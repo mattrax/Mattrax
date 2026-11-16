@@ -11,6 +11,7 @@ export const DeviceActionName = Schema.Literals([
   "sync",
   "lock",
   "wipe",
+  "return-to-service",
   "restart",
   "shutdown",
   "clear-passcode",
@@ -26,10 +27,46 @@ export const DeviceActionName = Schema.Literals([
 
 export type DeviceActionName = typeof DeviceActionName.Type;
 
+/**
+ * Actions that address one Apple user channel instead of the device.
+ *
+ * `sync` re-sends the user's APNs wake-up; `refresh-profiles` queues a
+ * `ProfileList` on the user channel so the profiles installed for that user's
+ * login context are reported back.
+ */
+export const AppleUserActionName = Schema.Literals(["sync", "refresh-profiles"]);
+
+export type AppleUserActionName = typeof AppleUserActionName.Type;
+
+export type AppleUserActionInput = {
+  /** A push token and push magic are stored for this user channel. */
+  readonly configured: boolean;
+};
+
+/**
+ * The per-user actions a channel supports. A channel without push credentials
+ * can still be queried when the user next checks in, but cannot be woken.
+ */
+export const appleUserAvailableActions = (
+  input: AppleUserActionInput,
+): ReadonlyArray<AppleUserActionName> => {
+  const actions: Array<AppleUserActionName> = ["refresh-profiles"];
+
+  if (input.configured) actions.unshift("sync");
+
+  return actions;
+};
+
+export const appleUserSupportsAction = (
+  input: AppleUserActionInput,
+  action: AppleUserActionName,
+): boolean => appleUserAvailableActions(input).includes(action);
+
 const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "sync",
   "lock",
   "wipe",
+  "return-to-service",
   "restart",
   "shutdown",
   "clear-passcode",
@@ -68,6 +105,8 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["lock", "lock"],
   ["wipe", "wipe"],
   ["erase", "wipe"],
+  ["return-to-service", "return-to-service"],
+  ["returnToService", "return-to-service"],
   ["restart", "restart"],
   ["reboot", "restart"],
   ["shutdown", "shutdown"],
@@ -140,6 +179,41 @@ export type DeviceActionInput = {
   readonly status?: string | null;
   /** Raw client capability list reported by the device, if any. */
   readonly capabilities?: Schema.Json | null;
+  /** OS edition/version narrow commands that only newer releases support. */
+  readonly osEdition?: string | null;
+  readonly osVersion?: string | null;
+  readonly model?: string | null;
+};
+
+const majorOsVersion = (value: string | null | undefined): number | null => {
+  const match = /^\s*(\d+)/.exec(value ?? "");
+
+  if (!match) return null;
+  const major = Number(match[1]);
+
+  return Number.isFinite(major) ? major : null;
+};
+
+/**
+ * Return to Service is an `EraseDevice` option on iOS/iPadOS 17+, tvOS 18+ and
+ * visionOS 26+. Apple does not support it on macOS at all. An unknown version
+ * stays advertised and the handler gives the precise error.
+ */
+const supportsReturnToService = (input: DeviceActionInput): boolean => {
+  // Only exclude macOS when the device identifies as a Mac. An unknown Apple
+  // device stays advertised; the command handler reports the precise limit.
+  if (/mac/i.test(input.osEdition ?? "") || /mac/i.test(input.model ?? "")) return false;
+
+  const major = majorOsVersion(input.osVersion);
+  const edition = (input.osEdition ?? "").toLowerCase();
+
+  if (major === null) return true;
+
+  if (/tvos/.test(edition)) return major >= 18;
+
+  if (/visionos/.test(edition)) return major >= 26;
+
+  return major >= 17;
 };
 
 /**
@@ -158,7 +232,10 @@ export const deviceAvailableActions = (
   input: DeviceActionInput,
 ): ReadonlyArray<DeviceActionName> => {
   const status = input.status?.trim();
-  const base = platformActions(input.proto);
+
+  const base = platformActions(input.proto).filter(
+    (action) => action !== "return-to-service" || supportsReturnToService(input),
+  );
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
 
@@ -204,6 +281,9 @@ export const deviceActionUnavailableReason = (
 
   if (input.status !== "enrolled")
     return "This action is only available while the device is enrolled.";
+
+  if (action === "return-to-service" && input.proto === "apple")
+    return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
 
   return `This device does not support the ${action} action.`;
 };

@@ -14,18 +14,15 @@ import {
   type WindowsManagementScope,
 } from "@mattrax/management-backend";
 import {
+  DiscoverResponse,
+  GetPoliciesResponse,
+  RequestSecurityTokenResponseCollection,
   WindowsMdmService,
   WindowsMdmServiceLive,
   windowsMdmRoutes,
   parseSyncML,
 } from "@mattrax/dm-windows";
-import {
-  DiscoverResponse,
-  GetPoliciesResponse,
-  RequestSecurityTokenResponseCollection,
-  deserializeSoapElement,
-  extractSoapBody,
-} from "@mattrax/soap";
+import { deserializeSoapElement, extractSoapBody } from "@mattrax/soap";
 
 export type WindowsHarnessState = {
   discovery: WindowsDiscoveryRequest[];
@@ -109,8 +106,8 @@ export const createWindowsHarness = (): WindowsHarness => {
   const backend = ManagementBackend.of({
     appleDeviceEvent: () => Effect.void,
     getAppleBootstrapToken: () => Effect.succeed(null),
-    appleManagementCheckin: () =>
-      Effect.succeed(ManagementManifest.members[0].make({})),
+    appleReturnToServiceConfiguration: () => Effect.succeed({ enabled: false }),
+    appleManagementCheckin: () => Effect.succeed(ManagementManifest.members[0].make({})),
     getAppleDeclarationTokens: () =>
       Effect.succeed({
         activationsToken: "",
@@ -193,9 +190,7 @@ export const createWindowsHarness = (): WindowsHarness => {
   const appLayer = windowsMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
 
-  const service = Effect.runSync(
-    Effect.provide(Effect.service(WindowsMdmService), serviceLayer),
-  );
+  const service = Effect.runSync(Effect.provide(Effect.service(WindowsMdmService), serviceLayer));
 
   return { handler, state, service, origin };
 };
@@ -277,7 +272,8 @@ export const windowsSyncMLBody = (
         `<Exec><CmdID>2</CmdID><Item><Target><LocURI>./Device/Vendor/MSFT/RemoteWipe/doWipe</LocURI></Target></Item></Exec>`,
     ),
     Match.orElse(
-      () => `<Get><CmdID>2</CmdID><Item><Target><LocURI>./DevInfo/DevId</LocURI></Target></Item></Get>`,
+      () =>
+        `<Get><CmdID>2</CmdID><Item><Target><LocURI>./DevInfo/DevId</LocURI></Target></Item></Get>`,
     ),
   );
 

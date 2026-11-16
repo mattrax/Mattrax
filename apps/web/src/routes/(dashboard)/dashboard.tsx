@@ -1,4 +1,5 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useSearchParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { readLastTenant } from "~/components/app-shell";

@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import type { JSX } from "@solidjs/web";
 import { Button, buttonVariants } from "~/components/ui/button";
 import {

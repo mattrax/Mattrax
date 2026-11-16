@@ -1,4 +1,4 @@
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Predicate, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, appleMdmRoutes } from "@mattrax/dm-apple";
 import type { AppleMdmTrustService } from "@mattrax/dm-apple";
@@ -10,6 +10,7 @@ import {
   ManagementManifest,
   ManagementNotSupported,
   ServerInitiatedUnenrollment,
+  UnknownDevice,
   MdmOrigin,
   type AppleDeviceEvent,
   type CheckinScope,
@@ -51,7 +52,11 @@ const origin = "https://mdm.example.test";
 const authSecret = "compliance-profile-secret";
 
 export const createAppleHarness = (
-  options: { readonly trust?: AppleMdmTrustService } = {},
+  options: {
+    readonly trust?: AppleMdmTrustService;
+    /** Simulate a backend that refuses to bind the user to the device. */
+    readonly unmanagedUser?: boolean;
+  } = {},
 ): AppleHarness => {
   const state: AppleHarnessState = {
     events: [],
@@ -115,10 +120,13 @@ export const createAppleHarness = (
 
   const backend = ManagementBackend.of({
     appleDeviceEvent: (scope, event) =>
-      Effect.sync(() => {
-        state.events.push({ scope, event });
-      }),
+      options.unmanagedUser && Predicate.isTagged(event, "UserAuthenticate")
+        ? Effect.fail(new UnknownDevice())
+        : Effect.sync(() => {
+            state.events.push({ scope, event });
+          }),
     getAppleBootstrapToken: () => Effect.succeed(state.bootstrapToken),
+    appleReturnToServiceConfiguration: () => Effect.succeed({ enabled: false }),
     appleManagementCheckin: () => {
       if (state.checkinError === "unenrolled")
         return Effect.fail(new ServerInitiatedUnenrollment());

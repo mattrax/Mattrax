@@ -259,6 +259,191 @@ describe("AppleMdmService", () => {
         throw new Error("expected a TokenUpdate event");
       expect(ev.channel).toBe("user");
     });
+
+    it("attributes a user-enrollment user channel to EnrollmentUserID", async () => {
+      let receivedScope: CheckinScope | undefined;
+      let receivedEvent: AppleDeviceEvent | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
+          Effect.sync(() => {
+            receivedScope = scope;
+            receivedEvent = event;
+          }),
+      });
+
+      await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleTokenUpdate({
+            MessageType: "TokenUpdate",
+            Topic: TEST_CONFIG.topic,
+            EnrollmentID: "enrollment-abc",
+            EnrollmentUserID: "enrollment-user-1",
+            PushMagic: "magic-123",
+            Token: "dGVzdA==",
+            UserShortName: "oscar",
+          });
+        }),
+      );
+
+      const scope = expectScope(receivedScope);
+
+      expect(scope._tag).toBe("user");
+      expect(scope).toMatchObject({
+        udid: "enrollment-abc",
+        enrollmentId: "enrollment-abc",
+        userId: "enrollment-user-1",
+        source: "user-enrollment",
+        userShortName: "oscar",
+      });
+
+      if (!receivedEvent || !Predicate.isTagged(receivedEvent, "TokenUpdate"))
+        throw new Error("expected a TokenUpdate event");
+      expect(receivedEvent.channel).toBe("user");
+      expect(receivedEvent.userId).toBe("enrollment-user-1");
+    });
+
+    it("rejects a user-channel TokenUpdate the backend does not know", async () => {
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () => Effect.fail(new UnknownDevice()),
+      });
+
+      const exit = await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleTokenUpdate({
+            MessageType: "TokenUpdate",
+            Topic: TEST_CONFIG.topic,
+            UDID: "udid-123",
+            UserID: "user-456",
+            PushMagic: "magic-123",
+            Token: "dGVzdA==",
+          });
+        }),
+      ).then(
+        () => "resolved",
+        (error) => error,
+      );
+
+      // The user channel must fail (400), unlike a device token for an unknown
+      // UDID, which the service deliberately ignores.
+      expect(exit).not.toBe("resolved");
+    });
+
+    it("ignores a device-channel TokenUpdate for an unknown device", async () => {
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () => Effect.fail(new UnknownDevice()),
+      });
+
+      await expect(
+        runWithService(
+          backend,
+          Effect.gen(function* () {
+            const service = yield* AppleMdmService;
+
+            return yield* service.handleTokenUpdate({
+              MessageType: "TokenUpdate",
+              Topic: TEST_CONFIG.topic,
+              UDID: "udid-unknown",
+              PushMagic: "magic-123",
+              Token: "dGVzdA==",
+            });
+          }),
+        ),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe("handleUserAuthenticate", () => {
+    it("opens a user channel with an empty DigestChallenge", async () => {
+      let receivedScope: CheckinScope | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (scope: CheckinScope) =>
+          Effect.sync(() => {
+            receivedScope = scope;
+          }),
+      });
+
+      const result = await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleUserAuthenticate({
+            MessageType: "UserAuthenticate",
+            UDID: "udid-123",
+            UserID: "user-456",
+            UserShortName: "oscar",
+          });
+        }),
+      );
+
+      expect(result).toEqual({ digestChallenge: "" });
+      expect(receivedScope).toMatchObject({
+        udid: "udid-123",
+        userId: "user-456",
+        userShortName: "oscar",
+        source: "user-channel",
+      });
+      expect(receivedScope?._tag).toBe("user");
+    });
+
+    it("returns 410 (null) when the device cannot bind the user", async () => {
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () => Effect.fail(new UnknownDevice()),
+      });
+
+      const result = await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleUserAuthenticate({
+            MessageType: "UserAuthenticate",
+            UDID: "udid-unknown",
+            UserID: "user-456",
+          });
+        }),
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it("rejects an unsolicited digest with an empty AuthToken", async () => {
+      let events = 0;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () =>
+          Effect.sync(() => {
+            events++;
+          }),
+      });
+
+      const result = await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleUserAuthenticate({
+            MessageType: "UserAuthenticate",
+            UDID: "udid-123",
+            UserID: "user-456",
+            DigestResponse: "digest",
+          });
+        }),
+      );
+
+      // Apple requires an empty AuthToken rather than a 410 for a rejected
+      // digest, and the server never asked for one.
+      expect(result).toEqual({ authToken: "" });
+      expect(events).toBe(0);
+    });
   });
 
   describe("handleCheckOut", () => {
@@ -291,6 +476,39 @@ describe("AppleMdmService", () => {
   });
 
   describe("handleCommandResult", () => {
+    it("attributes a user-channel result to the user scope", async () => {
+      let receivedScope: CheckinScope | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (scope: CheckinScope) =>
+          Effect.sync(() => {
+            receivedScope = scope;
+          }),
+      });
+
+      await runWithService(
+        backend,
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+
+          return yield* service.handleCommandResult({
+            UDID: "udid-123",
+            UserID: "user-456",
+            Status: "Acknowledged",
+            CommandUUID: "cmd-user-1",
+            QueryResponses: { ProfileList: [] },
+          });
+        }),
+      );
+
+      expect(receivedScope).toMatchObject({
+        udid: "udid-123",
+        userId: "user-456",
+        source: "user-channel",
+      });
+      expect(receivedScope?._tag).toBe("user");
+    });
+
     it("sends a CommandResult with status", async () => {
       let receivedEvent: AppleDeviceEvent | undefined;
 
@@ -716,7 +934,8 @@ describe("AppleMdmService", () => {
       expect(mdmPayload["Topic"]).toBe(TEST_CONFIG.topic);
       expect(mdmPayload["AccessRights"]).toBe(8191);
       expect(mdmPayload["ServerCapabilities"]).toContain("com.apple.mdm.bootstraptoken");
-      expect(mdmPayload["ServerCapabilities"]).toContain("com.apple.mdm.token");
+      // GetToken is not implemented, so the capability must not be advertised.
+      expect(mdmPayload["ServerCapabilities"]).not.toContain("com.apple.mdm.token");
     });
   });
 

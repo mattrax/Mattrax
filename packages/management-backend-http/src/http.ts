@@ -3,6 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api
 import {
   CheckinScope,
   AppleDeviceEvent,
+  AppleReturnToServiceConfiguration,
   ManagementManifest,
   DdmTokens,
   DdmDeclarationItems,
@@ -104,6 +105,13 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
     HttpApiEndpoint.post("getAppleBootstrapToken", "/apple/bootstrap-token", {
       payload: Schema.Struct({ scope: CheckinScope }),
       success: Schema.NullOr(Schema.String),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("appleReturnToServiceConfiguration", "/apple/return-to-service", {
+      payload: Schema.Struct({ scope: CheckinScope }),
+      success: AppleReturnToServiceConfiguration,
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

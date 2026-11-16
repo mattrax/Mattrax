@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  appleUserAvailableActions,
+  appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
@@ -70,5 +72,72 @@ describe("deviceAvailableActions", () => {
     expect(deviceActionUnavailableReason({ proto: "win", status: "enrolled" }, "sync")).toContain(
       "no push channel",
     );
+  });
+
+  it("offers Return to Service on supported Apple platforms", () => {
+    expect(deviceAvailableActions({ proto: "apple", status: "enrolled" })).toContain(
+      "return-to-service",
+    );
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iPadOS",
+        osVersion: "17.4",
+      }),
+    ).toContain("return-to-service");
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "tvOS",
+        osVersion: "18.0",
+      }),
+    ).toContain("return-to-service");
+  });
+
+  it("does not offer Return to Service on macOS or old Apple releases", () => {
+    expect(
+      deviceAvailableActions({ proto: "apple", status: "enrolled", osEdition: "macOS 15.1" }),
+    ).not.toContain("return-to-service");
+
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iOS",
+        osVersion: "16.7",
+      }),
+    ).not.toContain("return-to-service");
+
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "tvOS",
+        osVersion: "17.0",
+      }),
+    ).not.toContain("return-to-service");
+  });
+
+  it("explains the Apple Return to Service platform limit", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS 15" },
+        "return-to-service",
+      ),
+    ).toContain("not support it on macOS");
+  });
+});
+
+describe("appleUserAvailableActions", () => {
+  it("offers a profile refresh even without push credentials", () => {
+    expect(appleUserAvailableActions({ configured: false })).toEqual(["refresh-profiles"]);
+  });
+
+  it("adds a wake-up once the channel has a token", () => {
+    expect(appleUserAvailableActions({ configured: true })).toEqual(["sync", "refresh-profiles"]);
+    expect(appleUserSupportsAction({ configured: true }, "sync")).toBe(true);
+    expect(appleUserSupportsAction({ configured: false }, "sync")).toBe(false);
   });
 });

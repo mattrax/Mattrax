@@ -44,7 +44,10 @@ export type RateLimitRule = {
  */
 const authRule = (): RateLimitRule => ({
   bucket: "auth",
-  limit: 120,
+  // Credential endpoints share one bucket. A busy office behind a single
+  // address, or a browser that retries a ceremony, must not be mistaken for
+  // credential stuffing; 10 attempts per second is still a blunt backstop.
+  limit: 600,
   windowSeconds: 60,
   failClosedWhenUnavailable: true,
 });
@@ -60,6 +63,8 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
   "/api/v1/account/email-verification",
+  "/api/v1/register/verification",
+  "/api/v1/register/verification/verify",
   "/api/v1/verifyTotpPending",
   "/api/v1/recoverTotpPending",
   "/api/v1/beginTotpEnrollment",

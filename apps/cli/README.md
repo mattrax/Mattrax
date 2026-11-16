@@ -15,8 +15,9 @@ pnpm --filter @mattrax/cli typecheck
 pnpm --filter @mattrax/cli build
 ```
 
-The package exposes `src/index.ts` as the `mattrax` bin, so a workspace install can invoke
-`mattrax` directly. Node.js 22.12 or newer is required.
+The package exposes `src/index.ts` as the `mattrax` bin. It is TypeScript run through
+`tsx` (this repository emits declarations, not a bundle), so use
+`pnpm --filter @mattrax/cli start` during development. Node.js 22.12 or newer is required.
 
 ## Quick start
 

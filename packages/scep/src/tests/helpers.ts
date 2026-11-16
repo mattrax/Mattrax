@@ -8,6 +8,7 @@ import {
   type ScepCaScope,
   type ScepIssuedCertificate,
   type ScepPkcsReq,
+  type ScepRetiredCa,
   type ScepStoredCa,
 } from "../repository.js";
 import { ScepError } from "../schema.js";
@@ -310,6 +311,16 @@ export function mockScepRepository(
     getCa: (scope: ScepCaScope) => Effect.Effect<ScepStoredCa | null, ScepError>;
     saveCa: (scope: ScepCaScope, ca: ScepStoredCa) => Effect.Effect<ScepStoredCa, ScepError>;
     replaceCa: (scope: ScepCaScope, ca: ScepStoredCa) => Effect.Effect<ScepStoredCa, ScepError>;
+    rotateCa: (
+      scope: ScepCaScope,
+      ca: ScepStoredCa,
+      options: { retiredAt: Date; trustUntil: Date },
+    ) => Effect.Effect<ScepStoredCa, ScepError>;
+    trustedCaCertificates: (
+      scope: ScepCaScope,
+      now?: Date,
+    ) => Effect.Effect<ReadonlyArray<string>, ScepError>;
+    listRetiredCa: (scope: ScepCaScope) => Effect.Effect<ReadonlyArray<ScepRetiredCa>, ScepError>;
     authenticatePkcsReq: (
       scope: ScepCaScope,
       req: ScepPkcsReq,
@@ -327,6 +338,9 @@ export function mockScepRepository(
       getCa: overrides?.getCa ?? (() => Effect.succeed(null)),
       saveCa: overrides?.saveCa ?? ((_scope, ca) => Effect.succeed(ca)),
       replaceCa: overrides?.replaceCa ?? ((_scope, ca) => Effect.succeed(ca)),
+      rotateCa: overrides?.rotateCa ?? ((_scope, ca) => Effect.succeed(ca)),
+      trustedCaCertificates: overrides?.trustedCaCertificates ?? (() => Effect.succeed([])),
+      listRetiredCa: overrides?.listRetiredCa ?? (() => Effect.succeed([])),
       authenticatePkcsReq: overrides?.authenticatePkcsReq ?? (() => Effect.void),
       recordIssuedCertificate: overrides?.recordIssuedCertificate,
       findIssuedCertificate: overrides?.findIssuedCertificate,

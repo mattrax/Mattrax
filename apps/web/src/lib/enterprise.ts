@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/solid-query";
-import type { MeResponse } from "@mattrax/enterprise-domain/client";
+import type { AppleUserActionName, MeResponse } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
@@ -18,7 +18,8 @@ import {
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
-  enterpriseHttpApi,
+  makeEnterpriseClient,
+  scriptHttpApi,
   formatDeviceQueryText,
   parseDeviceQueryText,
   type AndroidEnterpriseInfo,
@@ -33,6 +34,10 @@ import {
   type ApplicationInventoryQuery,
   type AuditSearchQuery,
   type AutopilotImportRequest,
+  type CreateAttributeRequest,
+  type PatchAttributeRequest,
+  type PatchEnrollmentQuestionsRequest,
+  type SetDeviceAttributesRequest,
   type CreateAutopilotProfileRequest,
   type DevicePreRegistrationImportRequest,
   type DeviceRow,
@@ -64,6 +69,11 @@ import {
   type VppSyncResponse,
   type WebhookEndpointInfo,
   type WebhookDeliveryQuery,
+  type CreateScriptRequest,
+  type PatchScriptRequest,
+  type PatchScriptAssignmentsRequest,
+  type RunScriptRequest,
+  type ScriptSettings,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -122,6 +132,9 @@ export type {
   DeviceActivityKind,
   DeviceApplication,
   DeviceApplicationsResponse,
+  AppleDeviceUser,
+  AppleDeviceUsersResponse,
+  AppleUserActionName,
   DeviceCertificateCounts,
   DeviceCertificateInfo,
   DeviceFileVaultStatus,
@@ -205,6 +218,16 @@ export type {
   WebhookDeliveryReplayResponse,
   WebhookTestResponse,
   WindowsEnrollment,
+  ScriptInfo,
+  ScriptDetail,
+  ScriptExecutionInfo,
+  ScriptAssignmentsResponse,
+  ScriptExecutionsResponse,
+  ScriptSettings,
+  CreateScriptRequest,
+  PatchScriptRequest,
+  PatchScriptAssignmentsRequest,
+  RunScriptRequest,
 } from "@mattrax/enterprise-domain/client";
 
 export { formatDeviceQueryText, parseDeviceQueryText };
@@ -215,69 +238,91 @@ type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"];
 
+type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
+
+type EnterpriseAttributeClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseAttribute"];
+
+type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
+
+/**
+ * Query keys must not change when a tenant URL moves between its canonical slug
+ * and its id (the shell rewrites one to the other). Keying on the resolved id
+ * keeps the cached data mounted, so the segment swap neither refetches nor
+ * suspends the navigation.
+ */
+const keyTenant = (tenantId: RouteParam) =>
+  tenantId ? (resolveTenantId(tenantId) ?? tenantId) : "";
+
 export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
-  tenant: (tenantId: RouteParam) => ["enterprise", "tenant", tenantId ?? ""] as const,
-  backups: (tenantId: RouteParam) => ["enterprise", "backups", tenantId ?? ""] as const,
+  tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
+  backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
-    ["enterprise", "list", tenantId ?? "", entity, group ?? ""] as const,
+    ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
   deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
-    ["enterprise", "device-search", tenantId ?? "", query] as const,
+    ["enterprise", "device-search", keyTenant(tenantId), query] as const,
   deviceHealth: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-health", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "device-health", keyTenant(tenantId), id ?? ""] as const,
   deviceHealthSummary: (tenantId: RouteParam) =>
-    ["enterprise", "device-health-summary", tenantId ?? ""] as const,
+    ["enterprise", "device-health-summary", keyTenant(tenantId)] as const,
   devicePushHealth: (tenantId: RouteParam) =>
-    ["enterprise", "device-push-health", tenantId ?? ""] as const,
+    ["enterprise", "device-push-health", keyTenant(tenantId)] as const,
   deviceActivity: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-activity", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "device-activity", keyTenant(tenantId), id ?? ""] as const,
   credentialHealth: (tenantId: RouteParam) =>
-    ["enterprise", "credential-health", tenantId ?? ""] as const,
+    ["enterprise", "credential-health", keyTenant(tenantId)] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
-    ["enterprise", "item", tenantId ?? "", entity, id ?? ""] as const,
-  users: (tenantId: RouteParam) => ["enterprise", "tenant-users", tenantId ?? ""] as const,
-  roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", tenantId ?? ""] as const,
+    ["enterprise", "item", keyTenant(tenantId), entity, id ?? ""] as const,
+  users: (tenantId: RouteParam) => ["enterprise", "tenant-users", keyTenant(tenantId)] as const,
+  roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
   invitations: (tenantId: RouteParam) =>
-    ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
+    ["enterprise", "tenant-invitations", keyTenant(tenantId)] as const,
   invitationOptions: (tenantId: RouteParam) =>
-    ["enterprise", "tenant-invitation-options", tenantId ?? ""] as const,
-  apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
-  android: (tenantId: RouteParam) => ["enterprise", "android", tenantId ?? ""] as const,
-  abm: (tenantId: RouteParam) => ["enterprise", "abm", tenantId ?? ""] as const,
-  abmDevices: (tenantId: RouteParam) => ["enterprise", "abm-devices", tenantId ?? ""] as const,
+    ["enterprise", "tenant-invitation-options", keyTenant(tenantId)] as const,
+  apns: (tenantId: RouteParam) => ["enterprise", "apns", keyTenant(tenantId)] as const,
+  android: (tenantId: RouteParam) => ["enterprise", "android", keyTenant(tenantId)] as const,
+  abm: (tenantId: RouteParam) => ["enterprise", "abm", keyTenant(tenantId)] as const,
+  abmDevices: (tenantId: RouteParam) => ["enterprise", "abm-devices", keyTenant(tenantId)] as const,
   abmDevice: (tenantId: RouteParam, serial: RouteParam) =>
-    ["enterprise", "abm-device", tenantId ?? "", serial ?? ""] as const,
-  vpp: (tenantId: RouteParam) => ["enterprise", "vpp", tenantId ?? ""] as const,
-  vppAssets: (tenantId: RouteParam) => ["enterprise", "vpp-assets", tenantId ?? ""] as const,
+    ["enterprise", "abm-device", keyTenant(tenantId), serial ?? ""] as const,
+  vpp: (tenantId: RouteParam) => ["enterprise", "vpp", keyTenant(tenantId)] as const,
+  vppAssets: (tenantId: RouteParam) => ["enterprise", "vpp-assets", keyTenant(tenantId)] as const,
   vppAssignments: (tenantId: RouteParam) =>
-    ["enterprise", "vpp-assignments", tenantId ?? ""] as const,
-  billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
+    ["enterprise", "vpp-assignments", keyTenant(tenantId)] as const,
+  billing: (tenantId: RouteParam) => ["enterprise", "billing", keyTenant(tenantId)] as const,
   billingInvoices: (tenantId: RouteParam) =>
-    ["enterprise", "billing-invoices", tenantId ?? ""] as const,
-  enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
-  scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", tenantId ?? ""] as const,
+    ["enterprise", "billing-invoices", keyTenant(tenantId)] as const,
+  enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", keyTenant(tenantId)] as const,
+  scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", keyTenant(tenantId)] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
-    ["enterprise", "enrollment-attempts", tenantId ?? "", limit] as const,
+    ["enterprise", "enrollment-attempts", keyTenant(tenantId), limit] as const,
   devicePreRegistrations: (tenantId: RouteParam) =>
-    ["enterprise", "device-pre-registrations", tenantId ?? ""] as const,
+    ["enterprise", "device-pre-registrations", keyTenant(tenantId)] as const,
+  attributes: (tenantId: RouteParam) => ["enterprise", "attributes", keyTenant(tenantId)] as const,
+  enrollmentQuestions: (tenantId: RouteParam) =>
+    ["enterprise", "enrollment-questions", keyTenant(tenantId)] as const,
+  policyVariables: (tenantId: RouteParam) =>
+    ["enterprise", "policy-variables", keyTenant(tenantId)] as const,
   search: (tenantId: RouteParam, term: string, limit = 30) =>
-    ["enterprise", "search", tenantId ?? "", term, limit] as const,
+    ["enterprise", "search", keyTenant(tenantId), term, limit] as const,
   mcpConnections: () => ["enterprise", "mcp-connections"] as const,
-  dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", tenantId ?? ""] as const,
+  dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", keyTenant(tenantId)] as const,
   dashboard: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "dashboard", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "dashboard", keyTenant(tenantId), id ?? ""] as const,
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
-    ["enterprise", "dashboard-query", tenantId ?? "", request] as const,
-  auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
+    ["enterprise", "dashboard-query", keyTenant(tenantId), request] as const,
+  auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", keyTenant(tenantId)] as const,
   accountActivity: (query: AuditSearchQuery = {}) =>
     ["enterprise", "account-activity", query] as const,
   tenantSecurity: (tenantId: RouteParam) =>
-    ["enterprise", "tenant-security", tenantId ?? ""] as const,
+    ["enterprise", "tenant-security", keyTenant(tenantId)] as const,
   auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
-    ["enterprise", "audit-search", tenantId ?? "", query] as const,
-  scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
-  webhooks: (tenantId: RouteParam) => ["enterprise", "webhooks", tenantId ?? ""] as const,
+    ["enterprise", "audit-search", keyTenant(tenantId), query] as const,
+  scim: (tenantId: RouteParam) => ["enterprise", "scim", keyTenant(tenantId)] as const,
+  webhooks: (tenantId: RouteParam) => ["enterprise", "webhooks", keyTenant(tenantId)] as const,
   webhookDeliveries: (
     tenantId: RouteParam,
     webhookId: RouteParam,
@@ -286,36 +331,46 @@ export const enterpriseKeys = {
     [
       "enterprise",
       "webhook-deliveries",
-      tenantId ?? "",
+      keyTenant(tenantId),
       webhookId ?? "",
       filters.event ?? "",
       filters.status ?? "",
     ] as const,
-  sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
-  applications: (tenantId: RouteParam) => ["enterprise", "applications", tenantId ?? ""] as const,
+  sso: (tenantId: RouteParam) => ["enterprise", "sso", keyTenant(tenantId)] as const,
+  applications: (tenantId: RouteParam) =>
+    ["enterprise", "applications", keyTenant(tenantId)] as const,
   applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
-    ["enterprise", "application-inventory", tenantId ?? "", query] as const,
+    ["enterprise", "application-inventory", keyTenant(tenantId), query] as const,
   deviceApplications: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-applications", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "device-applications", keyTenant(tenantId), id ?? ""] as const,
   deviceRecoveryKey: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-recovery-key", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "device-recovery-key", keyTenant(tenantId), id ?? ""] as const,
   application: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "application", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "application", keyTenant(tenantId), id ?? ""] as const,
+  scripts: (tenantId: RouteParam) => ["enterprise", "scripts", keyTenant(tenantId)] as const,
+  script: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "script", keyTenant(tenantId), id ?? ""] as const,
+  scriptAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "script-assignments", keyTenant(tenantId), id ?? ""] as const,
+  scriptExecutions: (tenantId: RouteParam, id: RouteParam, deviceId?: string) =>
+    ["enterprise", "script-executions", keyTenant(tenantId), id ?? "", deviceId ?? ""] as const,
   policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "policy-assignments", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "policy-assignments", keyTenant(tenantId), id ?? ""] as const,
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-effective-policy", tenantId ?? "", id ?? ""] as const,
-  directory: (tenantId: RouteParam) => ["enterprise", "directory", tenantId ?? ""] as const,
+    ["enterprise", "device-effective-policy", keyTenant(tenantId), id ?? ""] as const,
+  directory: (tenantId: RouteParam) => ["enterprise", "directory", keyTenant(tenantId)] as const,
   deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
-    ["enterprise", "device-users", tenantId ?? "", id ?? ""] as const,
+    ["enterprise", "device-users", keyTenant(tenantId), id ?? ""] as const,
+  deviceAppleUsers: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-apple-users", keyTenant(tenantId), id ?? ""] as const,
   directorySync: (tenantId: RouteParam) =>
-    ["enterprise", "directory-sync", tenantId ?? ""] as const,
-  domains: (tenantId: RouteParam) => ["enterprise", "domains", tenantId ?? ""] as const,
-  autopilot: (tenantId: RouteParam) => ["enterprise", "autopilot", tenantId ?? ""] as const,
+    ["enterprise", "directory-sync", keyTenant(tenantId)] as const,
+  domains: (tenantId: RouteParam) => ["enterprise", "domains", keyTenant(tenantId)] as const,
+  autopilot: (tenantId: RouteParam) => ["enterprise", "autopilot", keyTenant(tenantId)] as const,
   autopilotDevices: (tenantId: RouteParam) =>
-    ["enterprise", "autopilot-devices", tenantId ?? ""] as const,
+    ["enterprise", "autopilot-devices", keyTenant(tenantId)] as const,
   autopilotProfiles: (tenantId: RouteParam) =>
-    ["enterprise", "autopilot-profiles", tenantId ?? ""] as const,
+    ["enterprise", "autopilot-profiles", keyTenant(tenantId)] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -329,7 +384,22 @@ const clientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
   const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
 
-  return HttpApiClient.make(enterpriseHttpApi, {
+  return makeEnterpriseClient({
+    baseUrl,
+    transformClient: (client) =>
+      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+  });
+};
+
+/**
+ * Scripts are their own HttpApi so the main contract's generated client type
+ * stays within TypeScript's declaration-size limit.
+ */
+const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+
+  return HttpApiClient.make(scriptHttpApi, {
     baseUrl,
     transformClient: (client) =>
       HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
@@ -346,8 +416,11 @@ type EndpointStepUp =
       readonly stepUp: false;
     };
 
-function endpoint<A, E>(
-  call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>,
+function endpointWith<Client, A, E>(
+  makeClient: (
+    headers: Readonly<Record<string, string>>,
+  ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
+  call: (api: Client) => Effect.Effect<A, E, never>,
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   const action = options.stepUp === false ? undefined : options.stepUp;
@@ -365,9 +438,7 @@ function endpoint<A, E>(
   };
 
   const attempt = (grant?: string) => {
-    const effect = clientEffect(requestHeaders(grant)).pipe(
-      Effect.flatMap((client) => call(client.EnterpriseApi)),
-    );
+    const effect = makeClient(requestHeaders(grant)).pipe(Effect.flatMap(call));
 
     // SAFETY: `Effect.runPromise` resolves with the effect's success value `A`;
     // the assertion restores the generic success type the client erases.
@@ -400,6 +471,50 @@ function endpoint<A, E>(
   // SAFETY: `EndpointPromise` only adds the phantom `__error` field that carries
   // the endpoint error type; the runtime value is the plain promise from `run`.
   return run() as EndpointPromise<A, E | EnterpriseBadRequest>;
+}
+
+function endpoint<A, E>(
+  call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseApi),
+    call,
+    options,
+  );
+}
+
+function accountEndpoint<A, E>(
+  call: (api: EnterpriseAccountClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAccount),
+    call,
+    options,
+  );
+}
+
+function attributeEndpoint<A, E>(
+  call: (api: EnterpriseAttributeClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAttribute),
+    call,
+    options,
+  );
+}
+
+function scriptEndpoint<A, E>(
+  call: (api: ScriptApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(scriptClientEffect(headers), (client) => client.ScriptApi),
+    call,
+    options,
+  );
 }
 
 type EndpointData<T> = T extends EndpointPromise<infer A, unknown> ? A : never;
@@ -436,7 +551,7 @@ const enterpriseQueryOptions = <
   });
 
 export const enterprise = {
-  me: () => endpoint((api) => api.me({})),
+  me: () => accountEndpoint((api) => api.me({})),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
   listTenants: () => endpoint((api) => api.listTenants({})),
@@ -568,9 +683,9 @@ export const enterprise = {
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
     ),
-  listMcpConnections: () => endpoint((api) => api.listMcpConnections({})),
+  listMcpConnections: () => accountEndpoint((api) => api.listMcpConnections({})),
   revokeMcpConnection: (connectionId: RouteParam) =>
-    endpoint((api) =>
+    accountEndpoint((api) =>
       api.revokeMcpConnection({
         params: { connectionId: required(connectionId, "connectionId") },
       }),
@@ -738,6 +853,66 @@ export const enterprise = {
     endpoint((api) =>
       api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
+  listAttributes: (tenantId: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.listAttributes({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createAttribute: (tenantId: RouteParam, payload: CreateAttributeRequest) =>
+    attributeEndpoint((api) =>
+      api.createAttribute({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  patchAttribute: (tenantId: RouteParam, attributeId: RouteParam, payload: PatchAttributeRequest) =>
+    attributeEndpoint((api) =>
+      api.patchAttribute({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          attributeId: required(attributeId, "attributeId"),
+        },
+        payload,
+      }),
+    ),
+  deleteAttribute: (tenantId: RouteParam, attributeId: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.deleteAttribute({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          attributeId: required(attributeId, "attributeId"),
+        },
+      }),
+    ),
+  setDeviceAttributes: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: SetDeviceAttributesRequest,
+  ) =>
+    attributeEndpoint((api) =>
+      api.setDeviceAttributes({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  importDeviceAttributes: (tenantId: RouteParam, csv: string) =>
+    attributeEndpoint((api) =>
+      api.importDeviceAttributes({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { csv },
+      }),
+    ),
+  listEnrollmentQuestions: (tenantId: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.listEnrollmentQuestions({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchEnrollmentQuestions: (tenantId: RouteParam, payload: PatchEnrollmentQuestionsRequest) =>
+    attributeEndpoint((api) =>
+      api.patchEnrollmentQuestions({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  getPolicyVariables: (tenantId: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.getPolicyVariables({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   listDevicePreRegistrations: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listDevicePreRegistrations({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -785,6 +960,7 @@ export const enterprise = {
         | "sync"
         | "lock"
         | "wipe"
+        | "return-to-service"
         | "restart"
         | "shutdown"
         | "clear-passcode"
@@ -817,6 +993,14 @@ export const enterprise = {
     endpoint(
       (api) =>
         api.getDeviceRecoveryKey({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  getDeviceLocalAdmin: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.getDeviceLocalAdmin({
           params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         }),
       { stepUp: "recovery-key-reveal" },
@@ -1022,6 +1206,86 @@ export const enterprise = {
         payload,
       }),
     ),
+  listScripts: (tenantId: RouteParam) =>
+    scriptEndpoint((api) =>
+      api.listScripts({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getScript: (tenantId: RouteParam, id: RouteParam) =>
+    scriptEndpoint((api) =>
+      api.getScript({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  createScript: (tenantId: RouteParam, payload: CreateScriptRequest) =>
+    scriptEndpoint(
+      (api) =>
+        api.createScript({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "script-change" },
+    ),
+  patchScript: (tenantId: RouteParam, id: RouteParam, payload: PatchScriptRequest) =>
+    scriptEndpoint(
+      (api) =>
+        api.patchScript({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "script-change" },
+    ),
+  deleteScript: (tenantId: RouteParam, id: RouteParam) =>
+    scriptEndpoint(
+      (api) =>
+        api.deleteScript({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "script-change" },
+    ),
+  getScriptAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    scriptEndpoint((api) =>
+      api.getScriptAssignments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  patchScriptAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: PatchScriptAssignmentsRequest,
+  ) =>
+    scriptEndpoint(
+      (api) =>
+        api.patchScriptAssignments({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "script-change" },
+    ),
+  runScript: (tenantId: RouteParam, id: RouteParam, payload: RunScriptRequest = {}) =>
+    scriptEndpoint(
+      (api) =>
+        api.runScript({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "script-run" },
+    ),
+  listScriptExecutions: (tenantId: RouteParam, id: RouteParam, deviceId?: string) =>
+    scriptEndpoint((api) =>
+      api.listScriptExecutions({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        query: { deviceId, limit: 100 },
+      }),
+    ),
+  patchScriptSettings: (tenantId: RouteParam, payload: ScriptSettings) =>
+    scriptEndpoint(
+      (api) =>
+        api.patchScriptSettings({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "script-change" },
+    ),
   listApplications: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listApplications({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -1039,6 +1303,24 @@ export const enterprise = {
       api.setDeviceUsers({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload: { userIds: [...userIds] },
+      }),
+    ),
+  listDeviceAppleUsers: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceAppleUsers({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  deviceAppleUserAction: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    userId: string,
+    action: AppleUserActionName,
+  ) =>
+    endpoint((api) =>
+      api.deviceAppleUserAction({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), userId },
+        payload: { action },
       }),
     ),
   getApplication: (tenantId: RouteParam, id: RouteParam) =>
@@ -1454,17 +1736,17 @@ export const enterprise = {
       { stepUp: "recovery-approve" },
     ),
   cancelEmailChange: (token: string) =>
-    endpoint((api) => api.cancelEmailChange({ payload: { token } })),
+    accountEndpoint((api) => api.cancelEmailChange({ payload: { token } })),
   requestAccountRecovery: (email: string) =>
-    endpoint((api) => api.requestAccountRecovery({ payload: { email } })),
+    accountEndpoint((api) => api.requestAccountRecovery({ payload: { email } })),
   verifyAccountRecovery: (token: string) =>
-    endpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
+    accountEndpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
   revokeAllAccountSessions: () =>
-    endpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
+    accountEndpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
   searchAccountAuditLog: (query: AuditSearchQuery = {}) =>
-    endpoint((api) => api.searchAccountAuditLog({ query })),
+    accountEndpoint((api) => api.searchAccountAuditLog({ query })),
   exportAccountAuditLog: (query: AuditSearchQuery = {}) =>
-    endpoint((api) => api.exportAccountAuditLog({ query })),
+    accountEndpoint((api) => api.exportAccountAuditLog({ query })),
   getSsoConfig: (tenantId: RouteParam) =>
     endpoint((api) => api.getSsoConfig({ params: { tenantId: required(tenantId, "tenantId") } })),
   patchSsoConfig: (
@@ -1718,13 +2000,13 @@ export const enterprise = {
     endpoint((api) =>
       api.billingInvoices({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  stepUpMethods: () => endpoint((api) => api.stepUpMethods({})),
+  stepUpMethods: () => accountEndpoint((api) => api.stepUpMethods({})),
   stepUpTotp: (payload: { code: string; action: StepUpAction }) =>
-    endpoint((api) => api.stepUpTotp({ payload })),
+    accountEndpoint((api) => api.stepUpTotp({ payload })),
   beginStepUpPasskey: (payload: { action: StepUpAction }) =>
-    endpoint((api) => api.beginStepUpPasskey({ payload })),
+    accountEndpoint((api) => api.beginStepUpPasskey({ payload })),
   completeStepUpPasskey: (payload: { stepUpToken: string; response: string }) =>
-    endpoint((api) => api.completeStepUpPasskey({ payload })),
+    accountEndpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
 export const meQueryOptions = (userId?: string, enabled = true) => {
@@ -1822,6 +2104,30 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.getSsoConfig(tenantId),
       enabled: Boolean(tenantId),
     }),
+  scripts: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scripts(tenantId),
+      queryFn: () => enterprise.listScripts(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  script: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.script(tenantId, id),
+      queryFn: () => enterprise.getScript(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  scriptAssignments: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scriptAssignments(tenantId, id),
+      queryFn: () => enterprise.getScriptAssignments(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  scriptExecutions: (tenantId: RouteParam, id: RouteParam, deviceId?: string) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scriptExecutions(tenantId, id, deviceId),
+      queryFn: () => enterprise.listScriptExecutions(tenantId, id, deviceId),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
   applications: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.applications(tenantId),
@@ -1874,6 +2180,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.deviceUsers(tenantId, id),
       queryFn: () => enterprise.getDeviceUsers(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  deviceAppleUsers: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceAppleUsers(tenantId, id),
+      queryFn: () => enterprise.listDeviceAppleUsers(tenantId, id),
       enabled: Boolean(tenantId && id) && !isServer,
     }),
   directorySync: (tenantId: RouteParam) =>

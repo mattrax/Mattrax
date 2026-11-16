@@ -21,6 +21,11 @@ const authSecret = "abm-test-secret";
 const organizationId = "org-1";
 const otherOrganizationId = "org-2";
 
+type StoredAbmDevice = {
+  organizationId: string;
+  serial: string;
+};
+
 const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
 
@@ -357,24 +362,29 @@ describe("Apple Business Manager sync", () => {
 
     expect(result).toMatchObject({ devices: 2, assigned: 1, unassigned: 1, removed: 1 });
 
-    const devices = db.store.abm_device.filter((row) => row.organizationId === organizationId);
+    const devices = db.store.abm_device.filter(
+      (row: StoredAbmDevice) => row.organizationId === organizationId,
+    );
+
     expect(devices).toHaveLength(3);
-    expect(devices.find((row) => row.serial === "SERIAL-1")).toMatchObject({
+    expect(devices.find((row: StoredAbmDevice) => row.serial === "SERIAL-1")).toMatchObject({
       deviceId: "device-1",
       os: "macOS",
       enrollmentState: "ASSIGNED",
       profileStatus: "assigned",
     });
-    expect(devices.find((row) => row.serial === "SERIAL-2")).toMatchObject({
+    expect(devices.find((row: StoredAbmDevice) => row.serial === "SERIAL-2")).toMatchObject({
       os: "iPadOS",
       enrollmentState: "UNASSIGNED",
     });
-    expect(devices.find((row) => row.serial === "SERIAL-REMOVED")).toMatchObject({
+    expect(devices.find((row: StoredAbmDevice) => row.serial === "SERIAL-REMOVED")).toMatchObject({
       enrollmentState: "REMOVED",
       profileStatus: "removed",
     });
     expect(
-      db.store.abm_device.find((row) => row.organizationId === otherOrganizationId),
+      db.store.abm_device.find(
+        (row: StoredAbmDevice) => row.organizationId === otherOrganizationId,
+      ),
     ).toMatchObject({ enrollmentState: "UNASSIGNED" });
 
     const refreshed = await runEffect(appleBusinessManagerInfo(db, organizationId));
@@ -478,6 +488,16 @@ describe("Apple Business Manager sync", () => {
 });
 
 describe("ADE profile links", () => {
+  it("exposes the stable automatic enrollment URL", async () => {
+    const db = makeDbWithTenant();
+
+    const info = await runEffect(
+      appleBusinessManagerInfo(db, organizationId, "https://mdm.example.com/"),
+    );
+
+    expect(info.enrollmentUrl).toBe("https://mdm.example.com/api/v1/abm/ade/enroll");
+  });
+
   it("signs a tenant/serial/profile-bound link and rejects tampering", async () => {
     const signed = await runEffect(
       createAdeProfileToken({

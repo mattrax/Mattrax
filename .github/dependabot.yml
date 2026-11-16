@@ -1,0 +1,57 @@
+version: 2
+
+# One PR per dependency family keeps the workspace lockfile reviewable. A
+# dependency may only match one group, so the patterns are disjoint.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      effect:
+        patterns:
+          - effect
+          - "@effect/*"
+          - "@yielded/*"
+      ui:
+        patterns:
+          - solid-js
+          - "@solidjs/*"
+          - "@kobalte/*"
+          - "@tanstack/*"
+          - "@fontsource-variable/*"
+          - tailwindcss
+          - "@tailwindcss/*"
+          - tailwind-merge
+          - tw-animate-css
+          - class-variance-authority
+          - clsx
+      tooling:
+        patterns:
+          - typescript
+          - oxlint
+          - "@oxlint/*"
+          - vite
+          - vite-plus
+          - vitest
+          - tsx
+          - drizzle-kit
+          - drizzle-orm
+          - cf
+          - "@cloudflare/*"
+    ignore:
+      # The Solid 2 RC and the Kobalte alpha it targets move in lockstep with
+      # the UI; a bot bumping either alone breaks the component layer.
+      - dependency-name: solid-js
+        update-types: [version-update:semver-major]
+      - dependency-name: "@solidjs/*"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@kobalte/*"
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -16,7 +16,10 @@ test("keeps the dashboard stable and animates the active nav indicator", async (
   const before = await indicator.getAttribute("style");
 
   await page.getByRole("link", { name: "Groups", exact: true }).click();
-  await page.waitForURL(`**/t/${tenant.slug}/groups`);
+  // Navigation starts from an id or slug URL; the tenant layout settles on the
+  // canonical slug after hydration.
+  await page.waitForURL(new RegExp(`/t/(${tenant.id}|${tenant.slug})/groups$`));
+  await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups$`));
 
   await expect.poll(() => indicator.getAttribute("style"), { timeout: 2_000 }).not.toBe(before);
 });

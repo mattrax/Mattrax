@@ -1,3 +1,7 @@
+/* oxlint-disable typescript/no-explicit-any -- asn1js represents schema nodes
+ * as a union of primitive and constructed value blocks. The extraction helpers
+ * below probe both representations at runtime, and the library exposes no
+ * narrower type for a node that may be either. */
 import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
@@ -854,7 +858,14 @@ export function parseScepPkcsReq(
 export async function createCaCertificate(
   keyPair: CryptoKeyPair,
   commonName: string,
-  options: { readonly organization?: string; readonly organizationalUnit?: string } = {},
+  options: {
+    readonly organization?: string;
+    readonly organizationalUnit?: string;
+    /** Defaults to now. */
+    readonly notBefore?: Date;
+    /** Defaults to ten years after `notBefore` for callers outside the CA lifecycle. */
+    readonly notAfter?: Date;
+  } = {},
 ): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
@@ -888,9 +899,11 @@ export async function createCaCertificate(
   cert.issuer = name;
   cert.subject = name;
 
-  cert.notBefore.value = new Date();
-  const notAfter = new Date();
-  notAfter.setUTCFullYear(notAfter.getUTCFullYear() + 10);
+  const notBefore = options.notBefore ?? new Date();
+  cert.notBefore.value = notBefore;
+  const notAfter = options.notAfter ?? new Date(notBefore);
+
+  if (!options.notAfter) notAfter.setUTCFullYear(notAfter.getUTCFullYear() + 10);
   cert.notAfter.value = notAfter;
 
   // KeyUsage: digitalSignature | keyCertSign | cRLSign

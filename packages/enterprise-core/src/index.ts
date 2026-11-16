@@ -30,7 +30,14 @@ export {
   type DeviceApplicationRecord,
 } from "./deviceApplications.ts";
 
-export { R2, type R2Bucket, type R2ObjectBody, type R2PutOptions } from "./r2.ts";
+export {
+  R2,
+  R2_IMMUTABLE_CACHE_CONTROL,
+  R2_PRIVATE_CACHE_CONTROL,
+  type R2Bucket,
+  type R2ObjectBody,
+  type R2PutOptions,
+} from "./r2.ts";
 
 export { Env } from "./env.ts";
 

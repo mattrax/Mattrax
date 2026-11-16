@@ -15,6 +15,7 @@ const webhookOperations = new Map([
   ["/webhook/apple/event", "appleDeviceEvent"],
   ["/webhook/apple/checkin", "appleManagementCheckin"],
   ["/webhook/apple/bootstrap-token", "getAppleBootstrapToken"],
+  ["/webhook/apple/return-to-service", "appleReturnToServiceConfiguration"],
   ["/webhook/apple/declaration-tokens", "getAppleDeclarationTokens"],
   ["/webhook/apple/declaration-items", "getAppleDeclarationItems"],
   ["/webhook/apple/declaration", "getAppleDeclaration"],
@@ -137,6 +138,7 @@ describe("Management Backend HTTP E2E", () => {
       serialNumber: "SN001",
       model: "MacBookPro",
       osVersion: "14.0",
+      enrollmentMode: "device" as const,
     };
 
     const res = await handler(

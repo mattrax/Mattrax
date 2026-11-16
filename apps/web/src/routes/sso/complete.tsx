@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useSearchParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { createSignal, onSettled, Show } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";

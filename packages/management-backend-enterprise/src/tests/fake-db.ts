@@ -82,6 +82,17 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+/**
+ * Primary keys for the tables whose upserts these tests depend on. Values are
+ * Drizzle property names (the fake store keeps rows in that shape).
+ */
+const PRIMARY_KEYS = new Map<string, ReadonlyArray<string>>([
+  ["device_apple_user", ["deviceId", "userId"]],
+  ["device_apple", ["deviceId"]],
+  ["device", ["id"]],
+  ["scep_issued_certificate", ["serial"]],
+]);
+
 const comparable = (value: RowValue): number | string => {
   if (value instanceof Date) return value.getTime();
 
@@ -265,9 +276,12 @@ class InsertBuilder {
   ) {}
 
   values(value: Row | Row[]) {
-    this.inserted = Array.isArray(value) ? value : [value];
+    this.inserted = (Array.isArray(value) ? value : [value]).map((row) => ({
+      ...row,
+      __table: this.table,
+    }));
 
-    for (const row of this.inserted) this.rows().push({ ...row, __table: this.table });
+    for (const row of this.inserted) this.rows().push(row);
 
     return this;
   }
@@ -280,7 +294,36 @@ class InsertBuilder {
     return this;
   }
 
-  onDuplicateKeyUpdate() {
+  /**
+   * MySQL's upsert semantics for the tables these tests exercise. Without this
+   * the fake would keep both rows, so a second TokenUpdate would look like a
+   * duplicate channel instead of an update.
+   */
+  onDuplicateKeyUpdate(config?: { set?: Row }) {
+    const primaryKey = PRIMARY_KEYS.get(this.table);
+
+    if (!primaryKey || !config?.set) return this;
+
+    const rows = this.rows();
+
+    for (const inserted of this.inserted) {
+      const existing = rows.find(
+        (row) =>
+          row.__table === this.table &&
+          row !== inserted &&
+          primaryKey.every((column) => row[column] === inserted[column]),
+      );
+
+      if (!existing) continue;
+
+      for (const [key, value] of Object.entries(config.set))
+        if (value !== undefined) existing[key] = value;
+
+      const insertedIndex = rows.indexOf(inserted);
+
+      if (insertedIndex !== -1) rows.splice(insertedIndex, 1);
+    }
+
     return this;
   }
 

@@ -1,11 +1,12 @@
 import { Effect, Layer, Option, Schema } from "effect";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import {
   ScepCaKeyError,
   ScepError,
   ScepRepository,
   createScepChallenge,
+  describeScepCa,
   openCaPrivateKey,
   scepChallengeExpiresAt,
   sealCaPrivateKey,
@@ -64,6 +65,8 @@ export type ScepRepositoryOptions = {
  * the client-only `$client` property.
  */
 type ScepDatabase = Pick<Db["Service"], "select" | "insert" | "update">;
+
+const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 export type IssueScepChallengeOptions = {
   readonly enrollmentId: string;
@@ -435,6 +438,136 @@ export class ScepRepositoryLive extends ScepRepository {
           return stored;
         }).pipe(Effect.mapError(databaseError("Failed to replace CA"))),
 
+      /**
+       * Staged rotation. The retired anchor is written before the current CA is
+       * replaced: a failure after the anchor insert leaves the old CA current
+       * (plus a redundant anchor for it, filtered as the current fingerprint),
+       * never identities whose issuer is no longer trusted.
+       */
+      rotateCa: (scope, ca, rotateOptions) =>
+        Effect.gen(function* () {
+          const sealed = yield* sealCa(ca);
+          const timestamp = new Date();
+
+          yield* requireOrganization(scope.organizationId);
+
+          const [previousRow] = yield* db
+            .select()
+            .from(schema.scepCa)
+            .where(eq(schema.scepCa.organizationId, scope.organizationId))
+            .limit(1);
+
+          if (previousRow) {
+            const previous = yield* describeScepCa(previousRow.certPem).pipe(
+              Effect.mapError(databaseError("Failed to read the previous SCEP CA before rotation")),
+            );
+
+            yield* db
+              .insert(schema.scepCaTrust)
+              .ignore()
+              .values({
+                id: newId(),
+                organizationId: scope.organizationId,
+                certPem: previousRow.certPem,
+                fingerprintSha256: previous.fingerprintSha256,
+                source: previousRow.source === "imported" ? "imported" : "generated",
+                retiredAt: rotateOptions.retiredAt,
+                // Never trust a retired CA past its own expiry, whatever the
+                // caller asked for: after that the chain cannot validate.
+                trustUntil: new Date(
+                  Math.min(rotateOptions.trustUntil.getTime(), previous.notAfter.getTime()),
+                ),
+                createdAt: timestamp,
+              });
+
+            yield* db
+              .update(schema.scepCa)
+              .set({
+                certPem: ca.certPem,
+                privateKeyJwk: sealed,
+                source: ca.source ?? "generated",
+                rotatedAt: timestamp,
+              })
+              .where(eq(schema.scepCa.organizationId, scope.organizationId));
+          } else {
+            yield* db.insert(schema.scepCa).values({
+              organizationId: scope.organizationId,
+              certPem: ca.certPem,
+              privateKeyJwk: sealed,
+              source: ca.source ?? "generated",
+              createdAt: timestamp,
+              rotatedAt: null,
+            });
+          }
+
+          const stored = yield* readCa(scope.organizationId);
+
+          if (!stored)
+            return yield* Effect.fail(
+              new ScepError({ message: "Failed to persist the SCEP CA", reason: "internal" }),
+            );
+
+          return stored;
+        }).pipe(Effect.mapError(databaseError("Failed to rotate CA"))),
+
+      trustedCaCertificates: (scope, now = new Date()) =>
+        Effect.gen(function* () {
+          const [current] = yield* db
+            .select({ certPem: schema.scepCa.certPem })
+            .from(schema.scepCa)
+            .where(eq(schema.scepCa.organizationId, scope.organizationId))
+            .limit(1);
+
+          const retired = yield* db
+            .select({ certPem: schema.scepCaTrust.certPem })
+            .from(schema.scepCaTrust)
+            .where(
+              and(
+                eq(schema.scepCaTrust.organizationId, scope.organizationId),
+                gt(schema.scepCaTrust.trustUntil, now),
+              ),
+            )
+            .orderBy(desc(schema.scepCaTrust.retiredAt));
+
+          // A retired row for the certificate that is current again (an import
+          // restored it, or a failed rotation left the anchor behind) is the
+          // same anchor; it must not appear twice.
+          const retiredPems = retired
+            .map((row) => row.certPem)
+            .filter((certPem) => certPem !== current?.certPem);
+
+          return [...(current ? [current.certPem] : []), ...retiredPems];
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof ScepError
+              ? cause
+              : new ScepError({ message: "Failed to read SCEP trust anchors", cause }),
+          ),
+        ),
+
+      listRetiredCa: (scope) =>
+        Effect.gen(function* () {
+          const rows = yield* db
+            .select()
+            .from(schema.scepCaTrust)
+            .where(eq(schema.scepCaTrust.organizationId, scope.organizationId))
+            .orderBy(desc(schema.scepCaTrust.retiredAt));
+
+          return rows.map((row) => ({
+            certPem: row.certPem,
+            fingerprintSha256: row.fingerprintSha256,
+            source: row.source === "imported" ? ("imported" as const) : ("generated" as const),
+            retiredAt: row.retiredAt,
+            trustUntil: row.trustUntil,
+          }));
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof ScepError
+              ? cause
+              : new ScepError({ message: "Failed to read retired SCEP CAs", cause }),
+          ),
+        ),
+
       authenticatePkcsReq,
       recordIssuedCertificate: (certificate) =>
         Effect.gen(function* () {
@@ -450,6 +583,7 @@ export class ScepRepositoryLive extends ScepRepository {
               organizationId: certificate.organizationId,
               enrollmentId: certificate.enrollmentId ?? null,
               deviceId: certificate.deviceId ?? null,
+              caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               createdAt: new Date(),
             });
@@ -476,6 +610,7 @@ export class ScepRepositoryLive extends ScepRepository {
             .update(schema.scepIssuedCertificate)
             .set({
               enrollmentId: certificate.enrollmentId ?? null,
+              caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               // `revokedAt` is intentionally preserved. A duplicate serial is a
               // replay or collision, not proof that the identity is trusted
@@ -541,6 +676,7 @@ export class ScepRepositoryLive extends ScepRepository {
             organizationId: row.organizationId,
             enrollmentId: row.enrollmentId ?? undefined,
             deviceId: row.deviceId ?? undefined,
+            caFingerprintSha256: row.caFingerprintSha256 ?? undefined,
             notAfter: row.notAfter,
           };
         }),

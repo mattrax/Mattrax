@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useSearchParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";
 import { createSignal, onSettled, Show } from "solid-js";
 import { enterprise } from "~/lib/enterprise";

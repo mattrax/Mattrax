@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { onSettled } from "solid-js";
 
 /**

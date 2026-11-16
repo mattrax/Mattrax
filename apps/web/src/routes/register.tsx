@@ -1,15 +1,24 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useSearchParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { createSignal, onSettled, Show } from "solid-js";
+import { Schema } from "effect";
 import { authClient } from "~/lib/auth";
-import { errorMessage } from "~/lib/errors";
+import { EmailCodeForm } from "~/components/email-code-form";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 
+/**
+ * Sign-up proves the email address before it creates anything: the code form
+ * issues and checks a guest challenge, then the passkey ceremony creates the
+ * account with a verified address. No callback page or email link is needed.
+ */
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
+  const [step, setStep] = createSignal<"details" | "code">("details");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
   const session = authClient.useSession();
@@ -46,13 +55,31 @@ export default function RegisterPage() {
     document.title = "Create account · Mattrax";
   });
 
+  const sendCode = async () => {
+    const result = await authClient.requestRegistrationCode({
+      name: name().trim(),
+      email: email().trim(),
+    });
+
+    return result.error
+      ? { error: result.error }
+      : { challenge: result.data?.emailSent ? "sent" : undefined };
+  };
+
+  const verifyCode = async (code: string) => {
+    const result = await authClient.verifyRegistrationCode({ email: email().trim(), code });
+
+    return result.error ? { error: result.error } : { result: result.data?.grant };
+  };
+
   const handleSubmit = async (event: SubmitEvent) => {
     event.preventDefault();
     setError(null);
 
+    const trimmedName = name().trim();
     const trimmedEmail = email().trim();
 
-    if (!name().trim()) {
+    if (!trimmedName) {
       setError("Enter your name.");
 
       return;
@@ -64,37 +91,66 @@ export default function RegisterPage() {
       return;
     }
 
+    setName(trimmedName);
+    setEmail(trimmedEmail);
     setPending(true);
 
-    const result = await authClient.register({ name: name().trim(), email: trimmedEmail });
+    try {
+      const result = await authClient.requestRegistrationCode({
+        name: trimmedName,
+        email: trimmedEmail,
+      });
 
-    setPending(false);
+      if (result.error) {
+        setError(result.error.message ?? "Could not send a verification code.");
+
+        return;
+      }
+
+      setStep("code");
+    } catch (cause) {
+      setError(errorMessage(raisedFailure(cause), "Could not send a verification code."));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const finishRegistration = async (grant: string) => {
+    const result = await authClient.register({
+      name: name().trim(),
+      email: email().trim(),
+      grant,
+    });
 
     if (result.error) {
-      setError(
+      throw new Error(
         errorMessage(
           result.error,
           "Could not create your account. That email may already be in use.",
         ),
       );
+    }
+
+    // One idempotent call so the welcome email has the same once-only trigger
+    // as a token-verified sign-up. Never block sign-up on mail delivery.
+    void authClient.requestEmailVerification();
+
+    // The account and passkey exist. Usually registration also signs it in;
+    // when the follow-up prompt did not take, send the person to the sign-in
+    // page with the address filled in rather than failing the account.
+    if (result.data?.signedIn === false) {
+      const query = new URLSearchParams({ email: email().trim(), created: "1" });
+
+      if (returnTo()) query.set("returnTo", returnTo()!);
+      navigate(`/login?${query.toString()}`, { replace: true });
 
       return;
     }
 
-    setEmail(trimmedEmail);
-
-    // The account exists and the passkey is already signed in. Prove ownership
-    // of the address before the account can reach the dashboard.
-    await authClient.requestEmailVerification();
-
-    // Move to the dedicated verification page instead of switching local
-    // state: registering changes the session, and a remount of this route
-    // would otherwise reset the step and leave the user on a stale form.
-    // `/verify-email` sends a code automatically and also accepts the link.
-    navigate(
-      returnTo() ? `/verify-email?returnTo=${encodeURIComponent(returnTo()!)}` : "/verify-email",
-      { replace: true },
-    );
+    // The address is verified by the code, so there is no verification step
+    // left.
+    const destination = returnTo() ?? "/dashboard";
+    navigate(destination, { replace: true });
   };
 
   return (
@@ -107,7 +163,9 @@ export default function RegisterPage() {
           </a>
           <h1 class="text-2xl font-semibold text-stone-900">Create an account</h1>
           <p class="text-stone-500 text-sm mt-1">
-            Use a passkey to sign in securely, without a password.
+            {step() === "details"
+              ? "We'll verify your email, then set up a passkey to sign in with."
+              : "Enter the code we sent to your inbox."}
           </p>
         </div>
 
@@ -134,65 +192,86 @@ export default function RegisterPage() {
           )}
         </Show>
 
-        <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
-          <div class="space-y-1.5">
-            <label for="name" class="text-sm font-medium text-stone-700">
-              Name
-            </label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              required
-              autofocus
-              autocomplete="name"
-              placeholder="Ada Lovelace"
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+        <Show
+          when={step() === "details"}
+          fallback={
+            <EmailCodeForm
+              email={email()}
+              sentInitially
+              submitLabel="Verify and create passkey"
+              requestCode={sendCode}
+              verifyCode={verifyCode}
+              onVerified={(result) =>
+                finishRegistration(Schema.decodeUnknownSync(Schema.String)(result))
+              }
+              onBack={() => {
+                setStep("details");
+                setError(null);
+              }}
+              backLabel="Change details"
             />
-          </div>
+          }
+        >
+          <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
+            <div class="space-y-1.5">
+              <label for="name" class="text-sm font-medium text-stone-700">
+                Name
+              </label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                required
+                autofocus
+                autocomplete="name"
+                placeholder="Ada Lovelace"
+                value={name()}
+                onInput={(event) => setName(event.currentTarget.value)}
+                class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+              />
+            </div>
 
-          <div class="space-y-1.5">
-            <label for="email" class="text-sm font-medium text-stone-700">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autocomplete="username"
-              autocapitalize="none"
-              spellcheck={false}
-              placeholder="you@example.com"
-              value={email()}
-              onInput={(event) => setEmail(event.currentTarget.value)}
-              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
-            />
-          </div>
+            <div class="space-y-1.5">
+              <label for="email" class="text-sm font-medium text-stone-700">
+                Email
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck={false}
+                placeholder="you@example.com"
+                value={email()}
+                onInput={(event) => setEmail(event.currentTarget.value)}
+                class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+              />
+            </div>
 
-          <Show when={error()}>
-            {(message) => (
-              <p id="register-error" role="alert" class="text-sm text-destructive">
-                {message()}
-              </p>
-            )}
-          </Show>
+            <Show when={error()}>
+              {(message) => (
+                <p id="register-error" role="alert" class="text-sm text-destructive">
+                  {message()}
+                </p>
+              )}
+            </Show>
 
-          <button
-            type="submit"
-            disabled={pending()}
-            class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {pending() ? "Waiting for your device…" : "Create account with a passkey"}
-          </button>
+            <button
+              type="submit"
+              disabled={pending()}
+              class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {pending() ? "Sending code…" : "Continue"}
+            </button>
 
-          <p class="text-center text-xs leading-relaxed text-stone-500">
-            We'll ask your device to create a passkey with Face ID, Touch ID, Windows Hello or a
-            security key. Mattrax never stores a password.
-          </p>
-        </form>
+            <p class="text-center text-xs leading-relaxed text-stone-500">
+              We'll email a six-digit code, then ask your device to create a passkey with Face ID,
+              Touch ID, Windows Hello or a security key. Mattrax never stores a password.
+            </p>
+          </form>
+        </Show>
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Already have an account?{" "}

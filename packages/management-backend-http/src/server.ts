@@ -108,6 +108,19 @@ export const managementWebhookHandlers = (
         return yield* backend.getAppleBootstrapToken(payload.scope);
       }),
     )
+    .handle("appleReturnToServiceConfiguration", ({ request, payload }) =>
+      Effect.gen(function* () {
+        yield* verifySignature(
+          request,
+          "appleReturnToServiceConfiguration",
+          payload,
+          options.secret,
+        );
+        const backend = yield* ManagementBackend;
+
+        return yield* backend.appleReturnToServiceConfiguration(payload.scope);
+      }),
+    )
     .handle("getAppleDeclarationTokens", ({ request, payload }) =>
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleDeclarationTokens", payload, options.secret);

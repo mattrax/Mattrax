@@ -36,6 +36,12 @@ export type DeviceHealthDeclaration = {
 
 export type DeviceHealthInput = {
   readonly status?: string | null;
+  /**
+   * The device is an ADE device held in Setup Assistant. This is not a fault,
+   * but it is not a finished enrolment either, so health is `attention` until
+   * the server releases it with `DeviceConfigured`.
+   */
+  readonly awaitingConfiguration?: boolean | null;
   readonly lastSeenAt?: Date | string | null;
   readonly declarations?: ReadonlyArray<DeviceHealthDeclaration>;
   readonly diskTotal?: string | number | null;
@@ -271,6 +277,14 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     reasons.push(reason("enrollment_unenrolled", "Device is unenrolled", "critical"));
   } else if (status === "unenrolling") {
     reasons.push(reason("enrollment_unenrolling", "Device is being unenrolled", "warning"));
+  } else if (status === "enrolling" && input.awaitingConfiguration === true) {
+    reasons.push(
+      reason(
+        "awaiting_configuration",
+        "Device is held in Setup Assistant until its setup payload is applied",
+        "warning",
+      ),
+    );
   } else if (status === "enrolling") {
     reasons.push(reason("enrollment_enrolling", "Enrollment is still in progress", "warning"));
   } else if (status !== "enrolled") {
@@ -534,6 +548,7 @@ const REASON_GROUP_LABELS = new Map<string, string>([
   ["enrollment_unenrolled", "Unenrolled"],
   ["enrollment_unenrolling", "Unenrolling"],
   ["enrollment_enrolling", "Enrollment incomplete"],
+  ["awaiting_configuration", "Awaiting setup"],
   ["never_seen", "Never checked in"],
   ["stale", "Not checking in"],
   ["declaration_invalid", "Policy not applied"],

@@ -30,15 +30,9 @@ test.describe("onboarding email", () => {
     await page.locator("#name").fill("Ada Lovelace");
     await page.locator("#email").fill(email);
 
-    const registration = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().includes("/api/v1/completePasskeyRegistration"),
-    );
-
-    await page.getByRole("button", { name: /create account with a passkey/i }).click();
-    expect((await registration).ok()).toBe(true);
-
+    // Sign-up verifies the address first, then the passkey creates the
+    // account. No link or callback page is involved.
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
 
     let code = "";
@@ -60,9 +54,24 @@ test.describe("onboarding email", () => {
       )
       .not.toBe("");
 
+    const registration = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/completePasskeyRegistration"),
+    );
+
     await page.locator("#verification-code").fill(code);
-    await page.getByRole("button", { name: /verify email/i }).click();
+    await page.getByRole("button", { name: /verify and create passkey/i }).click();
+    const registrationResponse = await registration;
+    expect(
+      registrationResponse.status(),
+      `${registrationResponse.url()} ${await registrationResponse.text()}`,
+    ).toBe(200);
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
+
+    await expect
+      .poll(async () => welcomeMessages(await mailbox(page), email).length, { timeout: 20_000 })
+      .toBe(1);
 
     const afterRegistration = await mailbox(page);
     const welcome = welcomeMessages(afterRegistration, email);
@@ -76,13 +85,14 @@ test.describe("onboarding email", () => {
       (item) => item.to === email && item.subject === "Your Mattrax verification code",
     );
 
-    const token = verification?.text.match(/verify-email\?token=([^\s]+)/)?.[1];
+    // The code is entered on the page: the message deliberately carries no
+    // callback URL to click.
+    expect(verification?.text).toContain(code);
+    expect(verification?.text).not.toContain("verify-email?token=");
 
-    expect(token).toBeTruthy();
-
-
-    const again = await page.request.post("/api/v1/verify-email", {
-      data: { token: decodeURIComponent(token!) },
+    // Asking again (the endpoint the verification screen uses) must not send a
+    // second welcome for an already-verified account.
+    const again = await page.request.post("/api/v1/account/email-verification", {
       headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
     });
 

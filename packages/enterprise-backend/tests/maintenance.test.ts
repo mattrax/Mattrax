@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
+import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -328,5 +329,153 @@ describe("maintenance Apple application inventory", () => {
 
     expect(result.applicationInventoryRefreshes).toBe(0);
     expect(db.store.device_command).toHaveLength(0);
+  });
+});
+
+describe("maintenance origin certificate review", () => {
+  const peer = {
+    hostname: "e.mattrax.app",
+    port: 443,
+    subject: "CN=e.mattrax.app",
+    issuer: "CN=Test CA",
+    serialNumber: "2a",
+    fingerprintSha256: "a".repeat(64),
+    notBefore: new Date(now.getTime() - 300 * DAY),
+    notAfter: new Date(now.getTime() + 60 * DAY),
+    authorized: true,
+    authorizationError: null,
+    chainLength: 2,
+  };
+
+  const runAt = (db: ReturnType<typeof makeDb>, at: Date, probe: () => Effect.Effect<any>) =>
+    runEffect(
+      runMaintenance({
+        now: at,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        serverCertificateOrigin: "https://e.mattrax.app",
+        serverCertificateProbe: probe,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+  it("probes on the scheduled run and reuses a fresh observation", async () => {
+    const db = makeDb();
+    const probe = vi.fn(() => Effect.succeed(peer));
+
+    const first = await runAt(db, now, probe);
+    expect(first.serverCertificateChecked).toBe(1);
+    expect(db.store.server_certificate_health).toHaveLength(1);
+    expect(db.store.server_certificate_health[0]).toMatchObject({
+      origin: "https://e.mattrax.app",
+      authorized: true,
+      notAfter: peer.notAfter,
+    });
+
+    const second = await runAt(db, new Date(now.getTime() + 30 * 60 * 1000), probe);
+    expect(second.serverCertificateChecked).toBe(0);
+    expect(probe).toHaveBeenCalledTimes(1);
+
+    const third = await runAt(db, new Date(now.getTime() + 61 * 60 * 1000), probe);
+    expect(third.serverCertificateChecked).toBe(1);
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips the probe when no origin is configured and never fails the run", async () => {
+    const db = makeDb();
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.serverCertificateChecked).toBe(0);
+    expect(db.store.server_certificate_health).toHaveLength(0);
+  });
+});
+
+describe("maintenance SCEP CA rotation", () => {
+  const authSecret = "maintenance-rotation-secret";
+
+  it("rotates a due CA and records the overlap without revoking identities", async () => {
+    const db = makeDb();
+    db.store.organization.push({ id: "org-1", name: "Acme" });
+
+    const previous = await Effect.runPromise(
+      generateScepCa("org-1", {
+        now: new Date(now.getTime() - 300 * DAY),
+        lifetimeDays: 500,
+      }),
+    );
+
+    db.store.scep_ca.push({
+      id: 1,
+      organizationId: "org-1",
+      certPem: previous.certPem,
+      privateKeyJwk: await sealCaPrivateKey(authSecret, previous.privateKeyJwk),
+      source: "generated",
+      createdAt: new Date(now.getTime() - 300 * DAY),
+      rotatedAt: null,
+    });
+    db.store.scep_issued_certificate.push({
+      serial: "s1",
+      organizationId: "org-1",
+      deviceId: "d1",
+      notAfter: new Date(now.getTime() + 20 * DAY),
+      revokedAt: null,
+      createdAt: now,
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        authSecret,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.scepCaRotated).toBe(1);
+    expect(result.scepCaRotationFailed).toBe(0);
+    expect(db.store.scep_ca[0]!.certPem).not.toBe(previous.certPem);
+    expect(db.store.scep_ca_trust).toHaveLength(1);
+    expect(db.store.scep_ca_trust[0]!.certPem).toBe(previous.certPem);
+    expect(db.store.scep_issued_certificate[0]!.revokedAt).toBeNull();
+    expect(db.store.audit_log.some((row: any) => row.action === "scep_ca.auto_rotated")).toBe(true);
+  });
+
+  it("can be disabled for hosts that rotate out of band", async () => {
+    const db = makeDb();
+    db.store.organization.push({ id: "org-1", name: "Acme" });
+
+    const previous = await Effect.runPromise(
+      generateScepCa("org-1", {
+        now: new Date(now.getTime() - 300 * DAY),
+        lifetimeDays: 500,
+      }),
+    );
+
+    db.store.scep_ca.push({
+      id: 1,
+      organizationId: "org-1",
+      certPem: previous.certPem,
+      privateKeyJwk: await sealCaPrivateKey(authSecret, previous.privateKeyJwk),
+      source: "generated",
+      createdAt: new Date(now.getTime() - 300 * DAY),
+      rotatedAt: null,
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        authSecret,
+        scepCaRotation: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.scepCaRotated).toBe(0);
+    expect(db.store.scep_ca[0]!.certPem).toBe(previous.certPem);
   });
 });

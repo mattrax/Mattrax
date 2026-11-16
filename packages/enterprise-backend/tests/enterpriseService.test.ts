@@ -1764,6 +1764,39 @@ describe("enterprise service APNs", () => {
     });
   };
 
+  const seedAppleUser = (
+    db: any,
+    id: string,
+    overrides: {
+      userId?: string;
+      token?: string | null;
+      authenticatedAt?: Date | null;
+      profiles?: Array<{
+        identifier: string;
+        displayName?: string;
+        payloadType?: string;
+        payloadUuid?: string;
+        managed: boolean;
+      }>;
+    } = {},
+  ) => {
+    const now = new Date();
+    db.store.device_apple_user.push({
+      deviceId: id,
+      userId: overrides.userId ?? "user-1",
+      userShortName: "oscar",
+      userLongName: "Oscar Beaumont",
+      token: overrides.token === null ? null : (overrides.token ?? "user-1-token"),
+      pushMagic: overrides.token === null ? null : "user-1-magic",
+      topic: "com.apple.mgmt.External.acme",
+      authenticatedAt: overrides.authenticatedAt === undefined ? now : overrides.authenticatedAt,
+      lastSeenAt: now,
+      profiles: overrides.profiles ?? [],
+      consecutivePushFailures: 0,
+      updatedAt: now,
+    });
+  };
+
   it("generates a CSR plist and stores a pending key", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -1820,8 +1853,13 @@ describe("enterprise service APNs", () => {
       configured: true,
       topic: "com.apple.mgmt.External.acme",
       commonName: "Acme APNs",
+      keyConfigured: true,
+      keyMatchesCertificate: true,
+      topicMatchesCertificate: true,
+      renewalUrl: "https://identity.apple.com/pushcert/",
     });
     expect(info.expiresAt).toBeTruthy();
+    expect(info.daysLeft).toBeGreaterThan(0);
   });
 
   it("rejects invalid and mismatched certificates", async () => {
@@ -1904,6 +1942,179 @@ describe("enterprise service APNs", () => {
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
     expect(db.store.device.find((item: any) => item.id === "device-1")?.status).toBe("unenrolling");
     expect(pushes).toHaveLength(2);
+  });
+
+  it("lists Apple user channels for a device", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedDevice(db, tenant.id, "device-1");
+    db.store.device_apple[0].enrollmentMode = "user";
+    seedAppleUser(db, "device-1", {
+      profiles: [
+        {
+          identifier: "com.acme.wifi",
+          displayName: "Acme Wi-Fi",
+          payloadType: "Configuration",
+          payloadUuid: "uuid-1",
+          managed: true,
+        },
+      ],
+    });
+
+    const result = await runEffect(
+      service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(result.enrollmentMode).toBe("user");
+    expect(result.users).toMatchObject([
+      {
+        platformUserId: "user-1",
+        shortName: "oscar",
+        longName: "Oscar Beaumont",
+        binding: "authenticated",
+        configured: true,
+        push: { configured: true, consecutiveFailures: 0 },
+        profiles: [{ identifier: "com.acme.wifi", displayName: "Acme Wi-Fi", managed: true }],
+      },
+    ]);
+    expect(result.users[0]!.actions).toEqual(["sync", "refresh-profiles"]);
+
+    // Another tenant cannot read this device's users.
+    const other = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+
+    await expect(
+      runEffect(service.listDeviceAppleUsers(request(headers), other.id, "device-1")),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("wakes a user channel and queues a per-user profile refresh", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    seedAppleUser(db, "device-1");
+
+    await runEffect(
+      service.deviceAppleUserAction(request(headers), tenant.id, "device-1", "user-1", {
+        action: "sync",
+      }),
+    );
+
+    expect(pushes.at(-1)).toMatchObject({
+      pushToken: "user-1-token",
+      pushMagic: "user-1-magic",
+      topic: "com.apple.mgmt.External.acme",
+    });
+
+    const queued = await runEffect(
+      service.deviceAppleUserAction(request(headers), tenant.id, "device-1", "user-1", {
+        action: "refresh-profiles",
+      }),
+    );
+
+    expect(queued.commandId).toBeTruthy();
+    expect(pushes).toHaveLength(2);
+    expect(db.store.device_command.at(-1)).toMatchObject({
+      deviceId: "device-1",
+      userId: "user-1",
+      requestType: "ProfileList",
+      status: "queued",
+    });
+
+    // De-duplicated while the first refresh is still in flight.
+    const duplicate = await runEffect(
+      service.deviceAppleUserAction(request(headers), tenant.id, "device-1", "user-1", {
+        action: "refresh-profiles",
+      }),
+    );
+
+    expect(duplicate).toMatchObject({ status: "ok", deduplicated: true });
+    expect(db.store.device_command).toHaveLength(1);
+  });
+
+  it("refuses per-user actions for unknown users, other tenants and unenrolled devices", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedDevice(db, tenant.id, "device-1");
+    seedAppleUser(db, "device-1");
+
+    await expect(
+      runEffect(
+        service.deviceAppleUserAction(request(headers), tenant.id, "device-1", "missing", {
+          action: "sync",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+
+    const other = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+
+    await expect(
+      runEffect(
+        service.deviceAppleUserAction(request(headers), other.id, "device-1", "user-1", {
+          action: "sync",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+
+    await seedDevice(db, tenant.id, "device-2", { status: "unenrolled" });
+    seedAppleUser(db, "device-2");
+
+    await expect(
+      runEffect(
+        service.deviceAppleUserAction(request(headers), tenant.id, "device-2", "user-1", {
+          action: "refresh-profiles",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("does not wake a user channel without push credentials", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    seedAppleUser(db, "device-1", { token: null, authenticatedAt: null });
+
+    const listed = await runEffect(
+      service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(listed.users[0]).toMatchObject({
+      configured: false,
+      binding: "unbound",
+      actions: ["refresh-profiles"],
+    });
+
+    await expect(
+      runEffect(
+        service.deviceAppleUserAction(request(headers), tenant.id, "device-1", "user-1", {
+          action: "sync",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+    expect(pushes).toHaveLength(0);
   });
 
   it("revokes device-scoped SCEP identities when unenrolling", async () => {
@@ -2946,7 +3157,9 @@ describe("enterprise policy validation and enrollment", () => {
     expect(profile).toContain(tenant.id);
     expect(profile).toContain("<key>Challenge</key>");
     expect(profile).toContain(`<string>${enrollment.id}.`);
-    expect(profile).toContain("com.apple.mdm.token");
+    // GetToken is not implemented, so the capability must not be advertised.
+    expect(profile).not.toContain("com.apple.mdm.token");
+    expect(profile).toContain("com.apple.mdm.per-user-connections");
   });
 
   it("brands the Apple enrollment profile and enrollment payload", async () => {
@@ -3436,7 +3649,8 @@ describe("Apple enrollment profile download", () => {
     expect(plist).toContain("<plist");
     expect(plist).toContain("com.apple.security.scep");
     expect(plist).toContain(`/mdm/apple/scep/${tenant.id}`);
-    expect(plist).toContain("com.apple.mdm.token");
+    expect(plist).toContain("com.apple.mdm.per-user-connections");
+    expect(plist).not.toContain("com.apple.mdm.token");
 
     const verification = await signedData.verify({
       signer: 0,
@@ -4027,6 +4241,10 @@ describe("tenant SCEP CA", () => {
       context.service.getTenantScepCa(request(context.headers), first.tenant.id),
     );
 
+    const beforeCertPem = context.db.store.scep_ca.find(
+      (row: any) => row.organizationId === first.tenant.id,
+    )?.certPem;
+
     const otherBefore = await runEffect(
       context.service.getTenantScepCa(request(context.headers), second.tenant.id),
     );
@@ -4055,8 +4273,25 @@ describe("tenant SCEP CA", () => {
 
     expect(otherAfter.fingerprintSha256).toBe(otherBefore.fingerprintSha256);
 
-    // Identities issued by the retired CA can no longer renew.
-    expect(context.db.store.scep_issued_certificate[0]?.revokedAt).toBeInstanceOf(Date);
+    // Rotation is not revocation: the identity issued by the retired CA stays
+    // valid for its lifetime and can renew during the overlap.
+    expect(context.db.store.scep_issued_certificate[0]?.revokedAt).toBeNull();
+
+    const trust = context.db.store.scep_ca_trust.filter(
+      (row: any) => row.organizationId === first.tenant.id,
+    );
+
+    expect(trust).toHaveLength(1);
+    expect(trust[0]?.certPem).toBe(beforeCertPem);
+    // The retired CA stays a trust anchor until its own expiry.
+    expect(trust[0]?.trustUntil).toEqual(new Date(before.notAfter!));
+    // The seeded identity predates issuing-CA attribution, so it is counted as
+    // unattributed while still being covered by the retired anchor.
+    expect(rotated.retiring).toMatchObject([
+      { fingerprintSha256: before.fingerprintSha256, identities: 0 },
+    ]);
+    expect(rotated.unattributedIdentities).toBe(1);
+    expect(rotated.rotationDue).toBe(false);
   });
 
   it("requires step-up for CA rotation and import", async () => {
@@ -4114,14 +4349,18 @@ describe("tenant SCEP CA", () => {
       actorEmail: "owner@example.com",
       targetType: "scep_ca",
       metadata: {
+        mode: "overlap",
         source: "generated",
         fingerprintSha256: rotated.fingerprintSha256,
         commonName: "Mattrax SCEP CA",
+        revokedCertificates: 0,
       },
     });
+    expect(entry.metadata.fingerprintSha256).not.toBe(entry.metadata.previousFingerprintSha256);
+    expect(entry.metadata.previousFingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("rolls back the CA replacement when revoking old identities fails", async () => {
+  it("leaves the current CA in place when the successor cannot be stored", async () => {
     const context = await makeContext();
     const { tenant, enrollment } = await prepareTenant(context, "Alpha", "alpha");
     await profileFor(context, enrollment, "profile-alpha");
@@ -4134,10 +4373,10 @@ describe("tenant SCEP CA", () => {
 
     const update = context.db.update;
     context.db.update = (table: any) => {
-      if (table === schema.scepIssuedCertificate)
+      if (table === schema.scepCa)
         return {
           set: () => ({
-            where: () => Effect.fail(new Error("revocation failed")),
+            where: () => Effect.fail(new Error("replacement failed")),
           }),
         };
 
@@ -4148,7 +4387,8 @@ describe("tenant SCEP CA", () => {
       runEffect(context.service.rotateTenantScepCa(request(context.headers), tenant.id)),
     ).rejects.toBeTruthy();
 
-    // The replacement and the revocation are one transaction: neither landed.
+    // The retired anchor is written before the current CA is replaced, so a
+    // failed replacement leaves the original CA current — devices keep working.
     expect(context.db.store.scep_ca[0]?.certPem).toBe(certPem);
     expect(context.db.store.audit_log.some((row: any) => row.action === "scep_ca.rotated")).toBe(
       false,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
+import { describeScepCa, generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { issueScepChallenge, ScepRepositoryLive } from "../scep.js";
 import { dbRows, makeDb as makeStoreDb, tableName, type Row } from "./fake-db.js";
 
@@ -418,5 +419,166 @@ describe("ScepRepositoryLive certificate recording", () => {
     // The original row is untouched.
     const [row] = dbRows(db, tableName(schema.scepIssuedCertificate));
     expect(row).toMatchObject({ deviceId: "other-device", organizationId: "tenant-2" });
+  });
+});
+
+describe("ScepRepositoryLive staged rotation", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  const seedCa = async (organizationId: string, lifetimeDays: number) => {
+    const ca = await Effect.runPromise(generateScepCa(organizationId, { lifetimeDays }));
+    const description = await Effect.runPromise(describeScepCa(ca.certPem));
+    const sealed = await sealCaPrivateKey(authSecret, ca.privateKeyJwk);
+
+    return {
+      ca,
+      description,
+      row: {
+        id: 1,
+        organizationId,
+        certPem: ca.certPem,
+        privateKeyJwk: sealed,
+        source: "generated",
+        createdAt: new Date("2025-01-01T00:00:00.000Z"),
+        rotatedAt: null,
+      },
+    };
+  };
+
+  const makeRotationDb = async () => {
+    const previous = await seedCa("tenant-1", 500);
+
+    const db = makeStoreDb({
+      [tableName(schema.organization)]: [{ id: "tenant-1", name: "Tenant One" }],
+      [tableName(schema.scepCa)]: [previous.row],
+    });
+
+    return { db, previous };
+  };
+
+  it("retains the previous CA until its own expiry and trusts both", async () => {
+    const { db, previous } = await makeRotationDb();
+    const repository = makeRepository(db);
+
+    const candidate = await Effect.runPromise(generateScepCa("tenant-1", { lifetimeDays: 365 }));
+
+    const retiredAt = new Date("2026-01-01T00:00:00.000Z");
+
+    // Asking for a longer overlap must be clamped: a retired CA is never
+    // trusted past its own expiry.
+    const stored = await Effect.runPromise(
+      repository.rotateCa(scope, candidate, {
+        retiredAt,
+        trustUntil: new Date(previous.description.notAfter.getTime() + 30 * DAY),
+      }),
+    );
+
+    expect(stored.certPem).toBe(candidate.certPem);
+    expect(dbRows(db, tableName(schema.scepCa))).toHaveLength(1);
+    expect(dbRows(db, tableName(schema.scepCa))[0]?.certPem).toBe(candidate.certPem);
+
+    const trust = dbRows(db, tableName(schema.scepCaTrust));
+    expect(trust).toHaveLength(1);
+    expect(trust[0]).toMatchObject({
+      organizationId: "tenant-1",
+      certPem: previous.ca.certPem,
+      fingerprintSha256: previous.description.fingerprintSha256,
+      source: "generated",
+      retiredAt,
+      trustUntil: previous.description.notAfter,
+    });
+
+    // The current CA is tried first, then the retired anchor.
+    await expect(Effect.runPromise(repository.trustedCaCertificates(scope))).resolves.toEqual([
+      candidate.certPem,
+      previous.ca.certPem,
+    ]);
+
+    await expect(Effect.runPromise(repository.listRetiredCa(scope))).resolves.toMatchObject([
+      {
+        certPem: previous.ca.certPem,
+        fingerprintSha256: previous.description.fingerprintSha256,
+        retiredAt,
+        trustUntil: previous.description.notAfter,
+      },
+    ]);
+  });
+
+  it("stops trusting a retired CA when its window closes without deleting the record", async () => {
+    const { db, previous } = await makeRotationDb();
+    const repository = makeRepository(db);
+
+    const candidate = await Effect.runPromise(generateScepCa("tenant-1", { lifetimeDays: 365 }));
+
+    await Effect.runPromise(
+      repository.rotateCa(scope, candidate, {
+        retiredAt: new Date("2026-01-01T00:00:00.000Z"),
+        trustUntil: previous.description.notAfter,
+      }),
+    );
+
+    const afterExpiry = new Date(previous.description.notAfter.getTime() + 1);
+    await expect(
+      Effect.runPromise(repository.trustedCaCertificates(scope, afterExpiry)),
+    ).resolves.toEqual([candidate.certPem]);
+
+    // Health still sees the retirement history until it is purged.
+    await expect(Effect.runPromise(repository.listRetiredCa(scope))).resolves.toHaveLength(1);
+  });
+
+  it("bootstraps through rotateCa when the tenant has no CA", async () => {
+    const db = makeStoreDb({
+      [tableName(schema.organization)]: [{ id: "tenant-1", name: "Tenant One" }],
+    });
+
+    const repository = makeRepository(db);
+
+    const candidate = await Effect.runPromise(generateScepCa("tenant-1", { lifetimeDays: 365 }));
+
+    const stored = await Effect.runPromise(
+      repository.rotateCa(scope, candidate, {
+        retiredAt: new Date(),
+        trustUntil: new Date(),
+      }),
+    );
+
+    expect(stored.certPem).toBe(candidate.certPem);
+    expect(dbRows(db, tableName(schema.scepCaTrust))).toHaveLength(0);
+  });
+});
+
+describe("ScepRepositoryLive issuing CA attribution", () => {
+  it("records the issuing CA fingerprint so rotation overlap can be audited", async () => {
+    const db = makeStoreDb();
+    const repository = makeRepository(db);
+
+    await Effect.runPromise(
+      repository.recordIssuedCertificate!({
+        serial: "0a",
+        organizationId: "tenant-1",
+        caFingerprintSha256: "f".repeat(64),
+        notAfter: new Date(Date.now() + 86_400_000),
+      }),
+    );
+
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))[0]).toMatchObject({
+      serial: "0a",
+      caFingerprintSha256: "f".repeat(64),
+    });
+
+    // A duplicate serial for the same identity refreshes the row.
+    await Effect.runPromise(
+      repository.recordIssuedCertificate!({
+        serial: "0a",
+        organizationId: "tenant-1",
+        caFingerprintSha256: "e".repeat(64),
+        notAfter: new Date(Date.now() + 172_800_000),
+      }),
+    );
+
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(1);
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))[0]?.caFingerprintSha256).toBe(
+      "e".repeat(64),
+    );
   });
 });

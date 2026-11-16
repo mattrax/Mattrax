@@ -44,7 +44,18 @@ export type ScepIssuedCertificate = {
   readonly organizationId: string;
   readonly enrollmentId?: string;
   readonly deviceId?: string;
+  /** SHA-256 of the issuing CA certificate. Absent on legacy rows. */
+  readonly caFingerprintSha256?: string;
   readonly notAfter: Date;
+};
+
+/** A retired CA that is still accepted for identities it issued. */
+export type ScepRetiredCa = {
+  readonly certPem: string;
+  readonly fingerprintSha256: string;
+  readonly source: "generated" | "imported";
+  readonly retiredAt: Date;
+  readonly trustUntil: Date;
 };
 
 export class ScepRepository extends Context.Service<
@@ -61,13 +72,41 @@ export class ScepRepository extends Context.Service<
       ca: ScepStoredCa,
     ) => Effect.Effect<ScepStoredCa, ScepError>;
     /**
-     * Replace the tenant CA. Used for rotation and for an operator-supplied CA;
-     * a tenant that has not bootstrapped yet is created.
+     * Replace the tenant CA. Used for an operator-supplied CA, which is a
+     * deliberate trust-root change; a tenant that has not bootstrapped yet is
+     * created.
      */
     readonly replaceCa: (
       scope: ScepCaScope,
       ca: ScepStoredCa,
     ) => Effect.Effect<ScepStoredCa, ScepError>;
+    /**
+     * Staged rotation. Persists `ca` as the tenant's current CA and retains the
+     * previously persisted CA as a verification anchor until `trustUntil`.
+     *
+     * Implementations must write the retired anchor before replacing the
+     * current CA: if the replacement then fails, the old CA is still current and
+     * an extra anchor for it is harmless, whereas the reverse order would leave
+     * issued identities untrusted.
+     */
+    readonly rotateCa: (
+      scope: ScepCaScope,
+      ca: ScepStoredCa,
+      options: { readonly retiredAt: Date; readonly trustUntil: Date },
+    ) => Effect.Effect<ScepStoredCa, ScepError>;
+    /**
+     * Certificates that may verify a device identity: the current CA followed by
+     * retired anchors whose `trustUntil` has not passed. Empty when the tenant
+     * has not bootstrapped yet.
+     */
+    readonly trustedCaCertificates: (
+      scope: ScepCaScope,
+      now?: Date,
+    ) => Effect.Effect<ReadonlyArray<string>, ScepError>;
+    /** Retired anchors, newest first. Used for health and the dashboard. */
+    readonly listRetiredCa: (
+      scope: ScepCaScope,
+    ) => Effect.Effect<ReadonlyArray<ScepRetiredCa>, ScepError>;
     /** Hook for authenticating incoming SCEP PKCSReq messages. Throw/return a failed Effect to reject. */
     readonly authenticatePkcsReq: (
       scope: ScepCaScope,

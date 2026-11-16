@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { buildAppleEnrollmentProfile } from "../enrollment.js";
+import { buildAppleAdeConfiguration, buildAppleEnrollmentProfile } from "../enrollment.js";
 
 /**
  * The generated profile must contain one SCEP payload and one MDM payload, the
@@ -65,16 +65,41 @@ describe("Apple enrollment profile", () => {
     });
   });
 
-  it("advertises the required server capabilities", () => {
+  it("advertises the server capabilities it implements", () => {
     const profile = build();
     const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm")!;
-    expect(mdm.ServerCapabilities).toEqual(
-      expect.arrayContaining([
-        "com.apple.mdm.per-user-connections",
-        "com.apple.mdm.bootstraptoken",
-        "com.apple.mdm.token",
-      ]),
-    );
+    expect(mdm.ServerCapabilities).toEqual([
+      "com.apple.mdm.per-user-connections",
+      "com.apple.mdm.bootstraptoken",
+    ]);
+    // `com.apple.mdm.token` makes devices send GetToken; the product does not
+    // implement Apple's token services, so it must not be advertised.
+    expect(mdm.ServerCapabilities).not.toContain("com.apple.mdm.token");
+  });
+
+  it("builds an Apple User Enrollment (BYOD) profile", () => {
+    const profile = buildAppleEnrollmentProfile({
+      origin: "https://mdm.example.com",
+      topic: "com.apple.mgmt.External.example",
+      organizationId: "tenant-1",
+      organizationName: "Acme",
+      challenge: "challenge-1",
+      userEnrollment: { managedAppleAccount: "oscar@acme.example" },
+    });
+
+    const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm")!;
+
+    expect(mdm).toMatchObject({
+      AssignedManagedAppleID: "oscar@acme.example",
+      EnrollmentMode: "BYOD",
+      PayloadIdentifier: "com.mattrax.mdm",
+      CheckOutWhenRemoved: true,
+    });
+    // Apple cancels the enrollment when a BYOD profile declares access rights.
+    expect(mdm.AccessRights).toBeUndefined();
+    expect(mdm.ServerCapabilities).toEqual(["com.apple.mdm.per-user-connections"]);
+    expect(profile.PayloadIdentifier).toBe("com.mattrax.enrollment.user");
+    expect(profile.PayloadUUID).toBe("C3D4E5F6-A7B8-4C9D-8E0F-1A2B3C4D5E6F");
   });
 
   it("uses stable payload UUIDs across re-serves", () => {
@@ -123,20 +148,6 @@ describe("Apple enrollment profile", () => {
     expect(scepContent["URL"]).toBe("https://mdm.example.com/mdm/apple/scep/org");
   });
 
-  it("points SCEP at the tenant CA endpoint", () => {
-    const profile = build();
-
-    const scep = profile.PayloadContent.find(
-      (payload) => payload.PayloadType === "com.apple.security.scep",
-    )!;
-
-    // A path segment (not a query parameter) so SCEP clients can append
-    // `?operation=...` without losing the tenant.
-    expect(Schema.decodeUnknownSync(Schema.JsonObject)(scep.PayloadContent)["URL"]).toBe(
-      "https://mdm.example.com/mdm/apple/scep/org-123",
-    );
-  });
-
   it("accepts an explicit SCEP URL override", () => {
     const profile = buildAppleEnrollmentProfile({
       origin: "https://mdm.example.com",
@@ -178,5 +189,52 @@ describe("Apple enrollment profile", () => {
     );
     expect(rebranded.PayloadDisplayName).toBe("Acme Corp Enrollment");
     expect(rebranded.PayloadOrganization).toBe("Acme Corp");
+  });
+
+  it("does not put AwaitingConfiguration in the MDM payload", () => {
+    // `await_device_configured` is a key of Apple's ADE cloud configuration,
+    // not of `com.apple.mdm`. The device reports AwaitingConfiguration in its
+    // TokenUpdate; the profile cannot request it.
+    const mdm = build().PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm")!;
+
+    expect(mdm).not.toHaveProperty("AwaitingConfiguration");
+  });
+});
+
+describe("Apple ADE cloud configuration", () => {
+  it("awaits configuration and enables Return to Service", () => {
+    const configuration = buildAppleAdeConfiguration({
+      url: "https://mdm.example.com/api/v1/abm/ade/enroll",
+      profileName: "Acme ADE",
+      organizationName: "Acme Corp",
+      supportEmail: "help@acme.test",
+      skipSetupItems: ["AppleID", "TOS"],
+    });
+
+    expect(configuration).toMatchObject({
+      profile_name: "Acme ADE",
+      url: "https://mdm.example.com/api/v1/abm/ade/enroll",
+      is_supervised: true,
+      is_mdm_removable: false,
+      is_mandatory: true,
+      await_device_configured: true,
+      is_return_to_service: false,
+      support_email_address: "help@acme.test",
+      skip_setup_items: ["AppleID", "TOS"],
+    });
+
+    expect(
+      buildAppleAdeConfiguration({
+        url: "https://mdm.example.com/enroll",
+        profileName: "RTS",
+        returnToService: true,
+      }).is_return_to_service,
+    ).toBe(true);
+  });
+
+  it("requires an https URL", () => {
+    expect(() =>
+      buildAppleAdeConfiguration({ url: "http://mdm.example.com/enroll", profileName: "Acme" }),
+    ).toThrow(/https/);
   });
 });

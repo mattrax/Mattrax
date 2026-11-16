@@ -10,7 +10,7 @@ import {
   authRequirementForSubject,
   schema,
 } from "@mattrax/enterprise-core";
-import { RecoveryRejected, type AuthClaims } from "@mattrax/enterprise-domain";
+import { AuthClaims, RecoveryRejected } from "@mattrax/enterprise-domain";
 import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
 import type { EmailTransport } from "./email.ts";
 import { hasOwnerRole } from "./rbac.ts";
@@ -570,6 +570,9 @@ export const redeemRecoveryToken = (
 
 type RecoveryServices = {
   readonly db: EnterpriseDb;
+  /* oxlint-disable-next-line typescript/no-explicit-any -- The completion
+   * service is generic over the strategy's claims codec, which only exists
+   * inside the library's `bind` callback, so its shape cannot be named here. */
   readonly completion: any;
 };
 
@@ -595,6 +598,9 @@ const digest = (value: string) =>
  * and its credential vector after the consumption transaction, so the issued
  * session carries the post-recovery security revision.
  */
+/* oxlint-disable-next-line typescript/no-explicit-any -- `StrategyDefinition`
+ * is generic over the library's claims type lambda, which callers only see
+ * through the service it produces. */
 export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefined> => ({
   namespace: undefined,
   bind: ({ sessions }) => {
@@ -638,7 +644,7 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
               .from(authCredentials)
               .where(eq(authCredentials.subjectId, user.id));
 
-            const active = credentials.filter((credential: any) => credential.active);
+            const active = credentials.filter((credential) => credential.active);
 
             if (active.length === 0)
               return yield* Effect.fail(
@@ -654,7 +660,7 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
             const revision = yield* Schema.decodeUnknownEffect(Sessions.AuthenticationRevision)({
               subjectId: user.id,
               securityRevision: user.authRevision,
-              credentials: active.map((credential: any) => ({
+              credentials: active.map((credential) => ({
                 credentialId: credential.credentialId,
                 revision: credential.revision,
               })),

@@ -811,6 +811,23 @@ const declarationTypeFor = (row: PolicyConfigurationRow): string | null => {
  * the rendered declaration (for legacy profiles that means origin and device
  * token). A content edit therefore always produces a new token.
  */
+/**
+ * Content hash used for declaration server tokens.
+ *
+ * Must match the hash written when a policy is saved (`jsonHash`), so a
+ * configuration whose variables resolved to the stored text keeps its token.
+ */
+export const policyDataHash = async (value: Schema.Json): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(value)),
+  );
+
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+};
+
 export const configurationServerToken = async (
   row: PolicyConfigurationRow,
   context: Pick<DeclarationContext, "origin" | "deviceToken">,

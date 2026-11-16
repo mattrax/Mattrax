@@ -15,9 +15,10 @@ From this repository:
 pnpm --filter @mattrax/cli start -- --help
 ```
 
-The package exposes `apps/cli/src/index.ts` as its `mattrax` bin. If you build or install the
-workspace, invoke the bin directly; during development use the `start`/`dev` scripts, which
-run the TypeScript entrypoint with `tsx`.
+The package exposes `apps/cli/src/index.ts` as its `mattrax` bin. The repository has no
+compiled CLI artifact yet (the shared TS config emits declarations only), so run it through
+`pnpm --filter @mattrax/cli start` or `tsx apps/cli/src/index.ts`; a workspace install of a
+published build would invoke `mattrax` directly.
 
 Requirements: Node.js 22.12 or newer.
 

@@ -1,9 +1,12 @@
 import * as DialogPrimitive from "@kobalte/core/dialog";
-import { useLocation, useNavigate, useParams } from "@solidjs/router";
+import { useLocation } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { useTenantRouteParams } from "~/lib/route-params";
+import { routes } from "~/lib/routes";
 import {
   Dialog,
   DialogBackgroundIsolation,
@@ -121,7 +124,7 @@ const iconForGroup = (group: string): Command["icon"] => {
 export function CommandPalette() {
   const navigate = useNavigate();
   const location = useLocation();
-  const params = useParams();
+  const tenantParams = useTenantRouteParams();
   const [open, setOpen] = createSignal(false);
   const { can, canAny } = useCan();
   const [query, setQuery] = createSignal("");
@@ -129,8 +132,15 @@ export function CommandPalette() {
   const [active, setActive] = createSignal(0);
   let opener: HTMLElement | null = null;
   const [recents, setRecents] = createSignal(readRecents());
-  const tenantId = () => params.tenantId;
-  const base = () => (tenantId() ? `/t/${tenantId()}` : "");
+  const tenantId = () => tenantParams.tenantId;
+
+  const tenant = () => {
+    const id = tenantId();
+
+    return id ? routes.tenant(id) : undefined;
+  };
+
+  const base = () => tenant()?.overview() ?? "";
   const [truncated, setTruncated] = createSignal(false);
 
   // Debounce search in the input handler so shortcut registration is not
@@ -244,28 +254,37 @@ export function CommandPalette() {
 
     const nav = (command: Command) => ({ ...command, href: command.href ?? undefined });
 
+    const tenantRoutes = routes.tenant(id);
+
     const navigation: Command[] = [
-      nav(navigable("nav-overview", "Overview", `${base()}`, go(`${base()}`))),
+      nav(
+        navigable("nav-overview", "Overview", tenantRoutes.overview(), go(tenantRoutes.overview())),
+      ),
       nav(
         navigable(
           "nav-dashboards",
           "Dashboards",
-          `${base()}/dashboards`,
-          go(`${base()}/dashboards`),
+          tenantRoutes.dashboards(),
+          go(tenantRoutes.dashboards()),
         ),
       ),
-      nav(navigable("nav-devices", "Devices", `${base()}/devices`, go(`${base()}/devices`))),
-      nav(navigable("nav-groups", "Groups", `${base()}/groups`, go(`${base()}/groups`))),
-      nav(navigable("nav-policies", "Policies", `${base()}/policies`, go(`${base()}/policies`))),
+      nav(navigable("nav-devices", "Devices", tenantRoutes.devices(), go(tenantRoutes.devices()))),
+      nav(navigable("nav-groups", "Groups", tenantRoutes.groups(), go(tenantRoutes.groups()))),
+      nav(
+        navigable("nav-policies", "Policies", tenantRoutes.policies(), go(tenantRoutes.policies())),
+      ),
       nav(
         navigable(
           "nav-applications",
           "Applications",
-          `${base()}/applications`,
-          go(`${base()}/applications`),
+          tenantRoutes.applications(),
+          go(tenantRoutes.applications()),
         ),
       ),
-      nav(navigable("nav-settings", "Settings", `${base()}/settings`, go(`${base()}/settings`))),
+      nav(navigable("nav-scripts", "Scripts", tenantRoutes.scripts(), go(tenantRoutes.scripts()))),
+      nav(
+        navigable("nav-settings", "Settings", tenantRoutes.settings(), go(tenantRoutes.settings())),
+      ),
     ];
 
     const shortcuts = new Map<string, CommandShortcut>([
@@ -275,6 +294,7 @@ export function CommandPalette() {
       ["nav-groups", sequence("g", "g")],
       ["nav-policies", sequence("g", "p")],
       ["nav-applications", sequence("g", "a")],
+      ["nav-scripts", sequence("g", "s")],
       ["nav-settings", sequence("g", "t")],
     ]);
 
@@ -299,30 +319,40 @@ export function CommandPalette() {
         title: "Create policy",
         group: "Actions",
         icon: Plus,
-        href: `${base()}/policies/new`,
+        href: routes.tenant(id).newPolicy(),
         keywords: ["new", "add", "policy"],
         shortcut: sequence("n", "p"),
-        run: go(`${base()}/policies/new`),
+        run: go(routes.tenant(id).newPolicy()),
       },
       {
         id: "new-group",
         title: "Create group",
         group: "Actions",
         icon: Plus,
-        href: `${base()}/groups/new`,
+        href: routes.tenant(id).newGroup(),
         keywords: ["new", "add", "group"],
         shortcut: sequence("n", "g"),
-        run: go(`${base()}/groups/new`),
+        run: go(routes.tenant(id).newGroup()),
       },
       {
         id: "new-dashboard",
         title: "Create dashboard",
         group: "Actions",
         icon: Plus,
-        href: `${base()}/dashboards`,
+        href: routes.tenant(id).dashboards(),
         keywords: ["new", "add", "dashboard", "overview", "widget"],
         shortcut: sequence("n", "d"),
-        run: go(`${base()}/dashboards`),
+        run: go(routes.tenant(id).dashboards()),
+      },
+      {
+        id: "new-script",
+        title: "Create script",
+        group: "Actions",
+        icon: Plus,
+        href: `/t/${id}/scripts/new`,
+        keywords: ["new", "add", "script", "automation", "shell"],
+        shortcut: sequence("n", "s"),
+        run: go(`/t/${id}/scripts/new`),
       },
       {
         id: "new-tenant",
@@ -414,63 +444,63 @@ export function CommandPalette() {
         title: "Devices needing attention",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?health=attention`,
+        href: routes.tenant(id).devices({ health: "attention" }),
         keywords: ["unhealthy", "warning", "attention", "table", "filter"],
-        run: go(`${base()}/devices?health=attention`),
+        run: go(routes.tenant(id).devices({ health: "attention" })),
       },
       {
         id: "query-critical",
         title: "Critical devices",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?health=critical`,
+        href: routes.tenant(id).devices({ health: "critical" }),
         keywords: ["unhealthy", "critical", "table", "filter"],
-        run: go(`${base()}/devices?health=critical`),
+        run: go(routes.tenant(id).devices({ health: "critical" })),
       },
       {
         id: "query-stale",
         title: "Devices not seen in 7 days",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?health=stale`,
+        href: routes.tenant(id).devices({ health: "stale" }),
         keywords: ["stale", "offline", "not checking in", "table", "filter"],
-        run: go(`${base()}/devices?health=stale`),
+        run: go(routes.tenant(id).devices({ health: "stale" })),
       },
       {
         id: "query-push-failing",
         title: "Apple push failures",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?push=failing`,
+        href: routes.tenant(id).devices({ push: "failing" }),
         keywords: ["apns", "push", "failing", "invalid", "table", "filter"],
-        run: go(`${base()}/devices?push=failing`),
+        run: go(routes.tenant(id).devices({ push: "failing" })),
       },
       {
         id: "query-apple",
         title: "Apple devices",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?proto=apple`,
+        href: routes.tenant(id).devices({ proto: "apple" }),
         keywords: ["mac", "ios", "ipados", "apple", "table", "filter"],
-        run: go(`${base()}/devices?proto=apple`),
+        run: go(routes.tenant(id).devices({ proto: "apple" })),
       },
       {
         id: "query-windows",
         title: "Windows devices",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?proto=win`,
+        href: routes.tenant(id).devices({ proto: "win" }),
         keywords: ["win", "windows", "table", "filter"],
-        run: go(`${base()}/devices?proto=win`),
+        run: go(routes.tenant(id).devices({ proto: "win" })),
       },
       {
         id: "query-android",
         title: "Android devices",
         group: "Queries",
         icon: Laptop,
-        href: `${base()}/devices?proto=android`,
+        href: routes.tenant(id).devices({ proto: "android" }),
         keywords: ["android", "table", "filter"],
-        run: go(`${base()}/devices?proto=android`),
+        run: go(routes.tenant(id).devices({ proto: "android" })),
       },
     ];
 
@@ -482,6 +512,8 @@ export function CommandPalette() {
         if (command.id === "new-group") return can("groups.write");
 
         if (command.id === "new-dashboard") return can("dashboards.write");
+
+        if (command.id === "new-script") return can("scripts.write");
 
         return true;
       }),
@@ -583,8 +615,8 @@ export function CommandPalette() {
             subtitle: [row.serial, row.model].filter(Boolean).join(" · ") || "Device",
             group: "Devices",
             icon: Laptop,
-            href: `/t/${id}/devices/${row.id}`,
-            run: () => navigate(`/t/${id}/devices/${row.id}`),
+            href: routes.tenant(id).device(row.id),
+            run: () => navigate(routes.tenant(id).device(row.id)),
           },
         ];
       }
@@ -599,8 +631,8 @@ export function CommandPalette() {
             subtitle: `${row.email} · ${row.role}`,
             group: "People",
             icon: User,
-            href: `/t/${id}/settings/administrators`,
-            run: () => navigate(`/t/${id}/settings/administrators`),
+            href: routes.tenant(id).settingsAdministrators(),
+            run: () => navigate(routes.tenant(id).settingsAdministrators()),
           },
         ];
       }
@@ -615,8 +647,8 @@ export function CommandPalette() {
             subtitle: `${row.devicesCount ?? 0} devices`,
             group: "Groups",
             icon: UsersRound,
-            href: `/t/${id}/groups/${row.id}`,
-            run: () => navigate(`/t/${id}/groups/${row.id}`),
+            href: routes.tenant(id).group(row.id),
+            run: () => navigate(routes.tenant(id).group(row.id)),
           },
         ];
       }
@@ -630,8 +662,8 @@ export function CommandPalette() {
           subtitle: "Policy",
           group: "Policies",
           icon: ShieldCheck,
-          href: `/t/${id}/policies/${row.id}`,
-          run: () => navigate(`/t/${id}/policies/${row.id}`),
+          href: routes.tenant(id).policy(row.id),
+          run: () => navigate(routes.tenant(id).policy(row.id)),
         },
       ];
     });

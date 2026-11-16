@@ -1,5 +1,16 @@
 import { Context, Effect, Layer, Schema } from "effect";
 
+/**
+ * Cache policy for an object whose key contains the SHA-256 of its bytes. The
+ * object can never be replaced, but it is still tenant data: `private` keeps a
+ * shared cache from serving another tenant's file if the bucket is ever exposed
+ * directly, while an authenticated edge may keep it indefinitely.
+ */
+export const R2_IMMUTABLE_CACHE_CONTROL = "private, max-age=31536000, immutable";
+
+/** Tenant snapshots (backups) must never be stored by a browser or shared cache. */
+export const R2_PRIVATE_CACHE_CONTROL = "private, no-store";
+
 export type R2PutValue = ReadableStream | ArrayBuffer | ArrayBufferView | string | null | Blob;
 
 export type R2HttpMetadata = {

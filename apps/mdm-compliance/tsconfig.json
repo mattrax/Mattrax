@@ -1,35 +1,37 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "esnext",
-    "lib": ["es2023", "dom"],
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
     "types": ["node"],
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "esModuleInterop": true,
-    "isolatedModules": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "outDir": "./dist",
-    "composite": true
+    "outDir": "./dist"
   },
   "references": [
-    { "path": "../../packages/dm-android" },
-    { "path": "../../packages/dm-apple" },
-    { "path": "../../packages/dm-windows" },
-    { "path": "../../packages/enterprise-backend" },
-    { "path": "../../packages/enterprise-core" },
-    { "path": "../../packages/management-backend" },
-    { "path": "../../packages/plist" },
-    { "path": "../../packages/scep" },
-    { "path": "../../packages/soap" }
+    {
+      "path": "../../packages/dm-android"
+    },
+    {
+      "path": "../../packages/dm-apple"
+    },
+    {
+      "path": "../../packages/dm-windows"
+    },
+    {
+      "path": "../../packages/enterprise-backend"
+    },
+    {
+      "path": "../../packages/enterprise-core"
+    },
+    {
+      "path": "../../packages/management-backend"
+    },
+    {
+      "path": "../../packages/plist"
+    },
+    {
+      "path": "../../packages/scep"
+    },
+    {
+      "path": "../../packages/soap"
+    }
   ],
   "include": ["src"]
 }

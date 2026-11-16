@@ -12,16 +12,35 @@ export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")
   declarationId: string;
 }> {}
 
+/**
+ * Device and user identifiers Apple sends on every check-in.
+ *
+ * A device enrollment reports `UDID`; an Apple User Enrollment (BYOD) reports
+ * the per-enrollment `EnrollmentID` instead. The user channel adds a user
+ * identifier, which is `UserID` on macOS and Shared iPad and
+ * `EnrollmentUserID` for a user enrollment on the user channel.
+ */
+const CheckinIdentifierFields = {
+  UDID: Schema.optional(Schema.String),
+  EnrollmentID: Schema.optional(Schema.String),
+};
+
+const UserChannelIdentifierFields = {
+  UserID: Schema.optional(Schema.String),
+  EnrollmentUserID: Schema.optional(Schema.String),
+  UserShortName: Schema.optional(Schema.String),
+  UserLongName: Schema.optional(Schema.String),
+};
+
 export const AuthenticatePlist = Schema.Struct({
   MessageType: Schema.Literal("Authenticate"),
   Topic: Schema.String,
-  UDID: Schema.String,
+  ...CheckinIdentifierFields,
   SerialNumber: Schema.optional(Schema.String),
   OSVersion: Schema.optional(Schema.String),
   Model: Schema.optional(Schema.String),
   ModelName: Schema.optional(Schema.String),
   ProductName: Schema.optional(Schema.String),
-  EnrollmentID: Schema.optional(Schema.String),
 });
 
 export type AuthenticatePlist = typeof AuthenticatePlist.Type;
@@ -29,15 +48,13 @@ export type AuthenticatePlist = typeof AuthenticatePlist.Type;
 export const TokenUpdatePlist = Schema.Struct({
   MessageType: Schema.Literal("TokenUpdate"),
   Topic: Schema.String,
-  UDID: Schema.String,
+  ...CheckinIdentifierFields,
+  ...UserChannelIdentifierFields,
   PushMagic: Schema.String,
   Token: Schema.String,
   UnlockToken: Schema.optional(Schema.String),
-  UserID: Schema.optional(Schema.String),
-  EnrollmentID: Schema.optional(Schema.String),
+  NotOnConsole: Schema.optional(Schema.Boolean),
   AwaitingConfiguration: Schema.optional(Schema.Boolean),
-  UserShortName: Schema.optional(Schema.String),
-  UserLongName: Schema.optional(Schema.String),
 });
 
 export type TokenUpdatePlist = typeof TokenUpdatePlist.Type;
@@ -45,15 +62,52 @@ export type TokenUpdatePlist = typeof TokenUpdatePlist.Type;
 export const CheckOutPlist = Schema.Struct({
   MessageType: Schema.Literal("CheckOut"),
   Topic: Schema.String,
-  UDID: Schema.String,
-  UserID: Schema.optional(Schema.String),
-  EnrollmentID: Schema.optional(Schema.String),
+  ...CheckinIdentifierFields,
+  ...UserChannelIdentifierFields,
 });
 
 export type CheckOutPlist = typeof CheckOutPlist.Type;
 
+/**
+ * `UserAuthenticate` is the two-transaction handshake macOS uses before a
+ * user-channel session. The first request carries `UserID` and no
+ * `DigestResponse`; a second request carries the digest a client computed from
+ * a challenge the server returned.
+ */
+export const UserAuthenticatePlist = Schema.Struct({
+  MessageType: Schema.Literal("UserAuthenticate"),
+  ...UserChannelIdentifierFields,
+  ...CheckinIdentifierFields,
+  UserID: Schema.String,
+  DigestResponse: Schema.optional(Schema.String),
+});
+
+export type UserAuthenticatePlist = typeof UserAuthenticatePlist.Type;
+
+/**
+ * `GetToken` asks the server for a token service credential (a Managed Apple
+ * Account access token or an Apple Watch pairing token). It is unrelated to
+ * the user channel's `AuthToken`.
+ */
+export const GetTokenPlist = Schema.Struct({
+  MessageType: Schema.Literal("GetToken"),
+  TokenServiceType: Schema.String,
+  TokenParameters: Schema.optional(
+    Schema.Struct({
+      SecurityToken: Schema.optional(Schema.String),
+      PhoneUDID: Schema.optional(Schema.String),
+      WatchUDID: Schema.optional(Schema.String),
+    }),
+  ),
+  ...CheckinIdentifierFields,
+  ...UserChannelIdentifierFields,
+});
+
+export type GetTokenPlist = typeof GetTokenPlist.Type;
+
 export const CommandResultPlist = Schema.Struct({
-  UDID: Schema.String,
+  ...CheckinIdentifierFields,
+  ...UserChannelIdentifierFields,
   Status: Schema.String,
   CommandUUID: Schema.optional(Schema.String),
   Command: Schema.optional(
@@ -88,6 +142,19 @@ export const GetBootstrapTokenPlist = Schema.Struct({
   EnrollmentID: Schema.optional(Schema.String),
 });
 
+/**
+ * The device asks for the Return to Service configuration before erasing.
+ * Apple sends this only for ADE devices whose cloud configuration enables
+ * return to service (`is_return_to_service`).
+ */
+export const ReturnToServicePlist = Schema.Struct({
+  MessageType: Schema.Literal("ReturnToService"),
+  UDID: Schema.String,
+  EnrollmentID: Schema.optional(Schema.String),
+});
+
+export type ReturnToServicePlist = typeof ReturnToServicePlist.Type;
+
 export const DDMStatusReport = Schema.Struct({
   /** Flat map of Apple status item paths to their values. */
   StatusItems: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
@@ -110,3 +177,64 @@ export const DDMStatusReport = Schema.Struct({
 });
 
 export type DDMStatusReport = typeof DDMStatusReport.Type;
+
+export type CheckinIdentifiers = {
+  readonly UDID?: string;
+  readonly EnrollmentID?: string;
+  readonly UserID?: string;
+  readonly EnrollmentUserID?: string;
+  readonly UserShortName?: string;
+  readonly UserLongName?: string;
+};
+
+/** Which connection a check-in arrived on, and the identifiers that came with it. */
+export type AppleCheckinChannel =
+  | {
+      readonly kind: "device";
+      readonly deviceIdentifier: string;
+      readonly enrollmentId?: string;
+    }
+  | {
+      readonly kind: "user";
+      readonly deviceIdentifier: string;
+      readonly enrollmentId?: string;
+      readonly userId: string;
+      /**
+       * `user-channel` is the macOS/Shared iPad user channel (`UserID`).
+       * `user-enrollment` is Apple User Enrollment on the user channel
+       * (`EnrollmentUserID`), where the enrollment itself is the user.
+       */
+      readonly source: "user-channel" | "user-enrollment";
+      readonly userShortName?: string;
+      readonly userLongName?: string;
+    };
+
+/**
+ * Resolve the device and user identity from a check-in plist.
+ *
+ * Apple sends `UDID` for a device enrollment and `EnrollmentID` for an Apple
+ * User Enrollment (BYOD). The user channel is identified by `UserID` on macOS
+ * and Shared iPad, or `EnrollmentUserID` on a user-enrollment user channel.
+ */
+export const resolveCheckinChannel = (
+  identifiers: CheckinIdentifiers,
+): AppleCheckinChannel | null => {
+  const deviceIdentifier = identifiers.UDID ?? identifiers.EnrollmentID;
+
+  if (!deviceIdentifier) return null;
+
+  const enrollmentId = identifiers.EnrollmentID;
+  const userId = identifiers.UserID ?? identifiers.EnrollmentUserID;
+
+  if (!userId) return { kind: "device", deviceIdentifier, enrollmentId };
+
+  return {
+    kind: "user",
+    deviceIdentifier,
+    enrollmentId,
+    userId,
+    source: identifiers.EnrollmentUserID ? "user-enrollment" : "user-channel",
+    userShortName: identifiers.UserShortName,
+    userLongName: identifiers.UserLongName,
+  };
+};

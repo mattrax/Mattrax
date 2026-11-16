@@ -117,6 +117,25 @@ export const readErrorTag = async (response: Response): Promise<string | undefin
   }
 };
 
+/**
+ * Authenticated API responses default to `no-store`. Routes that return a
+ * deliberately cacheable artifact (the OpenAPI document, a download with its
+ * own policy) set `cache-control` themselves and are left untouched, so the
+ * default can never turn a private response into a shared-cache hit.
+ */
+export const withDefaultNoStore = (response: Response): Response => {
+  if (response.headers.has("cache-control")) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store");
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+};
+
 /** Attach the request id to every response, including ones produced by Effect. */
 export const withRequestId = (response: Response, requestId: string): Response => {
   const headers = new Headers(response.headers);

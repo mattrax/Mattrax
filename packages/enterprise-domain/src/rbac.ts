@@ -21,6 +21,8 @@ export const PERMISSIONS = [
   "policies.write",
   "applications.read",
   "applications.write",
+  "scripts.read",
+  "scripts.write",
   "dashboards.read",
   "dashboards.write",
   "enrollment.read",
@@ -112,6 +114,19 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
         id: "applications.write",
         label: "Manage applications",
         description: "Upload and assign applications.",
+      },
+    ],
+  },
+  {
+    id: "scripts",
+    label: "Scripts",
+    description: "Scripts run on managed devices.",
+    permissions: [
+      { id: "scripts.read", label: "View scripts", description: "See scripts and run history." },
+      {
+        id: "scripts.write",
+        label: "Manage and run scripts",
+        description: "Create, edit, assign and run scripts.",
       },
     ],
   },

@@ -1,22 +1,11 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "es2023",
-    "module": "esnext",
-    "lib": ["ES2023", "DOM"],
     "types": ["node"],
-    "skipLibCheck": true,
+    "module": "esnext",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "emitDeclarationOnly": true,
-    "outDir": "./dist",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "composite": true
+    "outDir": "./dist"
   },
   "references": [
     {
@@ -62,6 +51,6 @@
       "path": "../../packages/crypto"
     }
   ],
-  "include": ["src", "package.json", "cloudflare.config.ts", ".cloudflare/types"],
-  "exclude": ["vite.config.ts", "node_modules"]
+  "include": ["src", "package.json", ".cloudflare/types"],
+  "exclude": ["node_modules"]
 }

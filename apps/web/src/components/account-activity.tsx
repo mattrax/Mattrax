@@ -13,6 +13,7 @@ import {
   type AuditSearchQuery,
 } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
+import { downloadBlob } from "~/lib/download";
 
 const PAGE_SIZE = 25;
 
@@ -147,14 +148,10 @@ export function AccountActivity(props: { userId: string | undefined }) {
       const body = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
       const type = format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8";
-      const blob = new Blob([body], { type });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `account-activity-${new Date().toISOString().slice(0, 10)}.${format}`;
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(
+        new Blob([body], { type }),
+        `account-activity-${new Date().toISOString().slice(0, 10)}.${format}`,
+      );
     } catch (error) {
       setExportError(error);
     } finally {

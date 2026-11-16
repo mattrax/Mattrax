@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { getRequestEvent } from "@solidjs/web";
 import {
   AndroidEnrollment,
+  EnrollmentQuestion,
   EnrollmentResponse,
   PlatformEnrollment,
   TenantBranding,
@@ -35,6 +36,7 @@ const ServerEnrollmentResponse = Schema.Union([
     windows: WindowsEnrollment,
     android: AndroidEnrollment,
     assetTag: Schema.Boolean,
+    questions: Schema.optional(Schema.Array(EnrollmentQuestion)),
     deviceLimit: Schema.optional(ServerDeviceLimit),
   }),
 ]);
@@ -114,4 +116,72 @@ export async function lookupPublicEnrollment(
   const enrollment = Option.getOrUndefined(decodeEnrollmentResponse(normalized));
 
   return enrollment === undefined ? { status: "invalid" } : { status: "found", enrollment };
+}
+
+const ErrorBody = Schema.Struct({ message: Schema.optional(Schema.String) });
+
+const StoredBody = Schema.Struct({ stored: Schema.optional(Schema.Number) });
+
+export type SubmitEnrollmentAnswersResult =
+  | { readonly ok: true; readonly stored: number }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * Store answers to a tenant's custom enrollment questions. The public
+ * enrollment page is served by the Worker, so the submission goes through the
+ * service binding rather than exposing the API origin to the browser.
+ */
+export async function submitPublicEnrollmentAnswers(
+  id: string,
+  input: {
+    readonly code?: string;
+    readonly serial: string;
+    readonly name?: string;
+    readonly assetTag?: string;
+    readonly answers: Readonly<Record<string, string>>;
+  },
+): Promise<SubmitEnrollmentAnswersResult> {
+  "use server";
+
+  const event = getRequestEvent();
+
+  const url = new URL(
+    `/api/v1/enrollment/${encodeURIComponent(id)}/answers`,
+    event?.request.url ?? "https://mattrax.invalid",
+  );
+
+  const headers = new Headers({ accept: "application/json", "content-type": "application/json" });
+  const cookie = event?.request.headers.get("cookie");
+  const ip = event?.request.headers.get("cf-connecting-ip");
+
+  if (cookie) headers.set("cookie", cookie);
+
+  if (ip) headers.set("cf-connecting-ip", ip);
+
+  let response: Response;
+
+  try {
+    response = await env.API.fetch(
+      new Request(url, { method: "POST", headers, body: JSON.stringify(input) }),
+    );
+  } catch {
+    return { ok: false, message: "Enrollment is temporarily unavailable. Try again shortly." };
+  }
+
+  const body = await response.json().catch(() => undefined);
+
+  if (!response.ok) {
+    const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorBody)(body));
+
+    return {
+      ok: false,
+      message:
+        decoded?.message ??
+        "The enrollment details could not be saved. Check the values and try again.",
+    };
+  }
+
+  const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(StoredBody)(body));
+
+  return { ok: true, stored: decoded?.stored ?? 0 };
 }

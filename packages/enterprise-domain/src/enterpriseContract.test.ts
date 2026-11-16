@@ -1,7 +1,21 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { EnterpriseInternal, UpdateMeRequest, enterpriseApi } from "./enterprise.ts";
+import {
+  AppleDeviceUsersResponse,
+  AppleUserActionRequest,
+  EnterpriseInternal,
+  UpdateMeRequest,
+  enterpriseAccountApi,
+  enterpriseApi,
+  enterpriseAttributeApi,
+} from "./enterprise.ts";
 import { Registration } from "./auth.ts";
+
+const endpoints = {
+  ...enterpriseAccountApi.endpoints,
+  ...enterpriseApi.endpoints,
+  ...enterpriseAttributeApi.endpoints,
+};
 
 describe("enterprise API error contract", () => {
   it("gives every endpoint a serializable internal fallback", () => {
@@ -9,7 +23,7 @@ describe("enterprise API error contract", () => {
       message: "Something went wrong on our side. Try again shortly.",
     });
 
-    for (const [identifier, endpoint] of Object.entries(enterpriseApi.endpoints)) {
+    for (const [identifier, endpoint] of Object.entries(endpoints)) {
       const schemas = [...endpoint.error];
       expect(schemas.length, `${identifier} declares no errors`).toBeGreaterThan(0);
       const union = Schema.Union(schemas);
@@ -21,7 +35,7 @@ describe("enterprise API error contract", () => {
   });
 
   it("keeps successful identifiers stable and unique", () => {
-    const names = Object.keys(enterpriseApi.endpoints);
+    const names = Object.keys(endpoints);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("searchDevices");
     expect(names).toContain("createPolicy");
@@ -47,5 +61,46 @@ describe("account profile contract", () => {
   it("still allows omitting the name or changing only the image", () => {
     expect(decodeUpdateMe({})).toEqual({});
     expect(decodeUpdateMe({ image: null })).toEqual({ image: null });
+  });
+});
+
+describe("Apple user channel contract", () => {
+  const decodeUsers = Schema.decodeUnknownSync(AppleDeviceUsersResponse);
+  const decodeAction = Schema.decodeUnknownSync(AppleUserActionRequest);
+
+  it("decodes the users payload the dashboard renders", () => {
+    const response = decodeUsers({
+      enrollmentMode: "user",
+      users: [
+        {
+          platformUserId: "user-1",
+          shortName: "oscar",
+          longName: "Oscar Beaumont",
+          binding: "authenticated",
+          configured: true,
+          authenticatedAt: "2026-11-16T10:00:00.000Z",
+          lastSeenAt: "2026-11-16T10:05:00.000Z",
+          push: {
+            configured: true,
+            lastAttemptAt: null,
+            lastSuccessAt: null,
+            lastError: null,
+            lastErrorCode: null,
+            consecutiveFailures: 0,
+            invalidToken: false,
+          },
+          profiles: [{ identifier: "com.acme.wifi", displayName: "Acme Wi-Fi", managed: true }],
+          actions: ["sync", "refresh-profiles"],
+        },
+      ],
+    });
+
+    expect(response.users[0]?.binding).toBe("authenticated");
+  });
+
+  it("accepts only the per-user actions the server implements", () => {
+    expect(decodeAction({ action: "sync" })).toEqual({ action: "sync" });
+    expect(decodeAction({ action: "refresh-profiles" })).toEqual({ action: "refresh-profiles" });
+    expect(() => decodeAction({ action: "erase" })).toThrow();
   });
 });

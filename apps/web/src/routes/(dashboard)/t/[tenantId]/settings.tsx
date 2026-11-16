@@ -9,11 +9,13 @@ const tabs = [
   { id: "administrators", label: "Members" },
   { id: "identity", label: "Identity" },
   { id: "enrollment", label: "Enrollment" },
+  { id: "attributes", label: "Attributes" },
   { id: "management", label: "Management" },
   { id: "delivery", label: "Delivery" },
   { id: "integrations", label: "Integrations" },
   { id: "audit", label: "Audit log" },
   { id: "billing", label: "Billing" },
+  { id: "legal", label: "Legal" },
 ];
 
 const sectionDescriptions = new Map([
@@ -21,11 +23,13 @@ const sectionDescriptions = new Map([
   ["administrators", "Invite people, assign roles, and review pending invitations."],
   ["identity", "Single sign-on, SCIM provisioning, and the domains that route sign-in."],
   ["enrollment", "Choose which platforms can enroll, and control the enrollment link."],
+  ["attributes", "Define the custom fields your organisation tracks on every device."],
   ["management", "Fleet integrations: Apple push, ABM, Apps and Books, Android and Windows."],
   ["delivery", "Check that notification delivery to devices is healthy."],
   ["integrations", "Send tenant events to webhooks you control."],
   ["audit", "Every change made in this tenant, newest first."],
   ["billing", "Plan, usage and invoices for this tenant."],
+  ["legal", "Open-source licences and the notices those projects require."],
 ]);
 
 export default function TenantSettingsLayout(props: ParentProps) {

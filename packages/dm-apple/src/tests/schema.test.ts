@@ -6,6 +6,7 @@ import {
   CheckOutPlist,
   CommandResultPlist,
   DDMStatusReport,
+  resolveCheckinChannel,
 } from "../schema.js";
 
 describe("schema", () => {
@@ -149,6 +150,53 @@ describe("schema", () => {
       );
 
       expect(result.QueryResponses).toEqual({ DeviceName: "TestMac" });
+    });
+  });
+
+  describe("resolveCheckinChannel", () => {
+    it("prefers UDID and reports the device channel without a user", () => {
+      expect(resolveCheckinChannel({ UDID: "udid-1", EnrollmentID: "enrollment-1" })).toEqual({
+        kind: "device",
+        deviceIdentifier: "udid-1",
+        enrollmentId: "enrollment-1",
+      });
+    });
+
+    it("uses EnrollmentID for an Apple User Enrollment device", () => {
+      expect(resolveCheckinChannel({ EnrollmentID: "enrollment-1" })).toEqual({
+        kind: "device",
+        deviceIdentifier: "enrollment-1",
+        enrollmentId: "enrollment-1",
+      });
+    });
+
+    it("marks a macOS/Shared iPad user channel as user-channel", () => {
+      expect(
+        resolveCheckinChannel({ UDID: "udid-1", UserID: "user-1", UserShortName: "oscar" }),
+      ).toMatchObject({
+        kind: "user",
+        deviceIdentifier: "udid-1",
+        userId: "user-1",
+        source: "user-channel",
+        userShortName: "oscar",
+      });
+    });
+
+    it("marks an EnrollmentUserID channel as user-enrollment", () => {
+      expect(
+        resolveCheckinChannel({ EnrollmentID: "enrollment-1", EnrollmentUserID: "user-1" }),
+      ).toMatchObject({
+        kind: "user",
+        deviceIdentifier: "enrollment-1",
+        userId: "user-1",
+        source: "user-enrollment",
+      });
+    });
+
+    it("returns null when Apple sent no device identifier", () => {
+      expect(resolveCheckinChannel({})).toBeNull();
+      // A user id alone cannot identify the device.
+      expect(resolveCheckinChannel({ UserID: "user-1" })).toBeNull();
     });
   });
 

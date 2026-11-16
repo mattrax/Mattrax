@@ -15,6 +15,7 @@ import { MdmTable } from "~/components/mdm/table";
 import { UsersRound } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
+import { routes } from "~/lib/routes";
 
 function MembershipBadge(props: { kind: GroupRow["kind"] }) {
   const dynamic = () => props.kind === "dynamic";
@@ -79,7 +80,7 @@ export default function GroupsPage() {
         description="Scope devices and policies into reusable deployment targets."
         actions={
           <Show when={can("groups.write") && filteredRows().length > 0}>
-            <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+            <LinkButton href={routes.tenant(params.tenantId).newGroup()}>Create group</LinkButton>
           </Show>
         }
       />
@@ -95,7 +96,7 @@ export default function GroupsPage() {
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
         searchPlaceholder="Search groups…"
-        rowHref={(row) => `/t/${params.tenantId}/groups/${row.id}`}
+        rowHref={(row) => routes.tenant(params.tenantId).group(row.id)}
         actions={(selected, clear, select) => (
           <EntityActions entity="group" selected={selected} clear={clear} select={select} />
         )}
@@ -113,7 +114,9 @@ export default function GroupsPage() {
               description="Create a group to organize devices and attach policy scope."
               action={
                 <Show when={can("groups.write")}>
-                  <LinkButton href={`/t/${params.tenantId}/groups/new`}>Create group</LinkButton>
+                  <LinkButton href={routes.tenant(params.tenantId).newGroup()}>
+                    Create group
+                  </LinkButton>
                 </Show>
               }
             />
@@ -129,7 +132,7 @@ export default function GroupsPage() {
               <div class="min-w-0">
                 <a
                   class="font-medium text-foreground hover:underline"
-                  href={`/t/${params.tenantId}/groups/${row.id}`}
+                  href={routes.tenant(params.tenantId).group(row.id)}
                 >
                   {row.name}
                 </a>

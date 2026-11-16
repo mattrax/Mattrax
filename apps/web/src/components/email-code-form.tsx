@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
+import type { Schema } from "effect";
 import { authClient } from "~/lib/auth";
-import { errorMessage } from "~/lib/errors";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /**
  * Six-digit email verification shared by registration and the standalone
@@ -16,7 +17,18 @@ export function EmailCodeForm(props: {
   initialChallenge?: string;
   /** A failure from the caller's initial send attempt. */
   initialError?: string | null;
-  onVerified: () => void | Promise<void>;
+  /**
+   * Override the signed-in account verification flow (guest sign-up). The
+   * request resolves with the challenge to send back on verify; the verify
+   * result is handed to `onVerified`.
+   */
+  requestCode?: () => Promise<{ challenge?: string; error?: { message?: string } }>;
+  verifyCode?: (
+    code: string,
+    challenge: string,
+  ) => Promise<{ result?: Schema.Json; error?: { message?: string } }>;
+  submitLabel?: string;
+  onVerified: (result?: Schema.Json) => void | Promise<void>;
   onBack?: () => void;
   backLabel?: string;
 }) {
@@ -56,16 +68,34 @@ export function EmailCodeForm(props: {
     setSending(true);
     setError(null);
     setNotice(null);
-    const result = await authClient.requestEmailVerification();
-    setSending(false);
+    let nextChallenge = "";
 
-    if (result.error) {
-      setError(errorMessage(result.error, "Could not send a verification code."));
+    if (props.requestCode) {
+      const result = await props.requestCode();
 
-      return;
+      if (result.error) {
+        setSending(false);
+        setError(result.error.message ?? "Could not send a verification code.");
+
+        return;
+      }
+
+      nextChallenge = result.challenge ?? "";
+    } else {
+      const result = await authClient.requestEmailVerification();
+
+      if (result.error) {
+        setSending(false);
+        setError(result.error.message ?? "Could not send a verification code.");
+
+        return;
+      }
+
+      nextChallenge = result.data?.challenge ?? "";
     }
 
-    setChallenge(result.data?.challenge ?? "");
+    setSending(false);
+    setChallenge(nextChallenge);
     setNotice("A new verification code has been sent.");
     startCooldown();
   };
@@ -86,23 +116,45 @@ export function EmailCodeForm(props: {
       return;
     }
 
-    if (!challenge()) {
+    if (!props.verifyCode && !challenge()) {
       setError("Request a code, then enter the six digits from the email.");
 
       return;
     }
 
     setPending(true);
-    const result = await authClient.verifyEmail({ code: code(), challenge: challenge() });
-    setPending(false);
 
-    if (result.error) {
-      setError(errorMessage(result.error, "That code is invalid or has expired."));
+    try {
+      let verified: Schema.Json | undefined;
 
-      return;
+      if (props.verifyCode) {
+        const result = await props.verifyCode(code(), challenge());
+
+        if (result.error) {
+          setError(result.error.message ?? "That code is invalid or has expired.");
+
+          return;
+        }
+
+        verified = result.result;
+      } else {
+        const result = await authClient.verifyEmail({ code: code(), challenge: challenge() });
+
+        if (result.error) {
+          setError(result.error.message ?? "That code is invalid or has expired.");
+
+          return;
+        }
+
+        verified = result.data;
+      }
+
+      await props.onVerified(verified);
+    } catch (cause) {
+      setError(errorMessage(raisedFailure(cause), "That code is invalid or has expired."));
+    } finally {
+      setPending(false);
     }
-
-    await props.onVerified();
   };
 
   return (
@@ -158,7 +210,7 @@ export function EmailCodeForm(props: {
           disabled={pending()}
           class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
-          {pending() ? "Verifying…" : "Verify email"}
+          {pending() ? "Verifying…" : (props.submitLabel ?? "Verify email")}
         </button>
       </form>
 

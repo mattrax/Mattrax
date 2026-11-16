@@ -11,6 +11,7 @@ import {
 } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
+import { describeScepCa } from "../ca.js";
 import {
   generateKeyPair,
   createTestCaCert,
@@ -526,6 +527,177 @@ describe("ScepService", () => {
         organizationId: "tenant-1",
         enrollmentId: "enrollment-1",
         deviceId: "device-1",
+      });
+    });
+
+    describe("after a staged CA rotation", () => {
+      const rotationFixture = async () => {
+        const oldKeyPair = await generateKeyPair();
+        const oldCaCert = await createTestCaCert(oldKeyPair, "Retired CA");
+        const newKeyPair = await generateKeyPair();
+        const newCaCert = await createTestCaCert(newKeyPair, "Current CA");
+
+        const oldCa: ScepStoredCa = {
+          certPem: certToPem(oldCaCert),
+          privateKeyJwk: await crypto.subtle.exportKey("jwk", oldKeyPair.privateKey),
+        };
+
+        const newCa: ScepStoredCa = {
+          certPem: certToPem(newCaCert),
+          privateKeyJwk: await crypto.subtle.exportKey("jwk", newKeyPair.privateKey),
+        };
+
+        const deviceKeyPair = await generateKeyPair();
+        const now = Date.now();
+
+        const identity = await createDeviceCertificate(
+          1,
+          [
+            { type: "2.5.4.3", value: "Device" },
+            { type: "2.5.4.11", value: scope.organizationId },
+          ],
+          deviceKeyPair.publicKey,
+          oldCaCert,
+          oldKeyPair.privateKey,
+          {
+            notBefore: new Date(now - 60_000),
+            notAfter: new Date(now + 30 * 24 * 60 * 60 * 1000),
+          },
+        );
+
+        const csr = await buildTestCsr(deviceKeyPair, "Device");
+
+        const renewal = await buildPkcsReq(
+          csr,
+          newCaCert,
+          identity,
+          deviceKeyPair.privateKey,
+          "txn-renewal-rotation",
+          crypto.getRandomValues(new Uint8Array(16)),
+          false,
+          "17",
+        );
+
+        return {
+          oldCa,
+          newCa,
+          oldCaCert,
+          newCaCert,
+          identitySerial: certificateSerialHex(identity),
+          renewal,
+        };
+      };
+
+      const certificateFrom = (response: ArrayBuffer) => {
+        const contentInfo = pkijs.ContentInfo.fromBER(response);
+        const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+
+        // The CA certificate in the CMS is self-signed; the identity is not.
+        const issued = signedData.certificates?.find(
+          (certificate): certificate is pkijs.Certificate =>
+            certificate instanceof pkijs.Certificate &&
+            !certificate.issuer.isEqual(certificate.subject),
+        );
+
+        if (!issued) throw new Error("response did not contain the renewed certificate");
+
+        return issued;
+      };
+
+      it("renews with the existing identity and issues from the current CA", async () => {
+        const fixture = await rotationFixture();
+        const recorded: Array<ScepIssuedCertificate> = [];
+
+        const oldFingerprint = (await Effect.runPromise(describeScepCa(fixture.oldCa.certPem)))
+          .fingerprintSha256;
+
+        const repo = mockScepRepository({
+          getCa: () => Effect.succeed(fixture.newCa),
+          // Both the successor and the CA that issued the existing identity are
+          // live trust anchors during the overlap.
+          trustedCaCertificates: () =>
+            Effect.succeed([fixture.newCa.certPem, fixture.oldCa.certPem]),
+          findIssuedCertificate: (_scope, serial) =>
+            Effect.succeed(
+              serial === fixture.identitySerial
+                ? {
+                    serial,
+                    organizationId: scope.organizationId,
+                    enrollmentId: "enrollment-1",
+                    deviceId: "device-1",
+                    caFingerprintSha256: oldFingerprint,
+                    notAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                  }
+                : null,
+            ),
+          recordIssuedCertificate: (certificate) =>
+            Effect.sync(() => {
+              recorded.push(certificate);
+            }),
+        });
+
+        const response = await runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
+
+            return yield* scep.pkiOperation(scope, fixture.renewal);
+          }),
+        );
+
+        const issued = certificateFrom(response);
+
+        // The renewed identity chains to the successor CA, not the retired one.
+        expect(await issued.verify(fixture.newCaCert)).toBe(true);
+        expect(await issued.verify(fixture.oldCaCert).catch(() => false)).toBe(false);
+        expect(issued.issuer.isEqual(fixture.newCaCert.subject)).toBe(true);
+
+        // The device stays linked, and the record names the CA that signed it so
+        // the overlap can be audited.
+        const currentFingerprint = (await Effect.runPromise(describeScepCa(fixture.newCa.certPem)))
+          .fingerprintSha256;
+
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]).toMatchObject({
+          organizationId: scope.organizationId,
+          deviceId: "device-1",
+          enrollmentId: "enrollment-1",
+          caFingerprintSha256: currentFingerprint,
+        });
+      });
+
+      it("refuses the renewal once the issuing CA is no longer trusted", async () => {
+        const fixture = await rotationFixture();
+
+        const repo = mockScepRepository({
+          getCa: () => Effect.succeed(fixture.newCa),
+          // The overlap has closed: only the current CA is trusted.
+          trustedCaCertificates: () => Effect.succeed([fixture.newCa.certPem]),
+          findIssuedCertificate: () => Effect.succeed(null),
+          recordIssuedCertificate: () => Effect.void,
+        });
+
+        const response = await runWithService(
+          repo,
+          Effect.gen(function* () {
+            const scep = yield* ScepServiceTag;
+
+            return yield* scep.pkiOperation(scope, fixture.renewal);
+          }),
+        );
+
+        const parsed = asn1js.fromBER(response);
+        const signedData = new pkijs.SignedData({ schema: parsed.result });
+
+        const attributes = new Map(
+          signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+            attribute.type,
+            attribute,
+          ]),
+        );
+
+        expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.3")).toBe("2");
+        expect(printableAttributeValue(attributes, "2.16.840.1.113733.1.9.4")).toBe("1");
       });
     });
 

@@ -43,9 +43,12 @@ import {
   type DeviceImportParseResult,
 } from "~/lib/device-import";
 import { healthRank } from "~/lib/device-health";
+import { readDeviceSearchParams, routes } from "~/lib/routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
+import { downloadBlob } from "~/lib/download";
+import { resolveTenantId } from "~/lib/tenant";
 
 const PAGE_SIZE = 50;
 
@@ -143,74 +146,37 @@ export default function DevicesPage() {
   const { can, canAny } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const param = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+  const search = () => readDeviceSearchParams(searchParams);
 
-  const initialStatus = (): DeviceRow["status"] | "" => {
-    const value = param(searchParams.status);
+  const initialStatus = (): DeviceRow["status"] | "" => search().status ?? "";
 
-    return value === "enrolling" ||
-      value === "enrolled" ||
-      value === "unenrolling" ||
-      value === "unenrolled"
-      ? value
-      : "";
-  };
+  const initialProto = (): DeviceRow["proto"] | "" => search().proto ?? "";
 
-  const initialProto = (): DeviceRow["proto"] | "" => {
-    const value = param(searchParams.proto);
+  const initialStale = (): "" | "7" | "30" | "90" => search().staleDays ?? "";
 
-    return value === "apple" || value === "win" || value === "android" ? value : "";
-  };
+  const initialHealth = (): DeviceHealthFilter | "" => search().health ?? "";
 
-  const initialStale = (): "" | "7" | "30" | "90" => {
-    const value = param(searchParams.staleDays);
+  const initialPush = (): "failing" | "invalid" | "" => search().push ?? "";
 
-    return value === "7" || value === "30" || value === "90" ? value : "";
-  };
+  const initialSort = (): MdmSortState => ({
+    id: search().sort ?? "name",
+    dir: search().direction ?? "asc",
+  });
 
-  const initialHealth = (): DeviceHealthFilter | "" => {
-    const value = param(searchParams.health);
-
-    return value === "healthy" ||
-      value === "attention" ||
-      value === "critical" ||
-      value === "unknown" ||
-      value === "stale"
-      ? value
-      : "";
-  };
-
-  const initialPush = (): "failing" | "invalid" | "" => {
-    const value = param(searchParams.push);
-
-    return value === "failing" || value === "invalid" ? value : "";
-  };
-
-  const initialSort = (): MdmSortState => {
-    const value = param(searchParams.sort);
-    const dir = param(searchParams.direction) === "desc" ? "desc" : "asc";
-
-    return {
-      id:
-        value === "lastSeenAt" || value === "enrolledAt" || value === "status" || value === "health"
-          ? value
-          : "name",
-      dir,
-    };
-  };
-
-  const [q, setQ] = createSignal(param(searchParams.q) ?? "");
-  const [debouncedQ, setDebouncedQ] = createSignal(param(searchParams.q) ?? "");
+  const [q, setQ] = createSignal(search().q ?? "");
+  const [debouncedQ, setDebouncedQ] = createSignal(search().q ?? "");
   const [status, setStatus] = createSignal<DeviceRow["status"] | "">(initialStatus());
   const [proto, setProto] = createSignal<DeviceRow["proto"] | "">(initialProto());
-  const [groupId, setGroupId] = createSignal(param(searchParams.groupId) ?? "");
+  const [groupId, setGroupId] = createSignal(search().groupId ?? "");
   const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
+  const [attributeKey, setAttributeKey] = createSignal(search().attributeKey ?? "");
+  const [attributeValue, setAttributeValue] = createSignal(search().attributeValue ?? "");
   const [sort, setSort] = createSignal<MdmSortState>(initialSort());
 
   const [deviceQuery, setDeviceQuery] = createSignal<DeviceQuery | null>(
-    parseDeviceQueryText(param(searchParams.query)),
+    parseDeviceQueryText(search().query),
   );
 
   const [queryOpen, setQueryOpen] = createSignal(false);
@@ -252,7 +218,7 @@ export default function DevicesPage() {
   const closeImport = () => {
     setImportOpen(false);
 
-    if (param(searchParams.import) === "1") setSearchParams({ import: "" }, { replace: true });
+    if (search().import === "1") setSearchParams({ import: "" }, { replace: true });
   };
 
   const chooseImportFile = () => importFileInput?.click();
@@ -260,7 +226,7 @@ export default function DevicesPage() {
   // `?import=1` is a convenience link from enrollment settings. Honour it only
   // for roles that may import; otherwise leave the read surface untouched.
   createEffect(
-    () => ({ requested: param(searchParams.import) === "1", writable: can("devices.write") }),
+    () => ({ requested: search().import === "1", writable: can("devices.write") }),
     ({ requested, writable }) => {
       if (!writable) {
         setImportOpen(false);
@@ -316,14 +282,10 @@ export default function DevicesPage() {
     const csv =
       "serial,name,asset_tag,group,notes\r\nC02EXAMPLE001,Alice's MacBook,AT-1001,Staff,Assigned at intake\r\n";
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "device-pre-registrations.csv";
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+      "device-pre-registrations.csv",
+    );
   };
 
   // Debounce typing so the search endpoint is not hit on every keystroke.
@@ -354,6 +316,8 @@ export default function DevicesPage() {
       staleDays: staleDays(),
       health: health(),
       push: push(),
+      attributeKey: attributeKey(),
+      attributeValue: attributeValue(),
       sort: sort()?.id ?? "name",
       direction: sort()?.dir ?? "asc",
       query: formatDeviceQueryText(deviceQuery()),
@@ -381,6 +345,10 @@ export default function DevicesPage() {
 
       if (state.push) next.push = state.push;
 
+      if (state.attributeKey) next.attributeKey = state.attributeKey;
+
+      if (state.attributeValue) next.attributeValue = state.attributeValue;
+
       if (state.sort && state.sort !== "name") next.sort = state.sort;
 
       if (state.direction === "desc") next.direction = state.direction;
@@ -395,15 +363,17 @@ export default function DevicesPage() {
   // read in the same reactive scope, or every keystroke would be mistaken for a
   // URL change and reverted to the last debounced value.
   const urlFilters = createMemo(() => ({
-    q: param(searchParams.q) ?? "",
+    q: search().q ?? "",
     status: initialStatus(),
     proto: initialProto(),
-    groupId: param(searchParams.groupId) ?? "",
+    groupId: search().groupId ?? "",
     staleDays: initialStale(),
     health: initialHealth(),
     push: initialPush(),
+    attributeKey: search().attributeKey ?? "",
+    attributeValue: search().attributeValue ?? "",
     sort: initialSort(),
-    query: param(searchParams.query) ?? "",
+    query: search().query ?? "",
   }));
 
   createEffect(
@@ -420,6 +390,8 @@ export default function DevicesPage() {
         staleDays: staleDays(),
         health: health(),
         push: push(),
+        attributeKey: attributeKey(),
+        attributeValue: attributeValue(),
         sort: sort(),
         deviceQuery: deviceQuery(),
       }));
@@ -441,6 +413,16 @@ export default function DevicesPage() {
       if (filters.health !== local.health) setHealth(filters.health);
 
       if (filters.push !== local.push) setPush(filters.push);
+
+      if (filters.attributeKey !== local.attributeKey) {
+        setAttributeKey(filters.attributeKey);
+        setPage(0);
+      }
+
+      if (filters.attributeValue !== local.attributeValue) {
+        setAttributeValue(filters.attributeValue);
+        setPage(0);
+      }
 
       if (
         local.sort?.id !== filters.sort?.id ||
@@ -473,6 +455,10 @@ export default function DevicesPage() {
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
     push: push() || undefined,
+    attributes:
+      attributeKey() && attributeValue()
+        ? JSON.stringify({ [attributeKey()]: attributeValue() })
+        : undefined,
     query: formatDeviceQueryText(deviceQuery()) || undefined,
     sort: sortField(),
     direction: sort()?.dir ?? "asc",
@@ -496,7 +482,33 @@ export default function DevicesPage() {
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
+    placeholderData: { rows: [] },
   }));
+
+  const attributeDefinitions = useQuery(() => ({
+    queryKey: enterpriseKeys.attributes(params.tenantId),
+    queryFn: () => enterprise.listAttributes(params.tenantId),
+    placeholderData: { rows: [] },
+  }));
+
+  /** One table column per visible custom attribute. */
+  const attributeColumns = () =>
+    (attributeDefinitions.data?.rows ?? [])
+      .filter((definition) => definition.visibility === "visible")
+      .map((definition) => ({
+        id: `attribute:${definition.key}`,
+        header: definition.label,
+        search: (row: DeviceRow) => row.attributes?.[definition.key],
+        cell: (row: DeviceRow) => {
+          const value = row.attributes?.[definition.key];
+
+          if (value === undefined || value === "") return "—";
+
+          if (definition.type === "boolean") return value === "true" ? "Yes" : "No";
+
+          return value;
+        },
+      }));
 
   const total = () => devices.data?.total ?? 0;
   const pageCount = () => Math.max(1, Math.ceil(total() / PAGE_SIZE));
@@ -539,6 +551,7 @@ export default function DevicesPage() {
       staleDays() ||
       health() ||
       push() ||
+      attributeKey() ||
       deviceQuery(),
     );
 
@@ -551,6 +564,8 @@ export default function DevicesPage() {
     setStaleDays("");
     setHealth("");
     setPush("");
+    setAttributeKey("");
+    setAttributeValue("");
     setDeviceQuery(null);
     setSort({ id: "name", dir: "asc" });
     setPage(0);
@@ -614,21 +629,17 @@ export default function DevicesPage() {
       const suffix = search ? `?${search}` : "";
 
       const response = await fetch(
-        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/devices/export${suffix}`,
+        `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/devices/export${suffix}`,
         { credentials: "include" },
       );
 
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
       const csv = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `devices-${new Date().toISOString().slice(0, 10)}.csv`;
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(
+        new Blob([csv], { type: "text/csv;charset=utf-8" }),
+        `devices-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
     } catch (error) {
       setExportError(error);
     } finally {
@@ -667,7 +678,7 @@ export default function DevicesPage() {
             <Show when={can("enrollment.write") && (total() > 0 || hasFilters())}>
               <Button
                 as="a"
-                href={`/t/${params.tenantId}/settings/enrollment`}
+                href={routes.tenant(params.tenantId).settingsTab("enrollment")}
                 size="sm"
                 class="h-8 text-[12px]"
               >
@@ -715,7 +726,7 @@ export default function DevicesPage() {
         onRefresh={() => void devices.refetch()}
         error={devices.error}
         storageKey="devices"
-        rowHref={(row) => `/t/${params.tenantId}/devices/${row.id}`}
+        rowHref={(row) => routes.tenant(params.tenantId).device(row.id)}
         searchValue={q()}
         onSearchChange={setQ}
         sortValue={sort()}
@@ -834,6 +845,78 @@ export default function DevicesPage() {
                   <option value="failing">Push failing</option>
                   <option value="invalid">Invalid token</option>
                 </select>
+                <select
+                  class={selectClass}
+                  aria-label="Filter by attribute"
+                  value={attributeKey()}
+                  onChange={(event) => {
+                    setAttributeKey(event.currentTarget.value);
+                    setAttributeValue("");
+                    setPage(0);
+                  }}
+                >
+                  <option value="">Any attribute</option>
+                  <For
+                    each={(attributeDefinitions.data?.rows ?? []).filter(
+                      (definition) => definition.visibility === "visible",
+                    )}
+                  >
+                    {(definition) => <option value={definition.key}>{definition.label}</option>}
+                  </For>
+                </select>
+                <Show when={attributeKey()}>
+                  {(() => {
+                    const definition = () =>
+                      (attributeDefinitions.data?.rows ?? []).find(
+                        (candidate) => candidate.key === attributeKey(),
+                      );
+
+                    return (
+                      <Show
+                        when={definition()?.type === "select" || definition()?.type === "boolean"}
+                        fallback={
+                          <input
+                            class={selectClass}
+                            aria-label="Attribute value"
+                            placeholder="Attribute value"
+                            value={attributeValue()}
+                            onInput={(event) => setAttributeValue(event.currentTarget.value)}
+                            onChange={() => setPage(0)}
+                          />
+                        }
+                      >
+                        <select
+                          class={selectClass}
+                          aria-label="Attribute value"
+                          value={attributeValue()}
+                          onChange={(event) => {
+                            setAttributeValue(event.currentTarget.value);
+                            setPage(0);
+                          }}
+                        >
+                          <option value="">Any value</option>
+                          <For
+                            each={
+                              definition()?.type === "boolean"
+                                ? ["true", "false"]
+                                : (definition()?.options ?? [])
+                            }
+                          >
+                            {(option) => (
+                              <option value={option}>
+                                {definition()?.type === "boolean"
+                                  ? option === "true"
+                                    ? "Yes"
+                                    : "No"
+                                  : option}
+                              </option>
+                            )}
+                          </For>
+                        </select>
+                      </Show>
+                    );
+                  })()}
+                </Show>
                 <select
                   class={selectClass}
                   aria-label="Filter by last seen"
@@ -1001,7 +1084,7 @@ export default function DevicesPage() {
               ) : (
                 <Show when={can("enrollment.write")}>
                   <LinkButton
-                    href={`/t/${params.tenantId}/settings/enrollment`}
+                    href={routes.tenant(params.tenantId).settingsTab("enrollment")}
                     variant="outline"
                     size="sm"
                   >
@@ -1013,6 +1096,7 @@ export default function DevicesPage() {
           />
         }
         columns={[
+          ...attributeColumns(),
           {
             id: "name",
             header: "Name",
@@ -1021,7 +1105,7 @@ export default function DevicesPage() {
             cell: (row) => (
               <a
                 class="font-medium text-foreground hover:underline"
-                href={`/t/${params.tenantId}/devices/${row.id}`}
+                href={routes.tenant(params.tenantId).device(row.id)}
               >
                 {row.name}
               </a>

@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import type { JSX } from "@solidjs/web";
 import {
@@ -105,6 +105,15 @@ import {
 import { cn } from "~/lib/utils";
 
 const keyOf = (collection: { id: string; name: string }) => `${collection.id}#${collection.name}`;
+
+/**
+ * Serialized drafts this tab has saved, by designer storage key. The persisted
+ * configurations are a lossy projection of the draft, so comparing against
+ * them alone reports a just-saved policy as dirty (and blocks the navigation
+ * that follows a save). Keeping the saved serialization also survives the
+ * remount an invalidation causes.
+ */
+const savedDrafts = new Map<string, string>();
 
 /** Selections store `${collection.id}#${collection.name}`; loaders need just the id. */
 const collectionIdOf = (selectionId: string) => selectionId.split("#")[0] ?? selectionId;
@@ -972,6 +981,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       props.persistedDraft !== undefined &&
       !props.saving &&
       !justSaved() &&
+      savedDrafts.get(storageKey) !== serializePolicy(policyDraft()) &&
       dirtySincePolicy(),
     {
       title: "Discard policy changes?",
@@ -1276,8 +1286,22 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return null;
   };
 
+  // A failed save must not leave the draft looking persisted: clear the
+  // marker so navigating away still asks before discarding unsent edits.
+  createEffect(
+    () => Boolean(props.error),
+    (failed) => {
+      if (!failed) return;
+      setJustSaved(false);
+      savedDrafts.delete(storageKey);
+    },
+  );
+
+  onCleanup(() => savedDrafts.delete(storageKey));
+
   const save = () => {
     if (!canSave()) return;
+    savedDrafts.set(storageKey, serializePolicy(policyDraft()));
     setJustSaved(true);
     void props.onSave?.(policyDraft());
   };

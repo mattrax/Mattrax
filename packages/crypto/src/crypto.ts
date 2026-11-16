@@ -1,13 +1,13 @@
 import { Data } from "effect";
 
-const ALGORITHM: any = {
+const ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
 };
 
-const SIGN_ALGORITHM: any = { name: "RSASSA-PKCS1-v1_5" };
+const SIGN_ALGORITHM: Algorithm = { name: "RSASSA-PKCS1-v1_5" };
 
 export class CryptoError extends Data.TaggedError("CryptoError")<{
   message: string;

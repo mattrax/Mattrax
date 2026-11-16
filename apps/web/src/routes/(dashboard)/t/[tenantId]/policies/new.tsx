@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";

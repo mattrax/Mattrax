@@ -1,17 +1,17 @@
 import { eq } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
-import {
-  AuthCredentialCommandCollector,
-  type AuthInvocation,
-} from "@yielded/auth/Operations";
+import { AuthCredentialCommandCollector, type AuthInvocation } from "@yielded/auth/Operations";
 import type { StrategyDefinition } from "@yielded/auth/Auth";
 import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
-import { SsoRejected, type AuthClaims } from "@mattrax/enterprise-domain";
+import { AuthClaims, SsoRejected } from "@mattrax/enterprise-domain";
 import { verifyToken } from "./tokens.ts";
 
 type SsoServices = {
   readonly db: Db["Service"];
+  /* oxlint-disable-next-line typescript/no-explicit-any -- The completion
+   * service is generic over the strategy's claims codec, which only exists
+   * inside the library's `bind` callback, so its shape cannot be named here. */
   readonly completion: any;
   readonly secret: string;
 };
@@ -39,6 +39,9 @@ const digest = (value: string) =>
  * token. The strategy only trusts that assertion and revalidates the subject,
  * tenant membership and active credential vector before issuing a session.
  */
+/* oxlint-disable-next-line typescript/no-explicit-any -- `StrategyDefinition`
+ * is generic over the library's claims type lambda, which callers only see
+ * through the service it produces. */
 export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> => ({
   namespace: undefined,
   bind: ({ sessions }) => {
@@ -100,7 +103,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
               .from(authCredentials)
               .where(eq(authCredentials.subjectId, user.id));
 
-            const active = credentials.filter((credential: any) => credential.active);
+            const active = credentials.filter((credential) => credential.active);
 
             if (active.length === 0)
               return yield* Effect.fail(
@@ -122,7 +125,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             const revision = yield* Schema.decodeUnknownEffect(Sessions.AuthenticationRevision)({
               subjectId: user.id,
               securityRevision: user.authRevision,
-              credentials: active.map((credential: any) => ({
+              credentials: active.map((credential) => ({
                 credentialId: credential.credentialId,
                 revision: credential.revision,
               })),

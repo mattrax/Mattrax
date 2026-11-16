@@ -90,6 +90,11 @@ export function PolicyConfigurationEditor() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
+  const policyVariables = useQuery(() => ({
+    queryKey: enterpriseKeys.policyVariables(params.tenantId),
+    queryFn: () => enterprise.getPolicyVariables(params.tenantId),
+  }));
+
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
   const [canEdit, setCanEdit] = createSignal(false);
   const [active, setActive] = createSignal("custom");
@@ -315,6 +320,11 @@ export function PolicyConfigurationEditor() {
               </Match>
             </Switch>
           </fieldset>
+          <VariableHints
+            loading={policyVariables.isPending}
+            variables={policyVariables.data?.variables ?? []}
+            notes={policyVariables.data?.notes ?? []}
+          />
           <ErrorText error={save.error} />
         </Panel>
       </div>
@@ -691,3 +701,49 @@ function CustomSection(props: {
 }
 
 const decodeText = (content: string) => new TextDecoder().decode(base64ToArrayBuffer(content));
+
+/**
+ * Variable reference for the policy editor.
+ *
+ * Names are rendered verbatim (`${device.name}`) so they can be copied into a
+ * payload. Unknown names fail when the policy is saved; an attribute with no
+ * value on a device resolves to an empty string.
+ */
+function VariableHints(props: {
+  loading: boolean;
+  variables: ReadonlyArray<{ name: string; description: string }>;
+  notes: ReadonlyArray<string>;
+}) {
+  return (
+    <details class="mt-4 rounded-lg border border-border bg-surface/60 px-3 py-2.5 text-[12px]">
+      <summary class="cursor-pointer font-medium text-foreground">
+        Policy variables{" "}
+        <span class="font-normal text-muted-foreground">(resolved per device at delivery)</span>
+      </summary>
+      <Show
+        when={!props.loading}
+        fallback={<p class="mt-2 text-muted-foreground">Loading variables…</p>}
+      >
+        <ul class="mt-2 grid gap-1.5 sm:grid-cols-2">
+          <For each={props.variables}>
+            {(variable) => (
+              <li class="min-w-0">
+                <code class="break-all font-mono text-[11.5px] text-foreground">
+                  {variable.name}
+                </code>
+                <p class="text-[11px] leading-relaxed text-muted-foreground">
+                  {variable.description}
+                </p>
+              </li>
+            )}
+          </For>
+        </ul>
+        <Show when={props.notes.length > 0}>
+          <ul class="mt-2 space-y-1 border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
+            <For each={props.notes}>{(note) => <li>{note}</li>}</For>
+          </ul>
+        </Show>
+      </Show>
+    </details>
+  );
+}

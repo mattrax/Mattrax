@@ -1,4 +1,4 @@
-import { defineConfig } from "oxlint";
+import { defineConfig, type OxlintConfig } from "oxlint";
 
 /** Deeper chains are not readable; the rule points at the whole expression. */
 const maxTernaryDepth: ["error", { maxDepth: number }] = ["error", { maxDepth: 2 }];
@@ -31,6 +31,10 @@ export const antiSlopLint = {
   // `plugins` replaces oxlint's default set, so the defaults are listed again.
   plugins: ["eslint", "typescript", "unicorn", "oxc", "jsx-a11y"],
   rules: {
+    // The codebase is strict everywhere else; a new `any` is never acceptable.
+    // Tests exercise intentionally malformed input and third-party mocks, so
+    // they are exempted below rather than peppering them with directives.
+    "typescript/no-explicit-any": "error",
     "oxc/no-accumulating-spread": "error",
     "anti-slop/max-ternary-depth": maxTernaryDepth,
     "anti-slop/no-array-filter-map": "error",
@@ -122,6 +126,12 @@ export const antiSlopLint = {
     "jsx-a11y/scope": "error",
     "jsx-a11y/tabindex-no-positive": "error",
   },
-};
+  overrides: [
+    {
+      files: ["**/*.test.ts", "**/*.test.tsx", "**/tests/**"],
+      rules: { "typescript/no-explicit-any": "off" },
+    },
+  ],
+} satisfies OxlintConfig;
 
 export default defineConfig(antiSlopLint);

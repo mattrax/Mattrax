@@ -21,13 +21,63 @@ const fail = (message: string, statusCode = 400) =>
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
-type StripeIdRef = string | { readonly id?: string | undefined } | null | undefined;
+/** Stripe ids are either a bare string or an expanded object with `id`. */
+const StripeIdObject = Schema.Struct({ id: Schema.optional(Schema.String) });
 
-const idOf = (value: StripeIdRef): string | undefined => {
+const idOf = (value: Schema.Json | undefined): string | undefined => {
   if (Schema.is(Schema.String)(value)) return value.trim() || undefined;
 
-  return value?.id;
+  return Option.getOrUndefined(Schema.decodeUnknownOption(StripeIdObject)(value))?.id;
 };
+
+/**
+ * The subset of each Stripe resource the webhook reads. Fields stay `unknown`
+ * until a Schema narrows them, because a webhook body is untrusted input even
+ * after its signature is verified.
+ */
+type StripeWebhookSubscription = {
+  readonly id?: Schema.Json;
+  readonly status?: Schema.Json;
+  readonly customer?: Schema.Json;
+  readonly metadata?: Schema.Json;
+  readonly cancel_at_period_end?: Schema.Json;
+  readonly start_date?: Schema.Json;
+  readonly current_period_start?: Schema.Json;
+  readonly current_period_end?: Schema.Json;
+  readonly items?: {
+    readonly data?: ReadonlyArray<{
+      readonly current_period_start?: Schema.Json;
+      readonly current_period_end?: Schema.Json;
+      readonly price?: { readonly id?: Schema.Json } | null;
+    }>;
+  } | null;
+};
+
+type StripeWebhookInvoice = {
+  readonly subscription?: string | StripeWebhookSubscription | null;
+  readonly customer?: Schema.Json;
+  readonly parent?: {
+    readonly subscription_details?: {
+      readonly subscription?: Schema.Json;
+      readonly metadata?: Schema.Json;
+    } | null;
+  } | null;
+  readonly subscription_details?: {
+    readonly subscription?: Schema.Json;
+    readonly metadata?: Schema.Json;
+  } | null;
+};
+
+type StripeWebhookCheckoutSession = {
+  readonly mode?: Schema.Json;
+  readonly payment_status?: Schema.Json;
+  readonly customer?: Schema.Json;
+  readonly subscription?: Schema.Json;
+  readonly client_reference_id?: Schema.Json;
+  readonly metadata?: Schema.Json;
+};
+
+type BillingSubscriptionRow = typeof schema.subscription.$inferSelect;
 
 const OrganizationMetadata = Schema.Struct({
   organizationId: Schema.optional(Schema.String),
@@ -41,10 +91,22 @@ const organizationIdFromMetadata = (metadata: Schema.Json | undefined): string |
   return value || undefined;
 };
 
-const dateFromUnix = (value: number | undefined): Date | null =>
-  value !== undefined && Number.isFinite(value) ? new Date(value * 1000) : null;
+const StringRecord = Schema.Record(Schema.String, Schema.String);
 
-const subscriptionPeriod = (subscription: any) => {
+/** Expand a Stripe metadata field into a string record, ignoring malformed values. */
+const metadataRecord = (value: Schema.Json | undefined): Readonly<Record<string, string>> =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(StringRecord)(value)) ?? {};
+
+const unixSeconds = (value: Schema.Json | undefined): number | undefined =>
+  Schema.is(Schema.Number)(value) ? value : undefined;
+
+const dateFromUnix = (value: Schema.Json | undefined): Date | null => {
+  const seconds = unixSeconds(value);
+
+  return seconds !== undefined && Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
+};
+
+const subscriptionPeriod = (subscription: StripeWebhookSubscription) => {
   // Stripe moved current period fields onto subscription items in newer API
   // versions; older subscriptions still carry them at the top level.
   const item = subscription.items?.data?.[0];
@@ -57,16 +119,22 @@ const subscriptionPeriod = (subscription: any) => {
   };
 };
 
-const planFor = (subscription: any, deviceMonthlyPriceId?: string) => {
+const SubscriptionMetadata = Schema.Struct({
+  plan: Schema.optional(Schema.String),
+  organizationId: Schema.optional(Schema.String),
+});
+
+const planFor = (subscription: StripeWebhookSubscription, deviceMonthlyPriceId?: string) => {
   const metadataPlan = Option.getOrUndefined(
-    Schema.decodeUnknownOption(Schema.String)(subscription.metadata?.plan),
-  )?.trim();
+    Schema.decodeUnknownOption(SubscriptionMetadata)(subscription.metadata),
+  )?.plan?.trim();
 
   if (metadataPlan) return metadataPlan.slice(0, 255);
 
   const priceId = subscription.items?.data?.[0]?.price?.id;
 
-  if (deviceMonthlyPriceId && priceId === deviceMonthlyPriceId) return "device";
+  if (deviceMonthlyPriceId && Schema.is(Schema.String)(priceId) && priceId === deviceMonthlyPriceId)
+    return "device";
 
   return "device";
 };
@@ -140,7 +208,7 @@ const resolveOrganization = (input: ResolveOrganizationInput) =>
 
 type ApplySubscriptionInput = {
   readonly db: BillingDb;
-  readonly subscription: any;
+  readonly subscription: StripeWebhookSubscription;
   readonly statusOverride?: string;
   readonly deviceMonthlyPriceId?: string;
   readonly now: Date;
@@ -217,7 +285,7 @@ const applySubscription = (input: ApplySubscriptionInput) =>
 
 type ApplyInvoiceInput = {
   readonly db: BillingDb;
-  readonly invoice: any;
+  readonly invoice: StripeWebhookInvoice;
   readonly paymentFailed: boolean;
   readonly deviceMonthlyPriceId?: string;
   readonly now: Date;
@@ -246,9 +314,14 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
 
     if (embeddedSubscription?.id) {
       // Expanded invoice subscriptions do not always repeat metadata.
-      const subscriptionMetadata = { ...embeddedSubscription.metadata };
+      const subscriptionMetadata = { ...metadataRecord(embeddedSubscription.metadata) };
 
       if (metadataOrganizationId) subscriptionMetadata.organizationId = metadataOrganizationId;
+
+      const embeddedStatus =
+        Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.String)(embeddedSubscription.status),
+        ) ?? "active";
 
       return yield* applySubscription({
         db: input.db,
@@ -258,10 +331,10 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
           customer: embeddedSubscription.customer ?? customerId,
         },
         statusOverride: input.paymentFailed
-          ? embeddedSubscription.status === "canceled"
+          ? embeddedStatus === "canceled"
             ? "canceled"
             : "past_due"
-          : (embeddedSubscription.status ?? "active"),
+          : embeddedStatus,
         deviceMonthlyPriceId: input.deviceMonthlyPriceId,
         now: input.now,
       });
@@ -274,7 +347,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
       now: input.now,
     });
 
-    let existing: any;
+    let existing: BillingSubscriptionRow | undefined;
 
     if (stripeSubscriptionId) {
       [existing] = yield* input.db
@@ -317,7 +390,7 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
 
 type ApplyCheckoutSessionInput = {
   readonly db: BillingDb;
-  readonly session: any;
+  readonly session: StripeWebhookCheckoutSession;
   readonly now: Date;
 };
 
@@ -351,9 +424,7 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
 
     const referenceId = organizationId ?? clientReference ?? undefined;
 
-    const plan = Option.getOrUndefined(
-      Schema.decodeUnknownOption(Schema.String)(session.metadata?.plan),
-    )?.trim();
+    const plan = metadataRecord(session.metadata).plan?.trim();
 
     const metadata: Record<string, string> = {};
 
@@ -413,26 +484,39 @@ const isDuplicateEventError = (cause: unknown): boolean => {
 /** The database surface the apply helpers use; transaction handles included. */
 type BillingDb = Pick<EnterpriseDb, "select" | "insert" | "update" | "query">;
 
+/**
+ * SAFETY: the signature over this payload was verified, and the switch below
+ * discriminates on `event.type`, which names the Stripe resource carried in
+ * `data.object`. The SDK types that field as the union of every resource, so a
+ * narrower per-event type is only available by asserting at this boundary.
+ */
+const eventObject = <T>(event: { readonly data: { readonly object: unknown } }): T =>
+  event.data.object as T;
+
 const applyVerifiedEvent = (
   input: Omit<ProcessStripeWebhookInput, "db"> & { readonly db: BillingDb },
-  event: { readonly type: string; readonly data: { readonly object: any } },
+  event: { readonly type: string; readonly data: { readonly object: unknown } },
   now: Date,
 ) => {
   switch (event.type) {
     case "checkout.session.completed":
-      return applyCheckoutSession({ db: input.db, session: event.data.object, now });
+      return applyCheckoutSession({
+        db: input.db,
+        session: eventObject<StripeWebhookCheckoutSession>(event),
+        now,
+      });
     case "customer.subscription.created":
     case "customer.subscription.updated":
       return applySubscription({
         db: input.db,
-        subscription: event.data.object,
+        subscription: eventObject<StripeWebhookSubscription>(event),
         deviceMonthlyPriceId: input.deviceMonthlyPriceId,
         now,
       });
     case "customer.subscription.deleted":
       return applySubscription({
         db: input.db,
-        subscription: event.data.object,
+        subscription: eventObject<StripeWebhookSubscription>(event),
         statusOverride: "canceled",
         deviceMonthlyPriceId: input.deviceMonthlyPriceId,
         now,
@@ -441,7 +525,7 @@ const applyVerifiedEvent = (
     case "invoice.payment_succeeded":
       return applyInvoice({
         db: input.db,
-        invoice: event.data.object,
+        invoice: eventObject<StripeWebhookInvoice>(event),
         paymentFailed: false,
         deviceMonthlyPriceId: input.deviceMonthlyPriceId,
         now,
@@ -449,7 +533,7 @@ const applyVerifiedEvent = (
     case "invoice.payment_failed":
       return applyInvoice({
         db: input.db,
-        invoice: event.data.object,
+        invoice: eventObject<StripeWebhookInvoice>(event),
         paymentFailed: true,
         deviceMonthlyPriceId: input.deviceMonthlyPriceId,
         now,

@@ -6,8 +6,9 @@ import * as asn1js from "asn1js";
 import { privateDecrypt, constants } from "node:crypto";
 import { scepRoutes } from "../routes.js";
 import { ScepService } from "../service.js";
-import { ScepRepository } from "../repository.js";
+import { ScepRepository, type ScepIssuedCertificate } from "../repository.js";
 import { pemEncode } from "../crypto.js";
+import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import {
   generateKeyPair,
   createTestCaCert,
@@ -219,5 +220,124 @@ describe("SCEP E2E", () => {
     // Verify the issued cert is signed by the CA
     const certValid = await issuedCert.verify(caCert);
     expect(certValid).toBe(true);
+  });
+
+  it("renews a retired-CA identity through the HTTP endpoint after rotation", async () => {
+    // ── Setup: the device holds an identity issued by the retired CA ────
+    const retiredKeyPair = await generateKeyPair();
+    const retiredCa = await createTestCaCert(retiredKeyPair, "Retired SCEP CA");
+    const currentKeyPair = await generateKeyPair();
+    const currentCa = await createTestCaCert(currentKeyPair, "Current SCEP CA");
+
+    const deviceKeyPair = await generateKeyPair();
+
+    const identity = await createDeviceCertificate(
+      1,
+      [
+        { type: "2.5.4.3", value: "Enrolled Device" },
+        { type: "2.5.4.11", value: "tenant-e2e" },
+      ],
+      deviceKeyPair.publicKey,
+      retiredCa,
+      retiredKeyPair.privateKey,
+      {
+        notBefore: new Date(Date.now() - 60_000),
+        notAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    );
+
+    const identitySerial = certificateSerialHex(identity);
+    const recorded: ScepIssuedCertificate[] = [];
+    const currentPrivateKeyJwk = await crypto.subtle.exportKey("jwk", currentKeyPair.privateKey);
+    const currentCaPem = certToPem(currentCa);
+    const retiredCaPem = certToPem(retiredCa);
+
+    const repo = mockScepRepository({
+      getCa: () => Effect.succeed({ certPem: currentCaPem, privateKeyJwk: currentPrivateKeyJwk }),
+      trustedCaCertificates: () => Effect.succeed([currentCaPem, retiredCaPem]),
+      findIssuedCertificate: (scope, serial) =>
+        Effect.succeed(
+          serial === identitySerial
+            ? {
+                serial,
+                organizationId: scope.organizationId,
+                enrollmentId: "enrollment-1",
+                deviceId: "device-1",
+                notAfter: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              }
+            : null,
+        ),
+      recordIssuedCertificate: (certificate) =>
+        Effect.sync(() => {
+          recorded.push(certificate);
+        }),
+    });
+
+    const handler = await makeScepHandler(repo);
+
+    // A profile fetched now trusts only the successor CA.
+    const certRes = await handler(
+      new Request("http://localhost/mdm/apple/scep/tenant-e2e?operation=GetCACert"),
+    );
+
+    expect(certRes.status).toBe(200);
+    expect(new Uint8Array(await certRes.arrayBuffer())).toEqual(
+      new Uint8Array(currentCa.toSchema().toBER(false)),
+    );
+
+    // ── The device renews with the certificate it already has ──────────
+    const csr = await buildTestCsr(deviceKeyPair, "Enrolled Device");
+
+    const renewal = await buildPkcsReq(
+      csr,
+      currentCa,
+      identity,
+      deviceKeyPair.privateKey,
+      "txn-renewal-e2e",
+      crypto.getRandomValues(new Uint8Array(16)),
+      false,
+      "17",
+    );
+
+    const response = await handler(
+      new Request("http://localhost/mdm/apple/scep/tenant-e2e?operation=PKIOperation", {
+        method: "POST",
+        body: renewal,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+
+    const signedData = new pkijs.SignedData({
+      schema: pkijs.ContentInfo.fromBER(await response.arrayBuffer()).content,
+    });
+
+    expect(
+      signedData.signerInfos[0]!.signedAttrs!.attributes.some(
+        (attribute) => attribute.type === "2.16.840.1.113733.1.9.3",
+      ),
+    ).toBe(true);
+
+    const issued = signedData.certificates?.find(
+      (certificate): certificate is pkijs.Certificate =>
+        certificate instanceof pkijs.Certificate &&
+        !certificate.issuer.isEqual(certificate.subject),
+    );
+
+    if (!issued) throw new Error("CertRep did not contain the renewed identity");
+
+    expect(await issued.verify(currentCa)).toBe(true);
+    expect(issued.issuer.isEqual(currentCa.subject)).toBe(true);
+    expect(issued.issuer.isEqual(retiredCa.subject)).toBe(false);
+
+    // The renewal keeps the device linkage so revocation and the next renewal
+    // continue to work.
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      organizationId: "tenant-e2e",
+      deviceId: "device-1",
+      enrollmentId: "enrollment-1",
+    });
+    expect(recorded[0]!.caFingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 });

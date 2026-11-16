@@ -110,7 +110,7 @@ type ClientRow = typeof schema.mcpOAuthClient.$inferSelect;
 const clientAndRedirect = (
   clientId: string | null,
   redirectUri: string | null,
-): Effect.Effect<ClientRow | null, any, any> =>
+): Effect.Effect<ClientRow | null, unknown, Db> =>
   Effect.gen(function* () {
     if (!clientId || !redirectUri) return null;
     const db = yield* Db;
@@ -159,7 +159,7 @@ const tokenResponse = (accessToken: string, refreshToken: string, expiresIn: num
 const issueTokens = (
   connectionId: string,
   clientId: string,
-): Effect.Effect<{ accessToken: string; refreshToken: string }, any, any> =>
+): Effect.Effect<{ accessToken: string; refreshToken: string }, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
     const now = new Date();

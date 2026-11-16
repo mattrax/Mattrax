@@ -6,7 +6,9 @@ import {
   DashboardDataset,
   DashboardQueryRequest,
   DeviceQuery,
+  enterpriseAccountApi,
   enterpriseApi,
+  enterpriseAttributeApi,
   MeResponse as MeResponseSchema,
   type MeResponse,
 } from "@mattrax/enterprise-domain/client";
@@ -275,6 +277,8 @@ const shouldExpose = (path: string) => {
 
   if (path.includes("email-change") || path.includes("email-verification")) return false;
 
+  if (path.includes("/answers")) return false;
+
   return true;
 };
 
@@ -324,10 +328,14 @@ const buildTools = (authorization: string, me: MeResponse) => {
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false);
 
-  const tools: Array<ReturnType<typeof Tool.make>> = [listTenants, queryData, search, getOpenApi];
+  const tools: Array<Tool.Any> = [listTenants, queryData, search, getOpenApi];
   const rest = new Map<string, { path: string; method: string }>();
 
-  for (const [identifier, endpoint] of Object.entries(enterpriseApi.endpoints)) {
+  for (const [identifier, endpoint] of Object.entries({
+    ...enterpriseAccountApi.endpoints,
+    ...enterpriseApi.endpoints,
+    ...enterpriseAttributeApi.endpoints,
+  })) {
     const path = endpoint.path;
 
     if (!shouldExpose(path)) continue;
@@ -342,8 +350,6 @@ const buildTools = (authorization: string, me: MeResponse) => {
       body: Schema.optional(Schema.Unknown),
     });
 
-    // SAFETY: the generated tool comes from Tool.make; the cast only erases
-    // the dynamically built parameter struct to the shared tool union.
     tools.push(
       Tool.make(name, {
         description: `${identifier.replace(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
@@ -351,9 +357,7 @@ const buildTools = (authorization: string, me: MeResponse) => {
         success: Schema.Unknown,
       })
         .annotate(Tool.Readonly, endpoint.method.toUpperCase() === "GET")
-        .annotate(Tool.Destructive, endpoint.method.toUpperCase() !== "GET") as ReturnType<
-        typeof Tool.make
-      >,
+        .annotate(Tool.Destructive, endpoint.method.toUpperCase() !== "GET"),
     );
     rest.set(name, { path, method: endpoint.method.toUpperCase() });
   }
@@ -490,18 +494,12 @@ const buildTools = (authorization: string, me: MeResponse) => {
 
 const mcpLayer = (authorization: string, me: MeResponse) => {
   const built = buildTools(authorization, me);
-  // SAFETY: every entry was produced by `Tool.make`; the generic tuple type
-  // cannot describe a tool list assembled from the runtime endpoint catalogue.
-  const toolkit = Toolkit.make(...(built.tools as any));
+  const toolkit = Toolkit.make(...built.tools);
 
-  const registrations = McpServer.toolkit(
-    // SAFETY: `toolkit` was constructed by `Toolkit.make` from these tools, so
-    // the runtime tool list matches the literal tuple the server expects.
-    toolkit as any,
-  ).pipe(
+  const registrations = McpServer.toolkit(toolkit).pipe(
     // SAFETY: handler keys are the same tool names registered in `toolkit`,
     // and each handler returns the JSON payload the tool's success schema accepts.
-    Layer.provide(toolkit.toLayer(built.handlers as any)),
+    Layer.provide(toolkit.toLayer(built.handlers as Parameters<typeof toolkit.toLayer>[0])),
   );
 
   return McpServer.layerHttpRequestScoped({
@@ -572,6 +570,7 @@ const handleMcp = async (request: Request): Promise<Response> => {
   const layer = mcpLayer(authorization, me).pipe(Layer.provide(HttpServer.layerServices));
   // SAFETY: `mcpLayer` provides the HTTP server services this layer needs; the
   // concrete layer type is opaque to the router constructor.
+  // oxlint-disable-next-line typescript/no-explicit-any
   const web = HttpRouter.toWebHandler(layer as any);
 
   try {

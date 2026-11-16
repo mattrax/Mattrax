@@ -82,7 +82,7 @@ describe("per-isolate fallback limiter", () => {
         headers: { "cf-connecting-ip": "203.0.113.4" },
       });
 
-    for (let index = 0; index < 120; index++) {
+    for (let index = 0; index < 600; index++) {
       expect((await limiter.check(req())).limited).toBe(false);
       now += 10;
     }
@@ -191,7 +191,7 @@ describe("shared limiter bindings", () => {
     expect(outcome).toMatchObject({
       limited: true,
       bucket: "auth",
-      limit: 120,
+      limit: 600,
       retryAfterSeconds: 60,
     });
     expect(outcome.retryAfterSeconds).toBeGreaterThan(0);
@@ -234,7 +234,7 @@ describe("shared limiter bindings", () => {
 
     // Local development has no namespace at all; it must keep working up to
     // the documented per-isolate ceiling.
-    for (let index = 0; index < 120; index++) {
+    for (let index = 0; index < 600; index++) {
       expect((await limiter.check(signIn())).limited).toBe(false);
       now += 10;
     }

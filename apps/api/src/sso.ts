@@ -22,6 +22,9 @@ const now = () => new Date();
  * subject has one stable authority row. This row is not a sign-in method: the
  * SSO strategy owns the assertion and the session requirement decides access.
  */
+/* oxlint-disable-next-line typescript/no-explicit-any -- `authCredentials` is
+ * exposed as `any` by the persistence library, so a narrowed database type
+ * makes drizzle report its own query builder as a duplicate declaration. */
 const ensureCredential = (db: any, subjectId: string) =>
   Effect.gen(function* () {
     const existing = yield* db
@@ -251,9 +254,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         catch: () => null,
       });
 
-      const tokens = Option.getOrUndefined(
-        Schema.decodeUnknownOption(TokenResponse)(rawTokens),
-      );
+      const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(rawTokens));
 
       if (!tokens?.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
 

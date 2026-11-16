@@ -7,14 +7,23 @@ catalog:
   "@cloudflare/vite-plugin": 2.0.0-beta.v.12
   "@effect/platform-node": ^4.1.2
   "@effect/sql-mysql2": ^4.1.2
+  "@fontsource-variable/geist": ^5.3.0
+  "@kobalte/core": 2.0.0-alpha.4
   "@lhci/cli": ^0.16.1
+  "@oxlint/plugins": 1.91.0
+  "@paralleldrive/cuid2": ^3.3.0
   "@playwright/test": ^1.65.0
   "@rolldown/perf-kit": ^0.1.0
   "@rspress/core": ^2.1.2
   "@rspress/plugin-llms": ^2.1.2
   "@simplewebauthn/browser": ^14.0.0
   "@simplewebauthn/server": ^14.0.1
-  "@tanstack/solid-query": ^5.107.1
+  "@solidjs/meta": 1.0.0-next.2
+  "@solidjs/router": 2.0.0-next.44
+  "@solidjs/vite-plugin": 3.0.0-next.57
+  "@solidjs/web": 2.0.0-rc.21
+  "@tailwindcss/vite": ^4.3.5
+  "@tanstack/solid-query": 6.0.0-rc.5
   "@types/node": ^26.6.6
   "@types/react": ^19.3.0
   "@xmldom/xmldom": ^0.9.12
@@ -24,23 +33,36 @@ catalog:
   "@yielded/auth-simplewebauthn": 0.1.0-beta.47
   asn1js: ^4.0.0
   cf: 1.0.0-beta.28
+  class-variance-authority: ^0.7.1
+  clsx: ^2.1.1
   drizzle-kit: 1.0.0-rc.5
   drizzle-orm: 1.0.0-rc.5
   effect: ^4.1.2
   fast-plist: ^0.1.3
+  filesystem-routing: ^0.5.0
+  miniflare: 5.20261104.0-beta
   mysql2: ^3.24.6
   oxc-minify: ^0.157.0
+  oxlint: 1.91.0
   pkijs: ^4.0.1
   posthog-js: ^1.448.0
   posthog-node: ^5.73.0
   react: ^19.3.1
   reflect-metadata: ^0.2.2
+  shadcn: ^4.23.0
+  solid-js: 2.0.0-rc.21
+  stripe: ^23.1.0
+  tailwind-merge: ^3.7.0
+  tailwindcss: ^4.3.5
+  tar: ^7.5.22
+  tsx: ^4.23.15
+  tw-animate-css: ^1.4.0
   typescript: ~7.0.2
   uqr: ^0.1.3
   vite: npm:@voidzero-dev/vite-plus-core@^1.5.0
   vite-plus: ^1.5.0
-  vitest: npm:@voidzero-dev/vite-plus-test@^0.1.24
-
+  vitest: ^5.1.0
+  yaml: ^2.8.3
 catalogMode: prefer
 
 onlyBuiltDependencies:

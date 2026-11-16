@@ -16,6 +16,17 @@ export const tenantMatchesKey = (tenant: TenantKey, key: string): boolean =>
   tenant.id === key || tenant.slug === key;
 
 /**
+ * The canonical segment for a value that may be an id or a slug. Used by the
+ * route builders so a click never starts on a legacy id URL once the shell
+ * knows the tenant.
+ */
+export function canonicalTenantSegment(value: string): string {
+  const tenant = directory.find((entry) => tenantMatchesKey(entry, value));
+
+  return tenant ? canonicalTenantParam(tenant) : value;
+}
+
+/**
  * The membership a URL segment names, accepting both the canonical slug and
  * the legacy id. With no key the first membership is the sensible default for
  * unscoped pages (the tenant picker and `/dashboard`).
@@ -59,7 +70,17 @@ export function rememberTenantAlias(slug: string, id: string): void {
 }
 
 export function rememberTenants(tenants: readonly TenantKey[] | undefined): void {
-  if (tenants) directory = tenants;
+  if (!tenants) return;
+
+  // Snapshot plain values: callers hand us reactive query stores, and the
+  // directory is read from untracked scopes (query keys, API helpers) where a
+  // pending async property read would suspend or trip the strict-read
+  // diagnostic.
+  directory = tenants.map((tenant) => ({
+    id: tenant.id,
+    slug: tenant.slug ?? null,
+    name: tenant.name,
+  }));
 }
 
 export function resolveTenantId(value: string | undefined): string | undefined {

@@ -1,8 +1,7 @@
 import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import type { ComponentProps, ValidComponent } from "@solidjs/web";
-import { createEffect, onCleanup } from "solid-js";
-import { isServer } from "@solidjs/web";
+import { onSettled } from "solid-js";
 import { mergeProps, splitProps } from "~/lib/solid";
 import { Check, ChevronRight } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
@@ -58,40 +57,32 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
   // change those keys.
   const [local, others] = splitProps(props as DropdownMenuContentProps, ["class"]);
 
-  createEffect(
-    () => undefined,
-    () => {
-      if (isServer) return;
+  onSettled(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
 
-      const onKeyDown = (event: KeyboardEvent) => {
-        if (event.key !== "Escape") return;
+      // The content primitive stays mounted behind its portal, so claim
+      // Escape only while an *open* menu exists; a closed picker must not
+      // swallow the page's own Escape handling.
+      if (!document.querySelector('[data-slot="dropdown-menu-content"]:not([data-closed])')) return;
 
-        // The content primitive stays mounted behind its portal; only claim
-        // Escape while focus is actually inside the open menu, otherwise every
-        // closed column picker would swallow the page's own Escape handling.
-        if (
-          !(event.target instanceof Element) ||
-          !event.target.closest('[data-slot="dropdown-menu-content"]')
-        )
-          return;
+      event.preventDefault();
+      event.stopPropagation();
+      // Kobalte closes the menu on an outside pointerdown; Escape does not
+      // reach its dismissable layer in this Solid RC.
+      document.body.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          pointerType: "mouse",
+        }),
+      );
+    };
 
-        event.preventDefault();
-        event.stopPropagation();
-        // Kobalte closes the menu on an outside pointerdown; Escape does not
-        // reach its dismissable layer in this Solid RC.
-        document.body.dispatchEvent(
-          new PointerEvent("pointerdown", {
-            bubbles: true,
-            cancelable: true,
-            pointerType: "mouse",
-          }),
-        );
-      };
+    window.addEventListener("keydown", onKeyDown, true);
 
-      window.addEventListener("keydown", onKeyDown, true);
-      onCleanup(() => window.removeEventListener("keydown", onKeyDown, true));
-    },
-  );
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  });
 
   return (
     <DropdownMenuPrimitive.Content

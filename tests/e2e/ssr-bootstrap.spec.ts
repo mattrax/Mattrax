@@ -65,7 +65,7 @@ test.describe("SSR bootstrap token", () => {
     expect(html).toContain("SSR Boot");
     expect(html).toContain("__MATTRAX_SESSION__");
     expect(html).toContain('"permissions"');
-    expect(html).toContain(`/t/${tenant.id}/devices`);
+    expect(html).toContain(`/t/${tenant.slug}/devices`);
 
     // A second navigation inside the token window still renders the shell.
     await gotoHydrated(page, `/t/${tenant.id}`);

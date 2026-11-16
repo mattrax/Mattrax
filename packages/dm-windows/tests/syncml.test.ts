@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import type { SyncML } from "@mattrax/soap";
+import type { SyncML } from "../src/messages.js";
 import { fromManagementResponse, serializeSyncML } from "../src/syncml.js";
 
 const request: SyncML = {

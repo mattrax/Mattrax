@@ -30,6 +30,9 @@ const DEVICE_READ = new Set([
   "getDeviceEffectivePolicy",
   "getDeviceUsers",
   "listDevicePreRegistrations",
+  "listAttributes",
+  "listEnrollmentQuestions",
+  "getPolicyVariables",
 ]);
 
 const DEVICE_WRITE = new Set([
@@ -41,6 +44,11 @@ const DEVICE_WRITE = new Set([
   "deviceUnenroll",
   "revokeDeviceIdentity",
   "setDeviceUsers",
+  "createAttribute",
+  "patchAttribute",
+  "deleteAttribute",
+  "setDeviceAttributes",
+  "importDeviceAttributes",
 ]);
 
 const GROUP_READ = new Set(["listGroups", "getGroup", "previewGroup"]);
@@ -89,6 +97,23 @@ const APPLICATION_WRITE = new Set([
   "uploadApplication",
 ]);
 
+const SCRIPT_READ = new Set([
+  "listScripts",
+  "getScript",
+  "getScriptSettings",
+  "getScriptAssignments",
+  "listScriptExecutions",
+]);
+
+const SCRIPT_WRITE = new Set([
+  "createScript",
+  "patchScript",
+  "deleteScript",
+  "patchScriptSettings",
+  "patchScriptAssignments",
+  "runScript",
+]);
+
 const DASHBOARD_READ = new Set(["listDashboards", "getDashboard", "queryDashboard"]);
 
 const DASHBOARD_WRITE = new Set([
@@ -114,6 +139,7 @@ const ENROLLMENT_WRITE = new Set([
   "resetTenantEnrollment",
   "rotateTenantScepCa",
   "importTenantScepCa",
+  "patchEnrollmentQuestions",
 ]);
 
 const IDENTITY_READ = new Set([
@@ -269,6 +295,10 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   if (APPLICATION_WRITE.has(method)) return "applications.write";
 
+  if (SCRIPT_READ.has(method)) return "scripts.read";
+
+  if (SCRIPT_WRITE.has(method)) return "scripts.write";
+
   if (DASHBOARD_READ.has(method)) return "dashboards.read";
 
   if (DASHBOARD_WRITE.has(method)) return "dashboards.write";
@@ -299,7 +329,12 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   // Public invitations: accepting and previewing are token-bound and gated by
   // the caller layer's rate limit instead of a tenant membership.
-  if (method === "acceptInvitation" || method === "previewInvitation" || method === "getEnrollment")
+  if (
+    method === "acceptInvitation" ||
+    method === "previewInvitation" ||
+    method === "getEnrollment" ||
+    method === "submitEnrollmentAnswers"
+  )
     return undefined;
 
   // Unknown methods fail safe to tenant write for mutations and tenant read for
@@ -348,7 +383,7 @@ type MemberRole = {
 export const resolveTenantRole = (
   db: EnterpriseDb,
   member: MemberRole,
-): Effect.Effect<ResolvedTenantRole, any, any> =>
+): Effect.Effect<ResolvedTenantRole, unknown, never> =>
   Effect.gen(function* () {
     if (member.customRoleId) {
       const role = yield* db.query.tenantRole.findFirst({

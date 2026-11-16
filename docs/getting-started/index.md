@@ -44,5 +44,5 @@ Whitelabel:  device ──► mttx gateway ──► your management webhook
 - [Core concepts](/getting-started/concepts) — tenants, groups, policies and assignments.
 - [Apple](/platforms/apple/) · [Windows](/platforms/windows/) · [Android](/platforms/android/)
 - [Manage devices](/manage/devices) — search, inventory, health and actions.
-- [REST API](/api/) and [API reference](/api/reference).
+- [REST API](/api/) and [API reference](/api/reference/).
 - [Migration](/migration/) — move from another MDM.

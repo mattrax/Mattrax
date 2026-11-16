@@ -75,6 +75,15 @@ export async function register(page: Page, options: { name?: string; email?: str
   await page.locator("#email").fill(email);
   await expect(page.locator("#email")).toHaveValue(email);
 
+  // Sign-up is email-code-first: the address is verified before the passkey
+  // ceremony that creates the account, so the account starts verified.
+  await page.getByRole("button", { name: /^continue$/i }).click();
+
+  const verificationCodeInput = page.locator("#verification-code");
+  await verificationCodeInput.waitFor({ state: "visible", timeout: 20_000 });
+
+  const code = await verificationCode(page, email);
+
   const registration = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -82,7 +91,8 @@ export async function register(page: Page, options: { name?: string; email?: str
     { timeout: 20_000 },
   );
 
-  await page.getByRole("button", { name: /create account with a passkey/i }).click();
+  await verificationCodeInput.fill(code);
+  await page.getByRole("button", { name: /verify and create passkey/i }).click();
   const response = await registration.catch(() => undefined);
 
   if (!response) throw new Error("Registration request was never sent");
@@ -90,24 +100,15 @@ export async function register(page: Page, options: { name?: string; email?: str
   if (!response.ok())
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
 
-  // Registration signs in with the new passkey, then waits on the code step
-  // until the address is proven. A cold dev server occasionally loses the
-  // inline transition (and with it the challenge); in that case use the magic
-  // link from the same email, which exercises the verification endpoint too.
-  const verificationCodeInput = page.locator("#verification-code");
-
-  if (!(await verificationCodeInput.isVisible().catch(() => false))) {
-    await verifyEmail(page, email);
-    await page.goto("/dashboard", { waitUntil: "networkidle" });
-  } else {
-    const code = await verificationCode(page, email);
-    await verificationCodeInput.fill(code);
-    await page.getByRole("button", { name: /verify email/i }).click();
-  }
-
   // A cold dev server compiles the dashboard route on the first navigation,
   // which can take longer than the default test timeout.
-  await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
+  await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new|\/accept-invitation|\/login/, {
+    timeout: 45_000,
+  });
+
+  // The account exists even when the post-registration prompt did not take;
+  // finish the sign-in the same way a person would.
+  if (page.url().includes("/login")) await signIn(page, email);
 
   return { email };
 }
@@ -122,8 +123,19 @@ export async function verificationCode(page: Page, email: string) {
 
         if (!response.ok()) return "";
         const messages: ReadonlyArray<DebugEmail> = await response.json();
-        const message = messages.find((item) => item.to === email);
-        code = message?.text.match(/code is (\d{6})/)?.[1] ?? "";
+        // Newest first: a recipient may also have a welcome message, so find
+        // the newest message that actually carries a code.
+
+        for (const message of messages) {
+          if (message.to !== email) continue;
+
+          const match = message.text.match(/code is (\d{6})/);
+
+          if (match?.[1]) {
+            code = match[1];
+            break;
+          }
+        }
 
         return code;
       },
@@ -144,8 +156,17 @@ export async function verifyEmail(page: Page, email: string) {
 
         if (!response.ok()) return "";
         const messages: ReadonlyArray<DebugEmail> = await response.json();
-        const message = messages.find((item) => item.to === email);
-        token = message?.text.match(/verify-email\?token=([^\s]+)/)?.[1] ?? "";
+
+        for (const message of messages) {
+          if (message.to !== email) continue;
+
+          const match = message.text.match(/verify-email\?token=([^\s]+)/);
+
+          if (match?.[1]) {
+            token = match[1];
+            break;
+          }
+        }
 
         return token;
       },
@@ -162,7 +183,10 @@ export async function verifyEmail(page: Page, email: string) {
     throw new Error(`Email verification failed (${response.status()}): ${await response.text()}`);
 }
 
-export async function signIn(page: Page, _email?: string) {
+export async function signIn(page: Page, email: string) {
+  // A fresh sign-in should not inherit flow/binding cookies from the session
+  // that just ended; a real browser restart clears them too.
+  await page.context().clearCookies();
   await installVirtualAuthenticator(page);
   await page.goto("/login", { waitUntil: "networkidle" });
   await page.waitForFunction(
@@ -170,16 +194,37 @@ export async function signIn(page: Page, _email?: string) {
     undefined,
     { timeout: 20_000 },
   );
-  await page.getByRole("button", { name: /sign in with a passkey/i }).click();
+
+  // Sign-in is email-first: the address decides whether SSO applies, and the
+  // passkey ceremony follows on the next step.
+  await page.locator("#email").fill(email);
+  await page.getByRole("button", { name: /^continue$/i }).click();
+  await page
+    .getByRole("button", { name: /passkey/i })
+    .first()
+    .click();
+
   // A passkey signs in directly unless TOTP is enabled, in which case the
   // pending step appears on the same page.
-  await Promise.race([
-    page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 }).catch(() => undefined),
+  const outcome = await Promise.race([
+    page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 }).then(() => "session"),
     page
       .getByText(/two-factor authentication required/i)
       .waitFor({ timeout: 45_000 })
-      .catch(() => undefined),
-  ]);
+      .then(() => "mfa"),
+  ]).catch(() => undefined);
+
+  if (!outcome) {
+    const alert = await page
+      .getByRole("alert")
+      .first()
+      .textContent()
+      .catch(() => null);
+
+    throw new Error(
+      `Passkey sign-in did not complete (${page.url()})${alert ? `: ${alert.trim()}` : ""}`,
+    );
+  }
 }
 
 export async function createTenant(page: Page, name: string) {
@@ -369,6 +414,14 @@ type VirtualAuthenticator = { client: any; authenticatorId: string };
 const authenticators = new WeakMap<Page, VirtualAuthenticator>();
 
 /**
+ * The WebAuthn domain lives on the browser, not the page: a virtual
+ * authenticator added for one test's context keeps answering ceremonies in
+ * every context that runs afterwards. Track and retire them so a later test
+ * cannot be offered an earlier test's credential.
+ */
+let retiredAuthenticators: string[] = [];
+
+/**
  * Install a CTAP2 virtual authenticator on the page target. WebAuthn then runs
  * entirely in software, so passkey tests do not need a hardware key.
  */
@@ -379,6 +432,14 @@ export async function installVirtualAuthenticator(page: Page) {
 
   const client = await page.context().newCDPSession(page);
   await client.send("WebAuthn.enable");
+
+  for (const authenticatorId of retiredAuthenticators) {
+    await client
+      .send("WebAuthn.removeVirtualAuthenticator", { authenticatorId })
+      .catch(() => undefined);
+  }
+
+  retiredAuthenticators = [];
 
   const { authenticatorId } = await client.send("WebAuthn.addVirtualAuthenticator", {
     options: {
@@ -393,6 +454,7 @@ export async function installVirtualAuthenticator(page: Page) {
 
   const value = { client, authenticatorId };
   authenticators.set(page, value);
+  retiredAuthenticators.push(authenticatorId);
 
   return value;
 }
@@ -414,6 +476,8 @@ export async function addVirtualAuthenticator(page: Page) {
       automaticPresenceSimulation: true,
     },
   });
+
+  retiredAuthenticators.push(authenticatorId);
 
   return { client: current.client, authenticatorId };
 }

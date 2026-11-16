@@ -144,6 +144,11 @@ export const authenticationRequirement = (
 export const Registration = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
   email: Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email)),
+  /**
+   * Proof that the address completed the guest verification code. The created
+   * subject starts with a verified email when it matches a live challenge.
+   */
+  grant: Schema.optional(Schema.String.check(Schema.isMaxLength(128))),
 });
 
 export type Registration = typeof Registration.Type;
@@ -443,6 +448,10 @@ type ExtraAuthStrategies = Readonly<
  * supplies its own `completionLayer` with a pending lifetime. The server layer
  * provides both the strategy and completion layers from `appSessionConfiguration`.
  */
+/* oxlint-disable-next-line typescript/no-explicit-any -- The service class that
+ * `Auth.make` returns mentions dozens of the library's internal strategy type
+ * lambdas, none of which are exported; TypeScript cannot name it in a
+ * declaration file, so callers see the service shape through this boundary. */
 export const makeAppAuth = (_origin: string, extraStrategies: ExtraAuthStrategies = {}): any =>
   Auth.make(AuthApi, {
     strategies: {

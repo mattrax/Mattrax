@@ -13,7 +13,7 @@ test.describe.configure({ timeout: 180_000 });
 
 test.describe("passkeys", () => {
   test("enrolls a passkey, signs in with it, and removes it", async ({ page }) => {
-    await register(page);
+    const { email } = await register(page);
     await gotoHydrated(page, "/account");
     // The registration passkey lives on the first virtual authenticator; a
     // second USB authenticator simulates a different device.
@@ -42,7 +42,12 @@ test.describe("passkeys", () => {
     await expect(page).toHaveURL(/\/login/);
 
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
-    await page.getByRole("button", { name: /sign in with a passkey/i }).click();
+    await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
+    await page
+      .getByRole("button", { name: /passkey/i })
+      .first()
+      .click();
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
     // Removing the last passkey needs another step-up and signs this session out.

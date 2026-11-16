@@ -2,6 +2,8 @@ export * from "./domain.js";
 
 export * from "./handlers.js";
 
+export * from "./messages.js";
+
 export * from "./service.js";
 
 export * from "./syncml.js";

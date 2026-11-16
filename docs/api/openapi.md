@@ -89,4 +89,4 @@ routes (`/mdm/*`) are documented separately:
 ## Next
 
 - [REST API](/api/)
-- [API reference](/api/reference)
+- [API reference](/api/reference/)

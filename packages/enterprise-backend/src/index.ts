@@ -1,4 +1,12 @@
-export { createEnterpriseService, enterpriseHandlers } from "./enterpriseHandlers.js";
+export {
+  createEnterpriseService,
+  enterpriseAccountHandlers,
+  enterpriseAdeHandlers,
+  enterpriseAttributeHandlers,
+  enterpriseHandlers,
+  scriptAgentHandlers,
+  scriptHandlers,
+} from "./enterpriseHandlers.js";
 
 export { EnterpriseAnalyticsService } from "./enterpriseHandlers.js";
 
@@ -191,6 +199,31 @@ export type {
   VppInfo,
   VppTokenRow,
 } from "./volumePurchase.js";
+
+export {
+  SCRIPT_EXECUTION_SWEEP_LIMIT,
+  createScript,
+  deleteScript,
+  expireScriptExecutions,
+  getScriptAssignments,
+  getScriptDetail,
+  getScriptSettings,
+  listScriptExecutions,
+  listScripts,
+  patchScriptAssignments,
+  recordScriptAgentResult,
+  runScript,
+  scriptAgentSync,
+  scriptAssignedDeviceIds,
+  scriptDigest,
+  scriptExecutionRetentionCutoff,
+  scriptExecutionIsDeliverable,
+  sha256Hex,
+  sweepScriptExecutions,
+  updateScript,
+} from "./scripts.js";
+
+export type { AssignmentPatchResult, ScriptResultIngestion, ScriptSweepResult } from "./scripts.js";
 
 export { EnterpriseService } from "./service.js";
 
@@ -434,13 +467,49 @@ export type {
 } from "@mattrax/management-backend-enterprise";
 
 export {
+  APNS_RENEWAL_URL,
   CREDENTIAL_CRITICAL_DAYS,
   CREDENTIAL_WARNING_DAYS,
+  apnsCredentialHealth,
   credentialLevel,
   daysUntilExpiry,
   loadCredentialHealth,
   parseCertificateNotAfter,
+  serverCertificateInfo,
   summarizeDeviceCertificates,
 } from "./credentialHealth.js";
 
-export type { CredentialHealth } from "./credentialHealth.js";
+export type { CredentialHealth, DeviceCertificateRecord } from "./credentialHealth.js";
+
+export {
+  loadScepCaState,
+  loadTrustedScepCaCertificates,
+  purgeExpiredScepCaTrust,
+  rotateDueScepCas,
+  scepCaStateFromRows,
+} from "./scepLifecycle.js";
+
+export type {
+  ScepCaRotationSweepResult,
+  ScepCaState,
+  ScepIssuedIdentity,
+  ScepRetiredCaState,
+} from "./scepLifecycle.js";
+
+export {
+  SERVER_CERTIFICATE_CHECK_INTERVAL_MINUTES,
+  SERVER_CERTIFICATE_CRITICAL_DAYS,
+  SERVER_CERTIFICATE_PROBE_TIMEOUT_MS,
+  SERVER_CERTIFICATE_WARNING_DAYS,
+  loadServerCertificateInfo,
+  probeServerCertificate,
+  runServerCertificateCheck,
+  serverCertificatePeerFromDer,
+} from "./serverCertificate.js";
+
+export type {
+  ServerCertificateCheckResult,
+  ServerCertificatePeer,
+  ServerCertificateProbe,
+  ServerCertificateProbeOptions,
+} from "./serverCertificate.js";

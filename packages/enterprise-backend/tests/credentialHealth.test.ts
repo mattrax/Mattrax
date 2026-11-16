@@ -2,11 +2,13 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { generateCaKeyPair, pemEncode } from "@mattrax/crypto";
+import { exportPrivateKeyJwk, generateCaKeyPair, pemEncode, sealSecret } from "@mattrax/crypto";
 import { Db } from "@mattrax/enterprise-core";
 import {
+  APNS_RENEWAL_URL,
   CREDENTIAL_CRITICAL_DAYS,
   CREDENTIAL_WARNING_DAYS,
+  apnsCredentialHealth,
   credentialLevel,
   daysUntilExpiry,
   loadCredentialHealth,
@@ -235,8 +237,19 @@ describe("loadCredentialHealth", () => {
       expiresAt: null,
       daysLeft: null,
       level: "missing",
+      commonName: null,
+      topic: null,
+      keyConfigured: false,
+      keyMatchesCertificate: null,
+      topicMatchesCertificate: null,
+      renewalUrl: "https://identity.apple.com/pushcert/",
     });
     expect(missing.scepCa.level).toBe("missing");
+    expect(missing.serverCertificate).toMatchObject({
+      configured: false,
+      level: "missing",
+      origin: null,
+    });
 
     db.store.apple_push_certificate.push({
       organizationId: "org-a",
@@ -398,5 +411,130 @@ describe("credential expiry notifications", () => {
     } finally {
       error.mockRestore();
     }
+  });
+});
+
+describe("apnsCredentialHealth", () => {
+  const secret = "apns-health-test-secret";
+  const topic = "com.apple.mgmt.External.acme";
+
+  const makeApnsMaterial = async (options: { notAfter?: Date; uid?: string } = {}) => {
+    const keys = await generateCaKeyPair();
+
+    const attribute = (type: string, value: string) =>
+      new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
+
+    const certificate = new pkijs.Certificate();
+    certificate.version = 2;
+    certificate.serialNumber = new asn1js.Integer({ value: 7 });
+
+    const name = new pkijs.RelativeDistinguishedNames({
+      typesAndValues: [
+        attribute("2.5.4.3", "Acme APNs"),
+        attribute("0.9.2342.19200300.100.1.1", options.uid ?? topic),
+      ],
+    });
+
+    certificate.issuer = name;
+    certificate.subject = name;
+    certificate.notBefore.value = new Date(now.getTime() - 300 * DAY);
+    certificate.notAfter.value = options.notAfter ?? daysFromNow(60);
+    await certificate.subjectPublicKeyInfo.importKey(keys.publicKey);
+    await certificate.sign(keys.privateKey, "SHA-256");
+
+    return {
+      pem: pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false)),
+      jwk: await exportPrivateKeyJwk(keys.privateKey),
+    };
+  };
+
+  const encryptedKey = (jwk: JsonWebKey) => sealSecret(secret, JSON.stringify(jwk));
+
+  it("reports expiry and a matching key/topic as healthy", async () => {
+    const material = await makeApnsMaterial();
+
+    const health = await apnsCredentialHealth({
+      certificatePem: material.pem,
+      topic,
+      encryptedKey: await encryptedKey(material.jwk),
+      authSecret: secret,
+      now,
+    });
+
+    expect(health).toMatchObject({
+      configured: true,
+      level: "ok",
+      daysLeft: 60,
+      commonName: "Acme APNs",
+      topic,
+      keyConfigured: true,
+      keyMatchesCertificate: true,
+      topicMatchesCertificate: true,
+      renewalUrl: APNS_RENEWAL_URL,
+    });
+  });
+
+  it("escalates a certificate whose stored key does not match", async () => {
+    const material = await makeApnsMaterial();
+    const other = await makeApnsMaterial();
+
+    const health = await apnsCredentialHealth({
+      certificatePem: material.pem,
+      topic,
+      encryptedKey: await encryptedKey(other.jwk),
+      authSecret: secret,
+      now,
+    });
+
+    // Expiry is still healthy, but pushes cannot be signed at all.
+    expect(health.level).toBe("critical");
+    expect(health.keyMatchesCertificate).toBe(false);
+  });
+
+  it("escalates a topic mismatch between the row and the certificate", async () => {
+    const material = await makeApnsMaterial({ uid: "com.apple.mgmt.External.other" });
+
+    const health = await apnsCredentialHealth({
+      certificatePem: material.pem,
+      topic,
+      encryptedKey: await encryptedKey(material.jwk),
+      authSecret: secret,
+      now,
+    });
+
+    expect(health.level).toBe("critical");
+    expect(health.topicMatchesCertificate).toBe(false);
+  });
+
+  it("leaves the key comparison unknown when no key is stored", async () => {
+    const material = await makeApnsMaterial();
+
+    const health = await apnsCredentialHealth({
+      certificatePem: material.pem,
+      topic,
+      encryptedKey: null,
+      authSecret: secret,
+      now,
+    });
+
+    expect(health).toMatchObject({
+      keyConfigured: false,
+      keyMatchesCertificate: null,
+      level: "ok",
+    });
+  });
+
+  it("keeps an expired certificate expired even when the key matches", async () => {
+    const material = await makeApnsMaterial({ notAfter: daysFromNow(-1) });
+
+    const health = await apnsCredentialHealth({
+      certificatePem: material.pem,
+      topic,
+      encryptedKey: await encryptedKey(material.jwk),
+      authSecret: secret,
+      now,
+    });
+
+    expect(health.level).toBe("expired");
   });
 });

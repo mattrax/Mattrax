@@ -64,17 +64,45 @@ const now = () => new Date();
 const iso = (value: Date | null | undefined) =>
   (value instanceof Date ? value : new Date(value ?? 0)).toISOString();
 
+type UserRow = typeof schema.user.$inferSelect;
+
+type MemberRow = typeof schema.member.$inferSelect;
+
+type GroupRow = typeof schema.userGroup.$inferSelect;
+
 const ScimGroupMemberRef = Schema.Struct({ value: Schema.String });
 
-const ScimGroupPatch = Schema.Struct({
-  Operations: Schema.optional(
-    Schema.Array(
-      Schema.Struct({
-        path: Schema.optional(Schema.String),
-        value: Schema.optional(Schema.Json),
-      }),
-    ),
-  ),
+const ScimPatchOperation = Schema.Struct({
+  path: Schema.optional(Schema.String),
+  value: Schema.optional(Schema.Json),
+});
+
+const ScimPatch = Schema.Struct({
+  Operations: Schema.optional(Schema.Array(ScimPatchOperation)),
+});
+
+const ScimRole = Schema.Struct({ value: Schema.optional(Schema.String) });
+
+const ScimUserName = Schema.Struct({
+  formatted: Schema.optional(Schema.String),
+  givenName: Schema.optional(Schema.String),
+  familyName: Schema.optional(Schema.String),
+});
+
+/**
+ * The subset of the SCIM 2.0 User resource this server provisions. Fields the
+ * service does not own (externalId, phone numbers) are accepted and ignored by
+ * the decoder rather than rejected.
+ */
+const ScimUserPayload = Schema.Struct({
+  userName: Schema.optional(Schema.String),
+  name: Schema.optional(ScimUserName),
+  roles: Schema.optional(Schema.Array(ScimRole)),
+});
+
+const ScimGroupPayload = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  members: Schema.optional(Schema.Array(ScimGroupMemberRef)),
 });
 
 type ScimContext = {
@@ -134,7 +162,7 @@ const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
     : null;
 };
 
-const userResource = (user: any, member: any) => ({
+const userResource = (user: UserRow, member: MemberRow) => ({
   schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
   id: user.id,
   userName: user.email,
@@ -149,7 +177,10 @@ const userResource = (user: any, member: any) => ({
   },
 });
 
-const groupResource = (group: any, members: Array<{ userId: string; email: string }>) => ({
+const groupResource = (
+  group: GroupRow,
+  members: ReadonlyArray<{ userId: string; email: string }>,
+) => ({
   schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
   id: group.id,
   displayName: group.name,
@@ -181,7 +212,7 @@ const listUsers = (ctx: ScimContext) =>
     return json({
       schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
       totalResults: rows.length,
-      Resources: rows.map((row: any) => userResource(row.user, row.member)),
+      Resources: rows.map((row) => userResource(row.user, row.member)),
     });
   });
 
@@ -214,9 +245,7 @@ const ownerCount = (ctx: ScimContext) =>
       .from(schema.member)
       .where(eq(schema.member.organizationId, ctx.organizationId));
 
-    return rows.filter((row: { role: string; customRoleId?: string | null }) =>
-      isBuiltInOwnerMember(row),
-    ).length;
+    return rows.filter((row) => isBuiltInOwnerMember(row)).length;
   });
 
 /**
@@ -241,9 +270,7 @@ const SCIM_NON_PRIVILEGED_ROLES = new Set([
 
 const SCIM_PRIVILEGED_ROLES = new Set(["owner", "admin", "administrator", "global admin"]);
 
-const ScimRole = Schema.Struct({ value: Schema.optional(Schema.String) });
-
-const createUser = (ctx: ScimContext, body: any) =>
+const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
@@ -328,7 +355,7 @@ const createUser = (ctx: ScimContext, body: any) =>
       : scimError(500, "Could not create the membership");
   });
 
-const patchUser = (ctx: ScimContext, userId: string, body: any) =>
+const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type) =>
   Effect.gen(function* () {
     const current = yield* findUser(ctx, userId);
 
@@ -440,7 +467,7 @@ const listGroups = (ctx: ScimContext) =>
     return json({
       schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
       totalResults: groups.length,
-      Resources: groups.map((group: any) => groupResource(group, [])),
+      Resources: groups.map((group) => groupResource(group, [])),
     });
   });
 
@@ -464,7 +491,7 @@ const findGroup = (ctx: ScimContext, groupId: string) =>
     return { group, members: rows };
   });
 
-const createGroup = (ctx: ScimContext, body: any) =>
+const createGroup = (ctx: ScimContext, body: typeof ScimGroupPayload.Type) =>
   Effect.gen(function* () {
     const db = yield* Db;
     const name = String(body.displayName ?? "").trim();
@@ -513,7 +540,7 @@ const replaceGroupMembers = (
         .where(eq(schema.member.organizationId, ctx.organizationId))
         .limit(1000);
 
-      const allowed = new Set(valid.map((row: any) => row.userId));
+      const allowed = new Set(valid.map((row) => row.userId));
       const rows = ids.filter((userId) => allowed.has(userId));
 
       if (rows.length > 0) {
@@ -603,7 +630,13 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
           if (!body.valid)
             return scimError(400, "Request body must be valid JSON", "invalidSyntax");
 
-          return yield* createUser(ctx, body.body);
+          const payload = Option.getOrUndefined(
+            Schema.decodeUnknownOption(ScimUserPayload)(body.body),
+          );
+
+          if (!payload) return scimError(400, "Invalid SCIM user payload", "invalidValue");
+
+          return yield* createUser(ctx, payload);
         }
 
         return scimError(405, "Method not allowed");
@@ -624,7 +657,11 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
           if (!body.valid)
             return scimError(400, "Request body must be valid JSON", "invalidSyntax");
 
-          return yield* patchUser(ctx, parsed.id, body.body);
+          const payload = Option.getOrUndefined(Schema.decodeUnknownOption(ScimPatch)(body.body));
+
+          if (!payload) return scimError(400, "Invalid SCIM patch", "invalidValue");
+
+          return yield* patchUser(ctx, parsed.id, payload);
         }
 
         if (method === "DELETE") return yield* deleteUser(ctx, parsed.id);
@@ -641,7 +678,13 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
           if (!body.valid)
             return scimError(400, "Request body must be valid JSON", "invalidSyntax");
 
-          return yield* createGroup(ctx, body.body);
+          const payload = Option.getOrUndefined(
+            Schema.decodeUnknownOption(ScimGroupPayload)(body.body),
+          );
+
+          if (!payload) return scimError(400, "Invalid SCIM group payload", "invalidValue");
+
+          return yield* createGroup(ctx, payload);
         }
 
         return scimError(405, "Method not allowed");
@@ -663,7 +706,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
             return scimError(400, "Request body must be valid JSON", "invalidSyntax");
 
           const patch = Option.getOrUndefined(
-            Schema.decodeUnknownOption(ScimGroupPatch)(parsedBody.body),
+            Schema.decodeUnknownOption(ScimPatch)(parsedBody.body),
           );
 
           const members = Option.getOrUndefined(

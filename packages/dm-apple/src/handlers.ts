@@ -1,24 +1,27 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/http";
-import { AppleMdmService } from "./service.js";
+import { AppleMdmService, appleCheckinScope } from "./service.js";
+import { MDM_ASSET_CACHE_CONTROL, MDM_PROFILE_CACHE_CONTROL } from "./cache.js";
 import { parsePlist, serializePlist, PlistValue } from "@mattrax/plist";
 import {
   AuthenticatePlist,
   DeviceUnenrolled,
+  GetTokenPlist,
   TokenUpdatePlist,
+  UserAuthenticatePlist,
   CheckOutPlist,
   CommandResultPlist,
   DDMStatusReport,
   GetBootstrapTokenPlist,
   SetBootstrapTokenPlist,
+  ReturnToServicePlist,
+  resolveCheckinChannel,
 } from "./schema.js";
 import { appleMdmApi } from "./domain.js";
 import { CheckinScope } from "@mattrax/management-backend";
 
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
-
-const [DeviceCheckinScope] = CheckinScope.members;
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -61,6 +64,12 @@ const commandBytes = (command: {
   });
 };
 
+type ReturnToServiceResponse = {
+  Enabled: boolean;
+  WiFiProfileData?: PlistValue;
+  BootstrapToken?: PlistValue;
+};
+
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
   handlers.handle("enroll", () =>
     // Enrollment profiles must be tenant-scoped and carry a bound SCEP
@@ -101,16 +110,29 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 
     const messageType = plistString(plist, "MessageType");
     const status = plistField(plist, "Status");
-    const udid = plistString(plist, "UDID") ?? plistString(plist, "EnrollmentID");
 
-    const scope = (): CheckinScope =>
-      DeviceCheckinScope.make({
-        udid: udid ?? "",
-        identityCertificate,
-        identityCertificateFingerprintSha256: identityFingerprint,
-        identityCertificateSerial: identitySerial,
-        mdmOrigin: service.mdmOrigin,
-      });
+    // Device enrollments report UDID; Apple User Enrollment reports the
+    // per-enrollment identifier instead, and the user channel adds UserID (or
+    // EnrollmentUserID for a user enrollment).
+    const channel = resolveCheckinChannel({
+      UDID: plistString(plist, "UDID"),
+      EnrollmentID: plistString(plist, "EnrollmentID"),
+      UserID: plistString(plist, "UserID"),
+      EnrollmentUserID: plistString(plist, "EnrollmentUserID"),
+      UserShortName: plistString(plist, "UserShortName"),
+      UserLongName: plistString(plist, "UserLongName"),
+    });
+
+    const scope = (): CheckinScope | null =>
+      channel
+        ? appleCheckinScope(
+            service.mdmOrigin,
+            channel,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+          )
+        : null;
 
     if (messageType) {
       switch (messageType) {
@@ -161,9 +183,9 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 
         case "DeclarativeManagement": {
           const endpoint = plistString(plist, "Endpoint");
-
-          if (!udid) return HttpServerResponse.empty({ status: 400 });
           const checkinScope = scope();
+
+          if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
 
           if (endpoint === "tokens") {
             const tokens = yield* service.handleDeclarativeTokens(checkinScope);
@@ -223,6 +245,10 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             Effect.mapError((err) => new Error(String(err))),
           );
 
+          // Bootstrap token escrow is a device-level secret; Apple never sends
+          // it on a user channel and a user connection must not write one.
+          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
           yield* service.handleSetBootstrapToken(
             token.BootstrapToken ?? "",
             identityCertificate,
@@ -238,6 +264,8 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             Effect.mapError((err) => new Error(String(err))),
           );
 
+          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
           const value = yield* service.handleGetBootstrapToken(
             identityCertificate,
             request.UDID ?? request.EnrollmentID,
@@ -252,10 +280,81 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           });
         }
 
-        case "GetToken":
+        case "GetToken": {
+          // `GetToken` is Apple's token-service check-in (Managed Apple Account
+          // access management via `com.apple.maid`, and Apple Watch pairing) —
+          // not the user channel's `AuthToken`, which `UserAuthenticate`
+          // negotiates. Mattrax issues neither token: the MAID token must be
+          // signed with the ABM-assigned server UUID, and watches are not
+          // managed. Apple requires a 400 for a service type the server does
+          // not support, and the enrollment profile no longer advertises the
+          // `com.apple.mdm.token` capability, so a conforming device will not
+          // ask.
+          yield* Schema.decodeUnknownEffect(GetTokenPlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+
           return HttpServerResponse.empty({ status: 400 });
-        case "UserAuthenticate":
-          return HttpServerResponse.empty({ status: 410 });
+        }
+
+        case "ReturnToService": {
+          yield* Schema.decodeUnknownEffect(ReturnToServicePlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+
+          // Setup Assistant runs on the device channel only.
+          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
+          const checkinScope = scope();
+
+          if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
+
+          const configuration = yield* service.handleReturnToService(checkinScope);
+
+          const response: ReturnToServiceResponse = { Enabled: configuration.enabled };
+
+          if (configuration.enabled) {
+            if (configuration.wifiProfileData)
+              response["WiFiProfileData"] = configuration.wifiProfileData;
+
+            if (configuration.bootstrapToken)
+              response["BootstrapToken"] = configuration.bootstrapToken;
+          }
+
+          return HttpServerResponse.text(yield* serializePlist({ ReturnToService: response }), {
+            contentType: "application/xml",
+          });
+        }
+
+        case "UserAuthenticate": {
+          const auth = yield* Schema.decodeUnknownEffect(UserAuthenticatePlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+
+          const result = yield* service.handleUserAuthenticate(
+            auth,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+          );
+
+          // 410 tells the client not to manage this user for the rest of the
+          // login session.
+          if (!result) return HttpServerResponse.empty({ status: 410 });
+
+          // SAFETY: the branch builds one of two string-keyed dictionaries, both
+          // of which are valid plist dictionaries.
+          const body = (
+            result.digestChallenge !== undefined
+              ? { DigestChallenge: result.digestChallenge }
+              : { AuthToken: result.authToken ?? "" }
+          ) as PlistValue;
+
+          return HttpServerResponse.text(yield* serializePlist(body), {
+            contentType: "application/xml",
+          });
+        }
+
         default:
           return HttpServerResponse.empty({ status: 400 });
       }
@@ -275,8 +374,10 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         );
       }
 
-      if (!udid) return HttpServerResponse.empty({ status: 200 });
-      const command = yield* service.handleCheckin(scope());
+      const checkinScope = scope();
+
+      if (!checkinScope) return HttpServerResponse.empty({ status: 200 });
+      const command = yield* service.handleCheckin(checkinScope);
 
       if (!command) return HttpServerResponse.empty({ status: 200 });
 
@@ -285,8 +386,10 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       });
     }
 
-    if (!udid) return HttpServerResponse.empty({ status: 400 });
-    const command = yield* service.handleCheckin(scope());
+    const checkinScope = scope();
+
+    if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
+    const command = yield* service.handleCheckin(checkinScope);
 
     if (!command) {
       const empty = yield* serializePlist({});
@@ -326,7 +429,10 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
 
     if (!asset) return HttpServerResponse.empty({ status: 404 });
 
-    return HttpServerResponse.uint8Array(asset.content, { contentType: asset.contentType });
+    return HttpServerResponse.uint8Array(asset.content, {
+      contentType: asset.contentType,
+      headers: { "Cache-Control": MDM_ASSET_CACHE_CONTROL },
+    });
   }).pipe(
     Effect.match({
       onSuccess: (val) => val,
@@ -368,6 +474,7 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
     return HttpServerResponse.uint8Array(profile.content, {
       contentType: profile.contentType,
       headers: {
+        "Cache-Control": MDM_PROFILE_CACHE_CONTROL,
         "Content-Disposition": `attachment; filename="${policyId}.mobileconfig"`,
       },
     });

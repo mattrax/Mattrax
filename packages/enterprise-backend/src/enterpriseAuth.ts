@@ -99,7 +99,9 @@ const requestFrom = (request: Request | { headers: HeadersRecord }) =>
     ? request
     : new Request("https://auth.invalid", { headers: headersFromRecord(request.headers) });
 
-const tokenInfo = (item: any) => ({
+type AccountApiTokenRow = typeof schema.accountApiToken.$inferSelect;
+
+const tokenInfo = (item: AccountApiTokenRow) => ({
   id: item.id,
   name: item.name,
   tokenPrefix: item.tokenPrefix,
@@ -194,7 +196,7 @@ const sha256Base64Url = (value: string) =>
     ),
   );
 
-const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
+export const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
 
 /** An email change must complete within the hour, like a password reset link. */
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
@@ -206,13 +208,13 @@ const emailChangeCancelLinkFor = (origin: string, token: string) =>
   `${origin}/account?emailCancelToken=${encodeURIComponent(token)}`;
 
 /** Six digits, zero padded. Randomness comes from the platform CSPRNG. */
-const generateEmailCode = () => {
+export const generateEmailCode = () => {
   const bytes = crypto.getRandomValues(new Uint32Array(1));
 
   return String(bytes[0]! % 1_000_000).padStart(6, "0");
 };
 
-const emailCodeHash = (authSecret: string, subjectId: string, code: string) =>
+export const emailCodeHash = (authSecret: string, subjectId: string, code: string) =>
   sha256(`${authSecret}:email-code:${subjectId}:${code}`);
 
 const verified = Effect.succeed({ status: "ok" as const });
@@ -1095,7 +1097,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         Effect.gen(function* () {
           const { user } = yield* requireUser(request);
 
-          if (user.emailVerified) return verified;
+          if (user.emailVerified) {
+            // The account may have been created by a guest sign-up that proved
+            // its address before the passkey existed; that path never ran the
+            // token verification, so greet the account on its first request.
+            yield* sendWelcomeAfterVerification(user);
+
+            return yield* verified;
+          }
 
           const code = generateEmailCode();
 
@@ -1151,7 +1160,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           if (body.code !== undefined) {
             const { user } = yield* requireUser(request);
 
-            if (user.emailVerified) return verified;
+            if (user.emailVerified) {
+              // The account may have been created by a guest sign-up that
+              // proved its address before the passkey existed; that path never
+              // ran the token verification, so greet it on the first request.
+              yield* sendWelcomeAfterVerification(user);
+
+              return yield* verified;
+            }
+
             const code = body.code.trim();
 
             if (!/^\d{6}$/.test(code))
@@ -1301,7 +1318,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                   .where(eq(schema.user.email, pending.newEmail))
                   .limit(1);
 
-                if (clash.some((row: any) => row.id !== user.id))
+                if (clash.some((row) => row.id !== user.id))
                   return yield* Effect.fail(
                     new EnterpriseConflict({
                       message: "That email address was registered by someone else. Try another.",
@@ -1346,7 +1363,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                     .where(eq(schema.user.email, pending.newEmail))
                     .limit(1);
 
-                  if (taken.some((row: any) => row.id !== user.id))
+                  if (taken.some((row) => row.id !== user.id))
                     return yield* Effect.fail(
                       new EnterpriseConflict({
                         message: "That email address was registered by someone else. Try another.",

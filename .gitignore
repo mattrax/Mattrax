@@ -68,3 +68,9 @@ dist-attrib/
 # Lighthouse CI reports
 /.lighthouseci/
 /.lighthouse-prod/
+
+# Generated API reference (pnpm docs:api / doc:build)
+/docs/api/reference/
+
+# Generated open-source licence inventory (pnpm licenses / web build)
+/apps/web/public/licenses.json

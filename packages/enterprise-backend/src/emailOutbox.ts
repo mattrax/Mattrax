@@ -26,6 +26,7 @@ import type { EmailTransport, OutboundEmailMessage } from "./email.ts";
 export const EMAIL_OUTBOX_TEMPLATES = [
   "invitation",
   "email_verification",
+  "registration_verification",
   "email_change_confirm",
   "email_change_notice",
   "credential_expiry",

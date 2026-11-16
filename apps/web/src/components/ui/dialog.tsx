@@ -3,7 +3,7 @@ import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import type { Component } from "solid-js";
 import { createEffect, onCleanup, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
-import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import type { ComponentProps, JSX, ValidComponent } from "@solidjs/web";
 import { mergeProps, splitProps } from "~/lib/solid";
 
 import { cn } from "~/lib/utils";
@@ -192,7 +192,7 @@ const DialogFooter = <T extends ValidComponent = "div">(props: DialogFooterProps
       )}
       // SAFETY: `others` has already had the footer-only keys removed,
       // leaving the intrinsic div attributes this spread forwards.
-      {...(others as any)}
+      {...(others as JSX.HTMLAttributes<HTMLDivElement>)}
     >
       {local.children}
       <Show when={local.showCloseButton}>

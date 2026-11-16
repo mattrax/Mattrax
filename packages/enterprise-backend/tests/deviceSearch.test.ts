@@ -64,6 +64,12 @@ describe("normalizeDeviceSearchQuery", () => {
     });
   });
 
+  it("carries the ADE setup filter", () => {
+    expect(normalizeDeviceSearchQuery({ setup: "awaiting" }, now).setup).toBe("awaiting");
+    expect(normalizeDeviceSearchQuery({ setup: "complete" }, now).setup).toBe("complete");
+    expect(normalizeDeviceSearchQuery({}, now).setup).toBeUndefined();
+  });
+
   it("turns staleDays into a cutoff", () => {
     expect(normalizeDeviceSearchQuery({ staleDays: 7 }, now).notSeenBefore?.toISOString()).toBe(
       "2026-11-03T12:00:00.000Z",

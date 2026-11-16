@@ -28,7 +28,7 @@ test.describe("accessibility audit", () => {
   test("public and authentication pages have no axe violations", async ({ page }) => {
     const pages = [
       { path: "/", ready: page.getByRole("heading", { level: 1 }) },
-      { path: "/login", ready: page.getByRole("button", { name: /sign in with a passkey/i }) },
+      { path: "/login", ready: page.locator("#email") },
       { path: "/register", ready: page.locator("#name") },
     ];
 

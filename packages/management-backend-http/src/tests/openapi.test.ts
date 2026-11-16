@@ -17,6 +17,7 @@ const expectedOperationIds = [
   "ManagementWebhook.appleDeviceEvent",
   "ManagementWebhook.appleManagementCheckin",
   "ManagementWebhook.getAppleBootstrapToken",
+  "ManagementWebhook.appleReturnToServiceConfiguration",
   "ManagementWebhook.getAppleDeclarationTokens",
   "ManagementWebhook.getAppleDeclarationItems",
   "ManagementWebhook.getAppleDeclaration",
@@ -30,10 +31,10 @@ const expectedOperationIds = [
 ].sort();
 
 describe("management webhook OpenAPI", () => {
-  it("documents all 13 paths, each under /webhook/", () => {
+  it("documents all 14 paths, each under /webhook/", () => {
     const paths = Object.keys(document.paths);
 
-    expect(paths).toHaveLength(13);
+    expect(paths).toHaveLength(14);
 
     for (const path of paths) {
       expect(path.startsWith("/webhook/")).toBe(true);
@@ -70,7 +71,7 @@ describe("management webhook OpenAPI", () => {
   });
 
   it("requires both headers on every operation", () => {
-    expect(operations).toHaveLength(13);
+    expect(operations).toHaveLength(14);
 
     for (const operation of operations) {
       expect(operation.security).toHaveLength(1);

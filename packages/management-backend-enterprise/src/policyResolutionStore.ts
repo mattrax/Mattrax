@@ -2,6 +2,12 @@ import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
 import {
+  containsPolicyVariables,
+  substitutePolicyVariables,
+  type PolicyVariableContext,
+} from "@mattrax/enterprise-domain";
+import { policyDataHash } from "./policy.ts";
+import {
   resolveEffectivePolicy,
   type EffectivePolicy,
   type PolicyResolutionGroup,
@@ -149,6 +155,71 @@ export const resolveEffectivePolicyForDevice = (
       return Option.isSome(data) ? [{ ...row, data: data.value }] : [];
     });
 
+    // Variables are resolved per device at compile time. The extra reads only
+    // happen when a payload actually references one, so fleets without
+    // variables pay nothing.
+    const needsVariables = configurations.some(
+      (configuration) =>
+        configuration.data !== undefined && containsPolicyVariables(configuration.data),
+    );
+
+    const [deviceRow] = needsVariables
+      ? yield* db
+          .select({
+            name: s.device.name,
+            serial: s.device.serial,
+            model: s.device.model,
+          })
+          .from(s.device)
+          .where(
+            and(eq(s.device.id, device.id), eq(s.device.organizationId, device.organizationId)),
+          )
+          .limit(1)
+      : [];
+
+    const [organization] = needsVariables
+      ? yield* db
+          .select({ name: s.organization.name })
+          .from(s.organization)
+          .where(eq(s.organization.id, device.organizationId))
+          .limit(1)
+      : [];
+
+    const attributeRows = needsVariables
+      ? yield* db
+          .select({ key: s.attributeDefinition.key, value: s.deviceAttribute.value })
+          .from(s.deviceAttribute)
+          .innerJoin(
+            s.attributeDefinition,
+            eq(s.attributeDefinition.id, s.deviceAttribute.attributeId),
+          )
+          .where(
+            and(
+              eq(s.deviceAttribute.organizationId, device.organizationId),
+              eq(s.deviceAttribute.deviceId, device.id),
+            ),
+          )
+      : [];
+
+    const variableContext: PolicyVariableContext = {
+      device: deviceRow ?? null,
+      tenant: organization ?? null,
+      attributes: Object.fromEntries(attributeRows.map((row) => [row.key, row.value])),
+    };
+
+    const resolvedConfigurations = yield* Effect.forEach(configurations, (configuration) => {
+      if (configuration.data === undefined || !containsPolicyVariables(configuration.data))
+        return Effect.succeed(configuration);
+
+      const data = substitutePolicyVariables(configuration.data, variableContext);
+
+      // The resolved text is what the device receives, so the declaration
+      // server token must change when an attribute value changes.
+      return Effect.promise(() => policyDataHash(data)).pipe(
+        Effect.map((hash) => ({ ...configuration, data, hash })),
+      );
+    });
+
     return resolveEffectivePolicy({
       deviceId: device.id,
       groups,
@@ -168,6 +239,6 @@ export const resolveEffectivePolicyForDevice = (
         knownPolicyIds.has(assignment.policyId),
       ),
       policies,
-      configurations,
+      configurations: resolvedConfigurations,
     });
   });

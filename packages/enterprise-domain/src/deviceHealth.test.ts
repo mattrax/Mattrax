@@ -98,6 +98,31 @@ describe("Windows device health", () => {
 
     expect(codes(summary)).not.toContain("bitlocker_disabled");
   });
+  it("flags an ADE device that is awaiting setup as attention, not healthy", () => {
+    const summary = deriveDeviceHealth({
+      proto: "apple",
+      status: "enrolling",
+      lastSeenAt: now,
+      awaitingConfiguration: true,
+      now,
+    });
+
+    expect(summary.level).toBe("attention");
+    expect(codes(summary)).toContain("awaiting_configuration");
+    expect(codes(summary)).not.toContain("enrollment_enrolling");
+  });
+
+  it("keeps a plain in-progress enrolment distinct from awaiting setup", () => {
+    const summary = deriveDeviceHealth({
+      proto: "apple",
+      status: "enrolling",
+      lastSeenAt: now,
+      now,
+    });
+
+    expect(codes(summary)).toContain("enrollment_enrolling");
+    expect(codes(summary)).not.toContain("awaiting_configuration");
+  });
 });
 
 describe("Apple compliance status health", () => {

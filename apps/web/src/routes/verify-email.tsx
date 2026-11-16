@@ -1,7 +1,8 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
 import { isServer } from "@solidjs/web";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useSearchParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
@@ -154,7 +155,9 @@ export default function VerifyEmailPage() {
                     autoSend
                     onVerified={async () => {
                       await session().refetch();
-                      navigate(returnTo() ?? "/dashboard", { replace: true });
+                      // Defer past the query-cache write: navigation issued in
+                      // the same tick is dropped by the router transition.
+                      setTimeout(() => navigate(returnTo() ?? "/dashboard", { replace: true }), 0);
                     }}
                   />
                 </Show>

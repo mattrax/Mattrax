@@ -93,6 +93,11 @@ yet, so a user policy applies to every linked device and affects every user of t
 Link users to devices from the device page. Directory sync (Entra or SCIM) keeps user
 groups current and triggers a refresh for linked devices.
 
+Apple devices additionally have a native **user channel** per macOS or Shared iPad login.
+That channel carries its own push token, profile inventory and per-user commands, and is
+visible on the device page. It is not a policy-delivery scope: policies still follow the
+device, so nothing is isolated per login. See [Apple](/platforms/apple/#user-channel).
+
 Resolution order, from strongest to weakest:
 
 1. Direct device **exclude** removes the policy, even if a group or user includes it.

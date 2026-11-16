@@ -50,6 +50,15 @@ export const CheckinScope = Schema.Union([
     identityCertificateSerial: Schema.optional(Schema.String),
     userId: Schema.String,
     userShortName: Schema.optional(Schema.String),
+    /**
+     * Which connection the user identity came from. `user-channel` is the
+     * macOS/Shared iPad user channel (`UserID`), which is only trusted after
+     * `UserAuthenticate`. `user-enrollment` is Apple User Enrollment's user
+     * channel (`EnrollmentUserID`), where the enrollment itself is the user.
+     */
+    source: Schema.Literals(["user-channel", "user-enrollment"]),
+    /** The per-enrollment identifier Apple sends for a user enrollment. */
+    enrollmentId: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,
   }),
 ]);
@@ -61,7 +70,20 @@ export const AppleDeviceEvent = Schema.Union([
     serialNumber: Schema.optional(Schema.String),
     model: Schema.optional(Schema.String),
     osVersion: Schema.optional(Schema.String),
+    /** Present for an Apple User Enrollment, which has no UDID. */
+    enrollmentId: Schema.optional(Schema.String),
+    /**
+     * `user` is Apple User Enrollment (BYOD): one user is enrolled, no device
+     * identity is available, and the accessible command/payload set is smaller.
+     */
+    enrollmentMode: Schema.Literals(["device", "user"]),
   }),
+  /**
+   * macOS opens a user-channel session with a two-transaction handshake. The
+   * backend validates the device/user binding and records it; the protocol
+   * layer answers with a DigestChallenge (or 410 when the user is not managed).
+   */
+  Schema.TaggedStruct("UserAuthenticate", {}),
   Schema.TaggedStruct("TokenUpdate", {
     pushToken: Schema.String,
     pushMagic: Schema.String,
@@ -147,6 +169,25 @@ export const DdmDeclarationItems = Schema.Struct({
 });
 
 export type DdmDeclarationItems = typeof DdmDeclarationItems.Type;
+
+/**
+ * The configuration the server returns for a `ReturnToService` check-in.
+ *
+ * The Wi-Fi profile is a complete `.mobileconfig`; Apple installs it after the
+ * erase so the device can reach the MDM server. The bootstrap token is the raw
+ * escrowed bytes (Apple's `BootstrapToken` is a `<data>` value). The device
+ * fetches its ADE enrollment profile from Apple when `enabled` is true, so no
+ * `MDMProfileData` is included here.
+ */
+export const AppleReturnToServiceConfiguration = Schema.Struct({
+  enabled: Schema.Boolean,
+  wifiProfileData: Schema.optional(Schema.Uint8Array),
+  bootstrapToken: Schema.optional(Schema.Uint8Array),
+  /** Why return to service is unavailable; diagnostics only, never sent. */
+  reason: Schema.optional(Schema.String),
+});
+
+export type AppleReturnToServiceConfiguration = typeof AppleReturnToServiceConfiguration.Type;
 
 export const WindowsDiscoveryRequest = Schema.Struct({
   emailAddress: Schema.optional(Schema.String),
@@ -282,6 +323,18 @@ export declare namespace ManagementBackend {
     readonly getAppleBootstrapToken: (
       scope: CheckinScope,
     ) => Effect.Effect<string | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    /**
+     * Answer Apple's `ReturnToService` check-in. Apple sends this before erasing
+     * an ADE device that is configured for return to service; the response
+     * carries the Wi-Fi profile and escrowed bootstrap token the device uses to
+     * reconnect and re-enroll.
+     */
+    readonly appleReturnToServiceConfiguration: (
+      scope: CheckinScope,
+    ) => Effect.Effect<
+      AppleReturnToServiceConfiguration,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
 
     // Regular device checkin: returns what the device should do next (imperative)
     readonly appleManagementCheckin: (

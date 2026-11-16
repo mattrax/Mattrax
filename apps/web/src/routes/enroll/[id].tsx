@@ -18,7 +18,7 @@ import {
   type PlatformEnrollment,
   type WindowsEnrollment,
 } from "~/lib/enterprise";
-import { lookupPublicEnrollment } from "~/lib/enrollment.server";
+import { lookupPublicEnrollment, submitPublicEnrollmentAnswers } from "~/lib/enrollment.server";
 import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 
 const isAuthenticatedEnrollment = (
@@ -91,6 +91,14 @@ function EnrollPage(props: { id: string; code: string }) {
   const brandName = () => branding()?.displayName ?? "Mattrax";
   const brandColor = () => branding()?.brandColor ?? DEFAULT_BRAND_COLOR;
   const supportEmail = () => branding()?.supportEmail ?? DEFAULT_SUPPORT_EMAIL;
+
+  const [detailsSaved, setDetailsSaved] = createSignal(false);
+
+  const needsDetails = () => {
+    const value = authenticated();
+
+    return value ? (value.questions?.length ?? 0) > 0 || value.assetTag : false;
+  };
 
   const deviceLimit = () => {
     const value = found();
@@ -204,12 +212,24 @@ function EnrollPage(props: { id: string; code: string }) {
                       </Show>
                     )}
                   </Show>
-                  <EnrollmentOptions
-                    enrollment={authenticatedEnrollment()}
-                    id={props.id}
-                    code={props.code}
-                    brandColor={brandColor()}
-                  />
+                  <Show
+                    when={!needsDetails() || detailsSaved()}
+                    fallback={
+                      <EnrollmentDetails
+                        enrollment={authenticatedEnrollment()}
+                        id={props.id}
+                        code={props.code}
+                        onSaved={() => setDetailsSaved(true)}
+                      />
+                    }
+                  >
+                    <EnrollmentOptions
+                      enrollment={authenticatedEnrollment()}
+                      id={props.id}
+                      code={props.code}
+                      brandColor={brandColor()}
+                    />
+                  </Show>
                   <div class="mt-6 flex flex-col items-center gap-2 border-t pt-5">
                     <p class="text-sm font-medium text-stone-800">Scan to open this page</p>
                     <QrCode value={enrollmentUrl()} label="QR code for this enrollment link" />
@@ -239,6 +259,191 @@ function EnrollPage(props: { id: string; code: string }) {
 }
 
 type Platform = "apple" | "windows" | "android";
+
+const attributeInputType = (type: string): "text" | "number" | "date" => {
+  if (type === "number") return "number";
+
+  if (type === "date") return "date";
+
+  return "text";
+};
+
+const attributeOptionLabel = (type: string, option: string) => {
+  if (type !== "boolean") return option;
+
+  return option === "true" ? "Yes" : "No";
+};
+
+/**
+ * Device details collected before enrollment.
+ *
+ * Apple and Windows do not identify a device until its first MDM check-in, so
+ * the serial is the link: answers are stored against it and claimed by the
+ * device when it appears. Questions are validated by the API exactly as the
+ * dashboard validates device values.
+ */
+function EnrollmentDetails(props: {
+  id: string | undefined;
+  code: string;
+  enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
+  onSaved: () => void;
+}) {
+  const questions = () => props.enrollment.questions ?? [];
+  const [serial, setSerial] = createSignal("");
+  const [name, setName] = createSignal("");
+  const [assetTag, setAssetTag] = createSignal("");
+  const [answers, setAnswers] = createSignal<Record<string, string>>({});
+  const [error, setError] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
+
+  const setAnswer = (key: string, value: string) => setAnswers({ ...answers(), [key]: value });
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault();
+
+    if (!props.id) {
+      setError("This enrollment link is invalid.");
+
+      return;
+    }
+
+    if (!serial().trim()) {
+      setError("Enter this device's serial number.");
+
+      return;
+    }
+
+    for (const question of questions()) {
+      const value = (answers()[question.key] ?? "").trim();
+
+      if (question.required && !value) {
+        setError(`${question.label} is required.`);
+
+        return;
+      }
+    }
+
+    setSaving(true);
+    setError(null);
+
+    const result = await submitPublicEnrollmentAnswers(props.id, {
+      code: props.code || undefined,
+      serial: serial().trim(),
+      name: name().trim() || undefined,
+      assetTag: assetTag().trim() || undefined,
+      answers: answers(),
+    });
+
+    setSaving(false);
+
+    if (!result.ok) {
+      setError(result.message);
+
+      return;
+    }
+
+    props.onSaved();
+  };
+
+  return (
+    <form class="space-y-4" onSubmit={(event) => void submit(event)}>
+      <div class="space-y-1">
+        <h2 class="text-sm font-semibold text-stone-900">Device details</h2>
+        <p class="text-xs text-muted-foreground">
+          Your administrator asks for these details before enrollment. They are applied when this
+          device checks in.
+        </p>
+      </div>
+      <div class="space-y-1.5">
+        <Label for="enrollment-serial" class="text-sm text-stone-700">
+          Serial number
+        </Label>
+        <Input
+          id="enrollment-serial"
+          autocomplete="off"
+          required
+          value={serial()}
+          onInput={(event) => setSerial(event.currentTarget.value)}
+        />
+      </div>
+      <Show when={props.enrollment.assetTag}>
+        <div class="space-y-1.5">
+          <Label for="enrollment-name" class="text-sm text-stone-700">
+            Device name <span class="font-normal text-muted-foreground">(optional)</span>
+          </Label>
+          <Input
+            id="enrollment-name"
+            autocomplete="off"
+            value={name()}
+            onInput={(event) => setName(event.currentTarget.value)}
+          />
+        </div>
+        <div class="space-y-1.5">
+          <Label for="enrollment-asset-tag" class="text-sm text-stone-700">
+            Asset tag <span class="font-normal text-muted-foreground">(optional)</span>
+          </Label>
+          <Input
+            id="enrollment-asset-tag"
+            autocomplete="off"
+            value={assetTag()}
+            onInput={(event) => setAssetTag(event.currentTarget.value)}
+          />
+        </div>
+      </Show>
+      <For each={questions()}>
+        {(question) => (
+          <div class="space-y-1.5">
+            <Label for={`enrollment-question-${question.key}`} class="text-sm text-stone-700">
+              {question.label}
+              <Show when={question.required}>
+                <span class="ml-1 text-red-600" aria-hidden="true">
+                  *
+                </span>
+              </Show>
+            </Label>
+            <Show
+              when={question.type === "select" || question.type === "boolean"}
+              fallback={
+                <Input
+                  id={`enrollment-question-${question.key}`}
+                  type={attributeInputType(question.type)}
+                  required={question.required}
+                  value={answers()[question.key] ?? ""}
+                  onInput={(event) => setAnswer(question.key, event.currentTarget.value)}
+                />
+              }
+            >
+              <select
+                id={`enrollment-question-${question.key}`}
+                required={question.required}
+                class="h-10 w-full rounded-lg border border-input bg-transparent px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                value={answers()[question.key] ?? ""}
+                onChange={(event) => setAnswer(question.key, event.currentTarget.value)}
+              >
+                <option value="">Choose…</option>
+                <For
+                  each={question.type === "boolean" ? ["true", "false"] : (question.options ?? [])}
+                >
+                  {(option) => (
+                    <option value={option}>{attributeOptionLabel(question.type, option)}</option>
+                  )}
+                </For>
+              </select>
+            </Show>
+          </div>
+        )}
+      </For>
+      <Show when={error()}>
+        <p role="alert" class="text-sm text-red-600">
+          {error()}
+        </p>
+      </Show>
+      <Button type="submit" class="w-full" disabled={saving()}>
+        {saving() ? "Saving…" : "Continue to enrollment"}
+      </Button>
+    </form>
+  );
+}
 
 const isAvailable = (value: PlatformEnrollment | WindowsEnrollment | AndroidEnrollment) =>
   value === "available" ||

@@ -11,6 +11,7 @@ import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -49,6 +50,59 @@ export default function EnrollmentSettingsPage() {
     queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
     queryFn: () => enterprise.listDevicePreRegistrations(params.tenantId),
   }));
+
+  const attributeDefinitions = useQuery(() => ({
+    queryKey: enterpriseKeys.attributes(params.tenantId),
+    queryFn: () => enterprise.listAttributes(params.tenantId),
+  }));
+
+  const enrollmentQuestions = useQuery(() => ({
+    queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
+    queryFn: () => enterprise.listEnrollmentQuestions(params.tenantId),
+  }));
+
+  const [questionRows, setQuestionRows] = createSignal<
+    Array<{ key: string; prompt: string; required: boolean | null }>
+  >([]);
+
+  createEffect(
+    () => enrollmentQuestions.data,
+    (data) => {
+      if (!data) return;
+
+      setQuestionRows(
+        data.rows.map((row) => ({
+          key: row.key,
+          prompt: row.label,
+          required: row.required,
+        })),
+      );
+    },
+  );
+
+  const saveQuestions = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchEnrollmentQuestions(params.tenantId, {
+        questions: questionRows().map((row, index) => ({
+          key: row.key,
+          prompt: row.prompt || null,
+          required: row.required,
+          sortOrder: index,
+        })),
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
+      });
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
+      toast.success("Enrollment questions saved");
+    },
+  }));
+
+  const addableQuestions = () =>
+    (attributeDefinitions.data?.rows ?? []).filter(
+      (definition) => !questionRows().some((row) => row.key === definition.key),
+    );
 
   const [edit, setEdit] = createSignal(false);
   const [code, setCode] = createSignal("");
@@ -403,6 +457,25 @@ export default function EnrollmentSettingsPage() {
                   : "Never"}
               </dd>
             </div>
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">Rotation</dt>
+              <dd class="mt-0.5 text-foreground">
+                {scepCa.data?.rotationDue
+                  ? "Due now"
+                  : scepCa.data?.rotationDueAt
+                    ? `Automatic from ${new Date(scepCa.data.rotationDueAt).toLocaleDateString()}`
+                    : "Not scheduled"}
+              </dd>
+            </div>
+            <div class="min-w-0">
+              <dt class="text-muted-foreground">Predecessor CAs still trusted</dt>
+              <dd class="mt-0.5 text-foreground">
+                {scepCa.data?.retiring?.length ?? 0}
+                {scepCa.data?.untrustedIdentities
+                  ? ` · ${scepCa.data.untrustedIdentities} identities untrusted`
+                  : ""}
+              </dd>
+            </div>
           </dl>
         </Show>
 
@@ -537,6 +610,143 @@ export default function EnrollmentSettingsPage() {
 
       <Panel
         class="xl:col-span-2"
+        title="Enrollment questions"
+        description="Ask for device attributes while someone enrolls. Answers are validated and written to the device when it first checks in."
+        actions={
+          <Show when={writable() && questionRows().length > 0}>
+            <Button
+              size="sm"
+              disabled={saveQuestions.isPending}
+              onClick={() => saveQuestions.mutate()}
+            >
+              {saveQuestions.isPending ? "Saving…" : "Save questions"}
+            </Button>
+          </Show>
+        }
+        flush
+      >
+        <div class="space-y-3 px-4 py-4 sm:px-5">
+          <Show
+            when={questionRows().length > 0}
+            fallback={
+              <p class="text-[13px] text-muted-foreground">
+                {attributeDefinitions.isPending
+                  ? "Loading attributes…"
+                  : "No custom questions. Add a registered attribute to ask for it during enrollment."}
+              </p>
+            }
+          >
+            <ul class="divide-y divide-border rounded-lg border border-border">
+              <For each={questionRows()}>
+                {(row, index) => (
+                  <li class="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
+                    <div class="min-w-0">
+                      <p class="font-mono text-[11px] text-muted-foreground">{row.key}</p>
+                      <Input
+                        class="mt-1 h-8 text-[12.5px]"
+                        disabled={!writable()}
+                        value={row.prompt}
+                        placeholder="Question shown at enrollment"
+                        onInput={(event) =>
+                          setQuestionRows(
+                            questionRows().map((candidate, position) =>
+                              position === index()
+                                ? { ...candidate, prompt: event.currentTarget.value }
+                                : candidate,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <label class="flex items-center gap-2 text-[12px]">
+                      <input
+                        type="checkbox"
+                        disabled={!writable()}
+                        checked={row.required === true}
+                        onChange={(event) =>
+                          setQuestionRows(
+                            questionRows().map((candidate, position) =>
+                              position === index()
+                                ? { ...candidate, required: event.currentTarget.checked }
+                                : candidate,
+                            ),
+                          )
+                        }
+                      />
+                      Required
+                    </label>
+                    <Show when={writable()}>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        class="justify-self-start text-destructive hover:bg-destructive/10 sm:justify-self-end"
+                        onClick={() =>
+                          setQuestionRows(
+                            questionRows().filter((_, position) => position !== index()),
+                          )
+                        }
+                      >
+                        Remove
+                      </Button>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+
+          <Show when={writable() && addableQuestions().length > 0}>
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                class="h-8 min-w-48 rounded-lg border border-input bg-transparent px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                aria-label="Add an enrollment question"
+                value=""
+                onChange={(event) => {
+                  const key = event.currentTarget.value;
+
+                  if (!key) return;
+
+                  const definition = (attributeDefinitions.data?.rows ?? []).find(
+                    (candidate) => candidate.key === key,
+                  );
+
+                  if (!definition) return;
+                  setQuestionRows([
+                    ...questionRows(),
+                    {
+                      key,
+                      prompt: definition.label,
+                      required: definition.required,
+                    },
+                  ]);
+                  event.currentTarget.value = "";
+                }}
+              >
+                <option value="">Add attribute…</option>
+                <For each={addableQuestions()}>
+                  {(definition) => (
+                    <option value={definition.key}>
+                      {definition.label} ({definition.key})
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Button
+                as="a"
+                variant="outline"
+                size="sm"
+                href={`/t/${params.tenantId}/settings/attributes`}
+              >
+                Manage attributes
+              </Button>
+            </div>
+          </Show>
+          <ErrorText error={saveQuestions.error} />
+        </div>
+      </Panel>
+
+      <Panel
+        class="xl:col-span-2"
         title="Pre-registered devices"
         description="Devices imported by serial before enrollment. Name, asset tag, notes and group are applied automatically when the device checks in."
         actions={
@@ -648,9 +858,8 @@ export default function EnrollmentSettingsPage() {
         open={confirmRotateCa()}
         onOpenChange={setConfirmRotateCa}
         title="Rotate the tenant SCEP CA?"
-        description="Every identity certificate issued by the current CA stops working for renewal and check-in, and every managed Apple device must enroll again. Other tenants are not affected."
+        description="A new CA starts signing new and renewed identities. The previous CA stays a trust anchor until it expires, so enrolled devices keep checking in and renew without enrolling again. Other tenants are not affected."
         confirmLabel="Rotate CA"
-        destructive
         pending={rotateCa.isPending}
         onConfirm={() => rotateCa.mutate()}
       />

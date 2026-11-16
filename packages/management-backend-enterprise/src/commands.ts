@@ -29,6 +29,10 @@ const BUDGETS = new Map<string, number>([
   ["SetRecoveryLock", 30 * MINUTE],
   ["Settings", 30 * MINUTE],
   ["VerifyRecoveryLock", HOUR],
+  // ADE setup: the device is sitting in Setup Assistant, so these are bounded
+  // to one setup window rather than a fleet-policy budget.
+  ["AccountConfiguration", 24 * HOUR],
+  ["DeviceConfigured", 24 * HOUR],
   // Installs: an app download is allowed a day to complete.
   ["InstallApplication", 24 * HOUR],
   ["InstallEnterpriseApplication", 24 * HOUR],

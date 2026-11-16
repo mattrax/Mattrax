@@ -5,6 +5,7 @@ import {
   gotoHydrated,
   installVirtualAuthenticator,
   uniqueEmail,
+  verificationCode,
 } from "./helpers";
 
 const primaryNav = (page: import("@playwright/test").Page) =>
@@ -60,23 +61,22 @@ test.describe("top navigation", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
-  test("keeps unverified accounts out of the dashboard", async ({ page }) => {
+  test("refuses tenant work until the email code is verified", async ({ page }) => {
+    const email = uniqueEmail("unverified");
+
     await installVirtualAuthenticator(page);
     await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#name").fill("Unverified User");
-    await page.locator("#email").fill(uniqueEmail("unverified"));
-    await page.getByRole("button", { name: /create account with a passkey/i }).click();
+    await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page.locator("#verification-code")).toBeVisible({ timeout: 20_000 });
 
-    // The API refuses tenant work until the address is verified.
-    const blocked = await page.evaluate(async () => {
-      const response = await fetch("/api/v1/tenants", { method: "GET" });
+    // The account does not exist until the address is proven, so there is no
+    // session to do tenant work with.
+    const blocked = await page.evaluate(async () => (await fetch("/api/v1/tenants")).status);
 
-      return response.status;
-    });
-
-    expect(blocked).toBe(403);
+    expect(blocked).toBe(401);
 
     const blockedCreate = await page.evaluate(async () => {
       const response = await fetch("/api/v1/tenants", {
@@ -88,11 +88,28 @@ test.describe("top navigation", () => {
       return response.status;
     });
 
-    expect(blockedCreate).toBe(403);
+    expect(blockedCreate).toBe(401);
 
-    await gotoHydrated(page, "/dashboard");
-    await expect(page).toHaveURL(/\/verify-email/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: "Verify your email" })).toBeVisible();
+    const code = await verificationCode(page, email);
+
+    const registration = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/completePasskeyRegistration"),
+    );
+
+    await page.locator("#verification-code").fill(code);
+    await page.getByRole("button", { name: /verify and create passkey/i }).click();
+    expect((await registration).ok()).toBe(true);
+    await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
+
+    // Proving the address is what unlocks the account: the created session is
+    // already verified.
+    const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
+    expect(me.user.emailVerified).toBe(true);
+
+    const allowed = await page.evaluate(async () => (await fetch("/api/v1/tenants")).status);
+    expect(allowed).toBe(200);
   });
 
   test("opens the tenant switcher from an unscoped page", async ({ page }) => {

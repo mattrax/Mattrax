@@ -1,5 +1,9 @@
 import { Context, type Effect } from "effect";
 
+/* oxlint-disable-next-line typescript/no-explicit-any -- The resolved session,
+ * API token and step-up values are produced by the `@yielded/auth` service
+ * class, whose type mentions internal strategy lambdas and cannot be named.
+ * Callers narrow these through the schemas in the API contract. */
 type Dynamic = any;
 
 type HeadersRecord = Record<string, string | string[] | undefined>;

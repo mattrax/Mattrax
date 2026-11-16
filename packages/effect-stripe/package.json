@@ -10,6 +10,6 @@
   "dependencies": {
     "@mattrax/net": "workspace:*",
     "effect": "catalog:",
-    "stripe": "^23.1.0"
+    "stripe": "catalog:"
   }
 }

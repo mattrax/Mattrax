@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useTenantParam } from "~/lib/route-params";
+import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createMemo, For, Show } from "solid-js";
@@ -16,6 +17,7 @@ import {
   type DashboardWidget,
 } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
+import { routes } from "~/lib/routes";
 
 const previewWidgets = (): DashboardWidget[] =>
   defaultOverviewWidgets().map((widget, index) => ({
@@ -109,7 +111,7 @@ function OverviewHeader(props: {
             {(id) => (
               <Button
                 as="a"
-                href={`/t/${props.tenantId}/dashboards/${id()}`}
+                href={routes.tenant(props.tenantId).dashboard(id())}
                 size="sm"
                 variant="outline"
               >
@@ -117,7 +119,12 @@ function OverviewHeader(props: {
               </Button>
             )}
           </Show>
-          <Button as="a" href={`/t/${props.tenantId}/dashboards`} size="sm" variant="ghost">
+          <Button
+            as="a"
+            href={routes.tenant(props.tenantId).dashboards()}
+            size="sm"
+            variant="ghost"
+          >
             All dashboards
           </Button>
           <Show when={can("dashboards.write")}>
@@ -184,7 +191,7 @@ function LoadedOverview(props: {
             <Show when={can("dashboards.write")}>
               <Button
                 as="a"
-                href={`/t/${props.tenantId}/dashboards/${props.summary.id}?edit=1`}
+                href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
                 size="sm"
                 class="mt-3"
               >
@@ -236,19 +243,21 @@ function PreviewOverview(props: {
 }
 
 export default function TenantOverviewPage() {
-  const params = useParams();
+  const tenant = useTenantParam();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const tenantId = () => params.tenantId!;
+  const tenantId = () => tenant()!;
   const dashboards = useQuery(() => enterpriseQueries.dashboards(tenantId()));
 
   const create = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: () =>
       enterprise.createDashboard(tenantId(), { name: "Overview", template: "overview" }),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(tenantId()) });
-      navigate(`/t/${tenantId()}/dashboards/${result.id}?edit=1`);
+    onSuccess: (result) => {
+      // Navigate before the refresh settles: awaiting the invalidation keeps
+      // the mutation pending and the route never changes.
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(tenantId()) });
+      navigate(routes.tenant(tenantId()).dashboard(result.id, { edit: "1" }));
     },
   }));
 

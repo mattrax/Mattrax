@@ -1,6 +1,6 @@
 import { Meta, Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { createEffect, createMemo, createSignal, onSettled, Show } from "solid-js";
 import type { InvitationPreviewResponse } from "@mattrax/enterprise-domain/client";
 import { ErrorText } from "~/components/mdm/common";
@@ -10,6 +10,7 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
 import { queryClient } from "~/lib/query-client";
+import { rememberTenantAlias } from "~/lib/tenant";
 
 type AcceptResult = { tenantId: string; alreadyMember: boolean };
 
@@ -224,9 +225,18 @@ export default function AcceptInvitationPage() {
 
       setJoined(result);
       clearMeCache();
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.tenants() });
-      navigate(`/t/${result.tenantId}/devices`, { replace: true });
+
+      // Land on the canonical slug. The membership list knows it now, and an
+      // id URL would only be rewritten a moment later (churning the tenant
+      // route's query keys for nothing).
+      const me = await enterprise.me().catch(() => undefined);
+      const tenant = me?.tenants.find((entry) => entry.id === result.tenantId);
+
+      if (tenant?.slug) rememberTenantAlias(tenant.slug, result.tenantId);
+
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.tenants() });
+      navigate(`/t/${tenant?.slug ?? result.tenantId}/devices`, { replace: true });
     } catch (cause) {
       const tag = errorTag(raisedFailure(cause));
 

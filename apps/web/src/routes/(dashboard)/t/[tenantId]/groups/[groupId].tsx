@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { GroupNode } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";

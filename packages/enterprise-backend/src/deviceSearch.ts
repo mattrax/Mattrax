@@ -10,6 +10,7 @@ import {
   type DeviceSearchSort,
   type SortDirection,
 } from "@mattrax/enterprise-domain";
+import { decodeAttributeFilter } from "./attributes.ts";
 
 type DeviceStatusValue = typeof DeviceStatus.Type;
 
@@ -39,6 +40,10 @@ export type DeviceSearchFilters = {
   readonly health?: DeviceHealthFilter;
   /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
   readonly push?: DevicePushFilter;
+  /** ADE setup state, from `device_apple.awaiting_configuration`. */
+  readonly setup?: "awaiting" | "complete";
+  /** Exact attribute filters keyed by registered attribute key. */
+  readonly attributes?: Readonly<Record<string, string>>;
   /** Structured device query from a shareable table URL. */
   readonly query?: DeviceQuery;
   readonly limit: number;
@@ -106,6 +111,16 @@ export const normalizeDeviceSearchQuery = (
     if (problem) throw new EnterpriseBadRequest({ message: problem });
   }
 
+  let attributes: Record<string, string> | undefined;
+
+  try {
+    attributes = decodeAttributeFilter(query.attributes);
+  } catch (cause) {
+    throw new EnterpriseBadRequest({
+      message: cause instanceof Error ? cause.message : "Invalid attribute filter",
+    });
+  }
+
   const filters: DeviceSearchFilters = {
     q: optionalText(query.q),
     status: query.status,
@@ -114,6 +129,8 @@ export const normalizeDeviceSearchQuery = (
     notSeenBefore,
     health: query.health,
     push: query.push,
+    setup: query.setup,
+    attributes: attributes && Object.keys(attributes).length ? attributes : undefined,
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),
     sort: query.sort ?? "name",

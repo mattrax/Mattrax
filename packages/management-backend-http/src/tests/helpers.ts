@@ -31,6 +31,7 @@ export function mockManagementBackend(
     ManagementBackend,
     ManagementBackend.of({
       getAppleBootstrapToken: () => Effect.succeed(null),
+      appleReturnToServiceConfiguration: () => Effect.succeed({ enabled: false }),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
         overrides?.appleManagementCheckin ?? (() => Effect.succeed(IdleManifest)),
@@ -56,21 +57,13 @@ export function mockManagementBackend(
       getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
       getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
-      windowsDiscovery:
-        overrides?.windowsDiscovery ??
-        (() => unsupportedWindowsOperation()),
+      windowsDiscovery: overrides?.windowsDiscovery ?? (() => unsupportedWindowsOperation()),
       getWindowsEnrollmentPolicy:
-        overrides?.getWindowsEnrollmentPolicy ??
-        (() => unsupportedWindowsOperation()),
-      windowsEnroll:
-        overrides?.windowsEnroll ??
-        (() => unsupportedWindowsOperation()),
+        overrides?.getWindowsEnrollmentPolicy ?? (() => unsupportedWindowsOperation()),
+      windowsEnroll: overrides?.windowsEnroll ?? (() => unsupportedWindowsOperation()),
       windowsManagementCheckin:
-        overrides?.windowsManagementCheckin ??
-        (() => unsupportedWindowsOperation()),
-      windowsDeviceEvent:
-        overrides?.windowsDeviceEvent ??
-        (() => unsupportedWindowsOperation()),
+        overrides?.windowsManagementCheckin ?? (() => unsupportedWindowsOperation()),
+      windowsDeviceEvent: overrides?.windowsDeviceEvent ?? (() => unsupportedWindowsOperation()),
     }),
   );
 }

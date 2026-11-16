@@ -7,13 +7,11 @@ import { merge, omit } from "solid-js";
  * views. The generated UI components still use the 1.x names, so keep the
  * shape while delegating to the runtime primitives.
  */
-export function mergeProps<T extends Record<string, any>[]>(
-  ...sources: T
-): ReturnType<typeof merge<T>> {
+export function mergeProps<T extends object[]>(...sources: T): ReturnType<typeof merge<T>> {
   return merge(...sources);
 }
 
-export function splitProps<T extends Record<string, any>, K extends keyof T>(
+export function splitProps<T extends object, K extends keyof T>(
   props: T,
   keys: readonly K[],
 ): [Pick<T, K>, Omit<T, K>] {

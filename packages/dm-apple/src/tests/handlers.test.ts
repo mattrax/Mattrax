@@ -8,6 +8,7 @@ import {
   CheckinScope,
   ManagementBackend,
   ManagementManifest,
+  UnknownDevice,
 } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
 import { mockManagementBackend } from "./helpers.js";
@@ -163,6 +164,238 @@ describe("Apple MDM handlers", () => {
       );
 
       expect(response.status).toBe(200);
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - UserAuthenticate", () => {
+    it("returns an empty DigestChallenge for a managed user", async () => {
+      let scope: CheckinScope | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (received: CheckinScope) =>
+          Effect.sync(() => {
+            scope = received;
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>UserAuthenticate</string>
+  <key>UDID</key><string>udid-user-001</string>
+  <key>UserID</key><string>user-001</string>
+  <key>UserShortName</key><string>oscar</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("<key>DigestChallenge</key><string></string>");
+      const received = expectScope(scope);
+
+      expect(received._tag).toBe("user");
+      expect(received).toMatchObject({
+        udid: "udid-user-001",
+        userId: "user-001",
+        source: "user-channel",
+      });
+    });
+
+    it("returns 410 when the user cannot be bound to the device", async () => {
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () => Effect.fail(new UnknownDevice()),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>UserAuthenticate</string>
+  <key>UDID</key><string>udid-user-002</string>
+  <key>UserID</key><string>user-002</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(410);
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - GetToken", () => {
+    it("rejects a token service it does not implement", async () => {
+      const backend = mockManagementBackend();
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>GetToken</string>
+  <key>TokenServiceType</key><string>com.apple.maid</string>
+  <key>UDID</key><string>udid-token-service</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - user channel", () => {
+    it("attributes a TokenUpdate with UserID to the user scope", async () => {
+      let scope: CheckinScope | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (received: CheckinScope) =>
+          Effect.sync(() => {
+            scope = received;
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>TokenUpdate</string>
+  <key>Topic</key><string>${TEST_CONFIG.topic}</string>
+  <key>UDID</key><string>udid-user-token</string>
+  <key>UserID</key><string>user-token-1</string>
+  <key>PushMagic</key><string>magic-user</string>
+  <key>Token</key><data>dG9rZW4=</data>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const received = expectScope(scope);
+
+      expect(received._tag).toBe("user");
+      expect(received).toMatchObject({
+        userId: "user-token-1",
+        source: "user-channel",
+      });
+    });
+
+    it("accepts an Apple User Enrollment token update without a UDID", async () => {
+      let scope: CheckinScope | undefined;
+      let event: AppleDeviceEvent | undefined;
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (received: CheckinScope, receivedEvent: AppleDeviceEvent) =>
+          Effect.sync(() => {
+            scope = received;
+            event = receivedEvent;
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>TokenUpdate</string>
+  <key>Topic</key><string>${TEST_CONFIG.topic}</string>
+  <key>EnrollmentID</key><string>enrollment-byod-1</string>
+  <key>EnrollmentUserID</key><string>byod-user-1</string>
+  <key>PushMagic</key><string>magic-byod</string>
+  <key>Token</key><data>dG9rZW4=</data>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const received = expectScope(scope);
+
+      expect(received._tag).toBe("user");
+      expect(received).toMatchObject({
+        udid: "enrollment-byod-1",
+        enrollmentId: "enrollment-byod-1",
+        userId: "byod-user-1",
+        source: "user-enrollment",
+      });
+      expect(event && "_tag" in event ? event._tag : null).toBe("TokenUpdate");
+    });
+
+    it("polls the user channel for the user's own commands", async () => {
+      let scope: CheckinScope | undefined;
+
+      const backend = mockManagementBackend({
+        appleManagementCheckin: (received: CheckinScope) =>
+          Effect.sync(() => {
+            scope = received;
+
+            return ManagementManifest.members[0].make({});
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-user-poll</string>
+  <key>UserID</key><string>user-poll-1</string>
+  <key>Status</key><string>Idle</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const received = expectScope(scope);
+
+      expect(received._tag).toBe("user");
+      expect(received).toMatchObject({ userId: "user-poll-1" });
     });
   });
 
@@ -440,8 +673,7 @@ describe("Apple MDM handlers", () => {
 
     it("returns an empty plist when idle", async () => {
       const backend = mockManagementBackend({
-        appleManagementCheckin: () =>
-          Effect.succeed(ManagementManifest.members[0].make({})),
+        appleManagementCheckin: () => Effect.succeed(ManagementManifest.members[0].make({})),
       });
 
       const handler = await makeMdmHandler(backend);
@@ -465,6 +697,112 @@ describe("Apple MDM handlers", () => {
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("<dict></dict>");
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - ReturnToService command payload", () => {
+    it("turns base64 nested Return to Service values into plist data", async () => {
+      const backend = mockManagementBackend({
+        appleManagementCheckin: () =>
+          Effect.succeed(
+            ManagementManifest.members[1]!.make({
+              commandUUID: "cmd-rts",
+              requestType: "EraseDevice",
+              payload: {
+                ReturnToService: {
+                  Enabled: true,
+                  WiFiProfileData: "AQID",
+                  BootstrapToken: "BAUG",
+                },
+              },
+            }),
+          ),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-rts-cmd-001</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      const body = await response.text();
+      expect(body).toContain("<string>EraseDevice</string>");
+      expect(body).toContain("<key>WiFiProfileData</key><data>AQID</data>");
+      expect(body).toContain("<key>BootstrapToken</key><data>BAUG</data>");
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - ReturnToService", () => {
+    const request = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>ReturnToService</string>
+  <key>UDID</key><string>udid-rts-001</string>
+</dict>
+</plist>`;
+
+    it("returns the Wi-Fi profile and bootstrap token as data", async () => {
+      const backend = mockManagementBackend({
+        appleReturnToServiceConfiguration: () =>
+          Effect.succeed({
+            enabled: true,
+            wifiProfileData: new Uint8Array([1, 2, 3]),
+            bootstrapToken: new Uint8Array([4, 5, 6]),
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: request,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("<key>ReturnToService</key>");
+      expect(body).toContain("<key>Enabled</key><true/>");
+      expect(body).toContain("<key>WiFiProfileData</key><data>AQID</data>");
+      expect(body).toContain("<key>BootstrapToken</key><data>BAUG</data>");
+    });
+
+    it("answers Enabled=false when the device cannot return to service", async () => {
+      const backend = mockManagementBackend({
+        appleReturnToServiceConfiguration: () =>
+          Effect.succeed({ enabled: false, reason: "No Wi-Fi profile" }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: request,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain("<key>ReturnToService</key>");
+      expect(body).toContain("<key>Enabled</key><false/>");
+      expect(body).not.toContain("WiFiProfileData");
     });
   });
 });

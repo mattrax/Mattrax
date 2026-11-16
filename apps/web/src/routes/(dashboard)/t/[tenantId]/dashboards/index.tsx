@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import {
@@ -19,6 +20,7 @@ import { LayoutDashboard, Plus, Star } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
 import { useCan } from "~/lib/permissions";
+import { routes } from "~/lib/routes";
 
 export default function DashboardsPage() {
   const params = useParams();
@@ -49,7 +51,7 @@ export default function DashboardsPage() {
       setName("");
       setError(null);
       await invalidate();
-      navigate(`/t/${params.tenantId}/dashboards/${result.id}?edit=1`);
+      navigate(routes.tenant(params.tenantId).dashboard(result.id, { edit: "1" }));
     },
     onError: (cause) => setError(errorMessage(cause, "Could not create the dashboard. Try again.")),
   }));
@@ -91,7 +93,9 @@ export default function DashboardsPage() {
             </span>
           </Show>
         }
-        actions={<LinkButton href={`/t/${params.tenantId}`}>Open Overview</LinkButton>}
+        actions={
+          <LinkButton href={routes.tenant(params.tenantId).overview()}>Open Overview</LinkButton>
+        }
       />
 
       <QueryError error={dashboards.error} onRetry={() => void dashboards.refetch()} />
@@ -154,7 +158,7 @@ export default function DashboardsPage() {
               <article class="group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 transition-colors hover:border-input">
                 <div class="flex items-start justify-between gap-2">
                   <a
-                    href={`/t/${params.tenantId}/dashboards/${dashboard.id}`}
+                    href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
                     class="min-w-0 flex-1"
                   >
                     <h2 class="truncate text-[13.5px] font-medium text-foreground group-hover:underline">
@@ -183,7 +187,7 @@ export default function DashboardsPage() {
                 <div class="mt-4 flex flex-wrap gap-2">
                   <Button
                     as="a"
-                    href={`/t/${params.tenantId}/dashboards/${dashboard.id}`}
+                    href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
                     size="xs"
                     variant="outline"
                   >
@@ -192,7 +196,7 @@ export default function DashboardsPage() {
                   <Show when={writable()}>
                     <Button
                       as="a"
-                      href={`/t/${params.tenantId}/dashboards/${dashboard.id}?edit=1`}
+                      href={routes.tenant(params.tenantId).dashboard(dashboard.id, { edit: "1" })}
                       size="xs"
                       variant="ghost"
                     >

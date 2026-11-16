@@ -124,12 +124,10 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(profile.PayloadContent.length, 2);
 
       const scep = profile.PayloadContent.find(
-        (payload: any) => payload.PayloadType === "com.apple.security.scep",
+        (payload) => payload.PayloadType === "com.apple.security.scep",
       );
 
-      const mdm = profile.PayloadContent.find(
-        (payload: any) => payload.PayloadType === "com.apple.mdm",
-      );
+      const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm");
 
       assert.ok(scep && mdm);
       assert.equal(scep.PayloadContent.Challenge, "challenge-compliance");
@@ -143,7 +141,13 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.ok(
         mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.bootstraptoken"),
       );
-      assert.ok(mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.token"));
+      assert.ok(
+        mdm.ServerCapabilities.some(
+          (capability) => capability === "com.apple.mdm.per-user-connections",
+        ),
+      );
+      // GetToken is not implemented; the capability must not be advertised.
+      assert.ok(mdm.ServerCapabilities.every((capability) => capability !== "com.apple.mdm.token"));
     },
   ),
   check(
@@ -706,30 +710,83 @@ export const appleChecks: ReadonlyArray<Check> = [
     },
   ),
   check(
-    "errors.user-authenticate",
-    "errors",
-    "UserAuthenticate is refused with 410",
-    "The user channel must not be issued an MDM identity through the device endpoint.",
+    "checkin.user-authenticate",
+    "check-in",
+    "UserAuthenticate opens a user channel without a password",
+    "macOS asks for a DigestChallenge before a user-channel session. Mattrax answers with an empty challenge (no AuthToken required), which tells the client to continue without a password.",
     async () => {
       const harness = createAppleHarness();
 
       const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid }),
+        await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid, UserID: "user-1" }),
+      );
+
+      assert.equal(response.status, 200);
+      const plist = readPlist(await applePlistResponse(response));
+      assert.equal(plist.DigestChallenge, "");
+      assert.equal(plist.AuthToken, undefined);
+
+      const recorded = harness.state.events[0]!;
+      assert.equal(recorded.scope._tag, "user");
+      assert.equal(
+        Predicate.isTagged(recorded.scope, "user") ? recorded.scope.userId : null,
+        "user-1",
+      );
+      assert.equal(recorded.event._tag, "UserAuthenticate");
+    },
+  ),
+  check(
+    "checkin.user-authenticate-unmanaged",
+    "errors",
+    "UserAuthenticate refuses a user the device cannot bind",
+    "A backend that cannot map the user to the authenticated device must produce Apple's 410 so the client stops managing that user.",
+    async () => {
+      const harness = createAppleHarness({ unmanagedUser: true });
+
+      const response = await harness.handler(
+        await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid, UserID: "user-1" }),
       );
 
       assert.equal(response.status, 410);
     },
   ),
   check(
-    "errors.get-token",
-    "errors",
-    "Legacy GetToken is rejected",
-    "GetToken is not supported and must return HTTP 400.",
+    "checkin.user-authenticate-digest",
+    "check-in",
+    "An unsolicited digest is rejected without a challenge",
+    "Mattrax never asks for a password, so a DigestResponse can never be verified. Apple requires an empty AuthToken rather than an error.",
     async () => {
       const harness = createAppleHarness();
 
       const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "GetToken", UDID: udid }),
+        await appleMdmRequest({
+          MessageType: "UserAuthenticate",
+          UDID: udid,
+          UserID: "user-1",
+          DigestResponse: "digest",
+        }),
+      );
+
+      assert.equal(response.status, 200);
+      const plist = readPlist(await applePlistResponse(response));
+      assert.equal(plist.AuthToken, "");
+      assert.equal(harness.state.events.length, 0);
+    },
+  ),
+  check(
+    "errors.get-token",
+    "errors",
+    "Unsupported GetToken service types are rejected",
+    "GetToken serves Managed Apple Account and watch-pairing tokens, which Mattrax does not issue. Apple requires HTTP 400 for a service type the server does not recognise.",
+    async () => {
+      const harness = createAppleHarness();
+
+      const response = await harness.handler(
+        await appleMdmRequest({
+          MessageType: "GetToken",
+          UDID: udid,
+          TokenServiceType: "com.apple.maid",
+        }),
       );
 
       assert.equal(response.status, 400);

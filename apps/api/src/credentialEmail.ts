@@ -37,7 +37,11 @@ const thresholdLabel = (
 
 const credentialLine = (
   label: string,
-  credential: CredentialExpiryNotification["health"]["apns"],
+  credential: {
+    readonly configured: boolean;
+    readonly expiresAt?: string | null;
+    readonly daysLeft?: number | null;
+  },
 ) => {
   if (!credential.configured) return `${label}: not configured`;
   const daysLeft = credential.daysLeft;
@@ -85,8 +89,8 @@ export const credentialExpiryEmail = (
     "Renew or replace the affected credentials in Settings → Management:",
     managementUrl,
     "",
-    "APNs: upload a renewed push certificate under Settings → Management. Once it expires, devices stop receiving push commands and fall back to polling for changes.",
-    "SCEP: rotate the CA before it expires. When it has expired, new device identities cannot be issued and existing devices cannot renew.",
+    "APNs: renew the push certificate with the same Apple Account at https://identity.apple.com/pushcert/ — choose Renew, not Create, so enrolled devices keep their push tokens. Then upload the renewed certificate under Settings → Management. Once it expires, devices stop receiving push commands and fall back to polling for changes.",
+    "SCEP: rotate the CA before it expires. Mattrax rotates automatically ahead of expiry and keeps the previous CA trusted for identities it issued, so devices keep checking in and renew during the overlap instead of re-enrolling. An alert here means automatic rotation has not happened yet.",
     "",
     `If you need help, reply to this email or contact ${supportEmail}.`,
     "",
@@ -103,8 +107,8 @@ export const credentialExpiryEmail = (
     "</ul>",
     "<p>Renew or replace the affected credentials in <strong>Settings → Management</strong>:</p>",
     `<p><a href="${escapeHtml(managementUrl)}">${escapeHtml(managementUrl)}</a></p>`,
-    "<p><strong>APNs:</strong> upload a renewed push certificate under Settings → Management. Once it expires, devices stop receiving push commands and fall back to polling for changes.</p>",
-    "<p><strong>SCEP:</strong> rotate the CA before it expires. When it has expired, new device identities cannot be issued and existing devices cannot renew.</p>",
+    '<p><strong>APNs:</strong> renew the push certificate with the same Apple Account at <a href="https://identity.apple.com/pushcert/">identity.apple.com/pushcert</a> — choose <strong>Renew</strong>, not Create, so enrolled devices keep their push tokens. Then upload the renewed certificate under Settings → Management. Once it expires, devices stop receiving push commands and fall back to polling for changes.</p>',
+    "<p><strong>SCEP:</strong> rotate the CA before it expires. Mattrax rotates automatically ahead of expiry and keeps the previous CA trusted for identities it issued, so devices keep checking in and renew during the overlap instead of re-enrolling. An alert here means automatic rotation has not happened yet.</p>",
     `<p>If you need help, reply to this email or contact <a href="mailto:${escapeHtml(
       supportEmail,
     )}">${escapeHtml(supportEmail)}</a>.</p>`,

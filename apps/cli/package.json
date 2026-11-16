@@ -17,11 +17,11 @@
     "@effect/platform-node": "catalog:",
     "@mattrax/enterprise-domain": "workspace:*",
     "effect": "catalog:",
-    "yaml": "^2.8.3"
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "^4.23.15",
+    "tsx": "catalog:",
     "typescript": "catalog:"
   },
   "engines": {

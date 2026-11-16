@@ -66,6 +66,9 @@ export const createScepHarness = async (
           return candidate;
         }),
       replaceCa: (_scope, candidate) => Effect.succeed(candidate),
+      rotateCa: (_scope, candidate) => Effect.succeed(candidate),
+      trustedCaCertificates: () => Effect.succeed([ca.certPem]),
+      listRetiredCa: () => Effect.succeed([]),
       authenticatePkcsReq: (_scope, request) => state.authenticate(request),
       recordIssuedCertificate: (certificate) =>
         Effect.sync(() => {

@@ -1,4 +1,5 @@
 import { useParams } from "@solidjs/router";
+import { routes } from "~/lib/routes";
 import { useQuery } from "@tanstack/solid-query";
 import {
   BUILT_IN_ROLE_LABELS,
@@ -192,6 +193,8 @@ export function tenantSectionPermission(section: string): Permission | undefined
       return "policies.read";
     case "applications":
       return "applications.read";
+    case "scripts":
+      return "scripts.read";
     case "settings":
       return "tenant.read";
     default:
@@ -239,6 +242,7 @@ const SETTINGS_TABS = [
   "administrators",
   "identity",
   "enrollment",
+  "attributes",
   "management",
   "delivery",
   "integrations",
@@ -253,6 +257,7 @@ const SECTIONS = [
   "groups",
   "policies",
   "applications",
+  "scripts",
   "settings",
 ] as const;
 
@@ -284,6 +289,30 @@ export function permissionForTenantPath(path: string, tenantId: string): Permiss
   return section ? tenantSectionPermission(section) : undefined;
 }
 
+/** The canonical path of one top-level dashboard section. */
+function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): string {
+  const tenant = routes.tenant(tenantId);
+
+  switch (section) {
+    case "overview":
+      return tenant.overview();
+    case "dashboards":
+      return tenant.dashboards();
+    case "devices":
+      return tenant.devices();
+    case "groups":
+      return tenant.groups();
+    case "policies":
+      return tenant.policies();
+    case "applications":
+      return tenant.applications();
+    case "scripts":
+      return tenant.scripts();
+    case "settings":
+      return tenant.settings();
+  }
+}
+
 /** The first tenant section the current membership can read, if any. */
 export function firstReadableTenantSection(
   can: (permission: Permission) => boolean,
@@ -294,13 +323,13 @@ export function firstReadableTenantSection(
 
     if (!permission || !can(permission)) continue;
 
-    return section === "overview" ? `/t/${tenantId}` : `/t/${tenantId}/${section}`;
+    return sectionPath(tenantId, section);
   }
 
   for (const tab of SETTINGS_TABS) {
     if (!can(settingsTabPermission(tab))) continue;
 
-    return `/t/${tenantId}/settings${tab ? `/${tab}` : ""}`;
+    return routes.tenant(tenantId).settingsTab(tab);
   }
 
   return undefined;

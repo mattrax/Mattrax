@@ -1,4 +1,5 @@
-import { useLocation, useNavigate } from "@solidjs/router";
+import { useLocation } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createEffect, createSignal, Errored, type ParentProps, onSettled, Show } from "solid-js";

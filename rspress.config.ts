@@ -107,6 +107,7 @@ export default defineConfig({
             { text: "Groups", link: "/manage/groups" },
             { text: "Policies", link: "/manage/policies" },
             { text: "Applications", link: "/manage/applications" },
+            { text: "Scripts", link: "/manage/scripts" },
             { text: "AI agents and MCP", link: "/manage/mcp" },
             { text: "Security", link: "/manage/security" },
           ],
@@ -139,7 +140,7 @@ export default defineConfig({
           items: [
             { text: "REST API", link: "/api/" },
             { text: "CLI", link: "/api/cli" },
-            { text: "Reference", link: "/api/reference" },
+            { text: "Reference", link: "/api/reference/" },
             { text: "OpenAPI", link: "/api/openapi" },
           ],
         },

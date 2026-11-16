@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import {
   type InfiniteData,
   useInfiniteQuery,
@@ -9,6 +10,7 @@ import {
 import {
   DeviceRow,
   EffectivePolicyResponse,
+  type AttributeDefinitionRow,
   type DeviceActivityResponse,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
@@ -61,6 +63,15 @@ import {
   enterpriseQueries,
   type DeviceApplication,
 } from "~/lib/enterprise";
+import {
+  appleUserBindingLabel,
+  appleUserDisplayName,
+  appleUserEnrollmentLabel,
+  appleUserLoginName,
+  appleUserPushLabel,
+  appleUserPushTone,
+} from "~/lib/device-apple-users";
+import type { AppleUserActionName } from "@mattrax/enterprise-domain/client";
 import { Markdown } from "~/components/dashboard/markdown";
 import {
   commandStatusTone,
@@ -200,12 +211,19 @@ function DeviceArtwork(props: { proto: string; modelIdentifier?: string | null; 
   );
 }
 
+/** The mutation surface the ABM panel drives; both are device-scoped actions. */
+type DeviceActionMutation = {
+  readonly isPending: boolean;
+  readonly error: Error | null;
+  readonly mutate: () => void;
+};
+
 function AbmPanel(props: {
   tenantId: string | undefined;
   serial: string | undefined;
   writable: boolean;
-  assignAbm: any;
-  adeProfile: any;
+  assignAbm: DeviceActionMutation;
+  adeProfile: DeviceActionMutation;
   adeUrl: () => string | null;
 }) {
   const abmConfig = useQuery(() => enterpriseQueries.abm(props.tenantId));
@@ -411,6 +429,35 @@ export default function DeviceDetailPage() {
       });
       await queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
+      });
+    },
+  }));
+
+  const appleUsers = useQuery(() =>
+    enterpriseQueries.deviceAppleUsers(params.tenantId, params.deviceId),
+  );
+
+  const [appleUserMessage, setAppleUserMessage] = createSignal<string | null>(null);
+
+  const appleUserAction = useMutation(() => ({
+    mutationFn: (input: { userId: string; action: AppleUserActionName }) =>
+      enterprise.deviceAppleUserAction(
+        params.tenantId,
+        params.deviceId,
+        input.userId,
+        input.action,
+      ),
+    onSuccess: async (_result, input) => {
+      setAppleUserMessage(
+        input.action === "sync"
+          ? "Wake-up sent to the user channel."
+          : "Profile refresh queued for the user channel.",
+      );
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceAppleUsers(params.tenantId, params.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
       });
     },
   }));
@@ -689,12 +736,15 @@ export default function DeviceDetailPage() {
   const [recoveryDialogOpen, setRecoveryDialogOpen] = createSignal(false);
   const [recoveryKey, setRecoveryKey] = createSignal<string | null>(null);
   const [recoveryCopied, setRecoveryCopied] = createSignal(false);
+  const [localAdminOpen, setLocalAdminOpen] = createSignal(false);
+  const [localAdminPassword, setLocalAdminPassword] = createSignal<string | null>(null);
 
   const command = useMutation(() => ({
     mutationFn: (payload: {
       action:
         | "lock"
         | "wipe"
+        | "return-to-service"
         | "restart"
         | "shutdown"
         | "clear-passcode"
@@ -705,6 +755,17 @@ export default function DeviceDetailPage() {
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
     onSuccess: async (result) => {
       setLockPin(result.pin ?? null);
+
+      if (result.returnToService) {
+        const summary = result.returnToService;
+
+        toast.success("Return to Service requested", {
+          description: summary.automatedDeviceEnrollment
+            ? "The device will erase, rejoin Wi-Fi and re-enroll through Automated Device Enrollment."
+            : "The device will erase, rejoin Wi-Fi and re-enroll using its embedded enrolment profile.",
+        });
+      }
+
       await invalidate();
     },
   }));
@@ -715,6 +776,11 @@ export default function DeviceDetailPage() {
       setRecoveryKey(result.recoveryKey);
       setRecoveryCopied(false);
     },
+  }));
+
+  const revealLocalAdmin = useMutation(() => ({
+    mutationFn: () => enterprise.getDeviceLocalAdmin(params.tenantId, params.deviceId),
+    onSuccess: (result) => setLocalAdminPassword(result.password),
   }));
 
   // Destructive actions close the confirm dialog only after success; on error
@@ -1191,6 +1257,14 @@ export default function DeviceDetailPage() {
                   <div class="mt-3 flex flex-wrap items-center gap-1.5">
                     <DeviceStatusBadge status={row()!.status} />
                     <PlatformBadge proto={row()!.proto} />
+                    <Show when={row()!.awaitingConfiguration}>
+                      <Badge
+                        variant="outline"
+                        class="border-warning/25 bg-warning/10 text-warning-foreground"
+                      >
+                        Awaiting setup
+                      </Badge>
+                    </Show>
                     <DeviceHealthBadge level={health.data?.health.level ?? "unknown"} />
                   </div>
                 </div>
@@ -1315,6 +1389,13 @@ export default function DeviceDetailPage() {
                   </tbody>
                 </table>
               </Panel>
+
+              <DeviceAttributesPanel
+                tenantId={params.tenantId ?? ""}
+                deviceId={row()?.id ?? ""}
+                values={row()?.attributes}
+                writable={writable()}
+              />
 
               <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
                 <div class="min-w-0 space-y-5">
@@ -1575,6 +1656,25 @@ export default function DeviceDetailPage() {
                             {row()!.bootstrapTokenEscrowed ? "Escrowed" : "Not escrowed"}
                           </Chip>
                         </MetaRow>
+                        <MetaRow label="Local administrator">
+                          <span class="flex flex-wrap items-center justify-end gap-2">
+                            <Chip tone={row()!.localAdminPasswordEscrowed ? "success" : "warning"}>
+                              {row()!.localAdminPasswordEscrowed ? "Escrowed" : "Not created"}
+                            </Chip>
+                            <Show when={row()!.localAdminPasswordEscrowed && canRevealKey()}>
+                              <Button
+                                variant="outline"
+                                size="xs"
+                                onClick={() => {
+                                  setLocalAdminPassword(null);
+                                  setLocalAdminOpen(true);
+                                }}
+                              >
+                                Reveal
+                              </Button>
+                            </Show>
+                          </span>
+                        </MetaRow>
                         <MetaRow label="Recovery key updated">
                           {formatDate(row()!.recoveryKeyUpdatedAt)}
                         </MetaRow>
@@ -1591,6 +1691,14 @@ export default function DeviceDetailPage() {
                           {formatDate(row()!.inventoryUpdatedAt)}
                         </MetaRow>
                       </dl>
+                      <Show when={row()!.awaitingConfiguration}>
+                        <p class="rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                          <strong class="font-medium">Setup is not complete.</strong> The device is
+                          held at the Remote Management pane until its local administrator and
+                          declarations are applied. Mattrax sends <code>DeviceConfigured</code>{" "}
+                          automatically once the declaration report is valid.
+                        </p>
+                      </Show>
                       <Show when={row()!.proto === "apple" && !row()!.recoveryKeyEscrowed}>
                         <p class="rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
                           <strong class="font-medium">
@@ -1876,7 +1984,8 @@ export default function DeviceDetailPage() {
                       <p class="rounded-lg border border-border bg-muted/15 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
                         Policies assigned to a user are delivered on the device channel. They affect
                         every user on this device, not only the linked account. Windows applies
-                        changes on its next check-in.
+                        changes on its next check-in. Apple user channels below carry per-user
+                        commands only.
                       </p>
                       <Show
                         when={directory.data}
@@ -1951,6 +2060,129 @@ export default function DeviceDetailPage() {
                           {saveUsers.isPending ? "Saving…" : "Save users"}
                         </Button>
                       </Show>
+
+                      <Show when={row()?.proto === "apple"}>
+                        <div class="space-y-2 border-t border-border/60 pt-3">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="text-[12.5px] font-medium text-foreground">
+                              Apple user channels
+                            </span>
+                            <Show when={appleUsers.data}>
+                              <Badge variant="outline" class="shrink-0 text-[10px]">
+                                {appleUserEnrollmentLabel(appleUsers.data!.enrollmentMode)}
+                              </Badge>
+                            </Show>
+                          </div>
+                          <p class="text-[11px] leading-relaxed text-muted-foreground">
+                            Every macOS or Shared iPad login Apple manages over the user channel. A
+                            channel is created when the user signs in and authenticates with the
+                            device's MDM identity; per-user commands are only delivered on it.
+                          </p>
+                          <Show
+                            when={appleUsers.data}
+                            fallback={
+                              <Show when={appleUsers.isError} fallback={<SkeletonRows rows={2} />}>
+                                <QueryError
+                                  error={appleUsers.error}
+                                  onRetry={() => void appleUsers.refetch()}
+                                />
+                              </Show>
+                            }
+                          >
+                            <Show
+                              when={appleUsers.data!.users.length > 0}
+                              fallback={
+                                <p class="text-[12.5px] text-muted-foreground">
+                                  No user channels yet. A channel appears after the next user signs
+                                  in to this Mac or Shared iPad.
+                                </p>
+                              }
+                            >
+                              <div class="divide-y divide-border/60 rounded-lg border border-border">
+                                <For each={appleUsers.data!.users}>
+                                  {(user) => (
+                                    <div class="flex flex-wrap items-start gap-2 px-2.5 py-2">
+                                      <div class="min-w-0 flex-1">
+                                        <span class="flex items-center gap-1.5">
+                                          <span class="truncate text-[13px] text-foreground">
+                                            {appleUserDisplayName(user)}
+                                          </span>
+                                          <Chip tone="muted">
+                                            {appleUserBindingLabel(user.binding)}
+                                          </Chip>
+                                        </span>
+                                        <span class="block truncate text-[11px] text-muted-foreground">
+                                          {appleUserLoginName(user)} · Last check-in{" "}
+                                          {user.lastSeenAt ? formatDate(user.lastSeenAt) : "never"}
+                                        </span>
+                                        <span class="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                                          <Chip tone={appleUserPushTone(user.push)}>
+                                            {appleUserPushLabel(user.push)}
+                                          </Chip>
+                                          <span>
+                                            {user.profiles.length === 1
+                                              ? "1 profile"
+                                              : `${user.profiles.length} profiles`}
+                                          </span>
+                                        </span>
+                                      </div>
+                                      <div class="flex shrink-0 gap-1">
+                                        <Show when={user.actions.includes("sync")}>
+                                          <Button
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={appleUserAction.isPending}
+                                            onClick={() =>
+                                              appleUserAction.mutate({
+                                                userId: user.platformUserId,
+                                                action: "sync",
+                                              })
+                                            }
+                                          >
+                                            Wake
+                                          </Button>
+                                        </Show>
+                                        <Show when={user.actions.includes("refresh-profiles")}>
+                                          <Button
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={appleUserAction.isPending}
+                                            onClick={() =>
+                                              appleUserAction.mutate({
+                                                userId: user.platformUserId,
+                                                action: "refresh-profiles",
+                                              })
+                                            }
+                                          >
+                                            Refresh profiles
+                                          </Button>
+                                        </Show>
+                                      </div>
+                                    </div>
+                                  )}
+                                </For>
+                              </div>
+                            </Show>
+                          </Show>
+                          <ErrorText error={appleUserAction.error} />
+                          <Show when={appleUserMessage()}>
+                            {(text) => (
+                              <p
+                                role="status"
+                                class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                              >
+                                {text()}
+                              </p>
+                            )}
+                          </Show>
+                          <Show when={!writable()}>
+                            <p class="text-[11px] text-muted-foreground">
+                              Your role can view user channels but not wake them or queue a profile
+                              refresh.
+                            </p>
+                          </Show>
+                        </div>
+                      </Show>
                     </div>
                   </Panel>
 
@@ -2007,6 +2239,23 @@ export default function DeviceDetailPage() {
                               onClick={() => command.mutate({ action: "clear-passcode" })}
                             >
                               Clear passcode
+                            </Button>
+                          </Show>
+                          <Show when={supports("return-to-service")}>
+                            <Button
+                              variant="destructive"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Return this device to service? It will erase, rejoin the assigned Wi-Fi network and enrol itself again. Apps and data are removed.",
+                                  )
+                                )
+                                  command.mutate({ action: "return-to-service" });
+                              }}
+                            >
+                              Return to service
                             </Button>
                           </Show>
                           <Show when={supports("wipe")}>
@@ -2647,6 +2896,71 @@ export default function DeviceDetailPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={localAdminOpen()}
+        onOpenChange={(open) => {
+          setLocalAdminOpen(open);
+
+          if (!open) setLocalAdminPassword(null);
+        }}
+      >
+        <DialogContent class="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reveal managed local administrator</DialogTitle>
+            <DialogDescription>
+              This device was prepared from Setup Assistant. The account is a hidden local
+              administrator; viewing its password is recorded in the tenant audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <Show
+            when={localAdminPassword()}
+            fallback={
+              <>
+                <ErrorText error={revealLocalAdmin.error} />
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setLocalAdminOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={revealLocalAdmin.isPending}
+                    onClick={() => revealLocalAdmin.mutate()}
+                  >
+                    {revealLocalAdmin.isPending ? "Decrypting…" : "Reveal password"}
+                  </Button>
+                </DialogFooter>
+              </>
+            }
+          >
+            {(password) => (
+              <>
+                <dl class="space-y-3 text-sm">
+                  <div class="flex items-center justify-between gap-4">
+                    <dt class="text-muted-foreground">Username</dt>
+                    <dd class="font-mono">{row()?.localAdminUsername ?? "mattrax-admin"}</dd>
+                  </div>
+                  <div class="flex items-start justify-between gap-4">
+                    <dt class="pt-2 text-muted-foreground">Password</dt>
+                    <dd class="min-w-0 flex-1">
+                      <code class="block break-all rounded-lg border border-border bg-surface p-3 font-mono text-sm">
+                        {password()}
+                      </code>
+                    </dd>
+                  </div>
+                </dl>
+                <p class="text-xs text-muted-foreground">
+                  Last generated {formatDate(row()?.localAdminUpdatedAt)}
+                </p>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setLocalAdminOpen(false)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </Show>
+        </DialogContent>
+      </Dialog>
+
       <Sheet
         open={editOpen()}
         onOpenChange={(open) =>
@@ -2712,5 +3026,233 @@ export default function DeviceDetailPage() {
         </SheetContent>
       </Sheet>
     </Page>
+  );
+}
+
+/**
+ * Custom attribute values for one device.
+ *
+ * Every field is edited inline. Saving sends only the keys that changed: an
+ * emptied field is sent as `null` (an explicit clear), untouched keys are left
+ * alone. The server re-validates type, options and requiredness.
+ */
+const attributeInputType = (type: string): "text" | "number" | "date" => {
+  if (type === "number") return "number";
+
+  if (type === "date") return "date";
+
+  return "text";
+};
+
+const attributeOptionLabel = (type: string, option: string) => {
+  if (type !== "boolean") return option;
+
+  return option === "true" ? "Yes" : "No";
+};
+
+function DeviceAttributesPanel(props: {
+  tenantId: string;
+  deviceId: string;
+  values: Record<string, string | null> | undefined;
+  writable: boolean;
+}) {
+  const queryClient = useQueryClient();
+
+  const definitions = useQuery(() => ({
+    queryKey: enterpriseKeys.attributes(props.tenantId),
+    queryFn: () => enterprise.listAttributes(props.tenantId),
+  }));
+
+  const [draft, setDraft] = createSignal<Record<string, string>>({});
+  const [baseline, setBaseline] = createSignal<Record<string, string>>({});
+  const [cleared, setCleared] = createSignal<Record<string, boolean>>({});
+
+  const [error, setError] = createSignal<unknown>();
+
+  createEffect(
+    () => ({ id: props.deviceId, values: props.values }),
+    ({ values }) => {
+      const next: Record<string, string> = {};
+
+      for (const [key, value] of Object.entries(values ?? {}))
+        if (value !== null) next[key] = value;
+
+      setDraft(next);
+      setBaseline(next);
+      setCleared({});
+    },
+  );
+
+  const visible = () =>
+    (definitions.data?.rows ?? []).filter((definition) => definition.visibility === "visible");
+
+  const dirty = () => {
+    const current = draft();
+    const original = baseline();
+    const clearedKeys = cleared();
+
+    return (
+      Object.keys(clearedKeys).some((key) => clearedKeys[key]) ||
+      Object.keys(current).some((key) => current[key] !== (original[key] ?? "")) ||
+      Object.keys(original).some((key) => !(key in current))
+    );
+  };
+
+  const save = useMutation(() => ({
+    mutationFn: () => {
+      const current = draft();
+      const original = baseline();
+      const values: Record<string, string | null> = {};
+
+      for (const definition of visible()) {
+        const next = current[definition.key] ?? "";
+        const previous = original[definition.key] ?? "";
+
+        if (next === previous && !cleared()[definition.key]) continue;
+
+        values[definition.key] = next.trim() === "" ? null : next;
+      }
+
+      return enterprise.setDeviceAttributes(props.tenantId, props.deviceId, { values });
+    },
+    onSuccess: async () => {
+      setCleared({});
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.item(props.tenantId, "device", props.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceSearch(props.tenantId),
+      });
+      toast.success("Device attributes saved");
+    },
+    onError: (cause) => setError(cause),
+  }));
+
+  return (
+    <Panel
+      title="Attributes"
+      description="Organisation-specific fields from this tenant's attribute registry."
+      actions={
+        <Show when={props.writable && visible().length > 0}>
+          <Button
+            size="sm"
+            disabled={!dirty() || save.isPending}
+            onClick={() => {
+              setError(undefined);
+              save.mutate();
+            }}
+          >
+            {save.isPending ? "Saving…" : "Save attributes"}
+          </Button>
+        </Show>
+      }
+      flush
+    >
+      <Show
+        when={visible().length > 0}
+        fallback={
+          <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            {definitions.isPending ? (
+              "Loading attributes…"
+            ) : (
+              <>
+                No attributes are defined for this tenant.{" "}
+                <a
+                  class="underline decoration-border underline-offset-4 hover:text-foreground"
+                  href={`/t/${props.tenantId}/settings/attributes`}
+                >
+                  Create one in Settings → Attributes
+                </a>
+                .
+              </>
+            )}
+          </p>
+        }
+      >
+        <div class="divide-y divide-border">
+          <For each={visible()}>
+            {(definition: AttributeDefinitionRow) => {
+              const value = () => draft()[definition.key] ?? "";
+
+              const isCleared = () => Boolean(cleared()[definition.key]);
+
+              const setValue = (next: string) => {
+                setDraft({ ...draft(), [definition.key]: next });
+                setCleared({ ...cleared(), [definition.key]: false });
+              };
+
+              return (
+                <div class="grid gap-1.5 px-4 py-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-start sm:gap-4 sm:px-5">
+                  <div class="min-w-0">
+                    <p class="text-[12.5px] font-medium text-foreground">{definition.label}</p>
+                    <p class="font-mono text-[10.5px] text-muted-foreground">{definition.key}</p>
+                    <Show when={definition.required}>
+                      <p class="text-[10.5px] text-warning-foreground">Required</p>
+                    </Show>
+                  </div>
+                  <div class="flex items-start gap-2">
+                    <Show
+                      when={definition.type === "select" || definition.type === "boolean"}
+                      fallback={
+                        <Input
+                          class="h-8 text-[12.5px]"
+                          type={attributeInputType(definition.type)}
+                          disabled={!props.writable}
+                          value={value()}
+                          onInput={(event) => setValue(event.currentTarget.value)}
+                        />
+                      }
+                    >
+                      <select
+                        class="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                        disabled={!props.writable}
+                        value={value()}
+                        onChange={(event) => setValue(event.currentTarget.value)}
+                      >
+                        <option value="">No value</option>
+                        <For
+                          each={
+                            definition.type === "boolean"
+                              ? ["true", "false"]
+                              : (definition.options ?? [])
+                          }
+                        >
+                          {(option) => (
+                            <option value={option}>
+                              {attributeOptionLabel(definition.type, option)}
+                            </option>
+                          )}
+                        </For>
+                      </select>
+                    </Show>
+                    <Show when={props.writable && value() !== ""}>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        class="shrink-0 text-muted-foreground"
+                        onClick={() => {
+                          setDraft({ ...draft(), [definition.key]: "" });
+                          setCleared({ ...cleared(), [definition.key]: true });
+                        }}
+                        aria-label={`Clear ${definition.label}`}
+                      >
+                        Clear
+                      </Button>
+                    </Show>
+                    <Show when={isCleared()}>
+                      <span class="pt-1.5 text-[10.5px] text-warning-foreground">Cleared</span>
+                    </Show>
+                  </div>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
+      <div class="px-4 pb-3 sm:px-5">
+        <ErrorText error={error()} />
+        <ErrorText error={definitions.error} />
+      </div>
+    </Panel>
   );
 }

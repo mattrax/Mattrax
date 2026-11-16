@@ -16,7 +16,7 @@ test.describe("authenticator MFA", () => {
   test("enrolls, requires a pending code, accepts a recovery code, and disables", async ({
     page,
   }) => {
-    await register(page);
+    const { email } = await register(page);
     await gotoHydrated(page, "/account");
 
     const card = page.locator("section", { hasText: "Authenticator app" });
@@ -36,7 +36,7 @@ test.describe("authenticator MFA", () => {
     // Enrollment rotates the security revision, so the current session is gone.
     await card.getByRole("button", { name: /sign in again/i }).click();
     await expect(page).toHaveURL(/\/login/);
-    await signIn(page);
+    await signIn(page, email);
 
     await expect(page.getByText(/two-factor authentication required/i)).toBeVisible();
 
@@ -65,7 +65,7 @@ test.describe("authenticator MFA", () => {
     await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
-    await signIn(page);
+    await signIn(page, email);
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]!);
     await page.getByRole("button", { name: /^continue$/i }).click();
@@ -100,7 +100,7 @@ test.describe("authenticator MFA", () => {
     await expect(disableCard.getByText(/security settings updated/i)).toBeVisible();
 
     await page.goto("/login", { waitUntil: "networkidle" });
-    await signIn(page);
+    await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);
   });

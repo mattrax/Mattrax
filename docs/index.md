@@ -29,7 +29,7 @@ production operations, the REST API and migration.
 
 ## Build and operate
 
-- [REST API](/api/) and [API reference](/api/reference)
+- [REST API](/api/) and [API reference](/api/reference/)
 - [Configuration](/operations/configuration) · [Monitoring](/operations/monitoring) ·
   [Troubleshooting](/operations/troubleshooting)
 - [Migration](/migration/) — moving from another MDM

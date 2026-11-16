@@ -5,15 +5,15 @@ boundary keeps protocol handling independent from product state.
 
 ## Layers
 
-| Layer               | Packages / apps                                                                 | Responsibility                                 |
-| ------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`, `policy-apple` | Wire protocols and payloads                    |
-| Management contract | `management-backend`, `management-backend-http`                                 | Interface and HMAC webhook binding             |
-| Hosted management   | `management-backend-enterprise`, `apps/api`                                     | Enterprise implementation                      |
-| Product contracts   | `enterprise-domain`                                                             | Effect HTTP contracts and schemas              |
-| Product backends    | `enterprise-backend`                                                            | Handlers, services, integrations               |
-| Data                | `enterprise-core`                                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`, `apps/mail-relay`                    | Dashboard, API, push and SMTP relays           |
+| Layer               | Packages / apps                                                 | Responsibility                                 |
+| ------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` | Wire protocols and payloads                    |
+| Management contract | `management-backend`, `management-backend-http`                 | Interface and HMAC webhook binding             |
+| Hosted management   | `management-backend-enterprise`, `apps/api`                     | Enterprise implementation                      |
+| Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
+| Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
+| Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
+| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`, `apps/mail-relay`    | Dashboard, API, push and SMTP relays           |
 
 ## Cloud topology
 
@@ -79,18 +79,34 @@ Core tables:
 - `organization` (tenant), `user`, `member`, `invitation`.
 - `device` (identity, management name, physical name, the cross-platform inventory
   columns, Windows security/join state and the applied OMA-URI delivery set),
-  `device_apple` (policy delivery mode and the security-report clocks),
-  `device_secret` (sealed recovery key, bootstrap token, activation-lock bypass code and
-  Recovery Lock password), `device_command`, `device_declaration`,
+  `device_apple` (policy delivery mode, ADE awaiting-setup/configured state, Return to
+  Service request clocks and the security-report clocks),
+  `device_secret` (sealed recovery key, bootstrap token, activation-lock bypass code,
+  managed local-admin password and Recovery Lock password), `device_command` (device or one
+  Apple user channel via `user_id`), `device_apple_user` (per-user Apple channel: identity names, push credentials,
+  bind time, last check-in and reported profiles), `device_declaration`,
   `device_application` (Apple bundle ids, Android package names and Windows product/registry
   keys share one table).
 - `enterprise_group`, `group_device`, `group_policy`, `device_policy`.
+- `attribute_definition` (tenant registry: key, label, type, options, required,
+  visibility), `device_attribute` (one canonical value per device and definition with the
+  writing user and timestamp), `enrollment_question` (which attributes the public
+  enrollment page asks for) and `enrollment_answer` (answers keyed by tenant and serial
+  until the device checks in).
 - `policy`, `configuration`, `policy_deployment`.
 - `application`, `application_group`, `application_device`.
+- `script`, `script_assignment` (device or group target, tenant-scoped), `script_execution`
+  (queued/terminal run per device with capped output and a unique
+  `(device, script, dedupe_key)` index). `organization.scripts_enabled` is the tenant
+  opt-out.
 - `apple_push_certificate`, `apple_push_key`, `apple_business_manager`, `abm_device`,
   `vpp_token`, `vpp_asset`, `device_vpp_assignment`.
-- `scep_ca` (one active CA per tenant, unique `organization_id`), `scep_challenge`,
-  `scep_issued_certificate`.
+- `scep_ca` (one active CA per tenant, unique `organization_id`), `scep_ca_trust`
+  (certificate-only, `onDelete: cascade` retained CAs and their trust deadline during a
+  rotation overlap), `scep_challenge`, `scep_issued_certificate` (now records the issuing
+  CA's SHA-256 fingerprint).
+- `server_certificate_health` (one row for the deployment origin: the latest scheduled TLS
+  probe with expiry, subject/issuer, chain length, validation result and probe error).
 - `apple_fde_escrow_key` (one per tenant: escrow certificate plus the AES-GCM-sealed
   private key used to unwrap CMS recovery keys).
 - `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device` (AMAPI
@@ -109,6 +125,32 @@ Core tables:
   reclamation and the final delete.
 
 Migrations live in `apps/api/migrations` and are applied with Drizzle Kit.
+
+## Script execution
+
+Scripts are a product feature with a device-facing edge:
+
+1. The dashboard queues a manual run (or an assignment changes).
+2. Apple check-in builds one `com.mattrax.script` `.mobileconfig` per assigned script and
+   installs it with the existing `InstallProfile` command. The diff comes from the
+   device's command history, like legacy policy delivery, so no extra state table is
+   needed. A queued run changes the payload's `RunID`.
+3. The on-device agent (`apps/agent`) runs the body on its trigger and posts the result to
+   `POST /api/v1/script-agent/results` with an HMAC device token derived from
+   `AUTH_SECRET`. The token embeds the device id; the handler resolves the device and
+   filters by its organization, so a token can never cross tenants.
+4. The server caps and redacts output again, stores the terminal row, and writes a
+   `script.run_completed`/`script.run_failed` audit entry against the device.
+5. Maintenance expires queued runs past their 24-hour deadline and prunes terminal history
+   past 30 days.
+
+The agent group (`ScriptAgentApi`) is deliberately not part of the browser client
+contract: it authenticates with a device token and no session.
+
+Windows has no arbitrary-script CSP; Microsoft's supported route is an agent (the Intune
+Management Extension is the same design). The agent sync endpoint returns assigned scripts
+and pending run ids for a Windows agent. Android Management API exposes no script command,
+so Android devices are skipped with a reason.
 
 ## Protocol boundaries
 

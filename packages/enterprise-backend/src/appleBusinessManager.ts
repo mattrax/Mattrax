@@ -744,11 +744,7 @@ export const createAbmClient = (
     if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
 
     try {
-      response = await fetchWithTimeout(
-        url,
-        { ...init, headers },
-        { fetch: doFetch, timeoutMs },
-      );
+      response = await fetchWithTimeout(url, { ...init, headers }, { fetch: doFetch, timeoutMs });
     } catch (cause) {
       throw fail(
         "upstream",
@@ -758,9 +754,7 @@ export const createAbmClient = (
     }
 
     if (!response.ok) {
-      const body: AppleErrorBody | undefined = await response
-        .json()
-        .catch(() => undefined);
+      const body: AppleErrorBody | undefined = await response.json().catch(() => undefined);
 
       throw fail(
         apiErrorKind(response.status),
@@ -1115,6 +1109,8 @@ export type AppleBusinessManagerInfo = {
   readonly tokenExpiresAt: string | null;
   readonly mdmServerId: string | null;
   readonly profileUuid: string | null;
+  /** Stable ADE enrollment URL; registered as the ADE profile's `url`. */
+  readonly enrollmentUrl: string | null;
   readonly lastSyncedAt: string | null;
   readonly lastError: string | null;
   readonly deviceCount: number;
@@ -1126,6 +1122,7 @@ export type AppleBusinessManagerInfo = {
 export const appleBusinessManagerInfo = (
   db: EnterpriseDb,
   organizationId: string,
+  origin?: string,
 ): Effect.Effect<AppleBusinessManagerInfo, AppleBusinessManagerError> =>
   Effect.gen(function* () {
     const row = yield* loadAppleBusinessManager(db, organizationId);
@@ -1144,6 +1141,7 @@ export const appleBusinessManagerInfo = (
       tokenExpiresAt: iso(row?.tokenExpiry ?? null),
       mdmServerId: row?.mdmServerId ?? null,
       profileUuid: row?.profileUuid ?? null,
+      enrollmentUrl: origin ? `${origin.replace(/\/+$/, "")}/api/v1/abm/ade/enroll` : null,
       lastSyncedAt: iso(row?.lastSyncedAt ?? null),
       lastError: row?.lastError ?? null,
       deviceCount: devices.length,

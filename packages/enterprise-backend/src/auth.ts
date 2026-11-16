@@ -12,6 +12,8 @@ import {
   makePasskeyRegistrationServices,
   makeTotpPersistenceServices,
 } from "@yielded/auth-persistence-drizzle/Mysql2";
+import type { Services as AuthPlatformServices } from "@yielded/auth-platform-workerd";
+import type { PasswordConfigurationError } from "@yielded/auth/Password";
 import {
   Db,
   authRequirement,
@@ -123,7 +125,7 @@ export type AppAuthService = ReturnType<typeof makeAppAuth>;
 
 export type AuthLiveOptions = {
   readonly appAuth: AppAuthService;
-  readonly cryptoLayer: Layer.Layer<any, any, any>;
+  readonly cryptoLayer: Layer.Layer<AuthPlatformServices, PasswordConfigurationError>;
   /** Application secret used to sign step-up grants and derive TOTP keys. */
   readonly authSecret?: string;
   /** Canonical public origin used for the WebAuthn relying party. */
@@ -277,7 +279,7 @@ export const makeAuthLive = ({
     Layer.provide(
       Layer.effect(
         Database,
-        Effect.map(Db, (db) => db as any),
+        Effect.map(Db, (db) => db as Database["Service"]),
       ),
     ),
     Layer.provide(cryptoLayer),

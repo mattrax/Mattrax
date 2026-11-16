@@ -132,6 +132,10 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
           client.ManagementWebhook.getAppleBootstrapToken({ payload: { scope } }).pipe(
             Effect.mapError(toManagementError),
           ),
+        appleReturnToServiceConfiguration: (scope) =>
+          client.ManagementWebhook.appleReturnToServiceConfiguration({
+            payload: { scope },
+          }).pipe(Effect.mapError(toManagementError)),
         appleDeviceEvent: (scope, event) =>
           normalize(client.ManagementWebhook.appleDeviceEvent({ payload: { scope, event } })),
 

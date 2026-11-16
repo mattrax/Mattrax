@@ -1,5 +1,5 @@
 import { Cause, Effect } from "effect";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { ApnsError, ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
@@ -321,6 +321,118 @@ export const applePushService = ({
   const pushAppleDevice = (deviceId: string, allowUnenrolling = false): Effect.Effect<void> =>
     Effect.asVoid(pushAppleDeviceInternal(deviceId, allowUnenrolling));
 
+  /**
+   * Push one Apple user channel. A user connection has its own APNs token and
+   * push magic, so waking the device channel does not wake the user and vice
+   * versa. Outcomes are recorded on `device_apple_user` for the device page.
+   */
+  const pushAppleUserChannelInternal = (
+    deviceId: string,
+    userId: string,
+  ): Effect.Effect<PushOutcome> =>
+    Effect.gen(function* () {
+      const device = yield* db.query.device.findFirst({ where: { id: deviceId } });
+
+      if (!device || device.proto !== "apple" || device.status !== "enrolled")
+        return { status: "skipped" as const };
+
+      const [user] = yield* db
+        .select()
+        .from(schema.deviceAppleUser)
+        .where(
+          and(
+            eq(schema.deviceAppleUser.deviceId, deviceId),
+            eq(schema.deviceAppleUser.userId, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!user?.token || !user.pushMagic) return { status: "skipped" as const };
+
+      const certificate = yield* db.query.applePushCertificate.findFirst({
+        where: { organizationId: device.organizationId },
+      });
+
+      if (!certificate?.encryptedKey) return { status: "skipped" as const };
+
+      const keyPem = yield* privateKeyPem(certificate.encryptedKey);
+
+      const outcome = yield* Effect.match(
+        apns
+          .push({
+            pushToken: user.token,
+            pushMagic: user.pushMagic,
+            topic: user.topic ?? certificate.topic,
+            certPem: certificate.certPem,
+            privateKeyPem: keyPem,
+          })
+          .pipe(
+            Effect.timeoutOrElse({
+              duration: backstopMs,
+              orElse: () =>
+                Effect.fail(
+                  new ApnsError({ message: `APNs push timed out after ${backstopMs}ms` }),
+                ),
+            }),
+          ),
+        {
+          onSuccess: () => ({ ok: true as const }),
+          onFailure: (error) => ({ ok: false as const, error }),
+        },
+      );
+
+      const at = new Date();
+
+      const outcomeColumns = outcome.ok
+        ? {
+            lastPushAt: at,
+            lastPushOkAt: at,
+            lastPushError: null,
+            consecutivePushFailures: 0,
+          }
+        : {
+            lastPushAt: at,
+            lastPushError: describeApplePushFailure(outcome.error),
+            consecutivePushFailures: (user.consecutivePushFailures ?? 0) + 1,
+          };
+
+      yield* db
+        .update(schema.deviceAppleUser)
+        .set(outcomeColumns)
+        .where(
+          and(
+            eq(schema.deviceAppleUser.deviceId, deviceId),
+            eq(schema.deviceAppleUser.userId, userId),
+          ),
+        );
+
+      if (!outcome.ok) {
+        const error = describeApplePushFailure(outcome.error);
+        yield* Effect.logWarning(
+          `Failed to send APNs push for user channel ${userId} on device ${deviceId}: ${error}`,
+        );
+
+        return { status: "failed" as const, error };
+      }
+
+      return { status: "pushed" as const };
+    }).pipe(
+      Effect.catchCause((cause) => {
+        const error = Cause.pretty(cause).slice(0, 255);
+
+        return Effect.logWarning(
+          `Failed to send APNs push for user channel ${userId} on device ${deviceId}: ${error}`,
+        ).pipe(Effect.as({ status: "failed" as const, error }));
+      }),
+    );
+
+  /** Wake one user channel; `false` means nothing pushable was configured. */
+  const pushAppleUserChannel = (deviceId: string, userId: string): Effect.Effect<boolean> =>
+    Effect.map(
+      pushAppleUserChannelInternal(deviceId, userId),
+      (outcome) => outcome.status === "pushed",
+    );
+
   const pushAppleDevices = (
     deviceIds: ReadonlyArray<string>,
     options?: { readonly concurrency?: number; readonly chunkSize?: number },
@@ -449,7 +561,13 @@ export const applePushService = ({
       ];
     });
 
-  return { pushAppleDevice, pushAppleDevices, deviceIdsInGroups, deviceIdsInPolicies };
+  return {
+    pushAppleDevice,
+    pushAppleDevices,
+    pushAppleUserChannel,
+    deviceIdsInGroups,
+    deviceIdsInPolicies,
+  };
 };
 
 export const makeApplePush = applePushService;

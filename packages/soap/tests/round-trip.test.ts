@@ -6,9 +6,23 @@ import {
   serializeSoapEnvelope,
   extractSoapBody,
 } from "../src/index.js";
-import { DiscoverRequest } from "../src/windows-mdm.js";
 
 const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
+
+/** A minimal namespaced document, standing in for a transport consumer. */
+const DiscoverRequest = Schema.Struct({
+  request: Schema.Struct({
+    requestVersion: Schema.String.pipe(Schema.annotateKey({ soapElementName: "RequestVersion" })),
+    authPolicies: Schema.Array(
+      Schema.String.pipe(Schema.annotateKey({ soapElementName: "AuthPolicy" })),
+    ).pipe(Schema.annotateKey({ soapElementName: "AuthPolicies" })),
+  }),
+}).pipe(
+  Schema.annotate({
+    identifier: "Discover",
+    soapNamespace: "urn:example:discover",
+  }),
+);
 
 describe("Round-trip tests", () => {
   it("should round-trip a complex nested structure", async () => {
@@ -48,11 +62,7 @@ describe("Round-trip tests", () => {
     const body = await runPromise(
       serializeSoapElement(DiscoverRequest, {
         request: {
-          emailAddress: undefined,
           requestVersion: "5.0",
-          deviceType: "CIMClient_Windows",
-          applicationVersion: "6.2.9200.1",
-          osEdition: 48,
           authPolicies: ["OnPremise"],
         },
       }),

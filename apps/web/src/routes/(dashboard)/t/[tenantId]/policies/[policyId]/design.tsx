@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -123,12 +124,16 @@ export default function PolicyDesignerPage() {
         configurations: next,
       });
     },
-    onSuccess: async (_result, draft) => {
+    onSuccess: (_result, draft) => {
       localStorage.setItem(storageKey(), JSON.stringify(draft));
-      await qc.invalidateQueries({
+
+      // Navigate before the refreshes settle: awaiting them keeps the mutation
+      // pending (and can reject on a suspended read) so the route never
+      // changes, while the policy page re-reads the cached item itself.
+      void qc.invalidateQueries({
         queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
       });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
       navigate(`/t/${params.tenantId}/policies/${params.policyId}`);
     },
   }));

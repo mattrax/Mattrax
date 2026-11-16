@@ -170,9 +170,9 @@
 }
 
 /* The tinted destructive background lowers the contrast of the already-red
-   label. A lighter foreground keeps destructive buttons at AA in dark mode. */
-.dark .z-button-variant-destructive {
-  color: #ffb4ab;
+   label. The 12-step colour is the text-safe end of the scale in both themes. */
+.z-button-variant-destructive {
+  color: var(--red-12);
 }
 
 .z-button-variant-link {

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { type AuditExportEntry, type AuditSearchFilters, escapeLike } from "./auditLog.ts";
@@ -277,7 +277,7 @@ export const accountAuditEntry = (entry: {
   targetId: string | null;
   actorUserId?: string | null;
   actorEmail?: string | null;
-  metadata?: Schema.Json;
+  metadata?: unknown;
   createdAt: Date;
 }): AccountAuditEntry => ({
   id: entry.id,
@@ -286,6 +286,7 @@ export const accountAuditEntry = (entry: {
   targetId: entry.targetId,
   actorUserId: entry.actorUserId ?? null,
   actorEmail: entry.actorEmail ?? null,
-  metadata: entry.metadata ?? null,
+  // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
+  metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
   createdAt: entry.createdAt.toISOString(),
 });

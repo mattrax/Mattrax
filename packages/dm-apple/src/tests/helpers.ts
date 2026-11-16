@@ -11,6 +11,7 @@ export function mockManagementBackend(
   overrides?: Partial<{
     appleDeviceEvent: ManagementBackendType["appleDeviceEvent"];
     appleManagementCheckin: ManagementBackendType["appleManagementCheckin"];
+    appleReturnToServiceConfiguration: ManagementBackendType["appleReturnToServiceConfiguration"];
     getAppleDeclarationTokens: ManagementBackendType["getAppleDeclarationTokens"];
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
@@ -27,6 +28,8 @@ export function mockManagementBackend(
     ManagementBackend,
     ManagementBackend.of({
       getAppleBootstrapToken: () => Effect.succeed(null),
+      appleReturnToServiceConfiguration:
+        overrides?.appleReturnToServiceConfiguration ?? (() => Effect.succeed({ enabled: false })),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
         overrides?.appleManagementCheckin ??
@@ -54,20 +57,14 @@ export function mockManagementBackend(
       getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery:
-        overrides?.windowsDiscovery ??
-        (() => Effect.fail(new ManagementNotSupported())),
+        overrides?.windowsDiscovery ?? (() => Effect.fail(new ManagementNotSupported())),
       getWindowsEnrollmentPolicy:
-        overrides?.getWindowsEnrollmentPolicy ??
-        (() => Effect.fail(new ManagementNotSupported())),
-      windowsEnroll:
-        overrides?.windowsEnroll ??
-        (() => Effect.fail(new ManagementNotSupported())),
+        overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new ManagementNotSupported())),
+      windowsEnroll: overrides?.windowsEnroll ?? (() => Effect.fail(new ManagementNotSupported())),
       windowsManagementCheckin:
-        overrides?.windowsManagementCheckin ??
-        (() => Effect.fail(new ManagementNotSupported())),
+        overrides?.windowsManagementCheckin ?? (() => Effect.fail(new ManagementNotSupported())),
       windowsDeviceEvent:
-        overrides?.windowsDeviceEvent ??
-        (() => Effect.fail(new ManagementNotSupported())),
+        overrides?.windowsDeviceEvent ?? (() => Effect.fail(new ManagementNotSupported())),
     }),
   );
 }

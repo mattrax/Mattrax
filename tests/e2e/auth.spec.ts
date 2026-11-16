@@ -3,6 +3,13 @@ import { createTenant, gotoHydrated, register, signIn } from "./helpers";
 
 test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
+    page.on("console", (m) => {
+      if (m.text().startsWith("NAV ") || m.text().startsWith("TENANT"))
+        console.log("BROWSER", m.text());
+    });
+    page.on("framenavigated", (frame) => {
+      if (frame === page.mainFrame()) console.log("FRAME", frame.url());
+    });
     await register(page, { name: "Onboard User" });
     await expect(page).toHaveURL(/\/tenants\/new/);
     await expect(page.getByRole("heading", { name: "Create tenant" })).toBeVisible();
@@ -15,31 +22,37 @@ test.describe("authentication and onboarding", () => {
       .click();
     await expect(page).toHaveURL(/\/t\/[^/]+\/devices/);
 
-    await page.goto("/dashboard");
-    await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
+    // The overview is the tenant root; it is reached from the primary nav.
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Overview", exact: true })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`), { timeout: 20_000 });
     await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
   });
 
-  test("offers passkey sign-in without any password fields", async ({ page }) => {
+  test("starts with an email and offers a passkey, without password fields", async ({ page }) => {
     await page.goto("/login", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
 
-    await expect(page.getByRole("button", { name: /sign in with a passkey/i })).toBeVisible();
-    await expect(page.locator("#password")).toHaveCount(0);
-    await expect(page.locator("#email")).toHaveCount(0);
-
-    await page.getByRole("button", { name: /sign in with your organisation/i }).click();
     const email = page.locator("#email");
+    await expect(email).toBeVisible();
     await expect(email).toHaveAttribute("autocomplete", "username");
+    await expect(page.locator("#password")).toHaveCount(0);
+
     await email.fill("person@example.com");
     await expect(email).toHaveValue("person@example.com");
+    await page.getByRole("button", { name: /^continue$/i }).click();
+    await expect(page.getByRole("button", { name: /passkey/i }).first()).toBeVisible();
+    await expect(page.getByText("person@example.com")).toBeVisible();
   });
 
   test("registration has no password fields", async ({ page }) => {
     await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
 
-    await expect(page.getByRole("button", { name: /create account with a passkey/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^continue$/i })).toBeVisible();
+    await expect(page.locator("#email")).toBeVisible();
     await expect(page.locator("#password")).toHaveCount(0);
     await expect(page.locator("#confirm-password")).toHaveCount(0);
   });
@@ -60,8 +73,8 @@ test.describe("authentication and onboarding", () => {
 
     await page.goto("/login?returnTo=%2Ft%2Fexample%2Fdevices", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
-    await page.getByRole("button", { name: /sign in with your organisation/i }).click();
     await page.locator("#email").fill("person@acme.com");
+    await page.getByRole("button", { name: /^continue$/i }).click();
     await page.getByRole("button", { name: /continue with sso/i }).click();
     await expect(page).toHaveURL(/sso=started/);
   });

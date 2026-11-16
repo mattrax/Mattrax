@@ -144,11 +144,12 @@ changes when a sibling tab mutates something or when the page is revisited.
 ## Device health in the list
 
 Health is derived per device from declarations and inventory, and it is not stored.
-The list computes it once per response: `/devices/search` reads declarations for the
-returned page only (one extra bounded query) and attaches the rollup to each row. A
-`health` sort loads the filtered set, sorts by severity in memory and slices the page;
-filtering by health uses the same rollup, so the column, the filter and the fleet
-counts cannot disagree. The unpaginated `/devices` listing omits health, which keeps a
+The list computes it once per response. `/devices/search` reads declarations for the
+returned page only unless a `health` filter is active: that filter has to load every
+SQL-matched device and its declarations before it can slice the page, which is the cost
+that will be removed by storing the rollup. A `health` sort loads the filtered set, sorts
+by severity in memory and slices the page; filtering by health uses the same rollup, so
+the column, the filter and the fleet counts cannot disagree. The unpaginated `/devices` listing omits health, which keeps a
 whole-fleet read free of declaration joins.
 
 ## Theme resolution
@@ -223,3 +224,23 @@ The last row is the remaining scaling gap: health, dashboard rollups and dynamic
 groups still evaluate the tenant's devices in application code. At 20k devices a
 scan is ~40 ms; the fix is a stored, indexed health rollup updated on check-in
 and inventory changes, tracked separately.
+
+## MDM and API cache policy
+
+Device-facing bodies are served by the API Worker (`apps/api`), not the dashboard Worker, so
+they set their own `Cache-Control`:
+
+- Certificate assets (`/mdm/apple/assets/*`) are bound to a signed, expiring URL and the
+  declaration carries the bytes' SHA-256, so they use
+  `private, max-age=600, stale-while-revalidate=600`.
+- Legacy profiles (`/mdm/apple/profiles/*`) keep a stable URL across policy edits, so they
+  use `private, no-cache`: a device may store the response but must revalidate before
+  applying old restrictions.
+- Authenticated `/api/*` responses default to `no-store` (`withDefaultNoStore` in
+  `apps/api/src/observability.ts`). A route that sets its own policy keeps it.
+- Uploaded applications and policy files are stored under keys that contain their SHA-256,
+  so their R2 metadata is `private, max-age=31536000, immutable`. Backups are the exception:
+  they are tenant snapshots and use `private, no-store`.
+
+Keeping assets `private` preserves tenant and device binding even if a bucket is ever
+exposed directly; the signed URL remains the capability that authorises a fetch.

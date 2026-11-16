@@ -1,4 +1,5 @@
-import { useIsRouting, useLocation, useNavigate } from "@solidjs/router";
+import { useIsRouting, useLocation } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useQuery } from "@tanstack/solid-query";
 import {
   createEffect,
@@ -34,6 +35,7 @@ import {
   User,
 } from "~/components/ui/icons";
 import { meQueryOptions } from "~/lib/enterprise";
+import { routes } from "~/lib/routes";
 import { announce, announcementText, Toaster } from "~/components/toast";
 import {
   SETTINGS_READ_PERMISSIONS,
@@ -159,7 +161,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
               onChange={(id) => {
                 rememberTenant(id);
                 const tenant = tenants().find((item) => item.id === id);
-                navigate(`/t/${tenant?.slug || id}`);
+                navigate(routes.tenant(tenant?.slug || id).overview());
               }}
             >
               <For each={tenants()}>
@@ -170,7 +172,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
                     // current value (unscoped pages), so navigate on select too.
                     onSelect={() => {
                       rememberTenant(tenant.id);
-                      navigate(`/t/${tenant.slug || tenant.id}`);
+                      navigate(routes.tenant(tenant.slug || tenant.id).overview());
                     }}
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
                     class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-hover"
@@ -327,46 +329,26 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
 
 function navFor(tenantId: string | undefined): NavItem[] {
   if (!tenantId) return [];
-  const base = `/t/${tenantId}`;
+  const tenant = routes.tenant(tenantId);
+  const base = tenant.overview();
 
+  const item = (id: string, label: string, href: string, exact = false): NavItem => ({
+    id,
+    label,
+    href,
+    match: (value) => value === href || (!exact && value.startsWith(`${href}/`)),
+  });
+
+  // Overview is the tenant root; a prefix match would also match every child.
   return [
-    { id: "overview", label: "Overview", href: base, match: (value) => value === base },
-    {
-      id: "dashboards",
-      label: "Dashboards",
-      href: `${base}/dashboards`,
-      match: (value) => value.startsWith(`${base}/dashboards`),
-    },
-    {
-      id: "devices",
-      label: "Devices",
-      href: `${base}/devices`,
-      match: (value) => value.startsWith(`${base}/devices`),
-    },
-    {
-      id: "groups",
-      label: "Groups",
-      href: `${base}/groups`,
-      match: (value) => value.startsWith(`${base}/groups`),
-    },
-    {
-      id: "policies",
-      label: "Policies",
-      href: `${base}/policies`,
-      match: (value) => value.startsWith(`${base}/policies`),
-    },
-    {
-      id: "applications",
-      label: "Applications",
-      href: `${base}/applications`,
-      match: (value) => value.startsWith(`${base}/applications`),
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      href: `${base}/settings`,
-      match: (value) => value.startsWith(`${base}/settings`),
-    },
+    item("overview", "Overview", base, true),
+    item("dashboards", "Dashboards", tenant.dashboards()),
+    item("devices", "Devices", tenant.devices()),
+    item("groups", "Groups", tenant.groups()),
+    item("policies", "Policies", tenant.policies()),
+    item("applications", "Applications", tenant.applications()),
+    item("scripts", "Scripts", tenant.scripts()),
+    item("settings", "Settings", tenant.settings()),
   ];
 }
 
@@ -402,9 +384,16 @@ export function AppShell(props: {
   );
 
   const activeId = createMemo(() => {
-    const routeId = routeTenantId();
+    const routeKey = routeTenantId();
 
-    if (routeId) return routeId;
+    if (routeKey) {
+      const tenant = (me.data?.tenants ?? []).find(
+        (entry) => entry.id === routeKey || entry.slug === routeKey,
+      );
+
+      return tenant?.id ?? routeKey;
+    }
+
     const known = me.data?.tenants ?? [];
     const remembered = lastTenant();
 
@@ -422,6 +411,16 @@ export function AppShell(props: {
     },
   );
 
+  /** Link segment: the slug when the membership is known, so clicks never start on an id URL. */
+  const tenantSegment = createMemo(() => {
+    const key = routeTenantId();
+
+    if (!key) return undefined;
+    const tenant = (me.data?.tenants ?? []).find((entry) => entry.id === key || entry.slug === key);
+
+    return tenant?.slug ?? key;
+  });
+
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
   const { can, canAny } = useCan();
 
@@ -432,7 +431,7 @@ export function AppShell(props: {
   );
 
   const navItems = createMemo(() =>
-    navFor(scopedTenant()).filter((item) => {
+    navFor(tenantSegment()).filter((item) => {
       if (item.id === "settings") return canAny(SETTINGS_READ_PERMISSIONS);
 
       const required = tenantSectionPermission(item.id);

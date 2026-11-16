@@ -12,7 +12,7 @@ export function BrandLogo(props: { class?: string }) {
   const sizing = () => props.class ?? "h-4";
 
   return (
-    <>
+    <span class="inline-flex items-center">
       <img
         src="/assets/brand/mattrax.png"
         alt="Mattrax"
@@ -30,6 +30,6 @@ export function BrandLogo(props: { class?: string }) {
         decoding="async"
         class={cn("hidden w-auto dark:block", sizing())}
       />
-    </>
+    </span>
   );
 }

@@ -56,6 +56,7 @@ Query parameters:
 | `staleDays`          | Integer                                                                 |
 | `health`             | `healthy`, `attention`, `critical`, `unknown`, `stale`                  |
 | `push`               | `failing`, `invalid`                                                    |
+| `setup`              | `awaiting` (ADE held in Setup Assistant), `complete`                    |
 | `limit` / `offset`   | Pagination                                                              |
 | `sort` / `direction` | `name`, `health`, `lastSeenAt`, `enrolledAt`, `status` and `asc`/`desc` |
 
@@ -92,8 +93,77 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/export?status=enrolled" \
 
 CSV columns: name, serial, model, platform, status, OS version, OS build, last seen,
 enrolled at, asset tag, model number, FileVault, battery health, capabilities, inventory
-updated and groups. Export is capped at 10,000 rows; a truncated response sets
-`X-Export-Truncated`.
+updated and groups. Visible custom attributes follow as `attribute:<key>` columns. Export
+is capped at 10,000 rows; a truncated response sets `X-Export-Truncated`.
+
+## Custom attributes
+
+Tenants define their own device fields — cost centre, warranty end, loaner owner, anything
+else they track — instead of putting them in notes. A definition has a stable key, a label,
+a type (`text`, `number`, `boolean`, `date` or `select`), optional select options, a
+required flag and a visibility (`visible` attributes get table columns and CSV columns;
+`hidden` ones are API-only).
+
+Manage the registry from **Settings → Attributes**. Keys are lowercase identifiers
+(`[a-z][a-z0-9_]*`, maximum 64 characters) because they become CSV headers and policy
+variables; they cannot be renamed after creation. Deleting a definition deletes every
+device value for it, and any policy that still references its variable is rejected until
+the reference is removed.
+
+### Values on a device
+
+The device page has an **Attributes** panel with one editor per visible attribute. Saving
+sends only changed keys; emptying a field sends an explicit clear. Required attributes
+reject empty values, select attributes must use one of their options, dates are
+`YYYY-MM-DD`, booleans canonicalise to `true`/`false`, and numbers normalise through
+`Number`.
+
+```bash
+curl -X PUT "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/attributes" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "values": { "cost_centre": "EMEA", "warranty_end": "2027-01-31" },
+    "replace": false
+  }'
+```
+
+`values` merges: listed keys are written, `null` clears that key, and unlisted keys are
+left alone. Set `"replace": true` to clear every registered key that is absent. Every
+write and clear is audited with the keys but not the values.
+
+### CSV import
+
+Bulk values go through a CSV with a `serial` column and one `attribute:<key>` column per
+attribute (a bare key or the label is also accepted):
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/attributes/import" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --rawfile csv values.csv '{ csv: $csv }')"
+```
+
+Empty cells clear the value, unknown columns and duplicate serials are reported, and the
+response lists a status per row. An export from the Devices page can be edited and
+re-imported unchanged. Imports are capped at 1,000 rows and do not create devices: a
+serial that is not in the tenant fails that row.
+
+The device list's search box matches attribute values. The toolbar also filters on one
+registered attribute (select attributes filter on their options); the filter is stored in
+the URL with the other device filters, so a view can be shared.
+
+### Enrollment questions
+
+**Settings → Enrollment → Enrollment questions** turns a registered attribute into a
+prompt on the public enrollment page. The enrolling person enters the hardware serial
+(and optionally the device name and asset tag when the tenant enables them), then answers
+the questions. Answers are validated with the same type, option and requiredness rules as
+the dashboard and stored against the serial. When a device with that serial first checks
+in, the answers become device attribute values (audited with the `enrollment` source).
+
+A question can override the attribute's prompt and required flag. Questions are presented
+in order and the platform instructions are hidden until the form is submitted.
 
 ## Device detail
 
@@ -125,9 +195,13 @@ The detail page and API expose:
 - DDM declaration status.
 - Installed applications, with the last report time and a stale marker.
 - APNs push health.
+- Apple user channels: per-user binding, last check-in, push health and reported profiles.
 - Identity certificate counts.
 - FileVault recovery-key presence, format (`plaintext` or unwrapped-on-reveal CMS),
   escrow age and whether the last security report is stale.
+- The managed local administrator created during macOS ADE setup; the password is
+  sealed at rest and revealed through a step-up read.
+- ADE setup state (`Awaiting setup` or released) with the setup release timestamp.
 - Activation Lock bypass-code presence and `IsActivationLockManageable`.
 - Passcode and software-update state, lockdown mode, managed-certificate count and
   `mdm.app` entries.
@@ -224,22 +298,23 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
   -d '{ "action": "sync" }'
 ```
 
-| Action                         | Apple                | Windows       | Android     | Step-up |
-| ------------------------------ | -------------------- | ------------- | ----------- | ------- |
-| `sync`                         | APNs wake-up         | Not supported | Push policy | No      |
-| `lock`                         | Yes (PIN)            | No            | Yes         | Yes     |
-| `wipe`                         | Yes (PIN)            | Yes           | Yes         | Yes     |
-| `restart`                      | Yes                  | Yes           | Yes         | Yes     |
-| `shutdown`                     | Yes                  | No            | No          | Yes     |
-| `clear-passcode`               | Yes                  | No            | No          | Yes     |
-| `install-app`                  | Manifest or Store id | No            | No          | Yes     |
-| `collect-security-info`        | Yes                  | No            | No          | No      |
-| `refresh-applications`         | Yes (manual refresh) | No            | No          | No      |
-| `collect-activation-lock-code` | Yes (supervised)     | No            | No          | Yes     |
-| `rotate-filevault-key`         | Yes                  | No            | No          | Yes     |
-| `set-recovery-lock`            | Yes (Apple silicon)  | No            | No          | Yes     |
-| `verify-recovery-lock`         | Yes (Apple silicon)  | No            | No          | Yes     |
-| `unenroll` (endpoint)          | Yes                  | Yes           | No          | No      |
+| Action                         | Apple                         | Windows       | Android     | Step-up |
+| ------------------------------ | ----------------------------- | ------------- | ----------- | ------- |
+| `sync`                         | APNs wake-up                  | Not supported | Push policy | No      |
+| `lock`                         | Yes (PIN)                     | No            | Yes         | Yes     |
+| `wipe`                         | Yes (PIN)                     | Yes           | Yes         | Yes     |
+| `return-to-service`            | iOS 17+/tvOS 18+/visionOS 26+ | No            | No          | Yes     |
+| `restart`                      | Yes                           | Yes           | Yes         | Yes     |
+| `shutdown`                     | Yes                           | No            | No          | Yes     |
+| `clear-passcode`               | Yes                           | No            | No          | Yes     |
+| `install-app`                  | Manifest or Store id          | No            | No          | Yes     |
+| `collect-security-info`        | Yes                           | No            | No          | No      |
+| `refresh-applications`         | Yes (manual refresh)          | No            | No          | No      |
+| `collect-activation-lock-code` | Yes (supervised)              | No            | No          | Yes     |
+| `rotate-filevault-key`         | Yes                           | No            | No          | Yes     |
+| `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes     |
+| `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes     |
+| `unenroll` (endpoint)          | Yes                           | Yes           | No          | No      |
 
 The action menu is capability-driven: `GET /api/v1/tenants/:tenantId/devices/:id` returns an
 `actions` array for the device. The API rejects an action that is not in that list, so a
@@ -265,6 +340,7 @@ Commands are recorded with a lifecycle and a delivery deadline:
 | Lock, clear passcode              | 15 minutes        |
 | Restart, shutdown                 | 30 minutes        |
 | Security info, device information | 24 hours          |
+| ADE setup commands                | 24 hours          |
 | App install                       | 24 hours          |
 | Installed-application inventory   | 7 days            |
 | Erase                             | 7 days            |
@@ -285,6 +361,32 @@ Queueing a wipe supersedes every other pending action - including an earlier wip
 why double-clicking **Erase** leaves exactly one erase queued - and a newer lock replaces
 the previous lock PIN.
 
+### Return to Service
+
+`return-to-service` erases an iPhone, iPad, Apple TV or Apple Vision Pro and lets it enrol
+itself again. Apple does not support Return to Service on macOS, and Mattrax refuses the
+action there with an explanation instead of sending an erase Apple will ignore.
+
+The erase carries:
+
+- the device's effective **Wi-Fi profile**, so it can rejoin the network after erasing;
+- the signed enrollment profile for devices that are not assigned in Apple Business Manager;
+  ADE devices re-fetch their profile from Apple's ADE flow instead (the response reports
+  `automatedDeviceEnrollment: true`);
+- the escrowed **bootstrap token**. iOS/iPadOS/visionOS 26+ require it for Return to Service
+  with app preservation, so the action refuses when the device has not escrowed one.
+
+Before queueing, Mattrax requires an enrolled Apple device, a Wi-Fi configuration assigned to
+it, and (on 26+) an escrowed bootstrap token. Missing prerequisites are reported as an
+actionable `400` rather than sending an erase that cannot re-enrol. The action is recorded on
+the device timeline; when the device comes back and sends its next `TokenUpdate`, Mattrax
+records the completed re-enrolment.
+
+Devices whose ADE profile sets `is_return_to_service` also send a `ReturnToService` check-in
+before erasing (for example when a user triggers it from Control Center). Mattrax answers it
+with the same Wi-Fi profile and bootstrap token; with no Wi-Fi policy or for an unenrolled
+device it answers `Enabled: false` and the device falls back to a normal erase.
+
 Command state is reconciled against what the device reports, so a command the device has
 already satisfied does not stay `sent` forever. A reported application inventory proves
 whether a delivered install landed (when the catalogue entry resolves to a bundle id); an
@@ -297,6 +399,44 @@ issued directly and rely on the Pub/Sub result. The daily maintenance run expire
 still active past its deadline (Android has no other way to close a lost result) and prunes
 terminal command history older than 90 days. The audit log keeps the record after the row is
 gone.
+
+## Users
+
+Two different things are called "users" on a device page:
+
+- **Linked directory users** are Mattrax/Entra/SCIM accounts associated with the device
+  (`GET/PUT /devices/:id/users`). Their policies are delivered on the device channel, so a
+  user policy affects every login on the device. The checkbox list on the device page edits
+  these.
+- **Apple user channels** are the logins Apple itself manages over the MDM user channel.
+  They carry push credentials, profiles and per-user commands, and they exist only for Apple
+  devices. The device page shows them under the same **Users** panel with their binding, last
+  check-in, push health and reported profile count.
+
+```text
+GET  /api/v1/tenants/:tenantId/devices/:id/apple-users
+POST /api/v1/tenants/:tenantId/devices/:id/apple-users/:userId/action
+```
+
+`GET .../apple-users` returns `{ enrollmentMode, users }`. `enrollmentMode` is `device` for a
+normal device enrollment and `user` for an Apple User Enrollment (BYOD). Each user has
+`platformUserId` (Apple's opaque `UserID` or `EnrollmentUserID`), the reported short and long
+names, a `binding` (`authenticated`, `enrollment` or `unbound`), push health and the profiles
+the channel last reported.
+
+Per-user actions:
+
+| Action             | Behaviour                                                              |
+| ------------------ | ---------------------------------------------------------------------- |
+| `sync`             | APNs wake-up to that user's token. Rejected when no token is stored.   |
+| `refresh-profiles` | Queues `ProfileList` on the user channel; the answer fills `profiles`. |
+
+Both require the write role, not a step-up. They are refused unless the device is enrolled,
+the user channel exists on _this_ device, and the tenant owns the device.
+
+The device channel and a user channel never share a queue. A command queued for the device
+is not delivered on a user check-in, and a user command is only acknowledged by the same
+user's channel. Results from a user channel never overwrite device inventory.
 
 ## Unenroll and delete
 
@@ -359,6 +499,18 @@ DELETE /api/v1/tenants/:tenantId/device-pre-registrations/:id
 DELETE /api/v1/tenants/:tenantId/device-pre-registrations
 ```
 
+## Scripts and the device timeline
+
+The device page's activity feed includes every script run. A terminal run writes
+`script.run_completed` or `script.run_failed` with the script name, trigger, status, exit
+code, duration and timeout flag. Output is never copied into the timeline; open the script's
+run history to read, copy or download it.
+
+Create and assign scripts in **Scripts**. Apple devices receive them as
+`com.mattrax.script` profiles executed by the Mattrax agent; Windows uses the same agent
+because Windows MDM has no arbitrary-script CSP; Android is unsupported. See
+[Scripts](/manage/scripts).
+
 ## Health
 
 `GET /api/v1/tenants/:tenantId/device-health` returns fleet counts. The detail endpoint
@@ -370,3 +522,4 @@ returns reasons and a level. Health is derived, not a compliance policy. See
 - [Groups](/manage/groups)
 - [Policies](/manage/policies)
 - [Applications](/manage/applications)
+- [Scripts](/manage/scripts)

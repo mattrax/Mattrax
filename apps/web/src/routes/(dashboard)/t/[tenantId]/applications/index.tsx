@@ -24,6 +24,7 @@ import { Badge } from "~/components/ui/badge";
 import { Package } from "~/components/ui/icons";
 import { enterpriseQueries, type ApplicationRow } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
+import { routes } from "~/lib/routes";
 
 const sourceLabel = (source: ApplicationRow["source"]) =>
   Match.value(source).pipe(
@@ -104,7 +105,7 @@ export default function ApplicationsPage() {
         actions={
           <div class="flex flex-wrap items-center gap-2">
             <Show when={can("applications.write")}>
-              <LinkButton href={`/t/${params.tenantId}/applications/new`}>
+              <LinkButton href={routes.tenant(params.tenantId).newApplication()}>
                 Add application
               </LinkButton>
             </Show>
@@ -121,7 +122,7 @@ export default function ApplicationsPage() {
         toolbar={
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
-        rowHref={(row) => `/t/${params.tenantId}/applications/${row.id}`}
+        rowHref={(row) => routes.tenant(params.tenantId).application(row.id)}
         empty={
           conditions().length > 0 ? (
             <EmptyState
@@ -136,7 +137,7 @@ export default function ApplicationsPage() {
               description="Add an Apple manifest or App Store app, or catalogue a Windows/Android package."
               action={
                 <Show when={can("applications.write")}>
-                  <LinkButton href={`/t/${params.tenantId}/applications/new`}>
+                  <LinkButton href={routes.tenant(params.tenantId).newApplication()}>
                     Add application
                   </LinkButton>
                 </Show>
@@ -154,7 +155,7 @@ export default function ApplicationsPage() {
               <span class="block min-w-0">
                 <a
                   class="block truncate font-medium hover:underline"
-                  href={`/t/${params.tenantId}/applications/${row.id}`}
+                  href={routes.tenant(params.tenantId).application(row.id)}
                 >
                   {row.name}
                 </a>

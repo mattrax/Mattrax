@@ -3,13 +3,14 @@ import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
 import { ScepRepository, type ScepCaScope, type ScepIssuedCertificate } from "./repository.js";
 import { randomCertificateSerial } from "./crypto.js";
-import { ensureScepCa } from "./ca.js";
+import { certificateFingerprintSha256, ensureScepCa } from "./ca.js";
 import {
   parseScepPkcsReq,
   createDeviceCertificate,
   buildScepCertRep,
   buildScepCertFailure,
   certificateSerialHex,
+  pemToCert,
 } from "./pkcs7.js";
 
 type AttributeValueBlock = { readonly value?: unknown };
@@ -35,6 +36,10 @@ export class ScepServiceTag extends Context.Service<
     /**
      * The CA certificate for a tenant. Bootstraps the tenant CA on first use;
      * there is no deployment-wide fallback, so the URL must name a tenant.
+     *
+     * This is always the *current* CA: a profile fetched after a rotation
+     * trusts only its successor, while identities issued by the retired CA keep
+     * renewing against the trust anchors in the repository.
      */
     readonly getCaCert: (
       scope: ScepCaScope,
@@ -70,6 +75,7 @@ export const ScepService = Layer.effect(
     ): Effect.Effect<ArrayBuffer, ScepError> =>
       Effect.gen(function* () {
         const ca = yield* ensureScepCa(repo, scope);
+        const issuedBy = yield* certificateFingerprintSha256(ca.caCert);
 
         const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk).pipe(
           Effect.mapError(
@@ -121,12 +127,30 @@ export const ScepService = Layer.effect(
 
           if (!signer) return yield* failureCertRep("1");
 
+          // A renewal is authenticated by the certificate being renewed. It may
+          // have been issued by the current CA or by a predecessor that is still
+          // inside its overlap window, so every live trust anchor is tried.
+          const anchors = yield* repo.trustedCaCertificates(scope, new Date());
+          const anchorPems = anchors.length > 0 ? anchors : [ca.certPem];
+
           const valid = yield* Effect.tryPromise({
-            try: () => signer.verify(ca.caCert),
+            try: async () => {
+              for (const anchorPem of anchorPems) {
+                const anchor = pemToCert(anchorPem);
+
+                if (await signer.verify(anchor)) return true;
+              }
+
+              return false;
+            },
             catch: (cause) => new ScepError({ message: "Failed to verify renewal signer", cause }),
           }).pipe(Effect.match({ onFailure: () => false, onSuccess: (value) => value }));
 
           if (!valid) return yield* failureCertRep("1");
+
+          const signerExpiry = signer.notAfter.value;
+
+          if (signerExpiry.getTime() <= Date.now()) return yield* failureCertRep("4");
           const serial = certificateSerialHex(signer);
           issued = repo.findIssuedCertificate
             ? yield* repo.findIssuedCertificate(scope, serial)
@@ -154,9 +178,18 @@ export const ScepService = Layer.effect(
         if (authentication?.organizationalUnit !== scope.organizationId)
           return yield* failureCertRep("2");
         // Allow ten minutes of clock skew between the CA and device, matching
-        // common SCEP clients.
+        // common SCEP clients. An identity never outlives the CA that signed it:
+        // towards the end of a CA's life the remaining overlap clamps the
+        // validity instead of issuing certificates the chain cannot support.
         const notBefore = new Date(Date.now() - 10 * 60 * 1000);
-        const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+        const notAfter = new Date(
+          Math.min(
+            notBefore.getTime() + 365 * 24 * 60 * 60 * 1000,
+            ca.caCert.notAfter.value.getTime(),
+          ),
+        );
+
         const serial = randomCertificateSerial();
 
         const publicKey = yield* Effect.tryPromise({
@@ -202,6 +235,9 @@ export const ScepService = Layer.effect(
             // Renewals must stay linked to the device so revocation, health and
             // the next renewal keep working instead of orphaning the identity.
             deviceId: issued?.deviceId,
+            // Which CA signed it. A rotated fleet therefore has an auditable
+            // record of when every identity moved to the successor CA.
+            caFingerprintSha256: issuedBy,
             notAfter,
           });
         }

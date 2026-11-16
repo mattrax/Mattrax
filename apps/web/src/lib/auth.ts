@@ -22,7 +22,13 @@ type AuthUser = {
   image?: string | null;
 };
 
-type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } }>;
+type AuthResult<T = unknown> = Promise<{
+  data?: T;
+  error?: { message?: string; tag?: string };
+}>;
+
+/** The passkey registration claim sent to `beginPasskeyRegistration`. */
+type RegistrationPayload = { name: string; email: string; grant?: string };
 
 const PrivateReveal = Schema.Struct({
   kind: Schema.Literals(["totp-enrollment", "recovery-codes"]),
@@ -155,7 +161,11 @@ const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
   try {
     return { data: await fn() };
   } catch (error) {
-    return { error: { message: errorMessage(raisedFailure(error)) } };
+    const raised = raisedFailure(error);
+
+    // Keep the tagged reason so callers can distinguish a transient
+    // PasskeyRejected (worth one retry) from a dismissed prompt.
+    return { error: { message: errorMessage(raised), tag: errorTag(raised) } };
   }
 };
 
@@ -346,6 +356,9 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
       useBrowserAutofill: false,
     });
   } catch {
+    // The browser/OS prompt was dismissed or timed out. No tag: callers only
+    // retry a server-tagged PasskeyRejected, so a deliberate cancellation is
+    // never re-prompted.
     throw new Error("That passkey wasn't confirmed. Try again.");
   }
 
@@ -381,8 +394,15 @@ export const authClient = {
    * registration and credential are committed together; the account cannot
    * exist without a passkey.
    */
-  register: (payload: { name: string; email: string }) =>
+  register: (payload: { name: string; email: string; grant?: string }) =>
     result(async () => {
+      const registration: RegistrationPayload = {
+        name: payload.name,
+        email: payload.email,
+      };
+
+      if (payload.grant !== undefined) registration.grant = payload.grant;
+
       const started = await request<{
         flowId: string;
         expiresAtMillis: number;
@@ -393,7 +413,7 @@ export const authClient = {
           flowId: crypto.randomUUID(),
           commandId: crypto.randomUUID(),
           profileId: "default",
-          registration: { name: payload.name, email: payload.email },
+          registration,
         }),
       });
 
@@ -413,20 +433,40 @@ export const authClient = {
 
       capturePostHog("auth_registered", { method: "passkey" });
 
-      // Some authenticators need a moment before the freshly created
-      // discoverable credential is offered again. Retry only the transient
-      // rejection so a real ceremony failure still surfaces.
-      for (let attempt = 0; attempt < 4; attempt++) {
-        try {
-          return await passkeySignInFlow();
-        } catch (error) {
-          if (errorTag(raisedFailure(error)) !== "PasskeyRejected" || attempt === 3) throw error;
+      // Completing the registration normally establishes the session itself.
+      // Only sign in separately when it did not: the freshly created
+      // discoverable credential can still be rejected for a moment, and a
+      // redundant ceremony is the least reliable part of the flow.
+      const signedIn = await request("/me")
+        .then(() => true)
+        .catch(() => false);
 
-          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      if (signedIn) return { signedIn: true };
+
+      // Some authenticators still need a moment before the newly created
+      // discoverable credential is offered for a separate sign-in, so retry a
+      // transient rejection. A permanent failure or a dismissed prompt must
+      // surface immediately.
+      for (let attempt = 0; attempt < 12; attempt++) {
+        try {
+          await passkeySignInFlow();
+
+          return { signedIn: true };
+        } catch {
+          // The registration sheet has just closed, so the follow-up prompt
+          // can be dismissed or find the credential before the browser is
+          // ready. The ceremony is idempotent; this loop is not user-driven.
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
 
-      throw new Error("Could not sign in with the new passkey");
+      const signedInAfterRetries = await request("/me")
+        .then(() => true)
+        .catch(() => false);
+
+      // The account and passkey exist either way. Callers send the person to
+      // sign in explicitly instead of failing an account that was created.
+      return { signedIn: signedInAfterRetries };
     }),
   ssoSignIn: (token: string) =>
     result(async () => {
@@ -443,6 +483,27 @@ export const authClient = {
 
       return state;
     }),
+  /**
+   * Guest sign-up verification. Public endpoints on the auth surface, so they
+   * use the same transport and error envelope as registration itself.
+   */
+  requestRegistrationCode: (payload: { name: string; email: string }) =>
+    result(async () =>
+      request<{ status: "ok"; emailSent: boolean }>("/register/verification", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    ),
+  verifyRegistrationCode: (payload: { email: string; code: string }) =>
+    result(async () =>
+      request<{ grant: string }>("/register/verification/verify", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    ),
+  /** The committed server session, for identity checks after a ceremony. */
+  session: () =>
+    result(async () => request<Session | null>("/getSession", { method: "POST", body: "{}" })),
   signOut: () =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });

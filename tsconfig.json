@@ -1,11 +1,10 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "allowImportingTsExtensions": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "composite": false
   },
   "files": [],
   "references": [
@@ -24,10 +23,10 @@
     { "path": "./packages/azure-oidc" },
     { "path": "./packages/azure-graph" },
     { "path": "./packages/dm-android" },
-    { "path": "./packages/policy-apple" },
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },
     { "path": "./apps/api" },
+    { "path": "./apps/api/tsconfig.tooling.json" },
     { "path": "./apps/cli" },
     { "path": "./apps/mdm-compliance" },
     { "path": "./apps/web" }

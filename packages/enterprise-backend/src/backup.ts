@@ -1,6 +1,6 @@
 import { Data, Effect, Schema } from "effect";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
-import { schema, type R2Bucket } from "@mattrax/enterprise-core";
+import { R2_PRIVATE_CACHE_CONTROL, schema, type R2Bucket } from "@mattrax/enterprise-core";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { EnterpriseDb } from "./schema.ts";
 
@@ -270,7 +270,10 @@ export const runTenantBackup = (
     const upload = yield* Effect.tryPromise({
       try: () =>
         storage.put(key, body, {
-          httpMetadata: { contentType: "application/json; charset=utf-8" },
+          httpMetadata: {
+            contentType: "application/json; charset=utf-8",
+            cacheControl: R2_PRIVATE_CACHE_CONTROL,
+          },
           customMetadata: {
             tenantId: organizationId,
             version: String(built.bundle.version),
@@ -486,7 +489,7 @@ export const listTenantBackups = (
   db: EnterpriseDb,
   organizationId: string,
   limit = 20,
-): Effect.Effect<Array<TenantBackupRun>, unknown, any> =>
+): Effect.Effect<Array<TenantBackupRun>, unknown, never> =>
   Effect.gen(function* () {
     const rows = yield* db
       .select()

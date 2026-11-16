@@ -5,14 +5,17 @@ import {
   type CommandResultPlist,
   type DDMStatusReport,
   type TokenUpdatePlist,
+  type UserAuthenticatePlist,
   DeviceUnenrolled,
   MdmError,
+  resolveCheckinChannel,
 } from "./schema.js";
 import {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
   MdmOrigin,
+  type AppleReturnToServiceConfiguration,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
@@ -101,6 +104,22 @@ export declare namespace AppleMdmService {
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
     ) => Effect.Effect<void, MdmError>;
+    /**
+     * Handle macOS's two-transaction user-channel authentication.
+     *
+     * `null` means the device or user is not managed, which the route turns
+     * into Apple's 410 so the client stops asking for that user. A returned
+     * dictionary is the plist body of the 200 response.
+     */
+    readonly handleUserAuthenticate: (
+      auth: UserAuthenticatePlist,
+      identityCertificate?: string,
+      identityFingerprintSha256?: string,
+      identityCertificateSerial?: string,
+    ) => Effect.Effect<
+      { readonly digestChallenge?: string; readonly authToken?: string } | null,
+      MdmError
+    >;
     readonly handleTokenUpdate: (
       update: TokenUpdatePlist,
       identityCertificate?: string,
@@ -130,6 +149,9 @@ export declare namespace AppleMdmService {
       udid?: string,
       identityCertificateSerial?: string,
     ) => Effect.Effect<string | null, MdmError>;
+    readonly handleReturnToService: (
+      scope: CheckinScope,
+    ) => Effect.Effect<AppleReturnToServiceConfiguration, MdmError>;
     readonly handleStatusReport: (
       scope: CheckinScope,
       report: DDMStatusReport,
@@ -178,6 +200,8 @@ export declare namespace AppleMdmService {
       readonly supportEmail?: string;
       readonly displayName?: string;
       readonly identifier?: string;
+      /** Issue an Apple User Enrollment (BYOD) profile for this Managed Apple Account. */
+      readonly managedAppleAccount?: string;
     }) => Effect.Effect<string, MdmError>;
   };
 }
@@ -190,12 +214,48 @@ const [DeviceCheckinScope, UserCheckinScope] = CheckinScope.members;
 
 const [
   AuthenticateEvent,
+  UserAuthenticateEvent,
   TokenUpdateEvent,
   CheckOutEvent,
   BootstrapTokenEvent,
   CommandResultEvent,
   DeclarationStatusEvent,
 ] = AppleDeviceEvent.members;
+
+/**
+ * Build the check-in scope for a resolved device/user channel.
+ *
+ * The identity certificate fields are identical on both channels: a user
+ * connection is still authenticated by the device's mTLS identity and never by
+ * a user password. The route and the service share this so the scope a command
+ * result is attributed to is the same one its check-in used.
+ */
+export const appleCheckinScope = (
+  mdmOrigin: MdmOrigin,
+  channel: NonNullable<ReturnType<typeof resolveCheckinChannel>>,
+  identityCertificate?: string,
+  identityCertificateFingerprintSha256?: string,
+  identityCertificateSerial?: string,
+): CheckinScope => {
+  const identity = {
+    identityCertificate,
+    identityCertificateFingerprintSha256,
+    identityCertificateSerial,
+    mdmOrigin,
+  };
+
+  if (channel.kind === "device")
+    return DeviceCheckinScope.make({ udid: channel.deviceIdentifier, ...identity });
+
+  return UserCheckinScope.make({
+    udid: channel.deviceIdentifier,
+    enrollmentId: channel.enrollmentId,
+    source: channel.source,
+    userId: channel.userId,
+    userShortName: channel.userShortName,
+    ...identity,
+  });
+};
 
 export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.Service>()(
   "AppleMdmTopic",
@@ -236,7 +296,10 @@ const makeAppleMdmService = (
   topic: string,
   trust?: AppleMdmTrustService,
 ): AppleMdmService.Service => {
-  const toMdmError = (message: string) => () => new MdmError({ message });
+  const toMdmError =
+    (message: string) =>
+    (cause: unknown): MdmError =>
+      cause instanceof MdmError ? cause : new MdmError({ message, cause });
 
   const verifyDeviceSignature: AppleMdmService.Service["verifyDeviceSignature"] = (input) =>
     Effect.gen(function* () {
@@ -284,19 +347,37 @@ const makeAppleMdmService = (
 
   const mdmOrigin = new MdmOrigin({ url: config.origin });
 
+  const channelScope = (
+    channel: ReturnType<typeof resolveCheckinChannel>,
+    identityCertificate?: string,
+    identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
+  ): CheckinScope | null =>
+    channel
+      ? appleCheckinScope(
+          mdmOrigin,
+          channel,
+          identityCertificate,
+          identityFingerprintSha256,
+          identityCertificateSerial,
+        )
+      : null;
+
   const handleAuthenticate = (
     auth: AuthenticatePlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = DeviceCheckinScope.make({
-      udid: auth.UDID,
+    const scope = channelScope(
+      resolveCheckinChannel(auth),
       identityCertificate,
-      identityCertificateFingerprintSha256: identityFingerprintSha256,
+      identityFingerprintSha256,
       identityCertificateSerial,
-      mdmOrigin,
-    });
+    );
+
+    if (!Predicate.isTagged(scope, "device"))
+      return Effect.fail(new MdmError({ message: "Authenticate has no device identifier" }));
 
     return backend
       .appleDeviceEvent(
@@ -305,6 +386,11 @@ const makeAppleMdmService = (
           serialNumber: auth.SerialNumber,
           model: auth.Model ?? auth.ModelName ?? auth.ProductName,
           osVersion: auth.OSVersion,
+          enrollmentId: auth.EnrollmentID,
+          // `UDID` is forbidden for an Apple User Enrollment, which reports the
+          // per-enrollment identifier instead. The distinction decides how the
+          // device and its (mandatory) user are displayed and managed.
+          enrollmentMode: auth.UDID ? "device" : "user",
         }),
       )
       .pipe(
@@ -313,28 +399,65 @@ const makeAppleMdmService = (
       );
   };
 
+  const handleUserAuthenticate = (
+    auth: UserAuthenticatePlist,
+    identityCertificate?: string,
+    identityFingerprintSha256?: string,
+    identityCertificateSerial?: string,
+  ): Effect.Effect<
+    { readonly digestChallenge?: string; readonly authToken?: string } | null,
+    MdmError
+  > =>
+    Effect.gen(function* () {
+      // Mattrax never asks for a password: the first transaction answers with
+      // an empty DigestChallenge, which Apple defines as "no AuthToken is
+      // required". A digest can therefore only be an unsolicited reply from a
+      // stale challenge; Apple requires an empty AuthToken (not a 410) so the
+      // client ends the handshake instead of retrying.
+      if (auth.DigestResponse !== undefined) return { authToken: "" };
+
+      const scope = channelScope(
+        resolveCheckinChannel(auth),
+        identityCertificate,
+        identityFingerprintSha256,
+        identityCertificateSerial,
+      );
+
+      if (!Predicate.isTagged(scope, "user"))
+        return yield* new MdmError({ message: "UserAuthenticate has no user identifier" });
+
+      // A 410 tells the client to stop managing this user for the whole login
+      // session. Only unknown/unenrolled devices, or a device that the tenant
+      // has not bound to this user, reach that branch.
+      const managed = yield* backend.appleDeviceEvent(scope, UserAuthenticateEvent.make({})).pipe(
+        Effect.as(true),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(false)),
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(false)),
+        Effect.mapError(toMdmError("Failed to send UserAuthenticate event")),
+      );
+
+      return managed ? { digestChallenge: "" } : null;
+    });
+
   const handleTokenUpdate = (
     update: TokenUpdatePlist,
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = update.UserID
-      ? UserCheckinScope.make({
-          udid: update.UDID,
-          identityCertificate,
-          identityCertificateFingerprintSha256: identityFingerprintSha256,
-          identityCertificateSerial,
-          userId: update.UserID,
-          mdmOrigin,
-        })
-      : DeviceCheckinScope.make({
-          udid: update.UDID,
-          identityCertificate,
-          identityCertificateFingerprintSha256: identityFingerprintSha256,
-          identityCertificateSerial,
-          mdmOrigin,
-        });
+    const channel = resolveCheckinChannel(update);
+
+    if (!channel)
+      return Effect.fail(new MdmError({ message: "TokenUpdate has no device identifier" }));
+
+    const scope = channelScope(
+      channel,
+      identityCertificate,
+      identityFingerprintSha256,
+      identityCertificateSerial,
+    );
+
+    if (!scope) return Effect.fail(new MdmError({ message: "TokenUpdate has no device scope" }));
 
     const pushToken = base64ToHex(update.Token);
 
@@ -345,8 +468,8 @@ const makeAppleMdmService = (
           pushToken,
           pushMagic: update.PushMagic,
           topic: update.Topic,
-          channel: update.UserID ? "user" : "device",
-          userId: update.UserID,
+          channel: channel.kind === "user" ? "user" : "device",
+          userId: channel.kind === "user" ? channel.userId : undefined,
           unlockToken: update.UnlockToken,
           enrollmentId: update.EnrollmentID,
           awaitingConfiguration: update.AwaitingConfiguration,
@@ -355,7 +478,17 @@ const makeAppleMdmService = (
         }),
       )
       .pipe(
-        Effect.catchTag("UnknownDevice", () => Effect.void),
+        // A device token for an unknown UDID is ignored: the device identity is
+        // already checked by the caller. A user channel, however, must belong
+        // to a user this device authenticated; silently accepting it would let
+        // any managed device register an arbitrary user's push channel.
+        Effect.catchTag("UnknownDevice", () =>
+          channel.kind === "user"
+            ? Effect.fail(
+                new MdmError({ message: "User channel is not authenticated for this device" }),
+              )
+            : Effect.void,
+        ),
         Effect.mapError(toMdmError("Failed to send TokenUpdate event")),
       );
   };
@@ -366,28 +499,30 @@ const makeAppleMdmService = (
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = checkout.UserID
-      ? UserCheckinScope.make({
-          udid: checkout.UDID,
-          userId: checkout.UserID,
-          identityCertificate,
-          identityCertificateFingerprintSha256: identityFingerprintSha256,
-          identityCertificateSerial,
-          mdmOrigin,
-        })
-      : DeviceCheckinScope.make({
-          udid: checkout.UDID,
-          identityCertificate,
-          identityCertificateFingerprintSha256: identityFingerprintSha256,
-          identityCertificateSerial,
-          mdmOrigin,
-        });
+    const channel = resolveCheckinChannel(checkout);
 
-    return backend.appleDeviceEvent(scope, CheckOutEvent.make({ userId: checkout.UserID })).pipe(
-      Effect.catchTag("ManagementNotSupported", () => Effect.void),
-      Effect.catchTag("UnknownDevice", () => Effect.void),
-      Effect.mapError(toMdmError("Failed to send CheckOut event")),
+    if (!channel)
+      return Effect.fail(new MdmError({ message: "CheckOut has no device identifier" }));
+
+    const scope = channelScope(
+      channel,
+      identityCertificate,
+      identityFingerprintSha256,
+      identityCertificateSerial,
     );
+
+    if (!scope) return Effect.fail(new MdmError({ message: "CheckOut has no device scope" }));
+
+    return backend
+      .appleDeviceEvent(
+        scope,
+        CheckOutEvent.make({ userId: channel.kind === "user" ? channel.userId : undefined }),
+      )
+      .pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.void),
+        Effect.catchTag("UnknownDevice", () => Effect.void),
+        Effect.mapError(toMdmError("Failed to send CheckOut event")),
+      );
   };
 
   const handleCommandResult = (
@@ -396,13 +531,19 @@ const makeAppleMdmService = (
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
   ): Effect.Effect<void, MdmError> => {
-    const scope: CheckinScope = DeviceCheckinScope.make({
-      udid: result.UDID,
+    const channel = resolveCheckinChannel(result);
+
+    if (!channel)
+      return Effect.fail(new MdmError({ message: "Command result has no device identifier" }));
+
+    const scope = channelScope(
+      channel,
       identityCertificate,
-      identityCertificateFingerprintSha256: identityFingerprintSha256,
+      identityFingerprintSha256,
       identityCertificateSerial,
-      mdmOrigin,
-    });
+    );
+
+    if (!scope) return Effect.fail(new MdmError({ message: "Command result has no device scope" }));
 
     const detail = result.ErrorChain
       ? result.ErrorChain.map((e) => `${e.ErrorDomain ?? ""}:${e.ErrorCode}`).join(", ")
@@ -434,7 +575,63 @@ const makeAppleMdmService = (
     ["InstallProfile", ["Payload"]],
     // DER certificate the replacement personal recovery key is wrapped for.
     ["RotateFileVaultKey", ["ReplyEncryptionCertificate"]],
+    // A managed local admin's password hash is a binary plist `<data>` value.
+    ["AccountConfiguration", ["AutoSetupAdminAccounts.0.passwordHash"]],
+    // Return to Service carries the Wi-Fi/MDM profile and bootstrap token as
+    // data values. A JSON payload has no byte type, so they are base64 in the
+    // queue and decoded when the command plist is built.
+    [
+      "EraseDevice",
+      [
+        "ReturnToService.WiFiProfileData",
+        "ReturnToService.MDMProfileData",
+        "ReturnToService.BootstrapToken",
+      ],
+    ],
   ]);
+
+  /**
+   * Replace base64 strings at dotted paths with plist `<data>` bytes. Array
+   * indices are supported (`AutoSetupAdminAccounts.0.passwordHash`); paths that
+   * do not exist are left alone so an optional key stays absent. A path
+   * resolves to a single value, so only that value is copied.
+   */
+  const setDataAt = (value: PlistValue, parts: ReadonlyArray<string>): PlistValue => {
+    const [head, ...rest] = parts;
+
+    if (head === undefined)
+      return Schema.is(Schema.String)(value)
+        ? Uint8Array.from(atob(value), (char) => char.charCodeAt(0))
+        : value;
+
+    if (Schema.is(PlistDictionary)(value)) {
+      if (!(head in value)) return value;
+
+      // SAFETY: the predicate above proves `value` is a string-keyed record, so
+      // copying it into a mutable record cannot change the value's shape.
+      const copy = Object.assign({} as Record<string, PlistValue>, value);
+
+      copy[head] = setDataAt(value[head]!, rest);
+
+      return copy;
+    }
+
+    if (Array.isArray(value)) {
+      const index = Number(head);
+
+      if (!Number.isInteger(index) || index < 0 || index >= value.length) return value;
+      const copy = [...value];
+
+      copy[index] = setDataAt(copy[index]!, rest);
+
+      return copy;
+    }
+
+    return value;
+  };
+
+  const decodeDataPaths = (payload: PlistValue, paths: ReadonlyArray<string>): PlistValue =>
+    paths.reduce((current, path) => setDataAt(current, path.split(".")), payload);
 
   const handleCheckin = (
     scope: CheckinScope,
@@ -464,17 +661,10 @@ const makeAppleMdmService = (
         // Command payloads are stored as JSON, which has no byte type. Apple
         // expects `<data>` for these keys, so a base64 string is decoded here
         // (the same place the plist is built) rather than in the command queue.
-        for (const key of DATA_PAYLOAD_KEYS.get(manifest.requestType) ?? []) {
-          const value = payload && Schema.is(PlistDictionary)(payload) ? payload[key] : undefined;
+        const dataPaths = DATA_PAYLOAD_KEYS.get(manifest.requestType) ?? [];
 
-          if (!Schema.is(Schema.String)(value)) continue;
-          const binary = atob(value);
-          const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-
-          payload = Schema.is(PlistDictionary)(payload)
-            ? Object.assign({}, payload, { [key]: bytes })
-            : { [key]: bytes };
-        }
+        if (payload && dataPaths.length > 0 && Schema.is(PlistDictionary)(payload))
+          payload = decodeDataPaths(payload, dataPaths);
 
         return {
           commandUUID: manifest.commandUUID,
@@ -645,6 +835,19 @@ const makeAppleMdmService = (
       );
     });
 
+  const handleReturnToService = (
+    scope: CheckinScope,
+  ): Effect.Effect<AppleReturnToServiceConfiguration, MdmError> =>
+    backend.appleReturnToServiceConfiguration(scope).pipe(
+      Effect.catchTag("ManagementNotSupported", () =>
+        Effect.succeed({ enabled: false, reason: "Return to service is not supported" }),
+      ),
+      Effect.catchTag("UnknownDevice", () =>
+        Effect.fail(new MdmError({ message: "Unknown device" })),
+      ),
+      Effect.mapError(toMdmError("Failed to build the return-to-service configuration")),
+    );
+
   const handleStatusReport = (
     scope: CheckinScope,
     report: DDMStatusReport,
@@ -677,6 +880,8 @@ const makeAppleMdmService = (
     readonly supportEmail?: string;
     readonly displayName?: string;
     readonly identifier?: string;
+    /** Issue an Apple User Enrollment (BYOD) profile for this Managed Apple Account. */
+    readonly managedAppleAccount?: string;
   }): Effect.Effect<string, MdmError> =>
     serializePlist(
       Schema.decodeUnknownSync(PlistValue)(
@@ -689,6 +894,9 @@ const makeAppleMdmService = (
           challenge: options?.challenge ?? crypto.randomUUID(),
           displayName: options?.displayName,
           identifier: options?.identifier,
+          userEnrollment: options?.managedAppleAccount
+            ? { managedAppleAccount: options.managedAppleAccount }
+            : undefined,
         }),
       ),
     ).pipe(
@@ -701,11 +909,13 @@ const makeAppleMdmService = (
     mdmOrigin,
     verifyDeviceSignature,
     handleAuthenticate,
+    handleUserAuthenticate,
     handleTokenUpdate,
     handleCheckOut,
     handleCommandResult,
     handleSetBootstrapToken,
     handleGetBootstrapToken,
+    handleReturnToService,
     handleStatusReport,
     handleCheckin,
     handleDeclarativeTokens,

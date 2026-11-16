@@ -1,24 +1,17 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "types": ["vite/client"],
-    "skipLibCheck": true,
+    "module": "esnext",
     "moduleResolution": "bundler",
+    "types": ["vite/client"],
     "jsx": "preserve",
     "jsxImportSource": "@solidjs/web",
-    "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
     "allowJs": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "isolatedModules": true,
     "noEmit": true,
-    "strict": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "composite": false,
     "paths": {
       "~/*": ["./src/*"]
     }

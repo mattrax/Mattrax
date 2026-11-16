@@ -156,6 +156,27 @@ const middleware: StartMiddleware = async (event, next) => {
 
   if (outcome.session !== undefined) setPreloadedSession(event.request, outcome.session);
 
+  // Canonical tenant URLs: an id link from a bookmark or an older integration
+  // is redirected to the tenant's slug before rendering. Doing this on the
+  // server avoids a client-side rewrite that races the router transition.
+  const requestUrl = new URL(event.request.url);
+  const tenantSegment = /^\/t\/([^/]+)(\/.*)?$/.exec(requestUrl.pathname);
+
+  if (
+    event.request.method === "GET" &&
+    (event.request.headers.get("accept") ?? "").includes("text/html") &&
+    tenantSegment
+  ) {
+    const key = tenantSegment[1]!;
+    const tenant = outcome.session?.me?.tenants.find((entry) => entry.id === key);
+
+    if (tenant && tenant.slug && tenant.slug !== key)
+      return Response.redirect(
+        `${requestUrl.origin}/t/${tenant.slug}${tenantSegment[2] ?? ""}${requestUrl.search}`,
+        302,
+      );
+  }
+
   const response = await api(event, next);
 
   // The SSR token is consumed by the web Worker itself. A browser reaching the

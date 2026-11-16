@@ -141,7 +141,12 @@ describe("tenant branding migration", () => {
 
 describe("APNs push telemetry migration", () => {
   const names = migrationNames();
-  const pushMigrations = names.filter((name) => readMigration(name).includes("`last_push_at`"));
+
+  // The same telemetry column names exist on `device_apple_user` for the user
+  // channel; this suite covers the device-channel columns only.
+  const pushMigrations = names.filter((name) =>
+    /ALTER TABLE `device_apple` ADD `last_push_at`/.test(readMigration(name)),
+  );
 
   it("is added by exactly one migration", () => {
     expect(pushMigrations).toHaveLength(1);

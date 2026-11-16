@@ -55,6 +55,8 @@ describe("GET /mdm/apple/profiles", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/x-apple-aspen-config");
+    // The URL survives policy edits, so the bytes must always be revalidated.
+    expect(response.headers.get("cache-control")).toBe("private, no-cache");
     expect(await response.text()).toBe("profile-content");
   });
 

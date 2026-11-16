@@ -9,8 +9,8 @@
     "start": "node src/server.mjs"
   },
   "dependencies": {
-    "miniflare": "5.20261104.0-beta",
-    "mysql2": "^3.24.6"
+    "miniflare": "catalog:",
+    "mysql2": "catalog:"
   },
   "engines": {
     "node": ">=22.12.0"

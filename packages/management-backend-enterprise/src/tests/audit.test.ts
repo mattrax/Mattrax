@@ -88,6 +88,7 @@ describe("system audit device lifecycle", () => {
         _tag: "Authenticate" as const,
         serialNumber: "SERIAL-device-1",
         model: "MacBookPro18,3",
+        enrollmentMode: "device" as const,
       }),
     );
     expect(auditRows(db)).toHaveLength(0);

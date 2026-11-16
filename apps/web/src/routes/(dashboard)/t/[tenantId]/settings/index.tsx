@@ -1,4 +1,5 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
@@ -34,6 +35,8 @@ import { withStepUp } from "~/lib/step-up";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { rememberTenantAlias } from "~/lib/tenant";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
+import { downloadBlob } from "~/lib/download";
+import { resolveTenantId } from "~/lib/tenant";
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are
@@ -358,7 +361,7 @@ export default function GeneralSettingsPage() {
     try {
       const response = await withStepUp("backup-download", async (grant) => {
         const result = await fetch(
-          `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/backups/${encodeURIComponent(
+          `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/backups/${encodeURIComponent(
             id,
           )}/download`,
           {
@@ -390,15 +393,8 @@ export default function GeneralSettingsPage() {
     }
   };
 
-  const download = (body: string, filename: string) => {
-    const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  };
+  const download = (body: string, filename: string) =>
+    downloadBlob(new Blob([body], { type: "application/json" }), filename);
 
   const exportTenant = async () => {
     setExporting(true);
@@ -408,7 +404,7 @@ export default function GeneralSettingsPage() {
       const suffix = includeAudit() ? "?includeAudit=true" : "";
 
       const response = await fetch(
-        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/export${suffix}`,
+        `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/export${suffix}`,
         { credentials: "include" },
       );
 

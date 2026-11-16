@@ -28,7 +28,6 @@ appledm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-apple/**
-          - packages/policy-apple/**
           - packages/apns/**
           - packages/scep/**
           - packages/plist/**

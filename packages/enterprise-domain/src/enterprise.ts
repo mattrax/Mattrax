@@ -1,7 +1,31 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
-import { DeviceActionName } from "./deviceActions.ts";
+import {
+  HttpApi,
+  HttpApiClient,
+  HttpApiEndpoint,
+  HttpApiGroup,
+  HttpApiSchema,
+  OpenApi,
+} from "effect/http-api";
+import type { HttpClient } from "effect/http";
+
+import { AppleUserActionName, DeviceActionName } from "./deviceActions.ts";
+import {
+  CreateScriptRequest,
+  PatchScriptAssignmentsRequest,
+  PatchScriptRequest,
+  RunScriptRequest,
+  RunScriptResponse,
+  ScriptAgentResultRequest,
+  ScriptAgentResultResponse,
+  ScriptAgentSyncResponse,
+  ScriptAssignmentsResponse,
+  ScriptDetail,
+  ScriptExecutionsResponse,
+  ScriptListResponse,
+  ScriptSettings,
+} from "./scripts.ts";
 import { DynamicGroupKind, DynamicGroupRules } from "./dynamicGroups.ts";
 import {
   CreateDashboardRequest,
@@ -30,6 +54,22 @@ import {
   TenantRolesResponse,
 } from "./rbac.ts";
 import {
+  AttributeDefinitionListResponse,
+  AttributeDefinitionRow,
+  CreateAttributeRequest,
+  DeviceAttributeImportResponse,
+  DeviceAttributeValues,
+  EnrollmentQuestion,
+  EnrollmentQuestionListResponse,
+  ImportDeviceAttributesRequest,
+  PatchAttributeRequest,
+  PatchEnrollmentQuestionsRequest,
+  SetDeviceAttributesRequest,
+  SubmitEnrollmentAnswersRequest,
+  SubmitEnrollmentAnswersResponse,
+} from "./attributes.ts";
+import { PolicyVariablesResponse } from "./policyVariables.ts";
+import {
   CreateWebhookEndpointRequest,
   CreateWebhookEndpointResponse,
   PatchWebhookEndpointRequest,
@@ -43,12 +83,20 @@ import {
   WebhookTestResponse,
 } from "./webhooks.ts";
 
+export { AppleUserActionName };
+
 const IdParam = { id: Schema.String };
 const TenantParam = { tenantId: Schema.String };
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
+
+/** A user channel is addressed by the device plus Apple's opaque user id. */
+const TenantDeviceUserParam = { tenantId: Schema.String, id: Schema.String, userId: Schema.String };
+
+const TenantAttributeParam = { tenantId: Schema.String, attributeId: Schema.String };
+
 const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
 
 const TenantWebhookDeliveryParam = {
@@ -1042,6 +1090,30 @@ export const EmailVerificationResponse = Schema.Struct({
   challenge: Schema.optional(Schema.String),
 });
 
+/**
+ * Guest sign-up verification. The address is proven before the passkey prompt,
+ * so the account is created already verified and no callback URL is needed.
+ */
+export const BeginRegistrationVerificationRequest = Schema.Struct({
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
+  email: Schema.String.check(Schema.isMaxLength(320)),
+});
+
+export const BeginRegistrationVerificationResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  emailSent: Schema.Boolean,
+});
+
+export const CompleteRegistrationVerificationRequest = Schema.Struct({
+  email: Schema.String.check(Schema.isMaxLength(320)),
+  code: Schema.String.check(Schema.isMinLength(6), Schema.isMaxLength(6)),
+});
+
+export const CompleteRegistrationVerificationResponse = Schema.Struct({
+  /** Proof to pass to `beginPasskeyRegistration` as `registration.grant`. */
+  grant: Schema.String,
+});
+
 export const UpdateMeRequest = Schema.Struct({
   /** Same 120-character ceiling as registration. */
   name: Schema.optional(Schema.String.check(Schema.isMaxLength(120))),
@@ -1212,6 +1284,18 @@ export const DeviceRow = Schema.Struct({
   declarationModeUpdatedAt: Schema.optional(NullableString),
   /** `SecurityInfo.ManagementStatus.IsActivationLockManageable`. */
   isActivationLockManageable: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /**
+   * ADE setup state. `awaitingConfiguration` is true while the device is held
+   * in Setup Assistant; `configured` flips when the server's
+   * `DeviceConfigured` command is acknowledged.
+   */
+  awaitingConfiguration: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  configured: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  setupReleasedAt: Schema.optional(NullableString),
+  /** When an administrator requested Return to Service. */
+  returnToServiceRequestedAt: Schema.optional(NullableString),
+  /** When the device re-enrolled after Return to Service. */
+  returnToServiceCompletedAt: Schema.optional(NullableString),
   /** Whether a device-generated Activation Lock bypass code is escrowed. */
   activationLockBypassCodeEscrowed: Schema.optional(Schema.Boolean),
   /** When the last `SecurityInfo` answer was persisted. */
@@ -1230,6 +1314,13 @@ export const DeviceRow = Schema.Struct({
   /** `plaintext` or `cms` (CMS is unwrapped on reveal, never returned raw). */
   recoveryKeyFormat: Schema.optional(Schema.NullOr(Schema.Literals(["plaintext", "cms"]))),
   bootstrapTokenUpdatedAt: Schema.optional(NullableString),
+  /**
+   * The managed local administrator generated for macOS ADE setup. The
+   * password is never included here; use the local-admin endpoint to reveal it.
+   */
+  localAdminUsername: Schema.optional(NullableString),
+  localAdminPasswordEscrowed: Schema.optional(Schema.Boolean),
+  localAdminUpdatedAt: Schema.optional(NullableString),
   applicationsUpdatedAt: Schema.optional(NullableString),
   /**
    * True when the installed-application inventory is older than the refresh
@@ -1250,6 +1341,11 @@ export const DeviceRow = Schema.Struct({
   actions: Schema.optional(Schema.Array(DeviceActionName)),
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
+  /**
+   * Tenant-defined attribute values keyed by definition key. Present on device
+   * detail and search rows; never includes attributes that have no value.
+   */
+  attributes: Schema.optional(DeviceAttributeValues),
   /** Group memberships, populated on device detail (not the list payload). */
   groups: Schema.optional(
     Schema.Array(
@@ -1333,6 +1429,16 @@ export const DeviceRecoveryKeyResponse = Schema.Struct({
 });
 
 export type DeviceRecoveryKeyResponse = typeof DeviceRecoveryKeyResponse.Type;
+
+/** The managed local administrator account created during macOS ADE setup. */
+export const DeviceLocalAdminResponse = Schema.Struct({
+  username: Schema.String,
+  password: Schema.String,
+  /** When the account password was last generated. */
+  updatedAt: Schema.String,
+});
+
+export type DeviceLocalAdminResponse = typeof DeviceLocalAdminResponse.Type;
 
 /**
  * Device-generated Activation Lock bypass code. Apple only returns a code
@@ -1530,6 +1636,55 @@ export const DevicePushInfo = Schema.Struct({
 
 export type DevicePushInfo = typeof DevicePushInfo.Type;
 
+/**
+ * One user connection Apple reports for a device.
+ *
+ * `platformUserId` is Apple's opaque identifier (`UserID`/`EnrollmentUserID`).
+ * A user channel is only usable once `UserAuthenticate` approved it (or the
+ * enrollment is an Apple User Enrollment); `configured` says whether APNs push
+ * credentials exist for it.
+ */
+export const AppleDeviceUserProfile = Schema.Struct({
+  identifier: Schema.String,
+  displayName: Schema.optional(NullableString),
+  payloadType: Schema.optional(NullableString),
+  managed: Schema.Boolean,
+});
+
+export type AppleDeviceUserProfile = typeof AppleDeviceUserProfile.Type;
+
+export const AppleDeviceUser = Schema.Struct({
+  platformUserId: Schema.String,
+  shortName: Schema.optional(NullableString),
+  longName: Schema.optional(NullableString),
+  /**
+   * `authenticated` means UserAuthenticate bound the user to the device.
+   * `enrollment` means the user came from an Apple User Enrollment, where the
+   * enrollment itself is the user. `unbound` is a row that has a push channel
+   * (Shared iPad) but no handshake.
+   */
+  binding: Schema.Literals(["authenticated", "enrollment", "unbound"]),
+  /** A push token and push magic are stored for this channel. */
+  configured: Schema.Boolean,
+  authenticatedAt: Schema.optional(NullableString),
+  lastSeenAt: Schema.optional(NullableString),
+  push: DevicePushInfo,
+  /** Profiles the user channel last reported for its login context. */
+  profiles: Schema.Array(AppleDeviceUserProfile),
+  /** Per-user actions currently available on this channel. */
+  actions: Schema.Array(Schema.String),
+});
+
+export type AppleDeviceUser = typeof AppleDeviceUser.Type;
+
+export const AppleDeviceUsersResponse = Schema.Struct({
+  users: Schema.Array(AppleDeviceUser),
+  /** How the device itself is enrolled (BYOD devices have one user). */
+  enrollmentMode: Schema.optional(Schema.NullOr(Schema.Literals(["device", "user"]))),
+});
+
+export type AppleDeviceUsersResponse = typeof AppleDeviceUsersResponse.Type;
+
 /** Tenant-wide APNs delivery rollup. */
 export const DevicePushHealthCounts = Schema.Struct({
   /** Apple devices that currently have a push token and magic. */
@@ -1690,10 +1845,86 @@ export const DeviceCertificateCounts = Schema.Struct({
 
 export type DeviceCertificateCounts = typeof DeviceCertificateCounts.Type;
 
+/**
+ * APNs credential health. `keyMatchesCertificate` is null when no private key
+ * is stored (a certificate uploaded without the paired CSR key) or the key
+ * cannot be read; `topicMatchesCertificate` is null when the certificate is
+ * unparseable. A mismatch is a hard failure — pushes cannot be delivered.
+ */
+export const ApnsCredentialHealth = Schema.Struct({
+  ...CredentialInfo.fields,
+  commonName: NullableString,
+  topic: NullableString,
+  keyConfigured: Schema.Boolean,
+  keyMatchesCertificate: Schema.NullOr(Schema.Boolean),
+  topicMatchesCertificate: Schema.NullOr(Schema.Boolean),
+  /** Apple Push Certificates Portal: renew here with the same Apple Account. */
+  renewalUrl: Schema.String,
+});
+
+export type ApnsCredentialHealth = typeof ApnsCredentialHealth.Type;
+
+/** A retired SCEP CA that is still a verification anchor during the overlap. */
+export const ScepRetiredCaState = Schema.Struct({
+  fingerprintSha256: Schema.String,
+  source: Schema.Literals(["generated", "imported"]),
+  retiredAt: Schema.String,
+  /** Last moment identities issued by this CA are accepted. */
+  trustUntil: Schema.String,
+  notAfter: Schema.String,
+  daysUntilUntrusted: Schema.Number,
+  /** Active identities still chained to this CA. */
+  identities: Schema.Number,
+});
+
+export type ScepRetiredCaState = typeof ScepRetiredCaState.Type;
+
+/**
+ * SCEP CA health, including the rotation state. `rotationDue` is the point at
+ * which maintenance rotates automatically; `retiring` lists predecessor CAs
+ * that still verify identities issued before that rotation.
+ */
+export const ScepCaCredentialHealth = Schema.Struct({
+  ...CredentialInfo.fields,
+  commonName: NullableString,
+  fingerprintSha256: NullableString,
+  source: Schema.NullOr(Schema.Literals(["generated", "imported"])),
+  rotationDue: Schema.Boolean,
+  /** When automatic rotation starts; null when no CA exists yet. */
+  rotationDueAt: NullableString,
+  retiring: Schema.Array(ScepRetiredCaState),
+  /** Active identities with no recorded issuing CA (issued before rotation history). */
+  unattributedIdentities: Schema.Number,
+  /** Active identities whose issuing CA is no longer trusted. */
+  untrustedIdentities: Schema.Number,
+});
+
+export type ScepCaCredentialHealth = typeof ScepCaCredentialHealth.Type;
+
+/**
+ * Deployment origin TLS certificate. It is shared by every tenant because they
+ * share the enrolment origin; the row is the latest scheduled probe.
+ */
+export const ServerCertificateInfo = Schema.Struct({
+  ...CredentialInfo.fields,
+  origin: NullableString,
+  hostname: NullableString,
+  checkedAt: NullableString,
+  subject: NullableString,
+  issuer: NullableString,
+  authorized: Schema.NullOr(Schema.Boolean),
+  authorizationError: NullableString,
+  /** Why the last probe failed; null when it completed. */
+  error: NullableString,
+});
+
+export type ServerCertificateInfo = typeof ServerCertificateInfo.Type;
+
 export const CredentialHealthResponse = Schema.Struct({
-  apns: CredentialInfo,
-  scepCa: CredentialInfo,
+  apns: ApnsCredentialHealth,
+  scepCa: ScepCaCredentialHealth,
   deviceCertificates: DeviceCertificateCounts,
+  serverCertificate: ServerCertificateInfo,
 });
 
 export type CredentialHealthResponse = typeof CredentialHealthResponse.Type;
@@ -1717,6 +1948,19 @@ export const DeviceActionResponse = Schema.Struct({
    * is clear, so the dashboard must not imply that it is.
    */
   activationLockWarning: Schema.optional(Schema.String),
+  /**
+   * What the queued Return to Service erase carries. Present only for that
+   * action, so the dashboard can explain exactly what the device will keep.
+   */
+  returnToService: Schema.optional(
+    Schema.Struct({
+      wifiProfileIncluded: Schema.Boolean,
+      enrollmentProfileIncluded: Schema.Boolean,
+      bootstrapTokenIncluded: Schema.Boolean,
+      /** True when the device's ADE assignment supplies the profile. */
+      automatedDeviceEnrollment: Schema.Boolean,
+    }),
+  ),
 });
 
 export const DeviceActionRequest = Schema.Struct({
@@ -1725,6 +1969,7 @@ export const DeviceActionRequest = Schema.Struct({
       "sync",
       "lock",
       "wipe",
+      "return-to-service",
       "restart",
       "shutdown",
       "clear-passcode",
@@ -1747,6 +1992,19 @@ export const PatchDeviceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   assetTag: Schema.optional(NullableString),
+});
+
+/** One Apple per-user channel action. */
+export const AppleUserActionRequest = Schema.Struct({
+  action: AppleUserActionName,
+});
+
+export const AppleUserActionResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** The command queued for the user channel (absent for `sync`). */
+  commandId: Schema.optional(Schema.String),
+  /** True when an identical user-channel command was already in flight. */
+  deduplicated: Schema.optional(Schema.Boolean),
 });
 
 export const GroupRow = Schema.Struct({
@@ -2688,6 +2946,19 @@ export const DeviceSearchQuery = Schema.Struct({
   health: Schema.optional(DeviceHealthFilter),
   /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
   push: Schema.optional(Schema.Literals(["failing", "invalid"])),
+  /**
+   * ADE setup state. `awaiting` matches devices held in Setup Assistant;
+   * `complete` matches devices that were released (or never awaited).
+   */
+  setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
+  /**
+   * JSON object of attribute key → expected value, for example
+   * `{"cost_centre":"EMEA"}`. Every entry must match for a device to be
+   * returned. Values are compared against the canonical stored form, so use
+   * `true`/`false` for booleans and `YYYY-MM-DD` for dates. Keys must be
+   * registered attributes; unknown keys are rejected.
+   */
+  attributes: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.Number),
   offset: Schema.optional(Schema.Number),
   sort: Schema.optional(DeviceSearchSort),
@@ -2825,6 +3096,11 @@ export const AppleBusinessManagerInfo = Schema.Struct({
   mdmServerId: Schema.optional(NullableString),
   /** Stable ADE enrollment profile UUID for this tenant. */
   profileUuid: Schema.optional(NullableString),
+  /**
+   * Stable URL to register as the ADE profile's `url`. Setup Assistant POSTs a
+   * signed MachineInfo here and receives the tenant's MDM enrollment profile.
+   */
+  enrollmentUrl: Schema.optional(NullableString),
   lastSyncedAt: Schema.optional(NullableString),
   lastError: Schema.optional(NullableString),
   deviceCount: Schema.Number,
@@ -3070,6 +3346,8 @@ export const EnrollmentResponse = Schema.Union([
     windows: WindowsEnrollment,
     android: AndroidEnrollment,
     assetTag: Schema.Boolean,
+    /** Custom questions the enrolling person must answer before enrolling. */
+    questions: Schema.optional(Schema.Array(EnrollmentQuestion)),
     deviceLimit: Schema.optional(EnrollmentDeviceLimit),
   }),
 ]);
@@ -3161,7 +3439,19 @@ export const TenantScepCaInfo = Schema.Struct({
   commonName: Schema.optional(NullableString),
   /** Lowercase hex SHA-256 of the CA certificate DER. */
   fingerprintSha256: Schema.optional(NullableString),
+  serialNumber: Schema.optional(NullableString),
+  notBefore: Schema.optional(NullableString),
   notAfter: Schema.optional(NullableString),
+  /** Whole days until expiry; null before a CA exists. */
+  daysLeft: Schema.optional(Schema.NullOr(Schema.Number)),
+  level: Schema.optional(CredentialLevel),
+  /** True once the CA is inside the automatic-rotation window. */
+  rotationDue: Schema.optional(Schema.Boolean),
+  rotationDueAt: Schema.optional(NullableString),
+  /** Predecessor CAs still verifying identities issued before rotation. */
+  retiring: Schema.optional(Schema.Array(ScepRetiredCaState)),
+  unattributedIdentities: Schema.optional(Schema.Number),
+  untrustedIdentities: Schema.optional(Schema.Number),
   createdAt: Schema.optional(NullableString),
   rotatedAt: Schema.optional(NullableString),
 });
@@ -3194,6 +3484,17 @@ export const ApnsInfo = Schema.Struct({
   topic: Schema.optional(NullableString),
   commonName: Schema.optional(NullableString),
   expiresAt: Schema.optional(NullableString),
+  /** Whole days until expiry; zero or negative once expired. */
+  daysLeft: Schema.optional(Schema.NullOr(Schema.Number)),
+  level: Schema.optional(CredentialLevel),
+  /** Whether a private key is stored alongside the certificate. */
+  keyConfigured: Schema.optional(Schema.Boolean),
+  /** null when there is no stored key to compare against the certificate. */
+  keyMatchesCertificate: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** null when the certificate cannot be parsed. */
+  topicMatchesCertificate: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** Apple Push Certificates Portal: renew here with the same Apple Account. */
+  renewalUrl: Schema.optional(Schema.String),
 });
 
 export type ApnsInfo = typeof ApnsInfo.Type;
@@ -3424,11 +3725,32 @@ export const VerifyAccountRecoveryRequest = Schema.Struct({ token: Schema.String
 
 export const ApproveAccountRecoveryRequest = Schema.Struct({ token: Schema.String });
 
-export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
+/**
+ * Account-scoped contract: profile, sessions, tokens, step-up and audit.
+ *
+ * Kept in a separate top-level group so the declaration emitter can serialise
+ * each group independently; the tenant contract is already at the compiler's
+ * limit.
+ */
+export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
   .add(
     HttpApiEndpoint.post("requestEmailVerification", "/v1/account/email-verification", {
       error: EnterpriseAccountErrors,
       success: EmailVerificationResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("requestRegistrationCode", "/v1/register/verification", {
+      error: EnterprisePublicEmailErrors,
+      payload: BeginRegistrationVerificationRequest,
+      success: BeginRegistrationVerificationResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("verifyRegistrationCode", "/v1/register/verification/verify", {
+      error: EnterprisePublicEmailErrors,
+      payload: CompleteRegistrationVerificationRequest,
+      success: CompleteRegistrationVerificationResponse,
     }),
   )
   .add(
@@ -3625,6 +3947,9 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
+  .prefix("/api");
+
+export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
     HttpApiEndpoint.get("listTenants", "/v1/tenants", {
       error: [...EnterpriseAuthRequiredErrors, EnterpriseForbidden.pipe(HttpApiSchema.status(403))],
@@ -4581,6 +4906,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getDeviceLocalAdmin", "/v1/tenants/:tenantId/devices/:id/local-admin", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      success: DeviceLocalAdminResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get(
       "getDeviceActivationLockBypassCode",
       "/v1/tenants/:tenantId/devices/:id/activation-lock-bypass-code",
@@ -4688,6 +5020,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantReadErrors,
         params: TenantIdParam,
         success: DeviceDeclarationsResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("listDeviceAppleUsers", "/v1/tenants/:tenantId/devices/:id/apple-users", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: AppleDeviceUsersResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "deviceAppleUserAction",
+      "/v1/tenants/:tenantId/devices/:id/apple-users/:userId/action",
+      {
+        // `refresh-profiles` queues a command, so it needs the write role; it
+        // is not destructive enough to demand a step-up (device `sync` and
+        // `refresh-applications` do not either).
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDeviceUserParam,
+        payload: AppleUserActionRequest,
+        success: AppleUserActionResponse,
       },
     ),
   )
@@ -5106,4 +5460,269 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   );
 
-export const enterpriseHttpApi = HttpApi.make("MattraxEnterprise").add(enterpriseApi);
+/**
+ * Public Automated Device Enrollment endpoints.
+ *
+ * Kept in a small top-level group: Setup Assistant calls them without an
+ * Authorization header, and the main group is already at the declaration
+ * emitter's size limit.
+ */
+export const enterpriseAdeApi = HttpApiGroup.make("EnterpriseAde")
+  .add(
+    HttpApiEndpoint.post("enrollAdeDevice", "/v1/abm/ade/enroll", {
+      error: EnterprisePublicAdeProfileErrors,
+      success: AppleEnrollmentProfileResponse,
+    }),
+  )
+  .prefix("/api");
+
+/**
+ * Attribute registry, device attribute values and enrollment questions.
+ *
+ * Kept in its own top-level group, like scripts, so the generated browser
+ * contract stays manageable: the main group already carries nearly two hundred
+ * endpoints and the declaration emitter refuses to serialise one more layer.
+ */
+export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
+  .add(
+    HttpApiEndpoint.get("listAttributes", "/v1/tenants/:tenantId/attributes", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: AttributeDefinitionListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createAttribute", "/v1/tenants/:tenantId/attributes", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: CreateAttributeRequest,
+      success: AttributeDefinitionRow,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchAttribute", "/v1/tenants/:tenantId/attributes/:attributeId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantAttributeParam,
+      payload: PatchAttributeRequest,
+      success: AttributeDefinitionRow,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteAttribute", "/v1/tenants/:tenantId/attributes/:attributeId", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantAttributeParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listEnrollmentQuestions", "/v1/tenants/:tenantId/enrollment/questions", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: EnrollmentQuestionListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.put("patchEnrollmentQuestions", "/v1/tenants/:tenantId/enrollment/questions", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchEnrollmentQuestionsRequest,
+      success: EnrollmentQuestionListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getPolicyVariables", "/v1/tenants/:tenantId/policy-variables", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: PolicyVariablesResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("submitEnrollmentAnswers", "/v1/enrollment/:id/answers", {
+      error: EnterprisePublicEnrollmentProfileErrors,
+      params: IdParam,
+      payload: SubmitEnrollmentAnswersRequest,
+      success: SubmitEnrollmentAnswersResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "importDeviceAttributes",
+      "/v1/tenants/:tenantId/devices/attributes/import",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: ImportDeviceAttributesRequest,
+        success: DeviceAttributeImportResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put("setDeviceAttributes", "/v1/tenants/:tenantId/devices/:id/attributes", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantIdParam,
+      payload: SetDeviceAttributesRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .prefix("/api");
+
+/**
+ * Script management contract.
+ *
+ * A separate group keeps the browser contract's generated types manageable and
+ * reflects that scripts are an independent resource. `scriptHttpApi` is the
+ * client the dashboard uses; `enterpriseHttpApi` deliberately excludes it.
+ */
+export const scriptApi = HttpApiGroup.make("ScriptApi")
+  .add(
+    HttpApiEndpoint.get("getScriptSettings", "/v1/tenants/:tenantId/scripts/settings", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: ScriptSettings,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchScriptSettings", "/v1/tenants/:tenantId/scripts/settings", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantParam,
+      payload: ScriptSettings,
+      success: ScriptSettings,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listScripts", "/v1/tenants/:tenantId/scripts", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: ScriptListResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getScript", "/v1/tenants/:tenantId/scripts/:id", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: ScriptDetail,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createScript", "/v1/tenants/:tenantId/scripts", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantParam,
+      payload: CreateScriptRequest,
+      success: Schema.Struct({ id: Schema.String }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchScript", "/v1/tenants/:tenantId/scripts/:id", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      payload: PatchScriptRequest,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteScript", "/v1/tenants/:tenantId/scripts/:id", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getScriptAssignments", "/v1/tenants/:tenantId/scripts/:id/assignments", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: ScriptAssignmentsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchScriptAssignments",
+      "/v1/tenants/:tenantId/scripts/:id/assignments",
+      {
+        error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+        params: TenantIdParam,
+        payload: PatchScriptAssignmentsRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("runScript", "/v1/tenants/:tenantId/scripts/:id/run", {
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      params: TenantIdParam,
+      payload: RunScriptRequest,
+      success: RunScriptResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listScriptExecutions", "/v1/tenants/:tenantId/scripts/:id/executions", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      query: Schema.Struct({
+        deviceId: Schema.optional(Schema.String),
+        limit: Schema.optional(Schema.Number),
+      }),
+      success: ScriptExecutionsResponse,
+    }),
+  )
+  .prefix("/api");
+
+export const scriptHttpApi = HttpApi.make("MattraxScripts").add(scriptApi);
+
+/**
+ * Device-facing script channel. Kept out of the browser contract: the agent
+ * authenticates with a signed device token instead of a session, and no
+ * dashboard call touches these endpoints.
+ */
+export const scriptAgentApi = HttpApiGroup.make("ScriptAgentApi")
+  .add(
+    HttpApiEndpoint.get("syncScriptAgent", "/v1/script-agent/scripts", {
+      error: EnterpriseAuthRequiredErrors,
+      success: ScriptAgentSyncResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("reportScriptAgentResult", "/v1/script-agent/results", {
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
+      payload: ScriptAgentResultRequest,
+      success: ScriptAgentResultResponse,
+    }),
+  )
+  .prefix("/api");
+
+/**
+ * The dashboard contract. Each group is exported separately for declaration
+ * emit; this value only feeds the generated client.
+ */
+const enterpriseHttpApi = HttpApi.make("MattraxEnterprise")
+  .add(enterpriseAccountApi)
+  .add(enterpriseApi)
+  .add(enterpriseAdeApi)
+  .add(enterpriseAttributeApi);
+
+/** The flattened client groups the dashboard can call. */
+export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
+  HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseAdeApi> &
+  HttpApiClient.Client<typeof enterpriseAttributeApi>;
+
+export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
+
+/**
+ * Build the browser-safe enterprise client. Declared here so the composed API
+ * type never has to be serialised into a `.d.ts`.
+ */
+export const makeEnterpriseClient = (
+  options?: EnterpriseClientOptions,
+): Effect.Effect<EnterpriseClient, never, HttpClient.HttpClient> =>
+  // SAFETY: `HttpApiClient.make` builds exactly the groups composed above; the
+  // assertion names that intersection and removes the generated union.
+  HttpApiClient.make(enterpriseHttpApi, options) as Effect.Effect<
+    EnterpriseClient,
+    never,
+    HttpClient.HttpClient
+  >;

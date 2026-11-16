@@ -14,6 +14,8 @@ import {
   type AuditSearchQuery,
 } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
+import { downloadBlob } from "~/lib/download";
+import { resolveTenantId } from "~/lib/tenant";
 
 const PAGE_SIZE = 50;
 const SYSTEM_ACTOR = "system";
@@ -293,7 +295,7 @@ export default function AuditSettingsPage() {
       query.set("format", format);
 
       const response = await fetch(
-        `/api/v1/tenants/${encodeURIComponent(params.tenantId ?? "")}/audit/export?${query}`,
+        `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/audit/export?${query}`,
         { credentials: "include" },
       );
 
@@ -301,14 +303,10 @@ export default function AuditSettingsPage() {
       const body = await response.text();
       setExportTruncated(response.headers.get("X-Export-Truncated") === "true");
       const type = format === "json" ? "application/json;charset=utf-8" : "text/csv;charset=utf-8";
-      const blob = new Blob([body], { type });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`;
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(
+        new Blob([body], { type }),
+        `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`,
+      );
     } catch (error) {
       setExportError(error);
     } finally {

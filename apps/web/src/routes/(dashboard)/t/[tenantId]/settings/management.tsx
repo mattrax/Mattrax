@@ -21,6 +21,8 @@ import { enterprise, enterpriseKeys, type AutopilotProfileInfo } from "~/lib/ent
 import { useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
+import { downloadBlob } from "~/lib/download";
+import { resolveTenantId } from "~/lib/tenant";
 
 const selectClass =
   "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
@@ -294,7 +296,7 @@ export default function ManagementSettingsPage() {
     setCsrError(undefined);
 
     try {
-      const response = await fetch(`/api/v1/tenants/${params.tenantId}/apns/csr`, {
+      const response = await fetch(`/api/v1/tenants/${resolveTenantId(params.tenantId)}/apns/csr`, {
         credentials: "include",
         headers: { "x-effect-auth-csrf": "1" },
       });
@@ -314,12 +316,7 @@ export default function ManagementSettingsPage() {
 
       if (data?.plist === undefined) throw new Error("The server did not return a CSR");
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/x-plist" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "mattrax-push-csr.plist";
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(new Blob([bytes], { type: "application/x-plist" }), "mattrax-push-csr.plist");
       setStep(2);
     } catch (error) {
       setCsrError(errorMessage(raisedFailure(error), "Could not download the CSR"));

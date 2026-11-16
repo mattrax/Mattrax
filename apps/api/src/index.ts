@@ -5,14 +5,27 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
 import { AuthContract, Http } from "@yielded/auth";
 import * as Workerd from "@yielded/auth-platform-workerd";
-import { AuthApi, enterpriseApi } from "@mattrax/enterprise-domain";
+import {
+  AuthApi,
+  enterpriseAccountApi,
+  enterpriseApi,
+  enterpriseAdeApi,
+  enterpriseAttributeApi,
+  scriptAgentApi,
+  scriptApi,
+} from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
   DEFAULT_EMAIL_FROM,
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
   EnterpriseService,
+  enterpriseAccountHandlers,
+  enterpriseAdeHandlers,
   enterpriseHandlers,
+  enterpriseAttributeHandlers,
+  scriptAgentHandlers,
+  scriptHandlers,
   billingWebhookRoutes,
   runMaintenance,
   runOnboardingEmails,
@@ -35,6 +48,8 @@ import {
   sessionCookie,
   drainEmailOutbox,
   sendTransactionalEmail,
+  loadTrustedScepCaCertificates,
+  runServerCertificateCheck,
   type CredentialExpiryNotification,
 } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
@@ -68,6 +83,7 @@ import {
   resolveRequestId,
   shouldLogRequest,
   tenantIdFromPath,
+  withDefaultNoStore,
   withRequestId,
 } from "./observability.js";
 import { createRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
@@ -143,7 +159,12 @@ const authHttps = Http.make(appAuth, {
 // browser and verification codes are delivered by EnterpriseAuth.
 
 const apiRoot = HttpApi.make("Mattrax")
+  .add(enterpriseAccountApi)
   .add(enterpriseApi)
+  .add(enterpriseAdeApi)
+  .add(enterpriseAttributeApi)
+  .add(scriptApi)
+  .add(scriptAgentApi)
   .add(authHttp)
   .add(appleMdmApi)
   .annotateMerge(
@@ -194,7 +215,12 @@ const apiDocsHtml = `<!doctype html>
 const apiDocsResponse = () => HttpServerResponse.html(apiDocsHtml);
 
 const applicationHandlers = Layer.mergeAll(
+  HttpApiBuilder.group(apiRoot, "EnterpriseAccount", enterpriseAccountHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
+  HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
+  HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
 ).pipe(authHttps.middleware);
 
@@ -390,6 +416,18 @@ const emailOutboxJob = (env: Env) =>
     });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
+/**
+ * Review the deployment origin's TLS certificate. Runs from the hourly trigger
+ * so the code path is exercised often; the check itself is throttled to once an
+ * hour, and the daily maintenance run reuses a fresh observation.
+ */
+const serverCertificateJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    return yield* runServerCertificateCheck(db, { origin: apiEnv.ORIGIN });
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
 /** Standalone scheduled Entra sweep used by the hourly trigger. */
 const entraSyncJob = (env: Env) =>
   Effect.gen(function* () {
@@ -520,8 +558,10 @@ const makeAppLayer = (env: Env) => {
       return AppleMdmTrust.of({
         requireSignature: true,
         // Each tenant has its own SCEP CA. The check-in identity certificate
-        // names the tenant in its OU, so only that tenant's CA is a valid trust
-        // anchor for the message signature.
+        // names the tenant in its OU, so only that tenant's CAs are valid trust
+        // anchors for the message signature. Retired CAs stay in the list until
+        // their overlap window closes, so a rotation never rejects an identity
+        // issued before it.
         caCertPems: (identityCertificateSubject) =>
           Effect.gen(function* () {
             if (!identityCertificateSubject) return [];
@@ -540,9 +580,7 @@ const makeAppLayer = (env: Env) => {
 
             if (!organizationId) return [];
 
-            const ca = yield* db.query.scepCa.findFirst({ where: { organizationId } });
-
-            return ca ? [ca.certPem] : [];
+            return yield* loadTrustedScepCaCertificates(db, organizationId);
           }).pipe(
             Effect.mapError(
               (cause) => new MdmError({ message: `Could not load SCEP CA: ${String(cause)}` }),
@@ -760,7 +798,10 @@ const makeAppLayer = (env: Env) => {
  */
 const getAppHandler = (env: Env) => {
   // SAFETY: makeAppLayer returns the combined router/service layer; the web
-  // handler only reads the router and server services from its output.
+  // handler only reads the router and server services from its output. The
+  // layer's inferred requirement channel includes framework request services
+  // that `toWebHandler` cannot name, so the assertion stays at this boundary.
+  // oxlint-disable-next-line typescript/no-explicit-any
   return HttpRouter.toWebHandler(makeAppLayer(env) as any);
 };
 
@@ -786,7 +827,10 @@ const checkStorageReady = async (env: Env): Promise<"ok"> => {
 
   try {
     const object = await env.STORAGE.put(key, "ok", {
-      httpMetadata: { contentType: "text/plain; charset=utf-8" },
+      httpMetadata: {
+        contentType: "text/plain; charset=utf-8",
+        cacheControl: "no-store",
+      },
     });
 
     if (!object) throw new Error("storage probe put returned no object");
@@ -957,9 +1001,7 @@ export default {
       } else {
         const deviceRequest = new Request(request, { headers: deviceIdentityHeaders(request) });
 
-        const context = Context.makeUnsafe<any>(
-          new Map<string, any>([[EnterpriseAnalyticsService.key, analytics]]),
-        );
+        const context = Context.makeUnsafe(new Map([[EnterpriseAnalyticsService.key, analytics]]));
 
         response = await getAppHandler(env).handler(deviceRequest, context);
       }
@@ -1043,6 +1085,8 @@ export default {
     // next navigation through bootstrap, which is authoritative.
     if (clearsSsrShell(request)) response = withClearedSsrShell(response);
 
+    if (pathname.startsWith("/api/")) response = withDefaultNoStore(response);
+
     return withRequestId(response, requestId);
   },
 
@@ -1080,6 +1124,21 @@ export default {
     if (controller.cron === ENTRA_SYNC_CRON) {
       if (!graphConfigured)
         console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
+
+      // The origin certificate probe runs on every hourly tick; it records at
+      // most one observation per hour, so this exercises the TLS path often
+      // without creating audit or database churn.
+      ctx.waitUntil(
+        Effect.runPromise(Effect.exit(serverCertificateJob(env))).then(
+          (exit) => {
+            if (Exit.isFailure(exit))
+              console.error("Scheduled origin certificate check failed", exit.cause);
+            else if (exit.value.checked)
+              console.log("Scheduled origin certificate check complete", exit.value.state.level);
+          },
+          (cause) => console.error("Scheduled origin certificate check job failed", cause),
+        ),
+      );
 
       ctx.waitUntil(
         Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(logOutboxResult, (cause) =>
@@ -1162,6 +1221,9 @@ export default {
           webhookAuthSecret: apiEnv.AUTH_SECRET,
           authSecret: apiEnv.AUTH_SECRET,
           notifyCredentialExpiry,
+          // Review the public origin certificate as part of the daily run too;
+          // the hourly trigger normally owns the frequent probe.
+          serverCertificateOrigin: apiEnv.ORIGIN,
           // Queued transactional mail is drained here as well as by the
           // hourly trigger; without a transport the rows stay pending.
           email: mailer.transport,

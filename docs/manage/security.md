@@ -23,10 +23,14 @@ Open **Account** to manage:
 
 ### Passkeys
 
-Passkeys are the only way to sign in. They are phishing-resistant, user-verified
-possession factors, and registration creates the account and its first passkey in
-one step. Adding or removing a key requires a recent passkey step-up. Removing a
-key invalidates other sessions and refuses to remove the last passkey.
+Passkeys are the primary credential. They are phishing-resistant, user-verified
+possession factors. Sign-up is email-first: the address receives a six-digit code
+that is entered on the page (no callback link), and the passkey ceremony then
+creates the account with that address already verified. Sign-in asks for the
+email first, then offers the organisation's SSO when the address has one and the
+passkey otherwise; the passkey ceremony is held to the address that was typed.
+Adding or removing a key requires a recent passkey step-up. Removing a key
+invalidates other sessions and refuses to remove the last passkey.
 
 An account with a single passkey sees a warning in Account security: lose that
 device and the only way back in is the recovery ceremony below.
@@ -247,8 +251,23 @@ entries and must be recorded in the incident log.
   deployment without usable signing material refuses to serve the download rather than
   serving an unsigned plist. See [Apple profile signing](/platforms/apple/#profile-signing).
 - Every tenant owns its SCEP CA. Rotating or importing one CA cannot affect another
-  tenant; rotation revokes the identities issued by the retired CA, so those devices must
-  enroll again. See [Tenant SCEP CA](/platforms/apple/#tenant-scep-ca).
+  tenant. A rotation is staged, not destructive: the successor CA signs new and renewed
+  identities while the retired certificate stays a verification anchor until it expires, so
+  existing devices keep checking in and renew without re-enrolling. Only the certificate is
+  retained — a retired CA can never sign again. The overlap and its deadlines are exposed
+  by `credential-health` and the SCEP identity endpoint, and every rotation is audited with
+  both fingerprints. An **import** is different: it is a deliberate trust-root change and
+  revokes the identities issued by the previous CA. See
+  [Tenant SCEP CA](/platforms/apple/#tenant-scep-ca).
+- The tenant CA is valid for five years and rotates automatically 400 days before expiry.
+  Credential health exposes its expiry, rotation state and retiring anchors. A failed or due
+  rotation is audited and logged; the expiry email to owners/admins follows the shared
+  credential schedule (30 and 7 days before expiry). It is an online issuing CA, so the
+  five-year life is intentionally shorter than an offline root's.
+- The deployment origin's TLS certificate is probed hourly (throttled to one observation an
+  hour) and the result is stored with its expiry, subject/issuer and chain validation
+  state. An expiring, expired or untrusted origin certificate is logged and surfaced in
+  credential health before devices fail to connect.
 - DDM asset URLs are bound to one device and expire. Unenrolling or deleting the device
   revokes its outstanding links. Profile URLs stay device-bound and are refreshed whenever
   the profile content changes. See [DDM](/platforms/apple/ddm#signed-profile-and-asset-urls).

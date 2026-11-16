@@ -434,7 +434,7 @@ function Developer() {
                 {" gateway = "}
                 <span class="text-foreground/80">ManagementBackendHttp</span>
                 {"({\n  baseUrl: "}
-                <span class="text-success">"https://api.acme.dev"</span>
+                <span class="text-success-foreground">"https://api.acme.dev"</span>
                 {",\n  secret: process.env."}
                 <span class="text-foreground/80">MATTRAX_WEBHOOK_SECRET</span>
                 {"!,\n});\n\n"}
@@ -444,7 +444,8 @@ function Developer() {
               </code>
             </pre>
             <div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground">
-              <span class="text-success">●</span> POST /webhook/apple/checkin · 200 · 12ms
+              <span class="text-success-foreground">●</span> POST /webhook/apple/checkin · 200 ·
+              12ms
             </div>
           </div>
         </div>
@@ -776,10 +777,6 @@ function SectionLabel(props: { children: JSX.Element }) {
   return (
     <p class="text-[11px] font-medium tracking-normal text-muted-foreground">{props.children}</p>
   );
-}
-
-function Dot() {
-  return <span class="size-0.5 rounded-full bg-muted-foreground/50" />;
 }
 
 function ArrowIcon(props: { class?: string }) {

@@ -420,6 +420,7 @@ const cmsWrappedKey = async (certificatePem: string, plaintext: string) => {
     new TextEncoder().encode(plaintext),
     certificatePem,
   );
+
   let binary = "";
 
   for (const byte of wrapped) binary += String.fromCharCode(byte);
@@ -614,6 +615,32 @@ describe("Activation Lock bypass code", () => {
 });
 
 describe("erase flags and Recovery Lock", () => {
+  it("sends macOS erase keys to a Mac", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(
+      deviceRow("device-1", tenant.id, { osEdition: "macOS 15", model: "MacBookPro18,2" }),
+    );
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", { action: "wipe" }),
+    );
+
+    const erase = db.store.device_command.find(
+      (command: any) => command.requestType === "EraseDevice",
+    );
+
+    expect(erase?.payload).toMatchObject({
+      ObliterationBehavior: "Default",
+      PIN: expect.any(String),
+    });
+    expect(erase?.payload).not.toHaveProperty("DisallowProximitySetup");
+  });
+
   it("sets erase flags explicitly and does not claim Activation Lock is clear", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -635,10 +662,12 @@ describe("erase flags and Recovery Lock", () => {
     );
 
     expect(erase?.payload).toMatchObject({
-      ObliterationBehavior: "Default",
       DisallowProximitySetup: true,
       PreserveDataPlan: false,
     });
+    // `PIN` and `ObliterationBehavior` are macOS-only erase keys.
+    expect(erase?.payload).not.toHaveProperty("PIN");
+    expect(erase?.payload).not.toHaveProperty("ObliterationBehavior");
 
     // Supervised devices must not be able to re-enable Activation Lock after
     // the wipe, so the MDM option is queued before the erase.

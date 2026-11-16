@@ -1,5 +1,12 @@
 import { Context, Data, Effect, Layer, Predicate, Schema } from "effect";
 import {
+  deserializeSoapElement,
+  extractSoapBody,
+  extractSoapHeader,
+  serializeSoapElement,
+  serializeSoapEnvelope,
+} from "@mattrax/soap";
+import {
   DiscoverRequest,
   DiscoverResponse,
   GetPolicies,
@@ -7,13 +14,8 @@ import {
   RequestSecurityToken,
   RequestSecurityTokenResponseCollection,
   SoapFault,
-  deserializeSoapElement,
-  extractSoapBody,
-  extractSoapHeader,
-  serializeSoapElement,
-  serializeSoapEnvelope,
   type SyncML as SyncMLType,
-} from "@mattrax/soap";
+} from "./messages.js";
 import {
   ManagementBackend,
   MdmOrigin,

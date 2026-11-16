@@ -145,6 +145,10 @@ export const authPasskeyFlows = mysqlTable(
   ],
 );
 
+/* oxlint-disable typescript/no-explicit-any -- The persistence library erases its
+ * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
+ * drizzle column type is only available from the value itself. Annotating these
+ * exports with the erased type breaks every `.update(table).set(...)` call. */
 export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
 
 export const authStorage: any = AuthPersistenceConfig.managed({
@@ -166,6 +170,13 @@ export const authStorage: any = AuthPersistenceConfig.managed({
 
 export const authSchema: any = authStorage.schema;
 
+/**
+ * The managed-layout accessor erases each generated table to
+ * `MySqlTable<TableConfig>` because `AuthPersistence.make` fixes its table
+ * parameter. Drizzle still needs the concrete column type at the call site, so
+ * these stay untyped at this single boundary; the mappings below type every
+ * value that crosses it.
+ */
 export const authIdentifiers: any = authSchema.identifiers;
 export const authCredentials: any = authSchema.credentials;
 export const authSessions: any = authSchema.sessions;
@@ -177,6 +188,7 @@ export const authPending: any = authSchema.pending;
  * and protocol credential id); challenges are scoped by module and flow.
  */
 export const authPasskeyCredentials: any = authSchema.passkeyCredentials;
+/* oxlint-enable typescript/no-explicit-any */
 
 /**
  * TOTP factor state. `state` is the JSON record produced by the library; its
@@ -203,7 +215,7 @@ export const authTotpFactors = mysqlTable(
  * credential row is the shared auth credential authority, so session revision
  * vectors automatically include an enabled authenticator.
  */
-export const totpMapping: any = {
+export const totpMapping = {
   moduleId: TOTP_MODULE_ID,
   policy: TOTP_POLICY,
   constraints: {
@@ -213,7 +225,7 @@ export const totpMapping: any = {
   },
   subjectIds: {
     toNative: (subjectId: string) => subjectId,
-    toSubject: (subjectId: string) => subjectId,
+    toSubject: (subjectId: string) => AuthSchema.SubjectId.make(subjectId),
   },
   subject: {
     table: user,
@@ -248,6 +260,57 @@ export const totpMapping: any = {
     }) => value,
   },
   engineNowMillis: sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
+} as const;
+
+/**
+ * Columns of the managed passkey credential row the registration mapping reads,
+ * and the values the library hands its writers. The library's generated tables
+ * are erased to `MySqlTable<TableConfig>`, so these describe the actual
+ * contract at the mapping boundary rather than the erased generic.
+ */
+type ManagedPasskeyCredentialRow = {
+  readonly credentialId: string;
+  readonly subjectId: string;
+  readonly rpId: string;
+  readonly protocolCredentialId: string;
+  readonly userHandle: string;
+  readonly publicKey: string;
+  readonly algorithm: number;
+  readonly profile: string;
+  readonly primarySignIn: boolean;
+  readonly enrollmentUserVerified: boolean;
+  readonly backupEligible: boolean;
+  readonly backupState: boolean;
+  readonly counter: number;
+};
+
+type PasskeyCredentialWrite = {
+  readonly credentialId: string;
+  readonly rpId: string;
+  readonly protocolCredentialId: string;
+  readonly userHandle: string;
+  readonly publicKey: string;
+  readonly algorithm: number;
+  readonly profile: unknown;
+  readonly primarySignIn: boolean;
+  readonly enrollmentUserVerified: boolean;
+  readonly backupEligible: boolean;
+  readonly backupState: boolean;
+  readonly counter: number;
+};
+
+type PasskeyWriteSummary = { readonly name: string; readonly createdAtMillis: number };
+
+type ManagedPasskeyCredentialRowInput = Readonly<Partial<ManagedPasskeyCredentialRow>>;
+
+/** A persisted status column; both boolean and SQL text/bit drivers return these. */
+type PersistedStatus = boolean | string | number | null;
+
+const passkeyCredentialRow = (row: ManagedPasskeyCredentialRowInput) => {
+  // SAFETY: the registration read selects every credential column, so the row
+  // carries the fields below; the library types it as Partial because another
+  // call site projects a subset of the columns.
+  return row as ManagedPasskeyCredentialRow;
 };
 
 /**
@@ -258,6 +321,10 @@ export const totpMapping: any = {
  * the ceremony row and the subject values the library inserts atomically with
  * the first credential.
  */
+/* oxlint-disable-next-line typescript/no-explicit-any -- The library's decoder
+ * returns branded credential values (`PasskeyProtocolCredentialId` and
+ * friends) whose constructors are not exported; the mapping is the only place
+ * that contract is expressed, and the callbacks above type every input. */
 export const passkeyRegistrationMapping: any = {
   moduleId: PASSKEY_MODULE_ID,
   read: {
@@ -266,10 +333,12 @@ export const passkeyRegistrationMapping: any = {
       id: "id",
       status: "disabled",
       securityRevision: "authRevision",
-      decodeId: (row: { id: string }) => row.id,
+      // SAFETY: the registration read always selects the subject row; the
+      // library widens the row to Partial because other call sites project it.
+      decodeId: (row: Readonly<Partial<typeof user.$inferSelect>>) => row.id!,
       decodeRequirement: (row: AuthSubjectFactors) =>
         Effect.succeed(authRequirementForSubject(row)),
-      isActiveStatus: (value: boolean) => value === false,
+      isActiveStatus: (value: PersistedStatus) => value === false,
       activeCondition: sql`${user.disabled} = false`,
     },
     credential: {
@@ -290,22 +359,27 @@ export const passkeyRegistrationMapping: any = {
       backupEligible: "backupEligible",
       backupState: "backupState",
       counter: "counter",
-      decode: (row: any) => ({
-        credentialId: row.credentialId,
-        rpId: row.rpId,
-        protocolCredentialId: row.protocolCredentialId,
-        userHandle: row.userHandle,
-        publicKey: row.publicKey,
-        algorithm: row.algorithm,
-        profile: JSON.parse(row.profile),
-        primarySignIn: row.primarySignIn,
-        enrollmentUserVerified: row.enrollmentUserVerified,
-        backupEligible: row.backupEligible,
-        backupState: row.backupState,
-        counter: row.counter,
-      }),
-      decodeSubjectId: (row: any) => row.subjectId,
-      isActiveStatus: (value: boolean) => value === true,
+      decode: (row: ManagedPasskeyCredentialRowInput) => {
+        const credential = passkeyCredentialRow(row);
+
+        return {
+          credentialId: credential.credentialId,
+          rpId: credential.rpId,
+          protocolCredentialId: credential.protocolCredentialId,
+          userHandle: credential.userHandle,
+          publicKey: credential.publicKey,
+          algorithm: credential.algorithm,
+          profile: JSON.parse(credential.profile),
+          primarySignIn: credential.primarySignIn,
+          enrollmentUserVerified: credential.enrollmentUserVerified,
+          backupEligible: credential.backupEligible,
+          backupState: credential.backupState,
+          counter: credential.counter,
+        };
+      },
+      decodeSubjectId: (row: ManagedPasskeyCredentialRowInput) =>
+        passkeyCredentialRow(row).subjectId,
+      isActiveStatus: (value: PersistedStatus) => value === true,
       activeCondition: sql`${authPasskeyCredentials.active} = true`,
     },
     authority: {
@@ -314,12 +388,12 @@ export const passkeyRegistrationMapping: any = {
       credentialId: "credentialId",
       revision: "revision",
       status: "active",
-      isActiveStatus: (value: boolean) => value === true,
+      isActiveStatus: (value: PersistedStatus) => value === true,
       activeCondition: sql`${authCredentials.active} = true`,
     },
     subjectIds: {
       toNative: (subjectId: string) => subjectId,
-      toSubject: (subjectId: string) => subjectId,
+      toSubject: (subjectId: string) => AuthSchema.SubjectId.make(subjectId),
       equals: (left: string, right: string) => left === right,
     },
     constraints: {
@@ -356,7 +430,17 @@ export const passkeyRegistrationMapping: any = {
     credential: {
       name: "name",
       createdAt: "createdAt",
-      encodeInsert: ({ credential, subjectId, summary, marker }: any) => ({
+      encodeInsert: ({
+        credential,
+        subjectId,
+        summary,
+        marker,
+      }: {
+        credential: PasskeyCredentialWrite;
+        subjectId: string;
+        summary: PasskeyWriteSummary;
+        marker: string;
+      }) => ({
         credentialId: credential.credentialId,
         subjectId,
         rpId: credential.rpId,
@@ -383,7 +467,15 @@ export const passkeyRegistrationMapping: any = {
       removedStatus: false,
     },
     authority: {
-      encodeInsert: ({ subjectId, credential, marker }: any) => ({
+      encodeInsert: ({
+        subjectId,
+        credential,
+        marker,
+      }: {
+        subjectId: string;
+        credential: Pick<PasskeyCredentialWrite, "credentialId">;
+        marker: string;
+      }) => ({
         subjectId,
         credentialId: credential.credentialId,
         revision: marker,
@@ -447,7 +539,11 @@ export const passkeyRegistrationMapping: any = {
           id: subjectId,
           name: registration.name,
           email: registration.email,
-          emailVerified: false,
+          // A guest proves the address with a code before the passkey prompt;
+          // the grant it received is checked here, in the same insert.
+          emailVerified: registration.grant
+            ? sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.expiresAt} > current_timestamp(3))`
+            : false,
           image: null,
           stripeCustomerId: null,
           disabled: false,
@@ -463,7 +559,7 @@ export const passkeyRegistrationMapping: any = {
     activeStatus: false,
   },
   constraints: requiredPasskeyPersistenceConstraints,
-};
+} as const;
 
 export const organization = mysqlTable(
   "organization",
@@ -484,6 +580,13 @@ export const organization = mysqlTable(
      * still enrol a factor.
      */
     requireMfa: boolean("require_mfa").notNull().default(false),
+    /**
+     * Tenant opt-out for the script feature. Scripts execute arbitrary code on
+     * managed devices, so a tenant can switch the whole surface off. Disabling
+     * it removes assigned script profiles from Apple devices and rejects new
+     * runs; existing execution history is retained until its normal expiry.
+     */
+    scriptsEnabled: boolean("scripts_enabled").notNull().default(true),
     stripeCustomerId: shortText("stripe_customer_id"),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
@@ -633,6 +736,26 @@ export const accountEmailChange = mysqlTable(
     index("account_email_change_user_idx").on(table.userId, table.createdAt),
   ],
 );
+
+/**
+ * A guest registration address that proved ownership with a six-digit code.
+ *
+ * The account is still created by its first passkey, but the registration
+ * carries the grant issued here and the provisioned subject starts verified.
+ * The email is the key, so only one live challenge exists per address and a
+ * completed registration makes the row unusable (the email is taken).
+ */
+export const registrationVerification = mysqlTable("registration_verification", {
+  email: varchar("email", { length: 320 }).primaryKey(),
+  name: shortText("name").notNull(),
+  codeHash: varchar("code_hash", { length: 128 }).notNull(),
+  grant: varchar("grant", { length: 128 }).notNull(),
+  attempts: int("attempts").notNull().default(0),
+  expiresAt: timestamp("expires_at").notNull(),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
 
 /**
  * Break-glass account recovery. A locked-out account proves control of its
@@ -891,11 +1014,45 @@ export const deviceAppleUser = mysqlTable(
     deviceId: id("device_id")
       .notNull()
       .references(() => device.id, { onDelete: "cascade" }),
+    /**
+     * Apple's user identifier: `UserID` for the macOS/Shared iPad user channel
+     * or `EnrollmentUserID` for a user-enrollment user channel.
+     */
     userId: shortText("user_id").notNull(),
+    /** Short (login) name reported by macOS. */
+    userShortName: shortText("user_short_name"),
+    /** Full name reported by macOS. */
+    userLongName: shortText("user_long_name"),
+    /**
+     * When `UserAuthenticate` last approved this user for the device. A user
+     * channel TokenUpdate is only accepted after this, so a managed device
+     * cannot register an arbitrary user's push channel.
+     */
+    authenticatedAt: timestamp("authenticated_at"),
+    /** Last user-channel check-in or command result. */
+    lastSeenAt: timestamp("last_seen_at"),
     token: text("token"),
     pushMagic: shortText("push_magic"),
     topic: shortText("topic"),
     unlockToken: text("unlock_token"),
+    /** Profiles the user channel reported for its login context. */
+    profiles: json("profiles").$type<
+      Array<{
+        identifier: string;
+        displayName?: string;
+        payloadType?: string;
+        payloadUuid?: string;
+        managed: boolean;
+      }>
+    >(),
+    /** When the last APNs delivery to this user channel was attempted. */
+    lastPushAt: timestamp("last_push_at"),
+    /** When an APNs delivery to this user channel last succeeded. */
+    lastPushOkAt: timestamp("last_push_ok_at"),
+    /** Short, secret-free description of the last user-channel push failure. */
+    lastPushError: shortText("last_push_error"),
+    /** Failures since the last successful push; reset to zero on success. */
+    consecutivePushFailures: int("consecutive_push_failures").notNull().default(0),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.deviceId, table.userId] })],
@@ -1536,6 +1693,149 @@ export const device = mysqlTable(
 );
 
 /**
+ * The tenant's device-attribute registry.
+ *
+ * Attributes are declared once per tenant with a stable `key` so scripts, the
+ * API, CSV columns, enrollment questions and policy variables
+ * (`${attribute.<key>}`) all refer to the same typed field. `label` is the
+ * presentation name; `key` is never shown as a CSV header on its own.
+ */
+export const attributeDefinition = mysqlTable(
+  "attribute_definition",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Lowercase identifier used in policy variables and CSV import headers. */
+    key: shortText("key").notNull(),
+    label: shortText("label").notNull(),
+    type: varchar("type", {
+      length: 16,
+      enum: ["text", "number", "boolean", "date", "select"],
+    })
+      .notNull()
+      .default("text"),
+    /** Allowed values for `select`; null for every other type. */
+    options: json("options").$type<string[]>(),
+    required: boolean("required").notNull().default(false),
+    /** `hidden` attributes are managed through the API but not shown in tables. */
+    visibility: varchar("visibility", { length: 16, enum: ["visible", "hidden"] })
+      .notNull()
+      .default("visible"),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("attribute_definition_organization_key_unique").on(table.organizationId, table.key),
+    index("attribute_definition_organization_sort_idx").on(table.organizationId, table.sortOrder),
+  ],
+);
+
+/**
+ * One value per device and registered attribute.
+ *
+ * `updatedByUserId` records the administrator who last wrote the value (null
+ * for enrollment answers and script/API writes without a user). `value` is the
+ * canonical string form: `true`/`false` for booleans and `YYYY-MM-DD` for
+ * dates, so filtering and CSV round-trips do not depend on the writer.
+ */
+export const deviceAttribute = mysqlTable(
+  "device_attribute",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    attributeId: id("attribute_id")
+      .notNull()
+      .references(() => attributeDefinition.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    value: text("value").notNull(),
+    updatedByUserId: id("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.attributeId] }),
+    // Every read and search filters by tenant before joining the registry.
+    index("device_attribute_organization_idx").on(table.organizationId),
+    index("device_attribute_attribute_idx").on(table.attributeId),
+  ],
+);
+
+/**
+ * A custom question shown on the public enrollment page.
+ *
+ * A question is a presentation layer over an attribute definition: the answer
+ * is validated with the definition's type/options/required rules and stored as
+ * a `device_attribute` once the device identifies itself with that serial.
+ */
+export const enrollmentQuestion = mysqlTable(
+  "enrollment_question",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    attributeId: id("attribute_id")
+      .notNull()
+      .references(() => attributeDefinition.id, { onDelete: "cascade" }),
+    /** Prompt shown to the person enrolling; falls back to the attribute label. */
+    prompt: shortText("prompt"),
+    /** Overrides the definition's required flag when set. */
+    required: boolean("required"),
+    sortOrder: int("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("enrollment_question_organization_attribute_unique").on(
+      table.organizationId,
+      table.attributeId,
+    ),
+    index("enrollment_question_organization_sort_idx").on(table.organizationId, table.sortOrder),
+  ],
+);
+
+/**
+ * Answers submitted on the public enrollment page before the device is known.
+ *
+ * Enrollment happens before the first MDM check-in, so the tenant, enrollment
+ * and hardware serial are the only identity available. Answers are keyed by
+ * `(organizationId, serial, attributeId)` and consumed when a device with that
+ * serial appears; the write then goes through the normal device-attribute path
+ * with `updatedByUserId` null and an audit entry naming the enrollment.
+ */
+export const enrollmentAnswer = mysqlTable(
+  "enrollment_answer",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: id("enrollment_id")
+      .notNull()
+      .references(() => enterpriseEnrollment.id, { onDelete: "cascade" }),
+    serial: varchar("serial", { length: 128 }).notNull(),
+    attributeId: id("attribute_id")
+      .notNull()
+      .references(() => attributeDefinition.id, { onDelete: "cascade" }),
+    value: text("value").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("enrollment_answer_organization_serial_attribute_unique").on(
+      table.organizationId,
+      table.serial,
+      table.attributeId,
+    ),
+    index("enrollment_answer_organization_serial_idx").on(table.organizationId, table.serial),
+  ],
+);
+
+/**
  * Android-specific mapping and policy-delivery state for a `device` row.
  *
  * Reusing `device` keeps the dashboard, groups and policy resolver unchanged;
@@ -1616,6 +1916,12 @@ export const deviceCommand = mysqlTable(
     requestType: shortText("request_type").notNull(),
     /** Apple/Windows command body; always a JSON value written by the command queue. */
     payload: json("payload").$type<EffectSchema.Json | null>(),
+    /**
+     * Apple user channel the command targets (`UserID`/`EnrollmentUserID`).
+     * Null means the device channel. Commands are delivered only on the
+     * channel they were queued for.
+     */
+    userId: shortText("user_id"),
     status: varchar("status", { length: 32 }).notNull().default("queued"),
     /**
      * SHA-256 of the request type and canonical payload while the command is
@@ -1647,6 +1953,12 @@ export const deviceApple = mysqlTable("device_apple", {
     .primaryKey()
     .references(() => device.id, { onDelete: "cascade" }),
   enrollmentId: shortText("enrollment_id"),
+  /**
+   * `user` is an Apple User Enrollment (BYOD): Apple reports a per-enrollment
+   * `EnrollmentID` instead of a UDID, the accessible command set is smaller,
+   * and the enrollment belongs to exactly one user.
+   */
+  enrollmentMode: varchar("enrollment_mode", { length: 16, enum: ["device", "user"] }),
   token: text("token"),
   pushMagic: shortText("push_magic"),
   topic: shortText("topic"),
@@ -1658,7 +1970,24 @@ export const deviceApple = mysqlTable("device_apple", {
    * `device_secret`; this column is display-only state.
    */
   bootstrapTokenEscrowed: boolean("bootstrap_token_escrowed"),
+  /**
+   * The device reported `AwaitingConfiguration` in `TokenUpdate`. ADE devices
+   * whose cloud configuration sets `await_device_configured` stay in Setup
+   * Assistant until the server sends `DeviceConfigured`.
+   */
+  awaitingConfiguration: boolean("awaiting_configuration").notNull().default(false),
+  /**
+   * Whether ADE setup has been released. False while an ADE device is held in
+   * Setup Assistant; true once `DeviceConfigured` is acknowledged (or for
+   * devices that never entered the awaiting-configuration state).
+   */
   configured: boolean("configured").notNull().default(false),
+  /** When the server released the device from Setup Assistant. */
+  setupReleasedAt: timestamp("setup_released_at"),
+  /** When an administrator last requested Return to Service. */
+  returnToServiceRequestedAt: timestamp("return_to_service_requested_at"),
+  /** When the device came back from Return to Service and re-enrolled. */
+  returnToServiceCompletedAt: timestamp("return_to_service_completed_at"),
   deviceToken: shortText("device_token"),
   tokenUpdatedAt: timestamp("token_updated_at"),
   /** When the last APNs delivery was attempted (success or failure). */
@@ -1727,6 +2056,7 @@ export const deviceSecret = mysqlTable(
         "bootstrap_token",
         "activation_lock_bypass_code",
         "recovery_lock_password",
+        "local_admin_password",
       ],
     }).notNull(),
     /** AES-256-GCM sealed value produced by `sealSecret`. */
@@ -2536,6 +2866,12 @@ export const scepIssuedCertificate = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     enrollmentId: shortText("enrollment_id"),
     deviceId: shortText("device_id"),
+    /**
+     * SHA-256 of the issuing CA certificate. Rows issued before rotation keep
+     * naming the CA that signed them so the overlap can be audited and a
+     * retired CA is only dropped once no identity still chains to it.
+     */
+    caFingerprintSha256: varchar("ca_fingerprint_sha256", { length: 64 }),
     notAfter: timestamp("not_after").notNull(),
     /** Set when the identity certificate can no longer be used for renewal. */
     revokedAt: timestamp("revoked_at"),
@@ -2544,6 +2880,7 @@ export const scepIssuedCertificate = mysqlTable(
   (table) => [
     index("scep_issued_certificate_org_idx").on(table.organizationId),
     index("scep_issued_certificate_device_idx").on(table.deviceId),
+    index("scep_issued_certificate_ca_idx").on(table.organizationId, table.caFingerprintSha256),
   ],
 );
 
@@ -2599,6 +2936,222 @@ export const scepCa = mysqlTable(
   (table) => [uniqueIndex("scep_ca_organization_unique").on(table.organizationId)],
 );
 
+/**
+ * A superseded SCEP CA that is still accepted while identities it issued remain
+ * in use.
+ *
+ * Rotation never revokes existing identities: the new CA signs new and renewed
+ * certificates, and the previous CA certificate stays here as a verification
+ * anchor until its own expiry (`trustUntil`). Only the certificate is retained —
+ * a retired CA can no longer sign anything, so a database reader cannot forge
+ * an identity with it. Rows are purged once `trustUntil` has passed.
+ */
+export const scepCaTrust = mysqlTable(
+  "scep_ca_trust",
+  {
+    id: shortText("id").primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    certPem: text("cert_pem").notNull(),
+    /** Lowercase hex SHA-256 of the CA certificate DER. */
+    fingerprintSha256: varchar("fingerprint_sha256", { length: 64 }).notNull(),
+    /** Whether Mattrax generated the CA or an operator supplied it. */
+    source: varchar("source", { length: 16, enum: ["generated", "imported"] })
+      .notNull()
+      .default("generated"),
+    /** When the CA stopped signing new identities. */
+    retiredAt: timestamp("retired_at").notNull(),
+    /**
+     * Last moment identities issued by this CA are accepted for renewal and
+     * mTLS. Normally the CA's own `notAfter`: after that the chain cannot be
+     * validated wherever the anchor is installed.
+     */
+    trustUntil: timestamp("trust_until").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("scep_ca_trust_org_fingerprint_unique").on(
+      table.organizationId,
+      table.fingerprintSha256,
+    ),
+    index("scep_ca_trust_org_idx").on(table.organizationId),
+    index("scep_ca_trust_trust_until_idx").on(table.trustUntil),
+  ],
+);
+
+/**
+ * Latest observation of the deployment's origin TLS certificate.
+ *
+ * One row per deployment origin (`id` is the origin). A scheduled probe records
+ * the leaf certificate so an expiring, expired, mismatched or untrusted origin
+ * certificate is visible and alerted before devices fail to connect.
+ */
+export const serverCertificateHealth = mysqlTable("server_certificate_health", {
+  id: shortText("id").primaryKey(),
+  origin: shortText("origin").notNull(),
+  hostname: shortText("hostname").notNull(),
+  checkedAt: timestamp("checked_at").notNull(),
+  notBefore: timestamp("not_before"),
+  notAfter: timestamp("not_after"),
+  subject: text("subject"),
+  issuer: text("issuer"),
+  serialNumber: shortText("serial_number"),
+  fingerprintSha256: shortText("fingerprint_sha256"),
+  /** Whether the chain validated against the host's trust store. */
+  authorized: boolean("authorized").notNull(),
+  authorizationError: text("authorization_error"),
+  chainLength: int("chain_length").notNull(),
+  /** Set when the probe itself failed (DNS, TCP, TLS handshake, timeout). */
+  error: text("error"),
+});
+
+/**
+ * A reusable script an operator can run on managed devices.
+ *
+ * The body is arbitrary code, so `body` is bounded at the domain layer and
+ * every mutation requires step-up. `triggerType` decides when on-device agents
+ * run it; the trigger-specific fields are null for the other trigger types.
+ */
+export const script = mysqlTable(
+  "script",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    description: text("description"),
+    /** Interpreter the agent invokes. `pwsh` is the Windows agent's shell. */
+    language: varchar("language", { length: 8, enum: ["bash", "zsh", "sh", "pwsh"] }).notNull(),
+    body: text("body").notNull(),
+    /** `root` runs elevated; `user` runs as the logged-in console user. */
+    runAs: varchar("run_as", { length: 8, enum: ["root", "user"] })
+      .notNull()
+      .default("user"),
+    /** Hard execution deadline enforced by the agent and the queue. */
+    timeoutSeconds: int("timeout_seconds").notNull().default(300),
+    /**
+     * Extra environment entries. Values flagged `secret` are redacted from
+     * captured output before it is stored or shown.
+     */
+    environment:
+      json("environment").$type<Array<{ name: string; value: string; secret: boolean }>>(),
+    triggerType: varchar("trigger_type", {
+      length: 20,
+      enum: ["manual", "cron", "interval", "login", "logout", "network-change", "install"],
+    })
+      .notNull()
+      .default("manual"),
+    /** Interval trigger cadence in seconds; null for other triggers. */
+    intervalSeconds: int("interval_seconds"),
+    /** Five-field cron expression for the `cron` trigger. */
+    cronExpression: shortText("cron_expression"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdByUserId: id("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("script_organization_name_idx").on(table.organizationId, table.name),
+    index("script_organization_enabled_idx").on(table.organizationId, table.enabled),
+  ],
+);
+
+/**
+ * Device or group assignment for a script. `targetId` points at either
+ * `device.id` or `enterprise_group.id`; the handler validates that the target
+ * belongs to the same tenant, because a column cannot reference two tables.
+ */
+export const scriptAssignment = mysqlTable(
+  "script_assignment",
+  {
+    scriptId: id("script_id")
+      .notNull()
+      .references(() => script.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    targetType: varchar("target_type", { length: 16, enum: ["device", "group"] }).notNull(),
+    targetId: id("target_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scriptId, table.targetType, table.targetId] }),
+    index("script_assignment_target_idx").on(table.targetType, table.targetId),
+    index("script_assignment_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One script run on one device.
+ *
+ * `queued`/`sent`/`running` are active; `succeeded`, `failed`, `expired` and
+ * `cancelled` are terminal. Manual runs are queued by the dashboard and expire
+ * if the device never collects them; trigger runs are created by the agent and
+ * are deduplicated on `(deviceId, scriptId, dedupeKey)` so a retried agent post
+ * cannot duplicate history. Captured output is size-capped and redacted before
+ * it is stored here.
+ */
+export const scriptExecution = mysqlTable(
+  "script_execution",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    scriptId: id("script_id")
+      .notNull()
+      .references(() => script.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    triggerType: varchar("trigger_type", {
+      length: 20,
+      enum: ["manual", "cron", "interval", "login", "logout", "network-change", "install"],
+    }).notNull(),
+    status: varchar("status", {
+      length: 16,
+      enum: ["queued", "sent", "running", "succeeded", "failed", "expired", "cancelled"],
+    })
+      .notNull()
+      .default("queued"),
+    /** SHA-256 of the run identity while active; null for trigger history. */
+    dedupeKey: varchar("dedupe_key", { length: 64 }),
+    requestedByUserId: id("requested_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    exitCode: int("exit_code"),
+    stdout: text("stdout"),
+    stderr: text("stderr"),
+    stdoutTruncated: boolean("stdout_truncated").notNull().default(false),
+    stderrTruncated: boolean("stderr_truncated").notNull().default(false),
+    durationMs: int("duration_ms"),
+    /** Non-output failure text (timeout, signal, agent error); never secrets. */
+    resultDetail: text("result_detail"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    /** Manual runs that pass this deadline are never executed. */
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("script_execution_device_created_idx").on(table.deviceId, table.createdAt),
+    index("script_execution_script_created_idx").on(table.scriptId, table.createdAt),
+    index("script_execution_organization_created_idx").on(table.organizationId, table.createdAt),
+    uniqueIndex("script_execution_device_script_dedupe_unique").on(
+      table.deviceId,
+      table.scriptId,
+      table.dedupeKey,
+    ),
+    index("script_execution_status_expires_idx").on(table.status, table.expiresAt),
+    index("script_execution_status_updated_idx").on(table.status, table.updatedAt),
+  ],
+);
+
 export const relations = defineRelations(
   {
     user,
@@ -2609,6 +3162,7 @@ export const relations = defineRelations(
     accountSessionContext,
     accountEmailChange,
     accountRecovery,
+    registrationVerification,
     invitation,
     subscription,
     stripeEvent,
@@ -2639,6 +3193,9 @@ export const relations = defineRelations(
     device,
     devicePreRegistration,
     deviceCommand,
+    script,
+    scriptAssignment,
+    scriptExecution,
     deviceDeclaration,
     deviceApple,
     deviceAppleUser,
@@ -2668,8 +3225,10 @@ export const relations = defineRelations(
     devicePolicy,
     organizationDeviceUsage,
     scepCa,
+    scepCaTrust,
     scepChallenge,
     scepIssuedCertificate,
+    serverCertificateHealth,
     authPasskeyCredentials,
   },
   (r) => ({
@@ -2740,6 +3299,7 @@ export const relations = defineRelations(
         from: r.organization.id,
         to: r.application.organizationId,
       }),
+      scripts: r.many.script({ from: r.organization.id, to: r.script.organizationId }),
       deviceUsage: r.many.organizationDeviceUsage({
         from: r.organization.id,
         to: r.organizationDeviceUsage.organizationId,
@@ -2840,6 +3400,36 @@ export const relations = defineRelations(
       applications: r.many.deviceApplication({
         from: r.device.id,
         to: r.deviceApplication.deviceId,
+      }),
+      scriptExecutions: r.many.scriptExecution({
+        from: r.device.id,
+        to: r.scriptExecution.deviceId,
+      }),
+    },
+    script: {
+      organization: r.one.organization({ from: r.script.organizationId, to: r.organization.id }),
+      assignments: r.many.scriptAssignment({
+        from: r.script.id,
+        to: r.scriptAssignment.scriptId,
+      }),
+      executions: r.many.scriptExecution({
+        from: r.script.id,
+        to: r.scriptExecution.scriptId,
+      }),
+    },
+    scriptAssignment: {
+      script: r.one.script({ from: r.scriptAssignment.scriptId, to: r.script.id }),
+      organization: r.one.organization({
+        from: r.scriptAssignment.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    scriptExecution: {
+      script: r.one.script({ from: r.scriptExecution.scriptId, to: r.script.id }),
+      device: r.one.device({ from: r.scriptExecution.deviceId, to: r.device.id }),
+      organization: r.one.organization({
+        from: r.scriptExecution.organizationId,
+        to: r.organization.id,
       }),
     },
     deviceSecret: {

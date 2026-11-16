@@ -8,6 +8,7 @@ import {
   resolveRequestId,
   shouldLogRequest,
   tenantIdFromPath,
+  withDefaultNoStore,
   withRequestId,
 } from "./observability.js";
 
@@ -125,5 +126,25 @@ describe("error tags", () => {
         }),
       ),
     ).toBe("EnterpriseNotFound");
+  });
+});
+
+describe("default cache policy", () => {
+  it("marks responses without a policy as no-store", () => {
+    const response = withDefaultNoStore(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("keeps an explicit cache policy", () => {
+    const response = withDefaultNoStore(
+      new Response("{}", { headers: { "cache-control": "public, max-age=60" } }),
+    );
+
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
   });
 });

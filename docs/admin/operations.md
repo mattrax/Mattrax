@@ -337,6 +337,15 @@ Limits are enforced at enrollment readiness, Apple `Authenticate`, Windows enrol
 Android token issuance, pre-registration import and tenant creation. Existing devices are
 never deleted. See [Configuration](/operations/configuration).
 
+## Open-source licences
+
+Settings → Legal lists every third-party package in the production dependency graph, its
+declared SPDX licence, and the licence text the package ships. The inventory is generated
+on every web build by `scripts/generate-licences.mjs` from `pnpm-lock.yaml` and the
+installed packages, so it cannot go stale when a dependency changes. It is served as
+`/licenses.json` and the page reads that asset on demand instead of bundling the notices
+into the Worker. Run `pnpm licenses` to regenerate it without building.
+
 ## Backups
 
 ### Scheduled tenant backups

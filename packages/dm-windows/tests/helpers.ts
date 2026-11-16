@@ -10,6 +10,7 @@ export function mockManagementBackend(overrides?: Partial<ManagementBackendType>
     ManagementBackend,
     ManagementBackend.of({
       getAppleBootstrapToken: () => Effect.succeed(null),
+      appleReturnToServiceConfiguration: () => Effect.succeed({ enabled: false }),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
         overrides?.appleManagementCheckin ?? (() => Effect.succeed(IdleManifest.make({}))),

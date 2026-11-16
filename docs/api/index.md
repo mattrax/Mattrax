@@ -139,6 +139,6 @@ const tenants = await response.json();
 ## Next
 
 - [CLI](/api/cli)
-- [API reference](/api/reference)
+- [API reference](/api/reference/)
 - [OpenAPI](/api/openapi)
 - [Webhooks](/admin/operations)

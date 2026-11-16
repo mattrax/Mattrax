@@ -155,6 +155,36 @@ changes. Navigating away, closing the tab or leaving the editor asks **Discard**
 Wi-Fi payload's password) have a reveal button so a long value can be checked before
 saving.
 
+## Policy variables
+
+Configuration payloads can interpolate per-device values. The supported contexts are:
+
+| Variable             | Value                                                       |
+| -------------------- | ----------------------------------------------------------- |
+| `${device.name}`     | The device's display name in this tenant.                   |
+| `${device.serial}`   | The hardware serial reported at enrollment.                 |
+| `${device.model}`    | The model name reported by the device.                      |
+| `${tenant.name}`     | The tenant (organisation) name.                             |
+| `${attribute.<key>}` | A device attribute registered in **Settings → Attributes**. |
+
+Variables are resolved when a policy is compiled for delivery, per device, before the
+platform compiler runs. Apple declarations, legacy `.mobileconfig` profiles, Windows
+SyncML nodes and the effective-policy preview all see the resolved text.
+
+- An unknown variable fails validation with the field path and the offending name, so a
+  typo cannot ship as literal text.
+- A registered attribute with no value on a particular device resolves to an empty
+  string.
+- `$${...}` is an escape and renders the literal text `${...}`; `$${device.name}` is sent
+  unchanged (without the extra `$`).
+- Secrets are never available. Only the contexts above resolve, so
+  `${device.recoveryKey}` or `${secret.apiKey}` is rejected.
+- Object keys are not interpolated; only string values.
+
+The editor's **Policy variables** hint lists every built-in name plus the tenant's
+registered attribute keys. `GET /api/v1/tenants/:tenantId/policy-variables` returns the
+same list for tooling.
+
 ## Application payloads
 
 Policies can store application files in R2:

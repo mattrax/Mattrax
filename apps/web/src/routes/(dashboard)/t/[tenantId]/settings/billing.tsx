@@ -83,9 +83,12 @@ export default function BillingSettingsPage() {
     },
   }));
 
+  // Do not read another query's pending data inside these options: tanstack
+  // invokes the accessor outside a tracking scope and Solid's diagnostics
+  // reject it. The invoices section is hidden when billing is unconfigured.
   const invoices = useQuery(() => ({
     ...enterpriseQueries.billingInvoices(params.tenantId),
-    enabled: Boolean(params.tenantId) && billing.data?.configured === true,
+    enabled: Boolean(params.tenantId),
   }));
 
   const checkout = useMutation(() => ({

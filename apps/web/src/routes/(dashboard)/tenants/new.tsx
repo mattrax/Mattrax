@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createSignal } from "solid-js";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ArrowLeft } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { rememberTenantAlias } from "~/lib/tenant";
 
 const slugify = (value: string) =>
   value
@@ -24,9 +25,15 @@ export default function NewTenantPage() {
 
   const createTenant = useMutation(() => ({
     mutationFn: () => enterprise.createTenant({ name: name(), slug: slug() || slugify(name()) }),
-    onSuccess: async ({ id }) => {
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
-      navigate(`/t/${id}/devices`);
+    onSuccess: ({ id }) => {
+      // Land on the canonical slug: an id URL would be rewritten to the slug
+      // moments later, which churns the tenant route's query keys for nothing.
+      // Seed the slug/id alias so those keys resolve before `/me` refreshes.
+      rememberTenantAlias(slug(), id);
+      navigate(`/t/${slug() || id}/devices`);
+      // Navigate before the background refresh: waiting for the cache write
+      // leaves the form in its pending state and the route never changes.
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
 

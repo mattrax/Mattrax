@@ -9,7 +9,10 @@ import {
   sweepDeviceCommands,
   syncDynamicGroupsForTenant,
 } from "@mattrax/management-backend-enterprise";
+import { sweepScriptExecutions } from "./scripts.ts";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
+import { purgeExpiredScepCaTrust, rotateDueScepCas } from "./scepLifecycle.ts";
+import { runServerCertificateCheck, type ServerCertificateProbe } from "./serverCertificate.ts";
 import { reconcileSubscriptionSweep } from "./billing.ts";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import type { EffectStripeClient } from "@mattrax/effect-stripe";
@@ -84,6 +87,21 @@ export type MaintenanceOptions = {
   /** Disable credential-expiry alerts (for example in tests). Defaults to true. */
   readonly credentialAlerts?: boolean;
   /**
+   * Rotate tenant SCEP CAs that have entered their rotation window. Defaults
+   * to true; requires `authSecret` to unseal and reseal the CA key.
+   */
+  readonly scepCaRotation?: boolean;
+  /**
+   * Public origin whose TLS certificate is reviewed on a schedule (for example
+   * `https://e.mattrax.app`). Omit it to skip the probe, which is what a host
+   * without an HTTPS origin (local development) does.
+   */
+  readonly serverCertificateOrigin?: string;
+  /** Minimum minutes between origin certificate probes. Defaults to 60. */
+  readonly serverCertificateIntervalMinutes?: number;
+  /** Injectable TLS probe for tests. */
+  readonly serverCertificateProbe?: ServerCertificateProbe;
+  /**
    * Optional delivery hook for new credential-expiry alerts. Called once per
    * tenant/threshold/day, after the deduped audit event is written. Without it
    * maintenance still records the audit event and sends nothing.
@@ -134,6 +152,12 @@ export type MaintenanceOptions = {
    */
   readonly commandRetentionDays?: number;
   /**
+   * Terminal script-execution rows older than this many days are deleted.
+   * Defaults to 30. Queued runs expire first; they are never pruned while
+   * active. Set to `0` to keep script results indefinitely.
+   */
+  readonly scriptExecutionRetentionDays?: number;
+  /**
    * Completed/failed tenant-teardown journal rows older than this many days are
    * deleted. Defaults to 365 so the operator email in the journal is not kept
    * forever. Set to `0` to keep them indefinitely.
@@ -163,6 +187,14 @@ export type MaintenanceResult = {
   readonly purgedAndroidPubSubMessages: number;
   /** Credential expiry audit events written this run. */
   readonly credentialAlerts: number;
+  /** Tenant SCEP CAs rotated because they entered the rotation window. */
+  readonly scepCaRotated: number;
+  /** Tenants whose automatic CA rotation failed; retried next run. */
+  readonly scepCaRotationFailed: number;
+  /** Retired CA anchors dropped after their trust window closed. */
+  readonly purgedScepCaTrust: number;
+  /** 1 when this run probed the origin TLS certificate, 0 when throttled/skipped. */
+  readonly serverCertificateChecked: number;
   /** Dynamic groups whose materialised membership was recomputed. */
   readonly dynamicGroupsEvaluated: number;
   /** Webhook delivery rows deleted by retention. */
@@ -182,6 +214,10 @@ export type MaintenanceResult = {
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Queued script runs whose deadline elapsed during this run. */
+  readonly expiredScriptRuns: number;
+  /** Terminal script-execution rows deleted by retention. */
+  readonly purgedScriptRuns: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
   /** Tenants whose Stripe seat quantity was brought in line this run. */
@@ -362,7 +398,7 @@ export const loadCredentialAlertRecipients = loadTenantAdminRecipients;
  */
 export const runMaintenance = (
   options: MaintenanceOptions = {},
-): Effect.Effect<MaintenanceResult, any, Db> =>
+): Effect.Effect<MaintenanceResult, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
     const now = options.now ?? new Date();
@@ -385,6 +421,10 @@ export const runMaintenance = (
       purgedEnrollmentAttempts: 0,
       purgedAndroidPubSubMessages: 0,
       credentialAlerts: 0,
+      scepCaRotated: 0,
+      scepCaRotationFailed: 0,
+      purgedScepCaTrust: 0,
+      serverCertificateChecked: 0,
       dynamicGroupsEvaluated: 0,
       purgedWebhookDeliveries: 0,
       webhookRetries: 0,
@@ -394,6 +434,8 @@ export const runMaintenance = (
       securityInfoRefreshes: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      expiredScriptRuns: 0,
+      purgedScriptRuns: 0,
       purgedTenantDeletionLogs: 0,
       billingSeatsUpdated: 0,
       billingSeatsUnchanged: 0,
@@ -573,6 +615,55 @@ export const runMaintenance = (
       }
     }
 
+    // 5c. SCEP CA lifecycle. A CA inside its rotation window is replaced by a
+    //     successor: the successor signs new and renewed identities, and the
+    //     previous CA stays a verification anchor until it expires. No identity
+    //     is revoked, so a fleet survives the rotation without re-enrolling.
+    //     Runs before the credential alerts so they describe the new state.
+    if (options.scepCaRotation !== false) {
+      const rotation = yield* rotateDueScepCas(db, {
+        now,
+        authSecret: options.authSecret,
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            console.error("SCEP CA rotation sweep failed", cause);
+
+            return { checked: 0, rotated: 0, failed: 0 };
+          }),
+        ),
+      );
+
+      result.scepCaRotated = rotation.rotated;
+      result.scepCaRotationFailed = rotation.failed;
+      result.purgedScepCaTrust = yield* purgeExpiredScepCaTrust(db, now).pipe(
+        Effect.catch(() => Effect.succeed(0)),
+      );
+    }
+
+    // 5d. Review the deployment origin's TLS certificate. The probe is
+    //     throttled, so the hourly cron can call it unconditionally while a
+    //     manual daily run reuses a fresh observation. A failure is recorded
+    //     rather than thrown: the rest of maintenance must still run.
+    if (options.serverCertificateOrigin) {
+      const check = yield* runServerCertificateCheck(db, {
+        origin: options.serverCertificateOrigin,
+        now,
+        intervalMinutes: options.serverCertificateIntervalMinutes,
+        probe: options.serverCertificateProbe,
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.sync(() => {
+            console.error("Origin TLS certificate check failed", cause);
+
+            return { checked: false, state: null };
+          }),
+        ),
+      );
+
+      result.serverCertificateChecked = check.checked ? 1 : 0;
+    }
+
     // 6. Credential expiry warnings. APNs and SCEP CA expiries are otherwise
     //    only visible on one settings page, so write one audit event per
     //    organisation per threshold per UTC day. The audit trail itself is the
@@ -622,7 +713,10 @@ export const runMaintenance = (
           if (threshold) alerted.add(threshold);
         }
 
-        const health = yield* loadCredentialHealth(db, organization.id, now);
+        const health = yield* loadCredentialHealth(db, organization.id, now, {
+          authSecret: options.authSecret,
+        });
+
         const threshold = alertThreshold(health);
 
         if (!threshold || alerted.has(threshold)) continue;
@@ -640,6 +734,7 @@ export const runMaintenance = (
             apns: health.apns,
             scepCa: health.scepCa,
             deviceCertificates: health.deviceCertificates,
+            serverCertificate: health.serverCertificate,
           },
           createdAt: now,
         });
@@ -777,6 +872,17 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+
+    // 10b. Script queue housekeeping. A manual run that no device collected
+    //      before its deadline must not fire weeks later, and script output can
+    //      be large, so terminal results are pruned on the same schedule.
+    const scriptRuns = yield* sweepScriptExecutions(db, {
+      now,
+      retentionDays: options.scriptExecutionRetentionDays,
+    });
+
+    result.expiredScriptRuns = scriptRuns.expired;
+    result.purgedScriptRuns = scriptRuns.pruned;
 
     // 11. Tenant-teardown journal retention. The journal carries the operator
     //     email that requested the deletion and survives the tenant row, so it

@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import {   dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
+import { dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "enterprise-test-secret";
@@ -105,6 +105,7 @@ const authenticate = (overrides: Row = {}) => ({
   _tag: "Authenticate" as const,
   serialNumber: "C02A",
   model: "MacBookPro18,3",
+  enrollmentMode: "device" as const,
   ...overrides,
 });
 

@@ -38,7 +38,6 @@ const push = (data: Schema.Json, type: string, messageId = "message-1") => ({
   subscription: "projects/compliance-project/subscriptions/mattrax-android",
 });
 
-
 const withDayN = (result: Check, dayN: boolean): Check =>
   dayN ? { ...result, dayN: true } : result;
 
@@ -77,9 +76,9 @@ const assertOkResult = (result: AndroidPubSubResult, type: string): void =>
   assertResult(result, "ok", type);
 
 const rejectsKind = async (work: Promise<object>, kind: string): Promise<void> => {
-  await assert.rejects(work, (error: any) => {
-    assert.equal(error?._tag, "AndroidDeliveryError");
-    assert.equal(error?.kind, kind);
+  await assert.rejects(work, (error: { readonly _tag?: string; readonly kind?: string }) => {
+    assert.equal(error._tag, "AndroidDeliveryError");
+    assert.equal(error.kind, kind);
 
     return true;
   });

@@ -1,7 +1,8 @@
-import { useLocation, useNavigate, useParams } from "@solidjs/router";
+import { useIsRouting, useLocation, useParams } from "@solidjs/router";
+import { useNavigate } from "~/lib/navigation";
 import { useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, createSignal, type ParentProps, onHydrationEnd, Show } from "solid-js";
+import { createEffect, type ParentProps, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
 import { canonicalTenantParam } from "~/lib/tenant";
@@ -23,16 +24,10 @@ export default function TenantLayout(props: ParentProps) {
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const isRouting = useIsRouting();
   const session = authClient.useSession();
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
   const { can } = useCan();
-
-  const [hydrated, setHydrated] = createSignal(false);
-
-  if (!isServer)
-    onHydrationEnd(() => {
-      setHydrated(true);
-    });
 
   // A tenant can appear in `me` after this component mounted (another tab
   // created one, or an invitation was just accepted), so a missing id gets one
@@ -77,17 +72,22 @@ export default function TenantLayout(props: ParentProps) {
         canonical: canonicalParam(),
         path: location.pathname,
         search: location.search,
-        hydrated: hydrated(),
         denied: tag === "EnterpriseForbidden" || tag === "EnterpriseNotFound",
         failed: me.isError,
         pending: me.isPlaceholderData || me.isFetching,
         settled: me.isFetchedAfterMount,
+        routing: isRouting(),
       };
     },
     (state) => {
       // `navigate` needs a browser history; SSR has no membership check to do
       // beyond the queries, which stay disabled until hydration.
       if (isServer) return;
+
+      // Issuing a second navigation while the transition that produced this
+      // page is still settling can deadlock the router: both writes are
+      // transitions and the URL settles on neither. Wait for it to land.
+      if (state.routing) return;
 
       if (state.denied) {
         navigate("/dashboard", { replace: true });
@@ -100,11 +100,18 @@ export default function TenantLayout(props: ParentProps) {
       if (state.found) {
         // Only an id URL is rewritten. A slug is already canonical (and a
         // just-saved slug may not be in the refreshed membership shell yet).
-        if (state.hydrated && state.canonical && state.tenantId === state.tenantRowId) {
+        if (state.canonical && state.tenantId === state.tenantRowId) {
           const prefix = `/t/${state.tenantId}`;
           const rest = state.path.startsWith(prefix) ? state.path.slice(prefix.length) : "";
+          const target = `/t/${state.canonical}${rest}${state.search}`;
 
-          navigate(`/t/${state.canonical}${rest}${state.search}`, { replace: true });
+          // Rewriting inside the effect's own tick races the navigation that
+          // produced the path change (both writes are transitions; the URL can
+          // settle on neither). Defer one macrotask so the destination route
+          // commits first, then replace only the tenant segment.
+          setTimeout(() => {
+            if (window.location.pathname.startsWith(prefix)) navigate(target, { replace: true });
+          }, 0);
         }
 
         return;
@@ -125,6 +132,9 @@ export default function TenantLayout(props: ParentProps) {
 
       navigate("/dashboard", { replace: true });
     },
+    // Client-only: the SSR pass returns above, and the canonical rewrite must
+    // run on the hydrated tree rather than adopting the server's empty value.
+    { transparent: true },
   );
 
   return (

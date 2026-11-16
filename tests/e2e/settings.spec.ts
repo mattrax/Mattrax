@@ -1,5 +1,20 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+
+/**
+ * Save the tenant profile and wait for the write. A follow-up read that races
+ * the mutation legitimately still sees the old row, so tests must observe the
+ * response rather than the click.
+ */
+const saveTenantSettings = async (page: Page) => {
+  const patched = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" && response.url().includes("/api/v1/tenants/"),
+  );
+
+  await page.getByRole("button", { name: /save changes/i }).click();
+  expect((await patched).ok()).toBe(true);
+};
 
 test.describe("tenant settings", () => {
   test("shows tenant audit events", async ({ page }) => {
@@ -82,10 +97,10 @@ test.describe("tenant settings", () => {
 
     const name = page.locator("input").first();
     await name.fill("Renamed Tenant");
-    await page.getByRole("button", { name: /save changes/i }).click();
+    await saveTenantSettings(page);
     await expect(name).toHaveValue("Renamed Tenant");
 
-    await page.goto("/dashboard");
+    await page.goto("/dashboard", { waitUntil: "commit" }).catch(() => undefined);
     await expect(page).toHaveURL(new RegExp(`/t/[^/]+$`));
     const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.find((item: { id: string }) => item.id === tenant.id).name).toBe(
@@ -139,7 +154,7 @@ test.describe("tenant settings", () => {
     await page.getByPlaceholder("#1c1917").fill("#2563eb");
     await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
     await expect(page.getByText("Enroll in Acme Corp")).toBeVisible();
-    await page.getByRole("button", { name: /save changes/i }).click();
+    await saveTenantSettings(page);
 
     const saved = await api<{
       displayName: string;

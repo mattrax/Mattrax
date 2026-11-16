@@ -26,6 +26,8 @@ export * from "./deviceHealth.ts";
 
 export * from "./deviceActions.ts";
 
+export * from "./scripts.ts";
+
 export * from "./deviceInventory.ts";
 
 export * from "./dynamicGroups.ts";
@@ -46,6 +48,12 @@ export { EnterpriseAuth, EnterpriseService } from "./service.ts";
 export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
 
 export * from "./auth.ts";
+
+export * from "./attributes.ts";
+
+export * from "./policyVariables.ts";
+
+export * from "./csv.ts";
 
 export * from "./stepUp.ts";
 

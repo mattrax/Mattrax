@@ -23,6 +23,8 @@ export const STEP_UP_ACTIONS = [
   "backup-delete",
   "backup-restore",
   "device-command",
+  "script-change",
+  "script-run",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
@@ -172,6 +174,10 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "restore this tenant from a backup";
     case "device-command":
       return "run this device action";
+    case "script-change":
+      return "change this script";
+    case "script-run":
+      return "run this script on your devices";
     case "billing-portal":
       return "open the billing portal";
     case "sso-policy":

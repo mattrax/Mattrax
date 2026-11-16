@@ -21,6 +21,8 @@ export const STEP_UP_ACTIONS = [
   "backup-delete",
   "backup-restore",
   "device-command",
+  "script-change",
+  "script-run",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",

@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "tsx": "^4.23.15",
+    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }

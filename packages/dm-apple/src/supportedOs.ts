@@ -12,9 +12,8 @@ import {
  * to a device that cannot apply it, and so the designer's OS label is a
  * guarantee the delivery path actually keeps.
  *
- * This lives in the protocol package (not `policy-apple`) because the managed
- * Worker imports it at request time and the unbundled generated policy schemas
- * do not resolve there.
+ * This lives in the protocol package because the managed Worker imports it at
+ * request time; the generated policy schemas are not bundled into the Worker.
  */
 
 /**

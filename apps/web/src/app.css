@@ -125,9 +125,9 @@
   --active: var(--gray-a4);
   --scrim: var(--black-a8);
   --success: var(--green-9);
-  --success-foreground: var(--green-11);
+  --success-foreground: var(--green-12);
   --warning: var(--amber-9);
-  --warning-foreground: var(--amber-11);
+  --warning-foreground: var(--amber-12);
   --sidebar: var(--gray-2);
   --sidebar-foreground: var(--gray-12);
   --sidebar-primary: var(--violet-9);
@@ -186,9 +186,9 @@
   --active: var(--gray-a4);
   --scrim: rgb(0 0 0 / 0.6);
   --success: var(--green-9);
-  --success-foreground: var(--green-11);
+  --success-foreground: var(--green-12);
   --warning: var(--amber-9);
-  --warning-foreground: var(--amber-11);
+  --warning-foreground: var(--amber-12);
   --sidebar: var(--gray-1);
   --sidebar-foreground: var(--gray-12);
   --sidebar-primary: var(--violet-9);

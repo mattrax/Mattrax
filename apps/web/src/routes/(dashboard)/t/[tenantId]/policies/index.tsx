@@ -23,6 +23,7 @@ import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
+import { routes } from "~/lib/routes";
 
 const configurationCount = (row: PolicyRow) => Object.keys(row.configurations ?? {}).length;
 
@@ -82,7 +83,7 @@ export default function PoliciesPage() {
         }
         actions={
           <Show when={can("policies.write") && rows().length > 0}>
-            <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+            <LinkButton href={routes.tenant(params.tenantId).newPolicy()}>Create policy</LinkButton>
           </Show>
         }
       />
@@ -97,7 +98,7 @@ export default function PoliciesPage() {
         toolbar={
           <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
         }
-        rowHref={(row) => `/t/${params.tenantId}/policies/${row.id}`}
+        rowHref={(row) => routes.tenant(params.tenantId).policy(row.id)}
         actions={(selected, clear, select) => (
           <EntityActions entity="policy" selected={selected} clear={clear} select={select} />
         )}
@@ -115,7 +116,9 @@ export default function PoliciesPage() {
               description="Create a policy to start configuring managed devices."
               action={
                 <Show when={can("policies.write")}>
-                  <LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>
+                  <LinkButton href={routes.tenant(params.tenantId).newPolicy()}>
+                    Create policy
+                  </LinkButton>
                 </Show>
               }
             />
@@ -131,7 +134,7 @@ export default function PoliciesPage() {
               <span class="block min-w-0">
                 <a
                   class="block truncate font-medium hover:underline"
-                  href={`/t/${params.tenantId}/policies/${row.id}`}
+                  href={routes.tenant(params.tenantId).policy(row.id)}
                 >
                   {row.name}
                 </a>

@@ -10,5 +10,3 @@ export * from "./deserializer.js";
 export * from "./envelope.js";
 
 export * from "./namespaces.js";
-
-export * from "./windows-mdm.js";

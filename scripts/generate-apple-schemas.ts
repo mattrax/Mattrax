@@ -3,14 +3,20 @@ import * as path from "node:path";
 import { parse } from "../node_modules/.pnpm/yaml@2.8.3/node_modules/yaml/dist/index.js";
 
 const APPLE_REPO = "/tmp/apple-device-management";
-const OUT_DIR = path.resolve(process.cwd(), "packages/policy-apple/src/generated");
 
 /**
- * `supportedOS` metadata is emitted separately from the policy schemas because
- * policy delivery (management-backend-enterprise) must import it inside the
- * Worker, where the unbundled `policy-apple` sources do not resolve.
+ * The generated declaration, profile, command and check-in schemas live in the
+ * Apple protocol package: it is the only package that describes Apple's wire
+ * format, and policy delivery already imports `supportedOS` from the same tree.
  */
-const SUPPORT_OUT_DIR = path.resolve(process.cwd(), "packages/dm-apple/src/generated");
+const OUT_DIR = path.resolve(process.cwd(), "packages/dm-apple/src/generated");
+
+/**
+ * `supportedOS` metadata is emitted alongside the policy schemas because
+ * policy delivery (management-backend-enterprise) must import it inside the
+ * Worker, where the generated schema sources are not bundled.
+ */
+const SUPPORT_OUT_DIR = OUT_DIR;
 
 // Ensure output directories exist
 fs.mkdirSync(OUT_DIR, { recursive: true });
