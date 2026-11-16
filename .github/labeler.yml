@@ -12,7 +12,6 @@ documentation:
       - any-glob-to-any-file:
           - docs/**
           - "**/*.md"
-          - rspress.config.ts
 
 design:
   - changed-files:
@@ -55,7 +54,7 @@ androiddm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-android/**
-          - apps/api/src/android.ts
+          - apps/cloud/src/android.ts
           - packages/enterprise-backend/src/android.ts
           - packages/enterprise-backend/src/androidRoutes.ts
 
@@ -70,3 +69,5 @@ tech-debt:
           - tsconfig.json
           - oxlint.config.ts
           - vite.config.ts
+          - playwright.config.ts
+          - packages/config/**

@@ -11,9 +11,13 @@ import {
 import { makeDb, runEffect, schema } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
+
 const devicePrice = "price_device";
+
 const now = new Date("2026-01-01T00:00:00.000Z");
+
 const periodStart = 1_767_225_600;
+
 const periodEnd = 1_769_817_600;
 
 const seedOrganization = (
@@ -154,6 +158,47 @@ describe("Stripe webhook signature verification", () => {
       deliverEvent(db, "customer.subscription.created", subscription()),
     ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
     expect(db.store.subscription).toHaveLength(1);
+  });
+
+  it("links a deployment licence subscription without touching a tenant", async () => {
+    const db = makeDb({
+      deployment_license: [
+        {
+          id: "lic-1",
+          name: "Acme self-hosted",
+          licenseKeyHash: "hash",
+          licenseKeyPrefix: "mtx_lic_",
+          origin: "https://mdm.example.com",
+          contactEmail: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          plan: "device",
+          status: null,
+          deviceCount: 10,
+          tenantCount: 1,
+          periodEnd: null,
+          cancelAtPeriodEnd: false,
+          lastSeenAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    await expect(
+      deliverEvent(
+        db,
+        "customer.subscription.created",
+        subscription({ metadata: { deploymentLicenseId: "lic-1" } }),
+      ),
+    ).resolves.toMatchObject({ organizationId: null });
+
+    expect(db.store.deployment_license[0]).toMatchObject({
+      stripeSubscriptionId: "sub_1",
+      stripeCustomerId: "cus_1",
+      status: "active",
+    });
+    expect(db.store.subscription).toHaveLength(0);
   });
 
   it("rejects a missing signature", async () => {

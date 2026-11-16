@@ -32,6 +32,8 @@ export type EnterpriseConfiguration = typeof schema.configuration.$inferSelect;
 
 export type EnterpriseApplication = typeof schema.application.$inferSelect;
 
+export type EnterpriseApplicationInstaller = typeof schema.applicationInstaller.$inferSelect;
+
 export type EnterpriseApplicationGroup = typeof schema.applicationGroup.$inferSelect;
 
 export type EnterpriseApplicationDevice = typeof schema.applicationDevice.$inferSelect;

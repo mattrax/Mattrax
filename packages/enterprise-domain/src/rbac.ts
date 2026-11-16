@@ -47,6 +47,7 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number];
 
 export const Permission = Schema.Literals(PERMISSIONS);
+
 export const PERMISSION_SET: ReadonlySet<string> = new Set(PERMISSIONS);
 
 export const PERMISSION_GROUPS: ReadonlyArray<{

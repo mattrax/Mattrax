@@ -7,6 +7,7 @@ import {
 } from "@mattrax/enterprise-domain";
 
 export const DEVICE_ACTIVITY_DEFAULT_LIMIT = 50;
+
 export const DEVICE_ACTIVITY_MAX_LIMIT = 200;
 
 /**
@@ -33,6 +34,7 @@ const iso = (value: Date | string | null | undefined) => {
 
 /** Event id prefixes. Their lexicographic order is the merged tiebreaker. */
 export const DEVICE_ACTIVITY_AUDIT_PREFIX = "audit:";
+
 export const DEVICE_ACTIVITY_COMMAND_PREFIX = "command:";
 
 /**

@@ -1,0 +1,34 @@
+{
+  "name": "@mattrax/docker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted Mattrax image: Node server composing the API and dashboard, plus the Dockerfile.",
+  "files": [
+    "src",
+    "scripts"
+  ],
+  "type": "module",
+  "main": "src/server.ts",
+  "scripts": {
+    "start": "node src/server.ts",
+    "build:api": "vp build --config vite.config.ts"
+  },
+  "dependencies": {
+    "mysql2": "catalog:"
+  },
+  "devDependencies": {
+    "@mattrax/cloud": "workspace:*",
+    "@mattrax/enterprise-backend": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@types/node": "catalog:",
+    "@yielded/auth": "catalog:",
+    "effect": "catalog:",
+    "reflect-metadata": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

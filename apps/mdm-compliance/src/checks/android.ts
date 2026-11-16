@@ -18,6 +18,7 @@ import type { Check } from "../types.ts";
 import { createAndroidHarness } from "../harness/android.ts";
 
 const enterpriseName = "enterprises/LC123456";
+
 const deviceName = `${enterpriseName}/devices/device-1`;
 
 const base64 = (value: Schema.Json): string => {

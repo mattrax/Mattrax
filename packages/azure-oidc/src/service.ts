@@ -44,6 +44,7 @@ type DecodedJwt = {
 };
 
 const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000;
+
 const DEFAULT_CLOCK_TOLERANCE_SECONDS = 300;
 
 const textEncoder = new TextEncoder();

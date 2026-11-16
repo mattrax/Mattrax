@@ -13,23 +13,25 @@ import {
   requestAccountRecovery,
   verifyAccountRecoveryProof,
 } from "../src/recovery.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-recovery-test-secret";
+
 const start = Date.UTC(2026, 10, 16, 12, 0, 0);
 
 type Sent = { to: string; subject: string; text: string };
 
-const emailTransport = (sent: Sent[]) => ({
-  send: async (message: OutboundEmailMessage) => {
+const emailTransport = (sent: Sent[]) =>
+  makeEmailTransport(async (message: OutboundEmailMessage) => {
     sent.push({
       to: Schema.is(Schema.String)(message.to) ? message.to : message.to.join(", "),
       subject: message.subject,
       text: message.text ?? "",
     });
-  },
-});
+  });
 
 type UserSeed = {
   id: string;
@@ -136,7 +138,9 @@ describe("break-glass recovery on a solo account", () => {
       runEffect(verifyAccountRecoveryProof(deps, { token: proof })),
     ).rejects.toBeInstanceOf(RecoveryRejected);
 
-    await expect(runEffect(redeemRecoveryToken(db, verified.signInToken))).resolves.toEqual({
+    await expect(
+      runEffect(redeemRecoveryToken(db, verified.signInToken, new Date(start))),
+    ).resolves.toEqual({
       userId: "user-1",
     });
     expect(db.store.account_recovery[0]!.status).toBe("completed");
@@ -146,7 +150,9 @@ describe("break-glass recovery on a solo account", () => {
     );
 
     // The completion link is consumed exactly once.
-    await expect(runEffect(redeemRecoveryToken(db, verified.signInToken))).resolves.toBeUndefined();
+    await expect(
+      runEffect(redeemRecoveryToken(db, verified.signInToken, new Date(start))),
+    ).resolves.toBeUndefined();
   });
 
   it("answers identically for an address that does not exist", async () => {
@@ -289,7 +295,9 @@ describe("break-glass recovery approval", () => {
     expect(completionToken).toEqual(expect.any(String));
     expect(completionToken).not.toBe("");
 
-    await expect(runEffect(redeemRecoveryToken(db, completionToken))).resolves.toEqual({
+    await expect(
+      runEffect(redeemRecoveryToken(db, completionToken, new Date(start))),
+    ).resolves.toEqual({
       userId: "user-1",
     });
   });

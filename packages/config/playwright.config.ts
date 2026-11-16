@@ -1,0 +1,46 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "@playwright/test";
+
+/**
+ * Browser tests drive the real dashboard over CDP using the locally installed
+ * Chrome. The dev server and MySQL are expected to be running; set
+ * `E2E_BASE_URL` to target an already-running deployment (for example staging).
+ */
+/** The repository root, which is where `pnpm test:e2e` is invoked. */
+const repository = fileURLToPath(new URL("../..", import.meta.url));
+
+export default defineConfig({
+  // Resolve from this package so `pnpm test:e2e` works from the repo root.
+  testDir: path.join(repository, "tests/e2e"),
+  // Playwright defaults these to the config file's directory; both are
+  // repository-level paths (CI uploads `test-results/`).
+  outputDir: path.join(repository, "test-results"),
+  timeout: 60_000,
+  expect: { timeout: 15_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: process.env.CI ? 1 : 0,
+  reporter: process.env.CI ? "github" : "list",
+  use: {
+    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:9050",
+    // Locally we drive the installed Chrome over CDP; CI uses the bundled
+    // Chromium build (also CDP) so no system browser is required.
+    channel:
+      process.env.E2E_CHANNEL === "bundled" ? undefined : (process.env.E2E_CHANNEL ?? "chrome"),
+    headless: true,
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1440, height: 900 },
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+  },
+  webServer: process.env.E2E_BASE_URL
+    ? undefined
+    : {
+        command: "tsx scripts/e2e-server.ts",
+        cwd: repository,
+        url: "http://localhost:9050",
+        reuseExistingServer: true,
+        timeout: 180_000,
+      },
+});

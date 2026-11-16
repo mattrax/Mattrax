@@ -378,6 +378,7 @@ export declare namespace ManagementBackend {
     readonly getAppleProfile?: (
       policyId: string,
       kind: string,
+      deviceId: string,
     ) => Effect.Effect<
       { content: Uint8Array; contentType: string } | null,
       ManagementNotSupported | UnknownDevice | InternalServerError

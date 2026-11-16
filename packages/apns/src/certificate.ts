@@ -11,6 +11,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 const UID_OID = "0.9.2342.19200300.100.1.1";
+
 const COMMON_NAME_OID = "2.5.4.3";
 
 // Apple MDM push topics are issued as `com.apple.mgmt.External.<id>` (device

@@ -5,11 +5,13 @@ import {
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest,
+  isSupportedDynamicGroupRulesVersion,
   validateTenantBranding,
   type TenantExportGroup,
 } from "@mattrax/enterprise-domain";
 import { validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { schema } from "@mattrax/enterprise-core";
+import { loadTenantEscrowKey } from "./fdeEscrow.ts";
 import {
   readTenantBackup,
   runTenantBackup,
@@ -92,6 +94,22 @@ type ParsedBundle = {
     sha256: string | null;
     r2Key: string | null;
     notes: string | null;
+    installers?: ReadonlyArray<{
+      platform: "apple" | "win" | "android";
+      source: "manifest" | "store" | "upload";
+      bundleId: string | null;
+      version: string | null;
+      manifestUrl: string | null;
+      storeId: string | null;
+      fileName: string | null;
+      contentType: string | null;
+      size: number | null;
+      sha256: string | null;
+      r2Key: string | null;
+      minOsVersion: string | null;
+      requiredCapability: string | null;
+      priority: number;
+    }>;
     groupKeys: ReadonlyArray<string>;
   }>;
   deviceAssignments: ReadonlyArray<{
@@ -101,12 +119,23 @@ type ParsedBundle = {
     excludedPolicyKeys: ReadonlyArray<string>;
     applicationKeys: ReadonlyArray<string>;
   }>;
+  userAssignments: ReadonlyArray<{
+    email: string;
+    policyKeys: ReadonlyArray<string>;
+    excludedPolicyKeys: ReadonlyArray<string>;
+  }>;
+  userGroupAssignments: ReadonlyArray<{
+    groupId: string;
+    policyKeys: ReadonlyArray<string>;
+    excludedPolicyKeys: ReadonlyArray<string>;
+  }>;
   preRegistrations: ReadonlyArray<{
     serial: string;
     name: string | null;
     assetTag: string | null;
     notes: string | null;
     groupKey: string | null;
+    consumedDeviceKey: string | null;
   }>;
   members: number;
   certificates: number;
@@ -132,6 +161,7 @@ const text = (value: string | null | undefined, max: number): string | null => {
  */
 export const parseTenantRestoreBundle = (
   text_: string,
+  options: { readonly escrowCertificateFingerprintSha256?: string | null } = {},
 ): Effect.Effect<ParsedBundle, TenantRestoreError, never> =>
   Effect.gen(function* () {
     if (new TextEncoder().encode(text_).byteLength > TENANT_RESTORE_MAX_BYTES)
@@ -211,6 +241,20 @@ export const parseTenantRestoreBundle = (
         return yield* Effect.fail(
           invalid(`Group "${group.name}" must list its policy assignments`),
         );
+
+      if (group.kind === "dynamic") {
+        if (!group.rules)
+          return yield* Effect.fail(
+            invalid(`Dynamic group "${group.name}" has no membership rules`),
+          );
+
+        if (!isSupportedDynamicGroupRulesVersion(group.rules.version))
+          return yield* Effect.fail(
+            invalid(
+              `Dynamic group "${group.name}" uses an unsupported rules version (${group.rules.version})`,
+            ),
+          );
+      }
     }
 
     const policyKeys = new Set<string>();
@@ -248,9 +292,15 @@ export const parseTenantRestoreBundle = (
             invalid(`Policy "${policyName}" has invalid configuration data`),
           );
 
-        yield* validateConfiguration(kind, configuration).pipe(
-          Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)),
-        );
+        yield* validateConfiguration(
+          kind,
+          configuration,
+          options.escrowCertificateFingerprintSha256 === undefined
+            ? undefined
+            : {
+                escrowCertificateFingerprintSha256: options.escrowCertificateFingerprintSha256,
+              },
+        ).pipe(Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)));
         entries.push([kind, configuration]);
       }
 
@@ -372,6 +422,70 @@ export const parseTenantRestoreBundle = (
       });
     }
 
+    const parsedUserAssignments: Array<ParsedBundle["userAssignments"][number]> = [];
+    const parsedUserGroupAssignments: Array<ParsedBundle["userGroupAssignments"][number]> = [];
+
+    const validPolicyLists = (
+      label: string,
+      included: ReadonlyArray<string>,
+      excluded: ReadonlyArray<string>,
+    ) =>
+      Effect.gen(function* () {
+        for (const policyKey of included) {
+          if (!policyKeys.has(policyKey))
+            return yield* Effect.fail(
+              invalid(`${label} references policy "${policyKey}", which is not in this backup`),
+            );
+
+          if (excluded.includes(policyKey))
+            return yield* Effect.fail(invalid(`${label} includes and excludes the same policy`));
+        }
+
+        for (const policyKey of excluded)
+          if (!policyKeys.has(policyKey))
+            return yield* Effect.fail(
+              invalid(`${label} references policy "${policyKey}", which is not in this backup`),
+            );
+      });
+
+    for (const assignment of bundle.userAssignments ?? []) {
+      const email = text(assignment.email, 320)?.toLowerCase();
+
+      if (!email || !email.includes("@"))
+        return yield* Effect.fail(invalid("Every user assignment needs a valid email"));
+
+      yield* validPolicyLists(
+        `User assignment "${email}"`,
+        assignment.policyKeys,
+        assignment.excludedPolicyKeys,
+      );
+
+      parsedUserAssignments.push({
+        email,
+        policyKeys: [...new Set(assignment.policyKeys)],
+        excludedPolicyKeys: [...new Set(assignment.excludedPolicyKeys)],
+      });
+    }
+
+    for (const assignment of bundle.userGroupAssignments ?? []) {
+      const groupId = text(assignment.groupId, 255);
+
+      if (!groupId)
+        return yield* Effect.fail(invalid("Every user-group assignment needs a group id"));
+
+      yield* validPolicyLists(
+        `User-group assignment "${groupId}"`,
+        assignment.policyKeys,
+        assignment.excludedPolicyKeys,
+      );
+
+      parsedUserGroupAssignments.push({
+        groupId,
+        policyKeys: [...new Set(assignment.policyKeys)],
+        excludedPolicyKeys: [...new Set(assignment.excludedPolicyKeys)],
+      });
+    }
+
     const serials = new Set<string>();
 
     for (const row of preRegistrations) {
@@ -434,6 +548,22 @@ export const parseTenantRestoreBundle = (
         sha256: text(application.sha256, 255),
         r2Key: application.r2Key ?? null,
         notes: text(application.notes, 10_000),
+        installers: application.installers?.map((installer) => ({
+          platform: installer.platform,
+          source: installer.source,
+          bundleId: text(installer.bundleId, 255),
+          version: text(installer.version, 255),
+          manifestUrl: installer.manifestUrl ?? null,
+          storeId: text(installer.storeId, 255),
+          fileName: text(installer.fileName, 255),
+          contentType: text(installer.contentType, 255),
+          size: installer.size ?? null,
+          sha256: text(installer.sha256, 255),
+          r2Key: installer.r2Key ?? null,
+          minOsVersion: text(installer.minOsVersion, 255),
+          requiredCapability: text(installer.requiredCapability, 255),
+          priority: installer.priority ?? 0,
+        })),
         groupKeys: application.groupKeys ?? [],
       })),
       preRegistrations: preRegistrations.map((row) => ({
@@ -444,8 +574,11 @@ export const parseTenantRestoreBundle = (
         assetTag: text(row.assetTag, 255),
         notes: text(row.notes, 10_000),
         groupKey: row.groupKey ?? null,
+        consumedDeviceKey: row.consumedDeviceKey ?? null,
       })),
       deviceAssignments: parsedDeviceAssignments,
+      userAssignments: parsedUserAssignments,
+      userGroupAssignments: parsedUserGroupAssignments,
       members: bundle.members?.length ?? 0,
       certificates: bundle.scepCertificates?.length ?? 0,
       auditLog: bundle.auditLog?.length ?? 0,
@@ -645,6 +778,8 @@ const applyBundle = (
             organizationId: organization.id,
             name: text(group.name, 255)!,
             notes: text(group.notes, 10_000),
+            kind: group.kind === "dynamic" ? "dynamic" : "manual",
+            rules: group.kind === "dynamic" ? (group.rules ?? null) : null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -665,8 +800,118 @@ const applyBundle = (
         if (groupPolicyValues.length > 0)
           yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
 
+        // Deleting and recreating policies cascades their user and user-group
+        // assignments away. Restore them from the bundle by the stable user
+        // email and the directory group id, which the restore does not replace.
+        const tenantUsers = yield* db
+          .select({ id: schema.user.id, email: schema.user.email })
+          .from(schema.user)
+          .innerJoin(schema.member, eq(schema.member.userId, schema.user.id))
+          .where(eq(schema.member.organizationId, organization.id));
+
+        const userIdByEmail = new Map(
+          tenantUsers.map((user) => [user.email.toLowerCase(), user.id]),
+        );
+
+        const userPolicyValues: Array<{
+          organizationId: string;
+          userId: string;
+          policyId: string;
+          mode: "include" | "exclude";
+          createdAt: Date;
+        }> = [];
+
+        for (const assignment of bundle.userAssignments) {
+          const userId = userIdByEmail.get(assignment.email);
+
+          if (!userId) continue;
+
+          for (const policyKey of assignment.policyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userPolicyValues.push({
+                organizationId: organization.id,
+                userId,
+                policyId,
+                mode: "include",
+                createdAt: timestamp,
+              });
+          }
+
+          for (const policyKey of assignment.excludedPolicyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userPolicyValues.push({
+                organizationId: organization.id,
+                userId,
+                policyId,
+                mode: "exclude",
+                createdAt: timestamp,
+              });
+          }
+        }
+
+        if (userPolicyValues.length > 0)
+          yield* tx.insert(schema.userPolicy).ignore().values(userPolicyValues);
+
+        const directoryGroups = yield* db
+          .select({ id: schema.userGroup.id })
+          .from(schema.userGroup)
+          .where(eq(schema.userGroup.organizationId, organization.id));
+
+        const directoryGroupIds = new Set(directoryGroups.map((group) => group.id));
+
+        const userGroupPolicyValues: Array<{
+          organizationId: string;
+          groupId: string;
+          policyId: string;
+          mode: "include" | "exclude";
+          createdAt: Date;
+        }> = [];
+
+        for (const assignment of bundle.userGroupAssignments) {
+          if (!directoryGroupIds.has(assignment.groupId)) continue;
+
+          for (const policyKey of assignment.policyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userGroupPolicyValues.push({
+                organizationId: organization.id,
+                groupId: assignment.groupId,
+                policyId,
+                mode: "include",
+                createdAt: timestamp,
+              });
+          }
+
+          for (const policyKey of assignment.excludedPolicyKeys) {
+            const policyId = policyIdByKey.get(policyKey);
+
+            if (policyId)
+              userGroupPolicyValues.push({
+                organizationId: organization.id,
+                groupId: assignment.groupId,
+                policyId,
+                mode: "exclude",
+                createdAt: timestamp,
+              });
+          }
+        }
+
+        if (userGroupPolicyValues.length > 0)
+          yield* tx.insert(schema.userGroupPolicy).ignore().values(userGroupPolicyValues);
+
         let skippedDevices = 0;
-        const groupDeviceValues: Array<{ groupId: string; deviceId: string }> = [];
+
+        const groupDeviceValues: Array<{
+          groupId: string;
+          deviceId: string;
+          source: "manual" | "dynamic";
+        }> = [];
+
         const seenMemberships = new Set<string>();
 
         for (const group of bundle.groups) {
@@ -684,7 +929,11 @@ const applyBundle = (
 
             if (seenMemberships.has(membership)) continue;
             seenMemberships.add(membership);
-            groupDeviceValues.push({ groupId, deviceId });
+            groupDeviceValues.push({
+              groupId,
+              deviceId,
+              source: group.kind === "dynamic" ? "dynamic" : (device.source ?? "manual"),
+            });
           }
         }
 
@@ -718,7 +967,54 @@ const applyBundle = (
             updatedAt: timestamp,
           });
 
-          if (application.source === "upload" && !application.r2Key) applicationsWithoutFiles++;
+          const installerInputs = application.installers?.length
+            ? application.installers
+            : [
+                {
+                  platform: application.platform,
+                  source: application.source,
+                  bundleId: application.bundleId,
+                  version: application.version,
+                  manifestUrl: application.manifestUrl,
+                  storeId: application.storeId,
+                  fileName: application.fileName,
+                  contentType: application.contentType,
+                  size: application.size,
+                  sha256: application.sha256,
+                  r2Key: application.r2Key,
+                  minOsVersion: null,
+                  requiredCapability: null,
+                  priority: 0,
+                },
+              ];
+
+          for (const installer of installerInputs)
+            yield* tx.insert(schema.applicationInstaller).values({
+              id: newId(),
+              organizationId: organization.id,
+              applicationId,
+              platform: installer.platform,
+              source: installer.source,
+              bundleId: installer.bundleId ?? null,
+              version: installer.version ?? null,
+              manifestUrl: installer.manifestUrl ?? null,
+              storeId: installer.storeId ?? null,
+              fileName: installer.fileName ?? null,
+              contentType: installer.contentType ?? null,
+              size: installer.size ?? null,
+              sha256: installer.sha256 ?? null,
+              r2Key: installer.r2Key ?? null,
+              minOsVersion: installer.minOsVersion ?? null,
+              requiredCapability: installer.requiredCapability ?? null,
+              priority: installer.priority ?? 0,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+
+          if (
+            installerInputs.some((installer) => installer.source === "upload" && !installer.r2Key)
+          )
+            applicationsWithoutFiles++;
         }
 
         const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
@@ -741,11 +1037,13 @@ const applyBundle = (
         // device has since been deleted is skipped and reported rather than
         // failing the whole restore.
         let skippedDeviceAssignments = 0;
+
         const devicePolicyValues: Array<{
           deviceId: string;
           policyId: string;
           mode: "include" | "exclude";
         }> = [];
+
         const applicationDeviceValues: Array<{ deviceId: string; applicationId: string }> = [];
 
         for (const assignment of bundle.deviceAssignments) {
@@ -786,7 +1084,15 @@ const applyBundle = (
         if (applicationDeviceValues.length > 0)
           yield* tx.insert(schema.applicationDevice).ignore().values(applicationDeviceValues);
 
-        for (const row of bundle.preRegistrations)
+        for (const row of bundle.preRegistrations) {
+          // A consumed serial must stay consumed. If its device is gone, drop
+          // the row rather than reopening an enrollment that already happened.
+          const consumedDeviceId = row.consumedDeviceKey
+            ? resolveDevice(row.consumedDeviceKey, null)
+            : undefined;
+
+          if (row.consumedDeviceKey && !consumedDeviceId) continue;
+
           yield* tx.insert(schema.devicePreRegistration).values({
             id: newId(),
             organizationId: organization.id,
@@ -795,10 +1101,11 @@ const applyBundle = (
             assetTag: row.assetTag,
             notes: row.notes,
             groupId: row.groupKey ? (groupIdByKey.get(row.groupKey) ?? null) : null,
-            consumedDeviceId: null,
+            consumedDeviceId: consumedDeviceId ?? null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
+        }
 
         if (bundle.enrollment) {
           const value = {
@@ -878,7 +1185,16 @@ export const restoreTenantFromBackup = (
 
     const loaded = yield* readTenantBackup(db, storage, organization.id, options.backupId);
 
-    const bundle = yield* parseTenantRestoreBundle(loaded.text);
+    // Restoring into the same tenant keeps its escrow key, so a policy that
+    // escrows FileVault keys must validate against that key rather than the
+    // "new tenant" null used by import.
+    const escrowKey = yield* loadTenantEscrowKey(db, organization.id).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+
+    const bundle = yield* parseTenantRestoreBundle(loaded.text, {
+      escrowCertificateFingerprintSha256: escrowKey?.certificateFingerprintSha256 ?? null,
+    });
 
     // A bundle can only reference objects this tenant owns. Accepting an
     // arbitrary key would make the download endpoint read another tenant's

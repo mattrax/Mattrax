@@ -19,7 +19,6 @@ import {
   EnterpriseNotConfigured,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
-  EnterpriseStripeError,
   EnterpriseTenantHasMembers,
   EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
@@ -68,8 +67,6 @@ import {
   type TenantScepCaInfo,
   verifyScriptAgentToken,
   type BillingCheckoutRequest,
-  type BillingInvoice,
-  type BillingInvoicesResponse,
   type WebhookDeliveryQuery,
   type WebhookDeliveryReplayResponse,
   type WebhookDeliveriesResponse,
@@ -82,13 +79,12 @@ import {
   validateAttributeValue,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
-import type { StripeClientLike, StripeCustomer, StripeInvoice } from "@mattrax/effect-stripe";
+import type { StripeClientLike } from "@mattrax/effect-stripe";
 import {
   authCredentials,
   authIdentifiers,
   authPending,
   authSessions,
-  countOrganizationDevices,
   deviceLimitForOrganization,
   hasMfaFactor,
   R2_IMMUTABLE_CACHE_CONTROL,
@@ -109,6 +105,7 @@ import {
   like,
   lt,
   ne,
+  notInArray,
   or,
   sql,
 } from "drizzle-orm";
@@ -282,7 +279,14 @@ import {
   type AuditExportEntry,
   type AuditSearchFilters,
 } from "./auditLog.ts";
-import { billableDeviceCount, reconcileSubscriptionQuantity } from "./billing.ts";
+import {
+  compareInstallerPreference,
+  installerSkipReason,
+  selectInstaller,
+} from "@mattrax/enterprise-domain";
+import { reconcileSubscriptionQuantity } from "./billing.ts";
+// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- this is the composition fallback for a deployment with a Stripe client but no remote billing layer.
+import { makeStripeBillingService, type BillingOperations } from "./billingService.ts";
 import {
   listWebhookDeliveries as listStoredWebhookDeliveries,
   loadWebhookDelivery as loadStoredWebhookDelivery,
@@ -418,11 +422,12 @@ import type {
   EnterpriseGroupDevice,
   EnterpriseGroupPolicy,
   EnterpriseApplication,
+  EnterpriseApplicationInstaller,
   EnterpriseOrganization,
   EnterprisePolicy,
   EnterpriseSchema,
 } from "./schema.ts";
-import type { EmailReplyTo } from "./email.ts";
+import type { EmailTransport } from "./email.ts";
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -460,6 +465,11 @@ export type EnterpriseHandlersConfig = {
    * failing at boot.
    */
   readonly stripeClient?: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
+  /**
+   * Customer-facing billing implementation. Hosted deployments omit it and get
+   * the Stripe service; a self-hosted deployment supplies the remote service.
+   */
+  readonly billing?: BillingOperations;
   /**
    * Stripe price for the per-device monthly plan. Checkout and seat
    * reconciliation need it alongside `stripeClient`; both request a
@@ -504,17 +514,8 @@ export type EnterpriseHandlersConfig = {
   readonly appleProfileSigning?: AppleProfileSigningConfig;
   /** Optional static analytics sink; the API supplies a request-scoped one. */
   readonly analytics?: EnterpriseAnalytics;
-  /** Transactional email binding. Invitations are returned without email when omitted. */
-  readonly email?: {
-    send(message: {
-      to: string;
-      from: { name: string; email: string };
-      replyTo?: EmailReplyTo;
-      subject: string;
-      text?: string;
-      html?: string;
-    }): Promise<void>;
-  };
+  /** Transactional email transport. Invitations are returned without email when omitted. */
+  readonly email?: EmailTransport;
   /**
    * Verified sender address for invitation email. Must remain an allowed
    * Cloudflare Email sender; defaults to `hello@mattrax.cloud`.
@@ -763,6 +764,7 @@ const now = () => new Date();
  * day. The challenge is one-time and bound to the tenant's enrollment id.
  */
 export const ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS = 60 * 60;
+
 export const ENROLLMENT_PROFILE_MAX_TTL_SECONDS = 24 * 60 * 60;
 
 export const normalizeEnrollmentProfileTtlSeconds = (value: number | undefined) => {
@@ -805,8 +807,11 @@ const deviceActivityKeysetCondition = (
  * reminded in the dashboard rather than forced.
  */
 const SCIM_TOKEN_DEFAULT_TTL_DAYS = 90;
+
 const SCIM_TOKEN_MAX_TTL_DAYS = 365;
+
 const SCIM_TOKEN_ROTATION_WINDOW_DAYS = 14;
+
 const DAY_MILLIS = 24 * 60 * 60 * 1_000;
 
 /**
@@ -901,10 +906,13 @@ const brandingOrFail = (body: BrandingPayload) =>
   });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const ok = { status: "ok" as const };
 
 const APPLE_PROFILE_WINDOW_MS = 60_000;
+
 const APPLE_PROFILE_PER_IP_LIMIT = 60;
+
 const appleProfileWindows = new Map<string, { count: number; resetAt: number }>();
 
 /**
@@ -1073,8 +1081,18 @@ const headersFromRequest = (request: HttpServerRequest) => {
   return headers;
 };
 
+/**
+ * Rebuild a Web Request for the auth library from the Effect request.
+ *
+ * The path and method matter: the library's MCP guard decides whether an OAuth
+ * token may touch account settings from them. Rebuilding at the origin root
+ * would make every request look like `GET /`.
+ */
 const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
-  new Request(origin, { headers: headersFromRequest(request) });
+  new Request(new URL(request.url, origin), {
+    method: request.method,
+    headers: headersFromRequest(request),
+  });
 
 /** Require a recent step-up for a sensitive action. */
 const requireStepUp = (
@@ -1140,8 +1158,11 @@ const validRoles = (role: string) => {
 };
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 const MAX_PENDING_INVITATIONS_PER_TENANT = 50;
+
 const INVITATION_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const DEFAULT_INVITATION_FROM = "hello@mattrax.cloud";
 
 /** Normalise an invitation target at the transport boundary. */
@@ -1269,6 +1290,7 @@ export const createEnterpriseService = ({
   origin,
   stripeClient,
   deviceMonthlyPriceId,
+  billing: providedBilling,
   storage,
   auth: authService,
   authSecret,
@@ -1361,82 +1383,15 @@ export const createEnterpriseService = ({
       : makeEffectStripeClient(stripeClient)
     : undefined;
 
-  const billingConfigured = Boolean(stripe);
-
-  const billingNotConfigured = () =>
-    new EnterpriseStripeError({
-      message: "Billing is not configured for this deployment.",
+  const billing =
+    providedBilling ??
+    makeStripeBillingService({
+      db,
+      origin,
+      stripe,
+      deviceMonthlyPriceId,
+      planLimits,
     });
-
-  const billingUnavailable = () =>
-    new EnterpriseStripeError({
-      message: "Billing is temporarily unavailable. Try again shortly.",
-    });
-
-  /**
-   * The canonical billing page for a tenant. Every redirect handed to Stripe
-   * starts here, so a Checkout return (or portal close) can only land on this
-   * deployment.
-   */
-  const tenantBillingUrl = (tenantId: string) =>
-    `${origin.replace(/\/+$/, "")}/t/${encodeURIComponent(tenantId)}/settings/billing`;
-
-  /**
-   * Resolve a caller-supplied return URL against `ORIGIN`. A value that points
-   * at another site (or uses another scheme) is discarded in favour of the
-   * canonical billing page, so billing cannot be used as an open redirect.
-   */
-  const sameOriginReturnUrl = (tenantId: string, candidate: string | null | undefined) => {
-    const fallback = tenantBillingUrl(tenantId);
-
-    if (!candidate) return fallback;
-
-    try {
-      const base = new URL(origin);
-      const url = new URL(candidate, base);
-
-      return url.origin === base.origin ? url.toString() : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
-  /**
-   * Stripe returns a fully-qualified HTTPS URL for hosted Checkout and the
-   * billing portal. Anything else is a misconfigured proxy or a tampered
-   * response, so it is treated as an upstream failure instead of being
-   * redirected to.
-   */
-  const hostedBillingUrl = (value: string | null | undefined): string | null => {
-    if (!value) return null;
-
-    try {
-      const url = new URL(value);
-
-      return url.protocol === "https:" ? url.toString() : null;
-    } catch {
-      return null;
-    }
-  };
-
-  /** Only https links are rendered; Stripe may omit either invoice link. */
-  const httpsLinkOrNull = (value: string | null | undefined): string | null =>
-    hostedBillingUrl(value);
-
-  const billingInvoice = (invoice: StripeInvoice): BillingInvoice => ({
-    id: invoice.id,
-    number: invoice.number ?? null,
-    status: invoice.status ?? null,
-    total: invoice.total ?? 0,
-    amountDue: invoice.amount_due ?? 0,
-    amountPaid: invoice.amount_paid ?? 0,
-    currency: invoice.currency ?? "usd",
-    createdAt: new Date((invoice.created ?? 0) * 1000).toISOString(),
-    periodStart: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
-    periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
-    hostedInvoiceUrl: httpsLinkOrNull(invoice.hosted_invoice_url),
-    pdfUrl: httpsLinkOrNull(invoice.invoice_pdf),
-  });
 
   /**
    * Translate an Android delivery failure into the API's stable error tags.
@@ -2315,53 +2270,6 @@ export const createEnterpriseService = ({
       ]);
     });
 
-  const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
-    Effect.gen(function* () {
-      if (organization.stripeCustomerId) return organization.stripeCustomerId;
-
-      if (!stripe) return yield* Effect.fail(billingNotConfigured());
-
-      // Search is the cheap path. Some Stripe accounts/API versions reject
-      // search, so fall back to a single bounded page instead of iterating the
-      // entire customer list.
-      const search = yield* Effect.exit(
-        stripe.customers.search({
-          query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
-          limit: 1,
-        }),
-      );
-
-      let stripeCustomer: StripeCustomer | undefined = Exit.isSuccess(search)
-        ? search.value.data[0]
-        : undefined;
-
-      if (!stripeCustomer && Exit.isFailure(search)) {
-        const page = yield* stripe
-          .effect((client: StripeClientLike) => client.customers.list({ limit: 100 }))
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        stripeCustomer = page.data.find(
-          (customer: StripeCustomer) =>
-            customer.metadata?.organizationId === organization.id &&
-            customer.metadata?.customerType === "organization",
-        );
-      }
-
-      stripeCustomer ??= yield* stripe.customers
-        .create({
-          name: organization.name,
-          metadata: { organizationId: organization.id, customerType: "organization" },
-        })
-        .pipe(Effect.mapError(() => billingUnavailable()));
-
-      yield* db
-        .update(schema.organization)
-        .set({ stripeCustomerId: stripeCustomer.id })
-        .where(eq(schema.organization.id, organization.id));
-
-      return stripeCustomer.id;
-    });
-
   /**
    * Best-effort seat reconciliation for a device lifecycle change.
    *
@@ -2628,6 +2536,8 @@ export const createEnterpriseService = ({
     readonly at: Date;
     /** Apple per-user channel (`UserID`/`EnrollmentUserID`); omit for the device. */
     readonly userId?: string;
+    /** Commands from the same operation that must survive supersede planning. */
+    readonly protectIds?: ReadonlyArray<string>;
   }): Effect.Effect<
     { readonly id: string; readonly payload: CommandPayload; readonly deduplicated: boolean },
     unknown,
@@ -2677,6 +2587,7 @@ export const createEnterpriseService = ({
             expiresAt: row.expiresAt,
           })),
         { requestType: input.requestType, payload: input.payload, now: input.at },
+        new Set(input.protectIds ?? []),
       );
 
       if (plan.duplicate) {
@@ -2816,61 +2727,6 @@ export const createEnterpriseService = ({
    * plan name; enforcement falls back to the configured default when the
    * subscription is absent or lapsed.
    */
-  const billingSummary = (organizationId: string, userId: string) =>
-    Effect.gen(function* () {
-      const [subscription] = yield* db
-        .select()
-        .from(schema.subscription)
-        .where(eq(schema.subscription.referenceId, organizationId))
-        .limit(1);
-
-      const [devices] = yield* db
-        .select({ value: count() })
-        .from(schema.device)
-        .where(
-          and(
-            eq(schema.device.organizationId, organizationId),
-            eq(schema.device.status, "enrolled"),
-          ),
-        );
-
-      const planLimitDbError = () =>
-        new EnterpriseDbError({ message: "Could not check plan limits" });
-
-      const devicesUsed = yield* countOrganizationDevices(db, organizationId).pipe(
-        Effect.mapError(planLimitDbError),
-      );
-
-      const deviceStatus = yield* deviceLimitForOrganization({
-        db,
-        organizationId,
-        config: planLimits,
-      }).pipe(Effect.mapError(planLimitDbError));
-
-      const tenantStatus = yield* tenantLimitForAccount({
-        db,
-        userId,
-        config: planLimits,
-      }).pipe(Effect.mapError(planLimitDbError));
-
-      return {
-        plan: deviceStatus.plan,
-        status: subscription?.status,
-        billableDevices: devices?.value ?? 0,
-        deviceLimit: deviceStatus.limit,
-        tenantLimit: tenantStatus.limit,
-        devicesUsed,
-        tenantsUsed: tenantStatus.used,
-        overDeviceLimit: deviceStatus.overLimit,
-        overTenantLimit: tenantStatus.overLimit,
-        limitsConfigured: Boolean(planLimits?.configured),
-        subscriptionId: subscription?.stripeSubscriptionId ?? null,
-        periodEnd: subscription?.periodEnd ? iso(subscription.periodEnd) : null,
-        cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
-        configured: billingConfigured,
-      };
-    });
-
   const PLAN_DEVICE_LIMIT_MESSAGE =
     "The device limit for this plan has been reached. Contact your administrator to upgrade.";
 
@@ -3553,7 +3409,213 @@ export const createEnterpriseService = ({
       return base;
     });
 
-  const rowApplication = (row: EnterpriseApplication, groupsCount = 0, devicesCount = 0) => ({
+  type InstallerInput = {
+    id?: string;
+    platform: "apple" | "win" | "android";
+    source?: "manifest" | "store" | "upload";
+    bundleId?: string | null;
+    version?: string | null;
+    manifestUrl?: string | null;
+    storeId?: string | null;
+    minOsVersion?: string | null;
+    requiredCapability?: string | null;
+    priority?: number;
+  };
+
+  const installerSource = (input: InstallerInput): "manifest" | "store" | "upload" =>
+    input.source ??
+    (input.storeId?.trim() ? "store" : input.platform === "android" ? "store" : "manifest");
+
+  const normaliseInstaller = (input: InstallerInput) =>
+    Effect.gen(function* () {
+      const source = installerSource(input);
+      const manifestUrl = input.manifestUrl?.trim() || null;
+      const storeId = input.storeId?.trim() || null;
+      const bundleId = input.bundleId?.trim() || null;
+      const minOsVersion = input.minOsVersion?.trim() || null;
+
+      if (minOsVersion && !/^\d+(\.\d+)*$/.test(minOsVersion))
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Minimum OS version must look like 14 or 14.2.1" }),
+        );
+
+      if (input.platform === "apple") {
+        if (source === "manifest" && !manifestUrl)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Apple manifest applications require a manifest URL",
+            }),
+          );
+
+        if (source === "store" && (!storeId || !Number.isSafeInteger(Number(storeId))))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Apple store applications require a whole-number store ID",
+            }),
+          );
+      }
+
+      if (
+        input.platform === "win" &&
+        (source === "manifest" || source === "upload") &&
+        !manifestUrl
+      )
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Windows installers require an installer URL" }),
+        );
+
+      if (input.platform === "android" && source !== "store" && !bundleId)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "Android applications require a Managed Google Play package name",
+          }),
+        );
+
+      return {
+        platform: input.platform,
+        source,
+        bundleId,
+        version: input.version?.trim() || null,
+        manifestUrl,
+        storeId,
+        minOsVersion,
+        requiredCapability: input.requiredCapability?.trim() || null,
+        priority: Number.isFinite(input.priority) ? Math.trunc(input.priority!) : 0,
+      };
+    });
+
+  const rowInstaller = (row: typeof schema.applicationInstaller.$inferSelect) => ({
+    id: row.id,
+    platform: row.platform,
+    source: row.source,
+    bundleId: row.bundleId,
+    version: row.version,
+    manifestUrl: row.manifestUrl,
+    storeId: row.storeId,
+    fileName: row.fileName,
+    contentType: row.contentType,
+    size: row.size ?? undefined,
+    sha256: row.sha256,
+    minOsVersion: row.minOsVersion,
+    requiredCapability: row.requiredCapability,
+    priority: row.priority,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
+  const applicationInstallers = (organizationId: string, applicationId: string) =>
+    db
+      .select()
+      .from(schema.applicationInstaller)
+      .where(
+        and(
+          eq(schema.applicationInstaller.organizationId, organizationId),
+          eq(schema.applicationInstaller.applicationId, applicationId),
+        ),
+      )
+      .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
+
+  /** Keep the legacy flat columns on `application` aligned with its best installer. */
+  const syncLegacyApplicationInstaller = (organizationId: string, applicationId: string) =>
+    Effect.gen(function* () {
+      const installers = yield* applicationInstallers(organizationId, applicationId);
+      const primary = installers[0];
+
+      if (!primary) return;
+
+      yield* db
+        .update(schema.application)
+        .set({
+          platform: primary.platform,
+          source: primary.source,
+          bundleId: primary.bundleId,
+          version: primary.version,
+          manifestUrl: primary.manifestUrl,
+          storeId: primary.storeId,
+          fileName: primary.fileName,
+          contentType: primary.contentType,
+          size: primary.size,
+          sha256: primary.sha256,
+          r2Key: primary.r2Key,
+          updatedAt: now(),
+        })
+        .where(
+          and(
+            eq(schema.application.id, applicationId),
+            eq(schema.application.organizationId, organizationId),
+          ),
+        );
+    });
+
+  const replaceApplicationInstallers = (input: {
+    organizationId: string;
+    applicationId: string;
+    installers: ReadonlyArray<InstallerInput>;
+  }) =>
+    Effect.gen(function* () {
+      const existing = yield* applicationInstallers(input.organizationId, input.applicationId);
+      const byId = new Map(existing.map((row) => [row.id, row]));
+      const keep = new Set<string>();
+      const at = now();
+
+      for (const installer of input.installers) {
+        const values = yield* normaliseInstaller(installer);
+        const current = installer.id ? byId.get(installer.id) : undefined;
+
+        if (current) {
+          keep.add(current.id);
+          yield* db
+            .update(schema.applicationInstaller)
+            .set({ ...values, updatedAt: at })
+            .where(
+              and(
+                eq(schema.applicationInstaller.id, current.id),
+                eq(schema.applicationInstaller.organizationId, input.organizationId),
+              ),
+            );
+        } else {
+          const installerId = id();
+
+          keep.add(installerId);
+          yield* db.insert(schema.applicationInstaller).values({
+            id: installerId,
+            organizationId: input.organizationId,
+            applicationId: input.applicationId,
+            ...values,
+            createdAt: at,
+            updatedAt: at,
+          });
+        }
+      }
+
+      const removed = existing.filter((row) => !keep.has(row.id));
+
+      for (const row of removed)
+        yield* db
+          .delete(schema.applicationInstaller)
+          .where(eq(schema.applicationInstaller.id, row.id));
+
+      // Remove the objects only after their rows are gone, so a failed delete
+      // leaves an orphan rather than a row pointing at a missing file.
+      for (const row of removed)
+        if (row.r2Key)
+          yield* Effect.tryPromise(() => storage.delete(row.r2Key!)).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                `Failed to delete application installer object ${row.r2Key}: ${String(cause)}`,
+              ),
+            ),
+          );
+
+      yield* syncLegacyApplicationInstaller(input.organizationId, input.applicationId);
+    });
+
+  const rowApplication = (
+    row: EnterpriseApplication,
+    groupsCount = 0,
+    devicesCount = 0,
+    installers: ReadonlyArray<ReturnType<typeof rowInstaller>> = [],
+  ) => ({
     id: row.id,
     name: row.name,
     platform: row.platform,
@@ -3567,6 +3629,7 @@ export const createEnterpriseService = ({
     size: row.size ?? undefined,
     sha256: row.sha256,
     notes: row.notes,
+    installers,
     groupsCount,
     devicesCount,
     createdAt: iso(row.createdAt),
@@ -3898,14 +3961,31 @@ export const createEnterpriseService = ({
       if (filters.setup) {
         // ADE setup state is stored on `device_apple`; the subquery keeps the
         // filter set-based and tenant scoping remains on the outer device query.
+        const appleDevices = db
+          .select({ deviceId: schema.deviceApple.deviceId })
+          .from(schema.deviceApple);
+
         conditions.push(
-          inArray(
-            schema.device.id,
-            db
-              .select({ deviceId: schema.deviceApple.deviceId })
-              .from(schema.deviceApple)
-              .where(eq(schema.deviceApple.awaitingConfiguration, filters.setup === "awaiting")),
-          ),
+          filters.setup === "awaiting"
+            ? inArray(
+                schema.device.id,
+                db
+                  .select({ deviceId: schema.deviceApple.deviceId })
+                  .from(schema.deviceApple)
+                  .where(eq(schema.deviceApple.awaitingConfiguration, true)),
+              )
+            : // "Complete" includes devices with no ADE row (Windows, Android,
+              // and Apple devices that never awaited configuration).
+              (or(
+                inArray(
+                  schema.device.id,
+                  db
+                    .select({ deviceId: schema.deviceApple.deviceId })
+                    .from(schema.deviceApple)
+                    .where(eq(schema.deviceApple.awaitingConfiguration, false)),
+                ),
+                notInArray(schema.device.id, appleDevices),
+              ) ?? sql`false`),
         );
       }
 
@@ -5015,9 +5095,37 @@ export const createEnterpriseService = ({
             .where(eq(schema.member.organizationId, membership.organizationId));
 
           if ((members?.value ?? 0) <= 1) {
-            yield* db
-              .delete(schema.organization)
-              .where(eq(schema.organization.id, membership.organizationId));
+            // A solo tenant is deleted with the account, so its subscription,
+            // devices and objects must be reclaimed exactly as the explicit
+            // tenant delete does. A failed teardown keeps both rows so the
+            // operator can retry instead of silently leaving Stripe billing.
+            const [organization] = yield* db
+              .select()
+              .from(schema.organization)
+              .where(eq(schema.organization.id, membership.organizationId))
+              .limit(1);
+
+            if (!organization)
+              return yield* Effect.fail(
+                new EnterpriseDbError({ message: "The tenant could not be loaded for deletion" }),
+              );
+
+            yield* teardownTenant(db, storage, {
+              organizationId: organization.id,
+              actor: { id: user.id, email: user.email },
+              deps: {
+                preflight: () => preflightTeardown(organization),
+                unenrollDevices: teardownDevices,
+                cancelSubscription: teardownSubscription,
+              },
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new EnterpriseDbError({
+                    message: `${cause.message} The account was kept so the deletion can be retried.`,
+                  }),
+              ),
+            );
           } else {
             if (
               isBuiltInOwnerMember(membership) &&
@@ -5464,6 +5572,14 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         yield* identifyUser(user);
+
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before importing a tenant.",
+            }),
+          );
+
         const bundle: TenantImportRequest = payload;
 
         // The payload has already been decoded, so this bounds what a caller
@@ -5990,7 +6106,11 @@ export const createEnterpriseService = ({
             if (applicationGroupValues.length > 0)
               yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
 
-            for (const row of preRegistrations)
+            for (const row of preRegistrations) {
+              // Devices are not imported, so a consumed serial can never be
+              // re-linked. Skipping it prevents a second enrollment.
+              if (row.consumedDeviceKey) continue;
+
               yield* tx.insert(schema.devicePreRegistration).values({
                 id: id(),
                 organizationId: tenantId,
@@ -6003,6 +6123,7 @@ export const createEnterpriseService = ({
                 createdAt: timestamp,
                 updatedAt: timestamp,
               });
+            }
 
             yield* tx.insert(schema.auditLog).values({
               id: id(),
@@ -6833,6 +6954,36 @@ export const createEnterpriseService = ({
           body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
 
         if (nextAzureTenantId) {
+          if (
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              nextAzureTenantId,
+            )
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Enter a valid Entra tenant ID (a GUID from the Entra admin centre)",
+              }),
+            );
+        } else if (body.enabled === true)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Enter the Entra tenant ID before enabling single sign-on",
+            }),
+          );
+
+        // Linking a different Entra tenant changes which identities can claim
+        // member accounts, so only a built-in owner may change it.
+        if (
+          nextAzureTenantId !== (existing?.azureTenantId ?? null) &&
+          !isBuiltInOwnerMember(ctx.member)
+        )
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only an owner can change the linked Entra tenant",
+            }),
+          );
+
+        if (nextAzureTenantId) {
           const claimed = yield* db.query.ssoConfig.findFirst({
             where: { azureTenantId: nextAzureTenantId },
           });
@@ -6948,6 +7099,8 @@ export const createEnterpriseService = ({
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "scim-token-create");
+
         const body: { name: string; expiresAt?: string | null } = payload;
         const name = body.name.trim();
 
@@ -9124,6 +9277,13 @@ export const createEnterpriseService = ({
           maxDevices?: number;
         } = payload;
 
+        if (body.code != null && body.code.trim().length > 0 && body.code.trim().length < 8)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "The enrollment password must be at least 8 characters, or left blank",
+            }),
+          );
+
         yield* db
           .update(schema.enterpriseEnrollment)
           .set({
@@ -9146,12 +9306,29 @@ export const createEnterpriseService = ({
     resetTenantEnrollment: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* getOrCreateEnrollment(ctx.organization.id);
+        const existing = yield* getOrCreateEnrollment(ctx.organization.id);
         const newId = id();
+        const timestamp = now();
+
+        // Rotate by replacing the row, not by updating its primary key:
+        // `enrollment_answer` references it with a cascade delete and no
+        // ON UPDATE rule, so a key update fails once a question has been
+        // answered. Deleting the old row clears those answers with it.
+        yield* db.insert(schema.enterpriseEnrollment).values({
+          id: newId,
+          organizationId: ctx.organization.id,
+          code: existing.code,
+          enabledApple: existing.enabledApple,
+          enabledWindows: existing.enabledWindows,
+          enabledAndroid: existing.enabledAndroid,
+          enabledAssetTag: existing.enabledAssetTag,
+          maxDevices: existing.maxDevices,
+          createdAt: existing.createdAt,
+          updatedAt: timestamp,
+        });
         yield* db
-          .update(schema.enterpriseEnrollment)
-          .set({ id: newId, updatedAt: now() })
-          .where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+          .delete(schema.enterpriseEnrollment)
+          .where(eq(schema.enterpriseEnrollment.id, existing.id));
         yield* invalidateUnusedScepChallenges(ctx.organization.id);
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
 
@@ -10831,16 +11008,43 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body: { name?: string; notes?: string | null; assetTag?: string | null } = payload;
+
+        const existing = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!existing)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Device name cannot be empty" }),
+          );
+
         yield* db
           .update(schema.device)
-          .set({ name: body.name, notes: body.notes, assetTag: body.assetTag })
+          .set({
+            name: body.name === undefined ? existing.name : body.name.trim(),
+            notes: body.notes === undefined ? existing.notes : body.notes,
+            assetTag: body.assetTag === undefined ? existing.assetTag : body.assetTag,
+          })
           .where(
             and(
               eq(schema.device.id, deviceId),
               eq(schema.device.organizationId, ctx.organization.id),
             ),
           );
-        yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, { now: now() });
+
+        // A rename or asset-tag edit can change dynamic-group membership, and
+        // therefore the device's policies. Push that change instead of only
+        // updating the server-side rows.
+        const groupChanges = yield* syncDynamicGroupsForDevice(db, ctx.organization.id, deviceId, {
+          now: now(),
+        }).pipe(Effect.catch(() => Effect.succeed([])));
+
+        if (groupChanges.some((group) => group.added > 0 || group.removed > 0))
+          yield* refreshDevicePolicies(ctx.organization.id, [deviceId]);
+
         yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
 
         return ok;
@@ -11171,8 +11375,8 @@ export const createEnterpriseService = ({
         );
 
         if (
-          device.status === "enrolled" &&
-          (!requestedAction || !deviceAvailableActions(deviceActionInput).includes(requestedAction))
+          !requestedAction ||
+          !deviceAvailableActions(deviceActionInput).includes(requestedAction)
         )
           return yield* Effect.fail(
             new EnterpriseBadRequest({
@@ -11548,6 +11752,8 @@ export const createEnterpriseService = ({
               request.payload = { Password: password };
             }
 
+            let recoveryLockClearId: string | undefined;
+
             if ((action === "wipe" || action === "return-to-service") && device.proto === "apple") {
               // A supervised device must not be able to re-enable Activation
               // Lock after the wipe. This is an MDM setting, not an erase key,
@@ -11576,13 +11782,17 @@ export const createEnterpriseService = ({
               const recoveryLock = yield* resolveRecoveryLockPassword(device);
 
               if (recoveryLock) {
-                yield* queueDeviceCommand({
+                // Protect this command from the erase's supersede pass: it is
+                // queued by the same request and must reach the device first.
+                const clear = yield* queueDeviceCommand({
                   organizationId: ctx.organization.id,
                   deviceId: device.id,
                   requestType: "SetRecoveryLock",
                   payload: { CurrentPassword: recoveryLock, NewPassword: "" },
                   at: new Date(timestamp.getTime() - 1),
                 });
+
+                recoveryLockClearId = clear.id;
               }
 
               const [apple] = yield* db
@@ -11606,6 +11816,7 @@ export const createEnterpriseService = ({
               requestType: request.requestType,
               payload: request.payload,
               at: timestamp,
+              protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
             });
 
             command = { commandId: queued.id, deduplicated: queued.deduplicated };
@@ -11984,7 +12195,9 @@ export const createEnterpriseService = ({
             : undefined;
 
         return {
-          health: normalizeDeviceHealth(rowDeviceHealth(device, declarations)),
+          health: normalizeDeviceHealth(
+            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null),
+          ),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
           push: rowPushInfo(apple),
@@ -12117,8 +12330,20 @@ export const createEnterpriseService = ({
           byDevice.set(declaration.deviceId, list);
         }
 
+        const setupRows = deviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceApple.deviceId,
+                awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+              })
+              .from(schema.deviceApple)
+              .where(inArray(schema.deviceApple.deviceId, deviceIds))
+          : [];
+
+        const setup = new Map(setupRows.map((row) => [row.deviceId, row.awaitingConfiguration]));
+
         const summaries = devices.map((device: EnterpriseDevice) =>
-          rowDeviceHealth(device, byDevice.get(device.id) ?? []),
+          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null),
         );
 
         const levelRank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
@@ -12881,9 +13106,12 @@ export const createEnterpriseService = ({
             );
         yield* snapshotPolicy(ctx, policyId);
         yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
-        yield* syncAndroidDevices(
+        // Rollback replaces configurations, so both Apple and Android devices
+        // must be woken; previously only Android was resynced.
+        yield* refreshDevicePolicies(
           ctx.organization.id,
           yield* applePush.deviceIdsInPolicies([policyId]),
+          policyId,
         );
 
         return ok;
@@ -13483,6 +13711,12 @@ export const createEnterpriseService = ({
           .from(schema.applicationDevice)
           .where(inArray(schema.applicationDevice.applicationId, ids));
 
+        const installerRows = yield* db
+          .select()
+          .from(schema.applicationInstaller)
+          .where(inArray(schema.applicationInstaller.applicationId, ids))
+          .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
+
         return {
           applications: apps.map((app) =>
             rowApplication(
@@ -13491,6 +13725,9 @@ export const createEnterpriseService = ({
                 .length,
               deviceLinks.filter((link: { applicationId: string }) => link.applicationId === app.id)
                 .length,
+              installerRows
+                .filter((installer) => installer.applicationId === app.id)
+                .map(rowInstaller),
             ),
           ),
         };
@@ -13533,7 +13770,13 @@ export const createEnterpriseService = ({
               .where(inArray(schema.device.id, deviceIds))
           : [];
 
-        return { ...rowApplication(app, groups.length, devices.length), groups, devices };
+        const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
+
+        return {
+          ...rowApplication(app, groups.length, devices.length, installers.map(rowInstaller)),
+          groups,
+          devices,
+        };
       }),
     createApplication: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -13541,59 +13784,68 @@ export const createEnterpriseService = ({
 
         const body: {
           name: string;
-          platform: "apple" | "win" | "android";
+          platform?: "apple" | "win" | "android";
           bundleId?: string | null;
           version?: string | null;
           source?: "manifest" | "store" | "upload";
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
         if (!body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
-        const source = body.source ?? (body.storeId ? "store" : "manifest");
 
-        if (body.platform === "apple") {
-          if (source === "manifest" && !body.manifestUrl?.trim())
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: "Apple manifest applications require a manifest URL",
-              }),
-            );
+        const inputs: ReadonlyArray<InstallerInput> = body.installers?.length
+          ? body.installers
+          : body.platform
+            ? [
+                {
+                  platform: body.platform,
+                  source: body.source,
+                  bundleId: body.bundleId,
+                  version: body.version,
+                  manifestUrl: body.manifestUrl,
+                  storeId: body.storeId,
+                },
+              ]
+            : [];
 
-          if (source === "store" && !body.storeId?.trim())
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
-            );
-        }
-
-        if (
-          body.platform === "apple" &&
-          source === "store" &&
-          !Number.isSafeInteger(Number(body.storeId))
-        )
+        if (inputs.length === 0)
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+            new EnterpriseBadRequest({ message: "Add at least one installer" }),
           );
+
+        const primary = yield* normaliseInstaller(inputs[0]!);
         const applicationId = id();
+        const at = now();
+
         yield* db.insert(schema.application).values({
           id: applicationId,
           organizationId: ctx.organization.id,
           name: body.name.trim(),
-          platform: body.platform,
-          bundleId: body.bundleId ?? null,
-          version: body.version ?? null,
-          source,
-          manifestUrl: body.manifestUrl ?? null,
-          storeId: body.storeId ?? null,
+          platform: primary.platform,
+          bundleId: primary.bundleId,
+          version: primary.version,
+          source: primary.source,
+          manifestUrl: primary.manifestUrl,
+          storeId: primary.storeId,
           notes: body.notes ?? null,
-          createdAt: now(),
-          updatedAt: now(),
+          createdAt: at,
+          updatedAt: at,
         });
+
+        yield* replaceApplicationInstallers({
+          organizationId: ctx.organization.id,
+          applicationId,
+          installers: inputs,
+        });
+
         yield* audit(ctx, "application.created", "application", applicationId, {
           name: body.name.trim(),
-          platform: body.platform,
+          platform: primary.platform,
+          installers: inputs.length,
         });
 
         return { id: applicationId };
@@ -13617,49 +13869,21 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          installers?: ReadonlyArray<InstallerInput>;
         } = payload;
-
-        const source = body.source ?? existing.source;
-
-        const manifestUrl =
-          body.manifestUrl === undefined ? existing.manifestUrl : body.manifestUrl;
-
-        const storeId = body.storeId === undefined ? existing.storeId : body.storeId;
 
         if (body.name !== undefined && !body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
 
-        if (existing.platform === "apple") {
-          if (source === "manifest" && !manifestUrl?.trim())
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: "Apple manifest applications require a manifest URL",
-              }),
-            );
-
-          if (source === "store" && !storeId?.trim())
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "Apple store applications require a store ID" }),
-            );
-        }
-
-        if (
-          existing.platform === "apple" &&
-          source === "store" &&
-          !Number.isSafeInteger(Number(storeId))
-        )
+        if (body.installers !== undefined && body.installers.length === 0)
           return yield* Effect.fail(
-            new EnterpriseBadRequest({ message: "Store ID must be a whole number" }),
+            new EnterpriseBadRequest({ message: "An application needs at least one installer" }),
           );
+
         yield* db
           .update(schema.application)
           .set({
             name: body.name?.trim() ?? existing.name,
-            bundleId: body.bundleId === undefined ? existing.bundleId : body.bundleId,
-            version: body.version === undefined ? existing.version : body.version,
-            source,
-            manifestUrl,
-            storeId,
             notes: body.notes === undefined ? existing.notes : body.notes,
             updatedAt: now(),
           })
@@ -13669,6 +13893,53 @@ export const createEnterpriseService = ({
               eq(schema.application.organizationId, ctx.organization.id),
             ),
           );
+
+        if (body.installers !== undefined) {
+          yield* replaceApplicationInstallers({
+            organizationId: ctx.organization.id,
+            applicationId,
+            installers: body.installers,
+          });
+        } else {
+          const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
+          const primary = installers[0];
+
+          if (primary) {
+            const merged: InstallerInput = {
+              id: primary.id,
+              platform: primary.platform,
+              source: body.source ?? primary.source,
+              bundleId: body.bundleId === undefined ? primary.bundleId : body.bundleId,
+              version: body.version === undefined ? primary.version : body.version,
+              manifestUrl: body.manifestUrl === undefined ? primary.manifestUrl : body.manifestUrl,
+              storeId: body.storeId === undefined ? primary.storeId : body.storeId,
+              minOsVersion: primary.minOsVersion,
+              requiredCapability: primary.requiredCapability,
+              priority: primary.priority,
+            };
+
+            yield* replaceApplicationInstallers({
+              organizationId: ctx.organization.id,
+              applicationId,
+              installers: [
+                merged,
+                ...installers.slice(1).map((installer) => ({
+                  id: installer.id,
+                  platform: installer.platform,
+                  source: installer.source,
+                  bundleId: installer.bundleId,
+                  version: installer.version,
+                  manifestUrl: installer.manifestUrl,
+                  storeId: installer.storeId,
+                  minOsVersion: installer.minOsVersion,
+                  requiredCapability: installer.requiredCapability,
+                  priority: installer.priority,
+                })),
+              ],
+            });
+          }
+        }
+
         yield* audit(ctx, "application.updated", "application", applicationId, {
           fields: Object.keys(body),
         });
@@ -13692,6 +13963,12 @@ export const createEnterpriseService = ({
 
               if (!existing)
                 return { id: applicationId, deleted: false as const, reason: "notFound" };
+
+              const installerRows = yield* db
+                .select({ r2Key: schema.applicationInstaller.r2Key })
+                .from(schema.applicationInstaller)
+                .where(eq(schema.applicationInstaller.applicationId, applicationId));
+
               yield* db
                 .delete(schema.application)
                 .where(
@@ -13701,12 +13978,15 @@ export const createEnterpriseService = ({
                   ),
                 );
 
-              // Delete the object only after the row is gone. A failure here
+              // Delete objects only after the rows are gone. A failure here
               // leaves an orphaned object, never a row pointing at a deleted
               // file, and must not abort the rest of the batch.
-              if (existing.r2Key)
+              for (const key of [
+                ...installerRows.flatMap((row) => (row.r2Key ? [row.r2Key] : [])),
+                ...(existing.r2Key ? [existing.r2Key] : []),
+              ])
                 yield* r2
-                  .delete(existing.r2Key)
+                  .delete(key)
                   .pipe(
                     Effect.catchCause((cause) =>
                       Effect.logWarning(
@@ -13809,102 +14089,395 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
+        const installerRows = yield* applicationInstallers(ctx.organization.id, applicationId);
+
+        // Rows created before multi-installer support (or by older importers)
+        // still carry a complete installer in the application columns.
+        const installers: ReadonlyArray<EnterpriseApplicationInstaller> =
+          installerRows.length > 0
+            ? installerRows
+            : [
+                {
+                  id: app.id,
+                  organizationId: app.organizationId,
+                  applicationId: app.id,
+                  platform: app.platform,
+                  source: app.source,
+                  bundleId: app.bundleId,
+                  version: app.version,
+                  manifestUrl: app.manifestUrl,
+                  storeId: app.storeId,
+                  fileName: app.fileName,
+                  contentType: app.contentType,
+                  size: app.size,
+                  sha256: app.sha256,
+                  r2Key: app.r2Key,
+                  minOsVersion: null,
+                  requiredCapability: null,
+                  priority: 0,
+                  createdAt: app.createdAt,
+                  updatedAt: app.updatedAt,
+                },
+              ];
+
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
 
-        const eligibleDevices = devices.filter(
-          (device) => device.proto === app.platform && device.status === "enrolled",
-        );
+        const selected = new Map<
+          string,
+          { installer: EnterpriseApplicationInstaller; devices: EnterpriseDevice[] }
+        >();
 
-        const skipped = devices.length - eligibleDevices.length;
+        const reasons: string[] = [];
+        let skipped = 0;
 
-        if (app.platform === "win") {
-          if (eligibleDevices.length === 0)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "No assigned enrolled Windows devices.",
-            };
-
-          if (app.source === "store")
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Windows Store applications cannot be installed through OMA-DM. Deploy an MSI instead, or use Intune for Store apps.",
-            };
-
-          const productId = app.bundleId?.trim();
-
-          if (!productId || !isMsiProductCode(productId))
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Windows MSI applications need the MSI ProductCode (a GUID) in the package ID field before they can be installed.",
-            };
-
-          const installerUrl = app.manifestUrl?.trim();
-
-          if (!installerUrl)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "Windows applications need an installer URL.",
-            };
-
-          let url: URL;
-
-          try {
-            url = new URL(installerUrl);
-          } catch {
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "The Windows installer URL is not a valid absolute URL.",
-            };
+        for (const device of devices) {
+          if (device.status !== "enrolled") {
+            skipped++;
+            continue;
           }
 
-          if (url.protocol !== "https:")
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "The Windows installer URL must use HTTPS.",
-            };
+          // Uploaded Apple packages are macOS-only. Filter them out before
+          // selection so an iPhone falls through to its manifest/store option.
+          const candidates = installers.filter(
+            (item) =>
+              !(
+                item.platform === "apple" &&
+                item.source === "upload" &&
+                appleOsFamily(device.osEdition) !== "macOS"
+              ),
+          );
 
-          if (
-            !isMsiInstaller({
-              fileName: app.fileName,
-              contentType: app.contentType,
-              installerUrl,
-            })
-          )
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Only .msi packages can be installed by the Windows MDM channel. Package this app as an MSI (an .exe or .intunewin needs the Intune Management Extension).",
-            };
-
-          const normalizedProductId = normalizeMsiProductCode(productId);
-
-          const payload = windowsMsiInstallPayload({
-            appId: app.id,
-            productId: normalizedProductId,
-            version: app.version ?? "1.0.0",
-            url: url.toString(),
-            sha256: app.sha256,
+          const installer = selectInstaller(candidates, {
+            proto: device.proto,
+            osVersion: device.osVersion,
+            capabilities: Array.isArray(device.capabilities)
+              ? device.capabilities.filter((value): value is string => typeof value === "string")
+              : undefined,
           });
 
-          const at = now();
+          if (!installer) {
+            skipped++;
 
-          for (const device of eligibleDevices)
+            const reason =
+              candidates.length === 0 &&
+              installers.some((item) => item.platform === "apple" && item.source === "upload")
+                ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+                : installerSkipReason(candidates, {
+                    proto: device.proto,
+                    osVersion: device.osVersion,
+                    capabilities: Array.isArray(device.capabilities)
+                      ? device.capabilities.filter(
+                          (value): value is string => typeof value === "string",
+                        )
+                      : undefined,
+                  });
+
+            if (reason) reasons.push(reason);
+
+            continue;
+          }
+
+          const group = selected.get(installer.id) ?? { installer, devices: [] };
+
+          group.devices.push(device);
+          selected.set(installer.id, group);
+        }
+
+        let queued = 0;
+        const at = now();
+
+        for (const { installer, devices: groupDevices } of selected.values()) {
+          if (installer.platform === "android") {
+            const packageName = installer.bundleId?.trim();
+
+            if (!packageName) {
+              skipped += groupDevices.length;
+              reasons.push("an Android installer is missing its package name");
+              continue;
+            }
+
+            if (!isAndroidConfigured(androidConfig)) {
+              skipped += groupDevices.length;
+              reasons.push("Android Management is not configured for this deployment");
+              continue;
+            }
+
+            const sync = yield* syncAndroidPoliciesForTenant({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+              deviceIds: groupDevices.map((device) => device.id),
+            }).pipe(Effect.result);
+
+            if (Predicate.isTagged(sync, "Failure")) {
+              skipped += groupDevices.length;
+              reasons.push(`the Android policy could not be pushed: ${sync.failure.message}`);
+              continue;
+            }
+
+            queued += sync.success.updated;
+            skipped += sync.success.failed;
+            continue;
+          }
+
+          if (installer.platform === "win") {
+            if (installer.source === "store") {
+              skipped += groupDevices.length;
+              reasons.push(
+                "Windows Store applications cannot be installed through OMA-DM; deploy an MSI installer",
+              );
+              continue;
+            }
+
+            const productId = installer.bundleId?.trim();
+
+            if (!productId || !isMsiProductCode(productId)) {
+              skipped += groupDevices.length;
+              reasons.push("a Windows installer needs the MSI ProductCode (a GUID)");
+              continue;
+            }
+
+            const installerUrl = installer.manifestUrl?.trim();
+
+            if (!installerUrl) {
+              skipped += groupDevices.length;
+              reasons.push("a Windows installer needs an installer URL");
+              continue;
+            }
+
+            let url: URL;
+
+            try {
+              url = new URL(installerUrl);
+            } catch {
+              skipped += groupDevices.length;
+              reasons.push("a Windows installer URL is not absolute");
+              continue;
+            }
+
+            if (url.protocol !== "https:") {
+              skipped += groupDevices.length;
+              reasons.push("a Windows installer URL must use HTTPS");
+              continue;
+            }
+
+            if (
+              !isMsiInstaller({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+                installerUrl,
+              })
+            ) {
+              skipped += groupDevices.length;
+              reasons.push(
+                "Only .msi packages can be installed by the Windows MDM channel. Package this app as an MSI (an .exe or .intunewin needs the Intune Management Extension).",
+              );
+              continue;
+            }
+
+            const payload = windowsMsiInstallPayload({
+              appId: app.id,
+              productId: normalizeMsiProductCode(productId),
+              version: installer.version ?? "1.0.0",
+              url: url.toString(),
+              sha256: installer.sha256,
+            });
+
+            for (const device of groupDevices)
+              yield* queueDeviceCommand({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                requestType: "InstallApplication",
+                payload,
+                at,
+              });
+
+            queued += groupDevices.length;
+            continue;
+          }
+
+          // Apple: one installer may be a .pkg upload, an OTA manifest or a
+          // store listing. The selected installer already matched the device's
+          // platform, OS version and reported capabilities.
+          if (installer.source === "upload") {
+            if (!installer.r2Key || !installer.sha256 || !installer.fileName) {
+              skipped += groupDevices.length;
+              reasons.push("Upload the installer before installing this application.");
+              continue;
+            }
+
+            if (!installer.bundleId?.trim()) {
+              skipped += groupDevices.length;
+              reasons.push("an uploaded Apple installer needs a bundle identifier");
+              continue;
+            }
+
+            if (
+              !isApplePackageUpload({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+              })
+            ) {
+              skipped += groupDevices.length;
+              reasons.push(
+                "Only signed .pkg installers can be installed from an upload. An .ipa needs an OTA manifest URL.",
+              );
+              continue;
+            }
+
+            const macDevices = groupDevices.filter(
+              (device) => appleOsFamily(device.osEdition) === "macOS",
+            );
+
+            skipped += groupDevices.length - macDevices.length;
+
+            if (macDevices.length === 0) {
+              reasons.push("uploaded .pkg installers target macOS only");
+              continue;
+            }
+
+            for (const device of macDevices) {
+              const token = yield* Effect.tryPromise(() =>
+                signAppleAssetToken(authSecret ?? "", {
+                  policyId: installer.id,
+                  kind: CATALOGUE_APPLICATION_ASSET_KIND,
+                  deviceId: device.id,
+                  expiresAt: appleInstallAssetExpiresAt(at.getTime()),
+                }),
+              );
+
+              const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
+                catalogueApplicationAssetIdentifier(installer.id),
+              )}?token=${encodeURIComponent(token)}`;
+
+              yield* queueDeviceCommand({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                requestType: "InstallEnterpriseApplication",
+                payload: buildInstallEnterpriseApplicationPayload({
+                  manifest: buildAppleManifest({
+                    url,
+                    sha256: installer.sha256,
+                    bundleId: installer.bundleId.trim(),
+                    version: installer.version?.trim() || "0",
+                    title: app.name,
+                  }),
+                  managementFlags: 1,
+                }),
+                at,
+              });
+            }
+
+            yield* applePush.pushAppleDevices(macDevices.map((device) => device.id));
+            queued += macDevices.length;
+            continue;
+          }
+
+          if (installer.source === "store") {
+            const storeId = installer.storeId?.trim();
+
+            if (!storeId) {
+              skipped += groupDevices.length;
+              reasons.push("the store installer is missing its store ID");
+              continue;
+            }
+
+            const vpp = yield* db.query.vppToken.findFirst({
+              where: { organizationId: ctx.organization.id },
+            });
+
+            if (vpp) {
+              if (vpp.status !== "active")
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "The Apps and Books token is not active. Re-upload a valid token before installing VPP apps.",
+                  }),
+                );
+
+              const asset = yield* findVppAssetByStoreId(db, ctx.organization.id, storeId);
+
+              if (!asset) {
+                skipped += groupDevices.length;
+                reasons.push("no VPP licence pool exists for this app yet");
+                continue;
+              }
+
+              const queuedDevices: Array<(typeof groupDevices)[number]> = [];
+
+              for (const device of groupDevices) {
+                const outcome = yield* mapVppFailure(
+                  assignVppLicence({
+                    db,
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    adamId: storeId,
+                    authSecret,
+                    config: appleApi ? appleApi : undefined,
+                  }),
+                ).pipe(Effect.result);
+
+                if (Predicate.isTagged(outcome, "Failure")) {
+                  skipped++;
+                  continue;
+                }
+
+                queuedDevices.push(device);
+              }
+
+              if (queuedDevices.length > 0) {
+                for (const device of queuedDevices)
+                  yield* queueDeviceCommand({
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    requestType: "InstallApplication",
+                    payload: vppInstallPayload(storeId),
+                    at,
+                  });
+
+                yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
+              }
+
+              queued += queuedDevices.length;
+              continue;
+            }
+
+            const payload: CommandPayload = {
+              iTunesStoreID: Number(storeId),
+              ManagementFlags: 1,
+              InstallAsManaged: true,
+              Options: { PurchaseMethod: 1 },
+            };
+
+            for (const device of groupDevices)
+              yield* queueDeviceCommand({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                requestType: "InstallApplication",
+                payload,
+                at,
+              });
+
+            queued += groupDevices.length;
+            continue;
+          }
+
+          const manifestUrl = installer.manifestUrl?.trim();
+
+          if (!manifestUrl) {
+            skipped += groupDevices.length;
+            reasons.push("the manifest installer is missing its manifest URL");
+            continue;
+          }
+
+          const payload: CommandPayload = {
+            ManifestURL: manifestUrl,
+            ManagementFlags: 1,
+            InstallAsManaged: true,
+            Options: { PurchaseMethod: 1 },
+          };
+
+          for (const device of groupDevices)
             yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -13913,312 +14486,27 @@ export const createEnterpriseService = ({
               at,
             });
 
-          yield* audit(ctx, "application.install_queued", "application", applicationId, {
-            queued: eligibleDevices.length,
-            skipped,
-            platform: "win",
-            installer: "msi",
-            productId: normalizedProductId,
-          });
-
-          return { status: "ok" as const, queued: eligibleDevices.length, skipped };
+          queued += groupDevices.length;
         }
 
-        if (app.platform === "android") {
-          if (eligibleDevices.length === 0)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "No assigned enrolled Android devices.",
-            };
-
-          const packageName = app.bundleId?.trim();
-
-          if (!packageName)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Android applications need the package name (for example com.google.android.gm) in the package ID field.",
-            };
-
-          if (!isAndroidConfigured(androidConfig))
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Android Management is not configured for this deployment, so no Android policy was pushed.",
-            };
-
-          const sync = yield* syncAndroidPoliciesForTenant({
-            db,
-            config: androidConfig,
-            organizationId: ctx.organization.id,
-            deviceIds: eligibleDevices.map((device) => device.id),
-          }).pipe(Effect.result);
-
-          if (Predicate.isTagged(sync, "Failure")) {
-            yield* audit(ctx, "application.install_failed", "application", applicationId, {
-              platform: "android",
-              skipped: devices.length,
-              message: sync.failure.message,
-            });
-
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped: devices.length,
-              message: `The Android policy could not be pushed: ${sync.failure.message}`,
-            };
-          }
-
-          yield* audit(ctx, "application.install_queued", "application", applicationId, {
-            queued: sync.success.updated,
-            skipped: skipped + sync.success.failed,
-            platform: "android",
-            packageName,
-            converged: sync.success.skipped,
-          });
-
-          return {
-            status: "ok" as const,
-            queued: sync.success.updated,
-            skipped: skipped + sync.success.failed,
-            message:
-              sync.success.failed > 0
-                ? `${sync.success.failed} device(s) could not be updated; the Android policy was pushed to ${sync.success.updated}.`
-                : sync.success.updated === 0 && sync.success.skipped > 0
-                  ? "The assigned devices already run a policy containing this app."
-                  : undefined,
-          };
-        }
-
-        const appleDevices = eligibleDevices;
-
-        if (appleDevices.length === 0)
-          return {
-            status: "ok" as const,
-            queued: 0,
-            skipped,
-            message: "No assigned Apple devices.",
-          };
-
-        if (app.source === "upload") {
-          if (!app.r2Key || !app.sha256)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message: "Upload the installer before installing this application.",
-            };
-
-          if (!app.bundleId?.trim())
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Uploaded Apple applications need a bundle identifier so installs can be tracked in inventory.",
-            };
-
-          if (!isApplePackageUpload({ fileName: app.fileName, contentType: app.contentType }))
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped,
-              message:
-                "Only signed .pkg installers can be installed from an upload. An .ipa needs an OTA manifest URL.",
-            };
-
-          // InstallEnterpriseApplication is a macOS command. iPhones and iPads
-          // need an OTA manifest (.ipa), so an uploaded package is not queued
-          // for them.
-          const packageDevices = appleDevices.filter(
-            (device) => appleOsFamily(device.osEdition) === "macOS",
-          );
-
-          const packageSkipped = skipped + (appleDevices.length - packageDevices.length);
-
-          if (packageDevices.length === 0)
-            return {
-              status: "ok" as const,
-              queued: 0,
-              skipped: packageSkipped,
-              message:
-                "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled.",
-            };
-
-          const at = now();
-          const sha256 = app.sha256;
-          const bundleId = app.bundleId.trim();
-          const version = app.version?.trim() || "0";
-          const title = app.name;
-
-          for (const device of packageDevices) {
-            const token = yield* Effect.tryPromise(() =>
-              signAppleAssetToken(authSecret ?? "", {
-                policyId: app.id,
-                kind: CATALOGUE_APPLICATION_ASSET_KIND,
-                deviceId: device.id,
-                expiresAt: appleInstallAssetExpiresAt(at.getTime()),
-              }),
-            );
-
-            const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
-              catalogueApplicationAssetIdentifier(app.id),
-            )}?token=${encodeURIComponent(token)}`;
-
-            yield* queueDeviceCommand({
-              organizationId: ctx.organization.id,
-              deviceId: device.id,
-              requestType: "InstallEnterpriseApplication",
-              payload: buildInstallEnterpriseApplicationPayload({
-                manifest: buildAppleManifest({
-                  url,
-                  sha256,
-                  bundleId,
-                  version,
-                  title,
-                }),
-                managementFlags: 1,
-              }),
-              at,
-            });
-          }
-
-          yield* applePush.pushAppleDevices(packageDevices.map((device) => device.id));
-          yield* audit(ctx, "application.install_queued", "application", applicationId, {
-            queued: packageDevices.length,
-            skipped: packageSkipped,
-            source: "upload",
-          });
-
-          return { status: "ok" as const, queued: packageDevices.length, skipped: packageSkipped };
-        }
-
-        // When Apps and Books is configured, a store app must consume a VPP
-        // licence. Falling back to a user-account App Store install would
-        // silently bypass the licence pool, so this path fails closed.
-        if (app.source === "store" && app.storeId) {
-          const storeId = app.storeId;
-
-          const vpp = yield* db.query.vppToken.findFirst({
-            where: { organizationId: ctx.organization.id },
-          });
-
-          if (vpp) {
-            if (vpp.status !== "active")
-              return yield* Effect.fail(
-                new EnterpriseBadRequest({
-                  message:
-                    "The Apps and Books token is not active. Re-upload a valid token before installing VPP apps.",
-                }),
-              );
-
-            const asset = yield* findVppAssetByStoreId(db, ctx.organization.id, storeId);
-
-            if (!asset)
-              return {
-                status: "ok" as const,
-                queued: 0,
-                skipped: devices.length,
-                message:
-                  "No VPP licence pool exists for this app yet. Sync Apps and Books, then try again.",
-              };
-            let assigned = 0;
-            let failed = 0;
-            const queuedDevices: Array<EnterpriseDevice> = [];
-
-            for (const device of appleDevices) {
-              const outcome = yield* mapVppFailure(
-                assignVppLicence({
-                  db,
-                  organizationId: ctx.organization.id,
-                  deviceId: device.id,
-                  adamId: storeId,
-                  authSecret,
-                  config: appleApi ? appleApi : undefined,
-                }),
-              ).pipe(Effect.result);
-
-              if (Predicate.isTagged(outcome, "Failure")) {
-                failed++;
-                continue;
-              }
-
-              assigned++;
-              queuedDevices.push(device);
-            }
-
-            if (queuedDevices.length > 0) {
-              const at = now();
-
-              for (const device of queuedDevices)
-                yield* queueDeviceCommand({
-                  organizationId: ctx.organization.id,
-                  deviceId: device.id,
-                  requestType: "InstallApplication",
-                  payload: vppInstallPayload(storeId),
-                  at,
-                });
-
-              yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
-            }
-
-            yield* audit(ctx, "application.install_queued", "application", applicationId, {
-              queued: queuedDevices.length,
-              skipped: skipped + failed,
-              vppAssigned: assigned,
-            });
-
-            return {
-              status: "ok" as const,
-              queued: queuedDevices.length,
-              skipped: skipped + failed,
-              message:
-                failed > 0
-                  ? `${failed} device(s) had no available VPP licence and were skipped.`
-                  : undefined,
-            };
-          }
-        }
-
-        const payload: CommandPayload =
-          app.source === "store"
-            ? {
-                iTunesStoreID: Number(app.storeId),
-                ManagementFlags: 1,
-                InstallAsManaged: true,
-                Options: { PurchaseMethod: 1 },
-              }
-            : {
-                ManifestURL: app.manifestUrl,
-                ManagementFlags: 1,
-                InstallAsManaged: true,
-                Options: { PurchaseMethod: 1 },
-              };
-
-        const at = now();
-
-        for (const device of appleDevices)
-          yield* queueDeviceCommand({
-            organizationId: ctx.organization.id,
-            deviceId: device.id,
-            requestType: "InstallApplication",
-            payload,
-            at,
-          });
-
-        yield* applePush.pushAppleDevices(appleDevices.map((device) => device.id));
         yield* audit(ctx, "application.install_queued", "application", applicationId, {
-          queued: appleDevices.length,
+          queued,
           skipped,
+          installers: [...selected.values()].map(({ installer, devices: group }) => ({
+            id: installer.id,
+            platform: installer.platform,
+            source: installer.source,
+            version: installer.version,
+            devices: group.length,
+          })),
         });
 
-        return { status: "ok" as const, queued: appleDevices.length, skipped };
+        return {
+          status: "ok" as const,
+          queued,
+          skipped,
+          message: queued === 0 ? reasons[0] : reasons.length > 0 ? reasons[0] : undefined,
+        };
       }),
     uploadApplication: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
@@ -14243,22 +14531,48 @@ export const createEnterpriseService = ({
           },
           customMetadata: { fileName: body.fileName },
         });
-        yield* db
-          .update(schema.application)
-          .set({
+        const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
+        const primary = installers[0];
+
+        if (primary) {
+          yield* db
+            .update(schema.applicationInstaller)
+            .set({
+              fileName: body.fileName,
+              contentType: body.contentType ?? null,
+              size: bytes.byteLength,
+              sha256,
+              r2Key: key,
+              updatedAt: now(),
+            })
+            .where(eq(schema.applicationInstaller.id, primary.id));
+
+          if (primary.r2Key && primary.r2Key !== key) yield* r2.delete(primary.r2Key);
+        } else {
+          const at = now();
+
+          yield* db.insert(schema.applicationInstaller).values({
+            id: id(),
+            organizationId: ctx.organization.id,
+            applicationId,
+            platform: existing?.platform ?? "apple",
+            source: "upload",
+            bundleId: existing?.bundleId ?? null,
+            version: existing?.version ?? null,
+            manifestUrl: existing?.manifestUrl ?? null,
+            storeId: existing?.storeId ?? null,
             fileName: body.fileName,
             contentType: body.contentType ?? null,
             size: bytes.byteLength,
             sha256,
             r2Key: key,
-            updatedAt: now(),
-          })
-          .where(
-            and(
-              eq(schema.application.id, applicationId),
-              eq(schema.application.organizationId, ctx.organization.id),
-            ),
-          );
+            priority: 0,
+            createdAt: at,
+            updatedAt: at,
+          });
+        }
+
+        yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
 
         if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
@@ -14309,6 +14623,108 @@ export const createEnterpriseService = ({
           content: bytesToBase64(new Uint8Array(bytes)),
         };
       }).pipe(Effect.provide(r2Layer)),
+    uploadApplicationInstaller: (request, tenantId, applicationId, installerId, payload) =>
+      Effect.gen(function* () {
+        const r2 = yield* R2Storage;
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const [installer] = yield* db
+          .select()
+          .from(schema.applicationInstaller)
+          .where(
+            and(
+              eq(schema.applicationInstaller.id, installerId),
+              eq(schema.applicationInstaller.applicationId, applicationId),
+              eq(schema.applicationInstaller.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!installer)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Installer not found" }));
+
+        const body: { fileName: string; contentType?: string; content: string } = payload;
+        const bytes = base64ToBytes(body.content);
+        const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const key = applicationKey(ctx.organization.id, installer.id, sha256);
+
+        yield* r2.put(key, bytes, {
+          httpMetadata: {
+            contentType: body.contentType ?? "application/octet-stream",
+            cacheControl: R2_IMMUTABLE_CACHE_CONTROL,
+          },
+          customMetadata: { fileName: body.fileName },
+        });
+
+        yield* db
+          .update(schema.applicationInstaller)
+          .set({
+            fileName: body.fileName,
+            contentType: body.contentType ?? null,
+            size: bytes.byteLength,
+            sha256,
+            r2Key: key,
+            updatedAt: now(),
+          })
+          .where(eq(schema.applicationInstaller.id, installer.id));
+
+        if (installer.r2Key && installer.r2Key !== key) yield* r2.delete(installer.r2Key);
+
+        yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
+        yield* audit(ctx, "application.uploaded", "application", applicationId, {
+          installerId: installer.id,
+          fileName: body.fileName,
+          sha256,
+          size: bytes.byteLength,
+        });
+
+        return {
+          sha256,
+          fileName: body.fileName,
+          contentType: body.contentType ?? null,
+          size: bytes.byteLength,
+        };
+      }).pipe(Effect.provide(r2Layer)),
+    downloadApplicationInstaller: (request, tenantId, applicationId, installerId, sha256) =>
+      Effect.gen(function* () {
+        const r2 = yield* R2Storage;
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const [installer] = yield* db
+          .select()
+          .from(schema.applicationInstaller)
+          .where(
+            and(
+              eq(schema.applicationInstaller.id, installerId),
+              eq(schema.applicationInstaller.applicationId, applicationId),
+              eq(schema.applicationInstaller.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!installer || installer.sha256 !== sha256 || !installer.r2Key)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Application file not found" }),
+          );
+
+        const object = yield* r2
+          .get(installer.r2Key)
+          .pipe(
+            Effect.catchTag("R2FileNotFound", () =>
+              Effect.fail(new EnterpriseNotFound({ message: "Application file not found" })),
+            ),
+          );
+
+        const bytes = yield* r2.arrayBuffer(object);
+
+        return {
+          sha256,
+          fileName: object.customMetadata?.fileName ?? installer.fileName ?? sha256,
+          contentType: object.httpMetadata?.contentType ?? installer.contentType ?? null,
+          size: object.size ?? bytes.byteLength,
+          content: bytesToBase64(new Uint8Array(bytes)),
+        };
+      }).pipe(Effect.provide(r2Layer)),
     syncPolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
@@ -14326,8 +14742,12 @@ export const createEnterpriseService = ({
           { concurrency: 10 },
         );
 
-        const pushed = yield* applePush.pushAppleDevices(affected.flat());
+        const deviceIds = affected.flat();
+        const pushed = yield* applePush.pushAppleDevices(deviceIds);
         yield* reportPolicyDeliveryFailure(tenantId, { policyIds: [...ids] }, pushed);
+        // Android has no push channel: the sync endpoint must recompute its
+        // policies explicitly, as every other policy mutation does.
+        yield* syncAndroidDevices(tenantId, deviceIds);
 
         return ok;
       }),
@@ -14443,22 +14863,26 @@ export const createEnterpriseService = ({
           )
           .limit(limit);
 
-        const users = yield* db
-          .select({
-            id: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
-            role: schema.member.role,
-          })
-          .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-          .where(
-            and(
-              eq(schema.member.organizationId, ctx.organization.id),
-              or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
-            ),
-          )
-          .limit(limit);
+        // Member names and addresses are the same data `listDirectory` gates
+        // behind `members.read`; tenant-level read must not bypass it.
+        const users = hasPermission(ctx.role.permissions, "members.read")
+          ? yield* db
+              .select({
+                id: schema.user.id,
+                name: schema.user.name,
+                email: schema.user.email,
+                role: schema.member.role,
+              })
+              .from(schema.member)
+              .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+              .where(
+                and(
+                  eq(schema.member.organizationId, ctx.organization.id),
+                  or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
+                ),
+              )
+              .limit(limit)
+          : [];
 
         return {
           rows: [
@@ -14532,6 +14956,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.enrolledAt.getTime();
               case "status":
                 return snapshot.row.status;
+              case "health":
+                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
               default:
                 return snapshot.row.name;
             }
@@ -15083,6 +15509,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.enrolledAt.getTime();
               case "status":
                 return snapshot.row.status;
+              case "health":
+                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
               default:
                 return snapshot.row.name;
             }
@@ -15908,107 +16336,53 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        return yield* billingSummary(ctx.organization.id, ctx.user.id);
+        return yield* billing.summary({
+          organizationId: ctx.organization.id,
+          userId: ctx.user.id,
+        });
       }),
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "billing-portal");
 
-        if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body: { returnUrl: string } = payload;
-        const returnUrl = sameOriginReturnUrl(tenantId, body.returnUrl);
-        const customer = yield* ensureStripeCustomer(ctx.organization);
 
-        const result = yield* stripe.billingPortal.sessions
-          .create({
-            customer,
-            return_url: returnUrl,
-          })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const url = hostedBillingUrl(result.url);
-
-        if (!url) return yield* Effect.fail(billingUnavailable());
+        const result = yield* billing.portal({
+          tenantId,
+          organization: ctx.organization,
+          returnUrl: body.returnUrl,
+        });
 
         yield* audit(ctx, "billing.portal_opened", "organization", ctx.organization.id);
 
-        return { url };
+        return result;
       }),
     billingCheckout: (request, tenantId, payload: BillingCheckoutRequest) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        // Checkout changes the tenant's plan, so it needs the same step-up as
-        // opening the portal.
+        // Checkout changes the plan, so it needs the same step-up as opening
+        // the portal.
         yield* requireStepUp(auth, request, "billing-portal");
 
-        if (!stripe || !deviceMonthlyPriceId) return yield* Effect.fail(billingNotConfigured());
-
-        const body: BillingCheckoutRequest = payload;
-        const customer = yield* ensureStripeCustomer(ctx.organization);
-        const billable = yield* billableDeviceCount(db, ctx.organization.id);
-        // Checkout requires a positive quantity. A tenant buying the plan with
-        // no enrolled devices starts with one seat and the next reconciliation
-        // moves it to the real fleet size.
-        const quantity = Math.max(1, billable);
-        const returnUrl = tenantBillingUrl(tenantId);
-
-        const metadata = {
-          organizationId: ctx.organization.id,
-          plan: "device",
-        };
-
-        // Stripe omits the field entirely when no trial was requested; an
-        // explicit `undefined` would be encoded as an empty form value.
-        const subscriptionData =
-          body.trialDays === undefined
-            ? { metadata }
-            : { metadata, trial_period_days: body.trialDays };
-
-        const session = yield* stripe.checkout.sessions
-          .create({
-            mode: "subscription",
-            customer,
-            client_reference_id: ctx.organization.id,
-            success_url: `${returnUrl}?checkout=success`,
-            cancel_url: `${returnUrl}?checkout=cancelled`,
-            line_items: [{ price: deviceMonthlyPriceId, quantity }],
-            metadata,
-            subscription_data: subscriptionData,
-            allow_promotion_codes: true,
-          })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const url = hostedBillingUrl(session.url);
-
-        if (!url) return yield* Effect.fail(billingUnavailable());
-
-        yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {
-          quantity,
-          trialDays: body.trialDays ?? null,
+        const result = yield* billing.checkout({
+          tenantId,
+          organization: ctx.organization,
+          request: payload,
         });
 
-        return { url };
+        yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {
+          quantity: result.quantity,
+          trialDays: payload.trialDays ?? null,
+        });
+
+        return { url: result.url };
       }),
     billingInvoices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        if (!stripe) return yield* Effect.fail(billingNotConfigured());
-
-        // No customer means nothing was ever purchased, so there are no
-        // invoices to ask Stripe about.
-        if (!ctx.organization.stripeCustomerId) return { invoices: [] };
-
-        const page = yield* stripe.invoices
-          .list({ customer: ctx.organization.stripeCustomerId, limit: 24 })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const response: BillingInvoicesResponse = {
-          invoices: page.data.map(billingInvoice),
-        };
-
-        return response;
+        return yield* billing.invoices({ organization: ctx.organization });
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),
@@ -16175,6 +16549,15 @@ export const createEnterpriseService = ({
     recordMcpActivity: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
+
+        // Only an issued MCP credential (OAuth connection or account API key)
+        // may attribute activity to a tool call. A browser session or a
+        // read-only token must not be able to forge audit entries; the write
+        // scope is enforced in `requireUser`.
+        if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token")
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "MCP activity requires an MCP credential." }),
+          );
 
         const body: {
           tool?: string;
@@ -17367,6 +17750,28 @@ export const enterpriseHandlers = (
     .handle("downloadApplication", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.downloadApplication(request, params.tenantId, params.id, params.sha256),
+      ),
+    )
+    .handle("uploadApplicationInstaller", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          payload,
+        ),
+      ),
+    )
+    .handle("downloadApplicationInstaller", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          params.sha256,
+        ),
       ),
     )
     .handle("getPolicyAssignments", ({ request, params }) =>

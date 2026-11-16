@@ -79,6 +79,7 @@ import {
 } from "@mattrax/management-backend";
 
 const encoder = new TextEncoder();
+
 const JsonArray = Schema.Array(Schema.Json);
 
 const StatusEntry = Schema.Struct({
@@ -328,7 +329,9 @@ const TENANT_TOKEN_PREFIX = "mttxw1";
 
 /** Prefix for a tenant token whose discovery chose the Federated auth policy. */
 const FEDERATED_TENANT_TOKEN_PREFIX = "mttxw2";
+
 const TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v1";
+
 const FEDERATED_TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v2:federated";
 
 /** Prefix that binds the organization into a WSTEP enrollment token subject. */

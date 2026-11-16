@@ -8,12 +8,17 @@ import {
 } from "../src/index.js";
 
 const audience = "https://mattrax.test/api/v1/android/pubsub";
+
 const serviceAccountEmail = "android-pubsub@test-project.iam.gserviceaccount.com";
+
 const jwksUri = "https://keys.test/jwks";
+
 const kid = "test-key-1";
 
 let privateKey: CryptoKey;
+
 let publicJwk: JsonWebKey & { kid?: string };
+
 let jwksResponse: () => Response;
 
 const encoder = new TextEncoder();
@@ -132,7 +137,10 @@ describe("verifyPubSubOidcToken", () => {
   it("rejects a modified signature", async () => {
     const token = await sign(claims());
     const [header, payload, signature] = token.split(".");
-    const tampered = `${header}.${payload}.${signature!.slice(0, -2)}AA`;
+    // Change a byte unconditionally: replacing the last two characters can be
+    // a no-op when they already are "AA", which is why this test flaked.
+    const replacement = signature![0] === "A" ? "B" : "A";
+    const tampered = `${header}.${payload}.${replacement}${signature!.slice(1)}`;
     const error = await rejection(tampered);
     expect(error.message).toContain("signature");
   });

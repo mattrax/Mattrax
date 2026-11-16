@@ -407,6 +407,7 @@ const SyncMLCommand = (identifier: string) =>
   }).pipe(Schema.annotate({ identifier }));
 
 export const SyncMLStatus = SyncMLCommand("Status");
+
 export const SyncMLAlert = SyncMLCommand("Alert");
 
 /**
@@ -416,9 +417,13 @@ export const SyncMLAlert = SyncMLCommand("Alert");
 export const SyncMLResults = SyncMLCommand("Results");
 
 export const SyncMLGet = SyncMLCommand("Get");
+
 export const SyncMLAdd = SyncMLCommand("Add");
+
 export const SyncMLReplace = SyncMLCommand("Replace");
+
 export const SyncMLDelete = SyncMLCommand("Delete");
+
 export const SyncMLExec = SyncMLCommand("Exec");
 
 export const SyncMLAtomic = Schema.Struct({

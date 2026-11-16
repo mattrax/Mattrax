@@ -30,7 +30,9 @@ const tableSymbol = (description: string) => (value: Row) =>
 const nameSymbol = tableSymbol("drizzle:Name");
 
 const tableName = (table: any): string => table?.[nameSymbol(table)];
+
 const columnName = (column: any): string => column?.name;
+
 const columnTable = (column: any) => tableName(column?.table);
 
 /** A drizzle column chunk embedded in a compiled condition. */

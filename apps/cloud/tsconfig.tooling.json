@@ -1,0 +1,17 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "erasableSyntaxOnly": true,
+    "outDir": "./dist/tooling"
+  },
+  "include": [
+    "vite.config.ts",
+    "cloudflare.config.ts",
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "scripts/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

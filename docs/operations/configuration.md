@@ -25,7 +25,7 @@ cf workers secrets update AUTH_SECRET --worker mattrax --type secret_text --text
 ```
 
 Self-hosted deployments get it from the same `AUTH_SECRET` environment variable in
-`apps/selfhost`. If the dashboard Worker has no secret, or the two values differ, pages
+`apps/docker`. If the dashboard Worker has no secret, or the two values differ, pages
 still render correctly: the Worker falls back to `GET /api/v1/bootstrap` on every
 authenticated navigation. That costs one membership/role query per tenant, turns every
 warm token into a miss, and logs a one-time `console.error` per isolate (grouped by
@@ -66,6 +66,7 @@ with the write and avoids similar stale reads on policy and membership changes.
 | `STRIPE_SECRET_KEY`              | Stripe API key                    |
 | `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature          |
 | `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan |
+| `STRIPE_LICENSE_PRICE_ID`        | Per-device price for self-hosted deployment licences |
 | `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue          |
 
 All are optional. Without them billing reports `configured: false`.
@@ -161,20 +162,20 @@ Transport selection is explicit:
 
 | Variable                 | Purpose                                                                       |
 | ------------------------ | ----------------------------------------------------------------------------- |
-| `MAIL_TRANSPORT`         | `resend`, `postmark`, `smtp` (self-hosted relay), `cloudflare` or `disabled`. |
-| `MAIL_FROM`              | Sender for every transactional email. Required for provider transports.       |
-| `RESEND_API_KEY`         | Resend API key.                                                               |
-| `POSTMARK_SERVER_TOKEN`  | Postmark server token.                                                        |
-| `MAIL_POSTMARK_STREAM`   | Postmark message stream, defaults to `outbound`.                              |
-| `MAIL_RELAY_URL`         | Base URL of `apps/mail-relay`, e.g. `http://mail-relay:8790`.                 |
-| `MAIL_RELAY_SECRET`      | Bearer secret shared with the relay (at least 16 characters).                 |
-| `MATTRAX_EMAIL_DISABLED` | `1` declares that this deployment has no outbound email.                      |
+| `MAIL_TRANSPORT`         | `smtp`, `cloudflare` or `disabled`.                                           |
+| `MAIL_FROM`              | Verified sender, e.g. `Mattrax <notifications@example.com>`.                  |
+| `MAIL_SMTP_HOST`         | SMTP server for `MAIL_TRANSPORT=smtp`.                                        |
+| `MAIL_SMTP_PORT`         | SMTP port; defaults to 587, or 465 with `MAIL_SMTP_SECURE`.                   |
+| `MAIL_SMTP_SECURE`       | `true` for implicit TLS instead of STARTTLS.                                  |
+| `MAIL_SMTP_USER`         | SMTP AUTH username.                                                           |
+| `MAIL_SMTP_PASSWORD`     | SMTP AUTH password.                                                           |
+| `MAIL_SMTP_HELO`         | EHLO name; defaults to the runtime hostname.                                  |
 
 Hosted Mattrax uses the Cloudflare `send_email` binding when `MAIL_TRANSPORT`
-is unset. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
+is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
 `MATTRAX_INVITATION_FROM` still overrides the invitation sender. The binding
-only accepts the addresses listed in `apps/api/cloudflare.config.ts`
-(`hello@mattrax.cloud`); set `MAIL_TRANSPORT=resend` or `postmark` to send from
+only accepts the addresses listed in `apps/cloud/cloudflare.config.ts`
+(`hello@mattrax.cloud`); set `MAIL_TRANSPORT=smtp` to send from
 another verified domain.
 `/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
 (the transport is misconfigured or missing), so a typo cannot look healthy.
@@ -271,9 +272,9 @@ Never enable the debug mailbox in production.
 ## Local development
 
 ```bash
-cp .dev.vars.example apps/api/.dev.vars
+cp .dev.vars.example apps/cloud/.dev.vars
 cp .dev.vars.example apps/web/.dev.vars
-pnpm api db:migrate
+pnpm cloud db:migrate
 pnpm web dev
 ```
 

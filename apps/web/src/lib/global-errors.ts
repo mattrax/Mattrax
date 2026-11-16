@@ -7,6 +7,7 @@ export type GlobalErrorNotice = {
 };
 
 const [globalError, setGlobalError] = createSignal<GlobalErrorNotice | null>(null);
+
 let nextId = 0;
 
 /** Report a failure that a component did not render inline (typically a mutation). */

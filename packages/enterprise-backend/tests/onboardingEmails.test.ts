@@ -7,11 +7,14 @@ import {
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
 } from "../src/onboardingEmails.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { OutboundEmailMessage } from "../src/email.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://mattrax.test";
+
 const now = new Date("2026-11-14T12:00:00.000Z");
+
 const DAY = 24 * 60 * 60 * 1000;
 
 const daysAgo = (days: number) => new Date(now.getTime() - days * DAY);
@@ -26,14 +29,14 @@ const makeTransport = (
   return {
     sent,
     attempts,
-    send: async (message: OutboundEmailMessage) => {
+    ...makeEmailTransport(async (message: OutboundEmailMessage) => {
       attempts.push(message);
 
       if (behaviour === "fail" || failFor?.(message))
         throw new Error("provider rejected the message");
 
       sent.push(message);
-    },
+    }),
   };
 };
 

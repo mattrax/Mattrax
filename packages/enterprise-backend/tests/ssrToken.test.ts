@@ -170,7 +170,10 @@ describe("SSR bootstrap token", () => {
     const payload = await run(verifySsrToken(secret, signed!.token));
 
     expect([...(payload.tenants?.[0]?.permissions ?? [])]).toEqual(["tenant.read", "devices.read"]);
-    expect([...ssrTenantPermissions(payload.tenants![0]!)]).toEqual(["tenant.read", "devices.read"]);
+    expect([...ssrTenantPermissions(payload.tenants![0]!)]).toEqual([
+      "tenant.read",
+      "devices.read",
+    ]);
   });
 
   it("signs no token when even the tenant-bearing payload is over budget", async () => {

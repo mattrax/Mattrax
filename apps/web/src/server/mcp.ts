@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { fetchApi } from "./api";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
@@ -14,7 +14,9 @@ import {
 } from "@mattrax/enterprise-domain/client";
 
 const API_BASE = "https://api.mattrax.internal";
+
 const SERVER_NAME = "mattrax";
+
 const SERVER_VERSION = "1.0.0";
 
 const isString = Schema.is(Schema.String);
@@ -175,7 +177,7 @@ const apiFetch = async (
   }
 
   try {
-    response = await env.API.fetch(new Request(`${API_BASE}${path}`, requestInit));
+    response = await fetchApi(new Request(`${API_BASE}${path}`, requestInit));
   } catch {
     throw new Error("The Mattrax API could not be reached");
   }
@@ -215,7 +217,7 @@ const recordActivity = async (
   entry: { tool: string; method: string; path: string; status: number },
 ) => {
   try {
-    const response = await env.API.fetch(
+    const response = await fetchApi(
       new Request(`${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`, {
         method: "POST",
         headers: {
@@ -278,6 +280,22 @@ const shouldExpose = (path: string) => {
   if (path.includes("email-change") || path.includes("email-verification")) return false;
 
   if (path.includes("/answers")) return false;
+
+  // Credentials, secret material and member administration are not part of
+  // the consent grant an MCP client receives, even when the signed-in user
+  // happens to hold the underlying permission.
+  for (const blocked of [
+    "/scim-tokens",
+    "/webhooks",
+    "/roles",
+    "/invitations",
+    "/members",
+    "/abm",
+    "/vpp",
+    "/api-tokens",
+    "/backups",
+  ])
+    if (path.includes(blocked)) return false;
 
   return true;
 };
@@ -527,7 +545,7 @@ const handleMcp = async (request: Request): Promise<Response> => {
   let meResponse: Response;
 
   try {
-    meResponse = await env.API.fetch(
+    meResponse = await fetchApi(
       new Request("https://api.mattrax.internal/api/v1/me", {
         headers: {
           authorization,

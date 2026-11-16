@@ -1,0 +1,38 @@
+diff --git a/build/dev.js b/build/dev.js
+index 2ce38f1c5174c81466be1d2bd820e216cab55696..f8aaa45807460de5ab1f5f7aa35c384e54f2bd7b 100644
+--- a/build/dev.js
++++ b/build/dev.js
+@@ -146,7 +146,13 @@ function useBaseQueryLayer(options, Observer, queryClient) {
+     ownedWrite: true
+   });
+   const onCacheEvent = (event) => {
+-    if (event.query.queryHash === untrack(defaultedOptions).queryHash || event.query.queryHash === latestHash) {
++    let currentHash;
++    try {
++      currentHash = untrack(defaultedOptions).queryHash;
++    } catch {
++      return;
++    }
++    if (event.query.queryHash === currentHash || event.query.queryHash === latestHash) {
+       setVersion((v) => v + 1);
+     }
+   };
+diff --git a/build/index.js b/build/index.js
+index 2ce38f1c5174c81466be1d2bd820e216cab55696..f8aaa45807460de5ab1f5f7aa35c384e54f2bd7b 100644
+--- a/build/index.js
++++ b/build/index.js
+@@ -146,7 +146,13 @@ function useBaseQueryLayer(options, Observer, queryClient) {
+     ownedWrite: true
+   });
+   const onCacheEvent = (event) => {
+-    if (event.query.queryHash === untrack(defaultedOptions).queryHash || event.query.queryHash === latestHash) {
++    let currentHash;
++    try {
++      currentHash = untrack(defaultedOptions).queryHash;
++    } catch {
++      return;
++    }
++    if (event.query.queryHash === currentHash || event.query.queryHash === latestHash) {
+       setVersion((v) => v + 1);
+     }
+   };

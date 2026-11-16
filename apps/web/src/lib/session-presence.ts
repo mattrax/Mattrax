@@ -6,9 +6,11 @@
  * expired browser immediately, without waiting for `/getSession` or `/me`.
  */
 export const SESSION_PRESENCE_COOKIE = "mattrax_session_presence";
+
 export const SESSION_PRESENCE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 const PREFIX = "v1.";
+
 const CLEARED = "Thu, 01 Jan 1970 00:00:00 GMT";
 
 export type SessionPresence = {

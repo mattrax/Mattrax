@@ -14,7 +14,7 @@
 **/.certs
 **/playwright-report
 **/test-results
-apps/selfhost/.data
+apps/docker/.data
 docs/doc_build
 doc_build
 *.log

@@ -196,3 +196,21 @@ body {
     max-width: 150px;
   }
 }
+
+/*
+ * The custom NavTitle shadows the theme's own component, so Rspress would
+ * otherwise drop the stylesheet that swaps the light/dark wordmark. These
+ * are the three rules it carried; keeping them here avoids a deep import into
+ * the package's `dist/`.
+ */
+.rspress-logo {
+  height: 1.6rem;
+}
+
+.dark .rp-nav__title__logo-image--light {
+  display: none;
+}
+
+.dark .rp-nav__title__logo-image--dark {
+  display: block;
+}

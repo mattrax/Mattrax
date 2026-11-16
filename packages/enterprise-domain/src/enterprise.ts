@@ -86,10 +86,15 @@ import {
 export { AppleUserActionName };
 
 const IdParam = { id: Schema.String };
+
 const TenantParam = { tenantId: Schema.String };
+
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
+
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
+
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
+
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 
 /** A user channel is addressed by the device plus Apple's opaque user id. */
@@ -106,7 +111,9 @@ const TenantWebhookDeliveryParam = {
 };
 
 const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
+
 const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
+
 const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
 
 const TenantDashboardWidgetParam = {
@@ -116,10 +123,13 @@ const TenantDashboardWidgetParam = {
 };
 
 const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
+
 const McpConnectionParam = { connectionId: Schema.String };
+
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
+
 export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
 
 export class EnterpriseUnauthorized extends Schema.TaggedError<EnterpriseUnauthorized>()(
@@ -339,7 +349,9 @@ const EnterpriseTenantImportErrors = [
 ] as const;
 
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
+
 const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
+
 const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
 
 const EnterpriseAndroidReadErrors = [
@@ -409,6 +421,9 @@ const EnterprisePublicEmailErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  // A deployment with no mail transport, or a broken one, fails here rather
+  // than surfacing as an undeclared handler error (HTTP 500).
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
 ] as const;
 
 const EnterprisePublicNotFoundErrors = [
@@ -1121,7 +1136,9 @@ export const UpdateMeRequest = Schema.Struct({
 });
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
+
 export const DeviceStatus = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
+
 export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "unknown"]);
 
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
@@ -2154,6 +2171,7 @@ export const PolicyApplicationObject = Schema.Struct({
 export type PolicyApplicationObject = typeof PolicyApplicationObject.Type;
 
 export const EnterpriseApplicationUploadErrors = EnterprisePolicyApplicationUploadErrors;
+
 export const EnterpriseApplicationDownloadErrors = EnterprisePolicyApplicationDownloadErrors;
 
 export const DownloadPolicyApplicationResponse = Schema.Struct({
@@ -2174,6 +2192,45 @@ export const ApplicationSource = Schema.Literals(["manifest", "store", "upload"]
 
 export type ApplicationSource = typeof ApplicationSource.Type;
 
+export const ApplicationInstallerRow = Schema.Struct({
+  id: Schema.String,
+  platform: ApplicationPlatform,
+  source: ApplicationSource,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.Number),
+  sha256: Schema.optional(NullableString),
+  /** Minimum device OS version this installer supports. */
+  minOsVersion: Schema.optional(NullableString),
+  /** Capability the device must report, e.g. `vpp` or `msi`. */
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.Number,
+  createdAt: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String),
+});
+
+export type ApplicationInstallerRow = typeof ApplicationInstallerRow.Type;
+
+export const ApplicationInstallerInput = Schema.Struct({
+  /** Present when updating an existing installer. */
+  id: Schema.optional(Schema.String),
+  platform: ApplicationPlatform,
+  source: Schema.optional(ApplicationSource),
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  minOsVersion: Schema.optional(NullableString),
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.optional(Schema.Number),
+});
+
+export type ApplicationInstallerInput = typeof ApplicationInstallerInput.Type;
+
 export const ApplicationRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -2188,6 +2245,7 @@ export const ApplicationRow = Schema.Struct({
   size: Schema.optional(Schema.Number),
   sha256: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  installers: Schema.Array(ApplicationInstallerRow),
   groupsCount: Schema.optional(Schema.Number),
   devicesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
@@ -2251,6 +2309,8 @@ export const TenantExportDeviceRef = Schema.Struct({
   key: Schema.String,
   name: Schema.optional(NullableString),
   serial: Schema.optional(NullableString),
+  /** How the device joined: manual rows survive a dynamic recompute. */
+  source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
 });
 
 export type TenantExportDeviceRef = typeof TenantExportDeviceRef.Type;
@@ -2259,6 +2319,9 @@ export const TenantExportGroup = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** A dynamic group keeps its rules and is no longer restored as manual. */
+  kind: Schema.optional(DynamicGroupKind),
+  rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
   /** Device members are metadata only; devices themselves are never imported. */
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
   policyKeys: Schema.Array(Schema.String),
@@ -2293,6 +2356,25 @@ export const TenantExportPolicy = Schema.Struct({
 
 export type TenantExportPolicy = typeof TenantExportPolicy.Type;
 
+export const TenantExportInstaller = Schema.Struct({
+  platform: ApplicationPlatform,
+  source: ApplicationSource,
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  manifestUrl: Schema.optional(NullableString),
+  storeId: Schema.optional(NullableString),
+  fileName: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  size: Schema.optional(Schema.NullOr(Schema.Number)),
+  sha256: Schema.optional(NullableString),
+  r2Key: Schema.optional(NullableString),
+  minOsVersion: Schema.optional(NullableString),
+  requiredCapability: Schema.optional(NullableString),
+  priority: Schema.optional(Schema.Number),
+});
+
+export type TenantExportInstaller = typeof TenantExportInstaller.Type;
+
 export const TenantExportApplication = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
@@ -2309,6 +2391,8 @@ export const TenantExportApplication = Schema.Struct({
   /** Hint only. Object bytes are never part of a bundle. */
   r2Key: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Multi-installer catalogues; older bundles omit this and use the flat fields. */
+  installers: Schema.optional(Schema.Array(TenantExportInstaller)),
   groupKeys: Schema.Array(Schema.String),
 });
 
@@ -2331,6 +2415,8 @@ export const TenantExportPreRegistration = Schema.Struct({
   assetTag: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   groupKey: Schema.optional(NullableString),
+  /** Set when the serial already enrolled; restore must not make it reusable. */
+  consumedDeviceKey: Schema.optional(NullableString),
 });
 
 export type TenantExportPreRegistration = typeof TenantExportPreRegistration.Type;
@@ -2358,6 +2444,22 @@ export const TenantExportAuditEntry = Schema.Struct({
 
 export type TenantExportAuditEntry = typeof TenantExportAuditEntry.Type;
 
+export const TenantExportUserAssignment = Schema.Struct({
+  email: Schema.String,
+  policyKeys: Schema.Array(Schema.String),
+  excludedPolicyKeys: Schema.Array(Schema.String),
+});
+
+export type TenantExportUserAssignment = typeof TenantExportUserAssignment.Type;
+
+export const TenantExportUserGroupAssignment = Schema.Struct({
+  groupId: Schema.String,
+  policyKeys: Schema.Array(Schema.String),
+  excludedPolicyKeys: Schema.Array(Schema.String),
+});
+
+export type TenantExportUserGroupAssignment = typeof TenantExportUserGroupAssignment.Type;
+
 export const TenantExportEnvelope = Schema.Struct({
   version: Schema.Literal(TENANT_EXPORT_VERSION),
   exportedAt: Schema.String,
@@ -2368,6 +2470,9 @@ export const TenantExportEnvelope = Schema.Struct({
   applications: Schema.Array(TenantExportApplication),
   /** Direct device-to-policy/application assignments (restore only). */
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  /** Policy assignments to directory users and user groups. */
+  userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
+  userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.Array(TenantExportPreRegistration),
   scepCertificates: Schema.Array(TenantExportCertificate),
@@ -2480,6 +2585,8 @@ export const TenantImportRequest = Schema.Struct({
   policies: Schema.optional(Schema.Array(TenantExportPolicy)),
   applications: Schema.optional(Schema.Array(TenantExportApplication)),
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
+  userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),
   preRegistrations: Schema.optional(Schema.Array(TenantExportPreRegistration)),
   scepCertificates: Schema.optional(Schema.Array(TenantExportCertificate)),
@@ -2520,13 +2627,15 @@ export type TenantImportResponse = typeof TenantImportResponse.Type;
 
 export const CreateApplicationRequest = Schema.Struct({
   name: Schema.String,
-  platform: ApplicationPlatform,
+  /** Legacy single-installer fields; omit when `installers` is supplied. */
+  platform: Schema.optional(ApplicationPlatform),
   bundleId: Schema.optional(NullableString),
   version: Schema.optional(NullableString),
   source: Schema.optional(ApplicationSource),
   manifestUrl: Schema.optional(NullableString),
   storeId: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
 });
 
 export const PatchApplicationRequest = Schema.Struct({
@@ -2537,6 +2646,8 @@ export const PatchApplicationRequest = Schema.Struct({
   manifestUrl: Schema.optional(NullableString),
   storeId: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Replace the installer set. Omit to keep it unchanged. */
+  installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
 });
 
 export const PatchApplicationAssignmentsRequest = Schema.Struct({
@@ -2787,8 +2898,11 @@ export const MobileconfigPreview = Schema.Struct({
 export type MobileconfigPreview = typeof MobileconfigPreview.Type;
 
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
+
 export const IdsRequest = Schema.Array(Schema.String);
+
 export const IdResponse = Schema.Struct({ id: Schema.String });
+
 export const NoContent = Schema.Void;
 
 export const BulkOperationResult = Schema.Struct({
@@ -3504,7 +3618,9 @@ export const ApnsCsrResponse = Schema.Struct({ plist: Schema.String });
 export type ApnsCsrResponse = typeof ApnsCsrResponse.Type;
 
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
+
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
+
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
 
 /** A Checkout Session redirect that buys the per-device plan. */
@@ -3571,7 +3687,9 @@ export const WebhookDeliveryQuery = Schema.Struct({
 export type WebhookDeliveryQuery = typeof WebhookDeliveryQuery.Type;
 
 export const AuthUser = UserInfo;
+
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
+
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
 
 /**
@@ -4227,7 +4345,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("createScimToken", "/v1/tenants/:tenantId/scim-tokens", {
-      error: EnterpriseTenantWriteErrors,
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: CreateScimTokenRequest,
       success: CreateScimTokenResponse,
@@ -4771,7 +4889,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("searchDevices", "/v1/tenants/:tenantId/devices/search", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantParam,
       query: DeviceSearchQuery,
       success: DeviceSearchResponse,
@@ -4871,7 +4989,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("exportDevices", "/v1/tenants/:tenantId/devices/export", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantParam,
       query: DeviceSearchQuery,
       success: Schema.String.pipe(HttpApiSchema.asText({ contentType: "text/csv; charset=utf-8" })),
@@ -5061,7 +5179,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.get("getDeviceActivity", "/v1/tenants/:tenantId/devices/:id/activity", {
-      error: EnterpriseTenantReadErrors,
+      error: EnterpriseTenantValidatedReadErrors,
       params: TenantIdParam,
       query: Schema.Struct({
         limit: Schema.optional(Schema.Number),
@@ -5342,6 +5460,38 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       payload: UploadPolicyApplicationRequest,
       success: PolicyApplicationObject,
     }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "uploadApplicationInstaller",
+      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/upload",
+      {
+        error: EnterpriseApplicationUploadErrors,
+        params: Schema.Struct({
+          tenantId: Schema.String,
+          id: Schema.String,
+          installerId: Schema.String,
+        }),
+        payload: UploadPolicyApplicationRequest,
+        success: PolicyApplicationObject,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "downloadApplicationInstaller",
+      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/download/:sha256",
+      {
+        error: EnterpriseApplicationDownloadErrors,
+        params: Schema.Struct({
+          tenantId: Schema.String,
+          id: Schema.String,
+          installerId: Schema.String,
+          sha256: Schema.String,
+        }),
+        success: DownloadPolicyApplicationResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get(

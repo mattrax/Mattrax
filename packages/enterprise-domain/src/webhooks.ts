@@ -42,9 +42,13 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
  * (Stripe-compatible shape). See docs/admin/operations.md.
  */
 export const WEBHOOK_SIGNATURE_HEADER = "X-Mattrax-Signature";
+
 export const WEBHOOK_TIMESTAMP_HEADER = "X-Mattrax-Timestamp";
+
 export const WEBHOOK_EVENT_HEADER = "X-Mattrax-Event";
+
 export const WEBHOOK_DELIVERY_HEADER = "X-Mattrax-Delivery";
+
 export const WEBHOOK_SECRET_PREFIX = "whsec_";
 
 /** Reject deliveries whose timestamp is more than five minutes old. */

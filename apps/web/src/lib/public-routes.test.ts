@@ -15,6 +15,7 @@ import {
 } from "./public-routes";
 
 const docsDirectory = fileURLToPath(new URL("../../../../docs/", import.meta.url));
+
 const landingRoutesDirectory = fileURLToPath(new URL("../routes/(landing)/", import.meta.url));
 
 /** Files below a directory, relative and forward-slashed. */

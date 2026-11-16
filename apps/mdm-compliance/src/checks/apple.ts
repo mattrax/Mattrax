@@ -32,7 +32,9 @@ const readPlist = (value: PlistValue): PlistDictionary => {
 };
 
 const origin = "https://mdm.example.test";
+
 const udid = "00008030-001A2B3C4D5E6F70";
+
 const topic = "com.apple.mgmt.External.compliance";
 
 const authenticate = () => ({
@@ -697,8 +699,8 @@ export const appleChecks: ReadonlyArray<Check> = [
   check(
     "bootstrap.get-missing-udid",
     "errors",
-    "GetBootstrapToken without UDID is rejected",
-    "Bootstrap token lookup cannot be ambiguous; a missing UDID must return HTTP 400.",
+    "GetBootstrapToken without an identifier returns no token",
+    "EnrollmentID is a valid identifier, so a request with neither identifier cannot resolve a device and answers an empty 200 instead of failing the plist decoder.",
     async () => {
       const harness = createAppleHarness();
 
@@ -706,7 +708,7 @@ export const appleChecks: ReadonlyArray<Check> = [
         await appleMdmRequest({ MessageType: "GetBootstrapToken" }),
       );
 
-      assert.equal(response.status, 400);
+      assert.equal(response.status, 200);
     },
   ),
   check(
@@ -878,15 +880,19 @@ export const appleChecks: ReadonlyArray<Check> = [
         contentType: "application/x-apple-aspen-config",
       };
 
+      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
       const token = await signAppleProfileToken(harness.config.authSecret, {
         deviceToken: "device-token",
         policyId: "policy-1",
         kind: "configuration",
+        deviceId: "device-1",
+        expiresAt,
       });
 
       const response = await harness.handler(
         new Request(
-          `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}`,
+          `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}&deviceId=device-1&expiresAt=${expiresAt}`,
         ),
       );
 

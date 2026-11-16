@@ -7,6 +7,7 @@ import { mcpOAuthRoutes, validRedirectUri } from "../src/mcpOAuth.js";
 import { makeDb } from "./helpers.js";
 
 const origin = "https://app.test";
+
 const sessionCookie = "__Host-mattrax_session=opaque-session";
 
 const me = {

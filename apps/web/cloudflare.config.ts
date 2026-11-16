@@ -31,7 +31,7 @@ export const webWorker = {
      * needs no service-binding call on a warm token. A missing or mismatched
      * secret falls back to bootstrap and logs one error per isolate, which
      * Workers Issues groups. Self-hosted deployments inherit it from
-     * `AUTH_SECRET` via `apps/selfhost`.
+     * `AUTH_SECRET` via `apps/docker`.
      */
     /** Public PostHog project key and ingestion host, injected into the HTML shell. */
     POSTHOG_KEY: bindings.secret(),
@@ -43,13 +43,26 @@ export type WebConfig = UnwrapConfig<typeof webWorker>;
 
 export type WebEnv = InferEnv<WebConfig>;
 
-export default defineConfig({
+export default defineConfig(({ isPreview }) => ({
   // The dashboard verifies SSR bootstrap tokens with the same secret as the
   // API. It is required rather than optional: a deployment without it would
   // silently fall back to a service-binding bootstrap on every page view, and
   // `cf deploy` refusing an unset secret is the correct failure.
   worker: {
     ...webWorker,
-    env: { ...webWorker.env, AUTH_SECRET: bindings.secret() },
+    // Previews get a generated host; production keeps the custom domain.
+    domains: isPreview ? [] : webWorker.domains,
+    previewUrls: isPreview,
+    env: {
+      ...webWorker.env,
+      AUTH_SECRET: bindings.secret(),
+      // A Preview cannot reach another Worker's Preview through a service
+      // binding (it always resolves to that Worker's production deployment),
+      // so the deploy passes the preview API's URL and the proxy prefers it.
+      API: bindings.worker({
+        worker: process.env.API_WORKER_NAME ?? "mattrax-api",
+      }),
+      API_URL: bindings.text(process.env.API_URL ?? ""),
+    },
   },
-});
+}));

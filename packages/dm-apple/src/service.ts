@@ -143,11 +143,13 @@ export declare namespace AppleMdmService {
       identityCertificate?: string,
       udid?: string,
       identityCertificateSerial?: string,
+      identityCertificateFingerprintSha256?: string,
     ) => Effect.Effect<void, MdmError>;
     readonly handleGetBootstrapToken: (
       identityCertificate?: string,
       udid?: string,
       identityCertificateSerial?: string,
+      identityCertificateFingerprintSha256?: string,
     ) => Effect.Effect<string | null, MdmError>;
     readonly handleReturnToService: (
       scope: CheckinScope,
@@ -192,6 +194,8 @@ export declare namespace AppleMdmService {
       policyId: string,
       kind: string,
       token: string | undefined,
+      deviceId: string | undefined,
+      expiresAt: number | undefined,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
     readonly generateEnrollmentProfile: (options?: {
       readonly challenge?: string;
@@ -766,6 +770,8 @@ const makeAppleMdmService = (
     policyId: string,
     kind: string,
     token: string | undefined,
+    deviceId: string | undefined,
+    expiresAt: number | undefined,
   ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
     Effect.gen(function* () {
       const secret = profileSecret();
@@ -773,17 +779,28 @@ const makeAppleMdmService = (
       // DDM profile fetches are unauthenticated at the transport level, so a
       // valid signature is mandatory. Fail closed when the host has not
       // configured a secret.
-      if (!secret || !token) return null;
+      if (!secret || !token || !deviceId || expiresAt === undefined) return null;
 
+      if (!Number.isSafeInteger(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000))
+        return null;
+
+      // The device id and expiry are in the signed message, not trusted from
+      // the URL alone. A leaked link stops working and cannot be re-pointed.
       const valid = yield* Effect.promise(() =>
-        verifyAppleProfileToken(secret, token, { policyId, kind, deviceToken }),
+        verifyAppleProfileToken(secret, token, {
+          policyId,
+          kind,
+          deviceToken,
+          deviceId,
+          expiresAt,
+        }),
       );
 
       if (!valid) return null;
 
       if (!backend.getAppleProfile) return null;
 
-      return yield* backend.getAppleProfile(policyId, kind).pipe(
+      return yield* backend.getAppleProfile(policyId, kind, deviceId).pipe(
         Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
         Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
         Effect.mapError(toMdmError("Failed to fetch profile")),
@@ -795,14 +812,19 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     udid?: string,
     identityCertificateSerial?: string,
+    identityCertificateFingerprintSha256?: string,
   ): Effect.Effect<void, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return yield* new MdmError({ message: "Bootstrap token has no UDID" });
 
+      // A UDID in the plist is caller-supplied. Bind the escrow write to the
+      // certificate presented on this connection so one enrolled device cannot
+      // overwrite another device's bootstrap token.
       const scope: CheckinScope = DeviceCheckinScope.make({
         udid,
         identityCertificate,
         identityCertificateSerial,
+        identityCertificateFingerprintSha256,
         mdmOrigin,
       });
 
@@ -817,14 +839,18 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     udid?: string,
     identityCertificateSerial?: string,
+    identityCertificateFingerprintSha256?: string,
   ): Effect.Effect<string | null, MdmError> =>
     Effect.gen(function* () {
       if (!udid) return null;
 
+      // Same binding as the write path: a claimed UDID must match the
+      // certificate on this connection before its escrowed token is returned.
       const scope: CheckinScope = DeviceCheckinScope.make({
         udid,
         identityCertificate,
         identityCertificateSerial,
+        identityCertificateFingerprintSha256,
         mdmOrigin,
       });
 

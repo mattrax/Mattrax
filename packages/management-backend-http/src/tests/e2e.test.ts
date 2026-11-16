@@ -319,9 +319,9 @@ describe("Management Backend HTTP E2E", () => {
 
   it("maps getAppleProfile over the webhook", async () => {
     const backend = mockManagementBackend({
-      getAppleProfile: (policyId: string, kind: string) =>
+      getAppleProfile: (policyId: string, kind: string, deviceId: string) =>
         Effect.succeed({
-          content: new TextEncoder().encode(`${policyId}:${kind}`),
+          content: new TextEncoder().encode(`${policyId}:${kind}:${deviceId}`),
           contentType: "application/x-apple-aspen-config",
         }),
     });
@@ -332,7 +332,11 @@ describe("Management Backend HTTP E2E", () => {
       new Request("http://localhost/webhook/apple/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ policyId: "policy-1", kind: "mttx.apple.device" }),
+        body: JSON.stringify({
+          policyId: "policy-1",
+          kind: "mttx.apple.device",
+          deviceId: "device-1",
+        }),
       }),
     );
 
@@ -340,7 +344,7 @@ describe("Management Backend HTTP E2E", () => {
     const body = await readJson(res);
     expect(body.contentType).toBe("application/x-apple-aspen-config");
     expect(atob(Schema.decodeUnknownSync(Schema.String)(body.content))).toBe(
-      "policy-1:mttx.apple.device",
+      "policy-1:mttx.apple.device:device-1",
     );
     await dispose();
   });

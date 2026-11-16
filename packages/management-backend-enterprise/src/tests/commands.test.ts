@@ -28,7 +28,9 @@ import {
 import { makeDb, tableName, stringValue } from "./fake-db.js";
 
 const origin = "https://policies.test";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 const at = (isoDate: string) => new Date(isoDate);
@@ -213,6 +215,27 @@ describe("command supersede rules", () => {
 
     expect([...plan.supersedeIds].sort()).toEqual(["install", "lock", "restart"]);
     expect(supersededRequestTypes("EraseDevice")).toContain("DeviceLock");
+  });
+
+  it("keeps a Recovery Lock clear queued by the same erase", () => {
+    const plan = planCommandQueueing(
+      [
+        row({
+          id: "clear-recovery-lock",
+          requestType: "SetRecoveryLock",
+          payload: { CurrentPassword: "old", NewPassword: "" },
+        }),
+        row({ id: "lock", requestType: "DeviceLock", payload: { PIN: "111111" } }),
+      ],
+      {
+        requestType: "EraseDevice",
+        payload: { PIN: "222222", ObliterationBehavior: "Default" },
+        now: at("2026-01-01T00:01:00.000Z"),
+      },
+      new Set(["clear-recovery-lock"]),
+    );
+
+    expect(plan.supersedeIds).toEqual(["lock"]);
   });
 
   it("lets a newer lock replace an older one with a different PIN", () => {

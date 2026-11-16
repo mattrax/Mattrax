@@ -15,6 +15,7 @@ import {
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-10T12:00:00.000Z");
+
 const at = (daysAgo: number) => new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
 
 const device = (overrides: Partial<DeviceQueryDevice> = {}): DeviceQueryDevice => ({

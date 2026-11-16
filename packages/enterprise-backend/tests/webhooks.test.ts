@@ -10,7 +10,9 @@ import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
+
 const now = new Date("2026-11-11T10:00:00.000Z");
 
 const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch } = {}) => {

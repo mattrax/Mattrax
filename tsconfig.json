@@ -1,5 +1,5 @@
 {
-  "extends": "./tsconfig.base.json",
+  "extends": "./packages/config/tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
     "declaration": false,
@@ -23,11 +23,14 @@
     { "path": "./packages/azure-oidc" },
     { "path": "./packages/azure-graph" },
     { "path": "./packages/dm-android" },
+    { "path": "./packages/config" },
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },
-    { "path": "./apps/api" },
-    { "path": "./apps/api/tsconfig.tooling.json" },
+    { "path": "./apps/cloud" },
+    { "path": "./apps/cloud/tsconfig.tooling.json" },
     { "path": "./apps/cli" },
+    { "path": "./apps/docker" },
+    { "path": "./scripts" },
     { "path": "./apps/mdm-compliance" },
     { "path": "./apps/web" }
   ]

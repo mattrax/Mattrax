@@ -7,10 +7,12 @@ import {
   EnterpriseNotFound,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { sendTransactionalEmail } from "../src/emailOutbox.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
 
 type TestUser = {
@@ -62,12 +64,10 @@ const makeContext = (
 
   if (!db.store.user.some((row: any) => row.id === user.id)) db.store.user.push(user);
 
-  const email = {
-    send: async (message: SentEmail) => {
-      if (options.send) await options.send(message);
-      sent.push(message);
-    },
-  };
+  const email = makeEmailTransport(async (message: SentEmail) => {
+    if (options.send) await options.send(message);
+    sent.push(message);
+  });
 
   const auth = {
     requireUser: (input: any) => {
@@ -664,7 +664,7 @@ describe("tenant invitations", () => {
     const outcome = await runEffect(
       sendTransactionalEmail({
         db: owner.db,
-        email: { send: async () => undefined },
+        email: makeEmailTransport(async () => undefined),
         recipient: "retry@example.com",
         template: "invitation",
         organizationId: tenant.id,

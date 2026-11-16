@@ -28,7 +28,7 @@ vendor tenant.
 │ Dashboard, docs, public enrollment            apps/web       │
 │        │ service binding                                     │
 │        ▼                                                     │
-│ API + MDM + SCIM + SSO + billing              apps/api       │
+│ API + MDM + SCIM + SSO + billing              apps/cloud       │
 │        │                                                     │
 │        ├── enterprise-backend  (tenants, policies, devices)  │
 │        ├── management-backend-enterprise (Apple/Windows)     │

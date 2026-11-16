@@ -12,6 +12,7 @@ import { scimHandler } from "../src/scim.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
 
 type TestUser = {

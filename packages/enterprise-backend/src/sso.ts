@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
 import { AuthCredentialCommandCollector, type AuthInvocation } from "@yielded/auth/Operations";
@@ -77,6 +77,29 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             if (!tenantId)
               return yield* Effect.fail(
                 new SsoRejected({ message: "SSO assertion has no tenant" }),
+              );
+
+            // The assertion arrives in a URL, so it is single-use. The primary
+            // key insert is the atomic claim; a second redemption loses.
+            if (!payload.jti)
+              return yield* Effect.fail(new SsoRejected({ message: "SSO assertion has no id" }));
+
+            yield* services.db
+              .delete(schema.ssoAssertion)
+              .where(lt(schema.ssoAssertion.expiresAt, new Date()));
+
+            const claimed = yield* services.db
+              .insert(schema.ssoAssertion)
+              .ignore()
+              .values({
+                jti: payload.jti,
+                expiresAt: new Date(payload.exp),
+                createdAt: new Date(),
+              });
+
+            if (claimed.affectedRows === 0)
+              return yield* Effect.fail(
+                new SsoRejected({ message: "SSO assertion was already used" }),
               );
 
             const user = yield* services.db.query.user.findFirst({ where: { id: payload.sub } });

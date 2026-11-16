@@ -380,6 +380,7 @@ export default function ScriptDetailPage() {
                       }
                     >
                       <ScriptEditor
+                        identity={params.scriptId}
                         initial={draft()}
                         submitLabel="Save script"
                         saving={save.isPending}

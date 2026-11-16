@@ -13,11 +13,13 @@ import {
   purgeEmailOutbox,
   sendTransactionalEmail,
 } from "../src/emailOutbox.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { OutboundEmailMessage } from "../src/email.js";
 import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-16T10:00:00.000Z");
+
 const MINUTE = 60 * 1000;
 
 const message = {
@@ -135,7 +137,7 @@ describe("email outbox enqueue", () => {
     const outcome = await runEffect(
       sendTransactionalEmail({
         db,
-        email: { local: true, send: async (item) => void sent.push(item) },
+        email: makeEmailTransport(async (item) => void sent.push(item), { local: true }),
         recipient: "invitee@example.com",
         template: "invitation",
         message,
@@ -173,7 +175,7 @@ describe("email outbox drain", () => {
     const result = await runEffect(
       drainEmailOutbox({
         db,
-        email: { send: async (item) => void sent.push(item) },
+        email: makeEmailTransport(async (item) => void sent.push(item)),
         now: new Date(now.getTime() + 1000),
       }),
     );
@@ -187,11 +189,9 @@ describe("email outbox drain", () => {
   it("reschedules a failed delivery with backoff and purges delivered rows later", async () => {
     const db = makeDb({ email_outbox: [record()] });
 
-    const email = {
-      send: async () => {
-        throw new Error("Resend rejected the message with status 503");
-      },
-    };
+    const email = makeEmailTransport(async () => {
+      throw new Error("Resend rejected the message with status 503");
+    });
 
     const first = await runEffect(
       drainEmailOutbox({ db, email, now: new Date(now.getTime() + MINUTE) }),
@@ -225,11 +225,9 @@ describe("email outbox drain", () => {
     const result = await runEffect(
       drainEmailOutbox({
         db,
-        email: {
-          send: async () => {
-            throw new Error("provider down");
-          },
-        },
+        email: makeEmailTransport(async () => {
+          throw new Error("provider down");
+        }),
         now: new Date(now.getTime() + MINUTE),
       }),
     );
@@ -257,7 +255,7 @@ describe("email outbox drain", () => {
       await runEffect(
         drainEmailOutbox({
           db,
-          email: { send: async () => undefined },
+          email: makeEmailTransport(async () => undefined),
           now: new Date(now.getTime() + 60 * MINUTE),
         }),
       ),
@@ -275,7 +273,7 @@ describe("email outbox drain", () => {
     const result = await runEffect(
       drainEmailOutbox({
         db,
-        email: { send: async () => void sent.push("sent") },
+        email: makeEmailTransport(async () => void sent.push("sent")),
         now: new Date(now.getTime() + MINUTE),
       }),
     );
@@ -296,7 +294,7 @@ describe("email outbox drain", () => {
     const result = await runEffect(
       drainEmailOutbox({
         db,
-        email: { send: async () => void sent.push("sent") },
+        email: makeEmailTransport(async () => void sent.push("sent")),
         now: new Date(now.getTime() + MINUTE),
       }),
     );
@@ -320,14 +318,12 @@ describe("email outbox drain", () => {
         db,
         concurrency: 2,
         now: new Date(now.getTime() + MINUTE),
-        email: {
-          send: async () => {
-            inFlight += 1;
-            peak = Math.max(peak, inFlight);
-            await new Promise((resolve) => setTimeout(resolve, 5));
-            inFlight -= 1;
-          },
-        },
+        email: makeEmailTransport(async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          inFlight -= 1;
+        }),
       }),
     );
 
@@ -381,7 +377,7 @@ describe("maintenance drains the outbox", () => {
         auditRetentionDays: 0,
         credentialAlerts: false,
         dynamicGroups: false,
-        email: { send: async () => void sent.push("sent") },
+        email: makeEmailTransport(async () => void sent.push("sent")),
       }).pipe(Effect.provideService(Db, db)),
     );
 

@@ -11,6 +11,7 @@ import {
 import { signSsrRevision, signSsrToken } from "../src/ssrToken.js";
 
 const secret = "interop-secret-that-is-long-enough-for-hmac";
+
 const sessionCookie = "opaque-session-cookie";
 
 const run = <A>(effect: Effect.Effect<A, unknown, never>) => Effect.runPromise(effect);

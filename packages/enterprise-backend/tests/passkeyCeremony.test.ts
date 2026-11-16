@@ -13,6 +13,7 @@ import { passkeyProfile } from "../src/auth.js";
  */
 
 const origin = "https://mattrax.example.com";
+
 const profile = yieldedProfile();
 
 function yieldedProfile() {
@@ -42,6 +43,7 @@ const protocol = () =>
   );
 
 const b64 = (bytes: Uint8Array) => Base64Url.encode(bytes);
+
 const utf8 = (value: string) => new TextEncoder().encode(value);
 
 const concat = (...parts: ReadonlyArray<Uint8Array>) => {

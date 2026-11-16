@@ -18,8 +18,16 @@ export default function VerifyEmailPage() {
   const token = () =>
     Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
 
-  const returnTo = () =>
-    Array.isArray(searchParams.returnTo) ? searchParams.returnTo[0] : searchParams.returnTo;
+  /** Only a same-origin path is a safe link target for the success screen. */
+  const returnTo = () => {
+    const value = Array.isArray(searchParams.returnTo)
+      ? searchParams.returnTo[0]
+      : searchParams.returnTo;
+
+    return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
+      ? value
+      : undefined;
+  };
 
   onSettled(() => {
     document.title = "Verify email · Mattrax";

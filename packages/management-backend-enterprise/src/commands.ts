@@ -6,7 +6,9 @@ import {
 } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;
+
 const HOUR = 60 * MINUTE;
+
 const DAY = 24 * HOUR;
 
 const BUDGETS = new Map<string, number>([
@@ -355,6 +357,8 @@ export type CommandQueuePlan = {
 export const planCommandQueueing = (
   rows: ReadonlyArray<CommandRow>,
   input: { readonly requestType: string; readonly payload?: CommandPayload; readonly now: Date },
+  /** Commands queued by the same operation that the new one must not cancel. */
+  protectIds: ReadonlySet<string> = new Set(),
 ): CommandQueuePlan => {
   const active = rows
     .filter((row) => commandStatusIsActive(row.status) && !commandIsExpired(row, input.now))
@@ -371,7 +375,9 @@ export const planCommandQueueing = (
 
   return {
     duplicate: null,
-    supersedeIds: active.filter((row) => superseded.includes(row.requestType)).map((row) => row.id),
+    supersedeIds: active
+      .filter((row) => !protectIds.has(row.id) && superseded.includes(row.requestType))
+      .map((row) => row.id),
   };
 };
 
@@ -497,6 +503,7 @@ export const reconcileDeviceCommands = (
  * loop forever.
  */
 export const DEVICE_COMMAND_INSTALL_MAX_ATTEMPTS = 3;
+
 export const DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS = DAY;
 
 export type InstallAttemptRow = Pick<CommandRow, "requestType" | "payload" | "createdAt">;

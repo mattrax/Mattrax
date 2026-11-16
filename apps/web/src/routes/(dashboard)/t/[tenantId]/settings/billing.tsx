@@ -99,6 +99,9 @@ export default function BillingSettingsPage() {
   }));
 
   const configured = () => billing.data?.configured !== false;
+  // Without a plan catalogue there is nothing Checkout can sell even when
+  // Stripe itself is configured for the deployment.
+  const sellable = () => configured() && billing.data?.limitsConfigured !== false;
   const overLimit = () => Boolean(billing.data?.overDeviceLimit || billing.data?.overTenantLimit);
 
   /**
@@ -208,7 +211,7 @@ export default function BillingSettingsPage() {
               <Show when={!subscribed()}>
                 <Button
                   onClick={() => checkout.mutate()}
-                  disabled={checkout.isPending || billing.isLoading || !configured()}
+                  disabled={checkout.isPending || billing.isLoading || !sellable()}
                 >
                   {checkout.isPending ? "Opening checkout…" : "Subscribe to the device plan"}
                 </Button>
@@ -216,7 +219,7 @@ export default function BillingSettingsPage() {
               <Button
                 variant="outline"
                 onClick={() => portal.mutate()}
-                disabled={portal.isPending || billing.isLoading || !configured()}
+                disabled={portal.isPending || billing.isLoading || !sellable()}
               >
                 {portal.isPending ? "Opening…" : "Open billing portal"}
               </Button>
@@ -227,10 +230,11 @@ export default function BillingSettingsPage() {
               subscription.
             </p>
           </Show>
-          <Show when={!configured()}>
+          <Show when={!sellable()}>
             <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Checkout and the billing portal are unavailable until Stripe is configured for this
-              deployment.
+              {configured()
+                ? "This deployment has no plan catalogue configured, so Checkout is unavailable."
+                : "Checkout and the billing portal are unavailable until Stripe is configured for this deployment."}
             </p>
           </Show>
           <ErrorText error={checkout.error} />

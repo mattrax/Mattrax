@@ -65,11 +65,19 @@ describe("enterprise policy compiler", () => {
     expect(url.origin).toBe("https://mdm.example.com");
     expect(url.pathname).toBe("/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device");
     const token = url.searchParams.get("token")!;
+    const deviceId = url.searchParams.get("deviceId")!;
+    const expiresAt = Number(url.searchParams.get("expiresAt"));
+
+    expect(deviceId).toBe("device-1");
+    expect(expiresAt).toBeGreaterThan(context.now! / 1000);
+
     await expect(
       verifyAppleProfileToken(context.authSecret, token, {
         policyId: "policy-1",
         kind: "mttx.apple.device",
         deviceToken: "device-token-1",
+        deviceId,
+        expiresAt,
       }),
     ).resolves.toBe(true);
     // A token for one device is not valid for another.
@@ -78,6 +86,17 @@ describe("enterprise policy compiler", () => {
         policyId: "policy-1",
         kind: "mttx.apple.device",
         deviceToken: "device-token-2",
+        deviceId,
+        expiresAt,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      verifyAppleProfileToken(context.authSecret, token, {
+        policyId: "policy-1",
+        kind: "mttx.apple.device",
+        deviceToken: "device-token-1",
+        deviceId: "device-2",
+        expiresAt,
       }),
     ).resolves.toBe(false);
   });

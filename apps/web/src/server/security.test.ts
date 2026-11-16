@@ -9,6 +9,7 @@ import {
   isKnownPagePath,
   isPassthroughPath,
   mergeVary,
+  canonicalHostUrl,
   normalisePath,
   securityHeaders,
   withSecurityHeaders,
@@ -30,6 +31,9 @@ describe("securityHeaders", () => {
     expect(headers["cross-origin-resource-policy"]).toBe("same-origin");
     expect(headers["permissions-policy"]).toContain("camera=()");
     expect(headers["permissions-policy"]).toContain("publickey-credentials-get=(self)");
+    expect(headers["x-permitted-cross-domain-policies"]).toBe("none");
+    expect(headers["x-dns-prefetch-control"]).toBe("off");
+    expect(headers["origin-agent-cluster"]).toBe("?1");
     expect(headers["strict-transport-security"]).toBe("max-age=31536000; includeSubDomains");
   });
 
@@ -54,12 +58,50 @@ describe("securityHeaders", () => {
     expect(headers["content-security-policy-report-only"]).toContain("'unsafe-inline'");
   });
 
-  it("makes HTML private and keeps it out of the CDN cache", () => {
+  it("makes authenticated HTML private and keeps it out of the CDN cache", () => {
     const headers = securityHeaders(httpsHtml);
 
     expect(headers["cache-control"]).toBe("private, no-store");
     expect(headers["cdn-cache-control"]).toBe("no-store");
     expect(headers.vary).toBe("Cookie");
+  });
+
+  it.each(["/", "/privacy", "/terms"])(
+    "lets the shared cache keep the signed-out shell for %s",
+    (pathname) => {
+      const headers = securityHeaders({
+        ...httpsHtml,
+        url: `https://e.mattrax.app${pathname}`,
+      });
+
+      expect(headers["cache-control"]).toBe(
+        "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+      );
+      expect(headers["cdn-cache-control"]).toBe(
+        "public, max-age=300, stale-while-revalidate=86400",
+      );
+      expect(headers.vary).toBe("Accept-Encoding");
+    },
+  );
+
+  it("does not cache a public path that sets a cookie", () => {
+    const headers = securityHeaders({
+      ...httpsHtml,
+      url: "https://e.mattrax.app/",
+      hasSetCookie: true,
+    });
+
+    expect(headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("does not cache a public path that failed", () => {
+    const headers = securityHeaders({
+      ...httpsHtml,
+      url: "https://e.mattrax.app/privacy",
+      status: 404,
+    });
+
+    expect(headers["cache-control"]).toBe("private, no-store");
   });
 
   it("leaves JSON caching and CSP to the owning layer", () => {
@@ -278,14 +320,19 @@ describe("static asset header rules", () => {
       "public, max-age=31536000, immutable",
     );
     expect(rules.get("/docs/static/*")?.has("! cache-control")).toBe(true);
+    expect(rules.get("/*")?.get("x-content-type-options")).toBe("nosniff");
+    expect(rules.get("/*")?.get("strict-transport-security")).toBe(
+      "max-age=31536000; includeSubDomains",
+    );
   });
 
   it("revalidates docs HTML and applies its own CSP", () => {
     const docs = rules.get("/docs/*");
 
     expect(docs?.get("cache-control")).toBe("public, max-age=0, must-revalidate");
-    expect(docs?.get("x-content-type-options")).toBe("nosniff");
-    expect(docs?.get("x-frame-options")).toBe("DENY");
+    expect(docs?.get("cdn-cache-control")).toBe(
+      "public, max-age=3600, stale-while-revalidate=86400",
+    );
     expect(docs?.get("content-security-policy")).toContain("'unsafe-inline'");
   });
 
@@ -307,8 +354,15 @@ describe("redirect rules", () => {
     .map((line) => line.split(/\s+/));
 
   it("canonicalises the docs entry files", () => {
+    expect(rules).toContainEqual(["/docs", "/docs/", "308"]);
     expect(rules).toContainEqual(["/docs/index.html", "/docs/", "308"]);
     expect(rules).toContainEqual(["/docs/404.html", "/docs/", "308"]);
+  });
+
+  it("canonicalises static .html spellings", () => {
+    expect(rules).toContainEqual(["/index.html", "/", "308"]);
+    expect(rules).toContainEqual(["/privacy.html", "/privacy", "308"]);
+    expect(rules).toContainEqual(["/terms.html", "/terms", "308"]);
   });
 
   it("moves legacy dashboard paths", () => {
@@ -324,5 +378,17 @@ describe("redirect rules", () => {
       expect(owned.some((prefix) => source === prefix || source.startsWith(`${prefix}/`))).toBe(
         false,
       );
+  });
+});
+
+describe("canonicalHostUrl", () => {
+  it("moves a www host to the apex and preserves the path", () => {
+    expect(canonicalHostUrl(new URL("https://www.e.mattrax.app/privacy?x=1"))).toBe(
+      "https://e.mattrax.app/privacy?x=1",
+    );
+  });
+
+  it("leaves the canonical host alone", () => {
+    expect(canonicalHostUrl(new URL("https://e.mattrax.app/"))).toBeUndefined();
   });
 });

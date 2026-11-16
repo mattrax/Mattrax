@@ -18,7 +18,9 @@ import {
 import { makeDb, runEffect } from "./helpers.js";
 
 const authSecret = "abm-test-secret";
+
 const organizationId = "org-1";
+
 const otherOrganizationId = "org-2";
 
 type StoredAbmDevice = {

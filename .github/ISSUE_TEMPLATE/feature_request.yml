@@ -1,0 +1,75 @@
+name: Feature request
+description: Propose an improvement to the product, a protocol or the documentation.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the solution: what are you unable to do,
+        and what workaround are you using today?
+
+        For a rough idea that is not ready to be built, open a discussion-style
+        issue and label it `human` so a maintainer can scope it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The workflow that is missing, slow or unsafe today.
+      placeholder: A fleet migrated from another MDM has to touch every device by hand.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the behaviour you would like, including the UI or API surface it belongs to.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, existing workarounds, or why the obvious option does not fit.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: The part of Mattrax this request belongs to. Choose the closest match.
+      multiple: true
+      options:
+        - Dashboard / web app
+        - API / CLI
+        - Apple MDM (ADE, DDM, profiles, apps)
+        - Windows MDM (Autopilot, policies, apps)
+        - Android MDM (AMAPI, policies, apps)
+        - Enrollment and onboarding
+        - Identity, SSO and SCIM
+        - Billing and plans
+        - Email, webhooks and integrations
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: References, screenshots, comparable products or links to the relevant protocol documentation.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate.
+          required: true

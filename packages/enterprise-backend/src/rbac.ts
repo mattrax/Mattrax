@@ -171,10 +171,11 @@ const MANAGEMENT_READ = new Set([
   "listVppAssignments",
   "getTenantAndroid",
   "getApns",
-  "getApnsCsr",
 ]);
 
 const MANAGEMENT_WRITE = new Set([
+  // Generating a CSR creates/replaces a pending APNs key pair.
+  "getApnsCsr",
   "importAutopilotDevices",
   "syncAutopilotDevices",
   "deleteAutopilotDevice",
@@ -227,6 +228,7 @@ const MEMBER_WRITE = new Set([
 ]);
 
 const ROLE_READ = new Set(["listTenantRoles"]);
+
 const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenantRole"]);
 
 const EXPLICIT = {
@@ -256,8 +258,10 @@ const EXPLICIT = {
   billingInvoices: "billing.read",
   deviceAction: "devices.command",
   getDeviceRecoveryKey: "devices.recovery_key",
-  extractMobileconfig: "policies.read",
-  previewMobileconfig: "policies.read",
+  // Managed-admin passwords and Activation Lock bypass codes are device
+  // secrets: reading them is as sensitive as the recovery key.
+  getDeviceLocalAdmin: "devices.recovery_key",
+  getDeviceActivationLockBypassCode: "devices.recovery_key",
 } satisfies Record<string, Permission>;
 
 const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
@@ -268,7 +272,14 @@ const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
  * gain access to them by name. `bootstrap` is the SSR shell read: it returns
  * only the caller's own account and memberships.
  */
-const ACCOUNT_METHODS = new Set(["bootstrap"]);
+const ACCOUNT_METHODS = new Set([
+  "bootstrap",
+  // Policy-editor helpers. They parse a caller-supplied profile for display
+  // and never resolve a tenant, so they are authenticated account endpoints
+  // rather than tenant-permission-gated ones.
+  "extractMobileconfig",
+  "previewMobileconfig",
+]);
 
 export const isAccountMethod = (method: string): boolean => ACCOUNT_METHODS.has(method);
 

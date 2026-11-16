@@ -18,8 +18,11 @@ import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const headers = { cookie: "mattrax_session=test" };
+
 const DAY = 24 * 60 * 60 * 1000;
+
 const now = new Date("2026-11-11T03:17:00.000Z");
 
 type R2PutValue = Parameters<R2Bucket["put"]>[1];

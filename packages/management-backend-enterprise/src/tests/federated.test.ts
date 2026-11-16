@@ -12,6 +12,7 @@ import {
 } from "../federated.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
+
 const audience = "22222222-2222-2222-2222-222222222222";
 
 const base64Url = (value: Uint8Array | string): string => {

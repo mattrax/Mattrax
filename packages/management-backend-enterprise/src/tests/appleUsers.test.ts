@@ -7,8 +7,11 @@ import { parseAppleUserProfiles } from "../appleUsers.js";
 import { dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const now = new Date("2026-11-16T10:00:00.000Z");
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
@@ -66,7 +69,9 @@ const command = (overrides: Row = {}) => ({
   payload: {},
   status: "queued",
   dedupeKey: null,
-  expiresAt: new Date("2026-11-16T11:00:00.000Z"),
+  // Far future so a command fixture does not start failing when the wall clock
+  // passes the original hard-coded value (the backend compares to `new Date()`).
+  expiresAt: new Date("2099-01-01T00:00:00.000Z"),
   createdAt: now,
   updatedAt: now,
   ...overrides,

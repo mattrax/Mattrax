@@ -9,11 +9,11 @@ boundary keeps protocol handling independent from product state.
 | ------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
 | Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` | Wire protocols and payloads                    |
 | Management contract | `management-backend`, `management-backend-http`                 | Interface and HMAC webhook binding             |
-| Hosted management   | `management-backend-enterprise`, `apps/api`                     | Enterprise implementation                      |
+| Hosted management   | `management-backend-enterprise`, `apps/cloud`                   | Enterprise implementation                      |
 | Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`, `apps/mail-relay`    | Dashboard, API, push and SMTP relays           |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                     | Dashboard, API and push relay                  |
 
 ## Cloud topology
 
@@ -24,14 +24,47 @@ Browser ──► Mattrax web Worker (public)
            API Worker (service binding)
               ├── MySQL via Hyperdrive
               ├── R2 (application files, backups)
-              ├── Email: Cloudflare Email Sending, Resend/Postmark, or the
-              │   self-hosted mail-relay sidecar (SMTP)
+              ├── Email: Cloudflare Email Sending, or SMTP directly
               ├── email_outbox (queued transactional mail, drained by cron)
               └── APNs relay / vendor cert
 ```
 
 The API Worker has no public route. Only the web Worker is exposed, which gives one origin
 for cookies, CSP and WebAuthn.
+
+- The web Worker runs globally (`placement.mode = off`) so assets and HTML render at the
+  visitor's nearest edge. The API Worker is pinned to `aws:us-east-1`, close to the hosted
+  MySQL origin.
+- SSR normally makes **zero** service-binding calls: the API-signed five-minute
+  `__Host-mattrax_ssr` token carries the user and per-tenant permissions, and the edge
+  verifies it with `AUTH_SECRET`. A cold or stale token makes exactly **one**
+  `GET /api/v1/bootstrap` call, which returns the session, `/me` shell, token and revision
+  together. Avoid adding another SSR round trip around bootstrap.
+- Public, signed-out shells (`/`, `/privacy`, `/terms`) are rendered without a session
+  preload and cached per colo for five minutes (`stale-while-revalidate` for a day). The
+  client loads the session after hydration. Authenticated HTML stays `private, no-store`
+  because it embeds the signed-in snapshot.
+- The docs are static assets with a one-hour edge cache; hashed assets are immutable.
+  `_headers` supplies the same hardening for asset responses that the Worker applies to
+  HTML, and `_redirects` canonicalises legacy paths and `.html` spellings.
+
+### Self-hosted runtime
+
+The container uses the same application code with Node entry points instead of Workers:
+
+- `apps/cloud` owns the shared runtime (`app.ts`: routes, auth, MDM handlers and
+  scheduled jobs) and the Cloudflare entry with the Workers crypto layer and
+  bindings.
+- `apps/docker` owns the self-hosted Node entry, its Vite build and the
+  `Dockerfile`; it supplies scrypt, the filesystem R2 adapter, SMTP and
+  process-environment bindings, then hosts the dashboard in the same process.
+- MySQL comes from `DATABASE_URL` (no Hyperdrive), object storage is the `/data`
+  volume (no R2) and email is SMTP (no Cloudflare Email binding).
+- The dashboard is built with `MATTRAX_TARGET=node`; `@solidjs/vite-plugin` emits a
+  Node SSR server and serves `dist/client` statically. A Node shim replaces
+  `cloudflare:workers` and forwards API calls to the same process over loopback.
+- The host routes `/api`, `/mdm` and `/scim` to the API and everything else to the
+  dashboard, then runs the cron expressions from its own scheduler.
 
 ## Request pipeline
 
@@ -124,7 +157,7 @@ Core tables:
   survives the row) and the retry record for device unenroll, Stripe cancellation, object
   reclamation and the final delete.
 
-Migrations live in `apps/api/migrations` and are applied with Drizzle Kit.
+Migrations live in `apps/cloud/migrations` and are applied with Drizzle Kit.
 
 ## Script execution
 
@@ -172,7 +205,7 @@ so Android devices are skipped with a reason.
 
 | File                                                    | Why                                     |
 | ------------------------------------------------------- | --------------------------------------- |
-| `apps/api/src/index.ts`                                 | Worker composition and request pipeline |
+| `apps/cloud/src/index.ts`                               | Worker composition and request pipeline |
 | `packages/enterprise-domain/src/enterprise.ts`          | REST contract                           |
 | `packages/enterprise-backend/src/enterpriseHandlers.ts` | Enterprise handlers                     |
 | `packages/management-backend-enterprise/src/index.ts`   | Apple/Windows management                |

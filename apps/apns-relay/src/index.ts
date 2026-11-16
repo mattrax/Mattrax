@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { NodePushTransport, relaySignature } from "@mattrax/apns";
 
 const port = Number(process.env.PORT ?? 8788);
+
 const secret = process.env.APNS_RELAY_SECRET;
 
 if (!secret || secret.length < 32) {
@@ -11,6 +12,7 @@ if (!secret || secret.length < 32) {
 }
 
 const transport = NodePushTransport();
+
 const maxBodyBytes = 64 * 1024;
 
 const readBody = (request: import("node:http").IncomingMessage) =>

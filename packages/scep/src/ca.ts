@@ -22,9 +22,13 @@ import { certToPem, certificateSerialHex, createCaCertificate, pemToCert } from 
  */
 
 const CA_COMMON_NAME = "Mattrax SCEP CA";
+
 const CA_ORGANIZATION = "Mattrax";
+
 const BASIC_CONSTRAINTS_OID = "2.5.29.19";
+
 const KEY_USAGE_OID = "2.5.29.15";
+
 const COMMON_NAME_OID = "2.5.4.3";
 
 /**
@@ -48,6 +52,7 @@ export const SCEP_CA_ROTATION_LEAD_DAYS = 400;
 
 /** A CA expiring within this window is `warning`; within 30 days, `critical`. */
 export const SCEP_CA_WARNING_DAYS = 90;
+
 export const SCEP_CA_CRITICAL_DAYS = 30;
 
 export type ScepLoadedCa = ScepStoredCa & {

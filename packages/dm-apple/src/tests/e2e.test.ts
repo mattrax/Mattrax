@@ -14,9 +14,8 @@ import { parsePlist, PlistValue } from "@mattrax/plist";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
+
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
-
-
 
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(

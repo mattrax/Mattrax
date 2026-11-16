@@ -12,6 +12,7 @@ import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "step-up-test-secret";
 
 const sha256 = async (value: string) =>
@@ -63,7 +64,7 @@ const makeContext = (verifyTotp = true) => {
     authSecret,
   }).pipe(Layer.provide(Layer.succeed(Db, db)), Layer.provide(stepUp));
 
-  const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>) =>
+  const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>): Promise<A> =>
     runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
@@ -76,7 +77,11 @@ const makeContext = (verifyTotp = true) => {
 };
 
 const session = (grant?: string) => {
-  const headers = new Headers({ cookie: "__Host-mattrax_session=test" });
+  const headers = new Headers({
+    cookie: "__Host-mattrax_session=test",
+    origin,
+    "x-effect-auth-csrf": "1",
+  });
 
   if (grant !== undefined) headers.set("x-mattrax-step-up", grant);
 
@@ -179,12 +184,14 @@ describe("step-up enforcement", () => {
   it("issues a grant from a verified authenticator code and rejects a wrong one", async () => {
     const { run } = makeContext(true);
 
-    const issued = await run((auth) =>
+    // SAFETY: the fake auth's step-up succeeds with the documented grant
+    // shape; the assertions below read exactly those fields.
+    const issued = (await run((auth) =>
       auth.stepUpTotp(session(), {
         code: "123456",
         action: "tenant-delete",
       }),
-    );
+    )) as { method: string; expiresAtMillis: number; grant: string };
 
     expect(issued.method).toBe("totp");
     expect(issued.expiresAtMillis).toBeGreaterThan(Date.now());

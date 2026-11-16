@@ -11,6 +11,7 @@ import { isBuiltInOwnerMember } from "./rbac.ts";
 import { settlePendingInvitations } from "./invitations.ts";
 
 const newId = () => crypto.randomUUID();
+
 const now = () => new Date();
 
 const normalizedDomain = (domain: string) => domain.trim().toLowerCase().replace(/\.$/, "");
@@ -139,10 +140,7 @@ export type EntraSyncProgress = {
   readonly groupsDelta?: string;
 };
 
-type EntraSyncDatabase = Pick<
-  EnterpriseDb,
-  "query" | "select" | "insert" | "update" | "delete"
->;
+type EntraSyncDatabase = Pick<EnterpriseDb, "query" | "select" | "insert" | "update" | "delete">;
 
 const ownerCount = (database: EntraSyncDatabase, organizationId: string) =>
   Effect.gen(function* () {
@@ -156,11 +154,7 @@ const ownerCount = (database: EntraSyncDatabase, organizationId: string) =>
     ).length;
   });
 
-const findIdentity = (
-  database: EntraSyncDatabase,
-  organizationId: string,
-  objectId: string,
-) =>
+const findIdentity = (database: EntraSyncDatabase, organizationId: string, objectId: string) =>
   database.query.ssoIdentity.findFirst({
     where: { organizationId, objectId },
   });
@@ -354,8 +348,18 @@ const syncGroupsPage = (
       });
 
       if (group.removed) {
-        if (existing)
+        if (existing) {
+          // Deleting the group cascades its memberships; those users must be
+          // refreshed so their devices drop the group's policies.
+          const members = yield* database
+            .select({ userId: schema.userGroupMember.userId })
+            .from(schema.userGroupMember)
+            .where(eq(schema.userGroupMember.groupId, existing.id));
+
+          for (const member of members) context.changedUserIds.add(member.userId);
           yield* database.delete(schema.userGroup).where(eq(schema.userGroup.id, existing.id));
+        }
+
         continue;
       }
 
@@ -580,9 +584,7 @@ export const syncEntraDirectory = (options: {
       const result = yield* usersDeltaPage(usersLink);
       // `tx` has the same query/builders as the outer db; the cast keeps the
       // page helpers usable from both.
-      yield* db.transaction((tx) =>
-        syncUsersPage(tx, result.items, userContext),
-      );
+      yield* db.transaction((tx) => syncUsersPage(tx, result.items, userContext));
 
       if (!result.nextLink) {
         usersDelta = result.deltaLink ?? undefined;
@@ -686,9 +688,7 @@ export const syncEntraDirectory = (options: {
 
     for (let page = 0; page < 1000; page++) {
       const result = yield* groupsDeltaPage(groupsLink);
-      yield* db.transaction((tx) =>
-        syncGroupsPage(tx, result.items, groupContext),
-      );
+      yield* db.transaction((tx) => syncGroupsPage(tx, result.items, groupContext));
 
       if (!result.nextLink) {
         groupsDelta = result.deltaLink ?? undefined;
@@ -924,11 +924,7 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
       yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
         Effect.catch((cause) =>
           Effect.sync(() => {
-            console.error(
-              "Entra directory membership refresh failed",
-              organizationId,
-              cause,
-            );
+            console.error("Entra directory membership refresh failed", organizationId, cause);
           }),
         ),
       );

@@ -29,7 +29,7 @@ which the current anonymous run does not provision.
 
 ### Budgets
 
-All assertions are errors in `.lighthouserc.cjs`. The categories are Lighthouse's
+All assertions are errors in `packages/config/lighthouserc.cjs`. The categories are Lighthouse's
 mobile, simulated-throttling preset.
 
 | Assertion                | Budget   |
@@ -83,7 +83,7 @@ assets (or the job targets a deployed preview environment).
 
 ## Static guards
 
-`tools/oxlint/anti-slop` runs through `pnpm lint` (and `vp lint`). Two rules
+`packages/config/oxlint` runs through `pnpm lint` (and `vp lint`). Two rules
 target the layout-shift and jank sources directly:
 
 - `anti-slop/no-layout-animating-transition` rejects `transition-all`,
@@ -99,7 +99,7 @@ target the layout-shift and jank sources directly:
   statically.
 
 Both rules have table-driven tests under
-`tools/oxlint/anti-slop/rules/*.test.ts`; `pnpm test` includes them.
+`packages/config/oxlint/rules/*.test.ts`; `pnpm test` includes them.
 
 ### Accessibility rules
 
@@ -227,7 +227,7 @@ and inventory changes, tracked separately.
 
 ## MDM and API cache policy
 
-Device-facing bodies are served by the API Worker (`apps/api`), not the dashboard Worker, so
+Device-facing bodies are served by the API Worker (`apps/cloud`), not the dashboard Worker, so
 they set their own `Cache-Control`:
 
 - Certificate assets (`/mdm/apple/assets/*`) are bound to a signed, expiring URL and the
@@ -237,7 +237,7 @@ they set their own `Cache-Control`:
   use `private, no-cache`: a device may store the response but must revalidate before
   applying old restrictions.
 - Authenticated `/api/*` responses default to `no-store` (`withDefaultNoStore` in
-  `apps/api/src/observability.ts`). A route that sets its own policy keeps it.
+  `apps/cloud/src/observability.ts`). A route that sets its own policy keeps it.
 - Uploaded applications and policy files are stored under keys that contain their SHA-256,
   so their R2 metadata is `private, max-age=31536000, immutable`. Backups are the exception:
   they are tenant snapshots and use `private, no-store`.

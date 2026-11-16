@@ -22,19 +22,24 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 // ─── OIDs ────────────────────────────────────────────────────────
 
 const SHA256_OID = "2.16.840.1.101.3.4.2.1";
+
 const SHA256_WITH_RSA_OID = "1.2.840.113549.1.1.11";
 
 // CMS attributes
 const CMS_CONTENT_TYPE = "1.2.840.113549.1.9.3";
+
 const CMS_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
 
 // SCEP attributes (VeriSign/iPlanet arc) — OIDs per RFC 8894 / draft-gutmann-scep
 const SCEP_MESSAGE_TYPE = "2.16.840.1.113733.1.9.2";
+
 const SCEP_PKI_STATUS = "2.16.840.1.113733.1.9.3";
 
 // OID .4 = failInfo (unused in success path)
 const SCEP_SENDER_NONCE = "2.16.840.1.113733.1.9.5";
+
 const SCEP_RECIPIENT_NONCE = "2.16.840.1.113733.1.9.6";
+
 const SCEP_TRANSACTION_ID = "2.16.840.1.113733.1.9.7";
 
 // PKCS#9 challengePassword, carried in the CSR attributes (not signedAttrs).
@@ -42,16 +47,24 @@ const PKCS9_CHALLENGE_PASSWORD = "1.2.840.113549.1.9.7";
 
 // Content encryption algorithms
 const AES_128_CBC_OID = "2.16.840.1.101.3.4.1.2";
+
 const AES_192_CBC_OID = "2.16.840.1.101.3.4.1.22";
+
 const AES_256_CBC_OID = "2.16.840.1.101.3.4.1.42";
+
 const DES3_CBC_OID = "1.2.840.113549.3.7";
 
 // SCEP message types
 const MSG_TYPE_PKCSREQ = "19";
+
 const MSG_TYPE_RENEWAL = "17";
+
 const MSG_TYPE_CERTREP = "3";
+
 const PKI_STATUS_SUCCESS = "0";
+
 const PKI_STATUS_FAILURE = "2";
+
 const SCEP_FAIL_INFO = "2.16.840.1.113733.1.9.4";
 
 // ─── EnvelopedData Decryption ─────────────────────────────────────
@@ -342,7 +355,14 @@ export async function buildScepCertFailure(
   );
   await signedData.sign(caPrivateKey, 0, "SHA-256");
 
-  return signedData.toSchema(true).toBER(false);
+  // SCEP messages are CMS ContentInfo values, not bare SignedData. A failure
+  // response has to be wrapped exactly like the success response.
+  return new pkijs.ContentInfo({
+    contentType: pkijs.ContentInfo.SIGNED_DATA,
+    content: signedData.toSchema(true),
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 export async function buildScepCertRep(
@@ -607,11 +627,17 @@ interface ScepRequest {
 
 // ASN.1 universal tag numbers (avoid instanceof across bundle boundaries)
 const TAG_INTEGER = 2;
+
 const TAG_OCTET_STRING = 4;
+
 const TAG_UTF8_STRING = 12;
+
 const TAG_NUMERIC_STRING = 18;
+
 const TAG_PRINTABLE_STRING = 19;
+
 const TAG_IA5_STRING = 22;
+
 const TAG_UNIVERSAL_CLASS = 1;
 
 function isUniversalTag(node: any, tagNumber: number): boolean {

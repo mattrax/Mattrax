@@ -16,6 +16,7 @@ type SsoAssertionClaims = {
   readonly exp: number;
   readonly purpose: string;
   readonly tenantId: string;
+  readonly jti: string;
 };
 
 const sign = (secret: string, payload: SsoAssertionClaims) => {
@@ -27,7 +28,7 @@ const sign = (secret: string, payload: SsoAssertionClaims) => {
 
 const authSecret = () => {
   if (process.env.AUTH_SECRET) return process.env.AUTH_SECRET;
-  const vars = readFileSync("apps/api/.dev.vars", "utf8");
+  const vars = readFileSync("apps/cloud/.dev.vars", "utf8");
   const match = vars.match(/^AUTH_SECRET=(.+)$/m);
 
   if (!match?.[1]) throw new Error("AUTH_SECRET is not configured for the SSO test");
@@ -52,6 +53,7 @@ test.describe("single sign-on", () => {
       exp: Date.now() + 60_000,
       purpose: "sso-assertion",
       tenantId: tenant.id,
+      jti: crypto.randomUUID(),
     });
 
     const response = await page.request.post(`${origin}/api/v1/ssoSignIn`, {

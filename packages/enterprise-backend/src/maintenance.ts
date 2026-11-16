@@ -245,6 +245,7 @@ export type MaintenanceResult = {
 };
 
 const day = 24 * 60 * 60 * 1000;
+
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /** Audit action recorded once per organisation per threshold per day. */

@@ -43,7 +43,9 @@ export const reservedAttributeKeyProblem = (key: string): string | null =>
 const NullOrString = Schema.NullOr(Schema.String);
 
 export const ATTRIBUTE_LABEL_MAX = 120;
+
 export const ATTRIBUTE_VALUE_MAX = 4096;
+
 export const ATTRIBUTE_OPTIONS_MAX = 100;
 
 /** One option of a `select` definition. */

@@ -10,17 +10,11 @@ import {
   type StepUpAction,
   type StepUpMethod,
 } from "@mattrax/enterprise-domain";
-import {
-  Data,
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  Predicate,
-  Redacted,
-  Schema,
-} from "effect";
+import { Data, DateTime, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { Schema as AuthSchema } from "@yielded/auth";
+import { and, eq, lt } from "drizzle-orm";
+import { Db } from "@mattrax/enterprise-core";
+import { schema } from "./schema.ts";
 import { signToken, verifyToken } from "./tokens.ts";
 
 const base64Url = (bytes: Uint8Array) =>
@@ -107,8 +101,7 @@ export const verifyStepUpGrant = (
   readStepUpGrant(secret, token, expected).pipe(
     Effect.map(
       (grant) =>
-        grant !== undefined &&
-        (expected.method === undefined || grant.method === expected.method),
+        grant !== undefined && (expected.method === undefined || grant.method === expected.method),
     ),
   );
 
@@ -202,6 +195,7 @@ export const stepUpServiceLayer = () =>
   Layer.effect(
     StepUpService,
     Effect.gen(function* () {
+      const db = yield* Db;
       const totpPersistence = yield* Totp.TotpPersistence;
       const totpCryptography = yield* Totp.TotpCryptography;
       const passkeyConfig = yield* Passkey.PasskeyConfig;
@@ -253,7 +247,19 @@ export const stepUpServiceLayer = () =>
             const record = snapshot?.record;
 
             if (!record?.secret) return false;
-            const nowMillis = DateTime.toEpochMillis(yield* DateTime.now);
+
+            const now = yield* DateTime.now;
+
+            const nowMillis = DateTime.toEpochMillis(now);
+            const nowDate = DateTime.toDate(now);
+
+            const [state] = yield* db
+              .select()
+              .from(schema.stepUpTotpState)
+              .where(eq(schema.stepUpTotpState.subjectId, subjectId))
+              .limit(1);
+
+            if (state?.lockedUntil && state.lockedUntil.getTime() > nowDate.getTime()) return false;
 
             const step = yield* Effect.acquireUseRelease(
               totpCryptography.decryptSecret(
@@ -273,10 +279,61 @@ export const stepUpServiceLayer = () =>
                   TOTP_POLICY.clockSkewSteps,
                 ),
               (secret) => Effect.sync(() => secret.fill(0)),
-            ).pipe(Effect.catch(() => Effect.succeed(false)));
+            ).pipe(Effect.catch(() => Effect.succeed(null)));
 
-            return step !== null;
-          }),
+            const failed = () =>
+              Effect.gen(function* () {
+                const failures = (state?.failures ?? 0) + 1;
+
+                const lockedUntil =
+                  failures >= 5 ? new Date(nowDate.getTime() + 15 * 60 * 1000) : null;
+
+                yield* db
+                  .insert(schema.stepUpTotpState)
+                  .values({
+                    subjectId,
+                    lastAcceptedStep: 0,
+                    failures,
+                    lockedUntil,
+                    updatedAt: nowDate,
+                  })
+                  .onDuplicateKeyUpdate({ set: { failures, lockedUntil, updatedAt: nowDate } });
+
+                return false;
+              });
+
+            if (step === null) return yield* failed();
+
+            // Accept each time-step once per account. The conditional update
+            // makes two concurrent guesses at the same step resolve to one
+            // winner.
+            const claimed = yield* db
+              .update(schema.stepUpTotpState)
+              .set({ lastAcceptedStep: step, failures: 0, lockedUntil: null, updatedAt: nowDate })
+              .where(
+                and(
+                  eq(schema.stepUpTotpState.subjectId, subjectId),
+                  lt(schema.stepUpTotpState.lastAcceptedStep, step),
+                ),
+              );
+
+            if (claimed.affectedRows === 0) {
+              // No row existed when it was read; claim the first step by
+              // inserting. A concurrent request that inserted first makes this
+              // a no-op, which is a replay.
+              const inserted = yield* db.insert(schema.stepUpTotpState).ignore().values({
+                subjectId,
+                lastAcceptedStep: step,
+                failures: 0,
+                lockedUntil: null,
+                updatedAt: nowDate,
+              });
+
+              if (inserted.affectedRows === 0) return false;
+            }
+
+            return true;
+          }).pipe(Effect.catch(() => Effect.succeed(false))),
 
         beginPasskey: (subjectId) =>
           Effect.gen(function* () {
@@ -417,9 +474,8 @@ export const stepUpServiceLayer = () =>
             // The assertion's `rawId` is the base64url protocol credential id.
             const rawId = yield* Effect.sync(() => {
               try {
-                const parsed: Schema.Schema.Type<typeof PasskeyAssertionResponse> = Schema.decodeUnknownSync(
-                  PasskeyAssertionResponse,
-                )(JSON.parse(input.response));
+                const parsed: Schema.Schema.Type<typeof PasskeyAssertionResponse> =
+                  Schema.decodeUnknownSync(PasskeyAssertionResponse)(JSON.parse(input.response));
 
                 return parsed.rawId;
               } catch {

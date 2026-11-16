@@ -22,6 +22,7 @@ import type { QueryClient } from "@tanstack/solid-query";
 export type CrossTabMessageType = "invalidate" | "set" | "reset";
 
 export const CROSS_TAB_CHANNEL = "mattrax:query-cache";
+
 export const CROSS_TAB_STORAGE_KEY = "mattrax:query-cache:last";
 
 /** Wait this long so a loop of mutations produces one message. */
@@ -120,7 +121,9 @@ type Sender = {
 };
 
 let installed = false;
+
 let sender: Sender | undefined;
+
 let activeTenantId: string | null = null;
 
 const pending = new Map<

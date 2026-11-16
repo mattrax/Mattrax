@@ -101,7 +101,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
         aria-modal="true"
         data-slot="dialog-content"
         class={cn(
-          "fixed top-1/2 left-1/2 z-50 z-dialog-content max-h-[calc(100dvh-2rem)] w-full -translate-x-1/2 -translate-y-1/2 overflow-y-auto text-foreground outline-none",
+          "fixed top-1/2 left-1/2 z-50 z-dialog-content max-h-[calc(100dvh-2rem)] w-full -translate-x-1/2 -translate-y-1/2 overflow-y-auto text-foreground outline-none sm:max-w-sm",
           local.class,
         )}
         onEscapeKeyDown={(event) => {

@@ -20,6 +20,22 @@ import { schema } from "./schema.ts";
  * the plan it is on allows, even when rows predate a lowered limit.
  */
 
+/** Enrolled devices and tenant count across a self-hosted deployment. */
+export const deploymentUsage = (db: EnterpriseDb) =>
+  Effect.gen(function* () {
+    const [devices] = yield* db
+      .select({ value: count() })
+      .from(schema.device)
+      .where(eq(schema.device.status, "enrolled"));
+
+    const [tenants] = yield* db.select({ value: count() }).from(schema.organization);
+
+    return {
+      deviceCount: devices?.value ?? 0,
+      tenantCount: tenants?.value ?? 0,
+    };
+  });
+
 /** Devices that cost a seat: enrolled only, not enrolling or retired. */
 export const billableDeviceCount = (db: EnterpriseDb, organizationId: string) =>
   Effect.gen(function* () {

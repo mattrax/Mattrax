@@ -11,11 +11,13 @@ import { Schema } from "effect";
  */
 
 export const SCRIPT_LANGUAGES = ["bash", "zsh", "sh", "pwsh"] as const;
+
 export const ScriptLanguage = Schema.Literals(SCRIPT_LANGUAGES);
 
 export type ScriptLanguage = typeof ScriptLanguage.Type;
 
 export const SCRIPT_RUN_AS = ["root", "user"] as const;
+
 export const ScriptRunAs = Schema.Literals(SCRIPT_RUN_AS);
 
 export type ScriptRunAs = typeof ScriptRunAs.Type;
@@ -64,18 +66,28 @@ export const SCRIPT_ACTIVE_STATUSES: ReadonlyArray<ScriptExecutionStatus> = [
 
 /** 32 KiB is a generous script and small enough for a single SQL statement. */
 export const SCRIPT_BODY_MAX_BYTES = 32 * 1024;
+
 export const SCRIPT_NAME_MAX_LENGTH = 120;
+
 export const SCRIPT_DESCRIPTION_MAX_LENGTH = 2_000;
+
 export const SCRIPT_ENVIRONMENT_MAX_ENTRIES = 32;
+
 export const SCRIPT_ENVIRONMENT_VALUE_MAX_BYTES = 4 * 1024;
+
 export const SCRIPT_TIMEOUT_DEFAULT_SECONDS = 300;
+
 export const SCRIPT_TIMEOUT_MAX_SECONDS = 86_400;
+
 export const SCRIPT_TIMEOUT_MIN_SECONDS = 1;
+
 export const SCRIPT_INTERVAL_MIN_SECONDS = 60;
+
 export const SCRIPT_INTERVAL_MAX_SECONDS = 30 * 24 * 60 * 60;
 
 /** Captured output kept per stream. The rest is dropped with a marker. */
 export const SCRIPT_OUTPUT_MAX_BYTES = 64 * 1024;
+
 export const SCRIPT_OUTPUT_TRUNCATED_MARKER = "\n[mattrax: output truncated]";
 
 /** A manual run that no device has collected by this point is expired. */
@@ -86,7 +98,9 @@ export const SCRIPT_EXECUTION_RETENTION_DAYS = 30;
 
 /** Bounded list pages. */
 export const SCRIPT_LIST_MAX = 200;
+
 export const SCRIPT_EXECUTION_LIST_DEFAULT = 50;
+
 export const SCRIPT_EXECUTION_LIST_MAX = 200;
 
 /** Request types used by the management layer for script delivery. */
@@ -117,6 +131,7 @@ const triggerTypeOf = (value: string): ScriptTriggerType | undefined =>
 const utf8Length = (value: string): number => new TextEncoder().encode(value).length;
 
 const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 const CRON_FIELD = /^[\d*/,-]+$/;
 
 /**

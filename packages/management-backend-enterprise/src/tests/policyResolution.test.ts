@@ -12,11 +12,7 @@ const policy = (
   updatedAt = "2026-01-01T00:00:00.000Z",
 ): PolicyResolutionPolicy => ({ id, name: id, priority, updatedAt });
 
-const configuration = (
-  policyId: string,
-  kind = "mttx.apple.device",
-  data: Schema.Json = {},
-) => ({
+const configuration = (policyId: string, kind = "mttx.apple.device", data: Schema.Json = {}) => ({
   policyId,
   kind,
   data,
@@ -429,9 +425,7 @@ describe("user-assigned policies", () => {
       users: [user("user-a")],
       userGroups: [directoryGroup("group-a")],
       userGroupMembers: [{ groupId: "group-a", userId: "user-a" }],
-      userGroupAssignments: [
-        { groupId: "group-a", policyId: "policy-a", mode: "exclude" },
-      ],
+      userGroupAssignments: [{ groupId: "group-a", policyId: "policy-a", mode: "exclude" }],
       policies: [policy("policy-a")],
       configurations: [configuration("policy-a")],
     });

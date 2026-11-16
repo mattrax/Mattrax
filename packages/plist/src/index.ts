@@ -10,8 +10,11 @@ import {
 export * from "./schema.js";
 
 const PlistArray = Schema.Array(PlistValue);
+
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
 const PlistBytes = Schema.instanceOf(Uint8Array);
+
 const PlistDate = Schema.instanceOf(Date);
 
 export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistParseError> =>

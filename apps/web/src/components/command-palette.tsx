@@ -49,6 +49,7 @@ import {
 import { cn } from "~/lib/utils";
 
 const RECENTS_KEY = "mattrax:recents";
+
 const SEARCH_LIMIT = 30;
 
 type Recent = { id: string; title: string; hint?: string; group: string; href: string };

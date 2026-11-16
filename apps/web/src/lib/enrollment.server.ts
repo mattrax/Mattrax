@@ -1,5 +1,5 @@
-import { env } from "cloudflare:workers";
 import { getRequestEvent } from "@solidjs/web";
+import { fetchApi } from "~/server/api";
 import {
   AndroidEnrollment,
   EnrollmentQuestion,
@@ -42,6 +42,7 @@ const ServerEnrollmentResponse = Schema.Union([
 ]);
 
 const decodeEnrollment = Schema.decodeUnknownOption(ServerEnrollmentResponse);
+
 const decodeEnrollmentResponse = Schema.decodeUnknownOption(EnrollmentResponse);
 
 /**
@@ -84,7 +85,7 @@ export async function lookupPublicEnrollment(
   let response: Response;
 
   try {
-    response = await env.API.fetch(new Request(url, { headers }));
+    response = await fetchApi(new Request(url, { headers }));
   } catch {
     return { status: "unavailable" };
   }
@@ -161,7 +162,7 @@ export async function submitPublicEnrollmentAnswers(
   let response: Response;
 
   try {
-    response = await env.API.fetch(
+    response = await fetchApi(
       new Request(url, { method: "POST", headers, body: JSON.stringify(input) }),
     );
   } catch {

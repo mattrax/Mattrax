@@ -48,6 +48,8 @@ const languageHint = (language: ScriptDraftValues["language"]) =>
  * so validation hints and limits stay identical in both places.
  */
 export function ScriptEditor(props: {
+  /** Stable script id; a refetch keeps the same value, a route change does not. */
+  identity?: string;
   initial?: ScriptDraftValues;
   submitLabel: string;
   saving: boolean;
@@ -62,13 +64,18 @@ export function ScriptEditor(props: {
     props.initial?.environment ?? [],
   );
 
+  // Seed once per script. The detail page passes a fresh object after every
+  // refetch, and reseeding then discarded unsaved body/environment edits.
+  let seededIdentity: string | undefined;
+
   createEffect(
-    () => props.initial,
-    (initial) => {
-      if (initial) {
-        setDraft({ ...initial, environment: [...initial.environment] });
-        setEnvironment([...initial.environment]);
-      }
+    () => ({ identity: props.identity, initial: props.initial }),
+    ({ identity, initial }) => {
+      if (seededIdentity === identity || !initial) return;
+
+      seededIdentity = identity;
+      setDraft({ ...initial, environment: [...initial.environment] });
+      setEnvironment([...initial.environment]);
     },
   );
 

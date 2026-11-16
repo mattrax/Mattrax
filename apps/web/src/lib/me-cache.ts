@@ -2,6 +2,7 @@ import { MeResponse } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 
 const ME_CACHE_KEY = "mattrax:me-cache:v1";
+
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const CachedMe = Schema.Struct({

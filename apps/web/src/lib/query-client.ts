@@ -22,7 +22,14 @@ import { reportGlobalError } from "~/lib/global-errors";
 // auth pages never download the query client.
 const [hydrationComplete, setHydrationComplete] = createSignal(isServer);
 
-if (!isServer) onHydrationEnd(() => setHydrationComplete(true));
+if (!isServer)
+  onHydrationEnd(() => {
+    // Let the router finish claiming the first route before any page query
+    // runs. A query that fails immediately could otherwise notify the cache
+    // while a hydration signal is still unreadable, and the resulting
+    // NotReadyError happened outside the component tree (blank page).
+    setTimeout(() => setHydrationComplete(true), 0);
+  });
 
 /** `false` until the initial server markup has been claimed by the client. */
 export const isHydrated = hydrationComplete;

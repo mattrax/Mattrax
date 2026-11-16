@@ -77,8 +77,16 @@ const timingSafeEqual = (left: string, right: string): boolean => {
 const verify = async (secret: string, message: string, token: string): Promise<boolean> =>
   timingSafeEqual(await sign(secret, message), token);
 
-const profileMessage = (policyId: string, kind: string, deviceToken: string): string =>
-  ["profile", policyId, kind, deviceToken].join("\u0000");
+const profileMessage = (context: AppleProfileTokenContext): string =>
+  [
+    "profile",
+    "v2",
+    context.policyId,
+    context.kind,
+    context.deviceToken,
+    context.deviceId,
+    String(context.expiresAt),
+  ].join("\u0000");
 
 const assetMessage = (context: AppleAssetTokenContext): string =>
   ["asset", "v2", context.policyId, context.kind, context.deviceId, String(context.expiresAt)].join(
@@ -89,6 +97,10 @@ export type AppleProfileTokenContext = {
   readonly policyId: string;
   readonly kind: string;
   readonly deviceToken: string;
+  /** Stable internal device id the profile link is bound to. */
+  readonly deviceId: string;
+  /** Unix seconds after which the URL is rejected. */
+  readonly expiresAt: number;
 };
 
 export type AppleAssetTokenContext = {
@@ -122,15 +134,13 @@ export const appleAssetTokenExpiresAt = (now: number = Date.now()): number =>
 export const signAppleProfileToken = (
   secret: string,
   context: AppleProfileTokenContext,
-): Promise<string> =>
-  sign(secret, profileMessage(context.policyId, context.kind, context.deviceToken));
+): Promise<string> => sign(secret, profileMessage(context));
 
 export const verifyAppleProfileToken = (
   secret: string,
   token: string,
   context: AppleProfileTokenContext,
-): Promise<boolean> =>
-  verify(secret, profileMessage(context.policyId, context.kind, context.deviceToken), token);
+): Promise<boolean> => verify(secret, profileMessage(context), token);
 
 /**
  * Sign an expiring, device-bound asset URL token.

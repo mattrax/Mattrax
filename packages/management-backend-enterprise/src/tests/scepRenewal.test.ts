@@ -10,7 +10,6 @@ import {
   createDeviceCertificate,
   sealCaPrivateKey,
 } from "@mattrax/scep";
-import * as asn1js from "asn1js";
 import {
   buildPkcsReq,
   buildTestCsr,
@@ -22,8 +21,11 @@ import { ScepRepositoryLive } from "../scep.js";
 import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+
 const authSecret = "scep-renewal-e2e-secret";
+
 const scope = { organizationId: "tenant-1" };
+
 const now = new Date("2026-11-10T12:00:00.000Z");
 
 /**
@@ -197,7 +199,9 @@ describe("SCEP renewal during a CA rotation (management layer)", () => {
       }).pipe(Effect.provide(ScepService.pipe(Layer.provide(repositoryLayer)))),
     );
 
-    const signedData = new pkijs.SignedData({ schema: asn1js.fromBER(response).result });
+    const signedData = new pkijs.SignedData({
+      schema: pkijs.ContentInfo.fromBER(response).content,
+    });
 
     const pkiStatus = signedData.signerInfos[0]!.signedAttrs!.attributes.find(
       (attribute) => attribute.type === "2.16.840.1.113733.1.9.3",

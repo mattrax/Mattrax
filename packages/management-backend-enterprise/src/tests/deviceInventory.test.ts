@@ -4,11 +4,14 @@ import { openSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "../index.js";
-import {   dbRows, makeDb, tableName, type Row, stringValue } from "./fake-db.js";
+import { dbRows, makeDb, tableName, type Row, stringValue } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "device-inventory-test-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const now = new Date("2026-11-11T10:00:00.000Z");
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
@@ -47,7 +50,7 @@ const setup = () => {
     ],
   });
 
-// SAFETY: The fake store implements only the query chains these tests exercise.
+  // SAFETY: The fake store implements only the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
   return { db, backend };
@@ -208,10 +211,9 @@ describe("InstalledApplicationList command results", () => {
 
     const rows = applicationRows(db);
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => stringValue(row.bundleId)).sort((left, right) => left.localeCompare(right))).toEqual([
-      "com.apple.Safari",
-      "com.example.Slack",
-    ]);
+    expect(
+      rows.map((row) => stringValue(row.bundleId)).sort((left, right) => left.localeCompare(right)),
+    ).toEqual(["com.apple.Safari", "com.example.Slack"]);
     expect(rows.find((row) => row.bundleId === "com.apple.Safari")).toMatchObject({
       version: "18",
       hasUpdateAvailable: true,

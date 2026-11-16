@@ -550,8 +550,11 @@ export const openAbmCredential = async (
 // ─── OAuth + typed API client ────────────────────────────────────
 
 export const ABM_DEFAULT_TOKEN_URL = "https://account.apple.com/auth/oauth2/token";
+
 export const ABM_DEFAULT_ASSERTION_AUDIENCE = "https://account.apple.com/auth/oauth2/v2/token";
+
 export const ABM_BUSINESS_BASE_URL = "https://api-business.apple.com/v1";
+
 export const ABM_SCHOOL_BASE_URL = "https://api-school.apple.com/v1";
 
 export type AppleApiConfig = {

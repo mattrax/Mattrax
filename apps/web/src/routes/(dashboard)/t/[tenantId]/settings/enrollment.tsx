@@ -146,14 +146,17 @@ export default function EnrollmentSettingsPage() {
     qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
 
   const save = useMutation(() => ({
-    mutationFn: () =>
-      enterprise.patchTenantEnrollment(params.tenantId, {
+    mutationFn: () => {
+      if (maxDevices() < 0) throw new Error("Enter a maximum device count, or 0 for unlimited.");
+
+      return enterprise.patchTenantEnrollment(params.tenantId, {
         code: code() || null,
         maxDevices: maxDevices(),
         enabledApple: apple(),
         enabledWindows: windows(),
         enabledAndroid: android(),
-      }),
+      });
+    },
     onSuccess: async () => {
       setEdit(false);
       await invalidate();
@@ -359,7 +362,10 @@ export default function EnrollmentSettingsPage() {
         </p>
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Enrollment password" hint="Leave blank to allow open enrollment.">
+          <Field
+            label="Enrollment password"
+            hint="At least 8 characters. Leave blank to allow open enrollment."
+          >
             <PasswordInput
               value={code()}
               onInput={(e) => setCode(e.currentTarget.value)}
@@ -370,8 +376,14 @@ export default function EnrollmentSettingsPage() {
             <Input
               type="number"
               min="0"
-              value={String(maxDevices())}
-              onInput={(e) => setMaxDevices(Math.max(0, Number(e.currentTarget.value || 0)))}
+              value={maxDevices() < 0 ? "" : String(maxDevices())}
+              onInput={(e) => {
+                const raw = e.currentTarget.value;
+
+                // Keep an empty field empty instead of collapsing it to the
+                // very different "0 = unlimited" value.
+                setMaxDevices(raw === "" ? -1 : Math.max(0, Math.floor(Number(raw) || 0)));
+              }}
             />
           </Field>
         </div>

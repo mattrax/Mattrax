@@ -1,46 +1,23 @@
 version: 2
 
-# One PR per dependency family keeps the workspace lockfile reviewable. A
-# dependency may only match one group, so the patterns are disjoint.
-updates:
-  - package-ecosystem: npm
-    directory: /
+# One weekly PR across every ecosystem keeps the workspace lockfile and the
+# deployment images reviewable as a unit. This mirrors the shape used by
+# specta-rs/specta: a single multi-ecosystem group with catch-all patterns.
+multi-ecosystem-groups:
+  mattrax-deps:
     schedule:
       interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    groups:
-      effect:
-        patterns:
-          - effect
-          - "@effect/*"
-          - "@yielded/*"
-      ui:
-        patterns:
-          - solid-js
-          - "@solidjs/*"
-          - "@kobalte/*"
-          - "@tanstack/*"
-          - "@fontsource-variable/*"
-          - tailwindcss
-          - "@tailwindcss/*"
-          - tailwind-merge
-          - tw-animate-css
-          - class-variance-authority
-          - clsx
-      tooling:
-        patterns:
-          - typescript
-          - oxlint
-          - "@oxlint/*"
-          - vite
-          - vite-plus
-          - vitest
-          - tsx
-          - drizzle-kit
-          - drizzle-orm
-          - cf
-          - "@cloudflare/*"
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    multi-ecosystem-group: mattrax-deps
+    patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    multi-ecosystem-group: mattrax-deps
+    patterns: ["*"]
     ignore:
       # The Solid 2 RC and the Kobalte alpha it targets move in lockstep with
       # the UI; a bot bumping either alone breaks the component layer.
@@ -51,7 +28,12 @@ updates:
       - dependency-name: "@kobalte/*"
         update-types: [version-update:semver-major]
 
-  - package-ecosystem: github-actions
+  - package-ecosystem: docker
     directory: /
-    schedule:
-      interval: monthly
+    multi-ecosystem-group: mattrax-deps
+    patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    multi-ecosystem-group: mattrax-deps
+    patterns: ["*"]

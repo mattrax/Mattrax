@@ -249,9 +249,13 @@ export type AndroidHarness = {
 };
 
 const organizationId = "org-compliance";
+
 const enterpriseName = "enterprises/LC123456";
+
 const serviceAccountEmail = "android-compliance@test-project.iam.gserviceaccount.com";
+
 const audience = "https://mdm.example.test/api/v1/android/pubsub";
+
 const jwksUri = "https://keys.compliance.test/jwks";
 
 const encoder = new TextEncoder();

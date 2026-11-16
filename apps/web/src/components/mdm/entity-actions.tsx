@@ -130,9 +130,9 @@ const reportBulk = (entity: Entity, copy: { ok: string; fail: string }, outcome:
   });
 };
 
-const confirmTarget = (rows: Named[], entity: string) =>
+const confirmTarget = (rows: Named[], entity: string, verb = "Delete") =>
   rows.length > 3
-    ? `Delete ${rows.length} ${entity === "policy" ? "policies" : `${entity}s`}`
+    ? `${verb} ${rows.length} ${entity === "policy" ? "policies" : `${entity}s`}`
     : rows.map((row) => row.name).join(", ");
 
 function ConfirmAction(props: {
@@ -158,7 +158,15 @@ function ConfirmAction(props: {
       <Button variant={props.destructive ? "destructive" : "outline"} onClick={() => setOpen(true)}>
         {props.title}
       </Button>
-      <Dialog open={open()} onOpenChange={setOpen}>
+      <Dialog
+        open={open()}
+        onOpenChange={(next) => {
+          // Closing (including Escape) resets the typed phrase; reopening must
+          // never start armed for the destructive action.
+          if (!next) setValue("");
+          setOpen(next);
+        }}
+      >
         <DialogContent class="max-w-md rounded-lg border border-border bg-popover p-6">
           <DialogHeader>
             <DialogTitle>{props.title}</DialogTitle>
@@ -428,7 +436,9 @@ export function EntityActions(props: {
           title="Unenroll"
           description="Unenroll selected devices."
           target={
-            props.allMatching ? entityNoun("device", count()) : confirmTarget(rows(), "device")
+            props.allMatching
+              ? `Unenroll ${entityNoun("device", count())}`
+              : confirmTarget(rows(), "device", "Unenroll")
           }
           destructive
           onConfirm={async () => {

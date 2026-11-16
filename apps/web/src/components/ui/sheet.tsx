@@ -69,6 +69,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
   );
 
   const [local, others] = splitProps(mergedProps, ["class", "children", "side", "showCloseButton"]);
+  const context = SheetPrimitive.useDialogContext();
   let opener: HTMLElement | null = null;
 
   return (
@@ -81,6 +82,15 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
         class={cn("z-sheet-content text-foreground", local.class)}
         onOpenAutoFocus={() => {
           opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.key !== "Escape") return;
+
+          // Kobalte's dismissable layer misses Escape for lazily-mounted
+          // sheets in this RC; close from the DOM event like the dialog does.
+          event.preventDefault();
+          event.stopPropagation();
+          context.close();
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();

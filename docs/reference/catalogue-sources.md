@@ -112,7 +112,7 @@ pnpm catalog:check
 ```
 
 `catalog:sync` writes the raw Windows catalogue to `data/catalog/windows.json`, then reuses
-`scripts/split-policy-catalog.mjs` to produce the per-collection browser assets. The split
+`scripts/split-policy-catalog.ts` to produce the per-collection browser assets. The split
 is deterministic; only changed upstream settings and the manifest timestamp should differ.
 
 If a source changes shape, the adapter will fail loudly rather than write a partial

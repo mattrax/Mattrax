@@ -108,6 +108,9 @@ export const randomCertificateSerial = (): ArrayBuffer => {
 };
 
 export const arrayBufferToBase64 = arrayBufferToBase64Raw;
+
 export const base64ToArrayBuffer = base64ToArrayBufferRaw;
+
 export const pemEncode = pemEncodeRaw;
+
 export const pemDecode = pemDecodeRaw;

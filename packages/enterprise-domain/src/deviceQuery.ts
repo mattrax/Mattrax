@@ -10,7 +10,9 @@ import { Schema } from "effect";
  */
 
 const DevicePlatform = Schema.Literals(["apple", "win", "android"]);
+
 const DeviceStatusValue = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
+
 const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
 
 export type DeviceQueryHealth = typeof DeviceHealthLevel.Type | "stale";
@@ -342,7 +344,12 @@ const matchesCondition = (
     }
 
     case "health": {
-      if (condition.value === "stale") return Boolean(device.health?.stale);
+      if (condition.value === "stale") {
+        const stale = Boolean(device.health?.stale);
+
+        return condition.op === "ne" ? !stale : stale;
+      }
+
       const matches = device.health?.level === condition.value;
 
       return condition.op === "ne" ? !matches : matches;

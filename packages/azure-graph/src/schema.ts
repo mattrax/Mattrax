@@ -5,6 +5,7 @@ import { Schema } from "effect";
  * accept `null` and the mappers below normalise it to `undefined`.
  */
 const optionalString = Schema.optional(Schema.NullOr(Schema.String));
+
 const optionalBoolean = Schema.optional(Schema.NullOr(Schema.Boolean));
 
 const RemovedReason = Schema.Struct({

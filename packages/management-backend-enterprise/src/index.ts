@@ -9,7 +9,9 @@ import {
 import {
   DeviceHealthManagementApp,
   deriveDeviceHealth,
+  installerSkipReason,
   resolveTenantBranding,
+  selectInstaller,
   shouldApplyReportedName,
 } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
@@ -130,9 +132,13 @@ import {
 } from "./policy.ts";
 
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
+
 const DEVICE_INFORMATION_ACTIVATION_SERVER_TOKEN = "660CF896-1647-4FAD-B8A8-7A2190B5B554";
+
 const DEVICE_INFORMATION_CONFIGURATION_ID = "13DE3EE0-D5A8-46E9-B967-27E56A4D918F";
+
 const MANAGEMENT_DECLARATION_ID = "F8C4C3A1-2B6E-4D7F-A9E5-3C8B7D9E2F4A";
+
 const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A67";
 
 /**
@@ -142,6 +148,7 @@ const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A6
 export const DEVICE_INFORMATION_STATUS_ITEMS = DEVICE_INFORMATION_BASE_STATUS_ITEMS;
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const now = () => new Date();
 
 const internal = () => new InternalServerError();
@@ -1878,8 +1885,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
     type CatalogueApplication = typeof s.application.$inferSelect;
 
+    type CatalogueInstaller = typeof s.applicationInstaller.$inferSelect;
+
     type ResolvedPolicyApplication = {
       readonly catalogueApplicationId?: string;
+      readonly installerId?: string;
       readonly source: "upload" | "manifest" | "store";
       readonly bundleId: string;
       readonly version: string;
@@ -1906,6 +1916,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     const resolvePolicyApplication = (
       configuration: AppleApplicationConfiguration,
       catalogue: CatalogueApplication | undefined,
+      installer: CatalogueInstaller | undefined,
     ): ResolvedPolicyApplicationResult => {
       if (configuration.type === "catalogue") {
         if (!catalogue)
@@ -1914,22 +1925,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               "the referenced application is not in this tenant's catalogue (it may have been deleted)",
           };
 
-        if (!catalogue.bundleId)
+        const bundleId = installer?.bundleId ?? catalogue.bundleId;
+
+        if (!bundleId)
           return {
             reason: "the catalogue entry has no bundle identifier, so installs cannot be tracked",
           };
 
-        const version = catalogue.version ?? "0";
+        const version = installer?.version ?? catalogue.version ?? "0";
         const title = catalogue.name;
+        const source = installer?.source ?? catalogue.source;
+        const installerId = installer?.id;
 
-        if (catalogue.source === "upload") {
-          if (!catalogue.r2Key || !catalogue.sha256)
-            return { reason: "the catalogue entry has no uploaded file" };
+        if (source === "upload") {
+          const r2Key = installer?.r2Key ?? catalogue.r2Key;
+          const sha256 = installer?.sha256 ?? catalogue.sha256;
+
+          if (!r2Key || !sha256) return { reason: "the catalogue entry has no uploaded file" };
 
           if (
             !isApplePackageUpload({
-              fileName: catalogue.fileName,
-              contentType: catalogue.contentType,
+              fileName: installer?.fileName ?? catalogue.fileName,
+              contentType: installer?.contentType ?? catalogue.contentType,
             })
           )
             return {
@@ -1940,46 +1957,53 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           return {
             application: {
               catalogueApplicationId: catalogue.id,
+              installerId,
               source: "upload",
-              bundleId: catalogue.bundleId,
+              bundleId,
               version,
               title,
-              sha256: catalogue.sha256,
-              fileName: catalogue.fileName ?? undefined,
-              contentType: catalogue.contentType ?? undefined,
+              sha256,
+              fileName: installer?.fileName ?? catalogue.fileName ?? undefined,
+              contentType: installer?.contentType ?? catalogue.contentType ?? undefined,
               configuration: configuration.configuration,
               managementFlags: 1,
             },
           };
         }
 
-        if (catalogue.source === "store") {
-          if (!catalogue.storeId) return { reason: "the catalogue entry has no App Store id" };
+        if (source === "store") {
+          const storeId = installer?.storeId ?? catalogue.storeId;
+
+          if (!storeId) return { reason: "the catalogue entry has no App Store id" };
 
           return {
             application: {
               catalogueApplicationId: catalogue.id,
+              installerId,
               source: "store",
-              bundleId: catalogue.bundleId,
+              bundleId,
               version,
               title,
-              storeId: catalogue.storeId,
+              storeId,
               configuration: configuration.configuration,
               managementFlags: 1,
             },
           };
         }
 
-        if (!catalogue.manifestUrl) return { reason: "the catalogue entry has no manifest URL" };
+        const manifestUrl = installer?.manifestUrl ?? catalogue.manifestUrl;
+
+        if (!manifestUrl) return { reason: "the catalogue entry has no manifest URL" };
 
         return {
           application: {
             catalogueApplicationId: catalogue.id,
+            installerId,
             source: "manifest",
-            bundleId: catalogue.bundleId,
+            bundleId,
             version,
             title,
-            manifestUrl: catalogue.manifestUrl,
+            manifestUrl,
             configuration: configuration.configuration,
             managementFlags: 1,
           },
@@ -2031,6 +2055,24 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           .where(eq(s.application.organizationId, device.organizationId));
 
         const catalogueById = new Map(catalogue.map((app) => [app.id, app]));
+
+        const catalogueInstallers = yield* db
+          .select()
+          .from(s.applicationInstaller)
+          .where(eq(s.applicationInstaller.organizationId, device.organizationId));
+
+        const installersByApplication = new Map<string, typeof catalogueInstallers>();
+
+        for (const installer of catalogueInstallers) {
+          const current = installersByApplication.get(installer.applicationId) ?? [];
+
+          current.push(installer);
+          installersByApplication.set(installer.applicationId, current);
+        }
+
+        const deviceCapabilities = Array.isArray(device.capabilities)
+          ? device.capabilities.filter((value): value is string => typeof value === "string")
+          : undefined;
 
         const installed = yield* db
           .select({ bundleId: s.deviceApplication.bundleId })
@@ -2086,12 +2128,43 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             continue;
           }
 
-          const resolved = resolvePolicyApplication(
-            configuration,
+          const catalogueApplication =
             configuration.type === "catalogue"
               ? catalogueById.get(configuration.applicationId!)
-              : undefined,
+              : undefined;
+
+          const catalogueInstallers =
+            configuration.type === "catalogue" && catalogueApplication
+              ? (installersByApplication.get(catalogueApplication.id) ?? [])
+              : [];
+
+          const candidates = catalogueInstallers.filter(
+            (installer) =>
+              !(installer.source === "upload" && appleOsFamily(device.osEdition) !== "macOS"),
           );
+
+          const installer = selectInstaller(candidates, {
+            proto: "apple",
+            osVersion: device.osVersion,
+            capabilities: deviceCapabilities,
+          });
+
+          // A catalogue that has installers must not fall back to its legacy
+          // columns: that would deliver an artefact this device does not match.
+          if (catalogueInstallers.length > 0 && !installer) {
+            yield* Effect.logWarning(
+              `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: ${
+                installerSkipReason(candidates, {
+                  proto: "apple",
+                  osVersion: device.osVersion,
+                  capabilities: deviceCapabilities,
+                }) ?? "no installer matches this device"
+              }`,
+            );
+            continue;
+          }
+
+          const resolved = resolvePolicyApplication(configuration, catalogueApplication, installer);
 
           if (!resolved.application) {
             yield* Effect.logWarning(
@@ -2134,17 +2207,20 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (!application.sha256 || !application.fileName) continue;
 
-            const identifier = application.catalogueApplicationId
-              ? catalogueApplicationAssetIdentifier(application.catalogueApplicationId)
+            // Multi-installer catalogues sign the selected installer, so two
+            // versions of the same app cannot share one asset URL. A legacy
+            // catalogue row without installer rows falls back to its own id.
+            const assetOwnerId = application.installerId ?? application.catalogueApplicationId;
+
+            const identifier = assetOwnerId
+              ? catalogueApplicationAssetIdentifier(assetOwnerId)
               : configurationAssetIdentifier(row.policyId, row.kind);
 
             const token = yield* Effect.tryPromise({
               try: () =>
                 signAppleAssetToken(authSecret ?? "", {
-                  policyId: application.catalogueApplicationId ?? row.policyId,
-                  kind: application.catalogueApplicationId
-                    ? CATALOGUE_APPLICATION_ASSET_KIND
-                    : row.kind,
+                  policyId: assetOwnerId ?? row.policyId,
+                  kind: assetOwnerId ? CATALOGUE_APPLICATION_ASSET_KIND : row.kind,
                   deviceId: device.id,
                   expiresAt: appleInstallAssetExpiresAt(at.getTime()),
                 }),
@@ -3751,14 +3827,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               catch: internal,
             });
 
-            // The device has now fetched the sync token, so this version has
-            // been observed. Persist it to stop repeating the DDM sync prompt.
-            yield* db
-              .update(s.device)
-              .set({ ddmDeclarationsToken: tokens.declarationsToken })
-              .where(eq(s.device.id, device.id))
-              .pipe(Effect.mapError(internal));
-
+            // Do not persist the token here: a device can fetch tokens and
+            // then drop before fetching items. The items handler records it
+            // only once the payload has actually been delivered, so the next
+            // check-in retries a failed sync.
             return tokens;
           }),
         ),
@@ -3971,12 +4043,23 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (catalogueApplicationId) {
               if (!token) return null;
 
-              const [application] = yield* db
+              // The identifier is an installer id for catalogues created after
+              // multi-installer support, and an application id for older links.
+              const [installer] = yield* db
                 .select()
-                .from(s.application)
-                .where(eq(s.application.id, catalogueApplicationId))
+                .from(s.applicationInstaller)
+                .where(eq(s.applicationInstaller.id, catalogueApplicationId))
                 .limit(1)
                 .pipe(Effect.mapError(internal));
+
+              const [application] = installer
+                ? [installer]
+                : yield* db
+                    .select()
+                    .from(s.application)
+                    .where(eq(s.application.id, catalogueApplicationId))
+                    .limit(1)
+                    .pipe(Effect.mapError(internal));
 
               if (!application?.r2Key || !application.sha256) return null;
 
@@ -4110,16 +4193,31 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
-      getAppleProfile: (policyId, kind) =>
+      getAppleProfile: (policyId, kind, deviceId) =>
         provideDb(
           Effect.gen(function* () {
             const [row] = yield* db
-              .select({ configuration: s.configuration, organizationId: s.policy.organizationId })
+              .select({
+                configuration: s.configuration,
+                organizationId: s.policy.organizationId,
+                deviceOrganizationId: s.device.organizationId,
+                deviceStatus: s.device.status,
+              })
               .from(s.configuration)
               .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+              .innerJoin(s.device, eq(s.device.id, deviceId))
               .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
               .limit(1)
               .pipe(Effect.mapError(internal));
+
+            // The signed link is device-bound; a leaked URL for a device that
+            // was removed, unenrolled or belongs to another tenant must fail.
+            if (
+              !row ||
+              row.deviceStatus !== "enrolled" ||
+              row.deviceOrganizationId !== row.organizationId
+            )
+              return null;
 
             if (!row) return null;
             const parsed = parseConfigurationKind(row.configuration.kind);

@@ -27,8 +27,11 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 // ─── Constants ───────────────────────────────────────────────────
 
 const DATA_CONTENT_TYPE_OID = "1.2.840.113549.1.7.1";
+
 const SIGNED_DATA_CONTENT_TYPE_OID = "1.2.840.113549.1.7.2";
+
 const CONTENT_TYPE_ATTRIBUTE_OID = "1.2.840.113549.1.9.3";
+
 const MESSAGE_DIGEST_ATTRIBUTE_OID = "1.2.840.113549.1.9.4";
 
 const CERTIFICATE_PATTERN =

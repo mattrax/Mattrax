@@ -47,7 +47,9 @@ const DURATION: Record<ToastTone, number> = {
 };
 
 const [toasts, setToasts] = createSignal<ReadonlyArray<Toast>>([]);
+
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
+
 let nextId = 1;
 
 function clearTimer(id: number) {

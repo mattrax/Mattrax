@@ -105,6 +105,7 @@ export type LegacyProfileChanges = {
 
 /** The command payloads this module reads back from device history. */
 const InstallProfilePayload = Schema.Struct({ Payload: Schema.String });
+
 const RemoveProfilePayload = Schema.Struct({ Identifier: Schema.String });
 
 /** SHA-256 of the profile bytes, used to notice a policy edit. */

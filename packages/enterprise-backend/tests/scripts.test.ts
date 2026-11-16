@@ -29,7 +29,9 @@ import { permissionForMethod } from "../src/rbac.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const now = new Date("2026-11-16T12:00:00.000Z");
+
 const orgId = "org-1";
+
 const otherOrgId = "org-2";
 
 const user = {

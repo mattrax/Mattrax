@@ -6,14 +6,18 @@
  */
 
 export const DEFAULT_BRAND_NAME = "Mattrax";
+
 export const DEFAULT_SUPPORT_EMAIL = "hello@mattrax.app";
 
 /** Stone-900, the colour used by the default dashboard chrome. */
 export const DEFAULT_BRAND_COLOR = "#1c1917";
 
 const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const LOGO_DATA_URL = /^data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,[a-z0-9+/=\s]+$/i;
+
 const HTTP_URL = /^https?:\/\/[^\s]+$/i;
 
 export type TenantBrandingSource = {

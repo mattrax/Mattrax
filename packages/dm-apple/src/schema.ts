@@ -70,15 +70,15 @@ export type CheckOutPlist = typeof CheckOutPlist.Type;
 
 /**
  * `UserAuthenticate` is the two-transaction handshake macOS uses before a
- * user-channel session. The first request carries `UserID` and no
+ * user-channel session. The first request carries a user identifier and no
  * `DigestResponse`; a second request carries the digest a client computed from
- * a challenge the server returned.
+ * a challenge the server returned. User Enrollment sends
+ * `EnrollmentUserID` instead of `UserID`, so neither may be required here.
  */
 export const UserAuthenticatePlist = Schema.Struct({
   MessageType: Schema.Literal("UserAuthenticate"),
   ...UserChannelIdentifierFields,
   ...CheckinIdentifierFields,
-  UserID: Schema.String,
   DigestResponse: Schema.optional(Schema.String),
 });
 
@@ -131,14 +131,15 @@ export type CommandResultPlist = typeof CommandResultPlist.Type;
 
 export const SetBootstrapTokenPlist = Schema.Struct({
   MessageType: Schema.Literal("SetBootstrapToken"),
-  UDID: Schema.String,
+  // User Enrollment and newer flows identify the device by EnrollmentID.
+  UDID: Schema.optional(Schema.String),
   BootstrapToken: Schema.optional(Schema.String),
   EnrollmentID: Schema.optional(Schema.String),
 });
 
 export const GetBootstrapTokenPlist = Schema.Struct({
   MessageType: Schema.Literal("GetBootstrapToken"),
-  UDID: Schema.String,
+  UDID: Schema.optional(Schema.String),
   EnrollmentID: Schema.optional(Schema.String),
 });
 
@@ -149,7 +150,7 @@ export const GetBootstrapTokenPlist = Schema.Struct({
  */
 export const ReturnToServicePlist = Schema.Struct({
   MessageType: Schema.Literal("ReturnToService"),
-  UDID: Schema.String,
+  UDID: Schema.optional(Schema.String),
   EnrollmentID: Schema.optional(Schema.String),
 });
 

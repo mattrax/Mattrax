@@ -101,6 +101,7 @@ export function PolicyConfigurationEditor() {
   const [config, setConfig] = createSignal<Config>({});
   const [initial, setInitial] = createSignal("{}");
   const [raw, setRaw] = createSignal("{}");
+  const [rawError, setRawError] = createSignal<string | null>(null);
 
   createEffect(
     () => row()?.id,
@@ -114,10 +115,11 @@ export function PolicyConfigurationEditor() {
       setConfig(decoded);
       setInitial(JSON.stringify(decoded));
       setRaw(JSON.stringify(decoded, null, 2));
+      setRawError(null);
     },
   );
 
-  const dirty = createMemo(() => JSON.stringify(config()) !== initial());
+  const dirty = createMemo(() => JSON.stringify(config()) !== initial() || rawError() !== null);
   const configuredKinds = createMemo(() => Object.keys(config()).length);
 
   const unsaved = useUnsavedChanges(() => canEdit() && dirty());
@@ -145,6 +147,14 @@ export function PolicyConfigurationEditor() {
   const toggleEdit = () => {
     if (!writable()) return;
 
+    if (canEdit() && rawError()) {
+      toast.error("Fix the invalid JSON before leaving the editor", {
+        description: rawError() ?? undefined,
+      });
+
+      return;
+    }
+
     if (canEdit() && dirty()) save.mutate();
     else setCanEdit(!canEdit());
   };
@@ -159,6 +169,7 @@ export function PolicyConfigurationEditor() {
   const discard = () => {
     setConfig(JSON.parse(initial()));
     setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
+    setRawError(null);
     setCanEdit(false);
   };
 
@@ -307,15 +318,28 @@ export function PolicyConfigurationEditor() {
                     value={raw()}
                     onInput={(event) => setRaw(event.currentTarget.value)}
                     onChange={(event) => {
+                      const text = event.currentTarget.value;
+
                       try {
-                        const parsed = JSON.parse(event.currentTarget.value);
+                        const parsed = JSON.parse(text);
                         setConfig(parsed);
                         setRaw(JSON.stringify(parsed, null, 2));
-                      } catch {
-                        // Keep the raw text; the save button will stay disabled.
+                        setRawError(null);
+                      } catch (error) {
+                        // Keep the typed text and tell the user why it cannot
+                        // be saved instead of silently dropping it.
+                        setRaw(text);
+                        setRawError(
+                          error instanceof Error ? error.message : "The JSON is not valid.",
+                        );
                       }
                     }}
                   />
+                  <Show when={rawError()}>
+                    <p role="alert" class="text-[12px] text-destructive">
+                      {rawError()}
+                    </p>
+                  </Show>
                 </div>
               </Match>
             </Switch>

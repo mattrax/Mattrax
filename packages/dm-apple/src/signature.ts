@@ -40,7 +40,9 @@ export const MAX_SCEP_CMS_BASE64_LENGTH = 1024 * 1024;
 export const CLIENT_AUTH_EKU_OID = "1.3.6.1.5.5.7.3.2";
 
 const SIGNED_DATA_OID = "1.2.840.113549.1.7.2";
+
 const BASIC_CONSTRAINTS_OID = "2.5.29.19";
+
 const EXT_KEY_USAGE_OID = "2.5.29.37";
 
 // ─── Public Types ────────────────────────────────────────────────

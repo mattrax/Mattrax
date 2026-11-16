@@ -213,25 +213,33 @@ export default function PolicyDesignerPage() {
             </div>
           </Show>
 
-          <PolicyDesigner
-            mode="dashboard"
-            pageActions={pageActions()}
-            initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
-            persistedDraft={
-              configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
-            }
-            storageKey={storageKey()}
-            saving={save.isPending}
-            saveDisabled={!writable()}
-            error={save.error}
-            onSave={
-              writable()
-                ? (draft) => {
-                    void save.mutate(draft);
-                  }
-                : undefined
-            }
-          />
+          {/* Remount per policy: the designer holds its draft in local state,
+              so a reused route would otherwise keep the previous policy's
+              selections when both policies are already cached. */}
+          <Show keyed when={params.policyId}>
+            {(_policyId) => (
+              <PolicyDesigner
+                mode="dashboard"
+                pageActions={pageActions()}
+                initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
+                persistedDraft={
+                  configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+                }
+                storageKey={storageKey()}
+                saving={save.isPending}
+                saveDisabled={!writable()}
+                canDeploy={writable()}
+                error={save.error}
+                onSave={
+                  writable()
+                    ? (draft) => {
+                        void save.mutate(draft);
+                      }
+                    : undefined
+                }
+              />
+            )}
+          </Show>
         </Show>
       </div>
     </Errored>

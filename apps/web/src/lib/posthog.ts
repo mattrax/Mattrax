@@ -15,11 +15,17 @@ export type PostHogUser = {
 };
 
 let initialized = false;
+
 let starting: Promise<boolean> | undefined;
+
 let posthog: PostHog | undefined;
+
 let loading: Promise<PostHog | undefined> | undefined;
+
 let lastUserId: string | null | undefined;
+
 let lastTenantId: string | null | undefined;
+
 let fetchInstalled = false;
 
 /**

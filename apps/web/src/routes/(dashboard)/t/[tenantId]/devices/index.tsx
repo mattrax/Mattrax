@@ -82,6 +82,8 @@ const FILTER_PARAM_KEYS = [
   "staleDays",
   "health",
   "push",
+  "attributeKey",
+  "attributeValue",
   "sort",
   "direction",
   "query",
@@ -307,6 +309,8 @@ export default function DevicesPage() {
   // Skip the initial run: the signals were seeded from the URL, so rewriting it
   // would start a redundant navigation (and delay other settled work).
   let urlInitialised = false;
+  let urlWriteTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(urlWriteTimer));
   createEffect(
     () => ({
       q: debouncedQ(),
@@ -354,7 +358,12 @@ export default function DevicesPage() {
       if (state.direction === "desc") next.direction = state.direction;
 
       if (state.query) next.query = state.query;
-      setSearchParams(next, { replace: true });
+
+      // Coalesce rapid control changes into one router write. Every
+      // `setSearchParams` is a navigation, and a burst of them trips the
+      // router's redirect guard.
+      clearTimeout(urlWriteTimer);
+      urlWriteTimer = setTimeout(() => setSearchParams(next, { replace: true }), 150);
     },
   );
 

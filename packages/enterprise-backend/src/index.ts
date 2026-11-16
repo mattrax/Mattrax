@@ -24,8 +24,30 @@ export {
 
 export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "./billingWebhook.js";
 
+export { BillingService, BillingServiceLive, makeStripeBillingService } from "./billingService.js";
+
+export { licenseBillingRoutes } from "./licenseBilling.js";
+
+export type { LicenseBillingConfig } from "./licenseBilling.js";
+
+export { makeRemoteBillingService } from "./remoteBillingService.js";
+
+export type { RemoteBillingOptions } from "./remoteBillingService.js";
+
+export type {
+  BillingCheckoutInput,
+  BillingError,
+  BillingInvoicesInput,
+  BillingPortalInput,
+  BillingOperations,
+  BillingSummaryInput,
+  BillingUsageInput,
+  StripeBillingOptions,
+} from "./billingService.js";
+
 export {
   billableDeviceCount,
+  deploymentUsage,
   reconcileSubscriptionQuantity,
   reconcileSubscriptionSweep,
   syncStripeCustomerName,
@@ -316,19 +338,18 @@ export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "./email
 
 export {
   DEFAULT_EMAIL_FROM,
+  EmailFailure,
+  describeEmailFailure,
   formatEmailAddress,
-  mailRelayTransport,
+  makeEmailTransport,
   parseEmailSender,
-  postmarkEmailTransport,
   replyToAddress,
-  resendEmailTransport,
+  smtpEmailTransport,
 } from "./email.js";
 
-export type {
-  EmailAddress,
-  HttpEmailTransportOptions,
-  MailRelayTransportOptions,
-} from "./email.js";
+export type { EmailAddress } from "./email.js";
+
+export type { SmtpTransportOptions } from "./smtp.js";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,

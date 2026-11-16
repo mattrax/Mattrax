@@ -41,15 +41,19 @@ describe("GET /mdm/apple/profiles", () => {
       Effect.succeed({ content: profile, contentType: "application/x-apple-aspen-config" }),
     );
 
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
     const token = await signAppleProfileToken(TEST_CONFIG.authSecret, {
       policyId: "policy-1",
       kind: "mttx.apple.device",
       deviceToken: "device-token-1",
+      deviceId: "device-1",
+      expiresAt,
     });
 
     const response = await handler(
       new Request(
-        `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}`,
+        `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}&deviceId=device-1&expiresAt=${expiresAt}`,
       ),
     );
 
@@ -83,15 +87,19 @@ describe("GET /mdm/apple/profiles", () => {
       }),
     );
 
+    const expiresAt = Math.floor(Date.now() / 1000) + 60;
+
     const token = await signAppleProfileToken(TEST_CONFIG.authSecret, {
       policyId: "policy-1",
       kind: "mttx.apple.device",
       deviceToken: "other-device",
+      deviceId: "device-1",
+      expiresAt,
     });
 
     const response = await handler(
       new Request(
-        `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}`,
+        `http://localhost/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device?token=${token}&deviceId=device-1&expiresAt=${expiresAt}`,
       ),
     );
 

@@ -212,10 +212,7 @@ export const sendTransactionalEmail = (
 
     if (!input.email.local) return yield* enqueueEmail(input.db, input);
 
-    const delivered = yield* Effect.tryPromise({
-      try: () => input.email!.send(input.message),
-      catch: (cause) => cause,
-    }).pipe(
+    const delivered = yield* input.email.send(input.message).pipe(
       Effect.as(true),
       Effect.catch(() => Effect.succeed(false)),
     );
@@ -396,10 +393,7 @@ export const drainEmailOutbox = (
         );
 
         const failure = payload
-          ? yield* Effect.tryPromise({
-              try: () => transport.send(payload),
-              catch: (cause) => cause,
-            }).pipe(
+          ? yield* transport.send(payload).pipe(
               Effect.as(null),
               Effect.catch((cause) => Effect.succeed(describeFailure(cause))),
             )

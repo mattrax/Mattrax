@@ -72,6 +72,7 @@ const configColumns = (config: MutableJsonObject) => {
 };
 
 const rowHeight = 64;
+
 const gap = 12;
 
 const defaultConfig = (type: DashboardWidgetType) => {

@@ -9,6 +9,7 @@ import {
 import { SITEMAP_PATH, createSeoHandler, renderRobots, renderSitemap } from "./seo";
 
 const origin = "https://e.mattrax.app";
+
 const docsRoutes = ["/docs/", "/docs/api/", "/docs/getting-started/quick-start"];
 
 const locs = (xml: string): string[] =>

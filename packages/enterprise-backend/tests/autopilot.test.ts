@@ -19,6 +19,7 @@ import {
 import { makeDb } from "./helpers.js";
 
 const organizationId = "org-1";
+
 const azureTenantId = "11111111-1111-1111-1111-111111111111";
 
 const device = (overrides: Partial<GraphAutopilotDevice> = {}): GraphAutopilotDevice => ({

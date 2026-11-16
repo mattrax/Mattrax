@@ -9,7 +9,9 @@ import {
 } from "./tenant";
 
 const acme = { id: "tenant-a1b2", slug: "acme", name: "Acme" };
+
 const globex = { id: "tenant-c3d4", slug: "globex", name: "Globex" };
+
 const tenants = [acme, globex];
 
 describe("tenant URL resolution", () => {

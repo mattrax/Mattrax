@@ -1,7 +1,7 @@
-import { env } from "cloudflare:workers";
+import { fetchApi } from "~/server/api";
 
 export async function apiFetch(request: Request) {
   "use server";
 
-  return await env.API.fetch(request);
+  return await fetchApi(request);
 }

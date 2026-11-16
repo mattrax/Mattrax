@@ -8,8 +8,11 @@ export type PlistObject = { readonly [key: string]: PlistValue };
 export type PlistInput = PlistValue | null | undefined;
 
 const APPLICATION_TRUE = new Set(["true", "yes", "1", "on"]);
+
 const APPLICATION_FALSE = new Set(["false", "no", "0", "off"]);
+
 const STATUS_TRUE = new Set(["enabled", "true", "yes", "on", "1"]);
+
 const STATUS_FALSE = new Set(["disabled", "false", "no", "off", "0"]);
 
 export function isPlistObject(value: PlistInput): value is PlistObject {
@@ -23,9 +26,7 @@ export function isPlistObject(value: PlistInput): value is PlistObject {
   );
 }
 
-export function isPlistArray(
-  value: PlistInput,
-): value is ReadonlyArray<PlistValue> {
+export function isPlistArray(value: PlistInput): value is ReadonlyArray<PlistValue> {
   return Array.isArray(value);
 }
 

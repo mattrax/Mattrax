@@ -120,9 +120,25 @@ func runProcess(_ path: String, _ arguments: [String], stdin: Data? = nil)
     try? input.fileHandleForWriting.close()
   }
 
-  let stdout = out.fileHandleForReading.readDataToEndOfFile()
-  let stderr = err.fileHandleForReading.readDataToEndOfFile()
+  // Drain both pipes concurrently. Reading stdout to EOF before touching
+  // stderr deadlocks when the child fills the stderr pipe first.
+  let drained = DispatchGroup()
+  var stdout = Data()
+  var stderr = Data()
 
+  drained.enter()
+  DispatchQueue.global().async {
+    stdout = out.fileHandleForReading.readDataToEndOfFile()
+    drained.leave()
+  }
+
+  drained.enter()
+  DispatchQueue.global().async {
+    stderr = err.fileHandleForReading.readDataToEndOfFile()
+    drained.leave()
+  }
+
+  drained.wait()
   process.waitUntilExit()
 
   return (Int(process.terminationStatus), stdout, stderr)
@@ -264,10 +280,14 @@ func networkHash() -> String {
 
 func scriptDigest(_ script: InstalledScript) -> String {
   var hash: UInt64 = 1469598103934665603
+  let environment = script.environment
+    .map { "\($0.name)=\($0.value)=\($0.secret)" }
+    .joined(separator: "\u{1e}")
   let source =
     [script.id, script.language, script.body, script.runAs, String(script.timeoutSeconds),
       script.trigger.type, String(script.trigger.intervalSeconds ?? 0),
-      script.trigger.cronExpression ?? ""].joined(separator: "\u{1f}")
+      script.trigger.cronExpression ?? "", script.serverUrl, script.deviceToken,
+      environment].joined(separator: "\u{1f}")
 
   for byte in Data(source.utf8) {
     hash = (hash ^ UInt64(byte)) &* 1099511628211
@@ -311,7 +331,8 @@ func cronMatches(_ expression: String?, _ date: Date) -> Bool {
 
   let calendar = Calendar(identifier: .gregorian)
   let components = calendar.dateComponents([.minute, .hour, .day, .month, .weekday], from: date)
-  let weekday = ((components.weekday ?? 1) + 5) % 7
+  // Calendar counts 1=Sunday…7=Saturday; cron counts 0=Sunday…6=Saturday.
+  let weekday = (components.weekday ?? 1) - 1
 
   return cronField(fields[0], components.minute ?? 0)
     && cronField(fields[1], components.hour ?? 0)

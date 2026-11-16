@@ -33,7 +33,9 @@ import { Effect, Schema as EffectSchema } from "effect";
  * primary/unique index is therefore bounded; unbounded payloads stay `text`.
  */
 const id = (name = "id") => varchar(name, { length: 255 });
+
 const shortText = (name: string) => varchar(name, { length: 255 });
+
 const timestamp = (name: string) => datetime(name, { mode: "date", fsp: 3 });
 
 export const user = mysqlTable(
@@ -178,8 +180,11 @@ export const authSchema: any = authStorage.schema;
  * value that crosses it.
  */
 export const authIdentifiers: any = authSchema.identifiers;
+
 export const authCredentials: any = authSchema.credentials;
+
 export const authSessions: any = authSchema.sessions;
+
 export const authPending: any = authSchema.pending;
 
 /**
@@ -189,6 +194,43 @@ export const authPending: any = authSchema.pending;
  */
 export const authPasskeyCredentials: any = authSchema.passkeyCredentials;
 /* oxlint-enable typescript/no-explicit-any */
+
+/**
+ * Consumed SSO assertion ids.
+ *
+ * The assertion token is carried in a redirect URL, so it can leak through
+ * history or proxy logs. Recording its id makes each link single-use for the
+ * lifetime of the assertion, rather than a replayable session credential.
+ */
+export const ssoAssertion = mysqlTable(
+  "sso_assertion",
+  {
+    jti: shortText("jti").primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [index("sso_assertion_expires_idx").on(table.expiresAt)],
+);
+
+/**
+ * Step-up TOTP replay and brute-force state.
+ *
+ * A six-digit code stays valid for several 30-second steps; without recording
+ * the step that was accepted, one observed code can mint several grants. The
+ * failure counter also gives step-up the same lockout the library applies to
+ * its own TOTP actions.
+ */
+export const stepUpTotpState = mysqlTable(
+  "step_up_totp_state",
+  {
+    subjectId: id("subject_id").primaryKey(),
+    lastAcceptedStep: int("last_accepted_step").notNull().default(0),
+    failures: int("failures").notNull().default(0),
+    lockedUntil: timestamp("locked_until"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("step_up_totp_state_locked_idx").on(table.lockedUntil)],
+);
 
 /**
  * TOTP factor state. `state` is the JSON record produced by the library; its
@@ -854,6 +896,44 @@ export const subscription = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [index("subscription_reference_id_idx").on(table.referenceId)],
+);
+
+/**
+ * A self-hosted deployment licensed to run Mattrax.
+ *
+ * Hosted tenants are billed through `subscription`; a self-hosted operator is
+ * billed once for the whole deployment. The license key is stored hashed and
+ * authenticates the deployment's calls to the cloud billing API. Usage is
+ * reported by the deployment, and the Stripe subscription quantity is
+ * reconciled against `deviceCount`.
+ */
+export const deploymentLicense = mysqlTable(
+  "deployment_license",
+  {
+    id: id().primaryKey(),
+    name: shortText("name").notNull(),
+    licenseKeyHash: shortText("license_key_hash").notNull(),
+    licenseKeyPrefix: shortText("license_key_prefix").notNull(),
+    /** Public origin of the deployment, bound on first contact. */
+    origin: shortText("origin"),
+    contactEmail: varchar("contact_email", { length: 320 }),
+    stripeCustomerId: shortText("stripe_customer_id"),
+    stripeSubscriptionId: shortText("stripe_subscription_id"),
+    plan: shortText("plan").notNull().default("device"),
+    status: varchar("status", { length: 32 }),
+    deviceCount: int("device_count").notNull().default(0),
+    tenantCount: int("tenant_count").notNull().default(0),
+    periodEnd: timestamp("period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    lastSeenAt: timestamp("last_seen_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("deployment_license_key_unique").on(table.licenseKeyHash),
+    uniqueIndex("deployment_license_customer_unique").on(table.stripeCustomerId),
+    index("deployment_license_last_seen_idx").on(table.lastSeenAt),
+  ],
 );
 
 /**
@@ -2710,6 +2790,53 @@ export const application = mysqlTable(
   (table) => [index("application_organization_id_idx").on(table.organizationId)],
 );
 
+/**
+ * One installable artefact for a catalogue application.
+ *
+ * An application can offer several installers across versions and delivery
+ * channels (native package, manifest, App Store/Play Store). The MDM layer
+ * selects one per device from its platform, OS version and reported
+ * capabilities. The legacy columns on `application` mirror the first installer
+ * for older readers and are kept in sync by the API.
+ */
+export const applicationInstaller = mysqlTable(
+  "application_installer",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    source: varchar("source", { length: 16, enum: ["manifest", "store", "upload"] })
+      .notNull()
+      .default("manifest"),
+    bundleId: shortText("bundle_id"),
+    version: shortText("version"),
+    manifestUrl: text("manifest_url"),
+    storeId: shortText("store_id"),
+    fileName: shortText("file_name"),
+    contentType: shortText("content_type"),
+    size: int("size"),
+    sha256: shortText("sha256"),
+    r2Key: text("r2_key"),
+    /** Minimum device OS version, inclusive. */
+    minOsVersion: shortText("min_os_version"),
+    /** Capability the device must report (for example `vpp`). */
+    requiredCapability: shortText("required_capability"),
+    /** Higher values win when several installers match. */
+    priority: int("priority").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("application_installer_organization_idx").on(table.organizationId),
+    index("application_installer_application_idx").on(table.applicationId),
+  ],
+);
+
 export const applicationGroup = mysqlTable(
   "application_group",
   {
@@ -3162,6 +3289,7 @@ export const relations = defineRelations(
     accountSessionContext,
     accountEmailChange,
     accountRecovery,
+    stepUpTotpState,
     registrationVerification,
     invitation,
     subscription,

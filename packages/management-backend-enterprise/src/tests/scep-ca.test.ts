@@ -7,6 +7,7 @@ import { ScepRepositoryLive } from "../scep.js";
 import { dbRows, makeDb, tableName, jsonValue, type Store } from "./fake-db.js";
 
 const authSecret = "scep-ca-test-secret";
+
 const scope = { organizationId: "tenant-1" };
 
 // SAFETY: The fake store implements only the query chains these tests exercise;

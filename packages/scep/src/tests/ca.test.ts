@@ -25,6 +25,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+
 const scope: ScepCaScope = { organizationId: "tenant-ca" };
 
 // SAFETY: tests provide every requirement before running, so no requirements
@@ -57,9 +58,11 @@ describe("SCEP CA lifetime", () => {
     expect(description.notAfter.getTime()).toBe(now.getTime() + SCEP_CA_LIFETIME_DAYS * DAY);
     // The certificate is self-describing: the tenant id is in the OU.
     const certificate = pemToCert(stored.certPem);
+
     const ou = certificate.subject.typesAndValues.find(
       (attribute) => attribute.type === "2.5.4.11",
     );
+
     expect(ou).toBeDefined();
     expect(description.fingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
     expect(description.serialNumber).toBe("1");

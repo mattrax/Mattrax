@@ -7,6 +7,7 @@ import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+
 const now = new Date("2026-11-10T12:00:00.000Z");
 
 const run = (db: ReturnType<typeof makeDb>) =>

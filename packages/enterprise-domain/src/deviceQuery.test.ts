@@ -81,6 +81,22 @@ describe("device query", () => {
     expect(evaluateDeviceQuery(query, device({ status: "unenrolled" }), { now })).toBe(false);
   });
 
+  it("negates the stale health condition", () => {
+    const stale = device({ health: { level: "critical", stale: true } });
+    const fresh = device({ health: { level: "attention", stale: false } });
+
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", op: "ne", value: "stale" }] }, stale, {
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", op: "ne", value: "stale" }] }, fresh, {
+        now,
+      }),
+    ).toBe(true);
+  });
+
   it("round-trips a shareable URL query", () => {
     const query = parseDeviceQueryText(
       'platform is apple and osVersion at least 14.4 and model contains "MacBook Pro" and staleDays at least 14',

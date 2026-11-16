@@ -73,9 +73,13 @@ export type WebhookDeliveryOutcome = {
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+
 const DEFAULT_CONCURRENCY = 4;
+
 const MAX_ERROR_LENGTH = 500;
+
 const RETENTION_DAYS = 30;
+
 const MAX_ATTEMPTS = 3;
 
 const newEventId = () => `evt_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
@@ -211,8 +215,9 @@ const postWebhook = async (input: {
       },
       body,
       // Never follow a redirect: a public URL could redirect to an internal
-      // address that the static guard cannot see.
-      redirect: "error",
+      // address that the static guard cannot see. `manual` is the runtime's
+      // supported spelling; a 3xx is then reported as a failed delivery.
+      redirect: "manual",
     },
     { timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS, fetch: input.fetch },
   );
@@ -666,7 +671,9 @@ export const pruneWebhookDeliveries = (
   }).pipe(Effect.catchCause(() => Effect.succeed(0)));
 
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+
 export const WEBHOOK_MAX_RETRY_ATTEMPTS = MAX_ATTEMPTS;
+
 export const WEBHOOK_DELIVERY_RETENTION_DAYS = RETENTION_DAYS;
 
 /**

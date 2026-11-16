@@ -5,6 +5,7 @@ import type { EnterpriseSchema } from "./schema.ts";
 import { toCsv } from "./deviceSearch.ts";
 
 export const AUDIT_SEARCH_DEFAULT_LIMIT = 50;
+
 export const AUDIT_SEARCH_MAX_LIMIT = 200;
 
 /** Hard ceiling for audit exports so a bad request cannot buffer all history. */

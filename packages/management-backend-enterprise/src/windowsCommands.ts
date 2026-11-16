@@ -6,9 +6,13 @@ import { Option, Schema } from "effect";
  * delivery planner.
  */
 export const WINDOWS_POLICY_REPLACE_REQUEST_TYPE = "WindowsPolicyReplace";
+
 export const WINDOWS_POLICY_DELETE_REQUEST_TYPE = "WindowsPolicyDelete";
+
 export const WINDOWS_INVENTORY_GET_REQUEST_TYPE = "WindowsInventoryGet";
+
 export const WINDOWS_APPLICATION_INVENTORY_GET_REQUEST_TYPE = "WindowsApplicationInventoryGet";
+
 export const WINDOWS_UNENROLL_REQUEST_TYPE = "WindowsUnenroll";
 
 /** Request types whose delivery is generated from device state, not a queue. */

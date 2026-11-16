@@ -27,6 +27,7 @@ import { schema } from "./schema.ts";
  */
 
 export const WEBHOOK_DELIVERY_PAGE_DEFAULT = 25;
+
 export const WEBHOOK_DELIVERY_PAGE_MAX = 100;
 
 const KNOWN_EVENTS = new Set<string>([...WEBHOOK_EVENT_TYPES, WEBHOOK_TEST_EVENT]);

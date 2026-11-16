@@ -83,6 +83,7 @@ export const validRedirectUri = (value: string) => {
  * the token endpoint.
  */
 const PKCE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+
 const PKCE_VERIFIER = /^[A-Za-z0-9\-._~]{43,128}$/;
 
 const validCodeChallenge = (value: string | null): value is string =>

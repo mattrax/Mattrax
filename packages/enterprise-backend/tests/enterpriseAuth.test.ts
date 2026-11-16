@@ -10,10 +10,12 @@ import {
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-auth-test-secret";
 
 const sha256 = async (value: string) =>
@@ -97,6 +99,7 @@ const seedUserAndTenant = () => {
 
 const bearer = (token: string) =>
   new Request(`${origin}/api/v1/account/api-tokens`, {
+    method: "POST",
     headers: { authorization: `Bearer ${token}` },
   });
 
@@ -207,6 +210,63 @@ describe("enterprise API tokens", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
+  it("stops a read-scoped token from mutating account security", async () => {
+    const now = new Date();
+    const raw = "mtx_read_only_mutation";
+
+    const context = makeContext(
+      {
+        ...seedUserAndTenant(),
+        account_api_token: [
+          {
+            id: "token-read",
+            userId: "user-1",
+            name: "Monitor",
+            tokenPrefix: raw.slice(0, 12),
+            tokenHash: await sha256(raw),
+            scopes: ["read"],
+            tenantId: null,
+            lastUsedAt: null,
+            expiresAt: null,
+            revokedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+      { email: makeEmailTransport(async () => {}) },
+    );
+
+    await expect(
+      context.run((auth) =>
+        auth.requestEmailChange(bearer(raw), { newEmail: "attacker@example.com" }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    // A write token is still a bearer credential and reaches the handler.
+    const writeRaw = "mtx_write_can_mutate";
+    context.db.store.account_api_token.push({
+      id: "token-write",
+      userId: "user-1",
+      name: "Writer",
+      tokenPrefix: writeRaw.slice(0, 12),
+      tokenHash: await sha256(writeRaw),
+      scopes: ["read", "write"],
+      tenantId: null,
+      lastUsedAt: null,
+      expiresAt: null,
+      revokedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      context.run((auth) =>
+        auth.requestEmailChange(bearer(writeRaw), { newEmail: "next@example.com" }),
+      ),
+    ).resolves.toMatchObject({ status: "ok" });
+  });
+
   it("stops an API token from minting a broader or cross-tenant token", async () => {
     const now = new Date();
     const raw = "mtx_existing_read_token";
@@ -251,7 +311,8 @@ describe("enterprise API tokens", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
-    // A narrower token in the same tenant is allowed.
+    // Read tokens are monitoring credentials: they cannot mint tokens at all,
+    // even at the same scope.
     await expect(
       context.run((auth) =>
         auth.createApiToken(bearer(raw), {
@@ -260,7 +321,7 @@ describe("enterprise API tokens", () => {
           tenantId: "tenant-1",
         }),
       ),
-    ).resolves.toMatchObject({ item: { scopes: ["read"], tenantId: "tenant-1" } });
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
   });
 });
 
@@ -276,7 +337,7 @@ describe("email verification", () => {
     const sent: Array<{ text: string }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -296,13 +357,11 @@ describe("email verification", () => {
     const sent: Array<unknown> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: {
-        send: async (message: any) => {
-          sent.push(message);
+      email: makeEmailTransport(async (message: any) => {
+        sent.push(message);
 
-          throw new Error("provider down");
-        },
-      },
+        throw new Error("provider down");
+      }),
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
@@ -337,7 +396,7 @@ describe("email verification", () => {
     }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -366,7 +425,7 @@ describe("email verification", () => {
     const sent: Array<{ to: string; subject: string; text: string }> = [];
 
     const { run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
@@ -383,7 +442,7 @@ describe("email verification", () => {
     const sent: Array<{ text: string }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -420,7 +479,7 @@ describe("email change ceremony", () => {
     sent.length = 0;
 
     return makeContext(initial, {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
   };
 

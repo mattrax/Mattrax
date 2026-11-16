@@ -11,7 +11,9 @@ import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "device-secret-test-secret";
+
 const key = "AAAA-BBBB-CCCC-DDDD-EEEE";
 
 const deviceRow = (id: string, organizationId: string, overrides: Schema.JsonObject = {}) => {

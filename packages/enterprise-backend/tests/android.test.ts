@@ -26,12 +26,19 @@ import {
 import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";
+
 const otherOrganizationId = "org-2";
+
 const enterpriseName = "enterprises/LC123";
+
 const deviceName = `${enterpriseName}/devices/device-1`;
+
 const serviceAccountEmail = "android@test-project.iam.gserviceaccount.com";
+
 const audience = "https://mattrax.test/api/v1/android/pubsub";
+
 const jwksUri = "https://keys.test/jwks";
+
 const kid = "android-test-key";
 
 let privateKey: CryptoKey;

@@ -1,0 +1,17 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "erasableSyntaxOnly": true,
+    "outDir": "./dist"
+  },
+  "include": ["src", "scripts", "../cloud/.cloudflare/types"],
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    { "path": "../cloud" },
+    { "path": "../../packages/enterprise-backend" },
+    { "path": "../../packages/enterprise-core" }
+  ]
+}

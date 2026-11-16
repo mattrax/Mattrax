@@ -16,6 +16,7 @@ const expectForbidden = async (run: Promise<unknown>, message?: string) => {
 };
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
 
 const planConfig = () =>

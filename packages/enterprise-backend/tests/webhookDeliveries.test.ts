@@ -15,7 +15,9 @@ import { RequiredPermission } from "../src/rbac.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
+
 const now = new Date("2026-11-16T12:00:00.000Z");
 
 const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch } = {}) => {

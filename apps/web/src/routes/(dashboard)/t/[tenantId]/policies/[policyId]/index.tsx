@@ -594,7 +594,13 @@ export default function PolicyDetailPage() {
         onAdd={(configurations) => addConfigurations.mutate(configurations)}
       />
 
-      <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
+      <Dialog
+        open={deleteOpen()}
+        onOpenChange={(open) => {
+          if (!open) setConfirm("");
+          setDeleteOpen(open);
+        }}
+      >
         <DialogContent class="max-w-md rounded-lg p-6">
           <DialogHeader>
             <DialogTitle>Delete {row()?.name ?? "policy"}?</DialogTitle>

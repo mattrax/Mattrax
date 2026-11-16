@@ -30,8 +30,11 @@ const RSA_ALGORITHM: RsaHashedKeyGenParams = {
 };
 
 const SHA256_OID = "2.16.840.1.101.3.4.2.1";
+
 const SHA256_WITH_RSA_OID = "1.2.840.113549.1.1.11";
+
 const CONTENT_TYPE_OID = "1.2.840.113549.1.9.3";
+
 const MESSAGE_DIGEST_OID = "1.2.840.113549.1.9.4";
 
 const DAY = 24 * 60 * 60 * 1000;
