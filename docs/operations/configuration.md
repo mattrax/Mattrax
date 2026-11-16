@@ -66,6 +66,7 @@ with the write and avoids similar stale reads on policy and membership changes.
 | `STRIPE_SECRET_KEY`              | Stripe API key                    |
 | `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature          |
 | `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan |
+| `STRIPE_LICENSE_PRICE_ID`        | Per-device price for self-hosted deployment licences |
 | `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue          |
 
 All are optional. Without them billing reports `configured: false`.

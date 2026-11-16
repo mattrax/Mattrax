@@ -91,6 +91,29 @@ const organizationIdFromMetadata = (metadata: Schema.Json | undefined): string |
   return value || undefined;
 };
 
+const DeploymentLicenseMetadata = Schema.Struct({
+  deploymentLicenseId: Schema.optional(Schema.String),
+});
+
+const deploymentLicenseIdFromMetadata = (metadata: Schema.Json | undefined): string | undefined => {
+  const value = Option.getOrUndefined(
+    Schema.decodeUnknownOption(DeploymentLicenseMetadata)(metadata),
+  )?.deploymentLicenseId?.trim();
+
+  return value || undefined;
+};
+
+const findDeploymentLicense = (db: BillingDb, id: string) =>
+  Effect.gen(function* () {
+    const [license] = yield* db
+      .select()
+      .from(schema.deploymentLicense)
+      .where(eq(schema.deploymentLicense.id, id))
+      .limit(1);
+
+    return license;
+  });
+
 const StringRecord = Schema.Record(Schema.String, Schema.String);
 
 /** Expand a Stripe metadata field into a string record, ignoring malformed values. */
@@ -206,6 +229,50 @@ const resolveOrganization = (input: ResolveOrganizationInput) =>
     return organization;
   });
 
+const applyLicenseSubscription = (input: {
+  readonly db: BillingDb;
+  readonly licenseId: string;
+  readonly subscription: StripeWebhookSubscription;
+  readonly statusOverride?: string;
+  readonly now: Date;
+}) =>
+  Effect.gen(function* () {
+    const subscription = input.subscription;
+    const stripeSubscriptionId = idOf(subscription.id);
+
+    if (!stripeSubscriptionId)
+      return yield* Effect.fail(fail("Subscription event is missing a subscription id"));
+
+    const customerId = idOf(subscription.customer);
+    const license = yield* findDeploymentLicense(input.db, input.licenseId);
+
+    if (!license) return yield* Effect.fail(fail("Subscription references an unknown licence"));
+
+    if (license.stripeCustomerId && customerId && license.stripeCustomerId !== customerId)
+      return yield* Effect.fail(fail("Stripe customer does not belong to this licence"));
+
+    const { periodEnd } = subscriptionPeriod(subscription);
+    const plan = metadataRecord(subscription.metadata).plan?.trim();
+
+    yield* input.db
+      .update(schema.deploymentLicense)
+      .set({
+        stripeCustomerId: customerId ?? license.stripeCustomerId ?? null,
+        stripeSubscriptionId,
+        status:
+          input.statusOverride ??
+          Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(subscription.status)) ??
+          "incomplete",
+        plan: plan ? plan.slice(0, 255) : license.plan,
+        periodEnd,
+        cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+        updatedAt: input.now,
+      })
+      .where(eq(schema.deploymentLicense.id, license.id));
+
+    return { organizationId: null };
+  });
+
 type ApplySubscriptionInput = {
   readonly db: BillingDb;
   readonly subscription: StripeWebhookSubscription;
@@ -221,6 +288,17 @@ const applySubscription = (input: ApplySubscriptionInput) =>
 
     if (!stripeSubscriptionId)
       return yield* Effect.fail(fail("Subscription event is missing a subscription id"));
+
+    const licenseId = deploymentLicenseIdFromMetadata(subscription.metadata);
+
+    if (licenseId)
+      return yield* applyLicenseSubscription({
+        db: input.db,
+        licenseId,
+        subscription,
+        statusOverride: input.statusOverride,
+        now: input.now,
+      });
 
     const customerId = idOf(subscription.customer);
 
@@ -311,6 +389,37 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
       organizationIdFromMetadata(invoice.subscription_details?.metadata);
 
     const customerId = idOf(invoice.customer);
+
+    const licenseId =
+      deploymentLicenseIdFromMetadata(embeddedSubscription?.metadata) ??
+      deploymentLicenseIdFromMetadata(invoice.parent?.subscription_details?.metadata) ??
+      deploymentLicenseIdFromMetadata(invoice.subscription_details?.metadata);
+
+    let license = licenseId ? yield* findDeploymentLicense(input.db, licenseId) : undefined;
+
+    if (!license && customerId) {
+      [license] = yield* input.db
+        .select()
+        .from(schema.deploymentLicense)
+        .where(eq(schema.deploymentLicense.stripeCustomerId, customerId))
+        .limit(1);
+    }
+
+    if (license) {
+      yield* input.db
+        .update(schema.deploymentLicense)
+        .set({
+          status: input.paymentFailed
+            ? license.status === "canceled"
+              ? "canceled"
+              : "past_due"
+            : "active",
+          updatedAt: input.now,
+        })
+        .where(eq(schema.deploymentLicense.id, license.id));
+
+      return { organizationId: null };
+    }
 
     if (embeddedSubscription?.id) {
       // Expanded invoice subscriptions do not always repeat metadata.
@@ -415,6 +524,27 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
 
     if (!stripeSubscriptionId)
       return yield* Effect.fail(fail("Completed Checkout Session has no subscription"));
+
+    const licenseId = deploymentLicenseIdFromMetadata(session.metadata);
+
+    if (licenseId) {
+      const customerId = idOf(session.customer);
+      const license = yield* findDeploymentLicense(input.db, licenseId);
+
+      if (!license) return yield* Effect.fail(fail("Checkout references an unknown licence"));
+
+      yield* input.db
+        .update(schema.deploymentLicense)
+        .set({
+          stripeCustomerId: customerId ?? license.stripeCustomerId ?? null,
+          stripeSubscriptionId,
+          status: session.payment_status === "unpaid" ? "incomplete" : "active",
+          updatedAt: input.now,
+        })
+        .where(eq(schema.deploymentLicense.id, license.id));
+
+      return { organizationId: null };
+    }
 
     const organizationId = organizationIdFromMetadata(session.metadata);
 

@@ -29,7 +29,8 @@
     "lint:fix": "vp lint --fix",
     "bundle:check": "tsx scripts/bundle-budget.ts",
     "lighthouse": "lhci autorun --config=packages/config/lighthouserc.cjs",
-    "build:selfhost": "pnpm doc:build && pnpm api build:node && pnpm --filter @mattrax/web build:selfhost && node apps/selfhost/scripts/stage.ts . dist-selfhost"
+    "build:selfhost": "pnpm doc:build && pnpm api build:node && pnpm --filter @mattrax/web build:selfhost && node apps/selfhost/scripts/stage.ts . dist-selfhost",
+    "license:issue": "pnpm api license:issue"
   },
   "devDependencies": {
     "@axe-core/playwright": "catalog:",

@@ -8,6 +8,7 @@ import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
 import type { AppleProfileSigningConfig } from "@mattrax/dm-apple";
 import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseHandlers.ts";
+import { BillingService, type BillingOperations } from "./billingService.ts";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "./android.ts";
 import type { AppleApiConfig } from "./appleBusinessManager.ts";
@@ -31,6 +32,11 @@ export type EnterpriseServiceOptions = {
   readonly planLimits?: PlanLimitsConfig;
   /** Stripe price for the per-device plan; enables Checkout and seat sync. */
   readonly deviceMonthlyPriceId?: string;
+  /**
+   * Customer-facing billing implementation. Omit on hosted deployments to use
+   * Stripe; a self-hosted deployment supplies the remote cloud service.
+   */
+  readonly billing?: BillingOperations;
   /** Optional static analytics sink, used when the request has no sink. */
   readonly analytics?: EnterpriseAnalytics;
   /**
@@ -57,6 +63,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
       const env = yield* Env;
       const auth = yield* EnterpriseAuth;
       const stripeClient = yield* Effect.serviceOption(StripeService);
+      const billing = Option.getOrUndefined(yield* Effect.serviceOption(BillingService));
       const r2 = yield* R2;
       const apns = yield* ApnsService;
       const azureGraph = yield* Effect.serviceOption(AzureGraph);
@@ -84,6 +91,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           origin: env.origin,
           stripeClient: Option.getOrUndefined(stripeClient),
           deviceMonthlyPriceId: options.deviceMonthlyPriceId,
+          billing: billing ?? options.billing,
           storage,
           auth,
           authSecret: env.authSecret,

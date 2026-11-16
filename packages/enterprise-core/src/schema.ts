@@ -857,6 +857,44 @@ export const subscription = mysqlTable(
 );
 
 /**
+ * A self-hosted deployment licensed to run Mattrax.
+ *
+ * Hosted tenants are billed through `subscription`; a self-hosted operator is
+ * billed once for the whole deployment. The license key is stored hashed and
+ * authenticates the deployment's calls to the cloud billing API. Usage is
+ * reported by the deployment, and the Stripe subscription quantity is
+ * reconciled against `deviceCount`.
+ */
+export const deploymentLicense = mysqlTable(
+  "deployment_license",
+  {
+    id: id().primaryKey(),
+    name: shortText("name").notNull(),
+    licenseKeyHash: shortText("license_key_hash").notNull(),
+    licenseKeyPrefix: shortText("license_key_prefix").notNull(),
+    /** Public origin of the deployment, bound on first contact. */
+    origin: shortText("origin"),
+    contactEmail: varchar("contact_email", { length: 320 }),
+    stripeCustomerId: shortText("stripe_customer_id"),
+    stripeSubscriptionId: shortText("stripe_subscription_id"),
+    plan: shortText("plan").notNull().default("device"),
+    status: varchar("status", { length: 32 }),
+    deviceCount: int("device_count").notNull().default(0),
+    tenantCount: int("tenant_count").notNull().default(0),
+    periodEnd: timestamp("period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    lastSeenAt: timestamp("last_seen_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("deployment_license_key_unique").on(table.licenseKeyHash),
+    uniqueIndex("deployment_license_customer_unique").on(table.stripeCustomerId),
+    index("deployment_license_last_seen_idx").on(table.lastSeenAt),
+  ],
+);
+
+/**
  * Stripe event ids already applied. The primary key is the dedupe key, so the
  * insert of a duplicate delivery fails atomically in MySQL even when two
  * isolates process the same event concurrently.

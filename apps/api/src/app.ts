@@ -46,7 +46,11 @@ import {
   makeEnterpriseAuthLive,
   EnterpriseAnalyticsService,
   sessionCookie,
+  deploymentUsage,
+  BillingServiceLive,
   drainEmailOutbox,
+  licenseBillingRoutes,
+  makeRemoteBillingService,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
@@ -259,6 +263,7 @@ const apiLayer = Layer.mergeAll(
   appleMdmRoutes,
   scepRoutes,
   scimRoutes,
+  licenseBillingRoutes({ priceId: apiEnv.STRIPE_LICENSE_PRICE_ID }),
 );
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
@@ -502,6 +507,31 @@ const entraSyncJob = (env: Env) =>
 
 type CryptoLayer = AuthLiveOptions["cryptoLayer"];
 
+/**
+ * Self-hosted billing is remote: the deployment pays the vendor for the whole
+ * licence and never holds Stripe credentials. These variables are read from the
+ * Node process directly because they are not part of the hosted Worker's
+ * binding set.
+ */
+const remoteBillingConfig = () => {
+  const url = process.env.MATTRAX_BILLING_URL?.trim();
+  const licenseKey = process.env.MATTRAX_LICENSE_KEY?.trim();
+
+  return url && licenseKey ? { url, licenseKey } : undefined;
+};
+
+/** Report deployment usage to the cloud licence so seats stay in sync. */
+const reportLicenseUsage = (db: EnterpriseDb, env: Env) =>
+  Effect.gen(function* () {
+    const config = remoteBillingConfig();
+
+    if (!config) return;
+
+    const usage = yield* deploymentUsage(db);
+
+    yield* makeRemoteBillingService({ ...config, origin: env.ORIGIN }).reportUsage(usage);
+  });
+
 const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   const androidConfig = androidDeliveryConfig();
 
@@ -665,6 +695,8 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     ? StripeService.layer(env.STRIPE_SECRET_KEY)
     : Layer.empty;
 
+  const remoteBilling = remoteBillingConfig();
+
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
       email,
@@ -683,6 +715,11 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       // report a configuration error when it is absent.
       deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
     }).pipe(
+      Layer.provide(
+        remoteBilling
+          ? BillingServiceLive(makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN }))
+          : Layer.empty,
+      ),
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(stripeLayer),
@@ -1287,6 +1324,12 @@ export const createApiRuntime = (
 
       const daily = Effect.gen(function* () {
         const db = yield* Db;
+
+        yield* reportLicenseUsage(db, env).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Scheduled licence usage report failed", { cause }),
+          ),
+        );
 
         // Maintenance is allowed to fail without skipping backups: a broken
         // retention query must not leave the fleet without a recent bundle.

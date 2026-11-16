@@ -134,6 +134,8 @@ verified sender and the server details:
 | `MAIL_SMTP_USER`     | Username for AUTH PLAIN/LOGIN, when the server requires it.              |
 | `MAIL_SMTP_PASSWORD` | Password for the same account.                                           |
 | `MAIL_SMTP_HELO`     | EHLO name; defaults to the runtime hostname.                             |
+| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://e.mattrax.app`.              |
+| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator.                   |
 
 ```bash
 MAIL_TRANSPORT=smtp
@@ -148,6 +150,25 @@ The sender domain must be authorised by the SMTP server (SPF/DKIM/DMARC at the
 provider). Use a monitored mailbox, not `no-reply@`: invitation and verification
 replies should reach a person. The container talks to the SMTP server directly,
 so there is no sidecar to run and no relay secret to manage.
+
+### Licensing
+
+Self-hosted deployments are licensed by the Mattrax operator and billed to the
+operator for the whole deployment, based on enrolled devices. The install does
+not need its own Stripe account:
+
+```bash
+MATTRAX_BILLING_URL=https://e.mattrax.app
+MATTRAX_LICENSE_KEY=mtx_lic_...
+```
+
+The licence key is issued against the cloud billing account (see
+[Operations](/admin/operations#deployment-licences)). The deployment reports its
+enrolled device and tenant counts once a day; the cloud keeps the Stripe
+subscription quantity in step. Settings → Billing shows the licence status,
+Stripe Checkout, the customer portal and invoices from the cloud. Without a
+licence the rest of the product keeps running; the billing page reports that the
+deployment is unlicensed.
 
 Without a transport the container declares `MATTRAX_EMAIL_DISABLED=1`: readiness
 reports `mailer: skipped` (degraded), verification requests fail with "This

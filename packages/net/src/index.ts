@@ -20,6 +20,8 @@ export const OUTBOUND_TIMEOUTS = {
   stripe: 15_000,
   /** SCEP/push relay calls between our own services. */
   relay: 10_000,
+  /** Self-hosted deployment to the cloud billing API. */
+  billing: 15_000,
 } as const;
 
 /** Retries handed to the Stripe SDK (`maxNetworkRetries`). */

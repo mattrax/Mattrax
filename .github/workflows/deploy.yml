@@ -151,6 +151,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           ORIGIN: ${{ vars.PRODUCTION_ORIGIN || 'https://e.mattrax.app' }}
+          STRIPE_LICENSE_PRICE_ID: ${{ vars.STRIPE_LICENSE_PRICE_ID }}
         run: pnpm deploy:prod:all
 
       # The first dashboard Preview exists only to learn its generated URL,

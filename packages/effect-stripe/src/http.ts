@@ -23,6 +23,8 @@ export type StripeSubscriptionItem = {
   readonly id: string;
   readonly quantity?: number | null;
   readonly price?: { readonly id?: string } | null;
+  /** Current period end in Unix seconds (moved onto items in newer APIs). */
+  readonly current_period_end?: number;
 };
 
 export type StripeSubscription = {
@@ -32,6 +34,8 @@ export type StripeSubscription = {
   readonly metadata?: Readonly<Record<string, string>> | null;
   readonly customer?: string | { readonly id?: string } | null;
   readonly items?: { readonly data: ReadonlyArray<StripeSubscriptionItem> } | null;
+  /** Older API versions keep the period end on the subscription. */
+  readonly current_period_end?: number;
 };
 
 /** A hosted Checkout Session. Only the fields the redirect needs are typed. */

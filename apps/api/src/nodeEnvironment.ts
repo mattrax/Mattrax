@@ -7,5 +7,9 @@
  * answer there is the same degraded readiness the previous host produced: no
  * transport means `mailer: skipped`, not a failed probe.
  */
-if (!process.env.MAIL_TRANSPORT?.trim() && !process.env.MATTRAX_EMAIL_DISABLED)
+if (
+  !process.env.MAIL_TRANSPORT?.trim() &&
+  !process.env.MATTRAX_EMAIL_DISABLED &&
+  process.env.DEV_MAILBOX !== "true"
+)
   process.env.MATTRAX_EMAIL_DISABLED = "1";

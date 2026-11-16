@@ -24,8 +24,30 @@ export {
 
 export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "./billingWebhook.js";
 
+export { BillingService, BillingServiceLive, makeStripeBillingService } from "./billingService.js";
+
+export { licenseBillingRoutes } from "./licenseBilling.js";
+
+export type { LicenseBillingConfig } from "./licenseBilling.js";
+
+export { makeRemoteBillingService } from "./remoteBillingService.js";
+
+export type { RemoteBillingOptions } from "./remoteBillingService.js";
+
+export type {
+  BillingCheckoutInput,
+  BillingError,
+  BillingInvoicesInput,
+  BillingPortalInput,
+  BillingOperations,
+  BillingSummaryInput,
+  BillingUsageInput,
+  StripeBillingOptions,
+} from "./billingService.js";
+
 export {
   billableDeviceCount,
+  deploymentUsage,
   reconcileSubscriptionQuantity,
   reconcileSubscriptionSweep,
   syncStripeCustomerName,

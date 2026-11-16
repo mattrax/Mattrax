@@ -498,12 +498,12 @@ export const cancelAccountRecovery = (deps: RecoveryDeps, input: { readonly toke
 export const redeemRecoveryToken = (
   db: EnterpriseDb,
   token: string,
+  now: Date = new Date(),
 ): Effect.Effect<{ readonly userId: string } | undefined, unknown> =>
   Effect.gen(function* () {
     if (!token) return undefined;
 
     const hash = yield* tokenHash(token);
-    const now = new Date();
 
     const record = yield* db.query.accountRecovery.findFirst({
       where: { completionTokenHash: hash },

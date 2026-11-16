@@ -19,7 +19,6 @@ import {
   EnterpriseNotConfigured,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
-  EnterpriseStripeError,
   EnterpriseTenantHasMembers,
   EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
@@ -68,8 +67,6 @@ import {
   type TenantScepCaInfo,
   verifyScriptAgentToken,
   type BillingCheckoutRequest,
-  type BillingInvoice,
-  type BillingInvoicesResponse,
   type WebhookDeliveryQuery,
   type WebhookDeliveryReplayResponse,
   type WebhookDeliveriesResponse,
@@ -82,13 +79,12 @@ import {
   validateAttributeValue,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
-import type { StripeClientLike, StripeCustomer, StripeInvoice } from "@mattrax/effect-stripe";
+import type { StripeClientLike } from "@mattrax/effect-stripe";
 import {
   authCredentials,
   authIdentifiers,
   authPending,
   authSessions,
-  countOrganizationDevices,
   deviceLimitForOrganization,
   hasMfaFactor,
   R2_IMMUTABLE_CACHE_CONTROL,
@@ -282,7 +278,8 @@ import {
   type AuditExportEntry,
   type AuditSearchFilters,
 } from "./auditLog.ts";
-import { billableDeviceCount, reconcileSubscriptionQuantity } from "./billing.ts";
+import { reconcileSubscriptionQuantity } from "./billing.ts";
+import { makeStripeBillingService, type BillingOperations } from "./billingService.ts";
 import {
   listWebhookDeliveries as listStoredWebhookDeliveries,
   loadWebhookDelivery as loadStoredWebhookDelivery,
@@ -460,6 +457,11 @@ export type EnterpriseHandlersConfig = {
    * failing at boot.
    */
   readonly stripeClient?: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
+  /**
+   * Customer-facing billing implementation. Hosted deployments omit it and get
+   * the Stripe service; a self-hosted deployment supplies the remote service.
+   */
+  readonly billing?: BillingOperations;
   /**
    * Stripe price for the per-device monthly plan. Checkout and seat
    * reconciliation need it alongside `stripeClient`; both request a
@@ -1270,6 +1272,7 @@ export const createEnterpriseService = ({
   origin,
   stripeClient,
   deviceMonthlyPriceId,
+  billing: providedBilling,
   storage,
   auth: authService,
   authSecret,
@@ -1362,82 +1365,15 @@ export const createEnterpriseService = ({
       : makeEffectStripeClient(stripeClient)
     : undefined;
 
-  const billingConfigured = Boolean(stripe);
-
-  const billingNotConfigured = () =>
-    new EnterpriseStripeError({
-      message: "Billing is not configured for this deployment.",
+  const billing =
+    providedBilling ??
+    makeStripeBillingService({
+      db,
+      origin,
+      stripe,
+      deviceMonthlyPriceId,
+      planLimits,
     });
-
-  const billingUnavailable = () =>
-    new EnterpriseStripeError({
-      message: "Billing is temporarily unavailable. Try again shortly.",
-    });
-
-  /**
-   * The canonical billing page for a tenant. Every redirect handed to Stripe
-   * starts here, so a Checkout return (or portal close) can only land on this
-   * deployment.
-   */
-  const tenantBillingUrl = (tenantId: string) =>
-    `${origin.replace(/\/+$/, "")}/t/${encodeURIComponent(tenantId)}/settings/billing`;
-
-  /**
-   * Resolve a caller-supplied return URL against `ORIGIN`. A value that points
-   * at another site (or uses another scheme) is discarded in favour of the
-   * canonical billing page, so billing cannot be used as an open redirect.
-   */
-  const sameOriginReturnUrl = (tenantId: string, candidate: string | null | undefined) => {
-    const fallback = tenantBillingUrl(tenantId);
-
-    if (!candidate) return fallback;
-
-    try {
-      const base = new URL(origin);
-      const url = new URL(candidate, base);
-
-      return url.origin === base.origin ? url.toString() : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
-  /**
-   * Stripe returns a fully-qualified HTTPS URL for hosted Checkout and the
-   * billing portal. Anything else is a misconfigured proxy or a tampered
-   * response, so it is treated as an upstream failure instead of being
-   * redirected to.
-   */
-  const hostedBillingUrl = (value: string | null | undefined): string | null => {
-    if (!value) return null;
-
-    try {
-      const url = new URL(value);
-
-      return url.protocol === "https:" ? url.toString() : null;
-    } catch {
-      return null;
-    }
-  };
-
-  /** Only https links are rendered; Stripe may omit either invoice link. */
-  const httpsLinkOrNull = (value: string | null | undefined): string | null =>
-    hostedBillingUrl(value);
-
-  const billingInvoice = (invoice: StripeInvoice): BillingInvoice => ({
-    id: invoice.id,
-    number: invoice.number ?? null,
-    status: invoice.status ?? null,
-    total: invoice.total ?? 0,
-    amountDue: invoice.amount_due ?? 0,
-    amountPaid: invoice.amount_paid ?? 0,
-    currency: invoice.currency ?? "usd",
-    createdAt: new Date((invoice.created ?? 0) * 1000).toISOString(),
-    periodStart: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
-    periodEnd: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
-    hostedInvoiceUrl: httpsLinkOrNull(invoice.hosted_invoice_url),
-    pdfUrl: httpsLinkOrNull(invoice.invoice_pdf),
-  });
 
   /**
    * Translate an Android delivery failure into the API's stable error tags.
@@ -2316,53 +2252,6 @@ export const createEnterpriseService = ({
       ]);
     });
 
-  const ensureStripeCustomer = (organization: EnterpriseOrganization) =>
-    Effect.gen(function* () {
-      if (organization.stripeCustomerId) return organization.stripeCustomerId;
-
-      if (!stripe) return yield* Effect.fail(billingNotConfigured());
-
-      // Search is the cheap path. Some Stripe accounts/API versions reject
-      // search, so fall back to a single bounded page instead of iterating the
-      // entire customer list.
-      const search = yield* Effect.exit(
-        stripe.customers.search({
-          query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
-          limit: 1,
-        }),
-      );
-
-      let stripeCustomer: StripeCustomer | undefined = Exit.isSuccess(search)
-        ? search.value.data[0]
-        : undefined;
-
-      if (!stripeCustomer && Exit.isFailure(search)) {
-        const page = yield* stripe
-          .effect((client: StripeClientLike) => client.customers.list({ limit: 100 }))
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        stripeCustomer = page.data.find(
-          (customer: StripeCustomer) =>
-            customer.metadata?.organizationId === organization.id &&
-            customer.metadata?.customerType === "organization",
-        );
-      }
-
-      stripeCustomer ??= yield* stripe.customers
-        .create({
-          name: organization.name,
-          metadata: { organizationId: organization.id, customerType: "organization" },
-        })
-        .pipe(Effect.mapError(() => billingUnavailable()));
-
-      yield* db
-        .update(schema.organization)
-        .set({ stripeCustomerId: stripeCustomer.id })
-        .where(eq(schema.organization.id, organization.id));
-
-      return stripeCustomer.id;
-    });
-
   /**
    * Best-effort seat reconciliation for a device lifecycle change.
    *
@@ -2817,61 +2706,6 @@ export const createEnterpriseService = ({
    * plan name; enforcement falls back to the configured default when the
    * subscription is absent or lapsed.
    */
-  const billingSummary = (organizationId: string, userId: string) =>
-    Effect.gen(function* () {
-      const [subscription] = yield* db
-        .select()
-        .from(schema.subscription)
-        .where(eq(schema.subscription.referenceId, organizationId))
-        .limit(1);
-
-      const [devices] = yield* db
-        .select({ value: count() })
-        .from(schema.device)
-        .where(
-          and(
-            eq(schema.device.organizationId, organizationId),
-            eq(schema.device.status, "enrolled"),
-          ),
-        );
-
-      const planLimitDbError = () =>
-        new EnterpriseDbError({ message: "Could not check plan limits" });
-
-      const devicesUsed = yield* countOrganizationDevices(db, organizationId).pipe(
-        Effect.mapError(planLimitDbError),
-      );
-
-      const deviceStatus = yield* deviceLimitForOrganization({
-        db,
-        organizationId,
-        config: planLimits,
-      }).pipe(Effect.mapError(planLimitDbError));
-
-      const tenantStatus = yield* tenantLimitForAccount({
-        db,
-        userId,
-        config: planLimits,
-      }).pipe(Effect.mapError(planLimitDbError));
-
-      return {
-        plan: deviceStatus.plan,
-        status: subscription?.status,
-        billableDevices: devices?.value ?? 0,
-        deviceLimit: deviceStatus.limit,
-        tenantLimit: tenantStatus.limit,
-        devicesUsed,
-        tenantsUsed: tenantStatus.used,
-        overDeviceLimit: deviceStatus.overLimit,
-        overTenantLimit: tenantStatus.overLimit,
-        limitsConfigured: Boolean(planLimits?.configured),
-        subscriptionId: subscription?.stripeSubscriptionId ?? null,
-        periodEnd: subscription?.periodEnd ? iso(subscription.periodEnd) : null,
-        cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
-        configured: billingConfigured,
-      };
-    });
-
   const PLAN_DEVICE_LIMIT_MESSAGE =
     "The device limit for this plan has been reached. Contact your administrator to upgrade.";
 
@@ -15909,107 +15743,52 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        return yield* billingSummary(ctx.organization.id, ctx.user.id);
+        return yield* billing.summary({
+          organizationId: ctx.organization.id,
+          userId: ctx.user.id,
+        });
       }),
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "billing-portal");
 
-        if (!stripe) return yield* Effect.fail(billingNotConfigured());
         const body: { returnUrl: string } = payload;
-        const returnUrl = sameOriginReturnUrl(tenantId, body.returnUrl);
-        const customer = yield* ensureStripeCustomer(ctx.organization);
-
-        const result = yield* stripe.billingPortal.sessions
-          .create({
-            customer,
-            return_url: returnUrl,
-          })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const url = hostedBillingUrl(result.url);
-
-        if (!url) return yield* Effect.fail(billingUnavailable());
+        const result = yield* billing.portal({
+          tenantId,
+          organization: ctx.organization,
+          returnUrl: body.returnUrl,
+        });
 
         yield* audit(ctx, "billing.portal_opened", "organization", ctx.organization.id);
 
-        return { url };
+        return result;
       }),
     billingCheckout: (request, tenantId, payload: BillingCheckoutRequest) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        // Checkout changes the tenant's plan, so it needs the same step-up as
-        // opening the portal.
+        // Checkout changes the plan, so it needs the same step-up as opening
+        // the portal.
         yield* requireStepUp(auth, request, "billing-portal");
 
-        if (!stripe || !deviceMonthlyPriceId) return yield* Effect.fail(billingNotConfigured());
-
-        const body: BillingCheckoutRequest = payload;
-        const customer = yield* ensureStripeCustomer(ctx.organization);
-        const billable = yield* billableDeviceCount(db, ctx.organization.id);
-        // Checkout requires a positive quantity. A tenant buying the plan with
-        // no enrolled devices starts with one seat and the next reconciliation
-        // moves it to the real fleet size.
-        const quantity = Math.max(1, billable);
-        const returnUrl = tenantBillingUrl(tenantId);
-
-        const metadata = {
-          organizationId: ctx.organization.id,
-          plan: "device",
-        };
-
-        // Stripe omits the field entirely when no trial was requested; an
-        // explicit `undefined` would be encoded as an empty form value.
-        const subscriptionData =
-          body.trialDays === undefined
-            ? { metadata }
-            : { metadata, trial_period_days: body.trialDays };
-
-        const session = yield* stripe.checkout.sessions
-          .create({
-            mode: "subscription",
-            customer,
-            client_reference_id: ctx.organization.id,
-            success_url: `${returnUrl}?checkout=success`,
-            cancel_url: `${returnUrl}?checkout=cancelled`,
-            line_items: [{ price: deviceMonthlyPriceId, quantity }],
-            metadata,
-            subscription_data: subscriptionData,
-            allow_promotion_codes: true,
-          })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const url = hostedBillingUrl(session.url);
-
-        if (!url) return yield* Effect.fail(billingUnavailable());
-
-        yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {
-          quantity,
-          trialDays: body.trialDays ?? null,
+        const result = yield* billing.checkout({
+          tenantId,
+          organization: ctx.organization,
+          request: payload,
         });
 
-        return { url };
+        yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {
+          quantity: result.quantity,
+          trialDays: payload.trialDays ?? null,
+        });
+
+        return { url: result.url };
       }),
     billingInvoices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        if (!stripe) return yield* Effect.fail(billingNotConfigured());
-
-        // No customer means nothing was ever purchased, so there are no
-        // invoices to ask Stripe about.
-        if (!ctx.organization.stripeCustomerId) return { invoices: [] };
-
-        const page = yield* stripe.invoices
-          .list({ customer: ctx.organization.stripeCustomerId, limit: 24 })
-          .pipe(Effect.mapError(() => billingUnavailable()));
-
-        const response: BillingInvoicesResponse = {
-          invoices: page.data.map(billingInvoice),
-        };
-
-        return response;
+        return yield* billing.invoices({ organization: ctx.organization });
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),

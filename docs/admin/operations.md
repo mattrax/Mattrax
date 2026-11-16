@@ -259,6 +259,32 @@ subscription event then fills in the period). Tenants are resolved by
 `metadata.organizationId` or the stored Stripe customer id, and a redelivered
 event is skipped by the transactional event-id ledger.
 
+### Deployment licences
+
+A self-hosted operator pays for the whole deployment rather than each tenant.
+Set `STRIPE_LICENSE_PRICE_ID` on the cloud API Worker (a per-device recurring
+price), then issue a licence:
+
+```bash
+DATABASE_URL=mysql://... pnpm license:issue --name "Acme" --email ops@acme.test
+```
+
+The command prints the only copy of the key and stores a SHA-256 hash in
+`deployment_license`. Give the operator:
+
+```bash
+MATTRAX_BILLING_URL=https://e.mattrax.app
+MATTRAX_LICENSE_KEY=mtx_lic_...
+```
+
+The deployment calls `POST /api/platform/billing/{summary,portal,checkout,invoices,usage}`
+with that key. The first authenticated call binds the licence to the
+deployment's public origin; later calls from another origin are rejected. The
+daily maintenance job reports enrolled-device and tenant counts, and the cloud
+keeps the Stripe subscription quantity in step. The self-hosted install never
+stores Stripe credentials; the existing tenant billing page renders the
+deployment licence for the operator.
+
 ### Portal and summary
 
 ```text

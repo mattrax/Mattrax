@@ -144,6 +144,9 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   )
     return authRule();
 
+  // Deployment licence calls carry a bearer credential and mutate billing.
+  if (pathname.startsWith("/api/platform/billing/")) return authRule();
+
   if (pathname.startsWith("/api/v1/enrollment/"))
     return { bucket: "enrollment", limit: 600, windowSeconds: 60 };
 

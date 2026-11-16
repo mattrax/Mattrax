@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "cf:types": "cf workers types",
     "typecheck": "cf workers types && tsc",
-    "build:node": "vp build --config vite.node.config.ts"
+    "build:node": "vp build --config vite.node.config.ts",
+    "license:issue": "tsx scripts/issue-license.ts"
   },
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",

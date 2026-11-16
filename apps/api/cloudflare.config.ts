@@ -92,6 +92,8 @@ export const apiWorker = {
     STRIPE_SECRET_KEY: bindings.secret(),
     STRIPE_WEBHOOK_SECRET: bindings.secret(),
     STRIPE_DEVICE_MONTHLY_PRICE_ID: bindings.secret(),
+    /** Optional: enables self-hosted deployment licences on this deployment. */
+    STRIPE_LICENSE_PRICE_ID: bindings.text(process.env.STRIPE_LICENSE_PRICE_ID ?? ""),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
     /**

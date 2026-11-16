@@ -35,6 +35,8 @@ const ApiEnvSchema = Schema.Struct({
   STRIPE_SECRET_KEY: Schema.optional(nonEmptyString),
   STRIPE_WEBHOOK_SECRET: Schema.optional(nonEmptyString),
   STRIPE_DEVICE_MONTHLY_PRICE_ID: Schema.optional(nonEmptyString),
+  /** Per-device price for a self-hosted deployment's platform licence. */
+  STRIPE_LICENSE_PRICE_ID: Schema.optional(nonEmptyString),
   /**
    * Optional JSON plan catalogue mapping plan names to device/tenant limits.
    * Missing or `null` limits are unlimited. Parsed defensively at startup.
@@ -201,6 +203,7 @@ const RawApiEnvSchema = Schema.Struct({
   STRIPE_SECRET_KEY: optionalString,
   STRIPE_WEBHOOK_SECRET: optionalString,
   STRIPE_DEVICE_MONTHLY_PRICE_ID: optionalString,
+  STRIPE_LICENSE_PRICE_ID: optionalString,
   MATTRAX_PLAN_LIMITS: optionalString,
   CLOUD_APPLE_VENDOR_CERT: optionalString,
   CLOUD_APPLE_VENDOR_KEY: optionalString,
@@ -271,6 +274,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   STRIPE_SECRET_KEY: emptyStringAsUndefined(rawEnv.STRIPE_SECRET_KEY),
   STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined(rawEnv.STRIPE_WEBHOOK_SECRET),
   STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID),
+  STRIPE_LICENSE_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_LICENSE_PRICE_ID),
   MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
   CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),
   CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_KEY),
