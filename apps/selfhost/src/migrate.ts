@@ -115,6 +115,20 @@ export const migrate = async ({
 
   const connection = await connect(databaseUrl, log);
 
+  // Two replicas (or a container restart racing `pnpm db:migrate`) must not
+  // apply the same migration concurrently. MySQL DDL implicitly commits, so a
+  // transaction cannot make a multi-statement migration atomic; the advisory
+  // lock at least guarantees one runner at a time.
+  const [lockRows] = await connection.query<RowDataPacket[]>(
+    "SELECT GET_LOCK('mattrax_migrate', 60) AS acquired",
+  );
+
+  if (Number(lockRows[0]?.acquired) !== 1) {
+    await connection.end();
+
+    throw new Error("could not acquire the database migration lock");
+  }
+
   try {
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`${MIGRATIONS_TABLE}\` (
@@ -144,22 +158,20 @@ export const migrate = async ({
     for (const migration of pending) {
       log(`mattrax self-host: applying migration ${migration.name}`);
 
-      await connection.beginTransaction();
+      // MySQL commits DDL immediately, so a failure part-way through leaves
+      // the schema changed without a migration row. Stop here and make the
+      // operator restore (or finish the statements) rather than replaying
+      // from the first statement and failing on an existing table.
+      for (const statement of migration.statements) await connection.query(statement);
 
-      try {
-        for (const statement of migration.statements) await connection.query(statement);
-
-        await connection.query(
-          `INSERT INTO \`${MIGRATIONS_TABLE}\` (\`hash\`, \`created_at\`, \`name\`) VALUES (?, ?, ?)`,
-          [migration.hash, migration.createdAt, migration.name],
-        );
-        await connection.commit();
-      } catch (cause) {
-        await connection.rollback();
-        throw cause;
-      }
+      await connection.query(
+        `INSERT INTO \`${MIGRATIONS_TABLE}\` (\`hash\`, \`created_at\`, \`name\`) VALUES (?, ?, ?)`,
+        [migration.hash, migration.createdAt, migration.name],
+      );
     }
   } finally {
+    await connection.query("SELECT RELEASE_LOCK('mattrax_migrate')").catch(() => {});
+
     await connection.end();
   }
 };

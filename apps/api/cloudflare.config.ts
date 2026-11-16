@@ -27,7 +27,7 @@ const rateLimitBinding = (name: string, limit: number) => {
 
 const configuredRateLimitBindings = () => {
   const candidates = {
-    RATE_LIMITER_AUTH: rateLimitBinding("AUTH", 120),
+    RATE_LIMITER_AUTH: rateLimitBinding("AUTH", 600),
     RATE_LIMITER_ENROLLMENT: rateLimitBinding("ENROLLMENT", 600),
     RATE_LIMITER_MDM: rateLimitBinding("MDM", 600),
     RATE_LIMITER_SCIM: rateLimitBinding("SCIM", 600),
@@ -70,6 +70,7 @@ export const apiWorker = {
   },
   // Daily maintenance: expired invitations, stale devices, expired auth
   // proofs/sessions and audit retention. Keep the off-peak UTC schedule.
+  // The values are mirrored in `src/crons.ts`, which dispatches them.
   triggers: [
     triggers.scheduled({ schedule: "17 3 * * *" }),
     // Hourly sweep for due Entra directory syncs. Runs after the daily job's
@@ -118,7 +119,7 @@ export const apiWorker = {
     // secret (shared by every deployment of this Worker).
     // Safe to default on: `isDevMailboxEnabled` still requires a loopback
     // origin, or an explicit ALLOW_REMOTE opt-in with a secret.
-    DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX ?? "true"),
+    DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX ?? ""),
     DEV_MAILBOX_ALLOW_REMOTE: bindings.text(process.env.DEV_MAILBOX_ALLOW_REMOTE ?? ""),
     DEV_MAILBOX_SECRET: bindings.secret(),
     /** Days without a check-in before the maintenance job marks a device unenrolled. */
@@ -159,6 +160,13 @@ export const apiWorker = {
     MAIL_TRANSPORT: bindings.text(process.env.MAIL_TRANSPORT ?? ""),
     /** Verified sender for every transactional email, e.g. `a@example.com`. */
     MAIL_FROM: bindings.text(""),
+    /** Invitation-specific sender override; empty uses `MAIL_FROM`. */
+    MATTRAX_INVITATION_FROM: bindings.text(""),
+    /** Legacy Windows tenant pin and federated WSTEP app registration. */
+    WINDOWS_ORGANIZATION_ID: bindings.text(""),
+    WINDOWS_FEDERATED_AUDIENCE: bindings.text(""),
+    /** Set to `1` only behind a proxy that terminates device mTLS. */
+    TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(process.env.TRUST_DEVICE_IDENTITY_HEADERS ?? ""),
     /** SMTP server used by self-hosted deployments. */
     MAIL_SMTP_HOST: bindings.text(""),
     MAIL_SMTP_PORT: bindings.text(""),

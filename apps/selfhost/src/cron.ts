@@ -72,15 +72,17 @@ export const parseCron = (expression: string): ((date: Date) => boolean) => {
   const dayRestricted = !fields[2].startsWith("*") && !fields[4].startsWith("*");
 
   return (date: Date) => {
-    if (!minutes.has(date.getMinutes())) return false;
+    // Cloudflare evaluates cron expressions in UTC, so a container must too:
+    // local-time accessors drift by the host offset and on DST changes.
+    if (!minutes.has(date.getUTCMinutes())) return false;
 
-    if (!hours.has(date.getHours())) return false;
+    if (!hours.has(date.getUTCHours())) return false;
 
-    if (!months.has(date.getMonth() + 1)) return false;
+    if (!months.has(date.getUTCMonth() + 1)) return false;
 
     // JavaScript counts Sunday as 0, matching cron; some crons use 7 instead.
-    const weekDay = date.getDay() % 7;
-    const domMatches = daysOfMonth.has(date.getDate());
+    const weekDay = date.getUTCDay() % 7;
+    const domMatches = daysOfMonth.has(date.getUTCDate());
     const dowMatches = daysOfWeek.has(weekDay);
 
     return dayRestricted ? domMatches || dowMatches : domMatches && dowMatches;
@@ -123,7 +125,7 @@ export const startCronScheduler = ({
 
   const tick = async (): Promise<void> => {
     const now = new Date();
-    const minute = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`;
+    const minute = now.toISOString().slice(0, 16);
 
     if (minute === lastMinute || running) return;
     lastMinute = minute;

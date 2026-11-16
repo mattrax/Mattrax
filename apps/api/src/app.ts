@@ -68,6 +68,7 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
+import { DAILY_CRON, HOURLY_CRON } from "./crons.js";
 import { androidDeliveryConfig, androidManagementLayer } from "./android.js";
 import { ssoRoutes } from "./sso.js";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
@@ -341,13 +342,6 @@ const entraSyncEffect = (
   );
 };
 
-/**
- * Hourly trigger that only sweeps due Entra directory syncs. It runs at minute
- * 47 so the daily job (03:17) has already applied maintenance and backups
- * before the same hour's sweep.
- */
-const ENTRA_SYNC_CRON = "47 * * * *";
-
 const parsePositive = (value: string | undefined) => {
   if (value === undefined) return undefined;
   const parsed = Number(value);
@@ -527,7 +521,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
-  const devMailbox = isDevMailboxEnabled(env, env.ORIGIN, env.ORIGIN);
+  // The routes exist whenever the feature is switched on; each request is
+  // checked against its own URL, so a loopback ORIGIN does not expose the
+  // mailbox when the deployment is reachable from a public host.
+  const devMailbox = env.DEV_MAILBOX === "true";
 
   const devMailboxSecret = env.DEV_MAILBOX_SECRET;
 
@@ -711,7 +708,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
             // verification links to arbitrary callers.
             const supplied = debugRequest.headers["x-dev-mailbox-secret"];
 
-            if (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
+            if (
+              !isDevMailboxEnabled(env, env.ORIGIN, debugRequest.url) ||
+              (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
+            )
               return Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 }));
 
             return HttpServerResponse.json(listDevEmails());
@@ -724,7 +724,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
             Effect.gen(function* () {
               const supplied = debugRequest.headers["x-dev-mailbox-secret"];
 
-              if (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
+              if (
+                !isDevMailboxEnabled(env, env.ORIGIN, debugRequest.url) ||
+                (devMailboxSecret && !timingSafeStringEqual(supplied ?? "", devMailboxSecret))
+              )
                 return HttpServerResponse.text("Not Found", { status: 404 });
 
               const db = yield* Db;
@@ -1169,7 +1172,7 @@ export const createApiRuntime = (
       // The hourly trigger drains queued transactional mail and, when Graph is
       // configured, sweeps due directory syncs. The outbox runs even without
       // Graph so a retry does not wait for the daily job.
-      if (controller.cron === ENTRA_SYNC_CRON) {
+      if (controller.cron === HOURLY_CRON) {
         if (!graphConfigured)
           console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
 
@@ -1200,6 +1203,14 @@ export const createApiRuntime = (
               console.error("Scheduled Entra directory sync job failed", cause),
             ),
           );
+
+        return;
+      }
+
+      // A new trigger must not accidentally run the daily maintenance, backup
+      // and retention work. Only the declared daily expression does that.
+      if (controller.cron !== DAILY_CRON) {
+        console.warn(`Scheduled trigger ${controller.cron} is not handled; ignoring`);
 
         return;
       }
