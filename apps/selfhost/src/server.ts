@@ -212,11 +212,9 @@ const SELF_HOST_BINDINGS = [
   "WINDOWS_ORGANIZATION_ID",
   "WINDOWS_FEDERATED_AUDIENCE",
   "TRUST_DEVICE_IDENTITY_HEADERS",
-  // Email provider credentials are declared secrets only when a Cloudflare
-  // deploy supplies them, so a container has to add them explicitly.
-  "RESEND_API_KEY",
-  "POSTMARK_SERVER_TOKEN",
-  "MAIL_RELAY_SECRET",
+  // The SMTP password is a declared secret only when a Cloudflare deploy
+  // supplies it, so a container has to add it explicitly.
+  "MAIL_SMTP_PASSWORD",
 ];
 
 const cronSecret = randomBytes(32).toString("base64url");
@@ -245,20 +243,18 @@ const mailTransport = (process.env.MAIL_TRANSPORT ?? "").trim().toLowerCase();
 const mailFrom = (process.env.MAIL_FROM ?? "").trim();
 
 const mailRequired: Record<string, readonly string[]> = {
-  resend: ["RESEND_API_KEY"],
-  postmark: ["POSTMARK_SERVER_TOKEN"],
-  smtp: ["MAIL_RELAY_URL", "MAIL_RELAY_SECRET"],
+  smtp: ["MAIL_SMTP_HOST"],
 };
 
 const mailEnabled = Object.hasOwn(mailRequired, mailTransport);
 
 if (mailTransport === "cloudflare")
   fail(
-    "MAIL_TRANSPORT=cloudflare needs the Cloudflare send_email binding, which a container does not have; use resend, postmark or smtp",
+    "MAIL_TRANSPORT=cloudflare needs the Cloudflare send_email binding, which a container does not have; use smtp",
   );
 
 if (mailTransport && mailTransport !== "disabled" && !mailEnabled)
-  fail(`MAIL_TRANSPORT=${mailTransport} is not supported; use resend, postmark, smtp or disabled`);
+  fail(`MAIL_TRANSPORT=${mailTransport} is not supported; use smtp or disabled`);
 
 if (mailEnabled) {
   const missing = mailRequired[mailTransport].filter((name) => !(process.env[name] ?? "").trim());
@@ -267,9 +263,6 @@ if (mailEnabled) {
     fail(`${missing.join(" and ")} required when MAIL_TRANSPORT=${mailTransport}`);
 
   if (!mailFrom) fail("MAIL_FROM is required when MAIL_TRANSPORT is set");
-
-  if (mailTransport === "smtp" && (process.env.MAIL_RELAY_SECRET ?? "").trim().length < 16)
-    fail("MAIL_RELAY_SECRET must be at least 16 characters");
 }
 
 const apiOverrides: Record<string, Binding | undefined> = {

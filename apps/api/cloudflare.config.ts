@@ -152,17 +152,19 @@ export const apiWorker = {
      */
     MATTRAX_EMAIL_DISABLED: bindings.text(process.env.MATTRAX_EMAIL_DISABLED ?? ""),
     /**
-     * Outbound email without the Cloudflare `EMAIL` binding: `resend`,
-     * `postmark`, `smtp` (self-hosted mail relay) or `disabled`. Empty leaves
-     * the hosted default (the `EMAIL` binding) in place.
+     * Outbound email without the Cloudflare `EMAIL` binding: `smtp` or
+     * `disabled`. Empty leaves the hosted default (the `EMAIL` binding) in
+     * place.
      */
     MAIL_TRANSPORT: bindings.text(process.env.MAIL_TRANSPORT ?? ""),
     /** Verified sender for every transactional email, e.g. `a@example.com`. */
     MAIL_FROM: bindings.text(""),
-    /** Base URL of the self-hosted `apps/mail-relay` SMTP sidecar. */
-    MAIL_RELAY_URL: bindings.text(""),
-    /** Postmark message stream; empty uses the provider default. */
-    MAIL_POSTMARK_STREAM: bindings.text(""),
+    /** SMTP server used by self-hosted deployments. */
+    MAIL_SMTP_HOST: bindings.text(""),
+    MAIL_SMTP_PORT: bindings.text(""),
+    MAIL_SMTP_SECURE: bindings.text(""),
+    MAIL_SMTP_USER: bindings.text(""),
+    MAIL_SMTP_HELO: bindings.text(""),
     /** Outbox deliveries in flight per maintenance run. */
     MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: bindings.text("4"),
     /** Attempts before queued mail is permanently failed. */
@@ -213,11 +215,7 @@ const useAppleProfileSigning = Boolean(process.env.APPLE_PROFILE_SIGNING_CERT);
  * secret with no value. A self-hosted container passes them as plain bindings
  * from its own environment instead (see `apps/selfhost`).
  */
-const EMAIL_PROVIDER_SECRETS = [
-  "RESEND_API_KEY",
-  "POSTMARK_SERVER_TOKEN",
-  "MAIL_RELAY_SECRET",
-] as const;
+const EMAIL_PROVIDER_SECRETS = ["MAIL_SMTP_PASSWORD"] as const;
 
 const emailProviderSecrets: Record<string, ReturnType<typeof bindings.secret>> = {};
 

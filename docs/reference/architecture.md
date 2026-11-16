@@ -13,7 +13,7 @@ boundary keeps protocol handling independent from product state.
 | Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`, `apps/mail-relay`    | Dashboard, API, push and SMTP relays           |
+| Surfaces            | `apps/web`, `apps/api`, `apps/apns-relay`                       | Dashboard, API and push relay                  |
 
 ## Cloud topology
 
@@ -24,8 +24,7 @@ Browser ──► Mattrax web Worker (public)
            API Worker (service binding)
               ├── MySQL via Hyperdrive
               ├── R2 (application files, backups)
-              ├── Email: Cloudflare Email Sending, Resend/Postmark, or the
-              │   self-hosted mail-relay sidecar (SMTP)
+              ├── Email: Cloudflare Email Sending, or SMTP directly
               ├── email_outbox (queued transactional mail, drained by cron)
               └── APNs relay / vendor cert
 ```

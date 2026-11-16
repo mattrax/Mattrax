@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import type { OutboundEmailMessage } from "@mattrax/enterprise-backend";
 import { mailerReadiness, selectMailer, type MailerEnv } from "./mailer.js";
 
@@ -51,18 +52,35 @@ describe("mailer selection", () => {
     expect(selection.sender).toEqual({ name: "Mattrax", email: "hello@mattrax.cloud" });
     expect(mailerReadiness(selection)).toBe("ok");
 
-    await selection.transport!.send({
-      to: "invitee@example.com",
-      from: selection.sender,
-      replyTo: { name: "Support", email: "help@mattrax.cloud" },
-      subject: "Hello",
-      text: "Body",
-    });
+    await Effect.runPromise(
+      selection.transport!.send({
+        to: "invitee@example.com",
+        from: selection.sender,
+        replyTo: { name: "Support", email: "help@mattrax.cloud" },
+        subject: "Hello",
+        text: "Body",
+      }),
+    );
 
     expect(sent[0]).toMatchObject({
       to: "invitee@example.com",
       replyTo: { name: "Support", email: "help@mattrax.cloud" },
     });
+  });
+
+  it("reports a binding failure as an EmailFailure", async () => {
+    const selection = selectMailer(environment({ EMAIL: fakeBinding().binding }));
+
+    const result = await Effect.runPromiseExit(
+      selection.transport!.send({
+        to: "invitee@example.com",
+        from: selection.sender,
+        subject: "Hello",
+        text: "Body",
+      }),
+    );
+
+    expect(result._tag).toBe("Success");
   });
 
   it("rejects a malformed MAIL_FROM instead of sending as the built-in address", () => {
@@ -81,95 +99,55 @@ describe("mailer selection", () => {
     expect(() => mailerReadiness(selection)).toThrow(/no outbound email transport/);
   });
 
-  it("selects Resend with a verified sender", () => {
+  it("selects SMTP with a server and a verified sender", () => {
     const selection = selectMailer(
       environment({
-        MATTRAX_EMAIL_DISABLED: undefined,
-        MAIL_TRANSPORT: "resend",
+        MAIL_TRANSPORT: "smtp",
         MAIL_FROM: "Mattrax <notifications@example.com>",
-        RESEND_API_KEY: "re_test",
+        MAIL_SMTP_HOST: "smtp.example.com",
+        MAIL_SMTP_USER: "notifications@example.com",
+        MAIL_SMTP_PASSWORD: "secret",
       }),
     );
 
-    expect(selection).toMatchObject({ state: "ok", detail: "Resend" });
+    expect(selection).toMatchObject({ state: "ok", detail: "SMTP" });
     expect(selection.sender).toEqual({ name: "Mattrax", email: "notifications@example.com" });
   });
 
-  it("requires MAIL_FROM and a provider key", () => {
+  it("requires the SMTP host and a sender", () => {
     expect(
-      selectMailer(environment({ MAIL_TRANSPORT: "resend", RESEND_API_KEY: "re_test" })),
+      selectMailer(environment({ MAIL_TRANSPORT: "smtp", MAIL_FROM: "a@example.com" })),
     ).toMatchObject({ state: "error" });
 
     expect(
-      selectMailer(environment({ MAIL_TRANSPORT: "resend", MAIL_FROM: "a@example.com" })),
+      selectMailer(environment({ MAIL_TRANSPORT: "smtp", MAIL_SMTP_HOST: "smtp.example.com" })),
     ).toMatchObject({ state: "error" });
 
     expect(
       selectMailer(
         environment({
-          MAIL_TRANSPORT: "postmark",
+          MAIL_TRANSPORT: "smtp",
           MAIL_FROM: "a@example.com",
-          POSTMARK_SERVER_TOKEN: "token",
+          MAIL_SMTP_HOST: "smtp.example.com",
+          MAIL_SMTP_PORT: "not-a-port",
         }),
       ),
-    ).toMatchObject({ state: "ok", detail: "Postmark" });
+    ).toMatchObject({ state: "error" });
   });
 
-  it("selects the SMTP relay only with a real secret", () => {
-    const base = {
-      MAIL_TRANSPORT: "smtp",
-      MAIL_FROM: "a@example.com",
-      MAIL_RELAY_URL: "http://mail-relay:8790",
-    };
-
-    expect(selectMailer(environment(base))).toMatchObject({ state: "error" });
-    expect(selectMailer(environment({ ...base, MAIL_RELAY_SECRET: "short" }))).toMatchObject({
-      state: "error",
-    });
-    expect(
-      selectMailer(environment({ ...base, MAIL_RELAY_SECRET: "a-long-enough-secret" })),
-    ).toMatchObject({ state: "ok", detail: "SMTP relay" });
-  });
-
-  it("probes the self-hosted relay during readiness", async () => {
-    const probed: string[] = [];
-
-    const selection = selectMailer(
-      environment({
-        MAIL_TRANSPORT: "smtp",
-        MAIL_FROM: "a@example.com",
-        MAIL_RELAY_URL: "http://mail-relay:8790/",
-        MAIL_RELAY_SECRET: "a-long-enough-secret",
-      }),
-      {
-        // SAFETY: the probe only uses the standard fetch signature this fake implements.
-        fetch: (async (input: RequestInfo | URL) => {
-          probed.push(String(input));
-
-          return new Response("{}", { status: 200 });
-        }) as typeof globalThis.fetch,
-      },
-    );
-
-    expect(selection.probe).toBeDefined();
-    await selection.probe!();
-
-    expect(probed).toEqual(["http://mail-relay:8790/health"]);
-  });
-
-  it("prefers an explicit provider over the Cloudflare binding", () => {
+  it("prefers an explicit transport over the Cloudflare binding", () => {
     const { binding } = fakeBinding();
 
     const selection = selectMailer(
       environment({
         EMAIL: binding,
-        MAIL_TRANSPORT: "resend",
+        MAIL_TRANSPORT: "smtp",
         MAIL_FROM: "a@example.com",
-        RESEND_API_KEY: "re_test",
+        MAIL_SMTP_HOST: "smtp.example.com",
       }),
     );
 
-    expect(selection.detail).toBe("Resend");
+    expect(selection.detail).toBe("SMTP");
   });
 
   it("rejects an unknown transport and a missing Cloudflare binding", () => {

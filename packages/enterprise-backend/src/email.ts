@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { sendSmtpMail, type SmtpTransportOptions } from "./smtp.ts";
 
 /**
  * Shared transactional-email contract.
@@ -19,8 +20,22 @@ export type OutboundEmailMessage = {
   readonly html?: string;
 };
 
+/**
+ * A delivery failure with a provider name and a secret-free reason. The
+ * message is safe to persist in the outbox and show in readiness output.
+ */
+export class EmailFailure extends Schema.TaggedError<EmailFailure>()("EmailFailure", {
+  provider: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
+ * The mailer service contract. Implementations adapt a provider (Cloudflare
+ * Email, SMTP, or the local debug mailbox) and report failures through the
+ * Effect error channel so the outbox can retry without losing the outcome.
+ */
 export type EmailTransport = {
-  send(message: OutboundEmailMessage): Promise<void>;
+  readonly send: (message: OutboundEmailMessage) => Effect.Effect<void, EmailFailure>;
   /**
    * Delivers synchronously into an in-process sink (the local debug mailbox)
    * rather than through a provider. Transactional mail then bypasses the
@@ -28,6 +43,39 @@ export type EmailTransport = {
    * immediately. Never set this on a production transport.
    */
   readonly local?: boolean;
+};
+
+/**
+ * Adapt a plain (possibly async) sender to the transport contract. The outbox
+ * needs a promise per message; tests and simple adapters should not repeat the
+ * `Effect.tryPromise` boilerplate.
+ */
+export const makeEmailTransport = (
+  send: (message: OutboundEmailMessage) => void | Promise<void>,
+  options: { readonly local?: boolean; readonly provider?: string } = {},
+): EmailTransport => ({
+  ...(options.local === undefined ? {} : { local: options.local }),
+  send: (message) =>
+    Effect.tryPromise({
+      try: async () => {
+        await send(message);
+      },
+      catch: (cause) =>
+        new EmailFailure({
+          provider: options.provider ?? "email",
+          message: describeEmailFailure(cause),
+        }),
+    }),
+});
+
+/** Safe, one-line failure text for logs and the outbox. */ export const describeEmailFailure = (
+  cause: unknown,
+): string => {
+  if (cause instanceof EmailFailure) return cause.message;
+
+  const message = cause instanceof Error ? cause.message : "delivery failed";
+
+  return message.replaceAll(/\s+/g, " ").trim().slice(0, 300) || "delivery failed";
 };
 
 /** Sender used when a deployment has not configured `MAIL_FROM`. */
@@ -90,129 +138,15 @@ export const replyToAddress = (replyTo: EmailReplyTo): EmailAddress =>
     ? { name: DEFAULT_EMAIL_FROM.name, email: replyTo }
     : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
 
-const replyToValue = (replyTo: EmailReplyTo | undefined): string | undefined =>
-  replyTo === undefined ? undefined : formatEmailAddress(replyToAddress(replyTo));
-
-const recipientsOf = (to: string | ReadonlyArray<string>): string[] =>
-  Schema.is(Schema.String)(to) ? [to] : [...to];
-
-/** Provider errors name the provider and status only: never the recipient. */
-const rejection = (provider: string, status: number) =>
-  new Error(`${provider} rejected the message with status ${status}`);
-
-export type HttpEmailTransportOptions = {
-  readonly apiKey: string;
-  readonly fetch: typeof globalThis.fetch;
-  /** Overrides the provider's production endpoint (tests and proxies). */
-  readonly endpoint?: string;
-};
-
 /**
- * Resend's send API. The key is only ever sent in the Authorization header and
- * never appears in an error, so a failure can be persisted safely.
+ * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
+ * `nodejs_compat`, so hosted and self-hosted deployments use one client.
  */
-export const resendEmailTransport = (options: HttpEmailTransportOptions): EmailTransport => {
-  const endpoint = options.endpoint ?? "https://api.resend.com/emails";
-
-  return {
-    send: async (message) => {
-      const response = await options.fetch(endpoint, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${options.apiKey}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          from: formatEmailAddress(message.from),
-          to: recipientsOf(message.to),
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-          reply_to: replyToValue(message.replyTo),
-        }),
-      });
-
-      if (!response.ok) throw rejection("Resend", response.status);
-
-      // Drain the body so the connection can be reused by the runtime.
-      await response.arrayBuffer();
-    },
-  };
-};
-
-/**
- * Postmark's transactional API. Postmark requires the message stream that the
- * server token belongs to; `outbound` is the default stream every server has.
- */
-export const postmarkEmailTransport = (
-  options: HttpEmailTransportOptions & { readonly messageStream?: string },
-): EmailTransport => {
-  const endpoint = options.endpoint ?? "https://api.postmarkapp.com/email";
-  const messageStream = options.messageStream ?? "outbound";
-
-  return {
-    send: async (message) => {
-      const response = await options.fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "x-postmark-server-token": options.apiKey,
-          "content-type": "application/json",
-          accept: "application/json",
-        },
-        body: JSON.stringify({
-          From: formatEmailAddress(message.from),
-          To: recipientsOf(message.to).join(", "),
-          Subject: message.subject,
-          TextBody: message.text,
-          HtmlBody: message.html,
-          ReplyTo: replyToValue(message.replyTo),
-          MessageStream: messageStream,
-        }),
-      });
-
-      if (!response.ok) throw rejection("Postmark", response.status);
-
-      await response.arrayBuffer();
-    },
-  };
-};
-
-export type MailRelayTransportOptions = {
-  readonly url: string;
-  readonly secret: string;
-  readonly fetch: typeof globalThis.fetch;
-};
-
-/**
- * HTTP client for the self-hosted `apps/mail-relay` sidecar, which speaks SMTP
- * to whatever mailbox the operator already has. The container has no way to
- * open an SMTP connection itself, and an HTTP hop keeps the Worker transport
- * seam identical to a hosted provider.
- */
-export const mailRelayTransport = (options: MailRelayTransportOptions): EmailTransport => {
-  const endpoint = `${options.url.replace(/\/+$/, "")}/send`;
-
-  return {
-    send: async (message) => {
-      const response = await options.fetch(endpoint, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${options.secret}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          to: recipientsOf(message.to),
-          from: message.from,
-          replyTo: message.replyTo,
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-        }),
-      });
-
-      if (!response.ok) throw rejection("Mail relay", response.status);
-
-      await response.arrayBuffer();
-    },
-  };
-};
+export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
+  send: (message) =>
+    Effect.tryPromise({
+      try: () => sendSmtpMail(options, message).then(() => undefined),
+      catch: (cause) =>
+        new EmailFailure({ provider: "SMTP", message: describeEmailFailure(cause) }),
+    }),
+});

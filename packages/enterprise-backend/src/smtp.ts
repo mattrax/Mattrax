@@ -4,36 +4,23 @@ import { connect as connectNet } from "node:net";
 import type { Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
 
+import type { OutboundEmailMessage } from "./email.ts";
+
 /**
- * Minimal SMTP client for the mail relay.
+ * Minimal SMTP client for the self-hosted mailer.
  *
- * It deliberately supports only what transactional mail needs: EHLO, optional
- * STARTTLS, AUTH PLAIN/LOGIN, one envelope with several recipients and a
- * multipart/alternative body. The relay has no dependencies so the container
- * image stays small and there is no supply chain beyond Node itself.
+ * Supports only what transactional mail needs: EHLO, optional STARTTLS,
+ * AUTH PLAIN/LOGIN, one envelope with several recipients and a
+ * multipart/alternative body. It runs on `node:net`/`node:tls`, which work in
+ * Node and in Workers with `nodejs_compat`, so the same implementation serves
+ * the Node entry point and the Cloudflare Worker.
  */
 
 const CRLF = "\r\n";
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-/* oxlint-disable anti-slop/no-runtime-typeof -- messages arrive as JSON from the relay's HTTP boundary; the SMTP client validates them before opening a socket. */
-const isText = (value: unknown): value is string => typeof value === "string";
-/* oxlint-enable anti-slop/no-runtime-typeof */
-
-/** The envelope and bodies the relay hands to the SMTP client. */
-export interface MailAddress {
-  name: string;
-  email: string;
-}
-
-export interface MailMessage {
-  to: string[];
-  from: MailAddress;
-  replyTo?: string | MailAddress;
-  subject: string;
-  text?: string;
-  html?: string;
-}
+const recipientsOf = (to: string | ReadonlyArray<string>): string[] =>
+  typeof to === "string" ? [to] : [...to];
 
 /** Everything needed to reach and authenticate against the operator's SMTP server. */
 export interface SmtpTransportOptions {
@@ -257,7 +244,9 @@ const sanitizeHeader = (value: string | null | undefined): string =>
     .replaceAll(/[\r\n]+/g, " ")
     .trim();
 
-const formatAddress = (address: { name?: string; email?: string } | null | undefined): string => {
+const formatAddress = (
+  address: { readonly name?: string | undefined; readonly email: string } | null | undefined,
+): string => {
   const email = sanitizeHeader(address?.email);
   const name = sanitizeHeader(address?.name);
 
@@ -290,9 +279,9 @@ const base64Body = (value: string): string => {
  * Render the RFC 5322 message. Pure so the relay's wire format is unit-tested
  * without a server.
  */
-export const buildMimeMessage = (message: MailMessage, now: Date = new Date()): string => {
+export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new Date()): string => {
   const from = formatAddress(message.from);
-  const to = message.to.map((address) => sanitizeHeader(address));
+  const to = recipientsOf(message.to).map((address) => sanitizeHeader(address));
 
   if (to.length === 0) throw new Error("at least one recipient is required");
 
@@ -314,9 +303,10 @@ export const buildMimeMessage = (message: MailMessage, now: Date = new Date()): 
   ];
 
   if (message.replyTo) {
-    const replyTo = isText(message.replyTo)
-      ? formatAddress({ name: "", email: message.replyTo })
-      : formatAddress(message.replyTo);
+    const replyTo =
+      typeof message.replyTo === "string"
+        ? formatAddress({ name: "", email: message.replyTo })
+        : formatAddress(message.replyTo);
 
     headers.push(`Reply-To: ${replyTo}`);
   }
@@ -375,7 +365,7 @@ const sendBody = async (channel: Channel, message: string): Promise<void> => {
  */
 export const sendSmtpMail = async (
   options: SmtpTransportOptions,
-  message: MailMessage,
+  message: OutboundEmailMessage,
 ): Promise<{ recipients: number }> => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // Validate the envelope and render the body before opening a connection, so a
@@ -408,7 +398,7 @@ export const sendSmtpMail = async (
     await authenticate(channel, options, capabilities);
     await channel.command(`MAIL FROM:<${sanitizeHeader(message.from?.email)}>`, [250]);
 
-    for (const recipient of message.to)
+    for (const recipient of recipientsOf(message.to))
       await channel.command(`RCPT TO:<${sanitizeHeader(recipient)}>`, [250, 251]);
 
     await channel.command("DATA", [354]);
@@ -417,7 +407,7 @@ export const sendSmtpMail = async (
     // QUIT failing must not turn a delivered message into a failure.
     await channel.command("QUIT", [221]).catch(() => undefined);
 
-    return { recipients: message.to.length };
+    return { recipients: recipientsOf(message.to).length };
   } finally {
     channel.detach();
     current.destroy();

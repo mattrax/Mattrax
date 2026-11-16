@@ -316,19 +316,18 @@ export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "./email
 
 export {
   DEFAULT_EMAIL_FROM,
+  EmailFailure,
+  describeEmailFailure,
   formatEmailAddress,
-  mailRelayTransport,
+  makeEmailTransport,
   parseEmailSender,
-  postmarkEmailTransport,
   replyToAddress,
-  resendEmailTransport,
+  smtpEmailTransport,
 } from "./email.js";
 
-export type {
-  EmailAddress,
-  HttpEmailTransportOptions,
-  MailRelayTransportOptions,
-} from "./email.js";
+export type { EmailAddress } from "./email.js";
+
+export type { SmtpTransportOptions } from "./smtp.js";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,

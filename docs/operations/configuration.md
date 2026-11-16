@@ -161,20 +161,20 @@ Transport selection is explicit:
 
 | Variable                 | Purpose                                                                       |
 | ------------------------ | ----------------------------------------------------------------------------- |
-| `MAIL_TRANSPORT`         | `resend`, `postmark`, `smtp` (self-hosted relay), `cloudflare` or `disabled`. |
-| `MAIL_FROM`              | Sender for every transactional email. Required for provider transports.       |
-| `RESEND_API_KEY`         | Resend API key.                                                               |
-| `POSTMARK_SERVER_TOKEN`  | Postmark server token.                                                        |
-| `MAIL_POSTMARK_STREAM`   | Postmark message stream, defaults to `outbound`.                              |
-| `MAIL_RELAY_URL`         | Base URL of `apps/mail-relay`, e.g. `http://mail-relay:8790`.                 |
-| `MAIL_RELAY_SECRET`      | Bearer secret shared with the relay (at least 16 characters).                 |
-| `MATTRAX_EMAIL_DISABLED` | `1` declares that this deployment has no outbound email.                      |
+| `MAIL_TRANSPORT`         | `smtp`, `cloudflare` or `disabled`.                                           |
+| `MAIL_FROM`              | Verified sender, e.g. `Mattrax <notifications@example.com>`.                  |
+| `MAIL_SMTP_HOST`         | SMTP server for `MAIL_TRANSPORT=smtp`.                                        |
+| `MAIL_SMTP_PORT`         | SMTP port; defaults to 587, or 465 with `MAIL_SMTP_SECURE`.                   |
+| `MAIL_SMTP_SECURE`       | `true` for implicit TLS instead of STARTTLS.                                  |
+| `MAIL_SMTP_USER`         | SMTP AUTH username.                                                           |
+| `MAIL_SMTP_PASSWORD`     | SMTP AUTH password.                                                           |
+| `MAIL_SMTP_HELO`         | EHLO name; defaults to the runtime hostname.                                  |
 
 Hosted Mattrax uses the Cloudflare `send_email` binding when `MAIL_TRANSPORT`
-is unset. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
+is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and
 `MATTRAX_INVITATION_FROM` still overrides the invitation sender. The binding
 only accepts the addresses listed in `apps/api/cloudflare.config.ts`
-(`hello@mattrax.cloud`); set `MAIL_TRANSPORT=resend` or `postmark` to send from
+(`hello@mattrax.cloud`); set `MAIL_TRANSPORT=smtp` to send from
 another verified domain.
 `/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
 (the transport is misconfigured or missing), so a typo cannot look healthy.

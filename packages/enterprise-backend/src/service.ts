@@ -11,7 +11,7 @@ import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseH
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "./android.ts";
 import type { AppleApiConfig } from "./appleBusinessManager.ts";
-import type { EmailReplyTo } from "./email.ts";
+import type { EmailTransport } from "./email.ts";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
@@ -39,16 +39,7 @@ export type EnterpriseServiceOptions = {
    * download.
    */
   readonly appleProfileSigning?: AppleProfileSigningConfig;
-  readonly email?: {
-    send(message: {
-      to: string;
-      from: { name: string; email: string };
-      replyTo?: EmailReplyTo;
-      subject: string;
-      text?: string;
-      html?: string;
-    }): Promise<void>;
-  };
+  readonly email?: EmailTransport;
   /** Verified invitation sender; defaults to `hello@mattrax.cloud`. */
   readonly invitationFromEmail?: string;
   /**

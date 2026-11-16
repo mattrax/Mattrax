@@ -10,6 +10,7 @@ import {
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -276,7 +277,7 @@ describe("email verification", () => {
     const sent: Array<{ text: string }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -296,13 +297,11 @@ describe("email verification", () => {
     const sent: Array<unknown> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: {
-        send: async (message: any) => {
-          sent.push(message);
+      email: makeEmailTransport(async (message: any) => {
+        sent.push(message);
 
-          throw new Error("provider down");
-        },
-      },
+        throw new Error("provider down");
+      }),
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
@@ -337,7 +336,7 @@ describe("email verification", () => {
     }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -366,7 +365,7 @@ describe("email verification", () => {
     const sent: Array<{ to: string; subject: string; text: string }> = [];
 
     const { run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
@@ -383,7 +382,7 @@ describe("email verification", () => {
     const sent: Array<{ text: string }> = [];
 
     const { db, run } = makeContext(unverified(), {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
@@ -420,7 +419,7 @@ describe("email change ceremony", () => {
     sent.length = 0;
 
     return makeContext(initial, {
-      email: { local: true, send: async (message: any) => void sent.push(message) },
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
   };
 

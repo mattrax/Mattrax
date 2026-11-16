@@ -41,16 +41,15 @@ services:
       ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: ${ANDROID_MANAGEMENT_PUBSUB_AUDIENCE:-}
       # Outbound email. Without a transport the container declares email
       # disabled (readiness reports mailer: skipped) and nothing is logged.
-      #   resend  -> MAIL_TRANSPORT=resend, MAIL_FROM, RESEND_API_KEY
-      #   postmark-> MAIL_TRANSPORT=postmark, MAIL_FROM, POSTMARK_SERVER_TOKEN
-      #   smtp    -> MAIL_TRANSPORT=smtp, MAIL_FROM, MAIL_RELAY_URL,
-      #              MAIL_RELAY_SECRET (start the mail-relay profile)
+      #   smtp -> MAIL_TRANSPORT=smtp, MAIL_FROM, MAIL_SMTP_HOST, ...
       MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
-      MAIL_RELAY_URL: ${MAIL_RELAY_URL:-}
-      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-}
+      MAIL_SMTP_SECURE: ${MAIL_SMTP_SECURE:-}
+      MAIL_SMTP_USER: ${MAIL_SMTP_USER:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_SMTP_HELO: ${MAIL_SMTP_HELO:-}
       MAINTENANCE_ONBOARDING_EMAILS: ${MAINTENANCE_ONBOARDING_EMAILS:-true}
       MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: ${MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS:-7}
       MAINTENANCE_ONBOARDING_WINDOW_DAYS: ${MAINTENANCE_ONBOARDING_WINDOW_DAYS:-7}
@@ -63,39 +62,55 @@ services:
     volumes:
       - mattrax-data:/data
 
-  # SMTP sidecar for operators whose mail provider only offers SMTP:
-  #   docker compose -f docker-compose.selfhost.yml --profile smtp up -d
-  # with SMTP_HOST and the MAIL_RELAY_* variables set. The app reaches it at
-  # MAIL_RELAY_URL=http://mail-relay:8790.
-  mail-relay:
-    profiles: ["smtp"]
-    image: mattrax-selfhost:local
-    restart: unless-stopped
-    command: ["/app/mail-relay/index.ts"]
+  mysql:
+        condition: service_healthy
     environment:
-      MAIL_RELAY_SECRET: ${MAIL_RELAY_SECRET:-}
+      ORIGIN: ${ORIGIN:?set ORIGIN to the public https URL}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET to a random secret}
+      DATABASE_URL: mysql://mattrax:${MYSQL_PASSWORD:-mattrax}@mysql:3306/mattrax
+      # Required when the proxy terminates device mTLS. See the self-hosting
+      # docs before enabling: the proxy must strip caller-supplied values.
+      TRUST_DEVICE_IDENTITY_HEADERS: ${TRUST_DEVICE_IDENTITY_HEADERS:-}
+      # Optional integrations, all disabled when unset.
+      POSTHOG_KEY: ${POSTHOG_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+      APNS_RELAY_URL: ${APNS_RELAY_URL:-}
+      APNS_RELAY_SECRET: ${APNS_RELAY_SECRET:-}
+      CLOUD_APPLE_VENDOR_CERT: ${CLOUD_APPLE_VENDOR_CERT:-}
+      CLOUD_APPLE_VENDOR_KEY: ${CLOUD_APPLE_VENDOR_KEY:-}
+      APPLE_PROFILE_SIGNING_CERT: ${APPLE_PROFILE_SIGNING_CERT:-}
+      APPLE_PROFILE_SIGNING_KEY: ${APPLE_PROFILE_SIGNING_KEY:-}
+      APPLE_PROFILE_SIGNING_CHAIN: ${APPLE_PROFILE_SIGNING_CHAIN:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: ${ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON:-}
+      ANDROID_MANAGEMENT_PROJECT_ID: ${ANDROID_MANAGEMENT_PROJECT_ID:-}
+      ANDROID_MANAGEMENT_PUBSUB_TOPIC: ${ANDROID_MANAGEMENT_PUBSUB_TOPIC:-}
+      ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: ${ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION:-}
+      ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: ${ANDROID_MANAGEMENT_PUBSUB_AUDIENCE:-}
+      # Outbound email. Without a transport the container declares email
+      # disabled (readiness reports mailer: skipped) and nothing is logged.
+      #   smtp -> MAIL_TRANSPORT=smtp, MAIL_FROM, MAIL_SMTP_HOST, ...
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-}
       MAIL_FROM: ${MAIL_FROM:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_REJECT_UNAUTHORIZED: ${SMTP_REJECT_UNAUTHORIZED:-true}
-      MAIL_RELAY_PORT: ${MAIL_RELAY_PORT:-8790}
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "/usr/local/bin/node",
-          "-e",
-          "fetch('http://127.0.0.1:'+(process.env.MAIL_RELAY_PORT||8790)+'/health').then((response)=>process.exit(response.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    expose:
-      - "8790"
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-}
+      MAIL_SMTP_SECURE: ${MAIL_SMTP_SECURE:-}
+      MAIL_SMTP_USER: ${MAIL_SMTP_USER:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_SMTP_HELO: ${MAIL_SMTP_HELO:-}
+      MAINTENANCE_ONBOARDING_EMAILS: ${MAINTENANCE_ONBOARDING_EMAILS:-true}
+      MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: ${MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS:-7}
+      MAINTENANCE_ONBOARDING_WINDOW_DAYS: ${MAINTENANCE_ONBOARDING_WINDOW_DAYS:-7}
+      MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: ${MAINTENANCE_ONBOARDING_COOLDOWN_DAYS:-7}
+      MATTRAX_ONBOARDING_SINCE: ${MATTRAX_ONBOARDING_SINCE:-}
+      MATTRAX_ONBOARDING_REPLY_TO: ${MATTRAX_ONBOARDING_REPLY_TO:-}
+      MATTRAX_ONBOARDING_SUPPORT_EMAIL: ${MATTRAX_ONBOARDING_SUPPORT_EMAIL:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - mattrax-data:/data
 
   mysql:
     image: mysql:8.4

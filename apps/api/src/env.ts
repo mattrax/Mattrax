@@ -107,20 +107,21 @@ const ApiEnvSchema = Schema.Struct({
   MATTRAX_ONBOARDING_SINCE: Schema.optional(nonEmptyString),
   /**
    * Outbound-email transport for deployments without the Cloudflare
-   * `send_email` binding: `resend`, `postmark`, `smtp` (mail relay),
-   * `cloudflare` or `disabled`.
+   * `send_email` binding: `smtp`, `cloudflare` or `disabled`.
    */
   MAIL_TRANSPORT: Schema.optional(nonEmptyString),
   /** Verified sender, e.g. `Mattrax <notifications@example.com>`. */
   MAIL_FROM: Schema.optional(nonEmptyString),
-  /** Base URL of the self-hosted `apps/mail-relay` SMTP sidecar. */
-  MAIL_RELAY_URL: Schema.optional(nonEmptyString),
-  /** Shared bearer secret for the relay; at least 16 characters. */
-  MAIL_RELAY_SECRET: Schema.optional(nonEmptyString),
-  RESEND_API_KEY: Schema.optional(nonEmptyString),
-  POSTMARK_SERVER_TOKEN: Schema.optional(nonEmptyString),
-  /** Postmark message stream; defaults to `outbound`. */
-  MAIL_POSTMARK_STREAM: Schema.optional(nonEmptyString),
+  /** SMTP server reached directly by the Worker or Node process. */
+  MAIL_SMTP_HOST: Schema.optional(nonEmptyString),
+  /** SMTP port; defaults to 587, or 465 with `MAIL_SMTP_SECURE`. */
+  MAIL_SMTP_PORT: Schema.optional(nonEmptyString),
+  /** `true` connects with implicit TLS instead of STARTTLS. */
+  MAIL_SMTP_SECURE: Schema.optional(nonEmptyString),
+  MAIL_SMTP_USER: Schema.optional(nonEmptyString),
+  MAIL_SMTP_PASSWORD: Schema.optional(nonEmptyString),
+  /** EHLO name; defaults to the hostname reported by the runtime. */
+  MAIL_SMTP_HELO: Schema.optional(nonEmptyString),
   /** Outbox deliveries in flight per maintenance run. Defaults to 4. */
   MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: Schema.optional(Schema.String),
   /** Attempts before queued mail is permanently failed. Defaults to 5. */
@@ -223,11 +224,12 @@ const RawApiEnvSchema = Schema.Struct({
   MATTRAX_ONBOARDING_SINCE: optionalString,
   MAIL_TRANSPORT: optionalString,
   MAIL_FROM: optionalString,
-  MAIL_RELAY_URL: optionalString,
-  MAIL_RELAY_SECRET: optionalString,
-  RESEND_API_KEY: optionalString,
-  POSTMARK_SERVER_TOKEN: optionalString,
-  MAIL_POSTMARK_STREAM: optionalString,
+  MAIL_SMTP_HOST: optionalString,
+  MAIL_SMTP_PORT: optionalString,
+  MAIL_SMTP_SECURE: optionalString,
+  MAIL_SMTP_USER: optionalString,
+  MAIL_SMTP_PASSWORD: optionalString,
+  MAIL_SMTP_HELO: optionalString,
   MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: optionalString,
   MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: optionalString,
   MAINTENANCE_ONBOARDING_EMAILS: optionalString,
@@ -301,11 +303,12 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
   MAIL_TRANSPORT: emptyStringAsUndefined(rawEnv.MAIL_TRANSPORT),
   MAIL_FROM: emptyStringAsUndefined(rawEnv.MAIL_FROM),
-  MAIL_RELAY_URL: emptyStringAsUndefined(rawEnv.MAIL_RELAY_URL),
-  MAIL_RELAY_SECRET: emptyStringAsUndefined(rawEnv.MAIL_RELAY_SECRET),
-  RESEND_API_KEY: emptyStringAsUndefined(rawEnv.RESEND_API_KEY),
-  POSTMARK_SERVER_TOKEN: emptyStringAsUndefined(rawEnv.POSTMARK_SERVER_TOKEN),
-  MAIL_POSTMARK_STREAM: emptyStringAsUndefined(rawEnv.MAIL_POSTMARK_STREAM),
+  MAIL_SMTP_HOST: emptyStringAsUndefined(rawEnv.MAIL_SMTP_HOST),
+  MAIL_SMTP_PORT: emptyStringAsUndefined(rawEnv.MAIL_SMTP_PORT),
+  MAIL_SMTP_SECURE: emptyStringAsUndefined(rawEnv.MAIL_SMTP_SECURE),
+  MAIL_SMTP_USER: emptyStringAsUndefined(rawEnv.MAIL_SMTP_USER),
+  MAIL_SMTP_PASSWORD: emptyStringAsUndefined(rawEnv.MAIL_SMTP_PASSWORD),
+  MAIL_SMTP_HELO: emptyStringAsUndefined(rawEnv.MAIL_SMTP_HELO),
   MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: emptyStringAsUndefined(
     rawEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY,
   ),

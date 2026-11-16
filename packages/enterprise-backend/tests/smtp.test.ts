@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:net";
 import { describe, expect, it } from "vitest";
-import { buildMimeMessage, dotStuff, sendSmtpMail, type MailMessage } from "./smtp.ts";
+import type { OutboundEmailMessage } from "../src/email.ts";
+import { buildMimeMessage, dotStuff, sendSmtpMail } from "../src/smtp.ts";
 
 interface SmtpServerOptions {
   rejectAuth?: boolean;
@@ -107,7 +108,7 @@ const message = {
   subject: "Join Acme on Mattrax",
   text: "Hello,\n\n.leading dot is preserved",
   html: "<p>Hello</p>",
-} satisfies MailMessage;
+} satisfies OutboundEmailMessage;
 
 describe("mail relay SMTP client", () => {
   it("delivers a multipart message with dot-stuffing and AUTH PLAIN", async () => {

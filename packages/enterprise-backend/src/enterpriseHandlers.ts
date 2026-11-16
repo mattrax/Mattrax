@@ -422,7 +422,7 @@ import type {
   EnterprisePolicy,
   EnterpriseSchema,
 } from "./schema.ts";
-import type { EmailReplyTo } from "./email.ts";
+import type { EmailTransport } from "./email.ts";
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -504,17 +504,8 @@ export type EnterpriseHandlersConfig = {
   readonly appleProfileSigning?: AppleProfileSigningConfig;
   /** Optional static analytics sink; the API supplies a request-scoped one. */
   readonly analytics?: EnterpriseAnalytics;
-  /** Transactional email binding. Invitations are returned without email when omitted. */
-  readonly email?: {
-    send(message: {
-      to: string;
-      from: { name: string; email: string };
-      replyTo?: EmailReplyTo;
-      subject: string;
-      text?: string;
-      html?: string;
-    }): Promise<void>;
-  };
+  /** Transactional email transport. Invitations are returned without email when omitted. */
+  readonly email?: EmailTransport;
   /**
    * Verified sender address for invitation email. Must remain an allowed
    * Cloudflare Email sender; defaults to `hello@mattrax.cloud`.

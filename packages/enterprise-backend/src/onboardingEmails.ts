@@ -240,21 +240,19 @@ export const sendWelcomeEmailOnce = (
 
     if (!message) return "failed";
 
-    const delivered = yield* Effect.tryPromise({
-      try: () =>
-        email.send({
-          to: user.email,
-          from: options.from ?? ONBOARDING_EMAIL_FROM,
-          replyTo,
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-        }),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.as(true),
-      Effect.catchCause(() => Effect.succeed(false)),
-    );
+    const delivered = yield* email
+      .send({
+        to: user.email,
+        from: options.from ?? ONBOARDING_EMAIL_FROM,
+        replyTo,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+      })
+      .pipe(
+        Effect.as(true),
+        Effect.catchCause(() => Effect.succeed(false)),
+      );
 
     if (delivered) return "sent";
 
@@ -681,22 +679,20 @@ export const runOnboardingEmails = (
 
             if (!message) return { recipient, delivered: false } as const;
 
-            const delivered = yield* Effect.tryPromise({
-              try: () =>
-                email.send({
-                  // One message per recipient: no admin sees another's address.
-                  to: recipient.email,
-                  from: options.from ?? ONBOARDING_EMAIL_FROM,
-                  replyTo,
-                  subject: message.subject,
-                  text: message.text,
-                  html: message.html,
-                }),
-              catch: (cause) => cause,
-            }).pipe(
-              Effect.as(true),
-              Effect.catchCause(() => Effect.succeed(false)),
-            );
+            const delivered = yield* email
+              .send({
+                // One message per recipient: no admin sees another's address.
+                to: recipient.email,
+                from: options.from ?? ONBOARDING_EMAIL_FROM,
+                replyTo,
+                subject: message.subject,
+                text: message.text,
+                html: message.html,
+              })
+              .pipe(
+                Effect.as(true),
+                Effect.catchCause(() => Effect.succeed(false)),
+              );
 
             if (!delivered) {
               yield* Effect.logError("Onboarding follow-up could not be sent", {

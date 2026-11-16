@@ -13,6 +13,7 @@ import {
   requestAccountRecovery,
   verifyAccountRecoveryProof,
 } from "../src/recovery.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -21,15 +22,14 @@ const start = Date.UTC(2026, 10, 16, 12, 0, 0);
 
 type Sent = { to: string; subject: string; text: string };
 
-const emailTransport = (sent: Sent[]) => ({
-  send: async (message: OutboundEmailMessage) => {
+const emailTransport = (sent: Sent[]) =>
+  makeEmailTransport(async (message: OutboundEmailMessage) => {
     sent.push({
       to: Schema.is(Schema.String)(message.to) ? message.to : message.to.join(", "),
       subject: message.subject,
       text: message.text ?? "",
     });
-  },
-});
+  });
 
 type UserSeed = {
   id: string;

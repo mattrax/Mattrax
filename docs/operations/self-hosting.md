@@ -110,7 +110,7 @@ The container serves plain HTTP because TLS is the proxy's job. Set
 | `R2_BUCKET`                     | no        | Local bucket name. Defaults to `mattrax`.                                   |
 | `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                        |
 | `LOG_LEVEL`                     | no        | Miniflare log level: `debug`, `info`, `warn`, `error`, `none`.              |
-| `MAIL_TRANSPORT`                | no        | `resend`, `postmark` or `smtp`; unset disables outbound email.              |
+| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                      |
 | `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                |
 
 Optional integrations use the same names as the hosted deployment. See
@@ -120,47 +120,33 @@ no analytics, and no Stripe billing.
 
 ### Email
 
-Self-hosted deployments can send real email. Set a transport and a verified
-sender:
+Self-hosted deployments send mail directly over SMTP. Set the transport, a
+verified sender and the server details:
 
-| Variable                | Purpose                                                             |
-| ----------------------- | ------------------------------------------------------------------- |
-| `MAIL_TRANSPORT`        | `resend`, `postmark` or `smtp` (the bundled relay).                 |
-| `MAIL_FROM`             | Sender address, e.g. `Mattrax <notifications@example.com>`.         |
-| `RESEND_API_KEY`        | Required for `resend`.                                              |
-| `POSTMARK_SERVER_TOKEN` | Required for `postmark`.                                            |
-| `MAIL_RELAY_URL`        | Required for `smtp`, e.g. `http://mail-relay:8790`.                 |
-| `MAIL_RELAY_SECRET`     | Required for `smtp`; shared with the relay, at least 16 characters. |
-
-```bash
-# Resend
-MAIL_TRANSPORT=resend
-MAIL_FROM="Mattrax <notifications@example.com>"
-RESEND_API_KEY=re_...
-```
-
-Any provider works, but the sender domain must be verified with it. Use a
-monitored mailbox, not `no-reply@`: invitation and verification replies should
-reach a person.
-
-For a provider that only speaks SMTP, start the bundled sidecar, which delivers
-through your existing mail account:
+| Variable             | Purpose                                                                  |
+| -------------------- | ------------------------------------------------------------------------ |
+| `MAIL_TRANSPORT`     | `smtp`.                                                                  |
+| `MAIL_FROM`          | Sender address, e.g. `Mattrax <notifications@example.com>`.              |
+| `MAIL_SMTP_HOST`     | SMTP server hostname, e.g. `smtp.example.com`.                           |
+| `MAIL_SMTP_PORT`     | Port. Defaults to 587, or 465 when `MAIL_SMTP_SECURE` is on.             |
+| `MAIL_SMTP_SECURE`   | `true` connects with implicit TLS; otherwise STARTTLS is used when offered. |
+| `MAIL_SMTP_USER`     | Username for AUTH PLAIN/LOGIN, when the server requires it.              |
+| `MAIL_SMTP_PASSWORD` | Password for the same account.                                           |
+| `MAIL_SMTP_HELO`     | EHLO name; defaults to the runtime hostname.                             |
 
 ```bash
 MAIL_TRANSPORT=smtp
 MAIL_FROM="Mattrax <notifications@example.com>"
-MAIL_RELAY_SECRET="$(openssl rand -base64 32)"
-MAIL_RELAY_URL=http://mail-relay:8790
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=notifications@example.com
-SMTP_PASSWORD=...
-docker compose -f docker-compose.selfhost.yml --profile smtp up -d
+MAIL_SMTP_HOST=smtp.example.com
+MAIL_SMTP_PORT=587
+MAIL_SMTP_USER=notifications@example.com
+MAIL_SMTP_PASSWORD=...
 ```
 
-Set `SMTP_SECURE=true` for implicit TLS (usually port 465); otherwise the relay
-upgrades with STARTTLS when the server offers it. `SMTP_REJECT_UNAUTHORIZED=false`
-is only for a relay with a self-signed certificate on your own network.
+The sender domain must be authorised by the SMTP server (SPF/DKIM/DMARC at the
+provider). Use a monitored mailbox, not `no-reply@`: invitation and verification
+replies should reach a person. The container talks to the SMTP server directly,
+so there is no sidecar to run and no relay secret to manage.
 
 Without a transport the container declares `MATTRAX_EMAIL_DISABLED=1`: readiness
 reports `mailer: skipped` (degraded), verification requests fail with "This

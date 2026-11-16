@@ -29,6 +29,7 @@ import {
   appleEnrollmentProfileResponse,
   createEnterpriseService,
 } from "../src/enterpriseHandlers.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "../src/email.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
@@ -804,12 +805,12 @@ describe("enterprise service tenant flow", () => {
     const sent: Array<OutboundEmailMessage> = [];
 
     const { service, headers } = await makeContext({
-      email: {
-        local: true,
-        send: async (message) => {
+      email: makeEmailTransport(
+        async (message) => {
           sent.push(message);
         },
-      },
+        { local: true },
+      ),
     });
 
     const tenant = await runEffect(

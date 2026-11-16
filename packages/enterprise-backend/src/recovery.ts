@@ -88,10 +88,7 @@ const sendEmail = (
       Effect.sync(() => {
         console.log(fallbackLog);
       })
-    : Effect.tryPromise({
-        try: () => email.send({ from: FROM, ...message }),
-        catch: () => undefined,
-      }).pipe(Effect.catch(() => Effect.void));
+    : email.send({ from: FROM, ...message }).pipe(Effect.catch(() => Effect.void));
 
 /**
  * Whether recovery needs approval. An account is "shared" when at least one

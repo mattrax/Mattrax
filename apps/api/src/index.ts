@@ -382,11 +382,12 @@ const resolveMailer = (env: Env) =>
     MATTRAX_EMAIL_DISABLED: apiEnv.MATTRAX_EMAIL_DISABLED,
     MAIL_TRANSPORT: apiEnv.MAIL_TRANSPORT,
     MAIL_FROM: apiEnv.MAIL_FROM,
-    MAIL_RELAY_URL: apiEnv.MAIL_RELAY_URL,
-    MAIL_RELAY_SECRET: apiEnv.MAIL_RELAY_SECRET,
-    RESEND_API_KEY: apiEnv.RESEND_API_KEY,
-    POSTMARK_SERVER_TOKEN: apiEnv.POSTMARK_SERVER_TOKEN,
-    MAIL_POSTMARK_STREAM: apiEnv.MAIL_POSTMARK_STREAM,
+    MAIL_SMTP_HOST: apiEnv.MAIL_SMTP_HOST,
+    MAIL_SMTP_PORT: apiEnv.MAIL_SMTP_PORT,
+    MAIL_SMTP_SECURE: apiEnv.MAIL_SMTP_SECURE,
+    MAIL_SMTP_USER: apiEnv.MAIL_SMTP_USER,
+    MAIL_SMTP_PASSWORD: apiEnv.MAIL_SMTP_PASSWORD,
+    MAIL_SMTP_HELO: apiEnv.MAIL_SMTP_HELO,
     DEV_MAILBOX: apiEnv.DEV_MAILBOX,
     DEV_MAILBOX_ALLOW_REMOTE: apiEnv.DEV_MAILBOX_ALLOW_REMOTE,
     DEV_MAILBOX_SECRET: apiEnv.DEV_MAILBOX_SECRET,
@@ -859,13 +860,7 @@ const checkStorageReady = async (env: Env): Promise<"ok"> => {
  * forgot the transport must not report ready while every sign-in email fails.
  * The reason is deliberately generic, and secrets never reach the probe.
  */
-const checkMailerReady = async (env: Env): Promise<"ok" | "skipped"> => {
-  const selection = resolveMailer(env);
-
-  await selection.probe?.();
-
-  return mailerReadiness(selection);
-};
+const checkMailerReady = (env: Env): "ok" | "skipped" => mailerReadiness(resolveMailer(env));
 
 /**
  * Readiness probes are memoised per isolate for 30 seconds. The storage probe
@@ -883,7 +878,7 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
   const result = await checkReadiness({
     checkDatabase: () => checkDatabaseReady(env),
     checkStorage: () => storageProbeCache.get(() => checkStorageReady(env)),
-    checkMailer: () => mailerProbeCache.get(() => checkMailerReady(env)),
+    checkMailer: () => mailerProbeCache.get(async () => checkMailerReady(env)),
     version,
     deploymentId: deploymentId(env),
   });

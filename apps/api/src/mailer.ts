@@ -1,25 +1,25 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import {
   DEFAULT_EMAIL_FROM,
-  mailRelayTransport,
+  EmailFailure,
   parseEmailSender,
-  postmarkEmailTransport,
-  resendEmailTransport,
   replyToAddress,
+  smtpEmailTransport,
   type EmailAddress,
   type EmailReplyTo,
   type EmailTransport,
+  type SmtpTransportOptions,
 } from "@mattrax/enterprise-backend";
 import { isDevMailboxEnabled, recordDevEmail } from "./devMailbox.js";
 
 /**
  * Outbound-email transport selection.
  *
- * One seam, three real transports and an explicit degraded mode:
+ * One seam, two real transports and an explicit degraded mode:
  *
  * - the Cloudflare `send_email` binding (hosted default),
- * - Resend or Postmark over HTTPS (any deployment, including a container),
- * - the self-hosted `apps/mail-relay` sidecar, which speaks SMTP.
+ * - SMTP for self-hosted deployments and any container,
+ * - the local debug mailbox for development and browser tests.
  *
  * Selection is explicit. A deployment that is missing a setting reports
  * `error` and readiness fails; it is never silently downgraded to logging
@@ -38,12 +38,6 @@ export type MailerSelection = {
   readonly sender: EmailAddress;
   /** Operator-facing reason. Never contains a credential. */
   readonly detail: string;
-  /**
-   * Optional readiness probe for a transport the deployment runs itself. A
-   * hosted provider needs no round trip; the self-hosted relay does, because
-   * the container beside it can be down while the Worker looks configured.
-   */
-  readonly probe?: () => Promise<void>;
 };
 
 /** The subset of the Worker environment the mailer reads. */
@@ -53,18 +47,15 @@ export type MailerEnv = {
   readonly MATTRAX_EMAIL_DISABLED?: string;
   readonly MAIL_TRANSPORT?: string;
   readonly MAIL_FROM?: string;
-  readonly MAIL_RELAY_URL?: string;
-  readonly MAIL_RELAY_SECRET?: string;
-  readonly RESEND_API_KEY?: string;
-  readonly POSTMARK_SERVER_TOKEN?: string;
-  readonly MAIL_POSTMARK_STREAM?: string;
+  readonly MAIL_SMTP_HOST?: string;
+  readonly MAIL_SMTP_PORT?: string;
+  readonly MAIL_SMTP_SECURE?: string;
+  readonly MAIL_SMTP_USER?: string;
+  readonly MAIL_SMTP_PASSWORD?: string;
+  readonly MAIL_SMTP_HELO?: string;
   readonly DEV_MAILBOX?: string;
   readonly DEV_MAILBOX_ALLOW_REMOTE?: string;
   readonly DEV_MAILBOX_SECRET?: string;
-};
-
-export type MailerOptions = {
-  readonly fetch?: typeof globalThis.fetch;
 };
 
 const enabled = (value: string | undefined) => {
@@ -92,16 +83,23 @@ const replyToForBinding = (replyTo: EmailReplyTo | undefined) =>
 
 /** Adapter for the Cloudflare `send_email` binding. */
 export const cloudEmailTransport = (binding: SendEmail): EmailTransport => ({
-  send: async (message) => {
-    await binding.send({
-      to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
-      from: message.from,
-      replyTo: replyToForBinding(message.replyTo),
-      subject: message.subject,
-      text: message.text,
-      html: message.html,
-    });
-  },
+  send: (message) =>
+    Effect.tryPromise({
+      try: () =>
+        binding.send({
+          to: Schema.is(Schema.String)(message.to) ? message.to : [...message.to],
+          from: message.from,
+          replyTo: replyToForBinding(message.replyTo),
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        }),
+      catch: (cause) =>
+        new EmailFailure({
+          provider: "Cloudflare Email",
+          message: cause instanceof Error ? cause.message : "delivery failed",
+        }),
+    }).pipe(Effect.asVoid),
 });
 
 /**
@@ -111,25 +109,26 @@ export const cloudEmailTransport = (binding: SendEmail): EmailTransport => ({
  */
 export const devMailboxTransport = (): EmailTransport => ({
   local: true,
-  send: async (message) => {
-    const recipients = Schema.is(Schema.String)(message.to) ? [message.to] : [...message.to];
+  send: (message) =>
+    Effect.sync(() => {
+      const recipients = Schema.is(Schema.String)(message.to) ? [message.to] : [...message.to];
 
-    const replyTo =
-      message.replyTo === undefined ? undefined : replyToAddress(message.replyTo).email;
+      const replyTo =
+        message.replyTo === undefined ? undefined : replyToAddress(message.replyTo).email;
 
-    for (const to of recipients) {
-      recordDevEmail({
-        to,
-        replyTo,
-        subject: message.subject,
-        text: message.text ?? "",
-        html: message.html,
-      });
+      for (const to of recipients) {
+        recordDevEmail({
+          to,
+          replyTo,
+          subject: message.subject,
+          text: message.text ?? "",
+          html: message.html,
+        });
 
-      // The link is the point of the mailbox during local development.
-      console.log("DEV EMAIL", to, message.subject, message.text);
-    }
-  },
+        // The link is the point of the mailbox during local development.
+        console.log("DEV EMAIL", to, message.subject, message.text);
+      }
+    }),
 });
 
 const error = (detail: string, sender: EmailAddress): MailerSelection => ({
@@ -139,20 +138,51 @@ const error = (detail: string, sender: EmailAddress): MailerSelection => ({
 });
 
 /**
+ * Read the SMTP settings. Returns the option bag or the operator-facing reason
+ * one is missing; every value is trimmed so a stray newline in a secret does
+ * not produce a confusing authentication failure.
+ */
+const smtpOptions = (
+  env: MailerEnv,
+): { readonly options: SmtpTransportOptions } | { readonly problem: string } => {
+  const host = trimmed(env.MAIL_SMTP_HOST);
+
+  if (!host) return { problem: "MAIL_SMTP_HOST is required when MAIL_TRANSPORT=smtp" };
+
+  const port = trimmed(env.MAIL_SMTP_PORT);
+  const parsedPort = port === undefined ? undefined : Number(port);
+
+  if (
+    parsedPort !== undefined &&
+    (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65_535)
+  )
+    return { problem: "MAIL_SMTP_PORT must be a TCP port number" };
+
+  return {
+    options: {
+      host,
+      port: parsedPort,
+      secure: enabled(env.MAIL_SMTP_SECURE),
+      user: trimmed(env.MAIL_SMTP_USER),
+      password: trimmed(env.MAIL_SMTP_PASSWORD),
+      helo: trimmed(env.MAIL_SMTP_HELO),
+    },
+  };
+};
+
+/**
  * Resolve the deployment's mailer.
  *
  * Order:
  *  1. `MATTRAX_EMAIL_DISABLED` — intentional degraded mode.
  *  2. A loopback debug mailbox — local development and browser tests.
- *  3. `MAIL_TRANSPORT` when set: `resend`, `postmark`, `smtp` (relay),
- *     `cloudflare` or `disabled`.
+ *  3. `MAIL_TRANSPORT` when set: `smtp`, `cloudflare` or `disabled`.
  *  4. The Cloudflare `EMAIL` binding when present.
  *  5. Otherwise `error`.
  */
-export const selectMailer = (env: MailerEnv, options: MailerOptions = {}): MailerSelection => {
+export const selectMailer = (env: MailerEnv): MailerSelection => {
   const configuredFrom = parseEmailSender(env.MAIL_FROM);
   const sender = configuredFrom ?? DEFAULT_EMAIL_FROM;
-  const fetchImpl = options.fetch ?? fetch;
 
   if (enabled(env.MATTRAX_EMAIL_DISABLED))
     return { state: "skipped", sender, detail: "email is disabled" };
@@ -175,68 +205,18 @@ export const selectMailer = (env: MailerEnv, options: MailerOptions = {}): Maile
   if (transport === "disabled")
     return { state: "skipped", sender, detail: "MAIL_TRANSPORT is disabled" };
 
-  if (transport === "resend") {
-    const apiKey = trimmed(env.RESEND_API_KEY);
-
-    if (!apiKey) return error("RESEND_API_KEY is required when MAIL_TRANSPORT=resend", sender);
-
-    if (!configuredFrom) return error("MAIL_FROM is required when MAIL_TRANSPORT=resend", sender);
-
-    return {
-      state: "ok",
-      transport: resendEmailTransport({ apiKey, fetch: fetchImpl }),
-      sender: configuredFrom,
-      detail: "Resend",
-    };
-  }
-
-  if (transport === "postmark") {
-    const apiKey = trimmed(env.POSTMARK_SERVER_TOKEN);
-
-    if (!apiKey)
-      return error("POSTMARK_SERVER_TOKEN is required when MAIL_TRANSPORT=postmark", sender);
-
-    if (!configuredFrom) return error("MAIL_FROM is required when MAIL_TRANSPORT=postmark", sender);
-
-    return {
-      state: "ok",
-      transport: postmarkEmailTransport({
-        apiKey,
-        fetch: fetchImpl,
-        messageStream: trimmed(env.MAIL_POSTMARK_STREAM),
-      }),
-      sender: configuredFrom,
-      detail: "Postmark",
-    };
-  }
-
   if (transport === "smtp") {
-    const url = trimmed(env.MAIL_RELAY_URL);
-    const secret = trimmed(env.MAIL_RELAY_SECRET);
+    const smtp = smtpOptions(env);
 
-    if (!url) return error("MAIL_RELAY_URL is required when MAIL_TRANSPORT=smtp", sender);
-
-    if (!secret || secret.length < 16)
-      return error(
-        "MAIL_RELAY_SECRET must be at least 16 characters when MAIL_TRANSPORT=smtp",
-        sender,
-      );
+    if ("problem" in smtp) return error(smtp.problem, sender);
 
     if (!configuredFrom) return error("MAIL_FROM is required when MAIL_TRANSPORT=smtp", sender);
 
     return {
       state: "ok",
-      transport: mailRelayTransport({ url, secret, fetch: fetchImpl }),
+      transport: smtpEmailTransport(smtp.options),
       sender: configuredFrom,
-      detail: "SMTP relay",
-      probe: async () => {
-        const response = await fetchImpl(`${url.replace(/\/+$/, "")}/health`);
-
-        if (!response.ok)
-          throw new Error(`mail relay health check failed with status ${response.status}`);
-
-        await response.arrayBuffer();
-      },
+      detail: "SMTP",
     };
   }
 

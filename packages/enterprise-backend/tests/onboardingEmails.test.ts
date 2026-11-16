@@ -7,6 +7,7 @@ import {
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
 } from "../src/onboardingEmails.js";
+import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { OutboundEmailMessage } from "../src/email.js";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -26,14 +27,14 @@ const makeTransport = (
   return {
     sent,
     attempts,
-    send: async (message: OutboundEmailMessage) => {
+    ...makeEmailTransport(async (message: OutboundEmailMessage) => {
       attempts.push(message);
 
       if (behaviour === "fail" || failFor?.(message))
         throw new Error("provider rejected the message");
 
       sent.push(message);
-    },
+    }),
   };
 };
 

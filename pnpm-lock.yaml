@@ -398,15 +398,6 @@ importers:
         specifier: 'catalog:'
         version: 7.0.2
 
-  apps/mail-relay:
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.6.6
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-
   apps/mdm-compliance:
     dependencies:
       '@effect/platform-node':
