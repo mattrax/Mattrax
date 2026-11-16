@@ -7,9 +7,7 @@
  * and failures are logged rather than silently swallowed.
  */
 
-const environment = process.env as unknown as Record<string, unknown>;
-
-export const env = environment;
+export const env: Record<string, string | undefined> = process.env;
 
 export const waitUntil = (promise: Promise<unknown>): void => {
   void promise.catch((cause) => console.error("Background task failed", cause));

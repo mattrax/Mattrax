@@ -34,8 +34,11 @@ const removeSourceMaps = async (directory: string): Promise<void> => {
 };
 
 await cp(apiSource, path.join(outputDirectory, "api"), { recursive: true });
+
 await cp(webServerSource, path.join(outputDirectory, "web", "server"), { recursive: true });
+
 await cp(webClientSource, path.join(outputDirectory, "web", "client"), { recursive: true });
+
 await cp(docsSource, path.join(outputDirectory, "web", "client", "docs"), { recursive: true });
 
 await Promise.all([

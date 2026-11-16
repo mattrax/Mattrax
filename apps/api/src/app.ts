@@ -263,12 +263,26 @@ const apiLayer = Layer.mergeAll(
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
 
+type DatabasePoolConfig = {
+  disableEval: boolean;
+  timezone: string;
+  ssl?: { rejectUnauthorized?: boolean; ca?: string };
+};
+
 const databaseLayer = (env: Env) => {
   // The Node host extends the binding with TLS options parsed from
   // `DATABASE_URL`; the Workers binding never has them.
+  // SAFETY: the extra field is optional and only the Node entry sets it.
   const hyperdrive = env.HYPERDRIVE as Env["HYPERDRIVE"] & {
     ssl?: { rejectUnauthorized?: boolean; ca?: string };
   };
+
+  const poolConfig: DatabasePoolConfig = {
+    disableEval: true,
+    timezone: "Z",
+  };
+
+  if (hyperdrive.ssl) poolConfig.ssl = hyperdrive.ssl;
 
   return MysqlClient.layer({
     // Hyperdrive exposes individual connection fields for MySQL. Do not
@@ -283,11 +297,7 @@ const databaseLayer = (env: Env) => {
     // `timezone: "Z"` keeps `DATETIME(3)` reads/writes UTC, matching the
     // `toISOString()` encoding Drizzle uses for `datetime` columns. The Node
     // entry supplies TLS options through the same object; Hyperdrive never does.
-    poolConfig: {
-      disableEval: true,
-      timezone: "Z",
-      ...(hyperdrive.ssl ? { ssl: hyperdrive.ssl } : {}),
-    },
+    poolConfig,
     // Hyperdrive rejects MySQL `COM_STMT_PREPARE`; use the text protocol.
     disablePreparedStatements: true,
   });
@@ -529,6 +539,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // checked against its own URL, so a loopback ORIGIN does not expose the
   // mailbox when the deployment is reachable from a public host.
   const devMailbox = env.DEV_MAILBOX === "true";
+
   // Effect's request URL is usually a path; the mailbox check needs the
   // request host, so resolve it against the deployment origin.
   const mailboxAllowed = (request: { readonly url: string }) =>

@@ -67,5 +67,4 @@ tech-debt:
           - pnpm-lock.yaml
           - pnpm-workspace.yaml
           - tsconfig.json
-          - oxlint.config.ts
-          - vite.config.ts
+          - packages/config/**

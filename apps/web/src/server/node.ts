@@ -20,7 +20,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  */
 
 type ServerEntry = { fetch(request: Request): Promise<Response> };
+
 type ServerModule = { default: ServerEntry };
+
+type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const clientRoot = path.resolve(here, "../client");
@@ -28,7 +31,12 @@ const assetsRoot = path.join(clientRoot, "assets") + path.sep;
 
 let entry: Promise<ServerModule> | undefined;
 
-/** The sibling `server.js` bundle, loaded once on the first request. */
+/**
+ * The sibling `server.js` bundle, loaded once on the first request.
+ *
+ * SAFETY: the build emits `server.js` beside this file with the same
+ * `default.fetch` shape as the server entry.
+ */
 const loadEntry = (): Promise<ServerModule> =>
   (entry ??= import(
     /* @vite-ignore */ pathToFileURL(path.join(here, "server.js")).href
@@ -43,6 +51,7 @@ const origin = (request: IncomingMessage): URL => {
   if (configured) return new URL(configured);
 
   const host = request.headers.host ?? "localhost";
+  // SAFETY: TLS sockets expose `encrypted`; plain HTTP sockets leave it undefined.
   const protocol = (request.socket as { encrypted?: boolean }).encrypted ? "https" : "http";
 
   return new URL(`${protocol}://${host}`);
@@ -60,12 +69,15 @@ const toHeaders = (request: IncomingMessage): Headers => {
   return headers;
 };
 
+type NodeRequestInit = RequestInit & { duplex?: "half" };
+
 const toRequest = (request: IncomingMessage, url: URL, response: ServerResponse): Request => {
   const method = request.method ?? "GET";
-  const body =
-    method === "GET" || method === "HEAD"
-      ? undefined
-      : (Readable.toWeb(request) as unknown as ReadableStream<Uint8Array>);
+
+  // SAFETY: `toWeb` returns a WHATWG stream of the request bytes; `BodyInit` is
+  // the same runtime contract, but Node and DOM declare the stream differently.
+  const body: BodyInit | undefined =
+    method === "GET" || method === "HEAD" ? undefined : (Readable.toWeb(request) as BodyInit);
 
   // Stop the render's own outbound calls when the browser goes away.
   const controller = new AbortController();
@@ -74,14 +86,17 @@ const toRequest = (request: IncomingMessage, url: URL, response: ServerResponse)
     if (!response.writableEnded) controller.abort();
   });
 
-  return new Request(url, {
+  const init: NodeRequestInit = {
     method,
     headers: toHeaders(request),
     body,
     signal: controller.signal,
-    // Required by Node's fetch implementation when streaming a request body.
-    ...(body === undefined ? {} : { duplex: "half" }),
-  } as RequestInit);
+  };
+
+  // Node's fetch requires `duplex` when the body is a stream.
+  if (body !== undefined) init.duplex = "half";
+
+  return new Request(url, init);
 };
 
 const writeResponse = async (response: ServerResponse, result: Response): Promise<void> => {
@@ -104,33 +119,35 @@ const writeResponse = async (response: ServerResponse, result: Response): Promis
     return;
   }
 
-  await pipeline(Readable.fromWeb(result.body as never), response);
+  // SAFETY: a web Response body and `fromWeb` both consume the WHATWG stream
+  // contract; only the ambient Node/DOM declarations differ.
+  await pipeline(Readable.fromWeb(result.body as NodeReadableStream), response);
 };
 
-const MIME: Record<string, string> = {
-  ".avif": "image/avif",
-  ".css": "text/css; charset=utf-8",
-  ".gif": "image/gif",
-  ".html": "text/html; charset=utf-8",
-  ".ico": "image/x-icon",
-  ".jpeg": "image/jpeg",
-  ".jpg": "image/jpeg",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".map": "application/json; charset=utf-8",
-  ".mjs": "text/javascript; charset=utf-8",
-  ".otf": "font/otf",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-  ".ttf": "font/ttf",
-  ".txt": "text/plain; charset=utf-8",
-  ".wasm": "application/wasm",
-  ".webmanifest": "application/manifest+json",
-  ".webp": "image/webp",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-  ".xml": "application/xml; charset=utf-8",
-};
+const MIME = new Map([
+  [".avif", "image/avif"],
+  [".css", "text/css; charset=utf-8"],
+  [".gif", "image/gif"],
+  [".html", "text/html; charset=utf-8"],
+  [".ico", "image/x-icon"],
+  [".jpeg", "image/jpeg"],
+  [".jpg", "image/jpeg"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".json", "application/json; charset=utf-8"],
+  [".map", "application/json; charset=utf-8"],
+  [".mjs", "text/javascript; charset=utf-8"],
+  [".otf", "font/otf"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".ttf", "font/ttf"],
+  [".txt", "text/plain; charset=utf-8"],
+  [".wasm", "application/wasm"],
+  [".webmanifest", "application/manifest+json"],
+  [".webp", "image/webp"],
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
+  [".xml", "application/xml; charset=utf-8"],
+]);
 
 const isFile = async (file: string) => {
   try {
@@ -185,7 +202,7 @@ const sendFile = async (
   const extension = path.extname(file).toLowerCase();
 
   response.statusCode = 200;
-  response.setHeader("content-type", MIME[extension] ?? "application/octet-stream");
+  response.setHeader("content-type", MIME.get(extension) ?? "application/octet-stream");
   response.setHeader("content-length", size);
   // Mirrors `public/_headers`: only the content-hashed bundle output (JS, CSS,
   // fonts, WebAssembly) is immutable; brand assets under `/assets/` keep their

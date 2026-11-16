@@ -1,0 +1,20 @@
+{
+  "name": "@mattrax/config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared repository configuration: oxlint rules, TypeScript base and workspace tool config.",
+  "type": "module",
+  "exports": {
+    "./oxlint": "./oxlint.config.ts",
+    "./tsconfig": "./tsconfig.base.json",
+    "./vite": "./vite.config.ts",
+    "./package.json": "./package.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

@@ -17,6 +17,15 @@ import { fileSystemR2 } from "./r2Node.js";
 
 const runtime = createApiRuntime(nodeCryptoLayer, { cacheHandler: true });
 
+type DatabaseConnection = {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  ssl?: { rejectUnauthorized?: boolean };
+};
+
 const requireEnv = (name: string): string => {
   const value = process.env[name]?.trim();
 
@@ -52,16 +61,19 @@ const parseDatabase = () => {
     if (!parsed.hostname || !database)
       throw new Error("DATABASE_URL must include a host and database");
 
-    const ssl = sslOptions(parsed.searchParams);
-
-    return {
+    const connection: DatabaseConnection = {
       host: parsed.hostname,
       port: Number(parsed.port || 3306),
       user: decodeURIComponent(parsed.username),
       password: decodeURIComponent(parsed.password),
       database,
-      ...(ssl ? { ssl } : {}),
     };
+
+    const ssl = sslOptions(parsed.searchParams);
+
+    if (ssl) connection.ssl = ssl;
+
+    return connection;
   }
 
   return {
@@ -75,7 +87,7 @@ const parseDatabase = () => {
 
 const dataDirectory = process.env.DATA_DIR?.trim() || "/data";
 
-const env = {
+const bindings = {
   ...process.env,
   ORIGIN: requireEnv("ORIGIN"),
   AUTH_SECRET: requireEnv("AUTH_SECRET"),
@@ -83,7 +95,12 @@ const env = {
   HYPERDRIVE: parseDatabase(),
   STORAGE: fileSystemR2({ root: path.join(dataDirectory, "storage") }),
   CF_VERSION_METADATA: { id: process.env.CF_VERSION_METADATA_ID ?? "selfhost" },
-} as unknown as Env;
+};
+
+// SAFETY: every field the shared runtime reads is present above: process.env
+// supplies the plain-text bindings and the two platform bindings are the Node
+// adapters built here.
+const env = bindings as Env;
 
 /** The subset of Workers' `ExecutionContext` the runtime uses. */
 export type RuntimeContext = {
@@ -91,9 +108,12 @@ export type RuntimeContext = {
   passThroughOnException?: () => void;
 };
 
+// SAFETY: the runtime only calls `waitUntil` and `passThroughOnException`, the
+// two members of Workers' ExecutionContext defined above.
 export const fetch = (request: Request, context: RuntimeContext): Promise<Response> =>
   runtime.fetch(request, env, context as ExecutionContext);
 
+// SAFETY: same ExecutionContext subset as `fetch`.
 export const scheduled = (
   controller: ScheduledController,
   context: RuntimeContext,

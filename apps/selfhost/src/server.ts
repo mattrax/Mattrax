@@ -53,7 +53,11 @@ const host = process.env.HOST ?? "0.0.0.0";
 const origin = requireEnv("ORIGIN");
 const databaseUrl = requireEnv("DATABASE_URL");
 
+// SAFETY: the staged layout places the two bundles at these paths and each
+// exports the shape declared above.
 const api = (await import(pathToFileURL(path.join(root, "api/node.js")).href)) as ApiRuntime;
+
+// SAFETY: same staged layout; the dashboard host exports `listener`.
 const web = (await import(pathToFileURL(path.join(root, "web/server/node.js")).href)) as WebRuntime;
 
 /**
@@ -94,20 +98,28 @@ const toHeaders = (request: IncomingMessage): Headers => {
   return headers;
 };
 
+type NodeRequestInit = RequestInit & { duplex?: "half" };
+
+type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
+
 const toRequest = (request: IncomingMessage): Request => {
   const method = request.method ?? "GET";
-  const body =
-    method === "GET" || method === "HEAD"
-      ? undefined
-      : (Readable.toWeb(request) as unknown as ReadableStream<Uint8Array>);
 
-  return new Request(new URL(request.url ?? "/", origin), {
+  // SAFETY: Node's `toWeb` returns a WHATWG stream of the request bytes;
+  // `BodyInit` is the same runtime contract despite the differing declarations.
+  const body: BodyInit | undefined =
+    method === "GET" || method === "HEAD" ? undefined : (Readable.toWeb(request) as BodyInit);
+
+  const init: NodeRequestInit = {
     method,
     headers: toHeaders(request),
     body,
-    // Required by Node's fetch implementation when streaming a request body.
-    ...(body === undefined ? {} : { duplex: "half" }),
-  } as RequestInit);
+  };
+
+  // Node's fetch requires `duplex` when the body is a stream.
+  if (body !== undefined) init.duplex = "half";
+
+  return new Request(new URL(request.url ?? "/", origin), init);
 };
 
 const writeResponse = async (response: Response, target: ServerResponse): Promise<void> => {
@@ -129,7 +141,9 @@ const writeResponse = async (response: Response, target: ServerResponse): Promis
     return;
   }
 
-  await pipeline(Readable.fromWeb(response.body as never), target);
+  // SAFETY: both sides consume the WHATWG stream contract; only the ambient
+  // Node/DOM declarations differ.
+  await pipeline(Readable.fromWeb(response.body as NodeReadableStream), target);
 };
 
 const server = createServer((request, response) => {
@@ -170,6 +184,8 @@ const stopCron = startCronScheduler({
   expressions: ["17 3 * * *", "47 * * * *"],
   trigger: (cron) =>
     api.scheduled(
+      // SAFETY: `ScheduledController` only requires the cron expression and
+      // schedule time for these handlers; `noRetry` is a no-op in-process.
       {
         cron,
         scheduledTime: Date.now(),

@@ -32,8 +32,7 @@ const parseField = (source: string, field: CronField): Set<number> => {
   const values = new Set<number>();
 
   for (const item of source.split(",")) {
-    // `split` yields a single element when the step is omitted.
-    const [range, stepSource] = item.split("/") as [string, string | undefined];
+    const [range, stepSource] = item.split("/");
     const step = stepSource === undefined ? 1 : parseNumber(stepSource, field);
 
     if (step === 0) throw new Error(`${field.name} step must be greater than zero`);
@@ -45,7 +44,7 @@ const parseField = (source: string, field: CronField): Set<number> => {
       start = field.min;
       end = field.max;
     } else if (range.includes("-")) {
-      const [from, to] = range.split("-") as [string, string];
+      const [from, to] = range.split("-");
 
       start = parseNumber(from, field);
       end = parseNumber(to, field);
@@ -96,7 +95,7 @@ interface CronSchedule {
 
 export interface CronSchedulerOptions {
   expressions: readonly string[];
-  trigger: (expression: string) => Promise<unknown> | unknown;
+  trigger: (expression: string) => Promise<void> | void;
   log?: (message: string) => void;
 }
 

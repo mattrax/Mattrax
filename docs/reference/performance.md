@@ -29,7 +29,7 @@ which the current anonymous run does not provision.
 
 ### Budgets
 
-All assertions are errors in `.lighthouserc.cjs`. The categories are Lighthouse's
+All assertions are errors in `packages/config/lighthouserc.cjs`. The categories are Lighthouse's
 mobile, simulated-throttling preset.
 
 | Assertion                | Budget   |

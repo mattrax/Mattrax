@@ -147,6 +147,7 @@ export const migrate = async ({
     const applied = new Map<string, number>(
       rows.map((row): [string, number] => [String(row.hash), Number(row.created_at)]),
     );
+
     const pending = migrations.filter((migration) => !applied.has(migration.hash));
 
     if (pending.length === 0) {

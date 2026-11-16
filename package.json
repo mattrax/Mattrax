@@ -28,7 +28,7 @@
     "lint": "vp lint",
     "lint:fix": "vp lint --fix",
     "bundle:check": "tsx scripts/bundle-budget.ts",
-    "lighthouse": "lhci autorun",
+    "lighthouse": "lhci autorun --config=packages/config/lighthouserc.cjs",
     "build:selfhost": "pnpm doc:build && pnpm api build:node && pnpm --filter @mattrax/web build:selfhost && node apps/selfhost/scripts/stage.ts . dist-selfhost"
   },
   "devDependencies": {

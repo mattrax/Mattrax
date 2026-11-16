@@ -9,7 +9,7 @@ import { Context, Layer, ManagedRuntime } from "effect";
  * another process on loopback. Application code only ever asks this service for
  * what it needs, so `cloudflare:workers` is not imported anywhere.
  */
-export interface BindingsShape {
+export interface DeploymentBindings {
   /** Shared with the API so SSR bootstrap tokens verify on the edge. */
   readonly AUTH_SECRET: string | undefined;
   readonly POSTHOG_KEY: string | undefined;
@@ -18,7 +18,7 @@ export interface BindingsShape {
   readonly API: { fetch(request: Request): Promise<Response> };
 }
 
-export class Bindings extends Context.Service<Bindings, BindingsShape>()("mattraxe/web/Bindings") {}
+export class Bindings extends Context.Service<Bindings, DeploymentBindings>()("mattraxe/web/Bindings") {}
 
 const text = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
@@ -41,7 +41,7 @@ const forward = (apiUrl: string, request: Request): Promise<Response> => {
  * that Worker's production deployment — so the preview deploy passes the
  * preview API's URL as `API_URL` and requests go there over HTTP instead.
  */
-const workerBindings = (env: Env): BindingsShape => {
+const workerBindings = (env: Env): DeploymentBindings => {
   const apiUrl = text(env.API_URL);
 
   return {
@@ -58,7 +58,7 @@ const workerBindings = (env: Env): BindingsShape => {
  * Node bindings: the process environment and a loopback client for the API's
  * Node server, which listens on `PORT` like `apps/selfhost` does.
  */
-const nodeBindings = (): BindingsShape => {
+const nodeBindings = (): DeploymentBindings => {
   const apiUrl =
     text(process.env.API_URL) ?? `http://127.0.0.1:${text(process.env.PORT) ?? "8080"}`;
 
@@ -107,7 +107,7 @@ let runtime: ManagedRuntime.ManagedRuntime<Bindings, never> | undefined;
  * functions, so the runtime is a process-level singleton rather than something
  * threaded through every call: the bindings themselves do not vary per request.
  */
-export const getBindings = (): BindingsShape =>
+export const getBindings = (): DeploymentBindings =>
   (runtime ??= ManagedRuntime.make(
     Layer.succeed(
       Bindings,

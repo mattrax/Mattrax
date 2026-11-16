@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Option, Schema } from "effect";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -35,7 +36,7 @@ const encodeKey = (key: string) => Buffer.from(key, "utf8").toString("base64url"
 const toBytes = async (value: R2PutValue): Promise<Uint8Array> => {
   if (value === null) return new Uint8Array();
 
-  if (typeof value === "string") return new TextEncoder().encode(value);
+  if (Schema.is(Schema.String)(value)) return new TextEncoder().encode(value);
 
   if (value instanceof Blob) return new Uint8Array(await value.arrayBuffer());
 
@@ -60,6 +61,7 @@ const toObject = (stored: StoredObject): R2Object => ({
 
 const toBody = (stored: StoredObject, bytes: Uint8Array): R2ObjectBody => {
   let used = false;
+
   const consume = () => {
     if (used) throw new TypeError("Body has already been used");
 
@@ -78,25 +80,35 @@ const toBody = (stored: StoredObject, bytes: Uint8Array): R2ObjectBody => {
     },
     arrayBuffer: async () => consume().slice().buffer,
     text: async () => new TextDecoder().decode(consume()),
+    // SAFETY: the caller chooses `T` for its own stored JSON; this mirrors R2's
+    // untyped `json<T>()` contract.
     json: async <T = unknown>() => JSON.parse(new TextDecoder().decode(consume())) as T,
     blob: async () => new Blob([consume().slice()]),
   };
 };
 
+/** The subset of R2's range form this local bucket implements. */
+const R2Range = Schema.Struct({
+  offset: Schema.optional(Schema.Number),
+  length: Schema.optional(Schema.Number),
+  suffix: Schema.optional(Schema.Number),
+});
+
 const rangeOf = (bytes: Uint8Array, range: R2GetOptions["range"]): Uint8Array => {
   if (range === undefined || range === null) return bytes;
 
-  const value = range as { offset?: number; length?: number; suffix?: number };
+  const value = Option.getOrNull(Schema.decodeUnknownOption(R2Range)(range));
 
-  if (typeof value.suffix === "number")
-    return bytes.subarray(Math.max(0, bytes.length - value.suffix));
+  if (value === null) return bytes;
 
-  const offset = typeof value.offset === "number" ? Math.max(0, value.offset) : 0;
+  if (value.suffix !== undefined) return bytes.subarray(Math.max(0, bytes.length - value.suffix));
+
+  const offset = Math.max(0, value.offset ?? 0);
 
   if (offset >= bytes.length) return new Uint8Array();
 
   const end =
-    typeof value.length === "number" ? Math.min(bytes.length, offset + value.length) : bytes.length;
+    value.length !== undefined ? Math.min(bytes.length, offset + value.length) : bytes.length;
 
   return bytes.subarray(offset, end);
 };
@@ -118,6 +130,7 @@ export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
 
   const readMeta = async (key: string): Promise<StoredObject | null> => {
     try {
+      // SAFETY: `put` writes this exact shape; a malformed file is treated as absent.
       return JSON.parse(await readFile(metaPath(key), "utf8")) as StoredObject;
     } catch {
       return null;
@@ -155,6 +168,7 @@ export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
     async put(key, value, options) {
       const bytes = await toBytes(value);
       const etag = createHash("md5").update(bytes).digest("hex");
+
       const stored: StoredObject = {
         key,
         size: bytes.byteLength,
@@ -173,7 +187,7 @@ export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
     },
 
     async delete(keys) {
-      const list = typeof keys === "string" ? [keys] : keys;
+      const list = Schema.is(Schema.String)(keys) ? [keys] : keys;
 
       await Promise.all(
         list.flatMap((key) => [
@@ -201,6 +215,8 @@ export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
         if (!name.endsWith(".json")) continue;
 
         try {
+          // SAFETY: metadata is written by `put` with this shape; any other
+          // content is ignored rather than listed.
           const item = JSON.parse(await readFile(path.join(metas, name), "utf8")) as StoredObject;
 
           if (item.key.startsWith(prefix)) stored.push(item);

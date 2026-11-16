@@ -66,7 +66,9 @@ const command = (overrides: Row = {}) => ({
   payload: {},
   status: "queued",
   dedupeKey: null,
-  expiresAt: new Date("2026-11-16T11:00:00.000Z"),
+  // Far future so a command fixture does not start failing when the wall clock
+  // passes the original hard-coded value (the backend compares to `new Date()`).
+  expiresAt: new Date("2099-01-01T00:00:00.000Z"),
   createdAt: now,
   updatedAt: now,
   ...overrides,

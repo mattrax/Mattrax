@@ -184,6 +184,7 @@ export const clientKey = (
   { trustForwarded = false }: ClientKeyOptions = {},
 ): string => {
   const header = (name: string) => request.headers.get(name)?.trim() || undefined;
+  // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
   const cloudflare = (request as { cf?: unknown }).cf !== undefined;
 
   if (cloudflare)
