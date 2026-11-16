@@ -8,6 +8,8 @@
     "./oxlint": "./oxlint.config.ts",
     "./tsconfig": "./tsconfig.base.json",
     "./vite": "./vite.config.ts",
+    "./playwright": "./playwright.config.ts",
+    "./lighthouse": "./lighthouserc.cjs",
     "./package.json": "./package.json"
   },
   "devDependencies": {
