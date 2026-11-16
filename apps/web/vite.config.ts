@@ -12,6 +12,7 @@ import { apiWorker } from "../cloud/cloudflare.config.ts";
 import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/public-routes.ts";
 
 const routesDir = path.resolve("src/routes");
+
 const extensions = ["js", "jsx", "ts", "tsx"];
 
 /**
@@ -28,6 +29,7 @@ const nodeTarget = process.env.MATTRAX_TARGET?.toLowerCase() === "node";
 const serverDirectory = fileURLToPath(new URL("./src/server/", import.meta.url));
 
 const docsSourceDirectory = fileURLToPath(new URL("../../docs/", import.meta.url));
+
 const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta.url));
 
 /** Every file below a directory, as forward-slash paths relative to it. */

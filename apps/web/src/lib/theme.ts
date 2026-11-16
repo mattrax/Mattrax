@@ -106,11 +106,13 @@ export const applyTheme = (theme: ResolvedTheme, root?: HTMLElement): void => {
 };
 
 const [themePreference, setThemePreferenceSignal] = createSignal<ThemePreference>("system");
+
 const [resolvedTheme, setResolvedThemeSignal] = createSignal<ResolvedTheme>("light");
 
 export { themePreference, resolvedTheme };
 
 let installedFor: string | undefined;
+
 let teardown: (() => void) | undefined;
 
 /**

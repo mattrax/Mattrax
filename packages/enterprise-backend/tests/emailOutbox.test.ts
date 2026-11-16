@@ -19,6 +19,7 @@ import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-16T10:00:00.000Z");
+
 const MINUTE = 60 * 1000;
 
 const message = {

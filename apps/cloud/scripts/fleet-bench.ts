@@ -27,9 +27,13 @@ const numberArg = (name: string, fallback: number): number => {
 const flag = (name: string): boolean => args.includes(`--${name}`);
 
 const deviceCount = numberArg("devices", 50_000);
+
 const keep = flag("keep");
+
 const batchSize = 5_000;
+
 const organizationId = "benchfleetorg";
+
 const organizationSlug = "bench-fleet";
 
 const connection = await mysql.createConnection({

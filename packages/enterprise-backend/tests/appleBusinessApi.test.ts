@@ -10,7 +10,9 @@ import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const authSecret = "abm-api-test-secret";
+
 const organizationId = "org-1";
+
 const otherOrganizationId = "org-2";
 
 const bytesToBase64 = (bytes: Uint8Array) => {
@@ -460,6 +462,7 @@ describe("Apple Business Manager API flow", () => {
   it("selects the installer that matches the device OS version", async () => {
     const { db, service, headers } = await makeContext();
     const now = new Date();
+
     const installers = [
       {
         id: "installer-14",
@@ -538,6 +541,7 @@ describe("Apple Business Manager API flow", () => {
     expect(db.store.device_command[0]!.payload.ManifestURL).toBe("https://example.com/14.plist");
 
     db.store.device[0]!.osVersion = "15.4";
+
     const second = await runEffect(
       service.installApplication(request(headers), organizationId, "app-versioned"),
     );

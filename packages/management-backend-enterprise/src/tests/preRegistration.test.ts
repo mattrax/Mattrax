@@ -7,7 +7,9 @@ import { ManagementBackendEnterpriseLive } from "../index.js";
 import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);

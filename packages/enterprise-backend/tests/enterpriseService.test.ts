@@ -42,6 +42,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
 
 const makeFakeApns = () => {

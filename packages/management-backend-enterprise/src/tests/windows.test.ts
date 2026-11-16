@@ -41,7 +41,9 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 const origin = "https://windows.test";
+
 const authSecret = "windows-test-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
@@ -188,6 +190,7 @@ const suppressInventory = (db: ReturnType<typeof makeDb>) => {
 };
 
 const federatedTenantId = "11111111-1111-1111-1111-111111111111";
+
 const federatedAudience = "22222222-2222-2222-2222-222222222222";
 
 const base64Url = (value: Uint8Array | string): string => {

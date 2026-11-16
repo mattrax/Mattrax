@@ -14,6 +14,7 @@ const json = (body: Schema.Json, status = 200, headers?: Record<string, string>)
   });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const now = () => new Date();
 
 /**

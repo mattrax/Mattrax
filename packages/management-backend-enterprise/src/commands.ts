@@ -6,7 +6,9 @@ import {
 } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;
+
 const HOUR = 60 * MINUTE;
+
 const DAY = 24 * HOUR;
 
 const BUDGETS = new Map<string, number>([
@@ -501,6 +503,7 @@ export const reconcileDeviceCommands = (
  * loop forever.
  */
 export const DEVICE_COMMAND_INSTALL_MAX_ATTEMPTS = 3;
+
 export const DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS = DAY;
 
 export type InstallAttemptRow = Pick<CommandRow, "requestType" | "payload" | "createdAt">;

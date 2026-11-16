@@ -24,6 +24,7 @@ const api = createAPIHandler(routes);
 // navigation pays the API round trip. `console.error` makes Workers Issues
 // group the misconfiguration instead of hiding it among warnings.
 let reportedMissingAuthSecret = false;
+
 let reportedSsrTokenRejected = false;
 
 const reportMissingAuthSecret = (): void => {

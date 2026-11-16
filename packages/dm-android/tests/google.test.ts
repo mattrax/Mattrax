@@ -19,6 +19,7 @@ import {
 } from "./helpers.js";
 
 const tokenUri = "https://oauth.test/token";
+
 let account: ServiceAccountFixture;
 
 function config(): ServiceAccountConfig {

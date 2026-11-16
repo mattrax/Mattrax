@@ -114,7 +114,9 @@ const bootstrapResponse = (
   });
 
 const sessionCookie = "__Host-mattrax_session=opaque-session";
+
 const ssrCookie = "__Host-mattrax_ssr=opaque-token";
+
 const revisionCookie = "__Host-mattrax_ssr_rev=revision-token";
 
 describe("SSR preload", () => {

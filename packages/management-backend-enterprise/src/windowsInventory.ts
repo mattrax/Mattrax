@@ -151,6 +151,7 @@ const requestedUriByCommandId = (requests: ReadonlyArray<WindowsInventoryRequest
 const REQUESTED_URI_BY_COMMAND_ID = requestedUriByCommandId(WINDOWS_INVENTORY_REQUESTS);
 
 const MAX_TEXT_LENGTH = 255;
+
 const MEBIBYTE = 1024 * 1024;
 
 /**

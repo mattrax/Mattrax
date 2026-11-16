@@ -54,7 +54,9 @@ type AuthEnvelope<T> = {
 };
 
 const TotpEnrollmentReveal = Schema.Struct({ manualKey: Schema.String, uri: Schema.String });
+
 const body = (value: Schema.Json) => JSON.stringify(value);
+
 const authBody = (value: Schema.Json) => body({ payload: value });
 
 const withStepUpHeaders = (init: RequestInit, grant: string | undefined) => {
@@ -193,6 +195,7 @@ const PendingCompletion = Schema.Struct({
 });
 
 const decodeAuthenticated = Schema.decodeUnknownOption(AuthenticatedCompletion);
+
 const decodePending = Schema.decodeUnknownOption(PendingCompletion);
 
 const ClientSessionGlobal = Schema.Struct({

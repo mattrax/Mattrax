@@ -13,6 +13,7 @@ import { gzipSync } from "node:zlib";
  * down at upload time.
  */
 const BUDGET = 2.5 * 1024 * 1024;
+
 const root = path.resolve(import.meta.dirname, "..");
 
 const workers = new Map<string, string>([

@@ -80,7 +80,9 @@ export type ValidateFederatedEntraTokenOptions = {
 };
 
 const DEFAULT_CLOCK_TOLERANCE_SECONDS = 300;
+
 const DEFAULT_JWKS_TIMEOUT_MS = 5_000;
+
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1_000;
 
 const textEncoder = new TextEncoder();

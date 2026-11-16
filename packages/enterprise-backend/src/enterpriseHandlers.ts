@@ -764,6 +764,7 @@ const now = () => new Date();
  * day. The challenge is one-time and bound to the tenant's enrollment id.
  */
 export const ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS = 60 * 60;
+
 export const ENROLLMENT_PROFILE_MAX_TTL_SECONDS = 24 * 60 * 60;
 
 export const normalizeEnrollmentProfileTtlSeconds = (value: number | undefined) => {
@@ -806,8 +807,11 @@ const deviceActivityKeysetCondition = (
  * reminded in the dashboard rather than forced.
  */
 const SCIM_TOKEN_DEFAULT_TTL_DAYS = 90;
+
 const SCIM_TOKEN_MAX_TTL_DAYS = 365;
+
 const SCIM_TOKEN_ROTATION_WINDOW_DAYS = 14;
+
 const DAY_MILLIS = 24 * 60 * 60 * 1_000;
 
 /**
@@ -902,10 +906,13 @@ const brandingOrFail = (body: BrandingPayload) =>
   });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const ok = { status: "ok" as const };
 
 const APPLE_PROFILE_WINDOW_MS = 60_000;
+
 const APPLE_PROFILE_PER_IP_LIMIT = 60;
+
 const appleProfileWindows = new Map<string, { count: number; resetAt: number }>();
 
 /**
@@ -1151,8 +1158,11 @@ const validRoles = (role: string) => {
 };
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 const MAX_PENDING_INVITATIONS_PER_TENANT = 50;
+
 const INVITATION_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const DEFAULT_INVITATION_FROM = "hello@mattrax.cloud";
 
 /** Normalise an invitation target at the transport boundary. */

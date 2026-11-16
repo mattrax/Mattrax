@@ -21,8 +21,11 @@ import { loadWindows } from "./windows.ts";
 import { writeSplit } from "../split-policy-catalog.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
 const CATALOG_DIR = path.join(ROOT, "apps/web/public/catalog");
+
 const WINDOWS_SOURCE = path.join(ROOT, "data/catalog/windows.json");
+
 const WINDOWS_SPLIT = path.join(CATALOG_DIR, "windows");
 
 interface SourceRecord {

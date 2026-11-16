@@ -11,9 +11,13 @@ import {
 import { makeDb, runEffect, schema } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
+
 const devicePrice = "price_device";
+
 const now = new Date("2026-01-01T00:00:00.000Z");
+
 const periodStart = 1_767_225_600;
+
 const periodEnd = 1_769_817_600;
 
 const seedOrganization = (

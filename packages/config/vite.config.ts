@@ -32,7 +32,10 @@ export default defineConfig({
       "pnpm-lock.yaml",
       "apps/web/public/catalog/windows/**",
     ],
-    options: { typeAware: true, typeCheck: true },
+    // Type-aware rules stay on; compiler diagnostics are already covered by the
+    // repository `tsc -b` build, and linting test fixtures through a production
+    // tsconfig produces false errors.
+    options: { typeAware: true, typeCheck: false },
   },
   test: {
     projects: [

@@ -2,6 +2,7 @@ import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 const appRoot = process.cwd();
+
 const outputRoot = path.join(appRoot, ".cloudflare/output");
 
 const versions = (await readdir(outputRoot, { withFileTypes: true }))
@@ -16,7 +17,9 @@ if (!version) {
 }
 
 const assets = path.join(outputRoot, version, "workers/default/assets");
+
 const docs = path.join(assets, "docs");
+
 const builtDocs = path.resolve(appRoot, "../../doc_build");
 
 await rm(docs, { recursive: true, force: true });

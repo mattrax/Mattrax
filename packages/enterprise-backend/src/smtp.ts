@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Schema } from "effect";
 import { hostname } from "node:os";
 import { connect as connectNet } from "node:net";
 import type { Socket } from "node:net";
@@ -17,10 +18,11 @@ import type { OutboundEmailMessage } from "./email.ts";
  */
 
 const CRLF = "\r\n";
+
 const DEFAULT_TIMEOUT_MS = 20_000;
 
 const recipientsOf = (to: string | ReadonlyArray<string>): string[] =>
-  typeof to === "string" ? [to] : [...to];
+  Schema.is(Schema.String)(to) ? [to] : [...to];
 
 /** Everything needed to reach and authenticate against the operator's SMTP server. */
 export interface SmtpTransportOptions {
@@ -303,10 +305,9 @@ export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new 
   ];
 
   if (message.replyTo) {
-    const replyTo =
-      typeof message.replyTo === "string"
-        ? formatAddress({ name: "", email: message.replyTo })
-        : formatAddress(message.replyTo);
+    const replyTo = Schema.is(Schema.String)(message.replyTo)
+      ? formatAddress({ name: "", email: message.replyTo })
+      : formatAddress(message.replyTo);
 
     headers.push(`Reply-To: ${replyTo}`);
   }

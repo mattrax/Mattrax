@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Cause, Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import type { OutboundEmailMessage } from "@mattrax/enterprise-backend";
 import { mailerReadiness, selectMailer, type MailerEnv } from "./mailer.js";
 
@@ -9,6 +9,12 @@ const environment = (overrides: Partial<MailerEnv> = {}): MailerEnv => ({
   ORIGIN: HOSTED_ORIGIN,
   ...overrides,
 });
+
+const asEmailBinding = (binding: {
+  send(message: OutboundEmailMessage): Promise<{ messageId: string }>;
+}): SendEmail =>
+  // SAFETY: the adapter only calls the structured `send` overload, which the binding implements.
+  binding as SendEmail;
 
 const fakeBinding = () => {
   const sent: OutboundEmailMessage[] = [];
@@ -75,10 +81,7 @@ describe("mailer selection", () => {
       },
     };
 
-    const selection = selectMailer(
-      // SAFETY: the adapter only calls the structured `send` overload.
-      environment({ EMAIL: binding as unknown as SendEmail }),
-    );
+    const selection = selectMailer(environment({ EMAIL: asEmailBinding(binding) }));
 
     const result = await Effect.runPromiseExit(
       selection.transport!.send({
@@ -89,17 +92,16 @@ describe("mailer selection", () => {
       }),
     );
 
-    expect(result._tag).toBe("Failure");
+    const failure = Exit.match(result, {
+      onFailure: (cause) => Cause.squash(cause),
+      onSuccess: () => undefined,
+    });
 
-    if (result._tag === "Failure") {
-      const failure = Cause.squash(result.cause);
-
-      expect(failure).toMatchObject({
-        _tag: "EmailFailure",
-        provider: "Cloudflare Email",
-        message: "binding rejected the message",
-      });
-    }
+    expect(failure).toMatchObject({
+      _tag: "EmailFailure",
+      provider: "Cloudflare Email",
+      message: "binding rejected the message",
+    });
   });
 
   it("rejects a malformed MAIL_FROM instead of sending as the built-in address", () => {

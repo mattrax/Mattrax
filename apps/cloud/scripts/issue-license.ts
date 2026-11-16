@@ -34,8 +34,11 @@ if (!databaseUrl) {
 }
 
 const licenseKey = `mtx_lic_${randomBytes(32).toString("base64url")}`;
+
 const hash = createHash("sha256").update(licenseKey).digest("hex");
+
 const now = new Date();
+
 const id = randomUUID().replaceAll("-", "").slice(0, 24);
 
 const connection = await mysql.createConnection({ uri: databaseUrl, timezone: "Z" });

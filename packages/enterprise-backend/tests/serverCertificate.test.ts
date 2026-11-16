@@ -22,7 +22,9 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 const DAY = 24 * 60 * 60 * 1000;
+
 const now = new Date("2026-11-10T12:00:00.000Z");
+
 const daysFromNow = (days: number) => new Date(now.getTime() + days * DAY);
 
 /** A self-signed certificate plus the PEM key that matches it. */

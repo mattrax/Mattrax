@@ -169,8 +169,11 @@ export interface StripeClientLike {
 }
 
 const DEFAULT_HOST = "https://api.stripe.com";
+
 const DEFAULT_TIMEOUT = OUTBOUND_TIMEOUTS.stripe;
+
 const DEFAULT_RETRIES = STRIPE_MAX_NETWORK_RETRIES;
+
 const RETRYABLE_STATUS = new Set([409, 429, 500, 502, 503, 504]);
 
 const SDK_ERROR_NAMES = new Map([

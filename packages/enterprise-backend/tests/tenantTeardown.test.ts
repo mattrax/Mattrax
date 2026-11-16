@@ -438,6 +438,7 @@ describe("tenant teardown", () => {
 
     const calls: string[] = [];
     let release: () => void = () => {};
+
     let started: () => void = () => {};
 
     const unenrollStarted = new Promise<void>((resolve) => {

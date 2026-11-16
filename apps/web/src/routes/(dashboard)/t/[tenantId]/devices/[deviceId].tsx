@@ -101,6 +101,7 @@ const ACTIVITY_PAGE_SIZE = 50;
 
 /** The command endpoint returns the newest 200 rows; page them on the client. */
 const COMMAND_FETCH_LIMIT = 200;
+
 const COMMAND_PAGE_SIZE = 20;
 
 const decodeDeviceRow = Schema.decodeUnknownOption(DeviceRow);

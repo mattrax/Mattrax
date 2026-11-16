@@ -18,6 +18,7 @@ import {
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 
 const authSecret = "webhook-test-secret";
+
 const now = new Date("2026-11-11T10:00:00.000Z");
 
 const run = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);

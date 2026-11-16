@@ -7,12 +7,17 @@ import { configurationAssetIdentifier } from "../policy.js";
 import { makeDb, tableName, type Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "asset-token-test-secret";
+
 const now = new Date("2026-11-15T10:00:00.000Z");
 
 const policyId = "policy-1";
+
 const kind = "mttx.apple.certificate.root";
+
 const identifier = configurationAssetIdentifier(policyId, kind);
+
 const pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
 
 const device = (id: string, organizationId: string, status: string) => ({

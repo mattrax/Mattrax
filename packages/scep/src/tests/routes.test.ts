@@ -16,6 +16,7 @@ import {
 } from "./helpers.js";
 
 const TENANT = "tenant-route";
+
 const SCEP_URL = `http://localhost/mdm/apple/scep/${TENANT}`;
 
 async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {

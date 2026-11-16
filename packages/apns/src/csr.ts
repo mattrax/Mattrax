@@ -34,6 +34,7 @@ const RSA_ALGORITHM = {
 const SIGN_ALGORITHM = { name: "RSASSA-PKCS1-v1_5" } as const;
 
 const ORGANIZATION_OID = "2.5.4.10";
+
 const ORGANIZATIONAL_UNIT_OID = "2.5.4.11";
 
 export type ApnsCsrSubject = {

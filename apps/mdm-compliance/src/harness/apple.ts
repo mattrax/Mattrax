@@ -49,6 +49,7 @@ export type AppleHarness = {
 };
 
 const origin = "https://mdm.example.test";
+
 const authSecret = "compliance-profile-secret";
 
 export const createAppleHarness = (

@@ -20,6 +20,7 @@ export const GOOGLE_OIDC_JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs"
 export const GOOGLE_OIDC_ISSUERS = ["https://accounts.google.com", "accounts.google.com"] as const;
 
 const JWKS_CACHE_MS = 60 * 60 * 1000;
+
 const CLOCK_SKEW_SECONDS = 60;
 
 export class PubSubAuthError extends Data.TaggedError("PubSubAuthError")<{
@@ -42,6 +43,7 @@ const jwksCache = new Map<string, CachedJwkSet>();
 
 /** Unknown kids that recently forced a refetch; avoid a JWKS-fetch oracle. */
 const unknownKidCache = new Map<string, number>();
+
 const UNKNOWN_KID_NEGATIVE_CACHE_MS = 60 * 1000;
 
 const textDecoder = new TextDecoder();

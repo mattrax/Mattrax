@@ -5,8 +5,9 @@ import { noArrayFilterMapRule } from "./rules/no-array-filter-map.ts";
 import { noReduceAccumulatorCopyRule } from "./rules/no-reduce-accumulator-copy.ts";
 import { noChainedTypeAssertionsRule } from "./rules/no-chained-type-assertions.ts";
 import { noConditionalSpreadRule } from "./rules/no-conditional-spread.ts";
-import { noKnownValueWideningRule } from "./rules/no-known-value-widening.ts";
+import { noDisabledTypeAssertionRulesRule } from "./rules/no-disabled-type-assertion-rules.ts";
 import { noLayoutAnimatingTransitionRule } from "./rules/no-layout-animating-transition.ts";
+import { noKnownValueWideningRule } from "./rules/no-known-value-widening.ts";
 import { noModuleMockingRule } from "./rules/no-module-mocking.ts";
 import { noObjectParametersRule } from "./rules/no-object-parameters.ts";
 import { noReflectApplyRule } from "./rules/no-reflect-apply.ts";
@@ -32,6 +33,7 @@ const antiSlopPlugin = eslintCompatPlugin({
 		"no-reduce-accumulator-copy": noReduceAccumulatorCopyRule,
 		"no-chained-type-assertions": noChainedTypeAssertionsRule,
 		"no-conditional-spread": noConditionalSpreadRule,
+		"no-disabled-type-assertion-rules": noDisabledTypeAssertionRulesRule,
 		"no-known-value-widening": noKnownValueWideningRule,
 		"no-layout-animating-transition": noLayoutAnimatingTransitionRule,
 		"no-module-mocking": noModuleMockingRule,

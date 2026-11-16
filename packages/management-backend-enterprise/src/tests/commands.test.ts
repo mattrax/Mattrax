@@ -28,7 +28,9 @@ import {
 import { makeDb, tableName, stringValue } from "./fake-db.js";
 
 const origin = "https://policies.test";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 const at = (isoDate: string) => new Date(isoDate);

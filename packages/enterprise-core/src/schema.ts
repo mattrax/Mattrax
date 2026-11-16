@@ -33,7 +33,9 @@ import { Effect, Schema as EffectSchema } from "effect";
  * primary/unique index is therefore bounded; unbounded payloads stay `text`.
  */
 const id = (name = "id") => varchar(name, { length: 255 });
+
 const shortText = (name: string) => varchar(name, { length: 255 });
+
 const timestamp = (name: string) => datetime(name, { mode: "date", fsp: 3 });
 
 export const user = mysqlTable(
@@ -178,8 +180,11 @@ export const authSchema: any = authStorage.schema;
  * value that crosses it.
  */
 export const authIdentifiers: any = authSchema.identifiers;
+
 export const authCredentials: any = authSchema.credentials;
+
 export const authSessions: any = authSchema.sessions;
+
 export const authPending: any = authSchema.pending;
 
 /**

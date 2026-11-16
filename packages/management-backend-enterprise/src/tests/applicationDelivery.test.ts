@@ -11,10 +11,15 @@ import {
 import { makeDb, tableName, type Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "application-delivery-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const at = new Date("2026-11-16T10:00:00.000Z");
+
 const sha256 = "a".repeat(64);
+
 const pkg = new Uint8Array([1, 2, 3, 4]);
 
 const scope = {

@@ -65,6 +65,7 @@ export const OS_UPDATE_INSTALL_STATES = [
 const OS_UPDATE_INSTALL_STATE_SET: ReadonlySet<string> = new Set(OS_UPDATE_INSTALL_STATES);
 
 const MAX_STATUS_ENTRIES = 200;
+
 const MAX_STATUS_TEXT = 255;
 
 const clampText = (value: string): string =>

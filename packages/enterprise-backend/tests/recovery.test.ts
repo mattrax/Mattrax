@@ -17,7 +17,9 @@ import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-recovery-test-secret";
+
 const start = Date.UTC(2026, 10, 16, 12, 0, 0);
 
 type Sent = { to: string; subject: string; text: string };

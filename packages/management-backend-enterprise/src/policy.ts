@@ -62,6 +62,7 @@ export type ConfigurationKind =
   | { readonly type: "unknown" };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9]{1,20}$/;
+
 const encoder = new TextEncoder();
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
@@ -325,6 +326,7 @@ export const splitConfigurationAssetIdentifier = (
 };
 
 const isJsonObject = Schema.is(Schema.JsonObject);
+
 const JsonArray = Schema.Array(Schema.Json);
 
 const decodeBase64 = (value: string): Uint8Array => {
@@ -520,6 +522,7 @@ export const configurationPayloadTypes = async (
 };
 
 const ESCROW_PAYLOAD_TYPE = "com.apple.security.FDERecoveryKeyEscrow";
+
 const ESCROW_CERTIFICATE_PAYLOAD_TYPE = "com.apple.security.pkcs1";
 
 /**

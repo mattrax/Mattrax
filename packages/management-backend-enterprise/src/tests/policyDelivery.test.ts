@@ -8,8 +8,11 @@ import { createWindowsBackend } from "../windows.js";
 import { makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://policies.test";
+
 const authSecret = "policy-delivery-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 const organization = (id: string) => ({

@@ -194,10 +194,15 @@ export type AzureGraphService = {
 export class AzureGraph extends Context.Service<AzureGraph, AzureGraphService>()("AzureGraph") {}
 
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
+
 const DEFAULT_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
+
 const DEFAULT_LOGIN_BASE_URL = "https://login.microsoftonline.com";
+
 const DEFAULT_RETRY_DELAY_MS = 1_000;
+
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
+
 const DEFAULT_TOKEN_LIFETIME_SECONDS = 3_600;
 
 const TokenResponse = Schema.Struct({

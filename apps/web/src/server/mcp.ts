@@ -14,7 +14,9 @@ import {
 } from "@mattrax/enterprise-domain/client";
 
 const API_BASE = "https://api.mattrax.internal";
+
 const SERVER_NAME = "mattrax";
+
 const SERVER_VERSION = "1.0.0";
 
 const isString = Schema.is(Schema.String);

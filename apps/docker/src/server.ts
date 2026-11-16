@@ -49,8 +49,11 @@ const requireEnv = (name: string): string => {
 };
 
 const port = Number(process.env.PORT ?? 8080);
+
 const host = process.env.HOST ?? "0.0.0.0";
+
 const origin = requireEnv("ORIGIN");
+
 const databaseUrl = requireEnv("DATABASE_URL");
 
 // SAFETY: the staged layout places the two bundles at these paths and each

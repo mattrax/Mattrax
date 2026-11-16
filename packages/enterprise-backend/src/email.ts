@@ -104,6 +104,7 @@ export const parseEmailSender = (value: string | null | undefined): EmailAddress
 
   if (angled) {
     const email = angled[2]!.trim();
+
     const name = angled[1]!
       .trim()
       .replace(/^"(.*)"$/, "$1")

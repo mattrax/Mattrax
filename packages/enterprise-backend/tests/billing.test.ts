@@ -9,8 +9,11 @@ import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "enterprise-test-secret";
+
 const devicePrice = "price_device";
+
 const now = new Date("2026-11-16T12:00:00.000Z");
 
 type FakeStripe = {

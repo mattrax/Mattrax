@@ -26,7 +26,9 @@ type ServerModule = { default: ServerEntry };
 type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
 const clientRoot = path.resolve(here, "../client");
+
 const assetsRoot = path.join(clientRoot, "assets") + path.sep;
 
 let entry: Promise<ServerModule> | undefined;

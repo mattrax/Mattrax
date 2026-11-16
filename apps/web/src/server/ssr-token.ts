@@ -6,6 +6,7 @@ import {
 } from "@mattrax/enterprise-domain/client";
 
 const decodePayload = Schema.decodeUnknownOption(SsrTokenPayload);
+
 const decodeRevision = Schema.decodeUnknownOption(SsrRevisionPayload);
 
 const encoder = new TextEncoder();

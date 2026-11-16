@@ -4,9 +4,13 @@ import { FetchHttpClient } from "effect/http";
 import { AzureOidc, AzureOidcError, AzureOidcLive, JsonWebKey, azureIssuer } from "../src/index.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
+
 const audience = "api://mattrax";
+
 const kid = "test-key-1";
+
 let sharedPair: CryptoKeyPair;
+
 let sharedJwk: JsonWebKey;
 
 function base64Url(data: ArrayBuffer | Uint8Array | string): string {

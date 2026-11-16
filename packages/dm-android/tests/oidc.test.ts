@@ -8,12 +8,17 @@ import {
 } from "../src/index.js";
 
 const audience = "https://mattrax.test/api/v1/android/pubsub";
+
 const serviceAccountEmail = "android-pubsub@test-project.iam.gserviceaccount.com";
+
 const jwksUri = "https://keys.test/jwks";
+
 const kid = "test-key-1";
 
 let privateKey: CryptoKey;
+
 let publicJwk: JsonWebKey & { kid?: string };
+
 let jwksResponse: () => Response;
 
 const encoder = new TextEncoder();

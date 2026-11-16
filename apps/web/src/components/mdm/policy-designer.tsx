@@ -237,6 +237,7 @@ const serializePolicy = (policy: PolicyDraft) => {
 };
 
 const SECTION_PAGE = 60;
+
 const SECTION_PAGE_INCREMENT = 40;
 
 export type PolicyDesignerProps = {

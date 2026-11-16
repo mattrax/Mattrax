@@ -73,9 +73,13 @@ export type WebhookDeliveryOutcome = {
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
+
 const DEFAULT_CONCURRENCY = 4;
+
 const MAX_ERROR_LENGTH = 500;
+
 const RETENTION_DAYS = 30;
+
 const MAX_ATTEMPTS = 3;
 
 const newEventId = () => `evt_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
@@ -667,7 +671,9 @@ export const pruneWebhookDeliveries = (
   }).pipe(Effect.catchCause(() => Effect.succeed(0)));
 
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
+
 export const WEBHOOK_MAX_RETRY_ATTEMPTS = MAX_ATTEMPTS;
+
 export const WEBHOOK_DELIVERY_RETENTION_DAYS = RETENTION_DAYS;
 
 /**

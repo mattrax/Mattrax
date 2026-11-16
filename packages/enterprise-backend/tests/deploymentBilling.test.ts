@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { makeRemoteBillingService } from "../src/remoteBillingService.ts";
 
 const origin = "https://mdm.example.com";
+
 const licenseKey = "mtx_lic_test_key";
 
 const summary = {
@@ -24,6 +25,7 @@ const summary = {
 
 const service = (responses: ReadonlyArray<unknown>) => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
+
   const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
 
@@ -41,6 +43,7 @@ const service = (responses: ReadonlyArray<unknown>) => {
       url: "https://e.mattrax.app",
       licenseKey,
       origin,
+      // SAFETY: the fake implements the fetch surface the billing client uses.
       fetch: fetch as typeof globalThis.fetch,
     }),
   };
@@ -89,6 +92,7 @@ describe("remote deployment billing", () => {
       url: "https://e.mattrax.app",
       licenseKey,
       origin,
+      // SAFETY: this fake returns a fetch Response, which is the billing client's contract.
       fetch: (async () =>
         new Response(JSON.stringify({ message: "Licence origin does not match." }), {
           status: 403,

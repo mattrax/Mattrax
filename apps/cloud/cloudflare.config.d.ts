@@ -1,4 +1,5 @@
 import type { InferEnv, UnwrapConfig } from "cf/config";
+
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
@@ -127,8 +128,11 @@ export declare const apiWorker: {
         EMAIL: import("cf/config").SendEmailBinding;
     };
 };
+
 export type ApiConfig = UnwrapConfig<typeof apiWorker>;
+
 export type ApiEnv = InferEnv<ApiConfig>;
+
 declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
     worker: {
         name: string;
@@ -373,4 +377,5 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
         };
     };
 };
+
 export default _default;

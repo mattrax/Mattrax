@@ -18,6 +18,7 @@ const origin = process.env.SITE_ORIGIN ?? "https://e.mattrax.app";
  * in the repository-root `doc_build/` consumed by the web Worker.
  */
 const docsRoot = fileURLToPath(new URL("..", import.meta.url));
+
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 export default defineConfig({

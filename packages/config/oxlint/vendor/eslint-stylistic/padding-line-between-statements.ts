@@ -3,9 +3,9 @@ import type { ESTree, Context as RuleContext, SourceCode, Token as SyntaxToken, 
 type ASTNode = ESTree.Node
 type Token = SyntaxToken | Comment
 import type {
-  PaddingType,
+  RuleOptions,
   SelectorOption,
-  StatementMatcher,
+  StatementOption,
 } from './padding-line-options.d.ts'
 import {
   isClosingBraceToken,
@@ -42,24 +42,9 @@ type NodeTest = (
   sourceCode: SourceCode,
 ) => boolean
 
-export interface NodeTestObject {
+interface NodeTestObject {
   test: NodeTest
 }
-
-/**
- * A policy entry may name a caller-defined statement type (registered through
- * `createPaddingLineRule`) anywhere the upstream statement types are accepted.
- */
-export type PolicyStatementOption<Extra extends string = never> =
-  | StatementMatcher
-  | Extra
-  | [StatementMatcher | Extra, ...(StatementMatcher | Extra)[]]
-
-export type PolicyOptions<Extra extends string = never> = {
-  blankLine: PaddingType
-  prev: PolicyStatementOption<Extra>
-  next: PolicyStatementOption<Extra>
-}[]
 
 const LT = `[${Array.from(LINEBREAKS).join('')}]`
 const PADDING_LINE_SEQUENCE = new RegExp(
@@ -67,7 +52,7 @@ const PADDING_LINE_SEQUENCE = new RegExp(
   'u',
 )
 
-function isSelectorOption(option: PolicyStatementOption<string>): option is SelectorOption {
+function isSelectorOption(option: StatementOption): option is SelectorOption {
   return typeof option === 'object' && !Array.isArray(option)
 }
 
@@ -604,16 +589,8 @@ const StatementTypes: Record<string, NodeTestObject> = {
   ),
 }
 
-/**
- * Build the vendored padding rule with caller-owned, typed policy options.
- * `statementTypes` registers caller-defined statement types, looked up before
- * the upstream table, for syntax the upstream matchers do not distinguish.
- */
-export default function createPaddingLineRule<Extra extends string = never>(
-  options: PolicyOptions<NoInfer<Extra>>,
-  statementTypes?: Record<Extra, NodeTestObject>,
-): CreateRule {
-const customStatementTypes: Partial<Record<string, NodeTestObject>> = statementTypes ?? {}
+/** Build the vendored padding rule with caller-owned, typed policy options. */
+export default function createPaddingLineRule(options: RuleOptions): CreateRule {
 return {
   meta: {
     type: 'layout',
@@ -690,7 +667,7 @@ return {
     const selectorMatchedNodes = new Map<string, Set<ASTNode>>()
     const pendingPairs: { prevNode: ASTNode, nextNode: ASTNode }[] = []
 
-    function collectSelectorOption(option: PolicyStatementOption<Extra>): void {
+    function collectSelectorOption(option: StatementOption): void {
       if (Array.isArray(option)) {
         for (const item of option)
           collectSelectorOption(item)
@@ -745,7 +722,7 @@ return {
      * @returns `true` if the statement node matched the type.
      * @private
      */
-    function match(node: ASTNode, type: PolicyStatementOption<Extra>): boolean {
+    function match(node: ASTNode, type: StatementOption): boolean {
       let innerStatementNode = node
 
       while (innerStatementNode.type === 'LabeledStatement')
@@ -769,7 +746,7 @@ return {
         return true
       }
       else {
-        const statementType = customStatementTypes[type] ?? StatementTypes[type]
+        const statementType = StatementTypes[type]
         if (statementType === undefined)
           throw new Error(`Padding rule invariant: unsupported statement type ${type}`)
         return statementType.test(innerStatementNode, sourceCode)

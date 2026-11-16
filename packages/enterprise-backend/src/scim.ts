@@ -59,6 +59,7 @@ const sha256 = (value: string) =>
   });
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const now = () => new Date();
 
 const iso = (value: Date | null | undefined) =>

@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import * as tar from "tar";
 
 const RETRIES = 3;
+
 const RETRY_DELAY_MS = 500;
+
 const FETCH_TIMEOUT_MS = 60_000;
 
 /** A recoverable failure while fetching or parsing an upstream source. */

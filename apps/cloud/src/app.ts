@@ -950,7 +950,9 @@ const checkMailerReady = (env: Env): "ok" | "skipped" => mailerReadiness(resolve
  * existing per-check timeout still turns a slow probe into a 503.
  */
 const READINESS_PROBE_TTL_MS = 30_000;
+
 const storageProbeCache = createProbeCache<"ok">(READINESS_PROBE_TTL_MS);
+
 const mailerProbeCache = createProbeCache<"ok" | "skipped">(READINESS_PROBE_TTL_MS);
 
 const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {

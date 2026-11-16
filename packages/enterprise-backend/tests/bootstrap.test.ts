@@ -7,6 +7,7 @@ import { verifySsrRevision, verifySsrToken } from "../src/ssrToken.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "bootstrap-test-secret-that-is-long-enough";
 
 const now = new Date();

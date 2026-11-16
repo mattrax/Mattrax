@@ -14,14 +14,18 @@ import {
 } from "./catalog";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
 const webRoot = path.resolve(here, "../../..");
+
 const repoRoot = path.resolve(webRoot, "../..");
+
 const catalogDir = path.join(webRoot, "public/catalog/windows");
 
 const readJson = <S extends Schema.ConstraintDecoder<unknown>>(schema: S, name: string): S["Type"] =>
   Schema.decodeUnknownSync(schema)(JSON.parse(readFileSync(path.join(catalogDir, name), "utf8")));
 
 const index = readJson(WindowsPlatformIndex, "index.json");
+
 const search = readJson(SearchIndex, "search.json");
 
 const summaries = index.collections.flatMap((summary) => {

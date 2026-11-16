@@ -42,6 +42,7 @@ const ServerEnrollmentResponse = Schema.Union([
 ]);
 
 const decodeEnrollment = Schema.decodeUnknownOption(ServerEnrollmentResponse);
+
 const decodeEnrollmentResponse = Schema.decodeUnknownOption(EnrollmentResponse);
 
 /**

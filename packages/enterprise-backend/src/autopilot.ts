@@ -100,6 +100,7 @@ const SERIAL_HEADERS = new Set([
 ]);
 
 const HASH_HEADERS = new Set(["hardwarehash", "hardwareidentifier", "hash", "devicehardwarehash"]);
+
 const GROUP_TAG_HEADERS = new Set(["grouptag", "group", "devicegrouptag"]);
 
 const headerIndex = (headers: ReadonlyArray<string>, candidates: ReadonlySet<string>) =>
@@ -206,8 +207,11 @@ export type AutopilotProfileValidation =
   | { readonly ok: false; readonly message: string };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+
 const TIMEZONE_PATTERN = /^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/;
+
 const DEVICE_NAME_PATTERN = /^[A-Za-z0-9%_\- ]+$/;
 
 /**

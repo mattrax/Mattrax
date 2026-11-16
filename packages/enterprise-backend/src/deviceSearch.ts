@@ -17,6 +17,7 @@ type DeviceStatusValue = typeof DeviceStatus.Type;
 type DeviceProtocolValue = typeof DeviceProtocol.Type;
 
 export const DEVICE_SEARCH_DEFAULT_LIMIT = 50;
+
 export const DEVICE_SEARCH_MAX_LIMIT = 200;
 
 /** Hard ceiling for CSV exports so a bad request cannot buffer an entire fleet. */

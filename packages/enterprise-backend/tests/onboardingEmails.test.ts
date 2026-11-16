@@ -12,7 +12,9 @@ import type { OutboundEmailMessage } from "../src/email.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://mattrax.test";
+
 const now = new Date("2026-11-14T12:00:00.000Z");
+
 const DAY = 24 * 60 * 60 * 1000;
 
 const daysAgo = (days: number) => new Date(now.getTime() - days * DAY);

@@ -11,6 +11,7 @@ import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const headers = { cookie: "mattrax_session=test" };
 
 const makeContext = () => {

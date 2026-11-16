@@ -112,6 +112,7 @@ export const scriptPayload = async (
 
   for (const entry of input.environment) {
     environment[entry.name] = entry.value;
+
     if (entry.secret) secrets.push(entry.name);
   }
 

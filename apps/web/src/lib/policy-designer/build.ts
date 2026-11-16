@@ -119,6 +119,7 @@ export const serializePlist = (value: PlistValue) =>
   `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">${plistValue(value)}</plist>`;
 
 const uuid = () => crypto.randomUUID();
+
 const identifierSafe = (value: string) => value.replace(/[^A-Za-z0-9._-]+/g, "-");
 
 /** Windows vector/CSP settings are identified by OMA-URI, not just the key. */
@@ -126,7 +127,9 @@ export const valueKey = (property: Property, platform: PlatformId) =>
   platform === "windows" ? (property.address ?? property.key) : property.key;
 
 const isEnvelope = (property: Property) => property.category === "Envelope";
+
 const isPlistDataProperty = (property: Property) => property.type === "data";
+
 const isPlistDateProperty = (property: Property) => property.type === "date";
 
 /** Payload fields, without generated declaration envelope fields or unset values. */

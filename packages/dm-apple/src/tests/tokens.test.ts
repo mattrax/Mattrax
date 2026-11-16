@@ -11,6 +11,7 @@ import {
 } from "../tokens.js";
 
 const SECRET = "asset-token-test-secret";
+
 const NOW = 1_700_000_000_000;
 
 const contextAt = (now: number) => ({

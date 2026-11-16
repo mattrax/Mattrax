@@ -7,8 +7,11 @@
  */
 
 export const SESSION_PRESENCE_COOKIE = "mattrax_session_presence";
+
 const PREFIX = "v1.";
+
 const DEFAULT_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
 const CLEARED = "Thu, 01 Jan 1970 00:00:00 GMT";
 
 const getSetCookies = (headers: Headers): ReadonlyArray<string> => headers.getSetCookie();

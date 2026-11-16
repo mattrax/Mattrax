@@ -4,13 +4,6 @@ const isTagKey = (key: ESTree.Node): boolean =>
 	(key.type === "Identifier" && key.name === "_tag") ||
 	(key.type === "Literal" && key.value === "_tag");
 
-/**
- * Reject hand-written tagged unions.
- *
- * Local policy: an *optional* `_tag` is a duck-typed probe at a boundary — for
- * example `{ readonly _tag?: string }` used to narrow an untrusted error — not
- * a tagged union. Only required `_tag` members are rejected.
- */
 export const noManualTaggedTypeRule = defineRule({
 	meta: {
 		type: "problem",
@@ -26,8 +19,6 @@ export const noManualTaggedTypeRule = defineRule({
 	createOnce(context) {
 		return {
 			TSPropertySignature(node) {
-				if (node.optional === true) return;
-
 				if (isTagKey(node.key)) {
 					context.report({ node, messageId: "manualTaggedType" });
 				}

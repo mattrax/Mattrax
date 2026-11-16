@@ -16,8 +16,11 @@ import { parsePlist, PlistValue } from "@mattrax/plist";
 import { DeviceUnenrolled } from "../schema.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
+
 const TEST_MDM_ORIGIN = new MdmOrigin({ url: TEST_CONFIG.origin });
+
 const DeviceCheckinScope = CheckinScope.members[0];
+
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
 function expectScope(scope: CheckinScope | undefined): CheckinScope {

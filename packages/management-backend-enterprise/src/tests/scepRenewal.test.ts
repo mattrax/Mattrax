@@ -21,8 +21,11 @@ import { ScepRepositoryLive } from "../scep.js";
 import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+
 const authSecret = "scep-renewal-e2e-secret";
+
 const scope = { organizationId: "tenant-1" };
+
 const now = new Date("2026-11-10T12:00:00.000Z");
 
 /**

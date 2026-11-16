@@ -104,7 +104,9 @@ export type RequestAnalytics = {
 };
 
 const MAX_MESSAGE_LENGTH = 500;
+
 const DISTINCT_ID_PATTERN = /^[A-Za-z0-9._:@+-]{1,200}$/;
+
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Remove emails and long opaque tokens, then bound the result. */

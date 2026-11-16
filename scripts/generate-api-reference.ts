@@ -33,8 +33,11 @@ type Operation = NonNullable<Document["paths"][string][(typeof methodNames)[numb
 type Parameter = Operation["parameters"][number];
 
 const isString = Schema.is(Schema.String);
+
 const isArray = Schema.is(Schema.Array(Schema.Unknown));
+
 const isJsonArray = Schema.is(Schema.Array(Schema.Json));
+
 const isRecord = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
 
 const restDocument = OpenApi.fromApi(

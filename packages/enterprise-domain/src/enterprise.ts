@@ -86,10 +86,15 @@ import {
 export { AppleUserActionName };
 
 const IdParam = { id: Schema.String };
+
 const TenantParam = { tenantId: Schema.String };
+
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
+
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
+
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
+
 const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 
 /** A user channel is addressed by the device plus Apple's opaque user id. */
@@ -106,7 +111,9 @@ const TenantWebhookDeliveryParam = {
 };
 
 const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Schema.String };
+
 const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
+
 const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
 
 const TenantDashboardWidgetParam = {
@@ -116,10 +123,13 @@ const TenantDashboardWidgetParam = {
 };
 
 const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
+
 const McpConnectionParam = { connectionId: Schema.String };
+
 const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
+
 export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
 
 export class EnterpriseUnauthorized extends Schema.TaggedError<EnterpriseUnauthorized>()(
@@ -339,7 +349,9 @@ const EnterpriseTenantImportErrors = [
 ] as const;
 
 const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
+
 const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
+
 const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
 
 const EnterpriseAndroidReadErrors = [
@@ -1124,7 +1136,9 @@ export const UpdateMeRequest = Schema.Struct({
 });
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
+
 export const DeviceStatus = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
+
 export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "unknown"]);
 
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
@@ -2157,6 +2171,7 @@ export const PolicyApplicationObject = Schema.Struct({
 export type PolicyApplicationObject = typeof PolicyApplicationObject.Type;
 
 export const EnterpriseApplicationUploadErrors = EnterprisePolicyApplicationUploadErrors;
+
 export const EnterpriseApplicationDownloadErrors = EnterprisePolicyApplicationDownloadErrors;
 
 export const DownloadPolicyApplicationResponse = Schema.Struct({
@@ -2883,8 +2898,11 @@ export const MobileconfigPreview = Schema.Struct({
 export type MobileconfigPreview = typeof MobileconfigPreview.Type;
 
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
+
 export const IdsRequest = Schema.Array(Schema.String);
+
 export const IdResponse = Schema.Struct({ id: Schema.String });
+
 export const NoContent = Schema.Void;
 
 export const BulkOperationResult = Schema.Struct({
@@ -3600,7 +3618,9 @@ export const ApnsCsrResponse = Schema.Struct({ plist: Schema.String });
 export type ApnsCsrResponse = typeof ApnsCsrResponse.Type;
 
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
+
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
+
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
 
 /** A Checkout Session redirect that buys the per-device plan. */
@@ -3667,7 +3687,9 @@ export const WebhookDeliveryQuery = Schema.Struct({
 export type WebhookDeliveryQuery = typeof WebhookDeliveryQuery.Type;
 
 export const AuthUser = UserInfo;
+
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
+
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
 
 /**

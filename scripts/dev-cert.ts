@@ -6,7 +6,9 @@ import path from "node:path";
 // dev server picks it up from `apps/web/.certs` and the API's `ORIGIN` must
 // match the resulting `https://localhost:9050` origin.
 const dir = path.resolve("apps/web/.certs");
+
 const key = path.join(dir, "localhost-key.pem");
+
 const cert = path.join(dir, "localhost.pem");
 
 if (existsSync(key) && existsSync(cert)) {

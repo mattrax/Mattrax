@@ -7,8 +7,11 @@ import { ManagementBackendEnterpriseLive } from "../index.js";
 import { dbRows, makeDb, tableName, type Row, stringValue } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "device-inventory-test-secret";
+
 const mdmOrigin = new MdmOrigin({ url: origin });
+
 const now = new Date("2026-11-11T10:00:00.000Z");
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);

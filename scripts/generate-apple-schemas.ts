@@ -434,7 +434,9 @@ const declarationNames = new Set(
 );
 
 const profileNames = new Set(collectNames("profile", path.join(APPLE_REPO, "mdm/profiles")));
+
 const commandNames = new Set(collectNames("command", path.join(APPLE_REPO, "mdm/commands")));
+
 const checkinNames = new Set(collectNames("checkin", path.join(APPLE_REPO, "mdm/checkin")));
 
 // Build rename map for cross-category conflicts.

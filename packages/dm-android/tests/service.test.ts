@@ -20,8 +20,11 @@ import {
 let account: ServiceAccountFixture;
 
 const baseUrl = "https://android.test/v1";
+
 const tokenUri = "https://oauth.test/token";
+
 const enterprise = "enterprises/LC123";
+
 const device = `${enterprise}/devices/device-1`;
 
 function config(): AndroidManagementConfig {

@@ -2,6 +2,7 @@ import type { Collection, Property, PropertyEnumValue, PropertyType } from "./ca
 import { cleanText, fetchJson, SourceError } from "./util.ts";
 
 const DISCOVERY = "https://androidmanagement.googleapis.com/$discovery/rest?version=v1";
+
 const MAX_DEPTH = 5;
 
 /** One entry in Google's discovery document `schemas` map. */

@@ -32,7 +32,9 @@ const readPlist = (value: PlistValue): PlistDictionary => {
 };
 
 const origin = "https://mdm.example.test";
+
 const udid = "00008030-001A2B3C4D5E6F70";
+
 const topic = "com.apple.mgmt.External.compliance";
 
 const authenticate = () => ({

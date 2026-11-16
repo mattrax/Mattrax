@@ -228,6 +228,7 @@ const MEMBER_WRITE = new Set([
 ]);
 
 const ROLE_READ = new Set(["listTenantRoles"]);
+
 const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenantRole"]);
 
 const EXPLICIT = {

@@ -9,7 +9,9 @@ export const ANDROID_MANAGEMENT_SCOPE = "https://www.googleapis.com/auth/android
 export const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 
 const JWT_LIFETIME_SECONDS = 60 * 60;
+
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
+
 const textEncoder = new TextEncoder();
 
 export class GoogleAuthError extends Data.TaggedError("GoogleAuthError")<{

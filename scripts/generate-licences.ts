@@ -34,6 +34,7 @@ interface LicenceOutput {
 }
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+
 const isString = Schema.is(Schema.String);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -41,8 +42,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** The lockfile is parsed YAML; these helpers narrow each value it reads. */
 const rawLock: unknown = parse(await readFile(path.join(root, "pnpm-lock.yaml"), "utf8"));
+
 const lock = isRecord(rawLock) ? rawLock : {};
+
 const importers = isRecord(lock.importers) ? lock.importers : {};
+
 const snapshots = isRecord(lock.snapshots) ? lock.snapshots : {};
 
 const dependenciesOf = (importer: unknown): [string, unknown][] => {
@@ -77,6 +81,7 @@ for (const [project, importer] of Object.entries(importers)) {
 }
 
 const reached = new Map<string, { name: string; version: string }>();
+
 const seen = new Set<string>();
 
 while (queue.length > 0) {
@@ -112,6 +117,7 @@ while (queue.length > 0) {
 }
 
 const storeEntries = await readdir(path.join(root, "node_modules/.pnpm"));
+
 const storeByPackage = new Map<string, string[]>();
 
 for (const entry of storeEntries) {
@@ -179,6 +185,7 @@ const repositoryUrl = (manifest: Record<string, unknown>): string | undefined =>
 };
 
 const packages: LicenceEntry[] = [];
+
 const texts = new Map<string, string>();
 
 for (const { name, version } of reached.values()) {

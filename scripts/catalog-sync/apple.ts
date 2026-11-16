@@ -10,7 +10,9 @@ import {
 } from "./util.ts";
 
 const REPO = "https://codeload.github.com/apple/device-management/tar.gz/refs/heads/release";
+
 const BLOB = "https://github.com/apple/device-management/blob/release";
+
 const CONCURRENCY = 8;
 
 const OS_DISPLAY = {

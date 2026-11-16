@@ -2,7 +2,7 @@ import { RuleTester } from "oxlint/plugins-dev";
 
 import { noManualTaggedTypeRule } from "./no-manual-tagged-type.ts";
 
-new RuleTester().run("anti-slop-effect/no-manual-tagged-type", noManualTaggedTypeRule, {
+new RuleTester().run("no-manual-tagged-type", noManualTaggedTypeRule, {
 	valid: [
 		{
 			filename: "value.ts",
@@ -19,16 +19,6 @@ new RuleTester().run("anti-slop-effect/no-manual-tagged-type", noManualTaggedTyp
 		{
 			filename: "value.ts",
 			code: 'type ValueTag = Value["_tag"];',
-		},
-		// An optional tag probes an untrusted value at a boundary; it does not
-		// declare a tagged union.
-		{
-			filename: "value.ts",
-			code: "type Envelope = { readonly _tag?: string; readonly message?: string };",
-		},
-		{
-			filename: "value.ts",
-			code: "const narrow = (error: { readonly _tag?: string }) => error;",
 		},
 	],
 	invalid: [

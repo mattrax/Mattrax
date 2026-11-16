@@ -87,7 +87,9 @@ export const withStatusReporting = (policy: Schema.JsonObject): Schema.JsonObjec
 export const ANDROID_NOTIFICATION_TYPES = ["ENROLLMENT", "STATUS_REPORT", "COMMAND"] as const;
 
 const SIGNUP_STATE_PURPOSE = "android-signup";
+
 const SIGNUP_STATE_TTL_MS = 30 * 60 * 1000;
+
 export const ANDROID_PUBSUB_RETENTION_DAYS = 30;
 
 export type AndroidServiceAccount = {
@@ -129,6 +131,7 @@ export class AndroidDeliveryError extends Data.TaggedError("AndroidDeliveryError
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 const now = () => new Date();
+
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 const iso = (value: Date | null | undefined) =>

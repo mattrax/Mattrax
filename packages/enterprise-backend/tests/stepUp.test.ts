@@ -12,6 +12,7 @@ import { signStepUpGrant } from "../src/stepUp.js";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const authSecret = "step-up-test-secret";
 
 const sha256 = async (value: string) =>

@@ -30,6 +30,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 export const MAX_ADE_MACHINE_INFO_BYTES = 64 * 1024;
 
 const SIGNED_DATA_OID = "1.2.840.113549.1.7.2";
+
 const BASIC_CONSTRAINTS_OID = "2.5.29.19";
 
 const APPLE_DEVICE_CA_PEM = `-----BEGIN CERTIFICATE-----

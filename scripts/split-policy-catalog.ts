@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export const DEFAULT_SOURCE = path.join(ROOT, "data/catalog/windows.json");
+
 export const DEFAULT_OUT = path.join(ROOT, "apps/web/public/catalog/windows");
 
 /** One setting in a generated collection. */

@@ -11,6 +11,7 @@ import { isBuiltInOwnerMember } from "./rbac.ts";
 import { settlePendingInvitations } from "./invitations.ts";
 
 const newId = () => crypto.randomUUID();
+
 const now = () => new Date();
 
 const normalizedDomain = (domain: string) => domain.trim().toLowerCase().replace(/\.$/, "");

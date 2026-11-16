@@ -180,6 +180,7 @@ const declarationName = (declaration: DeviceHealthDeclaration) =>
   declaration.identifier?.trim() || declaration.declarationType || "Declaration";
 
 const ACTIVE_DECLARATION_TYPES = new Set(["configurations", "activations"]);
+
 const KNOWN_STATUSES = new Set(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
 
 const NON_MAC_OS = /(ios|ipados|tvos|watchos|visionos|android|windows)/i;

@@ -275,9 +275,13 @@ export const appleCollectionManaged = (osVersions: ReadonlyArray<string> | undef
   osVersions.some((family) => /^(macos|ios|ipados)$/i.test(family));
 
 let manifestPromise: Promise<CatalogManifest> | undefined;
+
 const platformPromises = new Map<PlatformId, Promise<PlatformData>>();
+
 const indexPromises = new Map<PlatformId, Promise<PlatformIndex>>();
+
 const searchIndexPromises = new Map<PlatformId, Promise<SearchIndex>>();
+
 const collectionPromises = new Map<string, Promise<Collection>>();
 
 export const loadManifest = () => {

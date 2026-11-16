@@ -78,7 +78,9 @@ export const rememberStepUpGrant = (
 export const forgetStepUpGrants = () => grants.clear();
 
 const [pending, setPending] = createSignal<StepUpRequest | null>(null);
+
 let pendingAction: StepUpAction | null = null;
+
 let waiters: Array<{ resolve: (grant: string) => void; reject: (error: Error) => void }> = [];
 
 export const pendingStepUp = pending;
