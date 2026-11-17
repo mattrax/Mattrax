@@ -29,14 +29,13 @@ export function NewVersionNotice() {
   );
 
   return (
-    <Show when={pendingDeployment()}>
-      {(build) => (
-        <div class="pointer-events-none fixed inset-x-0 top-24 z-[65] flex flex-col items-center gap-2 px-4">
-          <div
-            role="status"
-            aria-live="polite"
-            class="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-[var(--shadow-popover)]"
-          >
+    <div class="pointer-events-none fixed inset-x-0 top-24 z-[65] flex flex-col items-center gap-2 px-4">
+      {/* Keep the live region permanently mounted and empty until there is an
+          update; inserting the region and its text together is unreliable in
+          several screen readers. */}
+      <div role="status" aria-live="polite" class="pointer-events-none w-full max-w-md">
+        <Show when={pendingDeployment()}>
+          <div class="pointer-events-auto flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-[var(--shadow-popover)]">
             <span
               aria-hidden="true"
               class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground"
@@ -66,11 +65,13 @@ export function NewVersionNotice() {
               <X class="size-3.5" />
             </button>
           </div>
-          {/* Outside the live region: assistive technology should announce the
-              update, not an opaque build id. */}
-          <span class="sr-only">Build {build()}</span>
-        </div>
-      )}
-    </Show>
+        </Show>
+      </div>
+      {/* Outside the live region: assistive technology should announce the
+          update, not an opaque build id. */}
+      <Show when={pendingDeployment()}>
+        {(build) => <span class="sr-only">Build {build()}</span>}
+      </Show>
+    </div>
   );
 }

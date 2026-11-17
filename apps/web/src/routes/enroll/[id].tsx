@@ -577,7 +577,9 @@ function EnrollmentOptions(props: {
 
     const marker = document
       .querySelector(
-        `[${ENROLLMENT_PLATFORM_ATTRIBUTE}][${ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE}="${props.id ?? ""}"]`,
+        `[${ENROLLMENT_PLATFORM_ATTRIBUTE}][${ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE}="${CSS.escape(
+          props.id ?? "",
+        )}"]`,
       )
       ?.getAttribute(ENROLLMENT_PLATFORM_ATTRIBUTE);
 

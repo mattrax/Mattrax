@@ -10,6 +10,7 @@ import {
   isChunkAssetUrl,
   isChunkLoadFailure,
   markDeploymentAnnounced,
+  preloadFailureMessage,
   shouldAnnounceDeployment,
   stripChunkReloadMarker,
 } from "./skew-protection";
@@ -84,6 +85,32 @@ describe("chunk failure attribution", () => {
   it("fails closed when the message has no verifiable URL", () => {
     expect(chunkFailureAssetUrl("Importing a module script failed.", origin)).toBeUndefined();
     expect(chunkFailureAssetUrl("Loading chunk 42 failed.", origin)).toBeUndefined();
+  });
+});
+
+describe("Vite preload error events", () => {
+  it("reads the payload Vite assigns to a plain Event", () => {
+    const event = new Event("vite:preloadError");
+
+    Object.defineProperty(event, "payload", {
+      value: new Error("Failed to fetch dynamically imported module: /assets/devices.js"),
+    });
+
+    expect(preloadFailureMessage(event)).toBe(
+      "Failed to fetch dynamically imported module: /assets/devices.js",
+    );
+  });
+
+  it("accepts a CustomEvent detail for compatibility", () => {
+    const event = new CustomEvent("vite:preloadError", {
+      detail: new Error("Unable to preload CSS for /assets/app.css"),
+    });
+
+    expect(preloadFailureMessage(event)).toBe("Unable to preload CSS for /assets/app.css");
+  });
+
+  it("ignores an event without an error payload", () => {
+    expect(preloadFailureMessage(new Event("vite:preloadError"))).toBeUndefined();
   });
 });
 

@@ -97,6 +97,23 @@ export function isChunkAssetUrl(candidate: string, origin: string): boolean {
 const MESSAGE_ASSET_URL = /(?:https?:\/\/[^\s"'<>]+|\/assets\/[^\s"'<>]+)/i;
 
 /**
+ * Extract the error message from Vite's `vite:preloadError` event.
+ *
+ * Vite 8 dispatches a plain `Event` and assigns `payload` onto it; it is not a
+ * `CustomEvent` and the DOM typings do not know about the field. CustomEvent
+ * detail is also accepted for forward/backward compatibility.
+ */
+export function preloadFailureMessage(event: Event): string | undefined {
+  // SAFETY: Vite defines `payload` on the Event it dispatches at runtime; the
+  // DOM Event declaration has no field for it.
+  const payload = (event as Event & { readonly payload?: unknown }).payload;
+  const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+  const reason = payload ?? detail;
+
+  return reason instanceof Error ? reason.message : undefined;
+}
+
+/**
  * Extract the failing module URL from a browser error message, but only when
  * it is one of this deployment's assets.
  *
@@ -306,33 +323,37 @@ export function installSkewProtection(): void {
   };
 
   const onPreloadError = (event: Event) => {
-    // Vite throws the rejection after dispatching this event; prevent the
-    // default only when a reload is actually taking over.
-    if (!(event instanceof CustomEvent)) return;
+    const message = preloadFailureMessage(event);
 
-    const detail: unknown = event.detail;
-    const message = detail instanceof Error ? detail.message : "";
+    if (!message || !chunkFailureAssetUrl(message, window.location.origin)) return;
 
-    if (chunkFailureAssetUrl(message, window.location.origin) && reloadForChunkError())
-      event.preventDefault();
+    // Reload first; only suppress Vite's rethrow when a reload is actually
+    // taking over. With `defaultPrevented`, Vite resolves the preload promise
+    // with `undefined` instead of throwing, which avoids an unhandled error on
+    // the document that is about to be replaced.
+    if (reloadForChunkError()) event.preventDefault();
   };
 
   const onError = (event: ErrorEvent) => {
     if (chunkFailureAssetUrl(event.message, window.location.origin)) reloadForChunkError();
   };
 
-  // Resource errors do not bubble. A failed same-origin script under `/assets/`
-  // is the last-resort signal for a chunk the browser refused to fetch without
-  // an exception. Third-party scripts (analytics, recording) must never trigger
-  // a reload.
+  // Resource errors do not bubble. A failed same-origin script or modulepreload
+  // under `/assets/` is the last-resort signal for a chunk the browser refused
+  // to fetch without an exception. Third-party scripts (analytics, recording)
+  // must never trigger a reload.
   const onResourceError = (event: Event) => {
     const target = event.target;
 
-    if (!(target instanceof HTMLScriptElement)) return;
+    if (target instanceof HTMLScriptElement) {
+      if (isChunkAssetUrl(target.src, window.location.origin)) reloadForChunkError();
 
-    if (!isChunkAssetUrl(target.src, window.location.origin)) return;
+      return;
+    }
 
-    reloadForChunkError();
+    if (target instanceof HTMLLinkElement && target.rel === "modulepreload") {
+      if (isChunkAssetUrl(target.href, window.location.origin)) reloadForChunkError();
+    }
   };
 
   const onUnhandledRejection = (event: PromiseRejectionEvent) => {

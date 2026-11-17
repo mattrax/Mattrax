@@ -92,11 +92,11 @@ export async function lookupPublicEnrollment(
     return { status: "unavailable" };
   }
 
-  const explicitlyExpired = response.headers.get(ENROLLMENT_STATUS_HEADER) === "expired";
+  if (!response.ok) {
+    const explicitlyExpired = response.headers.get(ENROLLMENT_STATUS_HEADER) === "expired";
 
-  if (explicitlyExpired) return { status: "expired" };
-
-  if (!response.ok) return { status: enrollmentLookupFailure(response.status) };
+    return { status: enrollmentLookupFailure(response.status, explicitlyExpired) };
+  }
 
   const body = await response.json().catch(() => undefined);
 

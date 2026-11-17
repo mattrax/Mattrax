@@ -18,11 +18,12 @@ import {
 } from "~/lib/site";
 import "./app.css";
 
-const Router = createRouter({ routes: fileRoutes(pageRoutes) });
-
-// Listen before hydration so a route chunk from a previous deployment that has
-// already been evicted is still recovered. The module is inert on the server.
+// Install before the router is created: recovering from a stale chunk strips
+// the one-shot reload marker from `window.location`, and the router must see the
+// clean URL for its initial match. Listeners are inert on the server.
 if (!isServer) installSkewProtection();
+
+const Router = createRouter({ routes: fileRoutes(pageRoutes) });
 
 /** Public origin for absolute social URLs; localhost and self-hosted deployments keep their own host. */
 function siteOrigin() {

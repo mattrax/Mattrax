@@ -19,7 +19,7 @@ export function enrollmentLookupFailure(
   status: number,
   explicitlyExpired = false,
 ): EnrollmentLookupFailure {
-  if (explicitlyExpired) return "expired";
+  if (explicitlyExpired && (status === 404 || status === 410)) return "expired";
 
   if (status === 401 || status === 403 || status === 408 || status === 429 || status >= 500)
     return "unavailable";
