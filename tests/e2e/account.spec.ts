@@ -10,7 +10,10 @@ test.describe("account", () => {
 
     const name = page.locator("#name");
     await name.fill("Renamed User");
-    await page.getByRole("button", { name: /^Save$/ }).click();
+    await page
+      .getByRole("region", { name: "Display name" })
+      .getByRole("button", { name: /^Save$/ })
+      .click();
     await expect
       .poll(async () =>
         page.evaluate(async () => {
