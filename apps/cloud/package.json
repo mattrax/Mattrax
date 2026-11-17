@@ -32,6 +32,7 @@
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",
+    "@mattrax/enterprise-api": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",

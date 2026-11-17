@@ -6,7 +6,7 @@ import {
   completeAndroidSignup,
   handleAndroidPubSub,
   type AndroidDeliveryConfig,
-} from "./android.ts";
+} from "@mattrax/enterprise-backend";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 

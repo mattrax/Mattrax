@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:net";
 import { describe, expect, it } from "vitest";
-import type { OutboundEmailMessage } from "../src/email.ts";
-import { buildMimeMessage, dotStuff, sendSmtpMail } from "../src/smtp.ts";
+import type { OutboundEmailMessage } from "./email.ts";
+import { buildMimeMessage, dotStuff, sendSmtpMail } from "./smtp.ts";
 
 interface SmtpServerOptions {
   rejectAuth?: boolean;

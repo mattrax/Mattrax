@@ -1,0 +1,14 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../effect-stripe" },
+    { "path": "../enterprise-core" },
+    { "path": "../enterprise-domain" },
+    { "path": "../net" }
+  ],
+  "include": ["src"]
+}

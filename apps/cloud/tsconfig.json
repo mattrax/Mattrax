@@ -11,6 +11,9 @@
   },
   "references": [
     {
+      "path": "../../packages/enterprise-api"
+    },
+    {
       "path": "../../packages/cloud-services"
     },
     {

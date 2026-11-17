@@ -2,8 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
-import { isBuiltInOwnerMember } from "./rbac.ts";
-import { settlePendingInvitations } from "./invitations.ts";
+import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
+import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 

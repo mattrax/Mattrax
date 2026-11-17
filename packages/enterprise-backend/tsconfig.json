@@ -1,7 +1,9 @@
 {
   "extends": "../../packages/config/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "outDir": "./dist"
   },
   "references": [
@@ -28,7 +30,27 @@
     },
     {
       "path": "../crypto"
+    },
+    {
+      "path": "../email"
+    },
+    {
+      "path": "../enterprise-tokens"
+    },
+    {
+      "path": "../enterprise-identity"
+    },
+    {
+      "path": "../enterprise-billing"
+    },
+    {
+      "path": "../entra-id"
+    },
+    {
+      "path": "../apple-business-manager"
     }
   ],
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

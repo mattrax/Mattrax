@@ -20,9 +20,9 @@ import {
   type BillingInvoicesResponse,
   type BillingSummary,
 } from "@mattrax/enterprise-domain";
-import { billableDeviceCount } from "./billing.ts";
-import type { EnterpriseDb, EnterpriseOrganization } from "./schema.ts";
-import { schema } from "./schema.ts";
+import { billableDeviceCount, type EnterpriseOrganization } from "./billing.ts";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
 
 /**
  * Customer-facing billing, independent of the deployment model.

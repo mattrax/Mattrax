@@ -1,38 +1,20 @@
 export {
-  createEnterpriseService,
-  enterpriseAccountHandlers,
-  enterpriseAdeHandlers,
-  enterpriseAttributeHandlers,
-  enterpriseHandlers,
-  scriptAgentHandlers,
-  scriptHandlers,
-} from "./enterpriseHandlers.js";
-
-export { EnterpriseAnalyticsService } from "./enterpriseHandlers.js";
-
-export type {
-  EnterpriseAnalytics,
-  EnterpriseAnalyticsIdentity,
-  EnterpriseHandlersConfig,
-} from "./enterpriseHandlers.js";
-
-export {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
-} from "./billingWebhook.js";
+} from "@mattrax/enterprise-billing";
 
-export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "./billingWebhook.js";
+export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/enterprise-billing";
 
-export { BillingService, BillingServiceLive, makeStripeBillingService } from "./billingService.js";
+export { BillingService, BillingServiceLive, makeStripeBillingService } from "@mattrax/enterprise-billing";
 
-export { licenseBillingRoutes } from "./licenseBilling.js";
+export { licenseBillingRoutes } from "@mattrax/enterprise-billing";
 
-export type { LicenseBillingConfig } from "./licenseBilling.js";
+export type { LicenseBillingConfig } from "@mattrax/enterprise-billing";
 
-export { makeRemoteBillingService } from "./remoteBillingService.js";
+export { makeRemoteBillingService } from "@mattrax/enterprise-billing";
 
-export type { RemoteBillingOptions } from "./remoteBillingService.js";
+export type { RemoteBillingOptions } from "@mattrax/enterprise-billing";
 
 export type {
   BillingCheckoutInput,
@@ -43,7 +25,7 @@ export type {
   BillingSummaryInput,
   BillingUsageInput,
   StripeBillingOptions,
-} from "./billingService.js";
+} from "@mattrax/enterprise-billing";
 
 export {
   billableDeviceCount,
@@ -51,7 +33,7 @@ export {
   reconcileSubscriptionQuantity,
   reconcileSubscriptionSweep,
   syncStripeCustomerName,
-} from "./billing.js";
+} from "@mattrax/enterprise-billing";
 
 export type {
   ReconcileSeatsInput,
@@ -60,7 +42,7 @@ export type {
   SubscriptionSweepInput,
   SubscriptionSweepResult,
   SyncCustomerNameInput,
-} from "./billing.js";
+} from "@mattrax/enterprise-billing";
 
 export {
   WEBHOOK_DELIVERY_PAGE_DEFAULT,
@@ -169,7 +151,7 @@ export {
   sealAbmCredential,
   syncAppleBusinessManagerDevices,
   validateAbmPrivateKey,
-} from "./appleBusinessManager.js";
+} from "@mattrax/apple-business-manager";
 
 export type {
   AbmAccessToken,
@@ -187,7 +169,7 @@ export type {
   AppleBusinessManagerInfo,
   AppleBusinessManagerRow,
   LegacyDepCredential,
-} from "./appleBusinessManager.js";
+} from "@mattrax/apple-business-manager";
 
 export {
   VPP_BASE_URL,
@@ -206,7 +188,7 @@ export {
   syncScheduledVppAssets,
   syncVppAssets,
   vppInfo,
-} from "./volumePurchase.js";
+} from "@mattrax/apple-business-manager";
 
 export type {
   DeviceVppAssignmentRow,
@@ -220,7 +202,7 @@ export type {
   VppErrorKind,
   VppInfo,
   VppTokenRow,
-} from "./volumePurchase.js";
+} from "@mattrax/apple-business-manager";
 
 export {
   SCRIPT_EXECUTION_SWEEP_LIMIT,
@@ -246,8 +228,6 @@ export {
 } from "./scripts.js";
 
 export type { AssignmentPatchResult, ScriptResultIngestion, ScriptSweepResult } from "./scripts.js";
-
-export { EnterpriseService } from "./service.js";
 
 export {
   ANDROID_NOTIFICATION_TYPES,
@@ -281,17 +261,9 @@ export type {
   AndroidSyncResult,
 } from "./android.js";
 
-export { androidRoutes } from "./androidRoutes.js";
-
-export type { AndroidRoutesOptions } from "./androidRoutes.js";
-
-export { scimRoutes } from "./scim.js";
-
-export { mcpOAuthRoutes } from "./mcpOAuth.js";
-
 export { makeSsoStrategy } from "./sso.js";
 
-export { signToken, verifyToken } from "./tokens.js";
+export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
   signSsrToken,
@@ -334,7 +306,7 @@ export type {
   WelcomeEmailSweepResult,
 } from "./onboardingEmails.js";
 
-export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "./email.js";
+export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 
 export {
   DEFAULT_EMAIL_FROM,
@@ -345,11 +317,11 @@ export {
   parseEmailSender,
   replyToAddress,
   smtpEmailTransport,
-} from "./email.js";
+} from "@mattrax/email";
 
-export type { EmailAddress } from "./email.js";
+export type { EmailAddress } from "@mattrax/email";
 
-export type { SmtpTransportOptions } from "./smtp.js";
+export type { SmtpTransportOptions } from "@mattrax/email";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,
@@ -378,7 +350,7 @@ export type {
   TransactionalEmailOutcome,
 } from "./emailOutbox.js";
 
-export { settlePendingInvitations } from "./invitations.js";
+export { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 export { makeAuthLive, sessionCookie } from "./auth.js";
 
@@ -454,7 +426,7 @@ export {
   runEntraDirectorySyncForTenant,
   runScheduledEntraSync,
   syncEntraDirectory,
-} from "./entraSync.js";
+} from "@mattrax/entra-id";
 
 export type {
   EntraDirectorySyncOutcome,
@@ -463,11 +435,7 @@ export type {
   EntraSyncScheduleState,
   EntraSyncTrigger,
   ScheduledEntraSyncResult,
-} from "./entraSync.js";
-
-export { ScimMembershipNotifier } from "./scim.ts";
-
-export type { ScimMembershipNotifierHandler } from "./scim.ts";
+} from "@mattrax/entra-id";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -534,3 +502,146 @@ export type {
   ServerCertificateProbe,
   ServerCertificateProbeOptions,
 } from "./serverCertificate.js";
+
+// Composition helpers used by @mattrax/enterprise-api. They remain internal to
+// the backend; the API package is the only consumer outside this package.
+export {
+  attributeCsvCells,
+  attributeCsvHeaders,
+  attributeDefinitionRow,
+  attributeValuesProblem,
+  claimEnrollmentAnswers,
+  definitionInputProblem,
+  listAttributeDefinitions,
+  loadDeviceAttributes,
+  loadEnrollmentQuestions,
+  mergeAttributeValues,
+  normalizeDefinitionOptions,
+  parseAttributeCsv,
+} from "./attributes.js";
+
+export {
+  AUTOPILOT_IMPORT_MAX_BYTES,
+  AUTOPILOT_IMPORT_MAX_ROWS,
+  AutopilotError,
+  assignAutopilotProfile,
+  autopilotDeviceInfo,
+  autopilotProfileInfo,
+  createAutopilotProfile,
+  deleteAutopilotDevice,
+  importAutopilotDevices,
+  listAutopilotProfiles,
+  normalizeAutopilotSerial,
+  parseAutopilotCsv,
+  syncAutopilotDevices,
+  updateAutopilotProfile,
+  validateAutopilotProfileInput,
+  type AutopilotProfileValues,
+} from "./autopilot.js";
+
+export { setBackupRetention, deleteBackupRun, BackupActionError } from "./backup.js";
+
+export {
+  deviceBucket,
+  normalizeWidgetConfig,
+  normalizeWidgetLayout,
+  softwareBucket,
+  toBuckets,
+} from "./dashboardQuery.js";
+
+export {
+  DEVICE_ACTIVITY_AUDIT_PREFIX,
+  DEVICE_ACTIVITY_COMMAND_PREFIX,
+  decodeDeviceActivityCursor,
+  deviceActivityPage,
+  deviceActivitySourceKeyset,
+  normalizeDeviceActivityLimit,
+  type DeviceActivitySourceKeyset,
+} from "./deviceActivity.js";
+
+export {
+  countDeviceHealth,
+  deriveDeviceHealth,
+  groupDeviceHealthReasons,
+  normalizeDeviceHealth,
+} from "./deviceHealth.js";
+
+export {
+  DEVICE_EXPORT_MAX_ROWS,
+  normalizeDeviceSearchQuery,
+  platformLabel,
+  toCsv,
+  type DeviceSearchFilters,
+} from "./deviceSearch.js";
+
+export { ENROLLMENT_ATTEMPT_DEDUPE_MS, ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT } from "./enrollmentAttempts.js";
+
+export { canEnrollDevice } from "./enrollmentLimit.js";
+
+export { tokenScopes, EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "./enterpriseAuth.js";
+
+export {
+  EscrowKeyError,
+  escrowKeyInfo,
+  generateTenantEscrowKey,
+  loadTenantEscrowKey,
+  revealRecoveryKey,
+  uploadTenantEscrowKey,
+} from "./fdeEscrow.js";
+
+export { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.js";
+
+export {
+  R2Storage,
+  R2StorageLive,
+  base64ToBytes,
+  bytesToBase64,
+  sha256Hex as storageSha256Hex,
+  type R2Bucket,
+} from "./policyApplicationStorage.js";
+
+export { applePushService, summarizeApplePushHealth } from "./push.js";
+
+export {
+  cookieValue,
+  signSsrRevision,
+} from "./ssrToken.js";
+
+export { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.js";
+
+export {
+  teardownTenant,
+  TenantTeardownStepFailed,
+  type DeviceUnenrollSummary,
+  type UnreachableDevice,
+} from "./tenantTeardown.js";
+
+export {
+  isMsiInstaller,
+  isMsiProductCode,
+  normalizeMsiProductCode,
+  windowsMsiInstallPayload,
+} from "./windowsApplications.js";
+
+export type { DeviceActivityPage } from "./deviceActivity.js";
+
+export type { RecoveryRequestResult, RecoveryVerifyResult } from "./recovery.js";
+
+export type { TenantRestoreResult } from "./tenantRestore.js";
+
+export type { SubscriptionReclamation } from "./tenantTeardown.js";
+
+export type {
+  EnterpriseConfiguration,
+  EnterpriseDb,
+  EnterpriseDevice,
+  EnterpriseEnrollment,
+  EnterpriseGroup,
+  EnterpriseGroupDevice,
+  EnterpriseGroupPolicy,
+  EnterpriseApplication,
+  EnterpriseApplicationInstaller,
+  EnterpriseOrganization,
+  EnterprisePolicy,
+  EnterpriseSchema,
+} from "./schema.js";

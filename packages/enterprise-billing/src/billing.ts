@@ -3,8 +3,10 @@ import { and, count, eq, isNotNull } from "drizzle-orm";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import { planForOrganization, planLimitsFor } from "@mattrax/enterprise-core";
 import type { EffectStripeClient } from "@mattrax/effect-stripe";
-import type { EnterpriseDb, EnterpriseOrganization } from "./schema.ts";
-import { schema } from "./schema.ts";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+
+export type EnterpriseOrganization = typeof schema.organization.$inferSelect;
 
 /**
  * Seat reconciliation for the per-device plan.

@@ -6,7 +6,7 @@ import { Layer } from "effect";
 import { Db } from "@mattrax/enterprise-core";
 import { StripeService } from "@mattrax/effect-stripe";
 import type { StripeClientLike, StripeCustomer } from "@mattrax/effect-stripe";
-import { schema } from "./schema.ts";
+import { schema } from "@mattrax/enterprise-core";
 
 /**
  * Cloud billing for self-hosted deployments.

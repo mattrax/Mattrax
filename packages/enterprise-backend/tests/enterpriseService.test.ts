@@ -28,9 +28,9 @@ import { certToPem, createCaCertificate } from "@mattrax/scep";
 import {
   appleEnrollmentProfileResponse,
   createEnterpriseService,
-} from "../src/enterpriseHandlers.js";
+} from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import type { EmailTransport, OutboundEmailMessage } from "../src/email.js";
+import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {

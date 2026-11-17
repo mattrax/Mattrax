@@ -8,7 +8,7 @@ import {
   sendWelcomeEmailOnce,
 } from "../src/onboardingEmails.js";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import type { OutboundEmailMessage } from "../src/email.js";
+import type { OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://mattrax.test";

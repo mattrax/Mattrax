@@ -40,7 +40,7 @@ import {
   writeSystemAudit,
   SYSTEM_AUDIT_ACTIONS,
 } from "@mattrax/management-backend-enterprise";
-import { signToken, verifyToken } from "./tokens.ts";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 /**
  * Android Enterprise delivery for the enterprise backend.

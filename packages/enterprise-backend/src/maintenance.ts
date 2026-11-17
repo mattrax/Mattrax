@@ -13,16 +13,16 @@ import { sweepScriptExecutions } from "./scripts.ts";
 import { loadCredentialHealth, type CredentialHealth } from "./credentialHealth.ts";
 import { purgeExpiredScepCaTrust, rotateDueScepCas } from "./scepLifecycle.ts";
 import { runServerCertificateCheck, type ServerCertificateProbe } from "./serverCertificate.ts";
-import { reconcileSubscriptionSweep } from "./billing.ts";
+import { reconcileSubscriptionSweep } from "@mattrax/enterprise-billing";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import type { EffectStripeClient } from "@mattrax/effect-stripe";
 import { refreshAppleApplicationInventory } from "./appleInventory.ts";
-import { syncScheduledVppAssets } from "./volumePurchase.ts";
+import { syncScheduledVppAssets } from "@mattrax/apple-business-manager";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
-import { isBuiltInOwnerMember } from "./rbac.ts";
+import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 import type { WebhookDeliveryOptions } from "@mattrax/management-backend-enterprise";
 import type { EnterpriseDb } from "./schema.ts";
-import type { EmailTransport } from "./email.ts";
+import type { EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "./emailOutbox.ts";
 
 /**

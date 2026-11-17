@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { ENTRA_SYNC_STALE_MS, acquireEntraSyncLock } from "../src/entraSync.js";
+import { ENTRA_SYNC_STALE_MS, acquireEntraSyncLock } from "@mattrax/entra-id";
 
 /** A value a fake sync row can hold. */
 type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;

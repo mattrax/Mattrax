@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
 import { ACCOUNT_AUDIT } from "./accountAudit.ts";
 import { schema as s, type EnterpriseDb } from "./schema.ts";
-import type { EmailTransport, OutboundEmailMessage } from "./email.ts";
+import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 
 /**
  * Durable transactional-email outbox.

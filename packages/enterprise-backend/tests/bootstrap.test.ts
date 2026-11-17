@@ -1,8 +1,8 @@
 import { Effect } from "effect";
 import { ssrSessionFingerprint, ssrTenantPermissions } from "@mattrax/enterprise-domain";
 import { describe, expect, it } from "vitest";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
-import { isAccountMethod, permissionForMethod } from "../src/rbac.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
+import { isAccountMethod, permissionForMethod } from "@mattrax/enterprise-identity";
 import { verifySsrRevision, verifySsrToken } from "../src/ssrToken.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 

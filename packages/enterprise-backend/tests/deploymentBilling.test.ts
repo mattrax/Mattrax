@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
-import { makeRemoteBillingService } from "../src/remoteBillingService.ts";
+import { makeRemoteBillingService } from "@mattrax/enterprise-billing";
 
 const origin = "https://mdm.example.com";
 

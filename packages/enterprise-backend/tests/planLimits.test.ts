@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { EnterpriseForbidden, EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { parsePlanLimits, planLimitsFor } from "@mattrax/enterprise-core";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 /** Assert a service call rejected with the forbidden tag and message fragment. */

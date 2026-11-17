@@ -7,7 +7,7 @@ import {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
-} from "../src/billingWebhook.js";
+} from "@mattrax/enterprise-billing";
 import { makeDb, runEffect, schema } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";

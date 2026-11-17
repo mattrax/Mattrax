@@ -1,0 +1,19 @@
+{
+  "name": "@mattrax/enterprise-tokens",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Signed, purpose-scoped token primitives shared by enterprise services",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

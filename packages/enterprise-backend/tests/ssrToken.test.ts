@@ -9,7 +9,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { describe, expect, it } from "vitest";
 import { signSsrToken, verifySsrToken, type SignSsrTokenInput } from "../src/ssrToken.js";
-import { signToken } from "../src/tokens.js";
+import { signToken } from "@mattrax/enterprise-tokens";
 
 const secret = "ssr-test-secret-that-is-long-enough-for-hmac";
 

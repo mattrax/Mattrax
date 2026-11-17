@@ -1,0 +1,28 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../apple-business-manager" },
+    { "path": "../apns" },
+    { "path": "../azure-graph" },
+    { "path": "../crypto" },
+    { "path": "../dm-android" },
+    { "path": "../dm-apple" },
+    { "path": "../effect-stripe" },
+    { "path": "../email" },
+    { "path": "../entra-id" },
+    { "path": "../enterprise-backend" },
+    { "path": "../enterprise-billing" },
+    { "path": "../enterprise-core" },
+    { "path": "../enterprise-domain" },
+    { "path": "../enterprise-identity" },
+    { "path": "../enterprise-tokens" },
+    { "path": "../management-backend-enterprise" },
+    { "path": "../plist" },
+    { "path": "../scep" }
+  ],
+  "include": ["src"]
+}

@@ -14,7 +14,7 @@ import {
   saveAppleBusinessManagerToken,
   sealAbmCredential,
   syncAppleBusinessManagerDevices,
-} from "../src/appleBusinessManager.js";
+} from "@mattrax/apple-business-manager";
 import { makeDb, runEffect } from "./helpers.js";
 
 const authSecret = "abm-test-secret";

@@ -5,7 +5,7 @@ import { AuthCredentialCommandCollector, type AuthInvocation } from "@yielded/au
 import type { StrategyDefinition } from "@yielded/auth/Auth";
 import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
 import { AuthClaims, SsoRejected } from "@mattrax/enterprise-domain";
-import { verifyToken } from "./tokens.ts";
+import { verifyToken } from "@mattrax/enterprise-tokens";
 
 type SsoServices = {
   readonly db: Db["Service"];

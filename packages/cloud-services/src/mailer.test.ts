@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Cause, Effect, Exit } from "effect";
-import type { OutboundEmailMessage } from "@mattrax/enterprise-backend";
+import type { OutboundEmailMessage } from "@mattrax/email";
 import { mailerReadiness, selectMailer, type MailerEnv, type SendEmail } from "./mailer.js";
 
 const HOSTED_ORIGIN = "https://e.mattrax.app";

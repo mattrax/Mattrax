@@ -164,7 +164,7 @@ import {
   updateAutopilotProfile,
   validateAutopilotProfileInput,
   type AutopilotProfileValues,
-} from "./autopilot.ts";
+} from "@mattrax/enterprise-backend";
 import {
   ScepRepositoryLive,
   isApplicationKind,
@@ -174,10 +174,10 @@ import {
 } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { certificateDer } from "@mattrax/scep";
-import { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.ts";
-import { tokenScopes } from "./enterpriseAuth.ts";
-import { sessionCookie } from "./auth.ts";
-import { cookieValue, signSsrRevision, signSsrToken } from "./ssrToken.ts";
+import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/enterprise-backend";
+import { tokenScopes } from "@mattrax/enterprise-backend";
+import { sessionCookie } from "@mattrax/enterprise-backend";
+import { cookieValue, signSsrRevision, signSsrToken } from "@mattrax/enterprise-backend";
 import {
   ApnsService,
   NoopPushTransport,
@@ -195,9 +195,9 @@ import {
   loadTenantEscrowKey,
   revealRecoveryKey,
   uploadTenantEscrowKey,
-} from "./fdeEscrow.ts";
-import { applePushService } from "./push.ts";
-import { summarizeApplePushHealth } from "./push.ts";
+} from "@mattrax/enterprise-backend";
+import { applePushService } from "@mattrax/enterprise-backend";
+import { summarizeApplePushHealth } from "@mattrax/enterprise-backend";
 import {
   DEVICE_ACTIVITY_AUDIT_PREFIX,
   DEVICE_ACTIVITY_COMMAND_PREFIX,
@@ -206,7 +206,7 @@ import {
   deviceActivitySourceKeyset,
   normalizeDeviceActivityLimit,
   type DeviceActivitySourceKeyset,
-} from "./deviceActivity.ts";
+} from "@mattrax/enterprise-backend";
 import {
   hasOwnerRole,
   isBuiltInOwnerMember,
@@ -214,7 +214,7 @@ import {
   permissionForMethod,
   RequiredPermission,
   resolveTenantRole,
-} from "./rbac.ts";
+} from "@mattrax/enterprise-identity";
 import {
   createScript,
   deleteScript,
@@ -229,30 +229,30 @@ import {
   scriptAgentSync,
   scriptAssignedDeviceIds,
   updateScript,
-} from "./scripts.ts";
-import { invitationEmail } from "./invitationEmail.ts";
-import { sendTransactionalEmail } from "./emailOutbox.ts";
-import { DEFAULT_EMAIL_FROM } from "./email.ts";
-import { EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "./enterpriseAuth.ts";
+} from "@mattrax/enterprise-backend";
+import { invitationEmail } from "@mattrax/enterprise-backend";
+import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
+import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
+import { EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "@mattrax/enterprise-backend";
 import {
   deviceBucket,
   normalizeWidgetConfig,
   normalizeWidgetLayout,
   softwareBucket,
   toBuckets,
-} from "./dashboardQuery.ts";
+} from "@mattrax/enterprise-backend";
 import {
   syncEntraDirectory,
   runEntraDirectorySyncForTenant,
   acquireEntraSyncLock,
-} from "./entraSync.ts";
+} from "@mattrax/entra-id";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
   type DeviceSearchFilters,
-} from "./deviceSearch.ts";
+} from "@mattrax/enterprise-backend";
 import {
   attributeCsvCells,
   attributeCsvHeaders,
@@ -266,7 +266,7 @@ import {
   mergeAttributeValues,
   normalizeDefinitionOptions,
   parseAttributeCsv,
-} from "./attributes.ts";
+} from "@mattrax/enterprise-backend";
 import {
   AUDIT_EXPORT_MAX_ROWS,
   auditCsv,
@@ -278,21 +278,21 @@ import {
   normalizeAuditSearchQuery,
   type AuditExportEntry,
   type AuditSearchFilters,
-} from "./auditLog.ts";
+} from "@mattrax/enterprise-backend";
 import {
   compareInstallerPreference,
   installerSkipReason,
   selectInstaller,
 } from "@mattrax/enterprise-domain";
-import { reconcileSubscriptionQuantity } from "./billing.ts";
+import { reconcileSubscriptionQuantity } from "@mattrax/enterprise-billing";
 // oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- this is the composition fallback for a deployment with a Stripe client but no remote billing layer.
-import { makeStripeBillingService, type BillingOperations } from "./billingService.ts";
+import { makeStripeBillingService, type BillingOperations } from "@mattrax/enterprise-billing";
 import {
   listWebhookDeliveries as listStoredWebhookDeliveries,
   loadWebhookDelivery as loadStoredWebhookDelivery,
   webhookDeliveryDetail,
   webhookDeliveryInfo,
-} from "./webhookDeliveries.ts";
+} from "@mattrax/enterprise-backend";
 import {
   ACCOUNT_AUDIT,
   accountAuditEntry,
@@ -300,7 +300,7 @@ import {
   accountAuditWhere,
   clientAddress,
   recordAccountAudit,
-} from "./accountAudit.ts";
+} from "@mattrax/enterprise-backend";
 import {
   approveAccountRecovery as approveRecoveryRequest,
   createRecoveryLimiter,
@@ -308,8 +308,8 @@ import {
   RECOVERY_WINDOW_MILLIS,
   requestAccountRecovery as startRecoveryRequest,
   verifyAccountRecoveryProof as consumeRecoveryProof,
-} from "./recovery.ts";
-import { canEnrollDevice } from "./enrollmentLimit.ts";
+} from "@mattrax/enterprise-backend";
+import { canEnrollDevice } from "@mattrax/enterprise-backend";
 import {
   AndroidDeliveryError,
   androidEnterpriseInfo,
@@ -321,7 +321,7 @@ import {
   setAndroidEnabled,
   syncAndroidPoliciesForTenant,
   type AndroidDeliveryConfig,
-} from "./android.ts";
+} from "@mattrax/enterprise-backend";
 import {
   detectEnrollmentPlatform,
   ENROLLMENT_ATTEMPT_DEDUPE_MS,
@@ -329,7 +329,7 @@ import {
   evaluateEnrollmentAttempt,
   type EnrollmentAttemptOutcome,
   type EnrollmentAttemptPlatform,
-} from "./enrollmentAttempts.ts";
+} from "@mattrax/enterprise-backend";
 import {
   AppleBusinessManagerError,
   appleBusinessManagerInfo,
@@ -343,7 +343,7 @@ import {
   saveAppleBusinessManagerToken,
   syncAppleBusinessManagerDevices,
   type AppleApiConfig,
-} from "./appleBusinessManager.ts";
+} from "@mattrax/apple-business-manager";
 import {
   VppError,
   assignVppLicence,
@@ -354,41 +354,41 @@ import {
   saveVppToken,
   syncVppAssets,
   vppInfo,
-} from "./volumePurchase.ts";
+} from "@mattrax/apple-business-manager";
 import {
   countDeviceHealth,
   deriveDeviceHealth,
   groupDeviceHealthReasons,
   normalizeDeviceHealth,
-} from "./deviceHealth.ts";
+} from "@mattrax/enterprise-backend";
 import {
   APNS_RENEWAL_URL,
   apnsCredentialHealth,
   loadCredentialHealth,
-} from "./credentialHealth.ts";
-import { loadScepCaState, type ScepCaState } from "./scepLifecycle.ts";
+} from "@mattrax/enterprise-backend";
+import { loadScepCaState, type ScepCaState } from "@mattrax/enterprise-backend";
 import {
   listTenantBackups as listTenantBackupRuns,
   runTenantBackup as runTenantBackupForTenant,
   setBackupRetention,
   deleteBackupRun,
   BackupActionError,
-} from "./backup.ts";
+} from "@mattrax/enterprise-backend";
 import {
   teardownTenant,
   TenantTeardownStepFailed,
   type DeviceUnenrollSummary,
   type UnreachableDevice,
-} from "./tenantTeardown.ts";
-import { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.ts";
+} from "@mattrax/enterprise-backend";
+import { restoreTenantFromBackup, TenantRestoreError } from "@mattrax/enterprise-backend";
 import {
   isMsiInstaller,
   isMsiProductCode,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
-} from "./windowsApplications.ts";
+} from "@mattrax/enterprise-backend";
 import { AndroidManagement } from "@mattrax/dm-android";
-import { buildTenantExport } from "./tenantExport.ts";
+import { buildTenantExport } from "@mattrax/enterprise-backend";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
@@ -404,15 +404,15 @@ import {
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
 import { ensureScepCa, importScepCa, replaceScepCa, rotateScepCa } from "@mattrax/scep";
-import { listUserSessions, revokeAllUserSessions, revokeUserSession } from "./sessions.ts";
+import { listUserSessions, revokeAllUserSessions, revokeUserSession } from "@mattrax/enterprise-backend";
 import {
   R2Storage,
   R2StorageLive,
   base64ToBytes,
   bytesToBase64,
-  sha256Hex,
-} from "./policyApplicationStorage.ts";
-import type { R2Bucket } from "./policyApplicationStorage.ts";
+  storageSha256Hex as sha256Hex,
+} from "@mattrax/enterprise-backend";
+import type { R2Bucket } from "@mattrax/enterprise-backend";
 import type {
   EnterpriseConfiguration,
   EnterpriseDb,
@@ -426,8 +426,8 @@ import type {
   EnterpriseOrganization,
   EnterprisePolicy,
   EnterpriseSchema,
-} from "./schema.ts";
-import type { EmailTransport } from "./email.ts";
+} from "@mattrax/enterprise-backend";
+import type { EmailTransport } from "@mattrax/email";
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 

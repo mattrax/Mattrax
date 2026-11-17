@@ -1,0 +1,24 @@
+{
+  "name": "@mattrax/enterprise-billing",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tenant and deployment billing services, Stripe webhooks and licence routes",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/effect-stripe": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/net": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

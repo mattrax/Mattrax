@@ -1,0 +1,12 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../enterprise-core" },
+    { "path": "../enterprise-domain" }
+  ],
+  "include": ["src"]
+}

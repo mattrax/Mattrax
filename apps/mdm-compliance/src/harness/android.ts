@@ -12,12 +12,12 @@ import {
 } from "@mattrax/dm-android";
 import { Db, schema, type EnterpriseDb } from "@mattrax/enterprise-core";
 import {
-  androidRoutes,
   createAndroidSignup,
   handleAndroidPubSub,
   type AndroidDeliveryConfig,
   type AndroidPubSubResult,
 } from "@mattrax/enterprise-backend";
+import { androidRoutes } from "@mattrax/enterprise-api";
 
 type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;
 

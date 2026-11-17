@@ -8,7 +8,7 @@ import {
   type SsrTokenTenant,
   type SsrTokenUser,
 } from "@mattrax/enterprise-domain";
-import { signToken, verifyToken } from "./tokens.ts";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
   SSR_REVISION_COOKIE,

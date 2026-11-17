@@ -10,7 +10,7 @@ import {
   syncScheduledVppAssets,
   syncVppAssets,
   vppInfo,
-} from "../src/volumePurchase.js";
+} from "@mattrax/apple-business-manager";
 import { makeDb, runEffect } from "./helpers.js";
 
 const authSecret = "vpp-test-secret";

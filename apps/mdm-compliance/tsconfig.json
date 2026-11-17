@@ -1,10 +1,15 @@
 {
   "extends": "../../packages/config/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "outDir": "./dist"
   },
   "references": [
+    {
+      "path": "../../packages/enterprise-api"
+    },
     {
       "path": "../../packages/dm-android"
     },
@@ -33,5 +38,7 @@
       "path": "../../packages/soap"
     }
   ],
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

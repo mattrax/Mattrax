@@ -6,7 +6,7 @@ import {
   EnterpriseNotFound,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const authSecret = "abm-api-test-secret";

@@ -1,14 +1,35 @@
 {
   "extends": "../config/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "outDir": "./dist"
   },
   "references": [
-    { "path": "../azure-oidc" },
-    { "path": "../dm-android" },
-    { "path": "../enterprise-backend" },
-    { "path": "../enterprise-core" }
+    {
+      "path": "../azure-oidc"
+    },
+    {
+      "path": "../dm-android"
+    },
+    {
+      "path": "../enterprise-backend"
+    },
+    {
+      "path": "../enterprise-core"
+    },
+    {
+      "path": "../email"
+    },
+    {
+      "path": "../enterprise-identity"
+    },
+    {
+      "path": "../enterprise-tokens"
+    }
   ],
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

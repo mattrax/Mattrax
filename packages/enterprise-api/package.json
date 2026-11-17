@@ -1,0 +1,38 @@
+{
+  "name": "@mattrax/enterprise-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "HTTP API composition for the enterprise contract",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/apple-business-manager": "workspace:*",
+    "@mattrax/apns": "workspace:*",
+    "@mattrax/azure-graph": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
+    "@mattrax/dm-android": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/effect-stripe": "workspace:*",
+    "@mattrax/email": "workspace:*",
+    "@mattrax/entra-id": "workspace:*",
+    "@mattrax/enterprise-backend": "workspace:*",
+    "@mattrax/enterprise-billing": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/enterprise-identity": "workspace:*",
+    "@mattrax/enterprise-tokens": "workspace:*",
+    "@mattrax/management-backend-enterprise": "workspace:*",
+    "@mattrax/plist": "workspace:*",
+    "@mattrax/scep": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

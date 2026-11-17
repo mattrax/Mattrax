@@ -7,12 +7,12 @@ import {
 import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
 import type { AppleProfileSigningConfig } from "@mattrax/dm-apple";
-import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseHandlers.ts";
-import { BillingService, type BillingOperations } from "./billingService.ts";
+import { createEnterpriseService, type EnterpriseAnalytics } from "./enterpriseHandlers.js";
+import { BillingService, type BillingOperations } from "@mattrax/enterprise-billing";
 import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
-import type { AndroidDeliveryConfig } from "./android.ts";
-import type { AppleApiConfig } from "./appleBusinessManager.ts";
-import type { EmailTransport } from "./email.ts";
+import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
+import type { AppleApiConfig } from "@mattrax/apple-business-manager";
+import type { EmailTransport } from "@mattrax/email";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 

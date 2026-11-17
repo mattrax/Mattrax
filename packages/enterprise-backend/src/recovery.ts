@@ -12,8 +12,8 @@ import {
 } from "@mattrax/enterprise-core";
 import { AuthClaims, RecoveryRejected } from "@mattrax/enterprise-domain";
 import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
-import type { EmailTransport } from "./email.ts";
-import { isBuiltInOwnerMember } from "./rbac.ts";
+import type { EmailTransport } from "@mattrax/email";
+import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 
 /**
  * Break-glass account recovery.

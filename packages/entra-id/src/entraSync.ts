@@ -6,9 +6,8 @@ import type {
   GraphGroup,
   GraphUser,
 } from "@mattrax/azure-graph";
-import { schema, type EnterpriseDb } from "./schema.ts";
-import { isBuiltInOwnerMember } from "./rbac.ts";
-import { settlePendingInvitations } from "./invitations.ts";
+import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { isBuiltInOwnerMember, settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 const newId = () => crypto.randomUUID();
 

@@ -14,7 +14,7 @@ import {
   sendTransactionalEmail,
 } from "../src/emailOutbox.js";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import type { OutboundEmailMessage } from "../src/email.js";
+import type { OutboundEmailMessage } from "@mattrax/email";
 import { runMaintenance } from "../src/maintenance.js";
 import { makeDb, runEffect } from "./helpers.js";
 

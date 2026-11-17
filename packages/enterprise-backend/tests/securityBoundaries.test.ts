@@ -7,8 +7,8 @@ import {
   EnterpriseNotFound,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
-import { scimHandler } from "../src/scim.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
+import { scimHandler } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";

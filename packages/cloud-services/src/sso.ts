@@ -3,7 +3,8 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { and, eq } from "drizzle-orm";
 import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
-import { settlePendingInvitations, signToken, verifyToken } from "@mattrax/enterprise-backend";
+import { settlePendingInvitations } from "@mattrax/enterprise-identity";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 const TokenResponse = Schema.Struct({ id_token: Schema.optional(Schema.String) });
 

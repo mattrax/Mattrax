@@ -8,7 +8,7 @@ import {
   type WelcomeEmailInput,
 } from "./onboardingEmail.ts";
 import { loadTenantAdminRecipients } from "./maintenance.ts";
-import type { EmailAddress, EmailReplyTo, EmailTransport } from "./email.ts";
+import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
 
 /** Keep the onboarding-specific name while sharing one transport contract. */
 export type OnboardingEmailTransport = EmailTransport;

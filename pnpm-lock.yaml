@@ -416,6 +416,7 @@ snapshots:
 				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/dm-windows": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
+				"@mattrax/enterprise-api": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
@@ -470,6 +471,7 @@ snapshots:
 				"@mattrax/dm-android": "workspace:*",
 				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/dm-windows": "workspace:*",
+				"@mattrax/enterprise-api": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
@@ -540,6 +542,26 @@ snapshots:
 			},
 		},
 
+		"packages/apple-business-manager": {
+			"name": "@mattrax/apple-business-manager",
+			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-tokens": "workspace:*",
+				"@mattrax/net": "workspace:*",
+				"@mattrax/plist": "workspace:*",
+				"asn1js": "catalog:",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+				"pkijs": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
 		"packages/azure-graph": {
 			"name": "@mattrax/azure-graph",
 			"dependencies": {
@@ -566,8 +588,11 @@ snapshots:
 			"dependencies": {
 				"@mattrax/azure-oidc": "workspace:*",
 				"@mattrax/dm-android": "workspace:*",
+				"@mattrax/email": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-identity": "workspace:*",
+				"@mattrax/enterprise-tokens": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
@@ -646,18 +671,67 @@ snapshots:
 			},
 		},
 
-		"packages/enterprise-backend": {
-			"name": "@mattrax/enterprise-backend",
+		"packages/email": {
+			"name": "@mattrax/email",
 			"dependencies": {
-				"@effect/sql-mysql2": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/enterprise-api": {
+			"name": "@mattrax/enterprise-api",
+			"dependencies": {
 				"@mattrax/apns": "workspace:*",
+				"@mattrax/apple-business-manager": "workspace:*",
 				"@mattrax/azure-graph": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/dm-android": "workspace:*",
 				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
+				"@mattrax/email": "workspace:*",
+				"@mattrax/enterprise-backend": "workspace:*",
+				"@mattrax/enterprise-billing": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/enterprise-identity": "workspace:*",
+				"@mattrax/enterprise-tokens": "workspace:*",
+				"@mattrax/entra-id": "workspace:*",
+				"@mattrax/management-backend-enterprise": "workspace:*",
+				"@mattrax/plist": "workspace:*",
+				"@mattrax/scep": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/enterprise-backend": {
+			"name": "@mattrax/enterprise-backend",
+			"dependencies": {
+				"@effect/sql-mysql2": "catalog:",
+				"@mattrax/apns": "workspace:*",
+				"@mattrax/apple-business-manager": "workspace:*",
+				"@mattrax/azure-graph": "workspace:*",
+				"@mattrax/crypto": "workspace:*",
+				"@mattrax/dm-android": "workspace:*",
+				"@mattrax/dm-apple": "workspace:*",
+				"@mattrax/effect-stripe": "workspace:*",
+				"@mattrax/email": "workspace:*",
+				"@mattrax/enterprise-billing": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/enterprise-identity": "workspace:*",
+				"@mattrax/enterprise-tokens": "workspace:*",
+				"@mattrax/entra-id": "workspace:*",
 				"@mattrax/management-backend-enterprise": "workspace:*",
 				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
@@ -674,7 +748,25 @@ snapshots:
 				"pkijs": "catalog:",
 			},
 			"devDependencies": {
+				"@mattrax/enterprise-api": "workspace:*",
 				"@types/node": "catalog:",
+			},
+		},
+
+		"packages/enterprise-billing": {
+			"name": "@mattrax/enterprise-billing",
+			"dependencies": {
+				"@mattrax/effect-stripe": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/net": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
 			},
 		},
 
@@ -701,6 +793,49 @@ snapshots:
 			},
 			"devDependencies": {
 				"@types/node": "catalog:",
+			},
+		},
+
+		"packages/enterprise-identity": {
+			"name": "@mattrax/enterprise-identity",
+			"dependencies": {
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/enterprise-tokens": {
+			"name": "@mattrax/enterprise-tokens",
+			"dependencies": {
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/entra-id": {
+			"name": "@mattrax/entra-id",
+			"dependencies": {
+				"@mattrax/azure-graph": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-identity": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
 			},
 		},
 

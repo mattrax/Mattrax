@@ -17,6 +17,7 @@
     "@mattrax/dm-android": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
+    "@mattrax/enterprise-api": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",

@@ -4,7 +4,7 @@ import {
   isEntraSyncDue,
   runEntraDirectorySyncForTenant,
   runScheduledEntraSync,
-} from "../src/entraSync.js";
+} from "@mattrax/entra-id";
 import { makeDb } from "./helpers.js";
 
 const now = new Date("2026-11-11T12:00:00.000Z");

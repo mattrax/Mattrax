@@ -3,7 +3,7 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
-import { sessionCookie } from "./auth.ts";
+import { sessionCookie } from "@mattrax/enterprise-backend";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {

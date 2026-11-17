@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { RecoveryRejected } from "@mattrax/enterprise-domain";
-import type { OutboundEmailMessage } from "../src/email.js";
+import type { OutboundEmailMessage } from "@mattrax/email";
 import {
   approveAccountRecovery,
   cancelAccountRecovery,

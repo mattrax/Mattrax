@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { verifyStripeWebhookSignature } from "@mattrax/effect-stripe";
-import { schema } from "./schema.ts";
-import type { EnterpriseDb } from "./schema.ts";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 export type BillingWebhookConfig = {
   readonly webhookSecret?: string;

@@ -7,7 +7,7 @@ import {
   EnterprisePermissionDenied,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";

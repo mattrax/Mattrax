@@ -15,7 +15,7 @@ import { Schema as AuthSchema } from "@yielded/auth";
 import { and, eq, lt } from "drizzle-orm";
 import { Db } from "@mattrax/enterprise-core";
 import { schema } from "./schema.ts";
-import { signToken, verifyToken } from "./tokens.ts";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 const base64Url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))

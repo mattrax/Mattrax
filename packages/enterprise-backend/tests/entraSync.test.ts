@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Predicate } from "effect";
-import { syncEntraDirectory } from "../src/entraSync.js";
+import { syncEntraDirectory } from "@mattrax/entra-id";
 import { makeDb } from "./helpers.js";
 
 const user = (id: string, email: string) => ({

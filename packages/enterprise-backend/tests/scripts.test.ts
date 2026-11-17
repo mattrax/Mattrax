@@ -24,8 +24,8 @@ import {
   sweepScriptExecutions,
   updateScript,
 } from "../src/scripts.js";
-import { createEnterpriseService } from "../src/enterpriseHandlers.js";
-import { permissionForMethod } from "../src/rbac.js";
+import { createEnterpriseService } from "@mattrax/enterprise-api";
+import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const now = new Date("2026-11-16T12:00:00.000Z");

@@ -4,7 +4,7 @@ import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { PlistValue, parsePlist } from "@mattrax/plist";
 import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
-import { signToken, verifyToken } from "./tokens.ts";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 /**
  * Apple Business Manager (ABM/ADE) integration.

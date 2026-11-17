@@ -9,7 +9,7 @@ import {
   type EmailReplyTo,
   type EmailTransport,
   type SmtpTransportOptions,
-} from "@mattrax/enterprise-backend";
+} from "@mattrax/email";
 import { isDevMailboxEnabled, recordDevEmail } from "./devMailbox.js";
 
 /**

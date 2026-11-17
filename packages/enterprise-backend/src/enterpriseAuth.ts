@@ -24,8 +24,8 @@ import {
   ONBOARDING_SUPPORT_EMAIL,
   sendWelcomeEmailOnce,
 } from "./onboardingEmails.ts";
-import type { EmailAddress, EmailReplyTo, EmailTransport } from "./email.ts";
-import { DEFAULT_EMAIL_FROM } from "./email.ts";
+import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
+import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import { sendTransactionalEmail } from "./emailOutbox.ts";
 import {
   signStepUpFlow,
@@ -34,7 +34,7 @@ import {
   verifyStepUpGrant,
 } from "./stepUp.ts";
 import { captureSessionContext } from "./sessions.ts";
-import { signToken, verifyToken } from "./tokens.ts";
+import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 type HeadersRecord = Record<string, string | string[] | undefined>;
 

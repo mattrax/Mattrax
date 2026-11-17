@@ -3,7 +3,7 @@ import { HttpRouter } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { describe, expect, it } from "vitest";
-import { mcpOAuthRoutes, validRedirectUri } from "../src/mcpOAuth.js";
+import { mcpOAuthRoutes, validRedirectUri } from "@mattrax/enterprise-api";
 import { makeDb } from "./helpers.js";
 
 const origin = "https://app.test";
