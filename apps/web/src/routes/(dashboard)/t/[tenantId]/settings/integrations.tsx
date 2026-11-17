@@ -661,287 +661,291 @@ export default function IntegrationsSettingsPage() {
         </div>
       </Show>
 
-      <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editing() ? "Edit webhook endpoint" : "Add webhook endpoint"}
-            </DialogTitle>
-            <DialogDescription>
-              Events are delivered as JSON with an HMAC-SHA256 signature over the timestamp and raw
-              body.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            class="space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
+      <Show when={editorOpen()}>
+        <Dialog open onOpenChange={setEditorOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {editing() ? "Edit webhook endpoint" : "Add webhook endpoint"}
+              </DialogTitle>
+              <DialogDescription>
+                Events are delivered as JSON with an HMAC-SHA256 signature over the timestamp and
+                raw body.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              class="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
 
-              if (!urlProblem()) save.mutate();
-            }}
-          >
-            <Field label="Endpoint URL" hint="Must be a public HTTPS URL.">
-              <Input
-                value={url()}
-                placeholder="https://hooks.example.com/mattrax"
-                onInput={(event) => setUrl(event.currentTarget.value)}
-                required
-              />
-              <Show when={urlProblem()}>
-                <p class="text-xs text-destructive">{urlProblem()}</p>
-              </Show>
-            </Field>
-            <Field label="Description" hint="Optional note for your team.">
-              <Input
-                value={description()}
-                maxlength={500}
-                onInput={(event) => setDescription(event.currentTarget.value)}
-              />
-            </Field>
-            <div class="space-y-2">
-              <p class="text-[13px] font-medium text-foreground">Events</p>
-              <label class="flex items-start gap-2 text-xs text-muted-foreground">
+                if (!urlProblem()) save.mutate();
+              }}
+            >
+              <Field label="Endpoint URL" hint="Must be a public HTTPS URL.">
+                <Input
+                  value={url()}
+                  placeholder="https://hooks.example.com/mattrax"
+                  onInput={(event) => setUrl(event.currentTarget.value)}
+                  required
+                />
+                <Show when={urlProblem()}>
+                  <p class="text-xs text-destructive">{urlProblem()}</p>
+                </Show>
+              </Field>
+              <Field label="Description" hint="Optional note for your team.">
+                <Input
+                  value={description()}
+                  maxlength={500}
+                  onInput={(event) => setDescription(event.currentTarget.value)}
+                />
+              </Field>
+              <div class="space-y-2">
+                <p class="text-[13px] font-medium text-foreground">Events</p>
+                <label class="flex items-start gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                    checked={allEvents()}
+                    onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
+                  />
+                  Deliver all events, including future events
+                </label>
+                <div class={cn("grid gap-2 sm:grid-cols-2", allEvents() && "opacity-50")}>
+                  <For each={WEBHOOK_EVENT_TYPES}>
+                    {(event) => (
+                      <label class="flex items-start gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                          checked={allEvents() || events().includes(event)}
+                          disabled={allEvents()}
+                          onChange={() => toggleEvent(event)}
+                        />
+                        <span class="min-w-0">
+                          <span class="block font-medium text-foreground">
+                            {WEBHOOK_EVENT_LABELS[event]}
+                          </span>
+                          <span class="block break-all font-mono text-[11px] text-muted-foreground">
+                            {event}
+                          </span>
+                        </span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </div>
+              <label class="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
-                  class="mt-0.5 size-3.5 shrink-0 accent-brand"
-                  checked={allEvents()}
-                  onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
+                  class="size-3.5 accent-brand"
+                  checked={enabled()}
+                  onChange={(event) => setEnabled(event.currentTarget.checked)}
                 />
-                Deliver all events, including future events
+                Endpoint is enabled
               </label>
-              <div class={cn("grid gap-2 sm:grid-cols-2", allEvents() && "opacity-50")}>
-                <For each={WEBHOOK_EVENT_TYPES}>
-                  {(event) => (
-                    <label class="flex items-start gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        class="mt-0.5 size-3.5 shrink-0 accent-brand"
-                        checked={allEvents() || events().includes(event)}
-                        disabled={allEvents()}
-                        onChange={() => toggleEvent(event)}
-                      />
-                      <span class="min-w-0">
-                        <span class="block font-medium text-foreground">
-                          {WEBHOOK_EVENT_LABELS[event]}
-                        </span>
-                        <span class="block break-all font-mono text-[11px] text-muted-foreground">
-                          {event}
-                        </span>
-                      </span>
-                    </label>
-                  )}
-                </For>
-              </div>
+              <ErrorText error={formError() ?? save.error} />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setEditorOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={save.isPending || Boolean(urlProblem())}>
+                  {save.isPending ? "Saving…" : editing() ? "Save changes" : "Add endpoint"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </Show>
+
+      <Show when={Boolean(secret())}>
+        <Dialog open onOpenChange={(open) => !open && setSecret(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Signing secret</DialogTitle>
+              <DialogDescription>
+                Copy this secret now. It is only shown once; rotate it later if it is lost.
+              </DialogDescription>
+            </DialogHeader>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <Input value={secret() ?? ""} readonly class="min-w-0 flex-1 font-mono" />
+              <Button
+                type="button"
+                variant="outline"
+                class="shrink-0"
+                onClick={() => void navigator.clipboard?.writeText(secret() ?? "")}
+              >
+                Copy
+              </Button>
             </div>
-            <label class="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                class="size-3.5 accent-brand"
-                checked={enabled()}
-                onChange={(event) => setEnabled(event.currentTarget.checked)}
-              />
-              Endpoint is enabled
-            </label>
-            <ErrorText error={formError() ?? save.error} />
+            <p class="text-xs leading-relaxed text-muted-foreground">
+              Verify deliveries with the <code class="font-mono">X-Mattrax-Signature</code> header:
+              HMAC-SHA256 over <code class="font-mono">timestamp + "." + rawBody</code>.
+            </p>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditorOpen(false)}>
+              <Button onClick={() => setSecret(null)}>I have copied it</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Show>
+
+      <Show when={Boolean(deleteTarget())}>
+        <Dialog open onOpenChange={(open) => !open && setDeleteTarget(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete this webhook endpoint?</DialogTitle>
+              <DialogDescription>
+                Deliveries stop immediately and delivery history is removed. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <p class="break-all font-mono text-[13px]">{deleteTarget()?.url}</p>
+            <ErrorText error={remove.error} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={save.isPending || Boolean(urlProblem())}>
-                {save.isPending ? "Saving…" : editing() ? "Save changes" : "Add endpoint"}
+              <Button
+                variant="destructive"
+                disabled={remove.isPending}
+                onClick={() => {
+                  const target = deleteTarget();
+
+                  if (target) remove.mutate(target);
+                }}
+              >
+                Delete endpoint
               </Button>
             </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      </Show>
 
-      <Dialog open={Boolean(secret())} onOpenChange={(open) => !open && setSecret(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Signing secret</DialogTitle>
-            <DialogDescription>
-              Copy this secret now. It is only shown once; rotate it later if it is lost.
-            </DialogDescription>
-          </DialogHeader>
-          <div class="flex flex-col gap-2 sm:flex-row">
-            <Input value={secret() ?? ""} readonly class="min-w-0 flex-1 font-mono" />
-            <Button
-              type="button"
-              variant="outline"
-              class="shrink-0"
-              onClick={() => void navigator.clipboard?.writeText(secret() ?? "")}
-            >
-              Copy
-            </Button>
-          </div>
-          <p class="text-xs leading-relaxed text-muted-foreground">
-            Verify deliveries with the <code class="font-mono">X-Mattrax-Signature</code> header:
-            HMAC-SHA256 over <code class="font-mono">timestamp + "." + rawBody</code>.
-          </p>
-          <DialogFooter>
-            <Button onClick={() => setSecret(null)}>I have copied it</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Show when={Boolean(rotateTarget())}>
+        <Dialog open onOpenChange={(open) => !open && setRotateTarget(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Rotate signing secret?</DialogTitle>
+              <DialogDescription>
+                The old secret stops working immediately. Deliveries already queued for retry will
+                be signed with the new secret.
+              </DialogDescription>
+            </DialogHeader>
+            <ErrorText error={rotateError()} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRotateTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={rotate.isPending}
+                onClick={() => {
+                  const target = rotateTarget();
 
-      <Dialog
-        open={Boolean(deleteTarget())}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete this webhook endpoint?</DialogTitle>
-            <DialogDescription>
-              Deliveries stop immediately and delivery history is removed. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <p class="break-all font-mono text-[13px]">{deleteTarget()?.url}</p>
-          <ErrorText error={remove.error} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={() => {
-                const target = deleteTarget();
+                  if (target) rotate.mutate(target);
+                }}
+              >
+                {rotate.isPending ? "Rotating…" : "Rotate secret"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Show>
 
-                if (target) remove.mutate(target);
-              }}
-            >
-              Delete endpoint
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Show when={detailOpen()}>
+        <Dialog open onOpenChange={(open) => !open && setDetailOpen(false)}>
+          <DialogContent class="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Delivery payload</DialogTitle>
+              <DialogDescription>
+                The exact JSON we signed and sent, plus the response we recorded.
+              </DialogDescription>
+            </DialogHeader>
 
-      <Dialog
-        open={Boolean(rotateTarget())}
-        onOpenChange={(open) => !open && setRotateTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rotate signing secret?</DialogTitle>
-            <DialogDescription>
-              The old secret stops working immediately. Deliveries already queued for retry will be
-              signed with the new secret.
-            </DialogDescription>
-          </DialogHeader>
-          <ErrorText error={rotateError()} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRotateTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={rotate.isPending}
-              onClick={() => {
-                const target = rotateTarget();
+            <Show when={detailLoading()}>
+              <p class="text-xs text-muted-foreground">Loading delivery…</p>
+            </Show>
+            <ErrorText error={detailError()} />
 
-                if (target) rotate.mutate(target);
-              }}
-            >
-              {rotate.isPending ? "Rotating…" : "Rotate secret"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={detailOpen()} onOpenChange={(open) => !open && setDetailOpen(false)}>
-        <DialogContent class="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Delivery payload</DialogTitle>
-            <DialogDescription>
-              The exact JSON we signed and sent, plus the response we recorded.
-            </DialogDescription>
-          </DialogHeader>
-
-          <Show when={detailLoading()}>
-            <p class="text-xs text-muted-foreground">Loading delivery…</p>
-          </Show>
-          <ErrorText error={detailError()} />
-
-          <Show when={detail()}>
-            {(delivery) => (
-              <div class="space-y-3">
-                <div class="flex flex-wrap items-center gap-2 text-xs">
-                  <Chip tone={delivery().status === "succeeded" ? "success" : "danger"}>
-                    {delivery().status}
-                  </Chip>
-                  <span class="font-mono text-[12px] text-foreground">{delivery().event}</span>
-                  <span class="text-muted-foreground">
-                    Attempt {delivery().attempt} · Response {delivery().responseStatus ?? "none"}
-                  </span>
-                </div>
-                <Show when={delivery().error}>
-                  <p class="rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2.5 text-xs text-destructive">
-                    {delivery().error}
-                  </p>
-                </Show>
-                <div class="grid gap-1 text-[11px] text-muted-foreground">
-                  <span class="font-mono">Delivery id · {delivery().id}</span>
-                  <Show when={delivery().eventId}>
-                    <span class="break-all font-mono">
-                      X-Mattrax-Delivery · {delivery().eventId}
-                    </span>
-                  </Show>
-                </div>
-                <div class="relative">
-                  <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
-                    {payloadText()}
-                  </pre>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    class="absolute right-2 top-2"
-                    onClick={() => void navigator.clipboard?.writeText(payloadText())}
-                  >
-                    Copy payload
-                  </Button>
-                </div>
-                <Show when={replayResult()}>
-                  {(result) => (
-                    <p
-                      class={cn(
-                        "rounded-lg border p-2.5 text-xs",
-                        result().delivery.status === "succeeded"
-                          ? "border-success/25 bg-success/[0.07] text-success-foreground"
-                          : "border-destructive/25 bg-destructive/[0.07] text-destructive",
-                      )}
-                    >
-                      Redelivered with the same delivery id:{" "}
-                      {result().delivery.status === "succeeded"
-                        ? `HTTP ${result().delivery.responseStatus ?? "2xx"}`
-                        : (result().delivery.error ?? "delivery failed")}
-                    </p>
-                  )}
-                </Show>
-                <ErrorText error={replayError()} />
-              </div>
-            )}
-          </Show>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailOpen(false)}>
-              Close
-            </Button>
-            <Show when={canManage() && detail()}>
+            <Show when={detail()}>
               {(delivery) => (
-                <Button
-                  disabled={replay.isPending}
-                  onClick={() => {
-                    setReplayError(undefined);
-                    replay.mutate(delivery());
-                  }}
-                >
-                  {replay.isPending ? "Redelivering…" : "Redeliver"}
-                </Button>
+                <div class="space-y-3">
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
+                    <Chip tone={delivery().status === "succeeded" ? "success" : "danger"}>
+                      {delivery().status}
+                    </Chip>
+                    <span class="font-mono text-[12px] text-foreground">{delivery().event}</span>
+                    <span class="text-muted-foreground">
+                      Attempt {delivery().attempt} · Response {delivery().responseStatus ?? "none"}
+                    </span>
+                  </div>
+                  <Show when={delivery().error}>
+                    <p class="rounded-lg border border-destructive/25 bg-destructive/[0.07] p-2.5 text-xs text-destructive">
+                      {delivery().error}
+                    </p>
+                  </Show>
+                  <div class="grid gap-1 text-[11px] text-muted-foreground">
+                    <span class="font-mono">Delivery id · {delivery().id}</span>
+                    <Show when={delivery().eventId}>
+                      <span class="break-all font-mono">
+                        X-Mattrax-Delivery · {delivery().eventId}
+                      </span>
+                    </Show>
+                  </div>
+                  <div class="relative">
+                    <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+                      {payloadText()}
+                    </pre>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      class="absolute right-2 top-2"
+                      onClick={() => void navigator.clipboard?.writeText(payloadText())}
+                    >
+                      Copy payload
+                    </Button>
+                  </div>
+                  <Show when={replayResult()}>
+                    {(result) => (
+                      <p
+                        class={cn(
+                          "rounded-lg border p-2.5 text-xs",
+                          result().delivery.status === "succeeded"
+                            ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                            : "border-destructive/25 bg-destructive/[0.07] text-destructive",
+                        )}
+                      >
+                        Redelivered with the same delivery id:{" "}
+                        {result().delivery.status === "succeeded"
+                          ? `HTTP ${result().delivery.responseStatus ?? "2xx"}`
+                          : (result().delivery.error ?? "delivery failed")}
+                      </p>
+                    )}
+                  </Show>
+                  <ErrorText error={replayError()} />
+                </div>
               )}
             </Show>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDetailOpen(false)}>
+                Close
+              </Button>
+              <Show when={canManage() && detail()}>
+                {(delivery) => (
+                  <Button
+                    disabled={replay.isPending}
+                    onClick={() => {
+                      setReplayError(undefined);
+                      replay.mutate(delivery());
+                    }}
+                  >
+                    {replay.isPending ? "Redelivering…" : "Redeliver"}
+                  </Button>
+                )}
+              </Show>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Show>
     </div>
   );
 }

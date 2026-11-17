@@ -85,116 +85,118 @@ export function StepUpDialog() {
   };
 
   return (
-    <Dialog
-      open={request() !== null}
-      onOpenChange={(open) => {
-        if (!open) close();
-      }}
-    >
-      <DialogContent showCloseButton={false} class="max-w-sm p-6">
-        <Show when={request()}>
-          {(current) => (
-            <div>
-              <DialogTitle class="text-base font-semibold text-foreground">
-                Confirm it's you
-              </DialogTitle>
-              <DialogDescription class="mt-1 text-sm text-muted-foreground">
-                For your security, confirm your identity to {stepUpActionLabel(current().action)}.
-              </DialogDescription>
+    <Show when={request()}>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
+      >
+        <DialogContent showCloseButton={false} class="max-w-sm p-6">
+          <Show when={request()}>
+            {(current) => (
+              <div>
+                <DialogTitle class="text-base font-semibold text-foreground">
+                  Confirm it's you
+                </DialogTitle>
+                <DialogDescription class="mt-1 text-sm text-muted-foreground">
+                  For your security, confirm your identity to {stepUpActionLabel(current().action)}.
+                </DialogDescription>
 
-              <div
-                role="group"
-                aria-label="Confirmation method"
-                class="mt-4 flex flex-wrap gap-2 text-xs"
-              >
-                <For each={available()}>
-                  {(item) => (
+                <div
+                  role="group"
+                  aria-label="Confirmation method"
+                  class="mt-4 flex flex-wrap gap-2 text-xs"
+                >
+                  <For each={available()}>
+                    {(item) => (
+                      <button
+                        type="button"
+                        aria-pressed={activeMethod() === item ? "true" : "false"}
+                        class={`rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
+                          activeMethod() === item
+                            ? "bg-brand-solid text-brand-foreground"
+                            : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
+                        }`}
+                        onClick={() => choose(item)}
+                      >
+                        {labels[item]}
+                      </button>
+                    )}
+                  </For>
+                </div>
+
+                <p role="status" aria-live="polite" class="sr-only">
+                  Confirming with {labels[activeMethod()].toLowerCase()}.
+                </p>
+
+                <form onSubmit={submit} class="mt-4 space-y-3">
+                  <Show when={activeMethod() === "totp"}>
+                    <div class="space-y-1.5">
+                      <label for="step-up-code" class="text-xs font-medium text-foreground/90">
+                        6-digit authenticator code
+                      </label>
+                      <input
+                        id="step-up-code"
+                        required
+                        autocomplete="one-time-code"
+                        inputmode="numeric"
+                        placeholder="000000"
+                        aria-invalid={error() ? "true" : undefined}
+                        aria-describedby={error() ? "step-up-error" : undefined}
+                        value={code()}
+                        onInput={(event) => setCode(event.currentTarget.value)}
+                        class={inputClass}
+                      />
+                    </div>
+                  </Show>
+
+                  <Show when={activeMethod() === "passkey"}>
+                    <p class="text-sm text-muted-foreground">
+                      Use the passkey saved on this device or a nearby device.
+                    </p>
+                  </Show>
+
+                  <Show when={error()}>
+                    {(message) => (
+                      <p
+                        id="step-up-error"
+                        role="alert"
+                        class={`text-sm text-destructive ${feedbackEnter}`}
+                      >
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+
+                  <div class="flex gap-2">
+                    <button
+                      type="submit"
+                      class={primaryButton}
+                      disabled={pending()}
+                      aria-busy={pending() ? "true" : "false"}
+                    >
+                      {pending()
+                        ? "Confirming…"
+                        : activeMethod() === "passkey"
+                          ? "Use passkey"
+                          : "Confirm"}
+                    </button>
                     <button
                       type="button"
-                      aria-pressed={activeMethod() === item ? "true" : "false"}
-                      class={`rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
-                        activeMethod() === item
-                          ? "bg-brand-solid text-brand-foreground"
-                          : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
-                      }`}
-                      onClick={() => choose(item)}
+                      class={secondaryButton}
+                      disabled={pending()}
+                      onClick={close}
                     >
-                      {labels[item]}
+                      Cancel
                     </button>
-                  )}
-                </For>
-              </div>
-
-              <p role="status" aria-live="polite" class="sr-only">
-                Confirming with {labels[activeMethod()].toLowerCase()}.
-              </p>
-
-              <form onSubmit={submit} class="mt-4 space-y-3">
-                <Show when={activeMethod() === "totp"}>
-                  <div class="space-y-1.5">
-                    <label for="step-up-code" class="text-xs font-medium text-foreground/90">
-                      6-digit authenticator code
-                    </label>
-                    <input
-                      id="step-up-code"
-                      required
-                      autocomplete="one-time-code"
-                      inputmode="numeric"
-                      placeholder="000000"
-                      aria-invalid={error() ? "true" : undefined}
-                      aria-describedby={error() ? "step-up-error" : undefined}
-                      value={code()}
-                      onInput={(event) => setCode(event.currentTarget.value)}
-                      class={inputClass}
-                    />
                   </div>
-                </Show>
-
-                <Show when={activeMethod() === "passkey"}>
-                  <p class="text-sm text-muted-foreground">
-                    Use the passkey saved on this device or a nearby device.
-                  </p>
-                </Show>
-
-                <Show when={error()}>
-                  {(message) => (
-                    <p
-                      id="step-up-error"
-                      role="alert"
-                      class={`text-sm text-destructive ${feedbackEnter}`}
-                    >
-                      {message()}
-                    </p>
-                  )}
-                </Show>
-
-                <div class="flex gap-2">
-                  <button
-                    type="submit"
-                    class={primaryButton}
-                    disabled={pending()}
-                    aria-busy={pending() ? "true" : "false"}
-                  >
-                    {pending()
-                      ? "Confirming…"
-                      : activeMethod() === "passkey"
-                        ? "Use passkey"
-                        : "Confirm"}
-                  </button>
-                  <button
-                    type="button"
-                    class={secondaryButton}
-                    disabled={pending()}
-                    onClick={close}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-        </Show>
-      </DialogContent>
-    </Dialog>
+                </form>
+              </div>
+            )}
+          </Show>
+        </DialogContent>
+      </Dialog>
+    </Show>
   );
 }
