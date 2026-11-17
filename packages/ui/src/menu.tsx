@@ -63,23 +63,21 @@ function DropdownMenuTrigger(
 ) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return (
-    <MenuTrigger
-      class={cn("outline-none", local.class)}
-      {...others}
-    />
-  );
+  return <MenuTrigger class={cn("outline-none", local.class)} {...others} />;
 }
 
 function DropdownMenuContent(
-  props: Omit<ComponentProps<"div">, "style"> & { sideOffset?: number; class?: string; children?: JSX.Element },
+  props: Omit<ComponentProps<"div">, "style"> & {
+    sideOffset?: number;
+    class?: string;
+    children?: JSX.Element;
+  },
 ) {
   const placement = useContext(AlignmentContext);
   const [local, others] = splitProps(props, ["class", "children", "sideOffset"]);
 
   return (
     <MenuContent
-      data-slot="dropdown-menu-content"
       side={placement.side}
       align={placement.align}
       sideOffset={local.sideOffset ?? 6}
@@ -107,12 +105,7 @@ function DropdownMenuLabel(props: Omit<ComponentProps<"div">, "style"> & { inset
 
   return (
     <MenuGroupLabel
-      data-slot="dropdown-menu-label"
-      class={cn(
-        "label-caps flex h-7 items-center px-2",
-        local.inset && "pl-7",
-        local.class,
-      )}
+      class={cn("label-caps flex h-7 items-center px-2", local.inset && "pl-7", local.class)}
       {...others}
     />
   );
@@ -147,7 +140,6 @@ function DropdownMenuItem(props: DropdownMenuItemProps) {
 
   return (
     <MenuItem
-      data-slot="dropdown-menu-item"
       value={local.value ?? local.onSelect?.name ?? "item"}
       onSelect={local.onSelect}
       render={
@@ -192,7 +184,6 @@ function DropdownMenuCheckboxItem(props: DropdownMenuCheckboxItemProps) {
 
   return (
     <MenuCheckboxItem
-      data-slot="dropdown-menu-checkbox-item"
       value={local.value ?? "item"}
       checked={local.checked ?? false}
       onCheckedChange={(checked) => local.onCheckedChange?.(checked === true)}
@@ -220,7 +211,6 @@ function DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) {
 
   return (
     <MenuRadioGroup
-      data-slot="dropdown-menu-radio-group"
       value={local.value}
       onValueChange={(value) => local.onValueChange?.(value ?? "")}
       class={cn("py-0.5", local.class)}
@@ -229,16 +219,13 @@ function DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) {
   );
 }
 
-function DropdownMenuRadioItem(props: Omit<ComponentProps<"div">, "style"> & { value: string; children?: JSX.Element }) {
+function DropdownMenuRadioItem(
+  props: Omit<ComponentProps<"div">, "style"> & { value: string; children?: JSX.Element },
+) {
   const [local, others] = splitProps(props, ["class", "value", "children"]);
 
   return (
-    <MenuRadioItem
-      data-slot="dropdown-menu-radio-item"
-      value={local.value}
-      class={cn(itemBase, "pl-7", local.class)}
-      {...others}
-    >
+    <MenuRadioItem value={local.value} class={cn(itemBase, "pl-7", local.class)} {...others}>
       <span class="absolute left-2 flex size-3.5 items-center justify-center">
         <span class="size-1.5 rounded-full bg-current" />
       </span>
@@ -250,13 +237,7 @@ function DropdownMenuRadioItem(props: Omit<ComponentProps<"div">, "style"> & { v
 function DropdownMenuSeparator(props: Omit<ComponentProps<"div">, "style">) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return (
-    <MenuSeparator
-      data-slot="dropdown-menu-separator"
-      class={cn("-mx-1 my-1 h-px bg-border", local.class)}
-      {...others}
-    />
-  );
+  return <MenuSeparator class={cn("-mx-1 my-1 h-px bg-border", local.class)} {...others} />;
 }
 
 function DropdownMenuShortcut(props: Omit<ComponentProps<"span">, "style">) {
@@ -264,7 +245,6 @@ function DropdownMenuShortcut(props: Omit<ComponentProps<"span">, "style">) {
 
   return (
     <MenuShortcut
-      data-slot="dropdown-menu-shortcut"
       class={cn("ml-auto text-[10.5px] tracking-[0.06em] text-subtle-foreground", local.class)}
       {...others}
     />

@@ -62,7 +62,7 @@ test.describe("authenticator MFA", () => {
 
     // A recovery code completes the same pending flow and is single use.
     await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
+    await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
     await signIn(page, email);

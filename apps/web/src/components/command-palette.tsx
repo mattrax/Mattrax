@@ -1,9 +1,8 @@
-import * as DialogPrimitive from "@kobalte/core/dialog";
 import { useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { useTenantRouteParams } from "~/lib/route-params";
 import { routes } from "~/lib/routes";
@@ -874,8 +873,8 @@ export function CommandPalette() {
     },
   );
 
-  // Kobalte's dismissable layer stops Escape in the capture phase before it
-  // reaches the combobox in this RC. Close from the window capture handler.
+  // Close from the window capture handler: Escape must work even when focus
+  // has wandered out of the combobox.
   createEffect(
     () => open(),
     (isOpen) => {
@@ -894,141 +893,148 @@ export function CommandPalette() {
     },
   );
 
-  onSettled(() => {
-    let pendingSequence = "";
-    let sequenceTimer: ReturnType<typeof setTimeout> | undefined;
+  // Registered from a plain effect, not `onSettled`: the settle queue can stay
+  // busy behind the dashboard's query churn, so the global shortcut and the
+  // header trigger would never find a listener.
+  createEffect(
+    () => true,
+    () => {
+      let pendingSequence = "";
+      let sequenceTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const clearSequence = () => {
-      pendingSequence = "";
-      clearTimeout(sequenceTimer);
-    };
-
-    const sequenceCommands = () =>
-      allCommands().filter(
-        (command) =>
-          command.shortcut?.kind === "sequence" && (!command.enabled || command.enabled()),
-      );
-
-    const chordCommands = () =>
-      allCommands().filter(
-        (command) => command.shortcut?.kind === "chord" && (!command.enabled || command.enabled()),
-      );
-
-    const runShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || event.isComposing) return false;
-      const editable = isEditableTarget(event.target);
-      const mod = event.metaKey || event.ctrlKey;
-
-      for (const command of chordCommands()) {
-        const shortcut = command.shortcut;
-
-        if (shortcut?.kind !== "chord") continue;
-
-        if (!matchesChord(shortcut, event)) continue;
-
-        if (editable && !mod) continue;
-        event.preventDefault();
-        void command.run();
-        clearSequence();
-
-        return true;
-      }
-
-      if (mod || event.altKey || editable) {
-        if (!pendingSequence) return false;
-        clearSequence();
-
-        return false;
-      }
-
-      const key = event.key.toLowerCase();
-      const prefix = pendingSequence + key;
-      const commands = sequenceCommands();
-
-      const exact = commands.find(
-        (command) =>
-          command.shortcut?.kind === "sequence" &&
-          command.shortcut.keys.join(" ").toLowerCase() === prefix,
-      );
-
-      if (exact) {
-        event.preventDefault();
-        clearSequence();
-        void exact.run();
-
-        return true;
-      }
-
-      const hasLonger = commands.some(
-        (command) =>
-          command.shortcut?.kind === "sequence" &&
-          command.shortcut.keys.join(" ").toLowerCase().startsWith(`${prefix} `),
-      );
-
-      if (hasLonger) {
-        event.preventDefault();
-        pendingSequence = `${prefix} `;
+      const clearSequence = () => {
+        pendingSequence = "";
         clearTimeout(sequenceTimer);
-        sequenceTimer = setTimeout(clearSequence, 1200);
+      };
 
-        return true;
-      }
+      const sequenceCommands = () =>
+        allCommands().filter(
+          (command) =>
+            command.shortcut?.kind === "sequence" && (!command.enabled || command.enabled()),
+        );
 
-      if (pendingSequence) clearSequence();
+      const chordCommands = () =>
+        allCommands().filter(
+          (command) =>
+            command.shortcut?.kind === "chord" && (!command.enabled || command.enabled()),
+        );
 
-      const startsSequence = commands.some(
-        (command) => command.shortcut?.kind === "sequence" && command.shortcut.keys[0] === key,
-      );
+      const runShortcut = (event: KeyboardEvent) => {
+        if (event.defaultPrevented || event.repeat || event.isComposing) return false;
+        const editable = isEditableTarget(event.target);
+        const mod = event.metaKey || event.ctrlKey;
 
-      if (startsSequence) {
-        event.preventDefault();
-        pendingSequence = `${key} `;
-        clearTimeout(sequenceTimer);
-        sequenceTimer = setTimeout(clearSequence, 1200);
+        for (const command of chordCommands()) {
+          const shortcut = command.shortcut;
 
-        return true;
-      }
+          if (shortcut?.kind !== "chord") continue;
 
-      return false;
-    };
+          if (!matchesChord(shortcut, event)) continue;
 
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        clearSequence();
+          if (editable && !mod) continue;
+          event.preventDefault();
+          void command.run();
+          clearSequence();
 
-        if (open()) {
-          close();
-        } else {
-          rememberOpener();
-          setOpen(true);
+          return true;
         }
 
-        return;
-      }
+        if (mod || event.altKey || editable) {
+          if (!pendingSequence) return false;
+          clearSequence();
 
-      if (!open() && runShortcut(event)) return;
-    };
+          return false;
+        }
 
-    const openEvent = () => {
-      rememberOpener();
-      setOpen(true);
-    };
+        const key = event.key.toLowerCase();
+        const prefix = pendingSequence + key;
+        const commands = sequenceCommands();
 
-    window.addEventListener("keydown", handler);
-    window.addEventListener("mattrax:open-command-palette", openEvent);
+        const exact = commands.find(
+          (command) =>
+            command.shortcut?.kind === "sequence" &&
+            command.shortcut.keys.join(" ").toLowerCase() === prefix,
+        );
 
-    return () => {
-      clearTimeout(sequenceTimer);
-      window.removeEventListener("keydown", handler);
-      window.removeEventListener("mattrax:open-command-palette", openEvent);
-    };
-  });
+        if (exact) {
+          event.preventDefault();
+          clearSequence();
+          void exact.run();
+
+          return true;
+        }
+
+        const hasLonger = commands.some(
+          (command) =>
+            command.shortcut?.kind === "sequence" &&
+            command.shortcut.keys.join(" ").toLowerCase().startsWith(`${prefix} `),
+        );
+
+        if (hasLonger) {
+          event.preventDefault();
+          pendingSequence = `${prefix} `;
+          clearTimeout(sequenceTimer);
+          sequenceTimer = setTimeout(clearSequence, 1200);
+
+          return true;
+        }
+
+        if (pendingSequence) clearSequence();
+
+        const startsSequence = commands.some(
+          (command) => command.shortcut?.kind === "sequence" && command.shortcut.keys[0] === key,
+        );
+
+        if (startsSequence) {
+          event.preventDefault();
+          pendingSequence = `${key} `;
+          clearTimeout(sequenceTimer);
+          sequenceTimer = setTimeout(clearSequence, 1200);
+
+          return true;
+        }
+
+        return false;
+      };
+
+      const handler = (event: KeyboardEvent) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          clearSequence();
+
+          if (open()) {
+            close();
+          } else {
+            rememberOpener();
+            setOpen(true);
+          }
+
+          return;
+        }
+
+        if (!open() && runShortcut(event)) return;
+      };
+
+      const openEvent = () => {
+        rememberOpener();
+        setOpen(true);
+      };
+
+      window.addEventListener("keydown", handler);
+      window.addEventListener("mattrax:open-command-palette", openEvent);
+
+      return () => {
+        clearTimeout(sequenceTimer);
+        window.removeEventListener("keydown", handler);
+        window.removeEventListener("mattrax:open-command-palette", openEvent);
+      };
+    },
+  );
 
   let input: HTMLInputElement | undefined;
 
-  // Kobalte's focus scope mounts the portal before it can take focus, so the
-  // input is focused on the next frame; the dialog remains the trap owner.
+  // The input is focused on the next frame, after the new panel has been laid
+  // out, so the first keystroke lands in the search field.
   createEffect(
     () => open(),
     (isOpen) => {
@@ -1038,8 +1044,10 @@ export function CommandPalette() {
     },
   );
 
-  /** Keys belong to the dialog while it is open, so they run in the event. */
+  /** Keys are handled on the combobox, which owns focus while the palette is open. */
   const onContentKeyDown = (event: KeyboardEvent) => {
+    if (event.isComposing) return;
+
     if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -1072,215 +1080,202 @@ export function CommandPalette() {
 
   return (
     <>
+      {/*
+      A plain modal rather than a component-library dialog. In this Solid
+      release the library's modal focus helper ran before the dialog content
+      was connected, hid <body> instead of its siblings, and dropped the whole
+      dialog out of the accessibility tree. Everything this palette needs —
+      overlay, trap, Escape, focus restore — is a handful of lines here.
+    */}
       <Show when={open()}>
-        {/*
-        A fresh uncontrolled dialog per open. The window shortcut and the header
-        button both flip `open`, and mounting the primitive fresh keeps its own
-        open state authoritative while it is on screen (Escape, light dismiss and
-        command selection all unmount it).
-      */}
-        <DialogPrimitive.Root defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
-          <DialogPrimitive.Portal>
-            <DialogPrimitive.Overlay
-              class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
-              onPointerDown={(event) => {
-                if (event.target === event.currentTarget) close();
+        <div
+          class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
+          aria-hidden="true"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="command-palette-title"
+          aria-describedby="command-palette-description"
+          data-slot="command-palette"
+          class="palette-card fixed inset-x-0 top-[10vh] z-[71] mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
+        >
+          <h2 id="command-palette-title" class="sr-only">
+            Search Mattrax
+          </h2>
+          <p id="command-palette-description" class="sr-only">
+            Search settings, devices, policies, people, and commands. Use the arrow keys to move
+            through results and Enter to run the highlighted one.
+          </p>
+          <div class="flex items-center gap-2 border-b border-border px-4 py-3">
+            <Search class="size-4 text-muted-foreground" />
+            <input
+              ref={(element) => {
+                input = element;
               }}
-            />
-            <DialogPrimitive.Content
-              data-slot="command-palette"
-              aria-modal="true"
-              class="palette-card fixed inset-x-0 top-[10vh] z-[71] mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
+              role="combobox"
+              aria-expanded={items().length > 0 ? "true" : "false"}
+              aria-controls="command-palette-list"
+              aria-autocomplete="list"
+              aria-label="Search settings, devices, policies, people or commands"
+              aria-activedescendant={
+                items()[active()] ? `command-palette-option-${active()}` : undefined
+              }
+              value={query()}
+              onInput={(event) => updateQuery(event.currentTarget.value)}
               onKeyDown={onContentKeyDown}
-            >
-                <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
-              <DialogPrimitive.Description class="sr-only">
-                Search settings, devices, policies, people, and commands. Use the arrow keys to move
-                through results and Enter to run the highlighted one.
-              </DialogPrimitive.Description>
+              placeholder="Search or run a command…"
+              class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
+            />
+            <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+              esc
+            </kbd>
+          </div>
 
-              <div class="flex items-center gap-2 border-b border-border px-4 py-3">
-                <Search class="size-4 text-muted-foreground" />
-                <input
-                  ref={(element) => {
-                    input = element;
-                  }}
-                  role="combobox"
-                  aria-expanded={items().length > 0 ? "true" : "false"}
-                  aria-controls="command-palette-list"
-                  aria-autocomplete="list"
-                  aria-label="Search settings, devices, policies, people or commands"
-                  aria-activedescendant={
-                    items()[active()] ? `command-palette-option-${active()}` : undefined
-                  }
-                  value={query()}
-                  onInput={(event) => updateQuery(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      close();
-
-                      return;
-                    }
-
-                    if (event.key !== "Enter" || event.isComposing) return;
-
-                    // Some primitives stop Enter before it bubbles to the dialog,
-                    // so run the active item directly from the combobox.
-                    event.preventDefault();
-                    run(items()[active()]);
-                  }}
-                  placeholder="Search or run a command…"
-                  class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
-                />
-                <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
-                  esc
-                </kbd>
-              </div>
-
-              <Show when={results.error}>
-                {(error) => (
-                  <div
-                    role="alert"
-                    class="mx-3 mt-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
-                  >
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
-                        <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                          {errorMessage(error(), "Search is unavailable right now.")}
-                        </p>
-                      </div>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        disabled={results.isFetching}
-                        onClick={() => void results.refetch()}
-                      >
-                        {results.isFetching ? "Retrying…" : "Try again"}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </Show>
-
-              <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
-                <div
-                  id="command-palette-list"
-                  role="listbox"
-                  aria-label="Search results"
-                  aria-busy={results.isFetching ? "true" : undefined}
-                >
-                  <For each={grouped()}>
-                    {([group, groupItems]) => (
-                      <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
-                        <p
-                          id={groupDomId(group)}
-                          class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
-                        >
-                          {group}
-                        </p>
-                        <For each={groupItems}>
-                          {(item) => {
-                            const index = () => items().indexOf(item);
-
-                            return (
-                              <a
-                                href={item.href ?? "#"}
-                                role="option"
-                                tabindex="-1"
-                                id={`command-palette-option-${index()}`}
-                                aria-selected={active() === index() ? "true" : "false"}
-                                onClick={(event) => {
-                                  if (item.href) {
-                                    // Remember after the route change commits;
-                                    // writing palette state here would cancel the
-                                    // router's transition.
-                                    pendingRecent = item;
-
-                                    // Selecting the page already on screen does
-                                    // not change the location, so the close
-                                    // effect never runs; close here instead.
-                                    const target = new URL(item.href, window.location.href);
-
-                                    if (
-                                      target.pathname === location.pathname &&
-                                      target.search === location.search
-                                    ) {
-                                      event.preventDefault();
-                                      close();
-                                    }
-
-                                    return;
-                                  }
-
-                                  event.preventDefault();
-                                  runAction(item);
-                                }}
-                                class={cn(
-                                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
-                                  active() === index() ? "bg-hover" : "hover:bg-hover",
-                                )}
-                              >
-                                <Show when={item.icon}>
-                                  {(icon) => {
-                                    const Icon = icon();
-
-                                    return <Icon class="size-4 shrink-0 text-muted-foreground" />;
-                                  }}
-                                </Show>
-                                <span class="min-w-0 flex-1">
-                                  <span class="block truncate font-[450] text-foreground">
-                                    {item.title}
-                                  </span>
-                                  <Show when={item.subtitle}>
-                                    <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
-                                      {item.subtitle}
-                                    </span>
-                                  </Show>
-                                </span>
-                                <Show when={item.shortcut}>
-                                  {(shortcut) => (
-                                    <kbd class="hidden shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
-                                      {shortcutLabel(shortcut())}
-                                    </kbd>
-                                  )}
-                                </Show>
-                              </a>
-                            );
-                          }}
-                        </For>
-                      </div>
-                    )}
-                  </For>
-                </div>
-
-                <Show when={items().length === 0 && !results.error}>
-                  <div class="px-3 py-8 text-center">
-                    <p class="text-[13px] text-muted-foreground">No results.</p>
-                    <p class="mt-1 text-[11px] text-muted-foreground">
-                      Try a device, policy, person, setting or a query like “devices critical”.
+          <Show when={results.error}>
+            {(error) => (
+              <div
+                role="alert"
+                class="mx-3 mt-2 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 py-2.5"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
+                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                      {errorMessage(error(), "Search is unavailable right now.")}
                     </p>
                   </div>
-                </Show>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={results.isFetching}
+                    onClick={() => void results.refetch()}
+                  >
+                    {results.isFetching ? "Retrying…" : "Try again"}
+                  </Button>
+                </div>
               </div>
+            )}
+          </Show>
 
-              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
-                {statusText()}
-              </div>
+          <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
+            <div
+              id="command-palette-list"
+              role="listbox"
+              aria-label="Search results"
+              aria-busy={results.isFetching ? "true" : undefined}
+            >
+              <For each={grouped()}>
+                {([group, groupItems]) => (
+                  <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
+                    <p
+                      id={groupDomId(group)}
+                      class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
+                    >
+                      {group}
+                    </p>
+                    <For each={groupItems}>
+                      {(item) => {
+                        const index = () => items().indexOf(item);
 
-              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground sm:flex">
-                <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
-                <Show
-                  when={truncated()}
-                  fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
-                >
-                  <span>Showing first {SEARCH_LIMIT} matches</span>
-                </Show>
+                        return (
+                          <a
+                            href={item.href ?? "#"}
+                            role="option"
+                            tabindex="-1"
+                            id={`command-palette-option-${index()}`}
+                            aria-selected={active() === index() ? "true" : "false"}
+                            onClick={(event) => {
+                              if (item.href) {
+                                // Remember after the route change commits;
+                                // writing palette state here would cancel the
+                                // router's transition.
+                                pendingRecent = item;
+
+                                // Selecting the page already on screen does
+                                // not change the location, so the close
+                                // effect never runs; close here instead.
+                                const target = new URL(item.href, window.location.href);
+
+                                if (
+                                  target.pathname === location.pathname &&
+                                  target.search === location.search
+                                ) {
+                                  event.preventDefault();
+                                  close();
+                                }
+
+                                return;
+                              }
+
+                              event.preventDefault();
+                              runAction(item);
+                            }}
+                            class={cn(
+                              "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
+                              active() === index() ? "bg-hover" : "hover:bg-hover",
+                            )}
+                          >
+                            <Show when={item.icon}>
+                              {(icon) => {
+                                const Icon = icon();
+
+                                return <Icon class="size-4 shrink-0 text-muted-foreground" />;
+                              }}
+                            </Show>
+                            <span class="min-w-0 flex-1">
+                              <span class="block truncate font-[450] text-foreground">
+                                {item.title}
+                              </span>
+                              <Show when={item.subtitle}>
+                                <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+                                  {item.subtitle}
+                                </span>
+                              </Show>
+                            </span>
+                            <Show when={item.shortcut}>
+                              {(shortcut) => (
+                                <kbd class="hidden shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
+                                  {shortcutLabel(shortcut())}
+                                </kbd>
+                              )}
+                            </Show>
+                          </a>
+                        );
+                      }}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </div>
+
+            <Show when={items().length === 0 && !results.error}>
+              <div class="px-3 py-8 text-center">
+                <p class="text-[13px] text-muted-foreground">No results.</p>
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  Try a device, policy, person, setting or a query like “devices critical”.
+                </p>
               </div>
-            </DialogPrimitive.Content>
-          </DialogPrimitive.Portal>
-        </DialogPrimitive.Root>
+            </Show>
+          </div>
+
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
+            {statusText()}
+          </div>
+
+          <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+            <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
+            <Show
+              when={truncated()}
+              fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
+            >
+              <span>Showing first {SEARCH_LIMIT} matches</span>
+            </Show>
+          </div>
+        </div>
       </Show>
     </>
   );

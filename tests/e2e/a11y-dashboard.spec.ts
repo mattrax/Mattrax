@@ -180,25 +180,25 @@ test.describe("dashboard accessibility", () => {
     await page.getByRole("button", { name: /Switch tenant/ }).click();
     await settle(page, 300);
     await expectNoViolations(page, "tenant switcher open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
 
     // User menu.
-    await page.getByRole("button", { name: "Account menu" }).click();
+    await page.getByRole("button", { name: /account menu/i }).click();
     await settle(page, 300);
     await expectNoViolations(page, "user menu open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await page.getByRole("button", { name: "Choose visible columns" }).click();
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toBeVisible();
+    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
     await settle(page, 300);
     await expectNoViolations(page, "column picker open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
 
@@ -238,17 +238,17 @@ test.describe("dashboard accessibility", () => {
     await expect(search).toBeFocused();
 
     // User menu.
-    const account = page.getByRole("button", { name: "Account menu" });
+    const account = page.getByRole("button", { name: /account menu/i });
     await account.click();
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(account).toBeFocused();
 
     // Column picker.
     const columns = page.getByRole("button", { name: "Choose visible columns" });
     await columns.click();
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(columns).toBeFocused();
   });
 

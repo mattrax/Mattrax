@@ -86,7 +86,7 @@ test.describe("authentication and onboarding", () => {
     await page.waitForTimeout(300);
 
     await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
+    await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
