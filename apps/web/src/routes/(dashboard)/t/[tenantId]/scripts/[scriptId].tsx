@@ -18,6 +18,7 @@ import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { ChevronDown } from "~/components/ui/icons";
 import {
   enterprise,
   enterpriseKeys,
@@ -258,8 +259,9 @@ export default function ScriptDetailPage() {
       header: "Output",
       cell: (row: ScriptExecutionInfo) => (
         <details class="max-w-xl">
-          <summary class="cursor-pointer text-[12px] text-muted-foreground hover:text-foreground">
+          <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-[12px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground">
             {row.stdout || row.stderr ? "View output" : "No output"}
+            <ChevronDown class="disclosure-chevron size-3 shrink-0" />
           </summary>
           <div class="mt-2 space-y-2">
             <div class="flex gap-2">
@@ -438,7 +440,7 @@ export default function ScriptDetailPage() {
                           <div class="max-h-52 space-y-1.5 overflow-y-auto">
                             <For each={groups.data?.rows ?? []}>
                               {(group) => (
-                                <label class="flex items-center gap-2 text-[12.5px]">
+                                <label class="flex cursor-pointer items-center gap-2 text-[12.5px]">
                                   <input
                                     type="checkbox"
                                     checked={groupIds().has(group.id)}
@@ -464,7 +466,7 @@ export default function ScriptDetailPage() {
                           <div class="max-h-60 space-y-1.5 overflow-y-auto">
                             <For each={devices.data?.rows ?? []}>
                               {(device) => (
-                                <label class="flex items-center gap-2 text-[12.5px]">
+                                <label class="flex cursor-pointer items-center gap-2 text-[12.5px]">
                                   <input
                                     type="checkbox"
                                     checked={selectedDeviceIds().has(device.id)}

@@ -43,7 +43,7 @@ function TooltipContentBox(
       sideOffset={8}
       class={cn(
         "z-[80] max-w-64 rounded-[6px] border border-border bg-popover px-2 py-1.5 text-[11.5px] leading-4 text-popover-foreground shadow-popover outline-none",
-        "transition-[opacity,transform] duration-100 ease-swift data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
+        "origin-[var(--ui-popup-transform-origin,top)] transition-[opacity,transform] duration-[var(--duration-hover)] ease-swift data-[starting-style]:translate-y-0.5 data-[starting-style]:opacity-0 data-[ending-style]:translate-y-0.5 data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}

@@ -1,12 +1,16 @@
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { BrandLogo } from "~/components/brand-logo";
+import { Button } from "~/components/ui/button";
 import { Option, Schema } from "effect";
 import { createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { Building2, KeyRound } from "~/components/ui/icons";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 const SsoStartResponse = Schema.Struct({
   url: Schema.optional(Schema.String),
@@ -205,7 +209,7 @@ export default function LoginPage() {
           <Show when={created}>
             <p
               role="status"
-              class="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-[12.5px] text-stone-700"
+              class={`mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-[12.5px] text-stone-700 ${feedbackEnter}`}
             >
               Your account is ready. Sign in with the passkey you just created.
             </p>
@@ -214,13 +218,13 @@ export default function LoginPage() {
           <Show
             when={step() === "email"}
             fallback={
-              <div class="space-y-4">
+              <div class={`space-y-4 ${feedbackEnter}`}>
                 <div class="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
                   <span class="min-w-0 truncate text-[13px] text-stone-700">{email()}</span>
                   <button
                     type="button"
                     onClick={changeEmail}
-                    class="shrink-0 text-[12px] font-medium text-stone-700 underline underline-offset-2 hover:text-stone-900"
+                    class="shrink-0 text-[12px] font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900"
                   >
                     Change
                   </button>
@@ -228,14 +232,18 @@ export default function LoginPage() {
 
                 <Show when={error()}>
                   {(message) => (
-                    <p id="login-error" role="alert" class="text-sm text-destructive">
+                    <p
+                      id="login-error"
+                      role="alert"
+                      class={`text-sm text-destructive ${feedbackEnter}`}
+                    >
                       {message()}
                     </p>
                   )}
                 </Show>
                 <Show when={ssoError()}>
                   {(message) => (
-                    <p role="alert" class="text-sm text-destructive">
+                    <p role="alert" class={`text-sm text-destructive ${feedbackEnter}`}>
                       {message()}
                     </p>
                   )}
@@ -244,25 +252,25 @@ export default function LoginPage() {
                 <Show
                   when={ssoAvailable()}
                   fallback={
-                    <button
+                    <Button
                       type="button"
-                      disabled={passkeyPending()}
-                      class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                      class="h-10 w-full rounded-lg px-4 text-sm"
+                      pending={passkeyPending()}
                       onClick={() => void signInWithPasskey()}
                     >
                       <KeyRound class="size-4" />
                       {passkeyPending() ? "Waiting for your device…" : "Sign in with a passkey"}
-                    </button>
+                    </Button>
                   }
                 >
-                  <button
+                  <Button
                     type="button"
-                    class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                    class="h-10 w-full rounded-lg px-4 text-sm"
                     onClick={chooseSso}
                   >
                     <Building2 class="size-4" />
                     Continue with SSO
-                  </button>
+                  </Button>
 
                   <div class="relative py-1 text-center">
                     <span class="absolute inset-x-0 top-1/2 h-px bg-stone-300/70" />
@@ -271,26 +279,28 @@ export default function LoginPage() {
                     </span>
                   </div>
 
-                  <button
+                  <Button
                     type="button"
-                    disabled={passkeyPending()}
-                    class="flex w-full items-center justify-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-100 disabled:opacity-50"
+                    variant="outline"
+                    class="h-10 w-full rounded-lg px-4 text-sm"
+                    pending={passkeyPending()}
                     onClick={() => void signInWithPasskey()}
                   >
                     <KeyRound class="size-4" />
                     {passkeyPending() ? "Waiting for your device…" : "Use a passkey instead"}
-                  </button>
+                  </Button>
                 </Show>
 
                 <Show when={!ssoAvailable()}>
-                  <button
+                  <Button
                     type="button"
-                    class="flex w-full items-center justify-center gap-2 rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-100 disabled:opacity-50"
+                    variant="outline"
+                    class="h-10 w-full rounded-lg px-4 text-sm"
                     onClick={chooseSso}
                   >
                     <Building2 class="size-4" />
                     Sign in with your organisation
-                  </button>
+                  </Button>
                 </Show>
               </div>
             }
@@ -317,32 +327,38 @@ export default function LoginPage() {
               </div>
               <Show when={emailError()}>
                 {(message) => (
-                  <p role="alert" class="text-sm text-destructive">
+                  <p role="alert" class={`text-sm text-destructive ${feedbackEnter}`}>
                     {message()}
                   </p>
                 )}
               </Show>
-              <button
+              <Button
                 type="submit"
-                disabled={checkingEmail()}
-                class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                class="h-10 w-full rounded-lg px-4 text-sm"
+                pending={checkingEmail()}
               >
                 {checkingEmail() ? "Checking…" : "Continue"}
-              </button>
+              </Button>
             </form>
           </Show>
         </Show>
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Don't have an account?{" "}
-          <a href="/register" class="text-stone-900 font-medium hover:underline">
+          <a
+            href="/register"
+            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+          >
             Sign up
           </a>
         </p>
 
         <p class="mt-2 text-center text-[12.5px] text-stone-500">
           Lost every passkey?{" "}
-          <a href="/recover" class="text-stone-900 font-medium hover:underline">
+          <a
+            href="/recover"
+            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+          >
             Recover access
           </a>
         </p>

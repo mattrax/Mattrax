@@ -143,7 +143,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-2 text-left shadow-[0_1px_2px_rgb(24_24_22/0.04)] outline-none transition-[border-color,background-color] duration-150 ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 data-expanded:border-border-strong"
+        class="group flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-2 text-left shadow-[0_1px_2px_rgb(24_24_22/0.04)] outline-none transition-[border-color,background-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 data-expanded:border-border-strong"
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         {/* The name is composed from the visible content so assistive tech and
@@ -178,7 +178,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             </Show>
           </Show>
         </span>
-        <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+        <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
       </DropdownMenuTrigger>
 
       <DropdownMenuContent class="w-[288px]">
@@ -247,7 +247,7 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-keyshortcuts="Meta+K Control+K"
       class={cn(
-        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,border-color] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
         props.compact
           ? "w-7 justify-center border border-transparent hover:bg-hover hover:text-foreground sm:w-[196px] sm:justify-start sm:border-border sm:bg-card sm:px-2"
           : "w-[196px] justify-start border border-border bg-card px-2 hover:border-border-strong hover:text-foreground",
@@ -286,7 +286,7 @@ function UserMenu(props: {
     <DropdownMenu placement={sidebar() ? "top-start" : "bottom-end"}>
       <DropdownMenuTrigger
         class={cn(
-          "outline-none transition-[background-color,border-color,box-shadow] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+          "outline-none transition-[background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
           sidebar()
             ? "group flex h-10 w-full items-center gap-2.5 rounded-lg px-1.5 text-left hover:bg-hover data-expanded:bg-hover"
             : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
@@ -318,7 +318,7 @@ function UserMenu(props: {
               {user()?.email}
             </span>
           </span>
-          <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+          <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
         </Show>
       </DropdownMenuTrigger>
       <DropdownMenuContent class="w-[248px]">
@@ -480,7 +480,7 @@ function NavGroups(props: {
                             aria-current={active() ? "page" : undefined}
                             onClick={() => props.onNavigate?.()}
                             class={cn(
-                              "group flex h-7 items-center gap-2 rounded-md border px-2 text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                              "group flex h-7 items-center gap-2 rounded-md border px-2 text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
                               active()
                                 ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
                                 : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -488,7 +488,7 @@ function NavGroups(props: {
                           >
                             <item.icon
                               class={cn(
-                                "size-3.5 shrink-0 transition-colors",
+                                "size-3.5 shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
                                 active()
                                   ? "text-foreground"
                                   : "text-subtle-foreground group-hover:text-foreground",
@@ -524,7 +524,7 @@ function SidebarPanel(props: {
       <div class="flex h-12 shrink-0 items-center px-4">
         <a
           href="/dashboard"
-          class="flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          class="flex items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60"
           aria-label="Mattrax home"
           onClick={() => props.onNavigate?.()}
         >
@@ -565,7 +565,7 @@ function ShellBreadcrumb(props: {
           <li class="hidden min-w-0 sm:block">
             <a
               href={props.tenantHref}
-              class="block max-w-[16ch] truncate text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
+              class="block max-w-[16ch] truncate text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground"
             >
               {props.tenantName}
             </a>
@@ -815,7 +815,7 @@ export function AppShell(props: {
             </Button>
             <a
               href="/dashboard"
-              class="flex shrink-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
+              class="flex shrink-0 items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
               aria-label="Mattrax home"
             >
               <BrandLogo class="h-3" />

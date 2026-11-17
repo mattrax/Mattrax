@@ -25,7 +25,7 @@ function Checkbox(props: CheckboxProps) {
       {...others}
     >
       <CheckboxIndicator class="flex items-center justify-center data-unchecked:hidden">
-        <Check class="size-3" stroke-width={3} />
+        <Check class="size-3 animate-[mt-check-in_160ms_var(--ease-swift)]" stroke-width={3} />
       </CheckboxIndicator>
       {local.children}
     </CheckboxPrimitive>
@@ -48,7 +48,7 @@ function Switch(props: SwitchProps) {
     >
       <SwitchThumb
         class={cn(
-          "pointer-events-none block size-3.5 rounded-full bg-card shadow-[0_1px_2px_rgb(24_24_22/0.25)] transition-transform duration-150 ease-swift",
+          "pointer-events-none block size-3.5 rounded-full bg-card shadow-[0_1px_2px_rgb(24_24_22/0.25)] transition-transform duration-200 ease-swift",
           "translate-x-[2px] data-checked:translate-x-[15px]",
         )}
       />

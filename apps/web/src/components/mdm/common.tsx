@@ -252,9 +252,9 @@ export function StatCard(props: {
   );
 
   const classes = cn(
-    "group flex min-w-0 flex-col rounded-xl border border-border bg-card p-3.5 text-left shadow-card transition-[border-color,translate,box-shadow] duration-150 ease-swift",
+    "group flex min-w-0 flex-col rounded-xl border border-border bg-card p-3.5 text-left shadow-card",
     (props.href ?? props.onClick) &&
-      "hover:border-border-strong hover:shadow-popover motion-safe:hover:-translate-y-px focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
+      "pressable hover:border-border-strong hover:shadow-popover focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
     props.class,
   );
 

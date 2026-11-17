@@ -112,7 +112,7 @@ export default function NewGroupPage() {
                 </select>
               </Field>
               <Show when={kind() === "dynamic"}>
-                <div class="rounded-lg border border-border bg-surface p-3">
+                <div class="animate-in rounded-lg border border-border bg-surface p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
                   <GroupRuleBuilder rules={rules()} onChange={setRules} />
                 </div>
               </Show>
@@ -179,7 +179,7 @@ export default function NewGroupPage() {
                   <div class="max-h-64 divide-y divide-border overflow-auto">
                     <For each={deviceList.data?.rows ?? []}>
                       {(device) => (
-                        <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-hover sm:px-5">
+                        <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover sm:px-5">
                           <input
                             type="checkbox"
                             class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
@@ -230,7 +230,7 @@ export default function NewGroupPage() {
                 <div class="max-h-64 divide-y divide-border overflow-auto">
                   <For each={policyList.data?.rows ?? []}>
                     {(policy) => (
-                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors hover:bg-hover sm:px-5">
+                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover sm:px-5">
                         <input
                           type="checkbox"
                           class="size-3.5 shrink-0 accent-[var(--brand-solid)]"

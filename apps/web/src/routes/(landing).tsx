@@ -69,7 +69,7 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
   return (
     <a
       href={props.href}
-      class={`transition-colors ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+      class={`transition-colors duration-[var(--duration-hover)] ease-swift ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
       target={props.target}
     >
       {props.label}
@@ -79,7 +79,11 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
 
 function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
-    <a href={props.href} class="transition-colors hover:text-foreground" target={props.target}>
+    <a
+      href={props.href}
+      class="transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+      target={props.target}
+    >
       {props.label}
     </a>
   );
@@ -164,7 +168,7 @@ function TopNavigation() {
             type="button"
             popovertarget="landing-site-menu"
             aria-label="Open navigation menu"
-            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground md:hidden"
+            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground md:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -183,14 +187,14 @@ function TopNavigation() {
           <div
             id="landing-site-menu"
             popover="auto"
-            class="fixed inset-auto top-[3.75rem] right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover md:hidden"
+            class="fixed inset-auto top-[3.75rem] right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-[mt-rise-in_140ms_var(--ease-swift)_both] md:hidden"
           >
             <nav aria-label="Site">
               {navigation.map((item) => (
                 <a
                   href={item.href}
                   target={item.target}
-                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground hover:bg-hover hover:text-foreground"
+                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground"
                 >
                   {item.label}
                 </a>
@@ -199,7 +203,7 @@ function TopNavigation() {
             <div class="mt-1 border-t border-border p-1">
               <a
                 href={session().data?.user ? "/dashboard" : "/register"}
-                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground"
+                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90"
               >
                 {session().data?.user ? "Open dashboard" : "Create an account"}
               </a>

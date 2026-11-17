@@ -12,13 +12,16 @@ import {
 } from "~/lib/step-up-bus";
 
 const inputClass =
-  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
+  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
 
 const primaryButton =
-  "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50";
+  "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 disabled:opacity-50";
 
 const secondaryButton =
-  "rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-hover disabled:opacity-50";
+  "rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover disabled:opacity-50";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 const labels: Record<StepUpMethod, string> = {
   totp: "Authenticator code",
@@ -109,7 +112,7 @@ export function StepUpDialog() {
                     <button
                       type="button"
                       aria-pressed={activeMethod() === item ? "true" : "false"}
-                      class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
+                      class={`rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
                         activeMethod() === item
                           ? "bg-brand-solid text-brand-foreground"
                           : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
@@ -155,14 +158,23 @@ export function StepUpDialog() {
 
                 <Show when={error()}>
                   {(message) => (
-                    <p id="step-up-error" role="alert" class="text-sm text-destructive">
+                    <p
+                      id="step-up-error"
+                      role="alert"
+                      class={`text-sm text-destructive ${feedbackEnter}`}
+                    >
                       {message()}
                     </p>
                   )}
                 </Show>
 
                 <div class="flex gap-2">
-                  <button type="submit" class={primaryButton} disabled={pending()}>
+                  <button
+                    type="submit"
+                    class={primaryButton}
+                    disabled={pending()}
+                    aria-busy={pending() ? "true" : "false"}
+                  >
                     {pending()
                       ? "Confirming…"
                       : activeMethod() === "passkey"

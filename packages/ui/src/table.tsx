@@ -43,7 +43,7 @@ function TableRow(props: ComponentProps<"tr">) {
   return (
     <tr
       class={cn(
-        "border-b border-border transition-colors hover:bg-surface data-selected:bg-surface",
+        "border-b border-border transition-colors duration-[var(--duration-hover)] hover:bg-surface data-selected:bg-surface",
         local.class,
       )}
       {...others}

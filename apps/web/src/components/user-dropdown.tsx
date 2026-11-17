@@ -62,7 +62,7 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuTrigger
               class={
                 props.triggerClass ??
-                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border outline-none transition-[box-shadow] duration-150 ease-swift hover:ring-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border outline-none transition-[box-shadow] duration-[var(--duration-hover)] ease-swift hover:ring-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
               }
               aria-label={
                 user().image ? "Account menu" : `${getInitials(user().name ?? "?")}, account menu`

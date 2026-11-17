@@ -35,7 +35,7 @@ function DialogContent(props: DialogContentProps) {
       <DialogBackdrop
         data-slot="dialog-backdrop"
         class={cn(
-          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[2px] transition-opacity duration-150 ease-swift",
+          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[2px] transition-opacity duration-[var(--duration-popover)] ease-swift",
           "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
         )}
       />
@@ -44,7 +44,7 @@ function DialogContent(props: DialogContentProps) {
         class={cn(
           "fixed left-1/2 top-1/2 z-[71] flex max-h-[min(85vh,44rem)] w-[min(calc(100vw-2rem),32rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4",
           "overflow-y-auto rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-panel outline-none",
-          "transition-[opacity,transform] duration-150 ease-swift",
+          "transition-[opacity,transform] duration-[var(--duration-panel)] ease-swift",
           "data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
           local.class,
         )}

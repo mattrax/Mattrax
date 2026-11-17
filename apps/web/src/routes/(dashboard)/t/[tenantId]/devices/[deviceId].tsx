@@ -2214,7 +2214,7 @@ export default function DeviceDetailPage() {
                               each={(directory.data?.users ?? []).filter((user) => !user.disabled)}
                             >
                               {(user) => (
-                                <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted/30">
+                                <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                                   <input
                                     type="checkbox"
                                     checked={selectedUsers().has(user.id)}
@@ -2567,7 +2567,7 @@ export default function DeviceDetailPage() {
                             <ul class="divide-y divide-border">
                               <For each={membershipRows()}>
                                 {(group) => (
-                                  <li class="flex items-start justify-between gap-3 p-2.5">
+                                  <li class="flex items-start justify-between gap-3 rounded-md p-2.5 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
                                     <div class="min-w-0">
                                       <a
                                         class="font-medium text-foreground hover:underline"

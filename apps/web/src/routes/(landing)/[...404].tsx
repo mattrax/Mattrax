@@ -12,23 +12,23 @@ export default function Page() {
           This page doesn't exist or was moved. Head back home and we'll get you sorted.
         </p>
         <div class="flex flex-wrap justify-center gap-3">
-          <a href="/">
-            <Button
-              size="lg"
-              class="bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-full px-8 h-11"
-            >
-              Go home
-            </Button>
-          </a>
-          <a href="/dashboard">
-            <Button
-              variant="outline"
-              size="lg"
-              class="border-stone-300 text-stone-600 hover:bg-stone-100 rounded-full px-8 h-11"
-            >
-              Dashboard →
-            </Button>
-          </a>
+          <Button
+            as="a"
+            href="/"
+            size="lg"
+            class="bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-full px-8 h-11"
+          >
+            Go home
+          </Button>
+          <Button
+            as="a"
+            href="/dashboard"
+            variant="outline"
+            size="lg"
+            class="border-stone-300 text-stone-600 hover:bg-stone-100 rounded-full px-8 h-11"
+          >
+            Dashboard →
+          </Button>
         </div>
       </div>
     </main>

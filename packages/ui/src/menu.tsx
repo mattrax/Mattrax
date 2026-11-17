@@ -79,7 +79,7 @@ function DropdownMenuContent(
       sideOffset={local.sideOffset ?? 6}
       class={cn(
         menuSurface,
-        "origin-[var(--ui-popup-transform-origin,top_left)] transition-[opacity,transform] duration-150 ease-swift",
+        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift",
         "data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
         local.class,
       )}

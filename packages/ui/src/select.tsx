@@ -53,7 +53,7 @@ function SelectContentBox(props: ComponentProps<typeof SelectContent> & { class?
       sideOffset={6}
       class={cn(
         "z-[75] max-h-72 min-w-[var(--ui-anchor-width,10rem)] overflow-y-auto rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none",
-        "transition-[opacity,transform] duration-150 ease-swift data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
+        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}
@@ -67,7 +67,7 @@ function SelectItemBox(props: ComponentProps<typeof SelectItem> & { class?: stri
   return (
     <SelectItem
       class={cn(
-        "relative flex h-8 cursor-default select-none items-center gap-2 rounded-[6px] px-2 pl-7 text-[12.5px] outline-none",
+        "relative flex h-8 cursor-default select-none items-center gap-2 rounded-[6px] px-2 pl-7 text-[12.5px] outline-none transition-colors duration-[var(--duration-press)]",
         "data-highlighted:bg-hover data-disabled:pointer-events-none data-disabled:opacity-45",
         local.class,
       )}

@@ -778,7 +778,7 @@ export default function ApplicationDetailPage() {
                     {(text) => (
                       <p
                         role="status"
-                        class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                        class="animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
                       >
                         {text()}
                       </p>
@@ -790,8 +790,8 @@ export default function ApplicationDetailPage() {
                         role="status"
                         class={
                           notice().tone === "success"
-                            ? "rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
-                            : "rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning-foreground"
+                            ? "animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
+                            : "animate-in rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
                         }
                       >
                         {notice().text}
@@ -832,7 +832,7 @@ export default function ApplicationDetailPage() {
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                         <For each={groups.data?.rows ?? []}>
                           {(group: GroupRow) => (
-                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                               <input
                                 type="checkbox"
                                 class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
@@ -861,7 +861,7 @@ export default function ApplicationDetailPage() {
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                         <For each={devices.data?.rows ?? []}>
                           {(device: DeviceRow) => (
-                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors hover:bg-muted/30">
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                               <input
                                 type="checkbox"
                                 class="size-3.5 shrink-0 accent-[var(--brand-solid)]"

@@ -1,7 +1,18 @@
 import { createSignal, Show } from "solid-js";
 import { Match as EffectMatch } from "effect";
 import { authClient } from "~/lib/auth";
+import { Button } from "~/components/ui/button";
 import { errorMessage } from "~/lib/errors";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+
+const modeButton = (active: boolean) =>
+  `rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
+    active
+      ? "bg-primary text-primary-foreground"
+      : "border border-stone-300 text-stone-700 hover:bg-stone-100 hover:text-stone-900"
+  }`;
 
 /**
  * Completes a pending sign-in with an authenticator code or a one-time recovery
@@ -79,11 +90,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         <button
           type="button"
           aria-pressed={mode() === "totp" ? "true" : "false"}
-          class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-            mode() === "totp"
-              ? "bg-primary text-primary-foreground"
-              : "border border-stone-300 text-stone-700"
-          }`}
+          class={modeButton(mode() === "totp")}
           onClick={() => {
             setMode("totp");
             setCode("");
@@ -95,11 +102,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         <button
           type="button"
           aria-pressed={mode() === "recovery" ? "true" : "false"}
-          class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-            mode() === "recovery"
-              ? "bg-primary text-primary-foreground"
-              : "border border-stone-300 text-stone-700"
-          }`}
+          class={modeButton(mode() === "recovery")}
           onClick={() => {
             setMode("recovery");
             setCode("");
@@ -111,11 +114,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         <button
           type="button"
           aria-pressed={mode() === "passkey" ? "true" : "false"}
-          class={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-            mode() === "passkey"
-              ? "bg-primary text-primary-foreground"
-              : "border border-stone-300 text-stone-700"
-          }`}
+          class={modeButton(mode() === "passkey")}
           onClick={() => {
             setMode("passkey");
             setCode("");
@@ -157,18 +156,14 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
         </Show>
         <Show when={error()}>
           {(message) => (
-            <p id="mfa-error" role="alert" class="text-sm text-destructive">
+            <p id="mfa-error" role="alert" class={`text-sm text-destructive ${feedbackEnter}`}>
               {message()}
             </p>
           )}
         </Show>
-        <button
-          type="submit"
-          disabled={pending()}
-          class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
+        <Button type="submit" class="h-9 w-full text-sm" pending={pending()}>
           {pending() ? "Verifying…" : mode() === "passkey" ? "Use passkey" : "Continue"}
-        </button>
+        </Button>
       </form>
     </div>
   );

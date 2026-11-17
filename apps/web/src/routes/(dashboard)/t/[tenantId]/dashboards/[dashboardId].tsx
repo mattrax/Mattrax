@@ -530,7 +530,7 @@ export default function DashboardPage() {
         <div class="min-w-0">
           <a
             href={`/t/${params.tenantId}/dashboards`}
-            class="text-[11.5px] text-muted-foreground hover:text-foreground"
+            class="text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
           >
             ← Dashboards
           </a>
@@ -682,9 +682,9 @@ export default function DashboardPage() {
               return (
                 <article
                   class={cn(
-                    "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)]",
+                    "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)] transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift",
                     `dashboard-widget-${widget.type}`,
-                    editing() && "border-border",
+                    editing() && "hover:border-border-strong",
                   )}
                   style={{
                     "grid-column": `${position().x + 1} / span ${position().w}`,
@@ -696,7 +696,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         aria-label={`Move ${widget.title}`}
-                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-hover hover:text-foreground active:cursor-grabbing"
+                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:cursor-grabbing active:bg-hover"
                         onPointerDown={(event) => startDrag(event, widget, "move")}
                       >
                         <GripVertical class="size-3.5" />
@@ -742,7 +742,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       aria-label={`Resize ${widget.title}`}
-                      class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground"
+                      class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                       onPointerDown={(event) => startDrag(event, widget, "resize")}
                     />
                   </Show>
@@ -923,10 +923,10 @@ export default function DashboardPage() {
                             aria-pressed={checked() ? "true" : "false"}
                             onClick={() => toggleColumn(id)}
                             class={cn(
-                              "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                              "rounded-full border px-2.5 py-1 text-[11px] transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
                               checked()
-                                ? "border-border bg-hover text-foreground"
-                                : "border-border text-muted-foreground hover:text-foreground",
+                                ? "border-border bg-hover text-foreground hover:border-border-strong"
+                                : "border-border text-muted-foreground hover:bg-hover hover:text-foreground",
                             )}
                           >
                             {label}

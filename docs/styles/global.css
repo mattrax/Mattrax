@@ -65,6 +65,19 @@ html:root {
   --rp-shadow-4: 0 20px 48px -20px rgba(24, 24, 22, 0.24);
   --rp-shadow-5: 0 28px 64px -24px rgba(24, 24, 22, 0.3);
 
+  /*
+   * Motion. The same names, curves and 110/140/160/240ms scale the dashboard
+   * uses (packages/ui/src/styles.css), so a hover in the docs and a hover in
+   * the console settle at the same speed. Hover feedback is nearly
+   * imperceptible; only panels are allowed to travel.
+   */
+  --ease-swift: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  --duration-press: 110ms;
+  --duration-hover: 140ms;
+  --duration-popover: 160ms;
+  --duration-panel: 240ms;
+
   /* Code blocks: white panes in light, near-black in dark. */
   --rp-code-font-size: 0.78125rem;
   --rp-code-title-bg: #fafaf7;
@@ -242,6 +255,7 @@ html.rp-dark ::selection {
 .rp-nav__title__link:focus-visible,
 .rp-social-links__icon:focus-visible,
 .rp-nav-hamburger:focus-visible,
+.rp-code-button-group__button:focus-visible,
 .rp-sidebar-menu button:focus-visible {
   outline: 2px solid var(--docs-focus);
   outline-offset: 2px;
@@ -259,6 +273,9 @@ html .rp-nav {
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
   backdrop-filter: blur(18px) saturate(1.4);
   border-bottom: 1px solid var(--rp-c-divider);
+  transition:
+    background-color var(--duration-popover) var(--ease-swift),
+    border-bottom-color var(--duration-popover) var(--ease-swift);
 }
 
 /* The theme pins the logo height to 1.6rem while the image keeps its `width`
@@ -282,6 +299,9 @@ html .rp-nav__title__link {
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--rp-c-text-0);
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    opacity var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-nav__title__link:hover {
@@ -306,10 +326,44 @@ html .rp-social-links__icon {
   width: 17px;
   height: 17px;
   color: var(--rp-c-text-3);
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-social-links__icon:hover {
   color: var(--rp-c-text-0);
+}
+
+/* The GitHub link is a 56px-tall anchor; the 28px hover surface is drawn
+   behind the glyph so it matches the theme toggle beside it. */
+html .rp-social-links__item::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 28px;
+  height: 28px;
+  margin: auto;
+  border-radius: 6px;
+  background: transparent;
+  transition: background-color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-social-links__item:hover::before {
+  background: var(--rp-c-bg-mute);
+}
+
+/* Same idea for the social link: ring the 28px pill rather than the tall
+   anchor that wraps it. */
+html .rp-social-links__item:focus-visible {
+  outline: none;
+}
+
+html .rp-social-links__item:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--docs-focus);
+}
+
+html .rp-social-links__item > .rp-social-links__icon {
+  position: relative;
+  z-index: 1;
 }
 
 html .rp-nav-menu {
@@ -317,14 +371,43 @@ html .rp-nav-menu {
 }
 
 html .rp-nav-menu__item__container {
+  position: relative;
   font-size: 13px;
   font-weight: 450;
   color: var(--rp-c-text-2);
   line-height: 20px;
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+/* Because a nav item is as tall as the bar, the hover surface is a 24px pill
+   drawn behind the label rather than a full-height band — same shape as a
+   sidebar row, and no reflow when it appears. */
+html .rp-nav-menu__item__container::before {
+  content: "";
+  position: absolute;
+  inset: 16px -9px;
+  border-radius: 6px;
+  background: transparent;
+  transition: background-color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-nav-menu__item:hover .rp-nav-menu__item__container::before {
+  background: var(--rp-c-brand-tint);
+}
+
+/* Keyboard focus rings the pill, not the 56px-tall anchor. */
+html .rp-nav-menu__item__container:focus-visible {
+  outline: none;
+}
+
+html .rp-nav-menu__item__container:focus-visible::before {
+  box-shadow: 0 0 0 2px var(--docs-focus);
 }
 
 html .rp-nav-menu__item:hover .rp-nav-menu__item__container {
   color: var(--rp-c-text-0);
+  /* Rspress bumps the label to 14px on hover, which reflows the bar; pin it. */
+  font-size: 13px;
 }
 
 html .rp-nav-menu__item--active .rp-nav-menu__item__container {
@@ -342,6 +425,9 @@ html .rp-switch-appearance {
   height: 28px;
   border-radius: 6px;
   color: var(--rp-c-text-3);
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-switch-appearance:hover {
@@ -357,6 +443,13 @@ html .rp-switch-appearance svg {
 html .rp-nav-hamburger {
   border-radius: 6px;
   color: var(--rp-c-text-2);
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-nav-hamburger:hover {
+  color: var(--rp-c-text-0);
 }
 
 /* Search field — a quiet control with a Kbd-style ⌘K */
@@ -371,13 +464,17 @@ html .rp-search-button {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   transition:
-    border-color 140ms ease,
-    background-color 140ms ease;
+    border-color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-search-button:hover {
   border-color: #d6d6cf;
   background: var(--rp-c-bg-alt);
+}
+
+html .rp-search-button:active {
+  background: var(--rp-c-bg-mute);
 }
 
 html.rp-dark .rp-search-button:hover {
@@ -397,6 +494,7 @@ html .rp-search-button__icon {
   font-size: 16px;
   color: var(--rp-c-text-3);
   display: inline-flex;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-search-button__icon svg {
@@ -409,6 +507,7 @@ html .rp-search-button__word {
   font-weight: 450;
   color: var(--rp-c-text-3);
   letter-spacing: -0.005em;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-search-button__hotkey {
@@ -426,6 +525,11 @@ html .rp-search-button__hotkey {
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.02em;
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-search-button:hover .rp-search-button__hotkey {
+  color: var(--rp-c-text-2);
 }
 
 html .rp-search-button--mobile {
@@ -434,12 +538,22 @@ html .rp-search-button--mobile {
   width: 32px;
   height: 32px;
   border-radius: 6px;
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift);
 }
 
-/* Search dialog */
+html .rp-search-button--mobile:hover {
+  color: var(--rp-c-text-0);
+  background: var(--rp-c-bg-mute);
+}
+
+/* Search dialog — Rspress mounts the mask and runs its own panel keyframes;
+   we only retune the curve and duration, never the behaviour. */
 html .rp-search-panel__mask {
   background: rgba(24, 24, 22, 0.28);
   backdrop-filter: blur(4px);
+  animation: rp-docs-mask-in var(--duration-popover) var(--ease-swift) both;
 }
 
 html .rp-search-panel__modal {
@@ -447,11 +561,40 @@ html .rp-search-panel__modal {
   border: 1px solid var(--rp-c-divider);
   border-radius: 12px;
   box-shadow: var(--rp-shadow-5);
+  animation: rp-search-panel-in var(--duration-popover) var(--ease-swift) both;
 }
 
 html .rp-search-panel__cancel {
   color: var(--rp-c-link);
   font-size: 12.5px;
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-search-panel__close {
+  color: var(--rp-c-text-3);
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-search-panel__close:hover {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-suggest-item__link {
+  transition:
+    background-color var(--duration-press) var(--ease-swift),
+    color var(--duration-press) var(--ease-swift);
+}
+
+@keyframes rp-docs-mask-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rp-docs-rail-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -484,7 +627,9 @@ html .rp-doc-layout__sidebar .rp-sidebar-group {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--rp-c-text-3);
-  transition: color 120ms ease;
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-doc-layout__sidebar .rp-sidebar-group:first-child {
@@ -518,9 +663,15 @@ html .rp-doc-layout__sidebar .rp-sidebar-item--group-item {
   font-weight: 400;
   line-height: 20px;
   color: var(--rp-c-text-2);
+  /* Transparent frame so the active card can fade its hairline in rather than
+     popping. No geometry changes. */
+  box-shadow:
+    inset 0 0 0 1px transparent,
+    0 1px 2px transparent;
   transition:
-    color 120ms ease,
-    background-color 120ms ease;
+    color var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift),
+    box-shadow var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-doc-layout__sidebar .rp-sidebar-item--group-item:hover {
@@ -564,19 +715,40 @@ html .rp-doc-layout__sidebar > div[style*="grid-template-rows"] > div {
   padding-bottom: 2px;
 }
 
-/* Mobile drawer needs an opaque canvas */
+/* Rspress drives the disclosure with inline styles. Keep its behaviour and
+   only retune the timing to the shared curve — the rotation value itself stays
+   inline. */
+html .rp-doc-layout__sidebar > div[style*="grid-template-rows"] {
+  transition: grid-template-rows var(--duration-popover) var(--ease-swift) !important;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group .rp-sidebar-item__right > div {
+  transition: transform var(--duration-popover) var(--ease-swift) !important;
+}
+
+/* Mobile drawer needs an opaque canvas. The slide itself is Rspress's
+   `--open` transform; only its curve is ours. */
 @media (max-width: 768px) {
   html .rp-doc-layout__sidebar {
     background: var(--rp-c-bg);
     box-shadow: var(--rp-shadow-3);
+    transition:
+      opacity var(--duration-popover) var(--ease-swift),
+      transform var(--duration-panel) var(--ease-glide);
   }
 }
 
 /* Between tablet and desktop the sidebar sits under the page's menu bar;
-   push its first group below that bar instead of hiding it. */
+   push its first group below that bar instead of hiding it. The sidebar is
+   raised to z-index 50 by Rspress, so the bar itself has to come back above
+   it: otherwise the sidebar's transparent top strip swallows the click. */
 @media (min-width: 769px) and (max-width: 1279px) {
   html .rp-doc-layout__sidebar {
     padding-top: calc(var(--rp-sidebar-menu-height) + 16px);
+  }
+
+  html .rp-doc-layout__menu {
+    z-index: calc(var(--rp-z-index-sidebar) + 1);
   }
 }
 
@@ -595,6 +767,25 @@ html .rp-sidebar-menu__right__text {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--rp-c-text-3);
+}
+
+html .rp-sidebar-menu .rp-sidebar-menu__left,
+html .rp-sidebar-menu .rp-sidebar-menu__right {
+  color: var(--rp-c-text-2);
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-sidebar-menu .rp-sidebar-menu__left:hover,
+html .rp-sidebar-menu .rp-sidebar-menu__right:hover:enabled {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-sidebar-menu__right__icon {
+  transition: transform var(--duration-popover) var(--ease-swift) !important;
+}
+
+html .rp-sidebar-menu__mask {
+  animation: rp-docs-mask-in var(--duration-popover) var(--ease-swift) both;
 }
 
 /* --------------------------------------------------------------------------
@@ -682,7 +873,7 @@ html .rp-doc.rspress-doc a.rp-link:not(.rp-header-anchor) {
   font-weight: 450;
   text-decoration: none;
   text-underline-offset: 3px;
-  transition: color 120ms ease;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-doc.rspress-doc a.rp-link:not(.rp-header-anchor):hover {
@@ -695,6 +886,9 @@ html .rp-doc.rspress-doc .rp-header-anchor {
   margin-left: -0.75em;
   font-weight: 400;
   border-bottom: 0;
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    opacity var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-doc.rspress-doc .rp-header-anchor:hover {
@@ -846,27 +1040,55 @@ html .rp-codeblock__content :where(pre) {
 html .rp-code-button-group {
   top: 10px;
   right: 12px;
-  gap: 8px;
+  gap: 4px;
 }
 
 html .rp-code-button-group__button {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   opacity: 0.4;
-  transition: opacity 140ms ease;
+  transition:
+    opacity var(--duration-hover) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift),
+    transform var(--duration-press) var(--ease-swift);
 }
 
 html .rp-codeblock__content:hover .rp-code-button-group__button,
-html .rp-code-button-group__button:hover {
+html .rp-code-button-group__button:hover,
+html .rp-code-button-group__button:focus-visible,
+html .rp-code-button-group__button.rp-code-copy-button--copied {
   opacity: 1;
+}
+
+html .rp-code-button-group__button:hover {
+  background: var(--rp-c-bg-mute);
+}
+
+/* A press, not a bounce: the button barely gives under the cursor. */
+html .rp-code-button-group__button:active {
+  transform: scale(0.94);
 }
 
 html .rp-code-button-group__icon {
   width: 15px;
   height: 15px;
   color: var(--rp-c-text-3);
+  transition:
+    color var(--duration-hover) var(--ease-swift),
+    opacity var(--duration-hover) var(--ease-swift),
+    transform var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-code-button-group__icon:hover {
   color: var(--rp-c-text-1);
+}
+
+/* Rspress swaps the copy glyph for a tick for two seconds; we only give that
+   tick the palette's success colour. */
+html .rp-code-copy-button__icon--success,
+html .rp-code-button-group__icon--wrapped {
+  color: var(--rp-container-tip-text);
 }
 
 /* --------------------------------------------------------------------------
@@ -971,6 +1193,71 @@ html .rp-callout a {
 }
 
 /* --------------------------------------------------------------------------
+ * Disclosure — `:::details` renders as a native <details>
+ *
+ * Rspress's summary is a plain block; the chevron is drawn here so it can turn
+ * on the same curve the dashboard's disclosure uses. The block size only
+ * interpolates where the browser understands `interpolate-size`; everywhere
+ * else the panel still opens instantly, which is a safe fallback.
+ * ----------------------------------------------------------------------- */
+
+html .rp-doc.rspress-doc details.rp-callout {
+  background: var(--rp-c-bg-soft);
+}
+
+html .rp-doc.rspress-doc details.rp-callout:hover {
+  background: var(--rp-c-bg-soft);
+}
+
+html .rp-doc.rspress-doc details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-doc.rspress-doc details > summary::-webkit-details-marker {
+  display: none;
+}
+
+html .rp-doc.rspress-doc details > summary::after {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: 2px;
+  border-right: 1.5px solid var(--rp-c-text-3);
+  border-bottom: 1.5px solid var(--rp-c-text-3);
+  transform: rotate(45deg) translateY(-1px);
+  transition: transform var(--duration-popover) var(--ease-swift);
+}
+
+html .rp-doc.rspress-doc details[open] > summary::after {
+  transform: rotate(225deg) translateY(-1px);
+}
+
+@supports (interpolate-size: allow-keywords) {
+  html:root {
+    interpolate-size: allow-keywords;
+  }
+
+  html .rp-doc.rspress-doc details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size var(--duration-panel) var(--ease-swift),
+      content-visibility var(--duration-panel) allow-discrete;
+  }
+
+  html .rp-doc.rspress-doc details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
  * Right table of contents
  * ----------------------------------------------------------------------- */
 
@@ -1022,7 +1309,7 @@ html .rp-toc-item__text {
   font-size: 11.5px;
   font-weight: 400;
   line-height: 1.45;
-  transition: color 120ms ease;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-toc-item:hover .rp-toc-item__text {
@@ -1042,11 +1329,13 @@ html .rp-outline .rp-toc-item--active::before {
   left: calc(-1 * var(--rp-outline-padding-x));
   border-radius: 2px;
   background: var(--rp-c-text-0);
+  animation: rp-docs-rail-in var(--duration-popover) var(--ease-swift) both;
 }
 
 html .rp-outline__action-row {
   font-size: 11.5px;
   color: var(--rp-c-text-3);
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-outline__action-row:hover {
@@ -1064,6 +1353,9 @@ html .rp-outline__action-row svg {
     border: 1px solid var(--rp-c-divider);
     border-radius: 10px;
     box-shadow: var(--rp-shadow-3);
+    transition:
+      opacity var(--duration-popover) var(--ease-swift),
+      transform var(--duration-panel) var(--ease-glide);
   }
 }
 
@@ -1081,6 +1373,7 @@ html .rp-doc-footer .rp-edit-link {
   color: var(--rp-c-text-2);
   font-size: 12.5px;
   font-weight: 450;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-doc-footer .rp-edit-link:hover {
@@ -1112,14 +1405,26 @@ html .rp-prev-next-page__item {
   border-radius: 8px;
   border: 1px solid transparent;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease;
+    background-color var(--duration-hover) var(--ease-swift),
+    border-color var(--duration-hover) var(--ease-swift),
+    box-shadow var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-prev-next-page__item:hover {
   opacity: 1;
   background: var(--rp-c-bg-alt);
   border-color: var(--rp-c-divider);
+  box-shadow: var(--rp-shadow-1);
+}
+
+html .rp-prev-next-page__item__title,
+html .rp-prev-next-page__item__desc,
+html .rp-prev-next-page__icon {
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+html .rp-prev-next-page__item:hover .rp-prev-next-page__icon {
+  color: var(--rp-c-text-1);
 }
 
 html .rp-prev-next-page__item__desc {
@@ -1160,6 +1465,7 @@ html .rp-home-footer__message {
 html .rp-home-footer__message a {
   color: var(--rp-c-text-2);
   text-decoration: none;
+  transition: color var(--duration-hover) var(--ease-swift);
 }
 
 html .rp-home-footer__message a:hover {
@@ -1221,4 +1527,43 @@ html .rp-home-footer__message a:hover {
 
 .dark .rp-nav__title__logo-image--dark {
   display: block;
+}
+
+/* --------------------------------------------------------------------------
+ * Reduced motion
+ *
+ * Colour and opacity feedback is kept — it is still information. Anything that
+ * travels (the drawer, the outline sheet, disclosure chevrons, the copy-button
+ * press) loses its duration so the end state lands immediately. Last in the
+ * file so it overrides the responsive and inline-driven rules above.
+ * ----------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  html .rp-doc-layout__sidebar,
+  html .rp-doc-layout__outline {
+    transition: opacity var(--duration-hover) linear !important;
+  }
+
+  html .rp-doc-layout__sidebar > div[style*="grid-template-rows"],
+  html .rp-doc-layout__sidebar .rp-sidebar-group .rp-sidebar-item__right > div,
+  html .rp-sidebar-menu__right__icon,
+  html .rp-doc.rspress-doc details > summary::after,
+  html .rp-doc.rspress-doc details::details-content {
+    transition: none !important;
+  }
+
+  html .rp-search-panel__mask,
+  html .rp-search-panel__modal,
+  html .rp-sidebar-menu__mask,
+  html .rp-outline .rp-toc-item--active::before {
+    animation: none;
+  }
+
+  html .rp-code-button-group__button:active {
+    transform: none;
+  }
 }

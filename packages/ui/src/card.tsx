@@ -11,7 +11,7 @@ function Card(props: ComponentProps<"div"> & { interactive?: boolean }) {
       data-interactive={local.interactive ? "" : undefined}
       class={cn(
         "flex flex-col rounded-xl border border-border bg-card text-card-foreground shadow-card",
-        "data-interactive:transition-[border-color,box-shadow,transform] data-interactive:duration-150 data-interactive:ease-swift data-interactive:hover:border-border-strong data-interactive:hover:shadow-popover",
+        "data-interactive:cursor-pointer data-interactive:transition-[border-color,box-shadow,transform] data-interactive:duration-[var(--duration-hover)] data-interactive:ease-swift data-interactive:hover:border-border-strong data-interactive:hover:shadow-popover data-interactive:active:scale-[0.997]",
         local.class,
       )}
       {...others}

@@ -13,12 +13,12 @@ import { Spinner } from "./spinner";
  */
 const buttonVariants = cva(
   [
-    "group/button relative inline-flex shrink-0 select-none items-center justify-center gap-1.5",
+    "group/button group relative inline-flex shrink-0 select-none items-center justify-center gap-1.5",
     "whitespace-nowrap rounded-md border border-transparent font-[500] tracking-[-0.006em]",
     "outline-none transition-[background-color,border-color,color,box-shadow,transform,opacity]",
-    "duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
-    "disabled:pointer-events-none disabled:opacity-45 aria-disabled:pointer-events-none aria-disabled:opacity-45",
-    "motion-safe:active:scale-[0.985] [&_svg]:pointer-events-none [&_svg]:shrink-0",
+    "duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+    "disabled:pointer-events-none disabled:opacity-45 aria-disabled:pointer-events-none aria-disabled:opacity-45 data-pending:!opacity-100 data-pending:cursor-progress",
+    "motion-safe:active:scale-[0.985] disabled:motion-safe:active:scale-100 aria-disabled:motion-safe:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   ].join(" "),
   {
     variants: {
@@ -78,6 +78,7 @@ function Button(props: ButtonProps) {
     <Dynamic
       component={local.as === "a" ? "a" : "button"}
       data-slot="button"
+      data-size={local.size ?? "default"}
       data-pending={busy() ? "" : undefined}
       class={cn(buttonVariants({ variant: local.variant, size: local.size }), local.class)}
       disabled={local.as === "a" ? undefined : local.disabled || busy()}

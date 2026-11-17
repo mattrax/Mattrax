@@ -385,3 +385,120 @@ body {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Disclosure motion
+ *
+ * Native <details> is used for FAQs, advanced settings and audit rows. Modern
+ * Chrome can interpolate the content block size; elsewhere the panel still
+ * opens instantly, which is a safe fallback.
+ * ------------------------------------------------------------------------- */
+
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+
+  details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 200ms var(--ease-swift),
+      content-visibility 200ms allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+details > summary {
+  transition: color 140ms var(--ease-swift), background-color 140ms var(--ease-swift);
+}
+
+details[open] > summary .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+.disclosure-chevron {
+  transition: transform 180ms var(--ease-swift);
+}
+
+/* Clickable cards and tiles share one press response. */
+.pressable {
+  transition:
+    transform 140ms var(--ease-swift),
+    border-color 140ms var(--ease-swift),
+    box-shadow 140ms var(--ease-swift),
+    background-color 140ms var(--ease-swift);
+}
+
+.pressable:active {
+  transform: scale(0.995);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pressable:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable:active,
+  .pressable:hover {
+    transform: none;
+  }
+
+  .disclosure-chevron,
+  details::details-content {
+    transition: none;
+  }
+}
+
+/* Directional affordances: only move for a real pointer, and stay static when
+   the OS asks for reduced motion. */
+.arrow-nudge {
+  transition: transform var(--duration-hover) var(--ease-swift);
+}
+
+.card-arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    transform var(--duration-hover) var(--ease-swift),
+    opacity var(--duration-hover) var(--ease-swift);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .arrow-nudge {
+    transform: translateX(2px);
+  }
+
+  .group:hover .card-arrow {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.group:focus-visible .arrow-nudge {
+  transform: translateX(2px);
+}
+
+.group:focus-visible .card-arrow {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow-nudge,
+  .card-arrow {
+    transition: none;
+  }
+
+  .group:hover .arrow-nudge,
+  .group:focus-visible .arrow-nudge,
+  .group:hover .card-arrow,
+  .group:focus-visible .card-arrow {
+    transform: none;
+  }
+}

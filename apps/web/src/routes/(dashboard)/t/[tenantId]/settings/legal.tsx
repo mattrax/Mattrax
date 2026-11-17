@@ -3,6 +3,7 @@ import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
 import { ErrorText, Field, PageHeader, Panel } from "~/components/mdm/common";
+import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 
 /**
@@ -141,12 +142,17 @@ export default function LegalSettingsPage() {
                     return (
                       <li>
                         <details class="group py-2">
-                          <summary class="flex cursor-pointer flex-wrap items-baseline gap-x-2 gap-y-1 rounded-[4px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                            <span class="font-medium text-foreground">{entry.name}</span>
-                            <span class="text-muted-foreground">{entry.version}</span>
-                            <span class="rounded-full border border-border px-2 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
-                              {entry.license}
+                          <summary class="flex cursor-pointer list-none items-center gap-2 rounded-[4px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                            <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1">
+                              <span class="font-medium text-foreground">{entry.name}</span>
+                              <span class="text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground">
+                                {entry.version}
+                              </span>
+                              <span class="rounded-full border border-border px-2 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
+                                {entry.license}
+                              </span>
                             </span>
+                            <ChevronDown class="disclosure-chevron size-3.5 shrink-0 text-muted-foreground" />
                           </summary>
                           <div class="mt-2 space-y-2 pb-2 pl-1">
                             <Show when={entry.repository}>

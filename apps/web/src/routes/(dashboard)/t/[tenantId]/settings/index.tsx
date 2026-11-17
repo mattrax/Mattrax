@@ -593,7 +593,7 @@ export default function GeneralSettingsPage() {
                   type="color"
                   aria-label="Brand colour picker"
                   disabled={!canWrite()}
-                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-surface p-1"
+                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-surface p-1 transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                   value={colorValue()}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
@@ -873,7 +873,7 @@ export default function GeneralSettingsPage() {
                     </thead>
                     <tbody class="divide-y divide-border">
                       {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
-                        <tr>
+                        <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-surface">
                           <td class="whitespace-nowrap px-3 py-2 text-muted-foreground">
                             {new Date(run.startedAt).toLocaleString()}
                           </td>
@@ -907,14 +907,14 @@ export default function GeneralSettingsPage() {
                               <Show when={run.status === "succeeded"}>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
                                   onClick={() => void downloadBackup(run.id)}
                                 >
                                   Download
                                 </button>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
                                   onClick={() => {
                                     setBackupActionError(null);
                                     setRestoreResult(null);
@@ -928,7 +928,7 @@ export default function GeneralSettingsPage() {
                               <Show when={run.status !== "running"}>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
+                                  class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
                                   disabled={!canRunBackup()}
                                   onClick={() => pinBackup.mutate(run)}
                                 >
@@ -936,7 +936,7 @@ export default function GeneralSettingsPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  class="text-xs font-medium text-destructive underline decoration-destructive/30 underline-offset-2 transition-colors hover:decoration-destructive/60"
+                                  class="text-xs font-medium text-destructive underline decoration-destructive/30 underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-destructive"
                                   disabled={!canRunBackup()}
                                   onClick={() =>
                                     setDeleteBackupTarget({ id: run.id, startedAt: run.startedAt })
@@ -962,7 +962,7 @@ export default function GeneralSettingsPage() {
                 applications and pre-registrations in place, keeps its members, devices and
                 certificates, and takes a pinned snapshot first.{" "}
                 <a
-                  class="text-foreground underline decoration-border underline-offset-2 transition-colors hover:decoration-border"
+                  class="text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
                   href="#restore"
                 >
                   Import a bundle

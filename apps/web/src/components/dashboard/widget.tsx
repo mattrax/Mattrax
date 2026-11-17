@@ -197,7 +197,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
               </p>
               <button
                 type="button"
-                class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground hover:bg-hover"
+                class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                 onClick={() => void result.refetch()}
               >
                 Try again
@@ -260,7 +260,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                         <tbody class="divide-y divide-border">
                           <For each={data().rows}>
                             {(row) => (
-                              <tr class="hover:bg-hover">
+                              <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
                                 <For each={columns()}>
                                   {(column) => (
                                     <td class="max-w-[24ch] px-1.5 py-1.5 text-muted-foreground">

@@ -29,6 +29,7 @@ import {
 } from "~/components/ui/dialog";
 import {
   Activity,
+  ChevronDown,
   CircleAlert,
   Plus,
   ShieldCheck,
@@ -220,8 +221,8 @@ function ViewTabs(props: { base: string; active: "overview" | "assignments" | "d
               aria-current={current ? "page" : undefined}
               class={
                 current
-                  ? "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-brand px-2.5 text-[12.5px] font-medium text-foreground"
-                  : "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                  ? "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-brand px-2.5 text-[12.5px] font-medium text-foreground transition-colors duration-[var(--duration-hover)] ease-swift"
+                  : "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/50 hover:text-foreground"
               }
             >
               {tab.label}
@@ -648,7 +649,7 @@ function ConfigurationCard(props: {
       class="group overflow-hidden rounded-lg border border-border bg-muted/15"
       onToggle={(event) => setOpened(event.currentTarget.open)}
     >
-      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[13px] transition-colors hover:bg-muted/40">
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/40">
         <span class="flex min-w-0 items-center gap-2.5">
           <span class="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground">
             <Show
@@ -680,6 +681,7 @@ function ConfigurationCard(props: {
               </Badge>
             )}
           </For>
+          <ChevronDown class="disclosure-chevron size-3.5 shrink-0 text-muted-foreground" />
         </span>
       </summary>
       <div class="space-y-3 border-t border-border bg-background/40 p-3">
@@ -831,11 +833,11 @@ function AddConfigurationDialog(props: {
           <button
             type="button"
             onClick={() => setPreset("wifi")}
-            class={
+            class={`pressable rounded-lg border p-3 text-left ${
               preset() === "wifi"
-                ? "rounded-lg border border-foreground/25 bg-hover p-3 text-left"
-                : "rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/40"
-            }
+                ? "border-foreground/25 bg-hover"
+                : "border-border hover:bg-muted/40"
+            }`}
           >
             <Wifi class="size-4 text-muted-foreground" />
             <span class="mt-2 block text-[13px] font-medium text-foreground">Wi-Fi network</span>
@@ -846,11 +848,11 @@ function AddConfigurationDialog(props: {
           <button
             type="button"
             onClick={() => setPreset("passcode")}
-            class={
+            class={`pressable rounded-lg border p-3 text-left ${
               preset() === "passcode"
-                ? "rounded-lg border border-foreground/25 bg-hover p-3 text-left"
-                : "rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/40"
-            }
+                ? "border-foreground/25 bg-hover"
+                : "border-border hover:bg-muted/40"
+            }`}
           >
             <ShieldCheck class="size-4 text-muted-foreground" />
             <span class="mt-2 block text-[13px] font-medium text-foreground">Passcode</span>

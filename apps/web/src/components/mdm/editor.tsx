@@ -15,6 +15,7 @@ import {
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
@@ -740,9 +741,12 @@ function VariableHints(props: {
 }) {
   return (
     <details class="mt-4 rounded-lg border border-border bg-surface/60 px-3 py-2.5 text-[12px]">
-      <summary class="cursor-pointer font-medium text-foreground">
-        Policy variables{" "}
-        <span class="font-normal text-muted-foreground">(resolved per device at delivery)</span>
+      <summary class="flex cursor-pointer list-none items-center gap-2 font-medium text-foreground">
+        <span class="min-w-0">
+          Policy variables{" "}
+          <span class="font-normal text-muted-foreground">(resolved per device at delivery)</span>
+        </span>
+        <ChevronDown class="disclosure-chevron ml-auto size-3.5 shrink-0 text-muted-foreground" />
       </summary>
       <Show
         when={!props.loading}

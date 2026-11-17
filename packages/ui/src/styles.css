@@ -69,6 +69,14 @@
 
   --ease-swift: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* Motion scale. Hover feedback is almost imperceptible; panels get the
+     longest budget because they move the most distance. */
+  --duration-press: 110ms;
+  --duration-hover: 140ms;
+  --duration-popover: 160ms;
+  --duration-panel: 240ms;
 }
 
 :root,
@@ -228,9 +236,59 @@
     *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+      /* Keep colour/opacity feedback, but drop movement. Transform hovers are
+         disabled below so nothing snaps to a new position. */
+      transition-property: color, background-color, border-color, opacity, box-shadow !important;
+      transition-duration: 120ms !important;
     }
+
+    [data-slot="card"][data-interactive]:hover,
+    .hover-lift:hover {
+      transform: none !important;
+    }
+  }
+}
+
+/* Pointer-gated lifts. Touch devices fire hover on tap, which reads as a
+   stuck state, so movement only exists for a real pointer. */
+@media (hover: hover) and (pointer: fine) {
+  [data-slot="card"][data-interactive]:hover,
+  .hover-lift:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes mt-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mt-toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
   }
 }
 

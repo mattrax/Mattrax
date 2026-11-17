@@ -848,7 +848,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                             return (
                               <button
                                 type="button"
-                                class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                                class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
                                 onClick={() => toggleSort(sortColumnId(col))}
                               >
                                 {col.header}
@@ -863,7 +863,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                                 >
                                   <ChevronDown
                                     class={cn(
-                                      "size-3 text-foreground",
+                                      "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
                                       ascending() && "rotate-180",
                                     )}
                                     aria-hidden="true"
@@ -898,6 +898,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                         onKeyDown={(event) => moveRow(event, rowIndex(), row)}
                         class={cn(
                           "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                          props.rowHref && "cursor-pointer active:bg-active",
                           isSelected(row.id) && "bg-surface",
                         )}
                       >

@@ -86,6 +86,11 @@ const sectionHeadline =
 
 const sectionIntro = "mt-4 max-w-md text-[13px] leading-6 text-muted-foreground";
 
+// Arrows that live inside a shared `Button` (rendered with `group/button`) slide
+// a hair on hover so the action reads as directional. The movement lives in
+// `.arrow-nudge` so touch pointers and reduced motion never see it.
+const arrowNudge = "arrow-nudge size-3.5";
+
 export default function Page() {
   return (
     <main id="main-content" tabindex="-1">
@@ -134,7 +139,7 @@ function Hero() {
           <div class="mt-8 flex flex-wrap items-center gap-2.5">
             <Button as="a" href="/register" size="lg" class="h-10 px-5">
               Start free
-              <ArrowIcon />
+              <ArrowIcon class={arrowNudge} />
             </Button>
             <Button
               as="a"
@@ -184,7 +189,7 @@ function FleetPreview() {
   ];
 
   return (
-    <div class="relative mx-auto w-full max-w-[540px] lg:max-w-none">
+    <div class="relative mx-auto w-full max-w-[540px] motion-safe:animate-[mt-rise-in_520ms_var(--ease-glide)_both] motion-safe:[animation-delay:90ms] lg:max-w-none">
       <Card class="overflow-hidden bg-card shadow-panel">
         <div class="flex h-9 items-center justify-between border-b border-border px-3.5">
           <div class="flex items-center gap-1.5" aria-hidden="true">
@@ -300,13 +305,13 @@ function Platforms() {
             {(platform) => (
               <a
                 href={platform.href}
-                class="group flex flex-col bg-card p-6 transition-colors hover:bg-hover/70 sm:p-7"
+                class="group flex flex-col bg-card p-6 outline-none transition-[background-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:bg-hover/70 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset sm:p-7"
               >
                 <div class="flex items-start justify-between">
-                  <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-foreground">
+                  <span class="flex size-8 items-center justify-center rounded-md border border-border bg-background text-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:border-border-strong">
                     <platform.icon class="size-4" />
                   </span>
-                  <ArrowIcon class="size-3.5 -translate-x-1 text-subtle-foreground opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
+                  <ArrowIcon class="card-arrow size-3.5 text-subtle-foreground" />
                 </div>
                 <h3 class="mt-5 text-[15px] font-[540] tracking-[-0.015em] text-foreground">
                   {platform.name}
@@ -334,7 +339,10 @@ function Platforms() {
 
 function FeatureGrid() {
   return (
-    <section id="product" class="scroll-mt-20 mx-auto w-full max-w-[1200px] px-6 py-20 sm:px-8 sm:py-20">
+    <section
+      id="product"
+      class="scroll-mt-20 mx-auto w-full max-w-[1200px] px-6 py-20 sm:px-8 sm:py-20"
+    >
       <div class="max-w-2xl">
         <SectionLabel>Product</SectionLabel>
         <h2 class={sectionHeadline}>The work behind the dashboard.</h2>
@@ -347,8 +355,8 @@ function FeatureGrid() {
       <div class="mt-10 grid gap-px border-y border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
         <For each={features}>
           {(feature) => (
-            <div class="bg-background p-6 sm:p-7">
-              <span class="flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+            <div class="group bg-background p-6 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover/50 sm:p-7">
+              <span class="flex size-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:border-border-strong group-hover:text-foreground">
                 <feature.icon class="size-3.5" />
               </span>
               <h3 class="mt-4 text-[13.5px] font-[540] tracking-[-0.012em] text-foreground">
@@ -394,7 +402,7 @@ function Developer() {
           <div class="mt-7 flex flex-wrap gap-2.5">
             <Button as="a" href="/docs/api/" target="_self" class="h-9 px-4">
               Explore the API
-              <ArrowIcon />
+              <ArrowIcon class={arrowNudge} />
             </Button>
           </div>
         </div>
@@ -490,10 +498,10 @@ function Migration() {
             <a
               href="/docs/migration/"
               target="_self"
-              class="group mt-7 inline-flex items-center gap-1.5 text-[12.5px] font-[520] text-foreground hover:text-muted-foreground"
+              class="group mt-7 inline-flex items-center gap-1.5 text-[12.5px] font-[520] text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-muted-foreground"
             >
               Read the migration guide
-              <ArrowIcon class="size-3 transition-transform group-hover:translate-x-0.5" />
+              <ArrowIcon class="arrow-nudge size-3" />
             </a>
           </div>
 
@@ -678,7 +686,10 @@ function PriceCard(props: {
 
 function Faq() {
   return (
-    <section id="faq" class="scroll-mt-20 mx-auto w-full max-w-[1200px] px-6 py-20 sm:px-8 sm:py-20">
+    <section
+      id="faq"
+      class="scroll-mt-20 mx-auto w-full max-w-[1200px] px-6 py-20 sm:px-8 sm:py-20"
+    >
       <div class="grid gap-12 lg:grid-cols-[0.8fr_1.2fr]">
         <div>
           <SectionLabel>Questions</SectionLabel>
@@ -695,10 +706,10 @@ function Faq() {
           <For each={faqs}>
             {(faq) => (
               <details class="group py-5">
-                <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-[13px] font-[520] text-foreground">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-[13px] font-[520] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
                   {faq.q}
-                  <span class="text-muted-foreground transition group-open:rotate-45">
-                    <PlusIcon />
+                  <span class="text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground">
+                    <ChevronDownIcon class="disclosure-chevron size-3.5" />
                   </span>
                 </summary>
                 <p class="mt-3 max-w-2xl text-[12.5px] leading-6 text-muted-foreground">{faq.a}</p>
@@ -727,7 +738,7 @@ function FinalCta() {
           <div class="mt-7 flex flex-wrap justify-center gap-2.5">
             <Button as="a" href="/register" class="h-9 px-4">
               Start free
-              <ArrowIcon />
+              <ArrowIcon class={arrowNudge} />
             </Button>
             <Button
               as="a"
@@ -790,7 +801,7 @@ function CheckIcon(props: { class?: string }) {
   );
 }
 
-function PlusIcon() {
+function ChevronDownIcon(props: { class?: string }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -801,10 +812,11 @@ function PlusIcon() {
       stroke="currentColor"
       stroke-width="1.5"
       stroke-linecap="round"
+      stroke-linejoin="round"
+      class={props.class}
       aria-hidden="true"
     >
-      <path d="M12 5v14" />
-      <path d="M5 12h14" />
+      <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }

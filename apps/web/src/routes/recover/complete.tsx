@@ -4,6 +4,7 @@ import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";
 import { createSignal, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
+import { Spinner } from "~/components/ui";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /**
@@ -67,19 +68,28 @@ export default function CompleteRecoveryPage() {
         <Show
           when={error()}
           fallback={
-            <p role="status" class="mt-3 text-[13px] text-muted-foreground">
+            <p
+              role="status"
+              class="mt-3 flex items-center justify-center gap-2 text-[13px] text-muted-foreground"
+            >
+              <span aria-hidden="true">
+                <Spinner class="size-3.5" />
+              </span>
               Signing you in…
             </p>
           }
         >
           {(message) => (
             <>
-              <p role="alert" class="mt-3 text-[13px] text-destructive">
+              <p
+                role="alert"
+                class="mt-3 text-[13px] text-destructive motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]"
+              >
                 {message()}
               </p>
               <a
                 href="/recover"
-                class="mt-4 inline-flex text-[13px] font-medium text-brand underline underline-offset-2"
+                class="mt-4 inline-flex text-[13px] font-medium text-brand underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-brand/80"
               >
                 Start recovery again
               </a>

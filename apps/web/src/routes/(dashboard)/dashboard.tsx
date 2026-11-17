@@ -178,7 +178,7 @@ export default function DashboardRedirectPage() {
                   </Button>
                   <a
                     href="/designer"
-                    class="text-[12px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    class="text-[12px] text-muted-foreground underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
                   >
                     Edit draft
                   </a>

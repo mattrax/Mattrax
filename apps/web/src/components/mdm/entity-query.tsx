@@ -217,7 +217,7 @@ export function EntityQueryBar<T>(props: {
         </div>
       }
     >
-      <div class="space-y-2 rounded-lg border border-border bg-surface p-2.5">
+      <div class="animate-in space-y-2 rounded-lg border border-border bg-surface p-2.5 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-[11.5px] font-medium text-muted-foreground">Match every condition</p>
           <div class="flex items-center gap-1.5">
@@ -255,7 +255,7 @@ export function EntityQueryBar<T>(props: {
                 <div class="flex flex-wrap items-center gap-1.5">
                   <select
                     aria-label="Filter field"
-                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
                     value={condition.field}
                     onChange={(event) => {
                       const next = [...props.conditions];
@@ -274,7 +274,7 @@ export function EntityQueryBar<T>(props: {
                   </select>
                   <select
                     aria-label="Filter operator"
-                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
                     value={condition.op}
                     onChange={(event) => {
                       const next = [...props.conditions];
@@ -307,7 +307,7 @@ export function EntityQueryBar<T>(props: {
                   >
                     <select
                       aria-label="Filter value"
-                      class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                      class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
                       value={condition.value}
                       onChange={(event) => {
                         const next = [...props.conditions];

@@ -5,8 +5,12 @@ import { useNavigate } from "~/lib/navigation";
 import { createSignal, onSettled, Show } from "solid-js";
 import { Schema } from "effect";
 import { authClient } from "~/lib/auth";
+import { Button } from "~/components/ui/button";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 /**
  * Sign-up proves the email address before it creates anything: the code form
@@ -173,7 +177,7 @@ export default function RegisterPage() {
           {(user) => (
             <div
               role="status"
-              class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] leading-relaxed text-warning-foreground"
+              class={`mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] leading-relaxed text-warning-foreground ${feedbackEnter}`}
             >
               <p class="font-medium">You're signed in as {user().email}</p>
               <p class="mt-1">
@@ -182,7 +186,7 @@ export default function RegisterPage() {
               </p>
               <button
                 type="button"
-                class="mt-2 inline-flex min-h-8 items-center rounded-md border border-current/30 px-2.5 font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
+                class="mt-2 inline-flex min-h-8 items-center rounded-md border border-current/30 px-2.5 font-medium transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 disabled:opacity-50"
                 disabled={signingOut()}
                 onClick={() => void signOutForRegistration()}
               >
@@ -195,21 +199,23 @@ export default function RegisterPage() {
         <Show
           when={step() === "details"}
           fallback={
-            <EmailCodeForm
-              email={email()}
-              sentInitially
-              submitLabel="Verify and create passkey"
-              requestCode={sendCode}
-              verifyCode={verifyCode}
-              onVerified={(result) =>
-                finishRegistration(Schema.decodeUnknownSync(Schema.String)(result))
-              }
-              onBack={() => {
-                setStep("details");
-                setError(null);
-              }}
-              backLabel="Change details"
-            />
+            <div class="motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]">
+              <EmailCodeForm
+                email={email()}
+                sentInitially
+                submitLabel="Verify and create passkey"
+                requestCode={sendCode}
+                verifyCode={verifyCode}
+                onVerified={(result) =>
+                  finishRegistration(Schema.decodeUnknownSync(Schema.String)(result))
+                }
+                onBack={() => {
+                  setStep("details");
+                  setError(null);
+                }}
+                backLabel="Change details"
+              />
+            </div>
           }
         >
           <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
@@ -252,19 +258,19 @@ export default function RegisterPage() {
 
             <Show when={error()}>
               {(message) => (
-                <p id="register-error" role="alert" class="text-sm text-destructive">
+                <p
+                  id="register-error"
+                  role="alert"
+                  class={`text-sm text-destructive ${feedbackEnter}`}
+                >
                   {message()}
                 </p>
               )}
             </Show>
 
-            <button
-              type="submit"
-              disabled={pending()}
-              class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
+            <Button type="submit" class="h-10 w-full rounded-lg px-4 text-sm" pending={pending()}>
               {pending() ? "Sending code…" : "Continue"}
-            </button>
+            </Button>
 
             <p class="text-center text-xs leading-relaxed text-stone-500">
               We'll email a six-digit code, then ask your device to create a passkey with Face ID,
@@ -275,7 +281,10 @@ export default function RegisterPage() {
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Already have an account?{" "}
-          <a href={withReturnTo("/login")} class="text-stone-900 font-medium hover:underline">
+          <a
+            href={withReturnTo("/login")}
+            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+          >
             Sign in
           </a>
         </p>

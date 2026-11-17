@@ -35,14 +35,14 @@ function SheetContent(
     <>
       <DialogBackdrop
         class={cn(
-          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[1px] transition-opacity duration-150 ease-swift",
+          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[1px] transition-opacity duration-[var(--duration-popover)] ease-swift",
           "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
         )}
       />
       <DialogContentPrimitive
         class={cn(
           "fixed inset-y-0 right-0 z-[71] flex w-full max-w-md flex-col gap-5 overflow-y-auto border-l border-border bg-background p-5 shadow-panel outline-none",
-          "transition-transform duration-200 ease-glide data-[starting-style]:translate-x-full data-[ending-style]:translate-x-full",
+          "transition-transform duration-[var(--duration-panel)] ease-glide data-[starting-style]:translate-x-full data-[ending-style]:translate-x-full",
           local.class,
         )}
         {...others}

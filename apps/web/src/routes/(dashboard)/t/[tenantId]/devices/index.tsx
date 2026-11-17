@@ -1069,7 +1069,7 @@ export default function DevicesPage() {
               </Show>
             </div>
             <Show when={queryOpen()}>
-              <div class="mt-1 w-full rounded-lg border border-border bg-card p-3">
+              <div class="mt-1 w-full animate-in rounded-lg border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
                 <DeviceQueryBuilder
                   compact
                   query={deviceQuery()}
@@ -1366,7 +1366,7 @@ export default function DevicesPage() {
                           <tbody class="divide-y divide-border">
                             <For each={parsed().rows.slice(0, 20)}>
                               {(row) => (
-                                <tr class="hover:bg-hover">
+                                <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
                                   <td class="px-3 py-2 font-mono text-xs">{row.serial}</td>
                                   <td class="px-3 py-2">{row.name ?? "—"}</td>
                                   <td class="px-3 py-2">{row.assetTag ?? "—"}</td>
