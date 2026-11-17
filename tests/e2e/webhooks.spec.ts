@@ -22,6 +22,8 @@ test.describe("tenant outbound webhooks", () => {
     const secret = await secretDialog.getByRole("textbox").inputValue();
     expect(secret).toMatch(/^whsec_/);
     await secretDialog.getByRole("button", { name: "I have copied it" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.waitForTimeout(350);
 
     await expect(page.getByText("https://hooks.example.com/e2e")).toBeVisible();
     await expect(page.getByText("E2E receiver")).toBeVisible();
@@ -44,6 +46,8 @@ test.describe("tenant outbound webhooks", () => {
     expect(rotated).toMatch(/^whsec_/);
     expect(rotated).not.toBe(secret);
     await rotatedDialog.getByRole("button", { name: "I have copied it" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.waitForTimeout(350);
 
     // Delete.
     await page.getByRole("button", { name: "Delete", exact: true }).click();

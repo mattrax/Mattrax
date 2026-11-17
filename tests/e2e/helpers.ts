@@ -323,6 +323,9 @@ export async function confirmStepUp(page: Page) {
   await dialog.getByRole("button", { name: /^passkey$/i }).click();
   await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
+  // The modal's dismiss layer lingers while it animates out; a press in that
+  // window is treated as an outside press and swallowed.
+  await page.waitForTimeout(350);
 }
 
 /**
