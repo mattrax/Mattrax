@@ -91,4 +91,13 @@ describe("management webhook OpenAPI", () => {
   it("memoizes the generated document", () => {
     expect(managementWebhookOpenApi()).toBe(document);
   });
+
+  it("declares both 200 and 204 for appleDeviceEvent", () => {
+    const operation = operations.find(
+      (candidate) => candidate.operationId === "ManagementWebhook.appleDeviceEvent",
+    );
+
+    expect(operation).toBeDefined();
+    expect(Object.keys(operation!.responses).sort()).toEqual(["200", "204", "500"]);
+  });
 });

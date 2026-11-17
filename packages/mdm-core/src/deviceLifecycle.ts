@@ -50,8 +50,6 @@ export type DepartedTenantDevice = {
 export const deleteDepartedTenantDevice = (input: {
   readonly db: EnterpriseDb;
   readonly device: DepartedTenantDevice;
-  /** Tenant that accepted the device and will own the new row. */
-  readonly newOrganizationId: string;
   readonly reason?: string;
   /** Enables the `device.unenrolled` webhook for the losing tenant. */
   readonly authSecret?: string;
@@ -114,7 +112,6 @@ export const deleteDepartedTenantDevice = (input: {
         metadata: {
           reason: input.reason ?? "re-enrolled in another tenant",
           previousTenantId: device.organizationId,
-          newTenantId: input.newOrganizationId,
           deviceId: device.id,
           dmIdentifier: device.dmIdentifier ?? null,
         },

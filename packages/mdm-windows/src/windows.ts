@@ -1184,6 +1184,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // The DeviceID is asserted by the client, so deletion also requires
         // tenant-owned proof that the hardware belongs here: an Autopilot
         // record or a pre-registration.
+        // Follow-up: add a `(proto, dm_identifier)` composite index; this
+        // cross-tenant lookup currently depends on the per-tenant indexes.
         const departedDevices = (yield* db
           .select()
           .from(s.device)
@@ -1392,7 +1394,6 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               deleteDepartedTenantDevice({
                 db,
                 device: departed,
-                newOrganizationId: organizationId,
                 reason: "Windows enrollment used the same DeviceID in another tenant",
                 authSecret,
               }).pipe(

@@ -2648,28 +2648,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // sweep would eventually hide.
                 //
                 // The serial and UDID in an Authenticate body are asserted by
-                // the device, so they are not proof that the hardware moved.
-                // Deletion is gated below on an ABM assignment, a matching
-                // pre-registration or a row this tenant already owns.
-                const bySerial = serialNumber
-                  ? yield* db
-                      .select()
-                      .from(s.device)
-                      .where(and(eq(s.device.proto, "apple"), eq(s.device.serial, serialNumber)))
-                  : [];
-
-                const byUdid = yield* db
-                  .select()
-                  .from(s.device)
-                  .where(and(eq(s.device.proto, "apple"), eq(s.device.dmIdentifier, scope.udid)));
-
-                const departedById = new Map<string, (typeof byUdid)[number]>();
-
-                for (const row of [...bySerial, ...byUdid])
-                  if (row.organizationId !== organizationId) departedById.set(row.id, row);
-
-                const departedDevices = [...departedById.values()];
-
+                // the device. A serial match is only actionable when this tenant
+                // independently owns that exact serial (ABM or pre-registration).
+                // A UDID-only match is never proof and is left to the sweep.
                 const [preRegistration] = serialNumber
                   ? yield* db
                       .select()
@@ -2697,14 +2678,35 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .limit(1)
                   : [];
 
-                const arrivalProof = Boolean(preRegistration || abmAssignment || existingByUdid);
+                const serialProof = Boolean(preRegistration || abmAssignment);
+
+                // Follow-up: a `(proto, serial)` composite index would keep
+                // this cross-tenant lookup index-only instead of scanning
+                // matching serials across tenants.
+                const serialMatches =
+                  serialNumber && serialProof
+                    ? yield* db
+                        .select()
+                        .from(s.device)
+                        .where(and(eq(s.device.proto, "apple"), eq(s.device.serial, serialNumber)))
+                    : [];
+
+                // Proof is per departing row and tied to the serial that
+                // matched it. Never fold UDID matches into this list: a device
+                // can assert any UDID, and that must not delete another
+                // tenant's row.
+                const departedDevices = serialProof
+                  ? serialMatches.filter(
+                      (row) => row.organizationId !== organizationId && row.serial === serialNumber,
+                    )
+                  : [];
 
                 // A same-serial device may already exist under an older UDID.
                 // Reuse that row instead of hitting the tenant's
-                // `(organization, serial)` unique index, but only when this
-                // tenant has independent proof of the hardware (ABM/pre-
-                // registration) or the slot is already gone/stale. Otherwise a
-                // device asserting another device's serial could take it over.
+                // `(organization, serial)` unique index, but only with a
+                // pre-registration or an already-released (unenrolled/stale)
+                // slot. ABM assignment alone is not intra-tenant proof: an
+                // enrolled device could otherwise claim a colleague's serial.
                 const [existingBySerial] =
                   !existingByUdid && serialNumber
                     ? yield* db
@@ -2724,13 +2726,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   const staleCutoff = Date.now() - APPLE_SERIAL_RECLAIM_STALE_MS;
 
                   const reclaimable =
-                    Boolean(preRegistration || abmAssignment) ||
+                    Boolean(preRegistration) ||
                     existingBySerial.status === "unenrolled" ||
                     existingBySerial.lastSeenAt.getTime() < staleCutoff;
 
                   if (!reclaimable) {
                     yield* Effect.logWarning(
-                      `Refusing to reclaim Apple serial ${serialNumber} (device ${existingBySerial.id}) for tenant ${organizationId}: no ABM assignment, pre-registration, or stale/unenrolled row`,
+                      `Refusing to reclaim Apple serial ${serialNumber} (device ${existingBySerial.id}) for tenant ${organizationId}: no pre-registration, or stale/unenrolled row`,
                     );
 
                     return yield* Effect.fail(new UnknownDevice());
@@ -2956,37 +2958,26 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // device with no row in either tenant. Certificate revocation
                 // and child-row cleanup are best effort: they must not fail an
                 // enrollment that the current tenant has already accepted.
-                //
-                // `arrivalProof` is what makes the serial/UDID trustworthy. A
-                // device that merely asserts another tenant's serial must not
-                // be able to delete that tenant's fleet entry.
-                if (departedDevices.length > 0 && !arrivalProof)
-                  yield* Effect.logWarning(
-                    `Leaving previous-tenant Apple device(s) ${departedDevices
-                      .map((device) => device.id)
-                      .join(
-                        ", ",
-                      )} in place: tenant ${organizationId} has no ABM assignment, pre-registration or existing row proving the hardware moved`,
-                  );
-                else
-                  yield* Effect.forEach(
-                    departedDevices,
-                    (departed) =>
-                      deleteDepartedTenantDevice({
-                        db,
-                        device: departed,
-                        newOrganizationId: organizationId,
-                        reason: "Apple Authenticate enrolled the same serial in another tenant",
-                        authSecret,
-                      }).pipe(
-                        Effect.catch((error) =>
-                          Effect.logWarning(
-                            `Failed to clean up device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
-                          ),
+                // `departedDevices` only contains rows matched by the exact
+                // serial proven above, so there is no request-global proof to
+                // re-check here.
+                yield* Effect.forEach(
+                  departedDevices,
+                  (departed) =>
+                    deleteDepartedTenantDevice({
+                      db,
+                      device: departed,
+                      reason: "Apple Authenticate enrolled the same serial in another tenant",
+                      authSecret,
+                    }).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to clean up device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
                         ),
                       ),
-                    { concurrency: 1, discard: true },
-                  );
+                    ),
+                  { concurrency: 1, discard: true },
+                );
 
                 // A device that did not already exist is a fresh enrollment.
                 // If ABM assigned it to this tenant, hand Setup Assistant the

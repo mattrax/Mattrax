@@ -1,14 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { createHash, createHmac } from "node:crypto";
 import { Effect, Layer, Schema } from "effect";
-import { HttpRouter, HttpServer } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import { HttpApiBuilder } from "effect/http-api";
 import {
+  ManagementBackend,
   ManagementNotSupported,
+  MdmOrigin,
   UnknownDevice,
   InternalServerError,
 } from "@mattrax/management-backend";
-import { managementApi, managementWebhookHandlers } from "../index.js";
+import { ManagementBackendHttp, managementApi, managementWebhookHandlers } from "../index.js";
 import { mockManagementBackend } from "./helpers.js";
 
 const webhookOperations = new Map([
@@ -100,6 +102,12 @@ const deviceScope = {
   mdmOrigin: { url: "https://mdm.test" },
 };
 
+/** The generated client encodes `MdmOrigin` as the service class. */
+const clientDeviceScope = {
+  ...deviceScope,
+  mdmOrigin: new MdmOrigin({ url: "https://mdm.test" }),
+};
+
 describe("Management Backend HTTP E2E", () => {
   it("serves a non-empty OpenAPI document", async () => {
     const { handler, dispose } = await makeHandler(mockManagementBackend({}));
@@ -185,6 +193,48 @@ describe("Management Backend HTTP E2E", () => {
     ).toEqual({ enrollmentProfile: "cHJvZmlsZQ==" });
 
     await dispose();
+  });
+
+  it("accepts both the 204 and profile 200 responses through the HTTP client", async () => {
+    for (const scenario of [
+      { result: undefined, expected: undefined },
+      {
+        result: { enrollmentProfile: "cHJvZmlsZQ==" },
+        expected: { enrollmentProfile: "cHJvZmlsZQ==" },
+      },
+    ]) {
+      const backend = mockManagementBackend({
+        appleDeviceEvent: () => Effect.succeed(scenario.result),
+      });
+
+      const { handler, dispose } = await makeHandler(backend);
+
+      const fetchImpl: typeof globalThis.fetch = (input, init) => handler(new Request(input, init));
+
+      const httpClientLayer = FetchHttpClient.layer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+      );
+
+      const clientLayer = ManagementBackendHttp({
+        baseUrl: "http://localhost",
+        secret: TEST_WEBHOOK_SECRET,
+      }).pipe(Layer.provide(httpClientLayer));
+
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const service = yield* ManagementBackend;
+
+          return yield* service.appleDeviceEvent(clientDeviceScope, {
+            _tag: "Authenticate" as const,
+            serialNumber: "SN001",
+            enrollmentMode: "device" as const,
+          });
+        }).pipe(Effect.provide(clientLayer)),
+      );
+
+      expect(result).toEqual(scenario.expected);
+      await dispose();
+    }
   });
 
   it("handles apple management checkin", async () => {

@@ -88,9 +88,9 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
     HttpApiEndpoint.post("appleDeviceEvent", "/apple/event", {
       payload: Schema.Struct({ scope: CheckinScope, event: AppleDeviceEvent }),
       // Older peers return 204 with no body; the profile is only present when
-      // this backend has one to hand back. Keeping NoContent in the union makes
-      // both responses valid for the generated client.
-      success: Schema.Union([AppleDeviceEventResult, HttpApiSchema.NoContent]),
+      // this backend has one to hand back. The tuple form keeps both statuses
+      // in the contract so the client and OpenAPI accept either.
+      success: [AppleDeviceEventResult, HttpApiSchema.NoContent],
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

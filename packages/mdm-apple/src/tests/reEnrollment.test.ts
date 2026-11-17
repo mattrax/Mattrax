@@ -80,7 +80,7 @@ const authenticate = (serialNumber = "C02A") => ({
 });
 
 describe("Apple device re-enrollment", () => {
-  it("reclaims a same-serial row with an ABM assignment but no pre-registration", async () => {
+  it("refuses an ABM-only same-tenant serial reclaim", async () => {
     const { db, backend } = setup({
       [tableName(schema.device)]: [
         device({
@@ -92,15 +92,13 @@ describe("Apple device re-enrollment", () => {
       [tableName(schema.abmDevice)]: [abmDevice({ serial: "C02A" })],
     });
 
-    await run(backend.appleDeviceEvent(scope("new-udid"), authenticate()));
+    await expect(
+      run(backend.appleDeviceEvent(scope("new-udid"), authenticate())),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
-    const devices = dbRows(db, tableName(schema.device));
-    expect(devices).toHaveLength(1);
-    expect(devices[0]).toMatchObject({
+    expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
       id: "existing-device",
-      organizationId: "org-1",
-      serial: "C02A",
-      dmIdentifier: "new-udid",
+      dmIdentifier: "old-udid",
     });
   });
 
@@ -146,12 +144,25 @@ describe("Apple device re-enrollment", () => {
     });
   });
 
-  it("preserves same-tenant relations when reclaiming a serial", async () => {
+  it("preserves same-tenant relations when reclaiming a pre-registered serial", async () => {
     const { db, backend } = setup({
       [tableName(schema.device)]: [
         device({ id: "existing-device", serial: "C02A", dmIdentifier: "old-udid" }),
       ],
-      [tableName(schema.abmDevice)]: [abmDevice({ serial: "C02A" })],
+      [tableName(schema.devicePreRegistration)]: [
+        {
+          id: "pre-1",
+          organizationId: "org-1",
+          serial: "C02A",
+          name: null,
+          assetTag: null,
+          notes: null,
+          groupId: null,
+          consumedDeviceId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
       [tableName(schema.groupDevice)]: [
         { groupId: "group-1", deviceId: "existing-device", source: "manual" },
       ],
@@ -267,9 +278,116 @@ describe("Apple device re-enrollment", () => {
       targetId: "old-tenant-device",
       metadata: expect.objectContaining({
         previousTenantId: "org-2",
-        newTenantId: "org-1",
       }),
     });
+    expect(JSON.stringify(audit?.metadata)).not.toContain("newTenantId");
+    expect(JSON.stringify(audit?.metadata)).not.toContain("org-1");
+  });
+
+  it("does not delete a victim serial when the attacker's own UDID matches", async () => {
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        device({
+          id: "attacker-device",
+          organizationId: "org-1",
+          serial: "C02OWN",
+          dmIdentifier: "attacker-udid",
+          dmIdentityFingerprint: "fingerprint-attacker-udid",
+        }),
+        device({
+          id: "victim-device",
+          organizationId: "org-2",
+          serial: "C02VICTIM",
+          dmIdentifier: "victim-udid",
+        }),
+      ],
+      [tableName(schema.deviceSecret)]: [
+        {
+          deviceId: "victim-device",
+          organizationId: "org-2",
+          kind: "bootstrap_token",
+          sealedValue: "sealed",
+          updatedAt: now,
+        },
+      ],
+      [tableName(schema.scepIssuedCertificate)]: [
+        {
+          serial: "VICTIMCERT",
+          organizationId: "org-2",
+          deviceId: "victim-device",
+          notAfter: new Date("2027-01-01T00:00:00Z"),
+          createdAt: now,
+          revokedAt: null,
+        },
+      ],
+    });
+
+    await run(backend.appleDeviceEvent(scope("attacker-udid"), authenticate("C02VICTIM")));
+
+    expect(
+      dbRows(db, tableName(schema.device)).find((row) => row.id === "victim-device"),
+    ).toMatchObject({ organizationId: "org-2", serial: "C02VICTIM" });
+    expect(
+      dbRows(db, tableName(schema.deviceSecret)).find((row) => row.deviceId === "victim-device"),
+    ).toBeDefined();
+    expect(
+      dbRows(db, tableName(schema.scepIssuedCertificate)).find(
+        (row) => row.deviceId === "victim-device",
+      ),
+    ).toMatchObject({ revokedAt: null });
+    expect(
+      dbRows(db, tableName(schema.auditLog)).filter((row) => row.action === "device.deleted"),
+    ).toEqual([]);
+  });
+
+  it("does not delete a victim UDID when the attacker's own serial is ABM-assigned", async () => {
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        device({
+          id: "victim-device",
+          organizationId: "org-2",
+          serial: "C02VICTIM",
+          dmIdentifier: "victim-udid",
+        }),
+      ],
+      [tableName(schema.abmDevice)]: [abmDevice({ serial: "C02OWN" })],
+      [tableName(schema.deviceSecret)]: [
+        {
+          deviceId: "victim-device",
+          organizationId: "org-2",
+          kind: "bootstrap_token",
+          sealedValue: "sealed",
+          updatedAt: now,
+        },
+      ],
+      [tableName(schema.scepIssuedCertificate)]: [
+        {
+          serial: "VICTIMCERT2",
+          organizationId: "org-2",
+          deviceId: "victim-device",
+          notAfter: new Date("2027-01-01T00:00:00Z"),
+          createdAt: now,
+          revokedAt: null,
+        },
+      ],
+    });
+
+    await run(backend.appleDeviceEvent(scope("victim-udid"), authenticate("C02OWN")));
+
+    expect(
+      dbRows(db, tableName(schema.device)).find((row) => row.id === "victim-device"),
+    ).toMatchObject({ organizationId: "org-2", serial: "C02VICTIM", dmIdentifier: "victim-udid" });
+    expect(
+      dbRows(db, tableName(schema.deviceSecret)).find((row) => row.deviceId === "victim-device"),
+    ).toBeDefined();
+    expect(
+      dbRows(db, tableName(schema.scepIssuedCertificate)).find(
+        (row) => row.deviceId === "victim-device",
+      ),
+    ).toMatchObject({ revokedAt: null });
+    expect(
+      dbRows(db, tableName(schema.auditLog)).filter((row) => row.action === "device.deleted"),
+    ).toEqual([]);
   });
 
   it("leaves the previous tenant's device when there is no proof", async () => {
