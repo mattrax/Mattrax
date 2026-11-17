@@ -293,7 +293,7 @@ function UserMenu(props: {
         )}
         title={user()?.name ?? "Account"}
       >
-        <span class="sr-only">Account menu: </span>
+        <span class="sr-only">Account menu</span>
         <Show
           when={sidebar()}
           fallback={
@@ -310,7 +310,7 @@ function UserMenu(props: {
               {(image) => <img src={image()} alt="" class="size-full object-cover" />}
             </Show>
           </Avatar>
-          <span class="min-w-0 flex-1">
+          <span class="min-w-0 flex-1" aria-hidden="true">
             <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
               {user()?.name ?? "Account"}
             </span>

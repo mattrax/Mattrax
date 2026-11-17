@@ -310,7 +310,16 @@ export async function api<T = unknown>(page: Page, path: string, init?: ApiReque
  */
 export async function confirmStepUp(page: Page) {
   const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
-  await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+  // A grant remembered earlier in the session lets the request through without
+  // a prompt, so only drive the dialog when it actually opens.
+  const opened = await dialog
+    .waitFor({ state: "visible", timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!opened) return;
+
   await dialog.getByRole("button", { name: /^passkey$/i }).click();
   await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
