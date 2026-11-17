@@ -25,6 +25,8 @@ catalog:
   "@tailwindcss/vite": ^4.3.5
   "@tanstack/solid-query": 6.0.0-rc.5
   "@types/node": ^26.6.6
+  "@ui-sdk/core": 0.1.0-beta.6
+  "@ui-sdk/solid": 0.1.0-beta.6
   "@types/react": ^19.3.0
   "@xmldom/xmldom": ^0.9.12
   "@yielded/auth": 0.1.0-beta.47
@@ -93,3 +95,6 @@ allowBuilds:
   esbuild: true
   msw: true
   workerd: true
+minimumReleaseAgeExclude:
+  - "@ui-sdk/core@0.1.0-beta.6"
+  - "@ui-sdk/solid@0.1.0-beta.6"

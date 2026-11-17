@@ -1,0 +1,30 @@
+{
+  "name": "@mattrax/ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mattrax's opinionated SolidJS component library",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@solidjs/router": "catalog:",
+    "@ui-sdk/core": "catalog:",
+    "@ui-sdk/solid": "catalog:",
+    "class-variance-authority": "catalog:",
+    "clsx": "catalog:",
+    "solid-js": "catalog:",
+    "@solidjs/web": "catalog:",
+    "tailwind-merge": "catalog:"
+  },
+  "peerDependencies": {
+    "solid-js": ">=2.0.0-rc.14 <3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "tailwindcss": "catalog:",
+    "vite": "catalog:"
+  }
+}

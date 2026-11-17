@@ -7,7 +7,6 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
@@ -688,7 +687,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   <ChevronsUpDown class="size-3.5" />
                   <span class="hidden sm:inline">Columns</span>
                 </DropdownMenuTrigger>
-                <DropdownMenuPortal>
                   <DropdownMenuContent class="w-52 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
                     <For each={props.columns}>
                       {(column) => {
@@ -704,7 +702,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                             title={
                               lastVisible() ? "At least one column must stay visible" : undefined
                             }
-                            onChange={(checked) => toggleColumn(column, checked)}
+                            onCheckedChange={(checked) => toggleColumn(column, checked)}
                           >
                             {column.header}
                           </DropdownMenuCheckboxItem>
@@ -725,7 +723,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       Show all
                     </DropdownMenuItem>
                   </DropdownMenuContent>
-                </DropdownMenuPortal>
               </DropdownMenu>
             </TooltipTrigger>
             <TooltipContent>

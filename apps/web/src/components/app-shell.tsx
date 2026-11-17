@@ -159,7 +159,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
           >
             <DropdownMenuRadioGroup
               value={props.activeId}
-              onChange={(id) => {
+              onValueChange={(id) => {
                 rememberTenant(id);
                 const tenant = tenants().find((item) => item.id === id);
                 navigate(routes.tenant(tenant?.slug || id).overview());
@@ -169,12 +169,6 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
                 {(tenant) => (
                   <DropdownMenuRadioItem
                     value={tenant.id}
-                    // RadioGroup onChange can be skipped when the group has no
-                    // current value (unscoped pages), so navigate on select too.
-                    onSelect={() => {
-                      rememberTenant(tenant.id);
-                      navigate(routes.tenant(tenant.slug || tenant.id).overview());
-                    }}
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
                     class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-hover"
                   >

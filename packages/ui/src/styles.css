@@ -1,0 +1,280 @@
+/*
+ * Mattrax UI — design tokens.
+ *
+ * One quiet, compact console language for the dashboard, landing page and docs:
+ * warm off-white page, white cards, hairline borders, near-black actions, and
+ * colour only where it carries meaning (status, focus, links).
+ *
+ * Components never name a raw palette step. They use the semantic utilities
+ * (`bg-card`, `text-muted-foreground`, `border-border`, …) defined here.
+ */
+
+@custom-variant dark (&:is(.dark, .dark *));
+
+@theme inline {
+  --font-sans:
+    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:
+    "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-scrim: var(--scrim);
+
+  --color-brand: var(--brand);
+  --color-brand-solid: var(--brand-solid);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-muted: var(--brand-muted);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+
+  --shadow-card: var(--shadow-card-value);
+  --shadow-popover: var(--shadow-popover-value);
+  --shadow-panel: var(--shadow-panel-value);
+
+  --ease-swift: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root,
+.theme-light {
+  color-scheme: light;
+
+  --background: #f6f6f3;
+  --foreground: #1a1a18;
+  --card: #ffffff;
+  --card-foreground: #1a1a18;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a18;
+  --primary: #1c1c1a;
+  --primary-foreground: #fbfbf8;
+  --secondary: #f0f0ec;
+  --secondary-foreground: #1a1a18;
+  --muted: #f1f1ed;
+  --muted-foreground: #77776f;
+  --subtle-foreground: #9b9b93;
+  --accent: #ededE7;
+  --accent-foreground: #1a1a18;
+  --destructive: #b4382e;
+  --destructive-foreground: #ffffff;
+  --success: #157a52;
+  --success-foreground: #ffffff;
+  --warning: #a9650d;
+  --warning-foreground: #ffffff;
+  --info: #2f62c4;
+  --info-foreground: #ffffff;
+  --border: #e5e5df;
+  --border-strong: #d6d6cf;
+  --input: #deded7;
+  --ring: #8b7fd4;
+  --hover: #f1f1ed;
+  --active: #e8e8e2;
+  --surface: #f1f1ed;
+  --surface-raised: #ffffff;
+  --scrim: rgb(24 24 22 / 0.28);
+
+  --brand: #6550b9;
+  --brand-solid: #6e56cf;
+  --brand-foreground: #ffffff;
+  --brand-muted: #efecfb;
+
+  --shadow-card-value: 0 1px 2px rgb(24 24 22 / 0.04), 0 0 0 1px rgb(24 24 22 / 0.02);
+  --shadow-popover-value:
+    0 12px 32px -12px rgb(24 24 22 / 0.22), 0 2px 6px -2px rgb(24 24 22 / 0.08);
+  --shadow-panel-value:
+    0 24px 64px -24px rgb(24 24 22 / 0.28), 0 8px 24px -12px rgb(24 24 22 / 0.12);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #10100f;
+  --foreground: #ecece6;
+  --card: #171716;
+  --card-foreground: #ecece6;
+  --popover: #1c1c1a;
+  --popover-foreground: #ecece6;
+  --primary: #eeeeE8;
+  --primary-foreground: #151514;
+  --secondary: #222220;
+  --secondary-foreground: #ecece6;
+  --muted: #1e1e1c;
+  --muted-foreground: #a2a29a;
+  --subtle-foreground: #7c7c74;
+  --accent: #262624;
+  --accent-foreground: #ecece6;
+  --destructive: #e5645a;
+  --destructive-foreground: #1a0d0b;
+  --success: #4fbf8f;
+  --success-foreground: #06170f;
+  --warning: #e0a04a;
+  --warning-foreground: #1c1104;
+  --info: #7aa2f7;
+  --info-foreground: #071127;
+  --border: #2a2a27;
+  --border-strong: #3a3a36;
+  --input: #343430;
+  --ring: #9c8ee8;
+  --hover: #232321;
+  --active: #2c2c29;
+  --surface: #1b1b19;
+  --surface-raised: #242421;
+  --scrim: rgb(0 0 0 / 0.55);
+
+  --brand: #b3a4f5;
+  --brand-solid: #7c63e0;
+  --brand-foreground: #ffffff;
+  --brand-muted: #241f3a;
+
+  --shadow-card-value: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-popover-value:
+    0 16px 40px -16px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --shadow-panel-value:
+    0 32px 80px -32px rgb(0 0 0 / 0.7), 0 12px 32px -16px rgb(0 0 0 / 0.5);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    letter-spacing: -0.006em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--brand-solid) 22%, transparent);
+  }
+
+  :focus-visible {
+    outline: none;
+  }
+
+  /* Data-like numbers line up in tables, stats and timelines. */
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 28%, transparent);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility label-caps {
+  font-size: 10.5px;
+  line-height: 1.2;
+  font-weight: 560;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility hairline-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+@keyframes mt-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mt-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mt-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
