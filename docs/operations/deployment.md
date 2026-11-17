@@ -26,6 +26,7 @@ Repository secrets (Settings → Secrets and variables → Actions → Secrets):
 | `CLOUDFLARE_API_TOKEN`                                                                                                          | Token with Workers Scripts:Edit, Workers R2 Storage:Edit, Workers Routes:Edit and Account Settings:Read on the account. |
 | `CLOUDFLARE_ACCOUNT_ID`                                                                                                         | Account that owns both Workers.                                                                                         |
 | `DATABASE_URL`                                                                                                                                   | Production MySQL connection string used by `pnpm cloud db:migrate`.                                                       |
+| `AUTH_SECRET`                                                                                                                                    | Optional copy of the dashboard's SSR signing secret. The Worker's existing secret is used when this is absent.            |
 | `PREVIEW_DATABASE_URL`                                                                                                                           | Optional. Shared preview MySQL connection string. When absent (together with the preview Hyperdrive/bucket), PR Preview deployments are skipped. |
 
 Repository variables (Settings → Secrets and variables → Actions → Variables):

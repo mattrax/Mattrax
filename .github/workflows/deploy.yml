@@ -17,6 +17,8 @@ name: Deploy
 #                             Workers Routes:Edit and Account Settings:Read
 #   CLOUDFLARE_ACCOUNT_ID     the account that owns both Workers
 #   DATABASE_URL              production MySQL connection used by migrations
+#   AUTH_SECRET               optional dashboard Worker copy; when absent the
+#                             secret already stored on the mattrax Worker is used
 #   PREVIEW_DATABASE_URL      optional shared preview MySQL connection; when
 #                             absent, PR Preview deployments are skipped
 #
@@ -135,12 +137,25 @@ jobs:
           DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
         run: pnpm cloud db:migrate
 
-      - name: Deploy production
+      - name: Deploy API Worker
         if: github.event_name == 'push'
         env:
           ORIGIN: ${{ vars.PRODUCTION_ORIGIN || 'https://e.mattrax.app' }}
           STRIPE_LICENSE_PRICE_ID: ${{ vars.STRIPE_LICENSE_PRICE_ID }}
-        run: pnpm deploy:prod:all
+        run: pnpm cloud deploy:prod
+
+      - name: Deploy dashboard Worker
+        if: github.event_name == 'push'
+        env:
+          # Optional GitHub copy of the dashboard's SSR signing secret. When it
+          # is absent, fall back to the secret already stored on the Worker.
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          if [ -n "$AUTH_SECRET" ]; then
+            pnpm web deploy:prod
+          else
+            env -u AUTH_SECRET pnpm web deploy:prod
+          fi
 
       # The first dashboard Preview exists only to learn its generated URL,
       # which becomes the API Preview's canonical origin (cookies, passkey RP
