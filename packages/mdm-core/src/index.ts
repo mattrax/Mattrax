@@ -10,6 +10,8 @@ export * from "./commands.js";
 
 export * from "./deliveryMode.js";
 
+export * from "./deviceLifecycle.js";
+
 export * from "./dynamicGroups.js";
 
 export * from "./inventory.js";

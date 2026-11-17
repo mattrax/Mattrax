@@ -424,6 +424,11 @@ whether a delivered install landed (when the catalogue entry resolves to a bundl
 install that is still assigned to the device and provably missing is queued again, up to
 three attempts per day. A device that unenrolls or re-enrolls closes out its old commands.
 
+When a device re-enrols into a **different** tenant, its previous tenant's device row and
+relations (commands, policies, memberships, secrets and inventory) are removed immediately
+instead of waiting for stale-unenrol. Identity certificates issued to the old row are
+revoked, so the old tenant cannot be pushed to or authenticated by the device.
+
 The same deadline applies on every platform: Windows SyncML delivers every queued command in
 one session but expires or retries each row on the same rules, and Android commands are
 issued directly and rely on the Pub/Sub result. The daily maintenance run expires anything

@@ -11,7 +11,7 @@ import {
   UnknownDevice,
 } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
-import { mockManagementBackend } from "./helpers.js";
+import { buildAuthenticatePlist, mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
 
@@ -91,6 +91,42 @@ describe("Apple MDM handlers", () => {
       );
 
       expect(response.status).toBe(200);
+    });
+
+    it("returns the signed ADE enrollment profile from Authenticate", async () => {
+      const profile = new TextEncoder().encode(
+        `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>PayloadIdentifier</key><string>com.mattrax.ade.profile-1</string></dict></plist>`,
+      );
+
+      const encoded = btoa(String.fromCharCode(...profile));
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
+          Effect.succeed(
+            Predicate.isTagged("Authenticate")(event) ? { enrollmentProfile: encoded } : undefined,
+          ),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: buildAuthenticatePlist({ UDID: "udid-ade-001", SerialNumber: "SN-ADE-001" }),
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/xml");
+
+      const body = await response.text();
+      const match = /<key>EnrollmentProfile<\/key><data>([^<]+)<\/data>/.exec(body);
+
+      expect(match).not.toBeNull();
+
+      const decoded = Uint8Array.from(atob(match![1]!), (char) => char.charCodeAt(0));
+      expect(new TextDecoder().decode(decoded)).toContain("com.mattrax.ade.profile-1");
     });
 
     it("forwards the mTLS identity certificate serial in the check-in scope", async () => {

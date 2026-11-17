@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
+import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
@@ -1174,6 +1175,18 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // because the tenant is at its limit.
         const existing = yield* findDevice(organizationId, deviceIdentifier);
 
+        // The same DeviceID can enroll into a different tenant after the
+        // machine is re-enrolled. Keep a note of the old rows now and remove
+        // them once this enrollment is durable; otherwise the previous tenant
+        // retains a managed device (and its policies, commands and seats)
+        // until the stale-device sweep.
+        const departedDevices = (yield* db
+          .select()
+          .from(s.device)
+          .where(eq(s.device.dmIdentifier, deviceIdentifier))).filter(
+          (row) => row.organizationId !== organizationId,
+        );
+
         // `maxDevices === 0` means unlimited for the tenant.
         if (!existing && enrollment.maxDevices > 0) {
           const windowsDevices = yield* db
@@ -1300,6 +1313,22 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             createdAt: timestamp,
           });
         }
+
+        // This enrollment is durable, so the previous tenant's copy can go.
+        // Cleanup is best effort: failing it must not reject a device the new
+        // tenant has already enrolled.
+        yield* Effect.forEach(
+          departedDevices,
+          (departed) =>
+            deleteDepartedTenantDevice({ db, device: departed }).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  `Failed to clean up Windows device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+                ),
+              ),
+            ),
+          { concurrency: 1, discard: true },
+        );
 
         return {
           deviceId: deviceIdentifier,

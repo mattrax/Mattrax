@@ -149,9 +149,41 @@ describe("Management Backend HTTP E2E", () => {
       }),
     );
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
     expect(receivedEvent).toBeDefined();
     expect(receivedEvent).toMatchObject(Schema.TaggedStruct("Authenticate", {}).make({}));
+    await dispose();
+  });
+
+  it("returns an inline ADE profile from the apple device event response", async () => {
+    const backend = mockManagementBackend({
+      appleDeviceEvent: () => Effect.succeed({ enrollmentProfile: "cHJvZmlsZQ==" }),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+
+    const res = await handler(
+      new Request("http://localhost/webhook/apple/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: deviceScope,
+          event: {
+            _tag: "Authenticate" as const,
+            serialNumber: "SN001",
+            enrollmentMode: "device" as const,
+          },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(Schema.Struct({ enrollmentProfile: Schema.String }))(
+        await res.json(),
+      ),
+    ).toEqual({ enrollmentProfile: "cHJvZmlsZQ==" });
+
     await dispose();
   });
 
@@ -514,7 +546,7 @@ describe("Management webhook signing", () => {
       }),
     );
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
     expect(received).toBe(true);
     await dispose();
   });

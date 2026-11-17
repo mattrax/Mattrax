@@ -81,13 +81,16 @@ stable: renaming it creates a second server in Apple's records.
 
 ## Serve the ADE profile automatically
 
-Apple's ADE flow does **not** return the enrollment profile from the `Authenticate`
-check-in. The `Authenticate` response is an empty `200 OK`; Apple's documentation
-says not to assume the MDM payload is installed at that point. The profile is
-fetched from the `url` of the **ADE profile** (the JSON cloud configuration Apple
-stores for the device management service) while the device is in Setup Assistant.
+Apple's ADE flow normally fetches the enrollment profile from the `url` of
+the **ADE profile** (the JSON cloud configuration Apple stores for the device
+management service) while the device is in Setup Assistant. Mattrax also
+returns the same tenant-signed profile from the first `Authenticate`
+check-in for an ABM-assigned serial, under the `EnrollmentProfile` key, so a
+device that reaches the MDM check-in without having installed the profile can
+still complete Setup Assistant without a manual install.
 
-Mattrax serves that stable enrollment endpoint:
+The stable ADE endpoint below remains the canonical path and is what Apple's
+cloud configuration points at:
 
 ```
 POST https://<your-mattrax-origin>/api/v1/abm/ade/enroll

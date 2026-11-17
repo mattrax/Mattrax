@@ -24,6 +24,8 @@ import {
   buildInstallEnterpriseApplicationPayload,
   buildAppleManifest,
   buildScriptProfile,
+  createAppleProfileSigner,
+  signAppleProfilePlist,
   appleInstallAssetExpiresAt,
   scriptProfileIdentifier,
   signAppleAssetToken,
@@ -62,6 +64,10 @@ import {
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { setupIsReady } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
+import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
+import { issueScepChallenge } from "@mattrax/mdm-core";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { ensureScepCa } from "@mattrax/scep";
 import {
   SYSTEM_AUDIT_ACTIONS,
   commandFailureTransition,
@@ -1383,11 +1389,135 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      * deliverable rather than returning an empty package).
      */
     readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+    /**
+     * Deployment Apple profile signing identity. When absent, profiles are
+     * signed with the tenant's SCEP CA, matching the enrollment download path.
+     */
+    readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
+    /** Lifetime of the one-time SCEP challenge in an ADE profile. */
+    readonly enrollmentProfileTtlSeconds?: number;
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret, readApplicationObject } = options;
 
+    const appleProfileSigner = options.appleProfileSigning
+      ? createAppleProfileSigner(options.appleProfileSigning)
+      : undefined;
+
+    const enrollmentProfileTtlSeconds = options.enrollmentProfileTtlSeconds ?? 60 * 60;
+
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
       effect.pipe(Effect.provideService(Db, db));
+
+    /**
+     * Build the signed Automated Device Enrollment profile for a serial.
+     *
+     * This is the same profile the ADE enrollment URL serves, generated from
+     * the tenant's ABM profile revision and a fresh one-time SCEP challenge.
+     * Returning it from `Authenticate` keeps the Setup Assistant flow
+     * zero-touch when the device did not (or could not) fetch the URL itself.
+     * Every failure is logged and treated as "no inline profile": the URL
+     * remains the canonical path, so a broken signing identity must not stop
+     * an otherwise valid enrollment.
+     */
+    const inlineAdeEnrollmentProfile = (input: {
+      readonly organizationId: string;
+      readonly serial: string;
+    }): Effect.Effect<string | undefined> =>
+      Effect.gen(function* () {
+        if (!authSecret) return undefined;
+
+        const [abmDevice] = yield* db
+          .select()
+          .from(s.abmDevice)
+          .where(
+            and(
+              eq(s.abmDevice.organizationId, input.organizationId),
+              eq(s.abmDevice.serial, input.serial),
+              eq(s.abmDevice.enrollmentState, "ASSIGNED"),
+            ),
+          )
+          .limit(1);
+
+        if (!abmDevice) return undefined;
+
+        const [abm] = yield* db
+          .select()
+          .from(s.appleBusinessManager)
+          .where(eq(s.appleBusinessManager.organizationId, input.organizationId))
+          .limit(1);
+
+        const [apnsCertificate] = yield* db
+          .select()
+          .from(s.applePushCertificate)
+          .where(eq(s.applePushCertificate.organizationId, input.organizationId))
+          .limit(1);
+
+        const [organization] = yield* db
+          .select()
+          .from(s.organization)
+          .where(eq(s.organization.id, input.organizationId))
+          .limit(1);
+
+        const [enrollmentRow] = yield* db
+          .select()
+          .from(s.enterpriseEnrollment)
+          .where(eq(s.enterpriseEnrollment.organizationId, input.organizationId))
+          .limit(1);
+
+        const profileUuid = abmDevice.assignedProfileUuid ?? abm?.profileUuid;
+        const topic = apnsCertificate?.topic;
+        const tenant = organization;
+
+        if (!profileUuid || !topic || !tenant || !enrollmentRow) return undefined;
+
+        const branding = resolveTenantBranding(tenant);
+
+        const { challenge } = yield* issueScepChallenge(db, {
+          enrollmentId: enrollmentRow.id,
+          organizationId: input.organizationId,
+          authSecret,
+          ttlSeconds: enrollmentProfileTtlSeconds,
+        });
+
+        const plist = yield* serializePlist(
+          Schema.decodeUnknownSync(PlistValue)(
+            enterpriseEnrollmentProfile({
+              origin,
+              topic,
+              organizationId: input.organizationId,
+              organizationName: branding.displayName,
+              supportEmail: branding.supportEmail,
+              challenge,
+              displayName: `${branding.displayName} Automated Device Enrollment`,
+              identifier: `com.mattrax.ade.${profileUuid}`,
+              profileUuid,
+            }),
+          ),
+        );
+
+        const signed = appleProfileSigner
+          ? yield* Effect.tryPromise(() => appleProfileSigner.sign(plist))
+          : yield* Effect.gen(function* () {
+              const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
+                organizationId: input.organizationId,
+              });
+
+              return yield* Effect.tryPromise(() =>
+                signAppleProfilePlist(plist, {
+                  certificatePem: ca.certPem,
+                  privateKey: ca.privateKey,
+                }),
+              );
+            });
+
+        return base64EncodeBytes(signed);
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Could not build the inline ADE profile for ${input.serial}: ${String(error)}`,
+          ).pipe(Effect.as(undefined)),
+        ),
+      );
 
     /**
      * mttx pushes a check-in immediately after a device first reports its push
@@ -2520,6 +2650,26 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
                 const serialNumber = event.serialNumber?.trim() || null;
 
+                // A device can be re-assigned to another tenant (for example
+                // after an ABM reassignment) and enrol again. Its previous
+                // tenant must not keep a managed row that only the stale-device
+                // sweep would eventually hide.
+                const bySerial = serialNumber
+                  ? yield* db.select().from(s.device).where(eq(s.device.serial, serialNumber))
+                  : [];
+
+                const byUdid = yield* db
+                  .select()
+                  .from(s.device)
+                  .where(eq(s.device.dmIdentifier, scope.udid));
+
+                const departedById = new Map<string, (typeof byUdid)[number]>();
+
+                for (const row of [...bySerial, ...byUdid])
+                  if (row.organizationId !== organizationId) departedById.set(row.id, row);
+
+                const departedDevices = [...departedById.values()];
+
                 const [preRegistration] = serialNumber
                   ? yield* db
                       .select()
@@ -2533,11 +2683,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .limit(1)
                   : [];
 
-                // A pre-registered serial may already belong to a device row
-                // enrolled under an older UDID. Reuse that row instead of
-                // hitting the tenant's `(organization, serial)` unique index.
+                // A same-serial device may already exist under an older UDID,
+                // with or without a pre-registration. Reuse that row instead
+                // of hitting the tenant's `(organization, serial)` unique
+                // index: Apple can report a new UDID for the same hardware
+                // after a wipe, restore or profile reinstall.
                 const [existingBySerial] =
-                  !existingByUdid && preRegistration && serialNumber
+                  !existingByUdid && serialNumber
                     ? yield* db
                         .select()
                         .from(s.device)
@@ -2764,7 +2916,39 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   { concurrency: 1, discard: true },
                 );
 
-                return;
+                // Only remove the previous tenant's row once this enrollment
+                // has been recorded, so a failed Authenticate cannot leave the
+                // device with no row in either tenant. Certificate revocation
+                // and child-row cleanup are best effort: they must not fail an
+                // enrollment that the current tenant has already accepted.
+                yield* Effect.forEach(
+                  departedDevices,
+                  (departed) =>
+                    deleteDepartedTenantDevice({
+                      db,
+                      device: departed,
+                    }).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to clean up device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+                        ),
+                      ),
+                    ),
+                  { concurrency: 1, discard: true },
+                );
+
+                // A device that did not already exist is a fresh enrollment.
+                // If ABM assigned it to this tenant, hand Setup Assistant the
+                // signed ADE profile so it does not need a manual install.
+                const inlineProfile =
+                  !existing && serialNumber
+                    ? yield* inlineAdeEnrollmentProfile({
+                        organizationId,
+                        serial: serialNumber,
+                      })
+                    : undefined;
+
+                return inlineProfile ? { enrollmentProfile: inlineProfile } : undefined;
               }
 
               const device = yield* findDeviceByScope(scope, options.requireAppleDeviceIdentity);
@@ -4281,6 +4465,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly planLimits?: PlanLimitsConfig;
       readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
       readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+      readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
+      readonly enrollmentProfileTtlSeconds?: number;
     },
   ) =>
     Layer.effect(

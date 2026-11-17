@@ -141,14 +141,25 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
             Effect.mapError((err) => new Error(String(err))),
           );
 
-          yield* service.handleAuthenticate(
+          // An ADE device can receive its tenant's signed enrollment profile
+          // directly from the check-in response, which removes the manual
+          // profile install from the Setup Assistant flow. The signed URL
+          // remains the canonical fallback, so no payload is valid here.
+          const result = yield* service.handleAuthenticate(
             auth,
             identityCertificate,
             identityFingerprint,
             identitySerial,
           );
 
-          return HttpServerResponse.empty({ status: 200 });
+          if (!result?.enrollmentProfile) return HttpServerResponse.empty({ status: 200 });
+
+          return HttpServerResponse.text(
+            yield* serializePlist({
+              EnrollmentProfile: decodeBase64(result.enrollmentProfile),
+            } satisfies PlistValue),
+            { contentType: "application/xml" },
+          );
         }
 
         case "TokenUpdate": {

@@ -15,6 +15,7 @@ import {
   CheckinScope,
   ManagementBackend,
   MdmOrigin,
+  type AppleDeviceEventResult,
   type AppleReturnToServiceConfiguration,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
@@ -103,7 +104,7 @@ export declare namespace AppleMdmService {
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
-    ) => Effect.Effect<void, MdmError>;
+    ) => Effect.Effect<AppleDeviceEventResult | void, MdmError>;
     /**
      * Handle macOS's two-transaction user-channel authentication.
      *
@@ -372,7 +373,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
-  ): Effect.Effect<void, MdmError> => {
+  ): Effect.Effect<AppleDeviceEventResult | void, MdmError> => {
     const scope = channelScope(
       resolveCheckinChannel(auth),
       identityCertificate,

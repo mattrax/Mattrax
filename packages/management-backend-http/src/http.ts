@@ -3,6 +3,7 @@ import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api
 import {
   CheckinScope,
   AppleDeviceEvent,
+  AppleDeviceEventResult,
   AppleReturnToServiceConfiguration,
   ManagementManifest,
   DdmTokens,
@@ -86,6 +87,7 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   .add(
     HttpApiEndpoint.post("appleDeviceEvent", "/apple/event", {
       payload: Schema.Struct({ scope: CheckinScope, event: AppleDeviceEvent }),
+      success: AppleDeviceEventResult,
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

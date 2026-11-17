@@ -1054,6 +1054,65 @@ describe("Windows tenant enrollment tokens", () => {
     expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
   });
 
+  it("removes a previous tenant's Windows device when the same DeviceID enrolls", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+
+    const { backend, db } = await setup({
+      windowsOrganizationId: null,
+      devices: [
+        {
+          id: "old-tenant-device",
+          organizationId: "org-late",
+          proto: "win",
+          status: "enrolled",
+          name: "OLD DEVICE",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+
+    db.store[tableName(schema.deviceCommand)] = [
+      {
+        __table: tableName(schema.deviceCommand),
+        id: "old-command",
+        organizationId: "org-late",
+        deviceId: "old-tenant-device",
+        requestType: "DeviceInformation",
+        payload: {},
+        status: "queued",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+    db.store[tableName(schema.groupDevice)] = [
+      {
+        __table: tableName(schema.groupDevice),
+        groupId: "old-group",
+        deviceId: "old-tenant-device",
+      },
+    ];
+
+    const token = await createWindowsTenantToken("org-early", authSecret);
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken: token }));
+    await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(policy.authToken, await makeCsr(), "device-1"),
+        tenantToken: token,
+      }),
+    );
+
+    const devices = dbRows(db, tableName(schema.device));
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      organizationId: "org-early",
+      dmIdentifier: "device-1",
+    });
+    expect(dbRows(db, tableName(schema.deviceCommand))).toEqual([]);
+    expect(dbRows(db, tableName(schema.groupDevice))).toEqual([]);
+  });
+
   it("rejects a WSTEP token issued to another tenant", async () => {
     const { backend } = await setup({ windowsOrganizationId: null });
     const lateToken = await createWindowsTenantToken("org-late", authSecret);

@@ -127,6 +127,22 @@ export const AppleDeviceEvent = Schema.Union([
 
 export type AppleDeviceEvent = typeof AppleDeviceEvent.Type;
 
+/**
+ * Optional payload returned by an Apple device event.
+ *
+ * `Authenticate` may carry a signed Automated Device Enrollment profile so a
+ * device enrolling from Setup Assistant receives its tenant profile from the
+ * check-in instead of having to install it from the signed URL. The value is
+ * base64 because the same result crosses the management webhook boundary.
+ * Devices that are not ADE, or that are already managed, return no result.
+ */
+export const AppleDeviceEventResult = Schema.Struct({
+  /** CMS-signed Apple enrollment profile, base64 encoded. */
+  enrollmentProfile: Schema.optional(Schema.String),
+});
+
+export type AppleDeviceEventResult = typeof AppleDeviceEventResult.Type;
+
 // Mutually exclusive: what the device should do after a checkin.
 // DdmSync and Command cannot both apply at once due to the underlying protocol.
 export const ManagementManifest = Schema.Union([
@@ -319,7 +335,10 @@ export declare namespace ManagementBackend {
     readonly appleDeviceEvent: (
       scope: CheckinScope,
       event: AppleDeviceEvent,
-    ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    ) => Effect.Effect<
+      void | AppleDeviceEventResult,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
     readonly getAppleBootstrapToken: (
       scope: CheckinScope,
     ) => Effect.Effect<string | null, ManagementNotSupported | UnknownDevice | InternalServerError>;

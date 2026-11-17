@@ -75,14 +75,14 @@ valid JSON. Android stays unavailable until it is set.
 
 ## Apple Business Manager
 
-| Symptom                          | Check                                                                 |
-| -------------------------------- | --------------------------------------------------------------------- |
-| Upload rejected                  | PKCS#8 EC P-256 key, Client/Key/Team ids, correct scope               |
-| Sync says migration required     | Legacy DEP `.p7m` token; create a Business API key                    |
-| Sync fails over 5,000 devices    | Apple page cap; narrow the org scope                                  |
-| Assignment fails                 | Valid tenant APNs certificate; MDM server created with it             |
-| Profile URL 404                  | Device `REMOVED`, unassigned, or profile revision changed             |
-| No zero-touch at Setup Assistant | ADE profile is not returned by `Authenticate`; install the signed URL |
+| Symptom                          | Check                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Upload rejected                  | PKCS#8 EC P-256 key, Client/Key/Team ids, correct scope                                                                           |
+| Sync says migration required     | Legacy DEP `.p7m` token; create a Business API key                                                                                |
+| Sync fails over 5,000 devices    | Apple page cap; narrow the org scope                                                                                              |
+| Assignment fails                 | Valid tenant APNs certificate; MDM server created with it                                                                         |
+| Profile URL 404                  | Device `REMOVED`, unassigned, or profile revision changed                                                                         |
+| No zero-touch at Setup Assistant | Check the serial is `ASSIGNED` in ABM; Mattrax returns the profile from `Authenticate`, and the ADE profile `url` is the fallback |
 
 ## Apps & Books
 

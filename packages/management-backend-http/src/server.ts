@@ -89,7 +89,8 @@ export const managementWebhookHandlers = (
       Effect.gen(function* () {
         yield* verifySignature(request, "appleDeviceEvent", payload, options.secret);
         const backend = yield* ManagementBackend;
-        yield* backend.appleDeviceEvent(payload.scope, payload.event);
+
+        return (yield* backend.appleDeviceEvent(payload.scope, payload.event)) ?? {};
       }),
     )
     .handle("appleManagementCheckin", ({ request, payload }) =>

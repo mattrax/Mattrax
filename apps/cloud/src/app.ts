@@ -63,10 +63,7 @@ import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
-import {
-  ManagementBackendEnterpriseLive,
-  ScepRepositoryLive,
-} from "@mattrax/mdm-apple";
+import { ManagementBackendEnterpriseLive, ScepRepositoryLive } from "@mattrax/mdm-apple";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import { Db, Env as CoreEnv, R2, parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
@@ -694,6 +691,19 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
       return new Uint8Array(await object.arrayBuffer());
     },
+    // Use the same signing identity and challenge lifetime as the enrollment
+    // profile download when an ADE device asks for its profile inline.
+    appleProfileSigning:
+      env.APPLE_PROFILE_SIGNING_CERT ||
+      env.APPLE_PROFILE_SIGNING_KEY ||
+      env.APPLE_PROFILE_SIGNING_CHAIN
+        ? {
+            certificatePem: env.APPLE_PROFILE_SIGNING_CERT,
+            privateKeyPem: env.APPLE_PROFILE_SIGNING_KEY,
+            chainPem: env.APPLE_PROFILE_SIGNING_CHAIN,
+          }
+        : undefined,
+    enrollmentProfileTtlSeconds,
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
