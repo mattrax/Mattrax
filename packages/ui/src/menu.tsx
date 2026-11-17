@@ -119,7 +119,7 @@ type DropdownMenuItemProps = Omit<Omit<ComponentProps<"div">, "style">, "onSelec
   href?: string;
   target?: string;
   rel?: string;
-  onSelect?: () => void | Promise<unknown>;
+  onSelect?: () => void | Promise<void>;
   disabled?: boolean;
   closeOnSelect?: boolean;
 };
@@ -212,9 +212,7 @@ function DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) {
   return (
     <MenuRadioGroup
       value={local.value}
-      onValueChange={(value) => {
-        if (typeof value === "string") local.onValueChange?.(value);
-      }}
+      onValueChange={(value) => local.onValueChange?.(value ?? "")}
       class={cn("py-0.5", local.class)}
       {...others}
     />

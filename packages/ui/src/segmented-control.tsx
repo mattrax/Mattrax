@@ -24,7 +24,7 @@ function SegmentedControl(props: SegmentedControlProps) {
       )}
       {...others}
     >
-      <SegmentedControlIndicator class="absolute inset-y-0.5 rounded-[5px] bg-card shadow-[0_1px_2px_rgb(24_24_22/0.08)] transition-[left,width] duration-150 ease-swift" />
+      <SegmentedControlIndicator class="absolute inset-y-0.5 rounded-[5px] bg-card shadow-[0_1px_2px_rgb(24_24_22/0.08)] transition-none" />
       {local.children}
     </SegmentedControlPrimitive>
   );

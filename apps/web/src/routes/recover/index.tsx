@@ -1,5 +1,6 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
+import { Button } from "~/components/ui/button";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";
@@ -152,7 +153,7 @@ export default function RecoverPage() {
             <Show
               when={!requested()}
               fallback={
-                <div class="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-[13px] leading-relaxed text-success-foreground">
+                <div class="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-[13px] leading-relaxed text-success">
                   If an account with that address exists and its email is verified, a recovery link
                   is on its way. It works once and expires in 30 minutes.
                 </div>
@@ -173,13 +174,9 @@ export default function RecoverPage() {
                     onInput={(event) => setEmail(event.currentTarget.value)}
                   />
                 </label>
-                <button
-                  type="submit"
-                  disabled={pending() || !email().trim()}
-                  class="inline-flex h-9 w-full items-center justify-center rounded-lg bg-brand-solid px-3 text-[13px] font-medium text-brand-foreground transition-opacity disabled:opacity-60"
-                >
+                <Button type="submit" class="h-9 w-full" pending={pending()} disabled={pending() || !email().trim()}>
                   {pending() ? "Sending…" : "Send recovery link"}
-                </button>
+                </Button>
               </form>
             </Show>
 

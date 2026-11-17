@@ -4,11 +4,21 @@ import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createMemo, For, Show } from "solid-js";
 import { defaultOverviewWidgets } from "@mattrax/enterprise-domain/client";
-import { ErrorText, Page, QueryError } from "~/components/mdm/common";
+import {
+  EmptyState as UIEmptyState,
+  Page,
+  PageActions,
+  PageDescription,
+  PageHeader,
+  PageHeaderBody,
+  PageTitle,
+} from "@mattrax/ui";
+import { ErrorText, QueryError } from "~/components/mdm/common";
 import { DashboardWidgetView } from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Star } from "~/components/ui/icons";
+import { cn } from "~/lib/utils";
 import {
   enterprise,
   enterpriseKeys,
@@ -19,8 +29,17 @@ import {
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 
-const previewWidgets = (): DashboardWidget[] =>
-  defaultOverviewWidgets().map((widget, index) => ({
+/** Preview widgets share the built-in layout, but stat, chart, table and note
+ * rows are capped so an empty fleet never leaves a page-tall blank surface. */
+const PREVIEW_HEIGHT_CAP: Record<string, number> = {
+  stat: 2,
+  pie: 4,
+  table: 4,
+  markdown: 2,
+};
+
+const previewWidgets = (): DashboardWidget[] => {
+  const widgets = defaultOverviewWidgets().map((widget, index) => ({
     id: `preview-${index}`,
     type: widget.type,
     title: widget.title,
@@ -28,36 +47,70 @@ const previewWidgets = (): DashboardWidget[] =>
     x: widget.x,
     y: widget.y,
     w: widget.w,
-    h: widget.h,
+    h: Math.min(widget.h, PREVIEW_HEIGHT_CAP[widget.type] ?? widget.h),
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   }));
 
+  // Capping a row's height leaves a hole unless the rows below move up. Walk
+  // the original bands in order and re-stack them at their capped heights.
+  const bands = [...new Set(widgets.map((widget) => widget.y))].sort((a, b) => a - b);
+  let cursor = 0;
+
+  for (const band of bands) {
+    const rows = widgets.filter((widget) => widget.y === band);
+
+    for (const widget of rows) widget.y = cursor;
+    cursor += Math.max(...rows.map((widget) => widget.h));
+  }
+
+  return widgets;
+};
+
+/** A quiet monochrome ramp for widget charts, scoped to the overview. The
+ * design system intentionally leaves the chart slots to the page. */
+const chartRamp = {
+  "--chart-1": "var(--foreground)",
+  "--chart-2": "color-mix(in oklab, var(--foreground) 62%, var(--background))",
+  "--chart-3": "color-mix(in oklab, var(--foreground) 42%, var(--background))",
+  "--chart-4": "color-mix(in oklab, var(--foreground) 26%, var(--background))",
+  "--chart-5": "color-mix(in oklab, var(--foreground) 14%, var(--background))",
+};
+
 function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
   return (
-    <div class="dashboard-grid">
+    <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
       <For each={props.widgets}>
         {(widget) => (
           <article
-            class={`dashboard-widget dashboard-widget-${widget.type} flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)]`}
+            class={cn(
+              "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
+              `dashboard-widget-${widget.type}`,
+              // Stat widgets are rendered by the shared widget view; on the
+              // overview they follow the design system's compact metric scale.
+              widget.type === "stat" &&
+                "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
+            )}
             style={{
               "grid-column": `${widget.x + 1} / span ${widget.w}`,
               "grid-row": `${widget.y + 1} / span ${widget.h}`,
             }}
           >
             <header class="px-0.5 pb-2">
-              <h2 class="truncate text-[12.5px] font-medium text-foreground">{widget.title}</h2>
-              <p class="truncate text-[10px] capitalize text-muted-foreground">
-                {widget.type === "markdown"
-                  ? "Markdown"
-                  : `${widget.type} · ${String(
-                      Option.getOrUndefined(
-                        Schema.decodeUnknownOption(
-                          Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
-                        )(widget.config),
-                      )?.dataset ?? "devices",
-                    )}`}
-              </p>
+              <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
+              <Show when={widget.type !== "stat"}>
+                <p class="truncate text-[10px] capitalize text-subtle-foreground">
+                  {widget.type === "markdown"
+                    ? "Markdown"
+                    : `${widget.type} · ${String(
+                        Option.getOrUndefined(
+                          Schema.decodeUnknownOption(
+                            Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
+                          )(widget.config),
+                        )?.dataset ?? "devices",
+                      )}`}
+                </p>
+              </Show>
             </header>
             <div class="min-h-0 flex-1 overflow-hidden">
               <DashboardWidgetView widget={widget} tenantId={props.tenantId} />
@@ -84,13 +137,11 @@ function OverviewHeader(props: {
 
   return (
     <>
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <p class="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-            Overview
-          </p>
-          <div class="mt-1 flex flex-wrap items-center gap-2">
-            <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">{props.name}</h1>
+      <PageHeader class="gap-3 border-0 pb-0">
+        <PageHeaderBody>
+          <div class="label-caps mb-1.5">Overview</div>
+          <div class="flex flex-wrap items-center gap-2">
+            <PageTitle class="text-[21px] font-[560] tracking-[-0.026em]">{props.name}</PageTitle>
             <Show when={props.isDefault}>
               <Badge variant="secondary" class="gap-1">
                 <Star class="size-3" />
@@ -101,12 +152,12 @@ function OverviewHeader(props: {
               <Badge variant="outline">Built-in preview</Badge>
             </Show>
           </div>
-          <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+          <PageDescription class="mt-1 max-w-2xl text-[12.5px] leading-5">
             {props.description?.trim() ||
               "Shared live views of your fleet. Create a dashboard to make this page your own."}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
+          </PageDescription>
+        </PageHeaderBody>
+        <PageActions>
           <Show when={props.dashboardId}>
             {(id) => (
               <Button
@@ -136,8 +187,8 @@ function OverviewHeader(props: {
                   : "New dashboard"}
             </Button>
           </Show>
-        </div>
-      </div>
+        </PageActions>
+      </PageHeader>
       <Show when={props.error}>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <ErrorText error={props.error} />
@@ -183,22 +234,22 @@ function LoadedOverview(props: {
       <Show
         when={(dashboard.data?.widgets.length ?? 0) > 0}
         fallback={
-          <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface px-6 text-center">
-            <p class="text-[13px] font-medium">This dashboard is empty</p>
-            <p class="mt-1 text-[12px] text-muted-foreground">
-              Add widgets from the dashboard editor to share tables, charts and notes.
-            </p>
-            <Show when={can("dashboards.write")}>
-              <Button
-                as="a"
-                href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
-                size="sm"
-                class="mt-3"
-              >
-                Edit dashboard
-              </Button>
-            </Show>
-          </div>
+          <UIEmptyState
+            class="py-10"
+            title="This dashboard is empty"
+            description="Add widgets from the dashboard editor to share tables, charts and notes."
+            action={
+              <Show when={can("dashboards.write")}>
+                <Button
+                  as="a"
+                  href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
+                  size="sm"
+                >
+                  Edit dashboard
+                </Button>
+              </Show>
+            }
+          />
         }
       >
         <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
@@ -227,7 +278,7 @@ function PreviewOverview(props: {
         error={props.error}
       />
       <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
-      <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-surface px-3.5 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
         <p class="text-[12px] text-muted-foreground">
           This is the built-in overview. Create a dashboard to add widgets, write team notes and
           share a layout with everyone.

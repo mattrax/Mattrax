@@ -1,6 +1,20 @@
 @import "@fontsource-variable/geist";
 
-:root {
+/*
+ * Mattrax docs — "Quiet light console".
+ *
+ * The same language as the dashboard: a warm off-white canvas, white surfaces,
+ * hairline borders, near-black actions, compact type and monochrome chrome.
+ * Violet appears only on links and focus; status colour only inside callouts.
+ *
+ * Tokens mirror packages/ui/src/styles.css. Rspress exposes most of its shell
+ * through custom properties, so the theming stays in this file — no layout
+ * hacks and no shadowing of components that carry behaviour. Rspress ships its
+ * layout stylesheet after the global stylesheet, so shell rules are scoped to
+ * `html` to win on specificity rather than on source order.
+ */
+
+html:root {
   --rp-font-family-base:
     "Geist Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -8,205 +22,1199 @@
     "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     monospace;
 
-  --rp-c-brand: #1c1917;
-  --rp-c-brand-dark: #0c0a09;
-  --rp-c-brand-darker: #000000;
-  --rp-c-brand-light: #44403c;
-  --rp-c-brand-lighter: #e7e5e4;
-  --rp-c-brand-tint: rgba(28, 25, 23, 0.08);
-
-  --rp-c-bg: #fafaf9;
+  /* Surfaces */
+  --rp-c-bg: #f6f6f3;
   --rp-c-bg-alt: #ffffff;
-  --rp-c-bg-soft: #f5f5f4;
-  --rp-c-bg-mute: #e7e5e4;
-  --rp-c-divider: #e7e5e4;
-  --rp-c-divider-light: #f5f5f4;
-  --rp-c-text-0: #0c0a09;
-  --rp-c-text-1: #1c1917;
-  --rp-c-text-2: #57534e;
-  --rp-c-text-3: #78716c;
-  --rp-c-text-4: #a8a29e;
-  --rp-c-link: #1c1917;
-  --rp-c-text-code: #1c1917;
-  --rp-c-text-code-bg: #f5f5f4;
-  --rp-c-text-code-border: #e7e5e4;
+  --rp-c-bg-soft: #fafaf7;
+  --rp-c-bg-mute: #ecece6;
+
+  /* Lines */
+  --rp-c-divider: #e5e5df;
+  --rp-c-divider-light: #ecece6;
+
+  /* Type */
+  --rp-c-text-0: #1a1a18;
+  --rp-c-text-1: #1a1a18;
+  --rp-c-text-2: #55554e;
+  --rp-c-text-3: #77776f;
+  --rp-c-text-4: #9b9b93;
+  --rp-c-link: #6550b9;
+
+  /* Inline code */
+  --rp-c-text-code: #1a1a18;
+  --rp-c-text-code-bg: #f1f1ed;
+  --rp-c-text-code-border: #e6e6df;
+
+  /* Brand = action, not decoration. Links use --rp-c-link instead. */
+  --rp-c-brand: #1c1c1a;
+  --rp-c-brand-dark: #000000;
+  --rp-c-brand-darker: #000000;
+  --rp-c-brand-light: #3a3a36;
+  --rp-c-brand-lighter: #ecece6;
+  --rp-c-brand-tint: rgba(28, 28, 26, 0.06);
+
+  /* Focus is one of the few places violet is allowed to show. */
+  --docs-focus: #8b7fd4;
 
   --rp-radius: 8px;
-  --rp-radius-large: 10px;
-  --rp-radius-small: 4px;
-  --rp-shadow-1: 0 1px 2px rgba(28, 25, 23, 0.04);
-  --rp-shadow-2: 0 4px 12px rgba(28, 25, 23, 0.06);
-  --rp-shadow-3: 0 12px 30px rgba(28, 25, 23, 0.08);
-  --rp-shadow-4: 0 20px 45px rgba(28, 25, 23, 0.12);
-  --rp-shadow-5: 0 30px 70px rgba(28, 25, 23, 0.16);
+  --rp-radius-large: 12px;
+  --rp-radius-small: 5px;
+  --rp-shadow-1: 0 1px 2px rgba(24, 24, 22, 0.04);
+  --rp-shadow-2: 0 4px 12px -4px rgba(24, 24, 22, 0.08);
+  --rp-shadow-3: 0 12px 32px -12px rgba(24, 24, 22, 0.18);
+  --rp-shadow-4: 0 20px 48px -20px rgba(24, 24, 22, 0.24);
+  --rp-shadow-5: 0 28px 64px -24px rgba(24, 24, 22, 0.3);
 
-  --rp-home-hero-secondary-color: #78716c;
-  --rp-home-hero-title-color: transparent;
-  --rp-home-hero-title-bg: linear-gradient(100deg, #0c0a09 0%, #1c1917 45%, #78716c 100%);
-  --rp-home-background-bg:
-    radial-gradient(50% 60% at 100% 0%, rgba(28, 25, 23, 0.06) 0%, transparent 100%),
-    radial-gradient(45% 70% at 55% 0%, rgba(120, 113, 108, 0.09) 0%, transparent 100%),
-    radial-gradient(80% 55% at 0% 0%, rgba(214, 211, 209, 0.25) 0%, transparent 100%), #fafaf9;
-  --rp-home-feature-bg: linear-gradient(145deg, #ffffff 0%, #fafaf9 100%);
+  /* Code blocks: white panes in light, near-black in dark. */
+  --rp-code-font-size: 0.78125rem;
+  --rp-code-title-bg: #fafaf7;
+  --rp-code-block-bg: #ffffff;
+  --rp-code-block-color: #24241f;
+  --rp-code-block-border: 1px solid var(--rp-c-divider);
+  --rp-code-block-shadow: none;
+
+  /* Shell metrics */
+  --rp-nav-height: 56px;
+  --rp-sidebar-width: 248px;
+  --rp-outline-width: 224px;
+  --rp-outline-padding-x: 16px;
+  --rp-content-max-width: 900px;
+  --rp-content-padding-x: 62px;
+  --rp-content-padding-y: 40px;
+  --rp-sidebar-padding: 18px 14px 40px;
+  --rp-sidebar-menu-height: 46px;
+
+  --rp-home-hero-secondary-color: #77776f;
+  --rp-home-hero-title-color: #1a1a18;
+  --rp-home-background-bg: #f6f6f3;
+  --rp-home-feature-bg: #ffffff;
 }
 
 html.rp-dark {
-  --rp-c-bg: #08080a;
-  --rp-c-bg-alt: #1f1f23;
-  --rp-c-bg-soft: #17171a;
-  --rp-c-bg-mute: #232327;
-  --rp-c-divider: #303036;
-  --rp-c-divider-light: #24242a;
-  --rp-c-text-0: #fafafa;
-  --rp-c-text-1: #f4f4f5;
-  --rp-c-text-2: #b4b4bb;
-  --rp-c-text-3: #9d9da5;
-  --rp-c-text-4: #77777f;
-  --rp-c-link: #fafafa;
-  --rp-c-text-code: #f4f4f5;
-  --rp-c-text-code-bg: #1f1f23;
-  --rp-c-text-code-border: #303036;
-  --rp-c-brand: #fafafa;
-  --rp-c-brand-dark: #e4e4e7;
-  --rp-c-brand-darker: #d4d4d8;
-  --rp-c-brand-light: #d4d4d8;
-  --rp-c-brand-lighter: #232327;
-  --rp-c-brand-tint: rgba(250, 250, 250, 0.07);
+  --rp-c-bg: #10100f;
+  --rp-c-bg-alt: #171716;
+  --rp-c-bg-soft: #1b1b19;
+  --rp-c-bg-mute: #232321;
+
+  --rp-c-divider: #2a2a27;
+  --rp-c-divider-light: #232321;
+
+  --rp-c-text-0: #ecece6;
+  --rp-c-text-1: #ecece6;
+  --rp-c-text-2: #b4b4ac;
+  --rp-c-text-3: #a2a29a;
+  --rp-c-text-4: #7c7c74;
+  --rp-c-link: #b3a4f5;
+
+  --rp-c-text-code: #ecece6;
+  --rp-c-text-code-bg: #222220;
+  --rp-c-text-code-border: #33332f;
+
+  --rp-c-brand: #ecece6;
+  --rp-c-brand-dark: #ffffff;
+  --rp-c-brand-darker: #ffffff;
+  --rp-c-brand-light: #d6d6cf;
+  --rp-c-brand-lighter: #262624;
+  --rp-c-brand-tint: rgba(236, 236, 230, 0.07);
+
+  --docs-focus: #9c8ee8;
+
+  --rp-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --rp-shadow-2: 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+  --rp-shadow-3: 0 12px 32px -12px rgba(0, 0, 0, 0.5);
+  --rp-shadow-4: 0 20px 48px -20px rgba(0, 0, 0, 0.55);
+  --rp-shadow-5: 0 28px 64px -24px rgba(0, 0, 0, 0.6);
+
+  --rp-code-title-bg: #1c1c1a;
+  --rp-code-block-bg: #171716;
+  --rp-code-block-color: #e6e6e0;
+
+  --rp-home-hero-secondary-color: #a2a29a;
+  --rp-home-hero-title-color: #ecece6;
+  --rp-home-background-bg: #10100f;
+  --rp-home-feature-bg: #171716;
 }
 
-:root {
-  --rp-nav-height: 56px;
-  --rp-sidebar-width: 280px;
-  --rp-content-max-width: 920px;
+/*
+ * Callout tones. The surface stays monochrome; each tone contributes a 2px
+ * left rule and a restrained title colour.
+ */
+html:root {
+  --rp-container-note-border: #d6d6cf;
+  --rp-container-note-text: #1a1a18;
+  --rp-container-note-bg: #fafaf7;
+  --rp-container-note-code-bg: #f1f1ed;
+  --rp-container-note-link: var(--rp-c-link);
+  --rp-container-tip-border: #2f8f66;
+  --rp-container-tip-text: #157a52;
+  --rp-container-tip-bg: #fafaf7;
+  --rp-container-tip-code-bg: #eef3ef;
+  --rp-container-info-border: #4d7fd0;
+  --rp-container-info-text: #2f62c4;
+  --rp-container-info-bg: #fafaf7;
+  --rp-container-info-code-bg: #eef1f7;
+  --rp-container-important-border: #7a63cf;
+  --rp-container-important-text: #5c46ad;
+  --rp-container-important-bg: #fafaf7;
+  --rp-container-important-code-bg: #f0eef8;
+  --rp-container-warning-border: #c68a2e;
+  --rp-container-warning-text: #8f5f0c;
+  --rp-container-warning-bg: #fafaf7;
+  --rp-container-warning-code-bg: #f7f2e8;
+  --rp-container-danger-border: #c4544a;
+  --rp-container-danger-text: #a8362c;
+  --rp-container-danger-bg: #fafaf7;
+  --rp-container-danger-code-bg: #f8edec;
+  --rp-container-details-border: #d6d6cf;
+  --rp-container-details-text: #1a1a18;
+  --rp-container-details-bg: #fafaf7;
+  --rp-container-details-code-bg: #f1f1ed;
 }
 
-/* The theme pins the logo height to 1.6rem while the image keeps its `width`
-   attribute, which stretches the wordmark. Size by height only so the mark
-   keeps its aspect ratio and matches the product header (16px). */
-.rp-nav__title .rp-nav__title__logo-image {
-  width: auto;
-  height: 1rem;
+html.rp-dark {
+  --rp-container-note-border: #3a3a36;
+  --rp-container-note-text: #ecece6;
+  --rp-container-note-bg: #171716;
+  --rp-container-note-code-bg: #222220;
+  --rp-container-tip-border: #3f9d75;
+  --rp-container-tip-text: #6fc79c;
+  --rp-container-tip-bg: #171716;
+  --rp-container-tip-code-bg: #1d2a23;
+  --rp-container-info-border: #5d86c9;
+  --rp-container-info-text: #8fb0e8;
+  --rp-container-info-bg: #171716;
+  --rp-container-info-code-bg: #1c2430;
+  --rp-container-important-border: #8f7ddb;
+  --rp-container-important-text: #b3a4f5;
+  --rp-container-important-bg: #171716;
+  --rp-container-important-code-bg: #232134;
+  --rp-container-warning-border: #c99743;
+  --rp-container-warning-text: #e0b06a;
+  --rp-container-warning-bg: #171716;
+  --rp-container-warning-code-bg: #2a2318;
+  --rp-container-danger-border: #c96056;
+  --rp-container-danger-text: #e7877d;
+  --rp-container-danger-bg: #171716;
+  --rp-container-danger-code-bg: #2b1c1a;
+  --rp-container-details-border: #3a3a36;
+  --rp-container-details-text: #ecece6;
+  --rp-container-details-bg: #171716;
+  --rp-container-details-code-bg: #222220;
 }
+
+/* --------------------------------------------------------------------------
+ * Base
+ * ----------------------------------------------------------------------- */
 
 html {
   scrollbar-gutter: stable;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   font-family: var(--rp-font-family-base);
+  background: var(--rp-c-bg);
+  color: var(--rp-c-text-1);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: #d4d4d8;
-  color: #08080a;
+  background: #e2dcf7;
+  color: #1a1a18;
 }
 
-.rp-nav {
-  background: var(--rp-c-bg);
+html.rp-dark ::selection {
+  background: #362f5c;
+  color: #f2f2ec;
+}
+
+.rp-doc a:focus-visible,
+.rp-toc-item:focus-visible,
+.rp-edit-link:focus-visible,
+.rp-outline__action-row:focus-visible,
+.rp-prev-next-page__item:focus-visible,
+.rp-search-button:focus-visible,
+.rp-search-button--mobile:focus-visible,
+.rp-search-panel__input:focus-visible,
+.rp-switch-appearance:focus-visible,
+.rp-nav__title__link:focus-visible,
+.rp-social-links__icon:focus-visible,
+.rp-nav-hamburger:focus-visible,
+.rp-sidebar-menu button:focus-visible {
+  outline: 2px solid var(--docs-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* --------------------------------------------------------------------------
+ * Nav — 56px, warm translucent canvas, one hairline
+ * ----------------------------------------------------------------------- */
+
+html .rp-nav {
+  height: var(--rp-nav-height);
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--rp-c-bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
   border-bottom: 1px solid var(--rp-c-divider);
 }
 
-.rp-nav-menu__item--active {
-  color: var(--rp-c-text-1);
+/* The theme pins the logo height to 1.6rem while the image keeps its `width`
+   attribute, which stretches the wordmark. Size by height only. */
+html .rp-nav__title .rp-nav__title__logo-image {
+  width: auto;
+  height: 15px;
+}
+
+html .rspress-logo {
+  height: 15px;
+}
+
+html .rp-nav__title__logo {
+  min-width: 0;
+  margin-right: 0;
+}
+
+html .rp-nav__title__link {
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--rp-c-text-0);
 }
 
-.rp-home-hero__title {
-  letter-spacing: -0.05em;
-  font-weight: 750;
-}
-
-.rp-home-hero__tagline {
+html .rp-nav__title__link:hover {
+  opacity: 1;
   color: var(--rp-c-text-2);
-  max-width: 42rem;
 }
 
-.rp-home-hero__image-img {
-  max-width: 220px;
-  height: auto;
-  filter: drop-shadow(0 18px 40px rgba(28, 25, 23, 0.18));
+html .rp-nav__right {
+  gap: 12px;
 }
 
-.rp-home-feature__card {
+html .rp-nav__others {
+  gap: 14px;
+}
+
+html .rp-social-links {
+  gap: 12px;
+  min-height: 0;
+}
+
+html .rp-social-links__icon {
+  width: 17px;
+  height: 17px;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-social-links__icon:hover {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-nav-menu {
+  --rp-nav-menu-item-gap: 22px;
+}
+
+html .rp-nav-menu__item__container {
+  font-size: 13px;
+  font-weight: 450;
+  color: var(--rp-c-text-2);
+  line-height: 20px;
+}
+
+html .rp-nav-menu__item:hover .rp-nav-menu__item__container {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-nav-menu__item--active .rp-nav-menu__item__container {
+  color: var(--rp-c-text-0);
+  font-weight: 550;
+}
+
+html .rp-nav-menu__divider {
+  height: 16px;
+  background: var(--rp-c-divider);
+}
+
+html .rp-switch-appearance {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-switch-appearance:hover {
+  color: var(--rp-c-text-0);
+  background: var(--rp-c-bg-mute);
+}
+
+html .rp-switch-appearance svg {
+  width: 16px;
+  height: 16px;
+}
+
+html .rp-nav-hamburger {
+  border-radius: 6px;
+  color: var(--rp-c-text-2);
+}
+
+/* Search field — a quiet control with a Kbd-style ⌘K */
+html .rp-search-button {
+  min-width: 198px;
+  height: 32px;
+  padding: 0 7px 0 10px;
+  gap: 8px;
+  border-radius: 7px;
   border: 1px solid var(--rp-c-divider);
-  border-radius: var(--rp-radius-large);
-  background: var(--rp-home-feature-bg);
+  background: color-mix(in srgb, var(--rp-c-bg-alt) 72%, transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color 140ms ease,
+    background-color 140ms ease;
 }
 
-.rp-home-feature__card--clickable:hover {
-  transform: translateY(-3px);
-  border-color: var(--rp-c-text-4);
-  box-shadow: var(--rp-shadow-3);
+html .rp-search-button:hover {
+  border-color: #d6d6cf;
+  background: var(--rp-c-bg-alt);
 }
 
-.rp-home-feature__title {
-  letter-spacing: -0.02em;
+html.rp-dark .rp-search-button:hover {
+  border-color: #3a3a36;
 }
 
-.rp-home-feature__icon {
-  font-size: 1.35rem;
+html .rp-search-button:hover .rp-search-button__word {
+  color: var(--rp-c-text-1);
 }
 
-.rp-doc h1,
-.rp-doc h2,
-.rp-doc h3 {
-  letter-spacing: -0.03em;
+html .rp-search-button__content {
+  gap: 7px;
+  font-size: 12.5px;
 }
 
-.rp-doc h1 {
-  font-weight: 750;
+html .rp-search-button__icon {
+  font-size: 16px;
+  color: var(--rp-c-text-3);
+  display: inline-flex;
 }
 
-.rp-doc a {
+html .rp-search-button__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+html .rp-search-button__word {
+  font-size: 12.5px;
+  font-weight: 450;
+  color: var(--rp-c-text-3);
+  letter-spacing: -0.005em;
+}
+
+html .rp-search-button__hotkey {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--rp-c-divider);
+  border-radius: 4px;
+  background: var(--rp-c-bg-alt);
+  color: var(--rp-c-text-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+html .rp-search-button--mobile {
+  font-size: 16px;
+  color: var(--rp-c-text-2);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+/* Search dialog */
+html .rp-search-panel__mask {
+  background: rgba(24, 24, 22, 0.28);
+  backdrop-filter: blur(4px);
+}
+
+html .rp-search-panel__modal {
+  background: var(--rp-c-bg-alt);
+  border: 1px solid var(--rp-c-divider);
+  border-radius: 12px;
+  box-shadow: var(--rp-shadow-5);
+}
+
+html .rp-search-panel__cancel {
+  color: var(--rp-c-link);
+  font-size: 12.5px;
+}
+
+/* --------------------------------------------------------------------------
+ * Sidebar — 248px, canvas background, compact 30px items
+ * ----------------------------------------------------------------------- */
+
+html .rp-doc-layout__sidebar {
+  width: var(--rp-sidebar-width);
+  min-width: var(--rp-sidebar-width);
+  max-width: var(--rp-sidebar-width);
+  padding: var(--rp-sidebar-padding);
+  background: transparent;
+  border-right: 1px solid var(--rp-c-divider-light);
+  scrollbar-width: thin;
+  scrollbar-color: #d6d6cf transparent;
+}
+
+html.rp-dark .rp-doc-layout__sidebar {
+  scrollbar-color: #3a3a36 transparent;
+}
+
+/* Group label: 11px uppercase with tracking */
+html .rp-doc-layout__sidebar .rp-sidebar-group {
+  margin-top: 16px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--rp-c-text-3);
+  transition: color 120ms ease;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group:first-child {
+  margin-top: 2px;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group:hover {
+  color: var(--rp-c-text-1);
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group .rp-sidebar-item__left {
+  gap: 4px;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group .rp-sidebar-item__right {
+  opacity: 0.55;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-group .rp-sidebar-item__right svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Items: 30px tall, full width, quiet until hover */
+html .rp-doc-layout__sidebar .rp-sidebar-item--group-item {
+  margin-left: 0 !important;
+  margin-top: 2px;
+  padding: 5px 10px 5px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--rp-c-text-2);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-item--group-item:hover {
+  color: var(--rp-c-text-0);
+  background: var(--rp-c-bg-mute);
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-item--group-item.rp-sidebar-item--active,
+html .rp-doc-layout__sidebar .rp-sidebar-item--group-item.rp-sidebar-item--active:hover {
+  color: var(--rp-c-text-0);
+  background: var(--rp-c-bg-alt);
+  font-weight: 500;
+  box-shadow:
+    inset 0 0 0 1px var(--rp-c-divider),
+    0 1px 2px rgba(24, 24, 22, 0.04);
+}
+
+html.rp-dark .rp-doc-layout__sidebar .rp-sidebar-item--group-item.rp-sidebar-item--active,
+html.rp-dark .rp-doc-layout__sidebar .rp-sidebar-item--group-item.rp-sidebar-item--active:hover {
+  box-shadow:
+    inset 0 0 0 1px #2f2f2b,
+    0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* No tree connectors — cards already carry the hierarchy. */
+html .rp-doc-layout__sidebar .rp-sidebar-item--group-item::before,
+html
+  .rp-doc-layout__sidebar
+  .rp-sidebar-item--group-item.rp-sidebar-item--active
+  .rp-sidebar-item__left::before {
+  display: none;
+}
+
+html .rp-doc-layout__sidebar .rp-sidebar-item:focus-visible {
+  outline: 2px solid var(--docs-focus);
+  outline-offset: 0;
+}
+
+/* Collapsible body spacing */
+html .rp-doc-layout__sidebar > div[style*="grid-template-rows"] > div {
+  padding-bottom: 2px;
+}
+
+/* Mobile drawer needs an opaque canvas */
+@media (max-width: 768px) {
+  html .rp-doc-layout__sidebar {
+    background: var(--rp-c-bg);
+    box-shadow: var(--rp-shadow-3);
+  }
+}
+
+/* Between tablet and desktop the sidebar sits under the page's menu bar;
+   push its first group below that bar instead of hiding it. */
+@media (min-width: 769px) and (max-width: 1279px) {
+  html .rp-doc-layout__sidebar {
+    padding-top: calc(var(--rp-sidebar-menu-height) + 16px);
+  }
+}
+
+/* Mobile menu bar (<=1279) */
+html .rp-sidebar-menu {
+  padding: 0 16px;
+  background: var(--rp-c-bg);
+  border-bottom: 1px solid var(--rp-c-divider);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--rp-c-text-2);
+}
+
+html .rp-sidebar-menu__right__text {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rp-c-text-3);
+}
+
+/* --------------------------------------------------------------------------
+ * Content — 760px measure, 15px body
+ * ----------------------------------------------------------------------- */
+
+html .rp-doc-layout__doc-container {
+  max-width: var(--rp-content-max-width);
+}
+
+html .rp-doc.rspress-doc {
+  font-size: 15px;
+  line-height: 1.65;
+  color: #34342f;
+}
+
+html.rp-dark .rp-doc.rspress-doc {
+  color: #d2d2cb;
+}
+
+html .rp-doc.rspress-doc p {
+  margin: 1rem 0;
+  line-height: 1.65;
+  font-size: inherit;
+}
+
+html .rp-doc.rspress-doc h1,
+html .rp-doc.rspress-doc h2,
+html .rp-doc.rspress-doc h3,
+html .rp-doc.rspress-doc h4,
+html .rp-doc.rspress-doc h5,
+html .rp-doc.rspress-doc h6 {
+  color: var(--rp-c-text-0);
+  font-weight: 600;
+  scroll-margin-top: calc(var(--rp-nav-height) + 24px);
+}
+
+html .rp-doc.rspress-doc h1 {
+  margin: 0 0 1.5rem;
+  font-size: 32px;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+
+html .rp-doc.rspress-doc h2 {
+  margin: 2.5rem 0 0.75rem;
+  font-size: 20px;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+
+html .rp-doc.rspress-doc h2:first-of-type::before {
+  margin-bottom: 1.75rem;
+  background: var(--rp-c-divider-light);
+}
+
+html .rp-doc.rspress-doc h3 {
+  margin: 1.75rem 0 0.4rem;
+  font-size: 15px;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+}
+
+html .rp-doc.rspress-doc h4 {
+  margin: 1.5rem 0 0.35rem;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+html .rp-doc.rspress-doc h5,
+html .rp-doc.rspress-doc h6 {
+  margin: 1.25rem 0 0.3rem;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+html .rp-doc.rspress-doc strong,
+html .rp-doc.rspress-doc b {
+  font-weight: 550;
+  color: var(--rp-c-text-0);
+}
+
+html .rp-doc.rspress-doc a.rp-link:not(.rp-header-anchor) {
+  color: var(--rp-c-link);
+  font-weight: 450;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 120ms ease;
+}
+
+html .rp-doc.rspress-doc a.rp-link:not(.rp-header-anchor):hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+html .rp-doc.rspress-doc .rp-header-anchor {
+  color: var(--rp-c-text-4);
+  margin-left: -0.75em;
+  font-weight: 400;
+  border-bottom: 0;
+}
+
+html .rp-doc.rspress-doc .rp-header-anchor:hover {
+  color: var(--rp-c-link);
+  border-bottom: 0;
+}
+
+html .rp-doc.rspress-doc ul,
+html .rp-doc.rspress-doc ol {
+  margin: 0.75rem 0;
+  padding-left: 1.15rem;
+  line-height: 1.65;
+}
+
+html .rp-doc.rspress-doc ul li::marker,
+html .rp-doc.rspress-doc ol li::marker {
+  color: var(--rp-c-text-4);
+}
+
+html .rp-doc.rspress-doc ul li:not(:first-child),
+html .rp-doc.rspress-doc ol li:not(:first-child) {
+  margin-top: 0.3rem;
+}
+
+html .rp-doc.rspress-doc li > ul,
+html .rp-doc.rspress-doc li > ol {
+  margin: 0.35rem 0;
+}
+
+html .rp-doc.rspress-doc hr {
+  margin: 2.5rem 0;
+  border-color: var(--rp-c-divider);
+}
+
+html .rp-doc.rspress-doc blockquote {
+  margin: 1.5rem 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--rp-c-divider);
+  color: var(--rp-c-text-2);
+}
+
+html .rp-doc.rspress-doc blockquote p {
+  margin: 0.25rem 0;
+  font-size: 14.5px;
+  color: inherit;
+}
+
+html .rp-doc.rspress-doc img {
+  border-radius: 8px;
+  border: 1px solid var(--rp-c-divider);
+}
+
+/* Inline code on a soft surface */
+html .rp-doc.rspress-doc :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--rp-c-text-code-border);
+  background: var(--rp-c-text-code-bg);
+  color: var(--rp-c-text-code);
+  font-family: var(--rp-font-family-mono);
+  font-size: 0.855em;
+  font-weight: 450;
+}
+
+html .rp-doc.rspress-doc a > code {
+  color: var(--rp-c-link);
+  background: color-mix(in srgb, var(--rp-c-link) 8%, transparent);
+  border-color: color-mix(in srgb, var(--rp-c-link) 18%, transparent);
+}
+
+/* Tables: 36px rows, hairline grid */
+html .rp-doc.rspress-doc table {
+  margin: 1.5rem 0;
+  border: 1px solid var(--rp-c-divider);
+  border-radius: 8px;
+  background: var(--rp-c-bg-alt);
+  font-size: 13px;
+}
+
+html .rp-doc.rspress-doc thead {
+  background: var(--rp-c-bg-soft);
+  color: var(--rp-c-text-2);
+}
+
+html .rp-doc.rspress-doc th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rp-c-divider);
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 20px;
+  letter-spacing: -0.005em;
+}
+
+html .rp-doc.rspress-doc td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--rp-c-divider-light);
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--rp-c-text-1);
+}
+
+html .rp-doc.rspress-doc tbody {
+  background: var(--rp-c-bg-alt);
+}
+
+html .rp-doc.rspress-doc tbody tr:hover {
+  background: var(--rp-c-bg-soft);
+}
+
+html .rp-doc.rspress-doc tr:last-child td {
+  border-bottom: none;
+}
+
+html .rp-doc.rspress-doc td :not(pre) > code,
+html .rp-doc.rspress-doc th :not(pre) > code {
+  font-size: 0.92em;
+}
+
+/* Code blocks: white panes, hairline frame, quiet controls */
+html .rp-codeblock {
+  border: 1px solid var(--rp-c-divider);
+  border-radius: 8px;
+  background: var(--rp-code-block-bg);
+}
+
+html .rp-codeblock__title {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rp-c-divider);
+  background: var(--rp-code-title-bg);
+  color: var(--rp-c-text-3);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+html .rp-codeblock__content {
+  background: var(--rp-code-block-bg);
+}
+
+html .rp-codeblock__content :where(code) {
+  padding: 12px 0;
+  font-size: var(--rp-code-font-size);
+  line-height: 1.65;
+}
+
+html .rp-codeblock__content :where(pre) {
+  font-family: var(--rp-font-family-mono);
+}
+
+html .rp-code-button-group {
+  top: 10px;
+  right: 12px;
+  gap: 8px;
+}
+
+html .rp-code-button-group__button {
+  opacity: 0.4;
+  transition: opacity 140ms ease;
+}
+
+html .rp-codeblock__content:hover .rp-code-button-group__button,
+html .rp-code-button-group__button:hover {
+  opacity: 1;
+}
+
+html .rp-code-button-group__icon {
+  width: 15px;
+  height: 15px;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-code-button-group__icon:hover {
+  color: var(--rp-c-text-1);
+}
+
+/* --------------------------------------------------------------------------
+ * Callouts — monochrome surface + 2px tone rule
+ * ----------------------------------------------------------------------- */
+
+html .rp-callout {
+  margin: 1.25rem 0;
+  padding: 14px 16px 6px;
+  border: 1px solid var(--rp-c-divider);
+  border-left-width: 2px;
+  border-radius: 8px;
+  background: var(--rp-c-bg-soft);
+}
+
+html .rp-callout__title {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: -0.005em;
+  color: var(--rp-c-text-0);
+}
+
+/* The accent is the left border now, not a floating bar. */
+html .rp-callout__title::before {
+  display: none;
+}
+
+html .rp-callout__content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--rp-c-text-2);
+}
+
+html .rp-callout__content p {
+  margin: 6px 0;
+}
+
+html .rp-callout--note {
+  border-left-color: var(--rp-container-note-border);
+}
+
+html .rp-callout--tip {
+  border-left-color: var(--rp-container-tip-border);
+}
+
+html .rp-callout--info {
+  border-left-color: var(--rp-container-info-border);
+}
+
+html .rp-callout--important {
+  border-left-color: var(--rp-container-important-border);
+}
+
+html .rp-callout--warning {
+  border-left-color: var(--rp-container-warning-border);
+}
+
+html .rp-callout--caution,
+html .rp-callout--danger {
+  border-left-color: var(--rp-container-danger-border);
+}
+
+html .rp-callout--details {
+  border-left-color: var(--rp-container-details-border);
+}
+
+html .rp-callout--note .rp-callout__title {
+  color: var(--rp-container-note-text);
+}
+
+html .rp-callout--tip .rp-callout__title {
+  color: var(--rp-container-tip-text);
+}
+
+html .rp-callout--info .rp-callout__title {
+  color: var(--rp-container-info-text);
+}
+
+html .rp-callout--important .rp-callout__title {
+  color: var(--rp-container-important-text);
+}
+
+html .rp-callout--warning .rp-callout__title {
+  color: var(--rp-container-warning-text);
+}
+
+html .rp-callout--caution .rp-callout__title,
+html .rp-callout--danger .rp-callout__title {
+  color: var(--rp-container-danger-text);
+}
+
+html .rp-callout :not(pre) > code {
+  color: var(--rp-c-text-0);
+  background: var(--rp-c-text-code-bg);
+  border-color: var(--rp-c-text-code-border);
+}
+
+html .rp-callout a {
+  color: var(--rp-c-link);
+  text-decoration-color: color-mix(in srgb, var(--rp-c-link) 40%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+ * Right table of contents
+ * ----------------------------------------------------------------------- */
+
+html .rp-doc-layout__outline {
+  padding-top: var(--rp-content-padding-y);
+  box-shadow: none;
+}
+
+html .rp-outline {
+  border-left: 0;
+}
+
+html .rp-outline__title {
+  height: auto;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-outline__title svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.6;
+}
+
+html .rp-outline__toc {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+html .rp-outline__divider {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  background: var(--rp-c-divider-light);
+}
+
+html .rp-toc-item {
+  margin-top: 8px;
+  padding-left: 0;
+  line-height: 1.45;
+}
+
+html .rp-toc-item__text {
+  color: var(--rp-c-text-3);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  transition: color 120ms ease;
+}
+
+html .rp-toc-item:hover .rp-toc-item__text {
+  color: var(--rp-c-text-1);
+}
+
+html .rp-outline .rp-toc-item--active .rp-toc-item__text,
+html .rp-outline .rp-toc-item--active .rp-toc-item__text code {
+  color: var(--rp-c-text-0);
+  font-weight: 500;
+}
+
+html .rp-outline .rp-toc-item--active::before {
+  width: 2px;
+  height: calc(100% - 2px);
+  top: 1px;
+  left: calc(-1 * var(--rp-outline-padding-x));
+  border-radius: 2px;
+  background: var(--rp-c-text-0);
+}
+
+html .rp-outline__action-row {
+  font-size: 11.5px;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-outline__action-row:hover {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-outline__action-row svg {
+  width: 13px;
+  height: 13px;
+}
+
+@media (max-width: 1279px) {
+  html .rp-doc-layout__outline {
+    background: color-mix(in srgb, var(--rp-c-bg-alt) 92%, transparent);
+    border: 1px solid var(--rp-c-divider);
+    border-radius: 10px;
+    box-shadow: var(--rp-shadow-3);
+  }
+}
+
+/* --------------------------------------------------------------------------
+ * Page footer / prev-next
+ * ----------------------------------------------------------------------- */
+
+html .rp-doc-footer {
+  margin-top: 44px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rp-c-divider);
+}
+
+html .rp-doc-footer .rp-edit-link {
+  color: var(--rp-c-text-2);
+  font-size: 12.5px;
+  font-weight: 450;
+}
+
+html .rp-doc-footer .rp-edit-link:hover {
+  color: var(--rp-c-text-0);
+}
+
+html .rp-last-updated {
+  color: var(--rp-c-text-3);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html .rp-last-updated p {
+  margin: 0;
+}
+
+html .rp-doc-footer__divider {
+  height: 1px;
+  margin: 20px 0;
+  background: var(--rp-c-divider-light);
+}
+
+html .rp-prev-next-page {
+  gap: 8px;
+}
+
+html .rp-prev-next-page__item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+html .rp-prev-next-page__item:hover {
+  opacity: 1;
+  background: var(--rp-c-bg-alt);
+  border-color: var(--rp-c-divider);
+}
+
+html .rp-prev-next-page__item__desc {
+  padding: 0;
+  margin-bottom: 2px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rp-c-text-3);
+}
+
+html .rp-prev-next-page__item__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--rp-c-text-0);
+}
+
+html .rp-prev-next-page__icon {
+  font-size: 13px;
+  color: var(--rp-c-text-3);
+}
+
+/* Site footer */
+html .rp-home-footer {
+  margin-top: 48px;
+  padding: 22px 24px;
+  border-top: 1px solid var(--rp-c-divider);
+}
+
+html .rp-home-footer__message {
+  color: var(--rp-c-text-3);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+html .rp-home-footer__message a {
+  color: var(--rp-c-text-2);
+  text-decoration: none;
+}
+
+html .rp-home-footer__message a:hover {
+  color: var(--rp-c-text-0);
+  text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.rp-code-block {
-  border: 1px solid var(--rp-c-divider);
-  border-radius: var(--rp-radius);
-}
+/* --------------------------------------------------------------------------
+ * Responsive shell
+ * ----------------------------------------------------------------------- */
 
-.rp-doc table {
-  border-radius: var(--rp-radius);
-  overflow: hidden;
-}
-
-.rp-doc blockquote {
-  border-left-color: var(--rp-c-text-3);
-  color: var(--rp-c-text-2);
-}
-
-.rp-sidebar-item {
-  border-radius: var(--rp-radius-small);
-}
-
-.rp-outline__item {
-  border-radius: var(--rp-radius-small);
+@media (max-width: 1279px) {
+  html:root {
+    --rp-content-padding-x: 36px;
+    --rp-content-padding-y: 36px;
+  }
 }
 
 @media (max-width: 768px) {
-  .rp-home-hero__image-img {
-    max-width: 150px;
+  html:root {
+    --rp-content-padding-x: 20px;
+    --rp-content-padding-y: 28px;
+  }
+
+  html .rp-nav {
+    padding: 0 14px;
+    --rp-nav-padding-x: 14px;
+  }
+
+  html .rp-search-button--mobile {
+    margin-right: 2px;
+  }
+
+  html .rp-doc.rspress-doc h1 {
+    font-size: 28px;
+  }
+
+  html .rp-nav-screen {
+    background: var(--rp-c-bg);
+    padding: 20px 24px;
+    border-top: 1px solid var(--rp-c-divider);
+  }
+
+  html .rp-nav-screen-divider {
+    background: var(--rp-c-divider-light);
   }
 }
 
 /*
  * The custom NavTitle shadows the theme's own component, so Rspress would
- * otherwise drop the stylesheet that swaps the light/dark wordmark. These
- * are the three rules it carried; keeping them here avoids a deep import into
- * the package's `dist/`.
+ * otherwise drop the stylesheet that swaps the light/dark wordmark. These are
+ * the three rules it carried; keeping them here avoids a deep import into the
+ * package's `dist/`.
  */
-.rspress-logo {
-  height: 1.6rem;
-}
-
 .dark .rp-nav__title__logo-image--light {
   display: none;
 }

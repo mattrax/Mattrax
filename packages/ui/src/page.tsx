@@ -29,14 +29,16 @@ function PageHeaderBody(props: ComponentProps<"div">) {
 }
 
 function PageTitle(props: ComponentProps<"h1">) {
-  const [local, others] = splitProps(props, ["class"]);
+  const [local, others] = splitProps(props, ["class", "children"]);
 
   return (
     <h1
       data-slot="page-title"
       class={cn("text-[22px] font-[580] leading-[1.15] tracking-[-0.028em]", local.class)}
       {...others}
-    />
+    >
+      {local.children}
+    </h1>
   );
 }
 
@@ -81,6 +83,8 @@ function Page(props: ComponentProps<"div"> & { wide?: boolean }) {
   );
 }
 
+const trendArrow = { up: "↑", down: "↓", flat: "→" } as const;
+
 /** A compact metric: label, value, and an optional delta or hint. */
 function Stat(props: {
   label: string;
@@ -107,7 +111,7 @@ function Stat(props: {
               local.trend.direction === "flat" && "text-muted-foreground",
             )}
           >
-            {local.trend.direction === "up" ? "↑" : local.trend.direction === "down" ? "↓" : "→"}
+            {trendArrow[local.trend.direction]}
             {local.trend.value}
           </span>
         ) : null}

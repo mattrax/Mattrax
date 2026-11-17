@@ -4,8 +4,8 @@ import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { readLastTenant } from "~/components/app-shell";
 import { resolveLandingTenant } from "~/lib/tenant";
-import { Page, Panel } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Page } from "~/components/mdm/common";
+import { Button, Card } from "@mattrax/ui";
 import { Sparkles } from "~/components/ui/icons";
 import { errorMessage } from "~/lib/errors";
 import { enterprise, meQueryOptions } from "~/lib/enterprise";
@@ -113,15 +113,17 @@ export default function DashboardRedirectPage() {
       }
     >
       {(current) => (
-        <Page class="max-w-[640px]">
-          <Panel class="overflow-hidden">
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(70%_100%_at_30%_0%,var(--brand-glow),transparent_75%)]" />
+        <Page class="max-w-[560px]">
+          <Card class="relative overflow-hidden">
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(70%_100%_at_30%_0%,var(--brand-muted),transparent_75%)]" />
             <div class="relative p-5 sm:p-6">
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-brand">
+              <span class="label-caps inline-flex items-center gap-1.5 text-brand">
                 <Sparkles class="size-3" />
                 Designer handoff
               </span>
-              <h1 class="mt-3 text-[22px] font-semibold tracking-[-0.02em]">Policy draft ready</h1>
+              <h1 class="mt-2 text-[20px] font-[560] leading-tight tracking-[-0.026em]">
+                Policy draft ready
+              </h1>
               <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                 {current().name} ·{" "}
                 {policyPlatforms(current())
@@ -154,7 +156,7 @@ export default function DashboardRedirectPage() {
                   </label>
                   <select
                     id="draft-tenant"
-                    class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] text-foreground"
+                    class="h-8 rounded-md border border-input bg-card px-2.5 text-[12.5px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
                     value={tenantId()}
                     onChange={(event) => setTenantId(event.currentTarget.value)}
                   >
@@ -190,7 +192,7 @@ export default function DashboardRedirectPage() {
                 )}
               </Show>
             </div>
-          </Panel>
+          </Card>
         </Page>
       )}
     </Show>

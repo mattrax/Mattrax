@@ -82,7 +82,7 @@ function Button(props: ButtonProps) {
       class={cn(buttonVariants({ variant: local.variant, size: local.size }), local.class)}
       disabled={local.as === "a" ? undefined : local.disabled || busy()}
       aria-busy={busy() ? "true" : local["aria-busy"]}
-      {...(others as Record<string, unknown>)}
+      {...others}
     >
       {busy() ? <Spinner class="size-3.5" /> : null}
       {local.children}

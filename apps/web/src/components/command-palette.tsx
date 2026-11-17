@@ -1,3 +1,4 @@
+import * as DialogPrimitive from "@kobalte/core/dialog";
 import { useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
@@ -6,12 +7,6 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show
 import { Button } from "~/components/ui/button";
 import { useTenantRouteParams } from "~/lib/route-params";
 import { routes } from "~/lib/routes";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "~/components/ui/dialog";
 import {
   Activity,
   BookOpen,
@@ -1084,18 +1079,25 @@ export function CommandPalette() {
         open state authoritative while it is on screen (Escape, light dismiss and
         command selection all unmount it).
       */}
-        <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
-          <DialogContent
-            data-slot="command-palette"
-            showCloseButton={false}
-            class="palette-card !top-[10vh] !translate-y-0 w-[calc(100vw-2rem)] max-w-2xl gap-0 overflow-hidden p-0"
-            onKeyDown={onContentKeyDown}
-          >
-            <DialogTitle class="sr-only">Search Mattrax</DialogTitle>
-            <DialogDescription class="sr-only">
-              Search settings, devices, policies, people, and commands. Use the arrow keys to move
-              through results and Enter to run the highlighted one.
-            </DialogDescription>
+        <DialogPrimitive.Root defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay
+              class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
+              onPointerDown={(event) => {
+                if (event.target === event.currentTarget) close();
+              }}
+            />
+            <DialogPrimitive.Content
+              data-slot="command-palette"
+              aria-modal="true"
+              class="palette-card fixed inset-x-0 top-[10vh] z-[71] mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
+              onKeyDown={onContentKeyDown}
+            >
+                <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
+              <DialogPrimitive.Description class="sr-only">
+                Search settings, devices, policies, people, and commands. Use the arrow keys to move
+                through results and Enter to run the highlighted one.
+              </DialogPrimitive.Description>
 
               <div class="flex items-center gap-2 border-b border-border px-4 py-3">
                 <Search class="size-4 text-muted-foreground" />
@@ -1276,8 +1278,9 @@ export function CommandPalette() {
                   <span>Showing first {SEARCH_LIMIT} matches</span>
                 </Show>
               </div>
-            </DialogContent>
-        </Dialog>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       </Show>
     </>
   );

@@ -1,4 +1,4 @@
-import type { ComponentProps, JSX } from "@solidjs/web";
+import type { ComponentProps } from "@solidjs/web";
 import { splitProps } from "./lib/solid";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./lib/cn";
@@ -52,7 +52,7 @@ function Badge(props: BadgeProps) {
           class={cn("size-1.5 shrink-0 rounded-full", dotColour[local.dot])}
         />
       ) : null}
-      {local.children as JSX.Element}
+      {local.children}
     </span>
   );
 }

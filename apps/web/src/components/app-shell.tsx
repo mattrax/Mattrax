@@ -13,6 +13,8 @@ import {
 } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
+  Avatar,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -22,26 +24,42 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
+  Kbd,
+  Separator,
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@mattrax/ui";
 import {
   Activity,
   BookOpen,
   Building2,
   ChevronsUpDown,
+  CommandIcon,
   HelpCircle,
+  LayoutDashboard,
   LogOut,
+  Menu,
+  MonitorSmartphone,
+  Package,
+  PanelRight,
   Plus,
   Search as SearchIcon,
+  Settings,
+  ShieldCheck,
   User,
+  UsersRound,
 } from "~/components/ui/icons";
 import { meQueryOptions } from "~/lib/enterprise";
+import type { Permission } from "@mattrax/enterprise-domain/client";
 import { routes } from "~/lib/routes";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
 import {
   SETTINGS_READ_PERMISSIONS,
   tenantRoleName,
-  tenantSectionPermission,
   useCan,
 } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
@@ -52,12 +70,26 @@ import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
 
+type NavGroup = "workspace" | "manage" | "settings";
+
 type NavItem = {
   id: string;
   label: string;
   href: string;
+  group: NavGroup;
+  icon: (props: { class?: string }) => JSX.Element;
   match: (path: string) => boolean;
+  /** Permission the section needs to appear; absent means always visible. */
+  permission?: Permission;
+  /** Settings is only useful when at least one settings tab is readable. */
+  settingsGate?: boolean;
 };
+
+const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
+  { id: "workspace", label: "Workspace" },
+  { id: "manage", label: "Manage" },
+  { id: "settings", label: "Settings" },
+];
 
 const LAST_TENANT_KEY = "mattrax:last-tenant";
 
@@ -76,12 +108,6 @@ function tenantInitials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
-}
-
-function prefersReducedMotion() {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** The tenant most recently used on this device, so unscoped pages still
@@ -117,38 +143,47 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-7 min-w-0 max-w-[14rem] items-center gap-2 rounded-md px-1.5 pr-2 text-left outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/60 data-expanded:bg-hover motion-safe:active:scale-[0.985]"
+        class="group flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-2 text-left shadow-[0_1px_2px_rgb(24_24_22/0.04)] outline-none transition-[border-color,background-color] duration-150 ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 data-expanded:border-border-strong"
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         {/* The name is composed from the visible content so assistive tech and
             the visible label stay in sync; the leading text states the action. */}
         <span class="sr-only">Switch tenant: </span>
-        <Show when={!active()}>
-          <span
-            aria-hidden="true"
-            class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-border bg-surface text-muted-foreground"
-          >
-            <Building2 class="size-2.5" />
-          </span>
-        </Show>
-        <span class="min-w-0 truncate text-[13px] font-[450] text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
+        <span
+          aria-hidden="true"
+          class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface text-[9.5px] font-[600] leading-none text-foreground/80 ring-1 ring-inset ring-border"
+        >
+          <Show when={active()} fallback={<Building2 class="size-3.5" />}>
+            {(tenant) => tenantInitials(tenant().name)}
+          </Show>
+        </span>
+        <span class="min-w-0 flex-1">
           <Show
             when={!loading()}
-            fallback={<span class="block h-2.5 w-20 animate-pulse rounded-full bg-hover" />}
+            fallback={<span class="block h-2.5 w-24 animate-pulse rounded-full bg-hover" />}
           >
-            <Show when={active()} fallback="Select tenant">
-              {(tenant) => tenant().name}
+            <span class="block truncate text-[12.5px] font-[520] leading-4 text-foreground">
+              <Show when={active()} fallback="Select tenant">
+                {(tenant) => tenant().name}
+              </Show>
+            </span>
+            <Show when={active()}>
+              {(tenant) => (
+                <span class="mt-0.5 block truncate text-[10.5px] leading-3.5 text-muted-foreground">
+                  <span class="capitalize">{tenantRoleName(tenant()) ?? tenant().role}</span>
+                  <span class="px-1 text-subtle-foreground/50">·</span>
+                  <span class="normal-case">{tenant().slug}</span>
+                </span>
+              )}
             </Show>
           </Show>
         </span>
-        <ChevronsUpDown class="-ml-1 size-3 shrink-0 text-muted-foreground transition-colors group-hover:text-muted-foreground group-data-[expanded]:text-muted-foreground" />
+        <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="w-[288px] rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
+      <DropdownMenuContent class="w-[288px]">
         <DropdownMenuGroup>
-          <DropdownMenuLabel class="px-2.5 pb-1 pt-2 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
-            Tenants
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>Tenants</DropdownMenuLabel>
           <Show
             when={tenants().length > 0}
             fallback={
@@ -170,18 +205,18 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
                   <DropdownMenuRadioItem
                     value={tenant.id}
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
-                    class="flex h-10 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 pl-8 text-sm outline-none data-highlighted:bg-hover"
+                    class="h-10 cursor-pointer"
                   >
                     <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-hover text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
                       {tenantInitials(tenant.name)}
                     </span>
                     <span class="min-w-0 flex-1 leading-none">
-                      <span class="block truncate text-[13px] font-[450] text-foreground">
+                      <span class="block truncate text-[12.5px] font-[500] text-foreground">
                         {tenant.name}
                       </span>
                       <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
                         <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
-                        <span class="px-1 text-muted-foreground/40">·</span>
+                        <span class="px-1 text-subtle-foreground/40">·</span>
                         <span class="normal-case">{tenant.slug}</span>
                       </span>
                     </span>
@@ -191,11 +226,8 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             </DropdownMenuRadioGroup>
           </Show>
         </DropdownMenuGroup>
-        <div class="mx-1 my-1 h-px bg-border" />
-        <DropdownMenuItem
-          onSelect={() => navigate("/tenants/new")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none data-highlighted:bg-hover data-highlighted:text-foreground"
-        >
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => navigate("/tenants/new")} class="gap-2.5">
           <span class="flex size-5 items-center justify-center text-muted-foreground">
             <Plus class="size-3.5" />
           </span>
@@ -215,18 +247,20 @@ function SearchButton(props: { compact?: boolean }) {
       onClick={open}
       aria-keyshortcuts="Meta+K Control+K"
       class={cn(
-        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,scale] duration-150 ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]",
-        props.compact ? "w-7 justify-center px-0 sm:w-auto sm:justify-start sm:px-2" : "px-2",
+        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,border-color] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        props.compact
+          ? "w-7 justify-center border border-transparent hover:bg-hover hover:text-foreground sm:w-[196px] sm:justify-start sm:border-border sm:bg-card sm:px-2"
+          : "w-[196px] justify-start border border-border bg-card px-2 hover:border-border-strong hover:text-foreground",
       )}
     >
-      <SearchIcon class="size-3.5" aria-hidden="true" />
+      <SearchIcon class="size-3.5 shrink-0" aria-hidden="true" />
       <span class="sr-only">Search</span>
-      <kbd
-        aria-hidden="true"
-        class="hidden rounded border border-border bg-surface px-1 py-px font-sans text-[9.5px] text-muted-foreground sm:inline"
-      >
+      <span class="hidden text-[12px] sm:inline" aria-hidden="true">
+        Search
+      </span>
+      <Kbd class="ml-auto hidden sm:inline-flex" aria-hidden="true">
         ⌘K
-      </kbd>
+      </Kbd>
     </button>
   );
 }
@@ -239,53 +273,74 @@ type ShellUser = {
   emailVerified?: boolean;
 };
 
-function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | Promise<void> }) {
+function UserMenu(props: {
+  user: ShellUser | undefined;
+  onSignOut: () => void | Promise<void>;
+  variant?: "sidebar" | "bar";
+}) {
   const user = () => props.user;
   const navigate = useNavigate();
+  const sidebar = () => props.variant !== "bar";
 
   return (
-    <DropdownMenu placement="bottom-end">
+    <DropdownMenu placement={sidebar() ? "top-start" : "bottom-end"}>
       <DropdownMenuTrigger
-        class="flex size-6 items-center justify-center overflow-hidden rounded-full bg-hover text-[9.5px] font-semibold text-foreground outline-none ring-1 ring-inset ring-border transition-[box-shadow,scale] duration-150 ease-swift hover:ring-input focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:active:scale-[0.985]"
+        class={cn(
+          "outline-none transition-[background-color,border-color,box-shadow] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+          sidebar()
+            ? "group flex h-10 w-full items-center gap-2.5 rounded-lg px-1.5 text-left hover:bg-hover data-expanded:bg-hover"
+            : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
+        )}
         title={user()?.name ?? "Account"}
         aria-label={user()?.image ? "Account menu" : `${initials(user()?.name)}, account menu`}
       >
         <Show
-          when={user()?.image}
-          fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}
+          when={sidebar()}
+          fallback={
+            <Show when={user()?.image} fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}>
+              {(image) => <img src={image()} alt="" class="size-full object-cover" />}
+            </Show>
+          }
         >
-          {(image) => <img src={image()} alt="" class="size-full object-cover" />}
+          <Avatar size="sm" class="size-6 text-[9px]">
+            <Show
+              when={user()?.image}
+              fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}
+            >
+              {(image) => <img src={image()} alt="" class="size-full object-cover" />}
+            </Show>
+          </Avatar>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
+              {user()?.name ?? "Account"}
+            </span>
+            <span class="mt-0.5 block truncate text-[10.5px] leading-3.5 text-muted-foreground">
+              {user()?.email}
+            </span>
+          </span>
+          <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
         </Show>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-[248px] rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
+      <DropdownMenuContent class="w-[248px]">
         <DropdownMenuGroup>
           <div class="flex items-center gap-2.5 px-2 py-2">
-            <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-hover text-[9.5px] font-semibold ring-1 ring-inset ring-border">
+            <Avatar size="sm" class="size-6 text-[9px]">
               <span aria-hidden="true">{initials(user()?.name)}</span>
-            </span>
+            </Avatar>
             <span class="min-w-0">
-              <DropdownMenuLabel class="block truncate text-[13px] font-medium">
+              <DropdownMenuLabel class="block h-auto truncate py-0 text-[12.5px] font-[550] text-foreground normal-case tracking-normal">
                 {user()?.name}
               </DropdownMenuLabel>
               <span class="block truncate text-[11px] text-muted-foreground">{user()?.email}</span>
             </span>
           </div>
         </DropdownMenuGroup>
-        <DropdownMenuSeparator class="my-1 h-px bg-border" />
-        <DropdownMenuItem
-          onSelect={() => navigate("/account")}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
-        >
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => navigate("/account")}>
           <User class="size-3.5 text-muted-foreground" />
           Account settings
         </DropdownMenuItem>
-        <DropdownMenuItem
-          as="a"
-          role="menuitem"
-          href="/docs/"
-          target="_self"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
-        >
+        <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
         </DropdownMenuItem>
@@ -293,7 +348,6 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           as="a"
           role="menuitem"
           href="mailto:hello@mattrax.app?subject=Mattrax%20support"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <HelpCircle class="size-3.5 text-muted-foreground" />
           Support
@@ -304,16 +358,12 @@ function UserMenu(props: { user: ShellUser | undefined; onSignOut: () => void | 
           href="https://status.otbeaumont.me"
           target="_blank"
           rel="noopener"
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] outline-none focus:bg-hover"
         >
           <Activity class="size-3.5 text-muted-foreground" />
           System status
         </DropdownMenuItem>
-        <DropdownMenuSeparator class="my-1 h-px bg-border" />
-        <DropdownMenuItem
-          onSelect={() => props.onSignOut()}
-          class="flex h-8 cursor-pointer items-center gap-2.5 rounded-[5px] px-2 text-[12.5px] text-muted-foreground outline-none focus:bg-hover focus:text-foreground"
-        >
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => props.onSignOut()}>
           <LogOut class="size-3.5" />
           Sign out
         </DropdownMenuItem>
@@ -327,24 +377,211 @@ function navFor(tenantId: string | undefined): NavItem[] {
   const tenant = routes.tenant(tenantId);
   const base = tenant.overview();
 
-  const item = (id: string, label: string, href: string, exact = false): NavItem => ({
+  const item = (
+    id: string,
+    label: string,
+    href: string,
+    icon: NavItem["icon"],
+    group: NavGroup,
+    options: { exact?: boolean; permission?: Permission } = {},
+  ): NavItem => ({
     id,
     label,
     href,
-    match: (value) => value === href || (!exact && value.startsWith(`${href}/`)),
+    icon,
+    group,
+    permission: options.permission,
+    match: (value) => value === href || (!options.exact && value.startsWith(`${href}/`)),
   });
 
   // Overview is the tenant root; a prefix match would also match every child.
   return [
-    item("overview", "Overview", base, true),
-    item("dashboards", "Dashboards", tenant.dashboards()),
-    item("devices", "Devices", tenant.devices()),
-    item("groups", "Groups", tenant.groups()),
-    item("policies", "Policies", tenant.policies()),
-    item("applications", "Applications", tenant.applications()),
-    item("scripts", "Scripts", tenant.scripts()),
-    item("settings", "Settings", tenant.settings()),
+    item("overview", "Overview", base, LayoutDashboard, "workspace", {
+      exact: true,
+      permission: "tenant.read",
+    }),
+    item("dashboards", "Dashboards", tenant.dashboards(), PanelRight, "workspace", {
+      permission: "dashboards.read",
+    }),
+    item("devices", "Devices", tenant.devices(), MonitorSmartphone, "workspace", {
+      permission: "devices.read",
+    }),
+    item("groups", "Groups", tenant.groups(), UsersRound, "workspace", {
+      permission: "groups.read",
+    }),
+    item("policies", "Policies", tenant.policies(), ShieldCheck, "manage", {
+      permission: "policies.read",
+    }),
+    item("applications", "Applications", tenant.applications(), Package, "manage", {
+      permission: "applications.read",
+    }),
+    item("scripts", "Scripts", tenant.scripts(), CommandIcon, "manage", {
+      permission: "scripts.read",
+    }),
+    {
+      id: "settings",
+      label: "Settings",
+      href: tenant.settings(),
+      group: "settings",
+      icon: Settings,
+      settingsGate: true,
+      match: (value) => value === tenant.settings() || value.startsWith(`${tenant.settings()}/`),
+    },
+    item(
+      "members",
+      "Members",
+      tenant.settingsAdministrators(),
+      UsersRound,
+      "settings",
+      { permission: "members.read" },
+    ),
+    item("audit", "Audit log", `${tenant.settings()}/audit`, Activity, "settings", {
+      permission: "audit.read",
+    }),
   ];
+}
+
+function NavGroups(props: {
+  items: NavItem[];
+  path: string;
+  label: string;
+  onNavigate?: () => void;
+}) {
+  const grouped = (group: NavGroup) => props.items.filter((item) => item.group === group);
+
+  // A section link is a prefix match, so `/settings/administrators` matches
+  // both Settings and Members. The most specific href owns the highlight.
+  const activeId = createMemo(
+    () =>
+      props.items
+        .filter((item) => item.match(props.path))
+        .sort((a, b) => b.href.length - a.href.length)[0]?.id,
+  );
+
+  return (
+    <nav aria-label={props.label} class="flex flex-col gap-1">
+      <For each={NAV_GROUPS}>
+        {(group) => {
+          const items = () => grouped(group.id);
+
+          return (
+            <Show when={items().length > 0}>
+              <div class="pt-3 first:pt-1">
+                <div class="label-caps px-2 pb-1.5">{group.label}</div>
+                <ul class="space-y-0.5">
+                  <For each={items()}>
+                    {(item) => {
+                      const active = () => activeId() === item.id;
+
+                      return (
+                        <li>
+                          <a
+                            href={item.href}
+                            aria-current={active() ? "page" : undefined}
+                            onClick={() => props.onNavigate?.()}
+                            class={cn(
+                              "group flex h-7 items-center gap-2 rounded-md border px-2 text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-150 ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                              active()
+                                ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
+                                : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
+                            )}
+                          >
+                            <item.icon
+                              class={cn(
+                                "size-3.5 shrink-0 transition-colors",
+                                active()
+                                  ? "text-foreground"
+                                  : "text-subtle-foreground group-hover:text-foreground",
+                              )}
+                            />
+                            <span class="truncate">{item.label}</span>
+                          </a>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ul>
+              </div>
+            </Show>
+          );
+        }}
+      </For>
+    </nav>
+  );
+}
+
+function SidebarPanel(props: {
+  user: ShellUser | undefined;
+  onSignOut: () => void | Promise<void>;
+  activeId: string | undefined;
+  items: NavItem[];
+  path: string;
+  label: string;
+  onNavigate?: () => void;
+}) {
+  return (
+    <div class="flex h-full min-h-0 flex-col bg-surface">
+      <div class="flex h-12 shrink-0 items-center px-4">
+        <a
+          href="/dashboard"
+          class="flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          aria-label="Mattrax home"
+          onClick={() => props.onNavigate?.()}
+        >
+          <BrandLogo class="h-3" />
+        </a>
+      </div>
+
+      <div class="px-2.5 pb-2">
+        <TenantSwitcher activeId={props.activeId} userId={props.user?.id} />
+      </div>
+
+      <div class="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
+        <NavGroups
+          items={props.items}
+          path={props.path}
+          label={props.label}
+          onNavigate={props.onNavigate}
+        />
+      </div>
+
+      <Separator />
+      <div class="shrink-0 p-2">
+        <UserMenu user={props.user} onSignOut={props.onSignOut} />
+      </div>
+    </div>
+  );
+}
+
+function ShellBreadcrumb(props: {
+  tenantName: string | undefined;
+  tenantHref: string | undefined;
+  label: string;
+}) {
+  return (
+    <nav aria-label="Breadcrumb" class="min-w-0">
+      <ol class="flex min-w-0 items-center gap-1.5 text-[12px]">
+        <Show when={props.tenantName && props.tenantHref}>
+          <li class="hidden min-w-0 sm:block">
+            <a
+              href={props.tenantHref}
+              class="block max-w-[16ch] truncate text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:text-foreground"
+            >
+              {props.tenantName}
+            </a>
+          </li>
+          <li aria-hidden="true" class="hidden text-subtle-foreground/70 sm:block">
+            /
+          </li>
+        </Show>
+        <li class="min-w-0">
+          <span aria-current="page" class="block truncate font-[500] text-foreground">
+            {props.label}
+          </span>
+        </li>
+      </ol>
+    </nav>
+  );
 }
 
 export function AppShell(props: {
@@ -357,6 +594,7 @@ export function AppShell(props: {
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => meQueryOptions(props.user?.id));
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
+  const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
 
   onSettled(() => {
     setLastTenant(readLastTenant());
@@ -375,6 +613,14 @@ export function AppShell(props: {
       if (!id) return;
       rememberTenant(id);
       setLastTenant(id);
+    },
+  );
+
+  // A sheet left open while the route changes would cover the page it opened.
+  createEffect(
+    () => location.pathname,
+    () => {
+      setMobileNavOpen(false);
     },
   );
 
@@ -417,6 +663,20 @@ export function AppShell(props: {
   });
 
   const scopedTenant = createMemo(() => (routeTenantId() ? activeId() : undefined));
+
+  /** Non-tenant pages still carry the console chrome, built from the tenant
+   * the switcher is showing rather than from the URL. */
+  const navTenant = createMemo(() => {
+    const segment = tenantSegment();
+
+    if (segment) return segment;
+    const id = activeId();
+
+    if (!id) return undefined;
+
+    return me.data?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
+  });
+
   const { can, canAny } = useCan();
 
   // Mutations broadcast to other tabs under the tenant currently on screen.
@@ -426,12 +686,10 @@ export function AppShell(props: {
   );
 
   const navItems = createMemo(() =>
-    navFor(tenantSegment()).filter((item) => {
-      if (item.id === "settings") return canAny(SETTINGS_READ_PERMISSIONS);
+    navFor(navTenant()).filter((item) => {
+      if (item.settingsGate) return canAny(SETTINGS_READ_PERMISSIONS);
 
-      const required = tenantSectionPermission(item.id);
-
-      return !required || can(required);
+      return !item.permission || can(item.permission);
     }),
   );
 
@@ -524,186 +782,131 @@ export function AppShell(props: {
     },
   );
 
-  let navRef: HTMLElement | undefined;
-  const [indicator, setIndicator] = createSignal<{ left: number; width: number } | null>(null);
-  const [indicatorReady, setIndicatorReady] = createSignal(false);
-  let indicatorFrame: number | undefined;
-
-  const measureIndicator = () => {
-    if (!navRef) return;
-    const activeLink = navRef.querySelector<HTMLElement>('[aria-current="page"]');
-
-    if (!activeLink) {
-      setIndicator(null);
-
-      return;
-    }
-
-    setIndicator({
-      left: activeLink.offsetLeft + 12,
-      width: Math.max(0, activeLink.offsetWidth - 24),
-    });
-  };
-
-  const queueMeasure = () => {
-    if (typeof window === "undefined") return;
-
-    if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
-    indicatorFrame = requestAnimationFrame(() => {
-      indicatorFrame = undefined;
-      measureIndicator();
-    });
-  };
-
-  onSettled(() => {
-    queueMeasure();
-    requestAnimationFrame(() => setIndicatorReady(true));
-    const observer = new ResizeObserver(queueMeasure);
-
-    if (navRef) observer.observe(navRef);
-    window.addEventListener("resize", queueMeasure);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", queueMeasure);
-
-      if (indicatorFrame !== undefined) cancelAnimationFrame(indicatorFrame);
-    };
-  });
-
-  createEffect(
-    () => navItems(),
-    () => queueMeasure(),
-  );
-
-  createEffect(
-    () => location.pathname,
-    () => {
-      queueMeasure();
-      queueMicrotask(() => {
-        navRef?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({
-          inline: "nearest",
-          block: "nearest",
-          behavior: prefersReducedMotion() ? "auto" : "smooth",
-        });
-      });
-    },
-  );
-
-  return (
-    <div class="flex min-h-svh flex-col bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
+  return (    <div class="flex min-h-svh bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
       <a
         href="#main"
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
       >
         Skip to content
       </a>
-      <header class="sticky top-0 z-40 border-b border-border bg-background">
-        <div class="mx-auto flex h-12 max-w-[1600px] items-center gap-2 px-3 sm:px-5 lg:px-6">
-          <a
-            href="/dashboard"
-            class="flex shrink-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-            aria-label="Mattrax home"
-          >
-            <BrandLogo class="h-3.5" />
-          </a>
 
-          <span class="mx-1 hidden h-3.5 w-px bg-border sm:block" aria-hidden="true" />
-          <TenantSwitcher activeId={activeId()} userId={props.user?.id} />
+      <aside class="sticky top-0 hidden h-svh w-[244px] shrink-0 border-r border-border lg:block">
+        <SidebarPanel
+          user={props.user}
+          onSignOut={props.onSignOut}
+          activeId={activeId()}
+          items={navItems()}
+          path={location.pathname}
+          label="Primary"
+        />
+      </aside>
 
-          <div class="ml-auto flex items-center gap-1">
-            <SearchButton />
-            <UserMenu user={props.user} onSignOut={props.onSignOut} />
-          </div>
-        </div>
-
-        <div class="mx-auto flex max-w-[1600px] items-center gap-3 px-3 sm:px-5 lg:px-6">
-          <div class="relative min-w-0 flex-1">
-            <nav
-              ref={(element) => {
-                navRef = element;
-              }}
-              aria-label="Primary"
-              class="no-scrollbar relative -mb-px flex h-11 items-center gap-0.5 overflow-x-auto"
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header class="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+          <div class="flex h-12 items-center gap-2 px-3 sm:px-5">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              class="lg:hidden"
+              aria-label="Open navigation"
+              onClick={() => setMobileNavOpen(true)}
             >
-              <For each={navItems()}>
-                {(item) => {
-                  const active = () => item.match(location.pathname);
-
-                  return (
-                    <a
-                      href={item.href}
-                      aria-current={active() ? "page" : undefined}
-                      class={cn(
-                        "relative flex h-11 shrink-0 items-center px-3 text-[13px] font-[450] transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60",
-                        active()
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {item.label}
-                    </a>
-                  );
-                }}
-              </For>
-              <Show when={indicator()}>
-                {(position) => (
-                  <span
-                    class={cn(
-                      "pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-full bg-foreground",
-                      indicatorReady() &&
-                        "transition-[transform,width] duration-200 ease-swift motion-reduce:transition-none",
-                    )}
-                    style={{
-                      transform: `translateX(${position().left}px)`,
-                      width: `${position().width}px`,
-                    }}
-                    aria-hidden="true"
-                  />
-                )}
-              </Show>
-            </nav>
+              <Menu class="size-4" />
+            </Button>
+            <a
+              href="/dashboard"
+              class="flex shrink-0 items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
+              aria-label="Mattrax home"
+            >
+              <BrandLogo class="h-3" />
+            </a>
             <span
-              class="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent sm:hidden"
+              class="mx-1 hidden h-3.5 w-px bg-border lg:block"
               aria-hidden="true"
             />
+            <div class="min-w-0 flex-1">
+              <ShellBreadcrumb
+                tenantName={tenantName()}
+                tenantHref={tenantSegment() ? routes.tenant(tenantSegment()).overview() : undefined}
+                label={pageLabel()}
+              />
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <SearchButton compact />
+              <Button
+                as="a"
+                href="/docs/"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Documentation"
+                title="Documentation"
+              >
+                <HelpCircle class="size-4" />
+              </Button>
+              <span class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden" aria-hidden="true" />
+              <span class="lg:hidden">
+                <UserMenu user={props.user} onSignOut={props.onSignOut} variant="bar" />
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Route progress: a slim indeterminate segment pinned to the header
-            edge. It disappears the moment the router settles, so it never
-            competes with the page's own entrance. */}
-        <Show when={isRouting()}>
-          <div
-            class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
-            aria-hidden="true"
-          >
-            <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
-          </div>
-        </Show>
-      </header>
+          {/* Route progress: a slim indeterminate segment pinned to the header
+              edge. It disappears the moment the router settles, so it never
+              competes with the page's own entrance. */}
+          <Show when={isRouting()}>
+            <div
+              class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
+              aria-hidden="true"
+            >
+              <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+            </div>
+          </Show>
+        </header>
 
-      <main
-        id="main"
-        tabindex="-1"
-        class={cn(
-          "relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 scroll-mt-24 flex-col transition-opacity duration-[140ms] ease-swift focus:outline-none",
-          isRouting() && "opacity-70",
-        )}
-      >
-        <Errored
-          fallback={(error, reset) => (
-            <ErrorPanel boundary="dashboard" error={error()} reset={reset} label="Dashboard" />
+        <main
+          id="main"
+          tabindex="-1"
+          class={cn(
+            "relative z-10 flex w-full flex-1 flex-col transition-opacity duration-[140ms] ease-swift focus:outline-none",
+            isRouting() && "opacity-70",
           )}
         >
-          {/* Page content mounts after the shell is hydrated. Server-rendered
-              page markup is data-independent, but the client resolves queries
-              before claiming it, so hydration would silently detach controls
-              (column pickers, filters, sort buttons). Rendering the page once
-              hydration finishes keeps every control live on cold loads. */}
-          <Show when={!isServer && isHydrated()}>{props.children}</Show>
-        </Errored>
-      </main>
+          <Errored
+            fallback={(error, reset) => (
+              <ErrorPanel boundary="dashboard" error={error()} reset={reset} label="Dashboard" />
+            )}
+          >
+            {/* Page content mounts after the shell is hydrated. Server-rendered
+                page markup is data-independent, but the client resolves queries
+                before claiming it, so hydration would silently detach controls
+                (column pickers, filters, sort buttons). Rendering the page once
+                hydration finishes keeps every control live on cold loads. */}
+            <Show when={!isServer && isHydrated()}>{props.children}</Show>
+          </Errored>
+        </main>
+      </div>
+
+      <Sheet open={mobileNavOpen()} onOpenChange={setMobileNavOpen}>
+        <SheetContent
+          side="left"
+          class="left-0 right-auto w-[264px] max-w-[264px] border-l-0 border-r border-border bg-surface p-0 data-[starting-style]:-translate-x-full data-[ending-style]:-translate-x-full"
+        >
+          <SheetHeader class="sr-only">
+            <SheetTitle>Navigation</SheetTitle>
+            <SheetDescription>Dashboard sections and account menu</SheetDescription>
+          </SheetHeader>
+          <SidebarPanel
+            user={props.user}
+            onSignOut={props.onSignOut}
+            activeId={activeId()}
+            items={navItems()}
+            path={location.pathname}
+            label="Primary"
+            onNavigate={() => setMobileNavOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
+
       <div role="status" aria-live="polite" aria-atomic="true" class="sr-only">
         {announcementText()}
       </div>
