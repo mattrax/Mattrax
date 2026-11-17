@@ -65,7 +65,6 @@ function DropdownMenuTrigger(
 
   return (
     <MenuTrigger
-      data-slot="dropdown-menu-trigger"
       class={cn("outline-none", local.class)}
       {...others}
     />

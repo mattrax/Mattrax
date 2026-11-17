@@ -292,8 +292,8 @@ function UserMenu(props: {
             : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
         )}
         title={user()?.name ?? "Account"}
-        aria-label={`${user()?.name ?? "Account"}${user()?.email ? `, ${user()!.email}` : ""}, account menu`}
       >
+        <span class="sr-only">Account menu: </span>
         <Show
           when={sidebar()}
           fallback={
