@@ -198,8 +198,9 @@ first use, and resetting or reconfiguring the enrollment invalidates it.
 | Command result          | Updates the command row, parses `SecurityInfo` and `InstalledApplicationList`; a user result only touches that user's rows                                                                                                                                                                  |
 
 A new identity cannot take over an already-enrolled UDID with a different certificate
-fingerprint. Reclaiming a row by serial also requires an ABM assignment, a pre-registration,
-or a stale/unenrolled row; a self-asserted serial alone is refused.
+fingerprint. Reclaiming a row by serial requires a pre-registration or a row that is already
+unenrolled/stale. An ABM assignment alone is **not** intra-tenant proof: any enrolled device
+in the tenant can assert a serial, so ABM-only reclaim is refused.
 
 ### User channel
 
