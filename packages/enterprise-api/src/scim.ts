@@ -165,19 +165,28 @@ const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
     : null;
 };
 
-const userResource = (user: UserRow, member: MemberRow) => ({
+const userResource = (user: UserRow, member: MemberRow | null) => ({
   schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
   id: user.id,
   userName: user.email,
   name: { formatted: user.name, givenName: user.name },
   emails: [{ value: user.email, primary: true }],
   active: !user.disabled,
-  roles: [{ value: member.role }],
+  roles: member ? [{ value: member.role }] : [],
   meta: {
     resourceType: "User",
-    created: iso(member.createdAt),
+    created: iso(member?.createdAt ?? user.createdAt),
     lastModified: iso(user.updatedAt),
   },
+});
+
+/**
+ * SCIM reports `active` per tenant, so a deactivated user is inactive even when
+ * the global account stays enabled because it still belongs to other tenants.
+ */
+const inactiveUserResource = (user: UserRow, member: MemberRow | null) => ({
+  ...userResource(user, member),
+  active: false,
 });
 
 const groupResource = (
@@ -360,11 +369,29 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
 
 const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type) =>
   Effect.gen(function* () {
-    const current = yield* findUser(ctx, userId);
-
-    if (!current) return scimError(404, "User not found");
     const db = yield* Db;
     const operations = Array.isArray(body.Operations) ? body.Operations : [];
+
+    const deactivationRequested = operations.some(
+      (operation) =>
+        String(operation.path ?? "").toLowerCase() === "active" &&
+        Boolean(operation.value) === false,
+    );
+
+    const current = yield* findUser(ctx, userId);
+
+    if (!current) {
+      // Deactivation is idempotent: an IdP may retry after the membership was
+      // already removed, and the tenant is in the requested state. DELETE
+      // still reports 404 for a user that is not a member, because that is a
+      // different statement about the resource.
+      if (!deactivationRequested) return scimError(404, "User not found");
+
+      const user = yield* db.query.user.findFirst({ where: { id: userId } });
+
+      return user ? json(inactiveUserResource(user, null)) : scimError(404, "User not found");
+    }
+
     let active = !current.user.disabled;
     let name = current.user.name;
 
@@ -410,32 +437,40 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
       }
     }
 
-    if (!active) {
+    const deactivated = !active;
+
+    if (deactivated) {
       if (isBuiltInOwnerMember(current.member) && (yield* ownerCount(ctx)) <= 1)
         return scimError(409, "Cannot deactivate the last owner");
+
+      // The membership and the directory grants it unlocked must disappear
+      // together; a partial delete would leave group policies applying (or an
+      // identity row pointing at a user who is no longer a member).
+      yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          yield* tx
+            .delete(schema.member)
+            .where(
+              and(
+                eq(schema.member.organizationId, ctx.organizationId),
+                eq(schema.member.userId, userId),
+              ),
+            );
+          yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
+
+          const remaining = yield* tx
+            .select({ id: schema.member.id })
+            .from(schema.member)
+            .where(eq(schema.member.userId, userId))
+            .limit(1);
+
+          yield* tx
+            .update(schema.user)
+            .set({ name, disabled: remaining.length === 0, updatedAt: now() })
+            .where(eq(schema.user.id, userId));
+        }),
+      );
       ctx.changedUserIds.add(userId);
-      yield* db
-        .delete(schema.member)
-        .where(
-          and(
-            eq(schema.member.organizationId, ctx.organizationId),
-            eq(schema.member.userId, userId),
-          ),
-        );
-      // Deactivation is a directory removal too: directory groups and the IdP
-      // identity must not keep granting access or re-provision the member.
-      yield* clearTenantUserDirectoryState(db, ctx.organizationId, userId);
-
-      const remaining = yield* db
-        .select({ id: schema.member.id })
-        .from(schema.member)
-        .where(eq(schema.member.userId, userId))
-        .limit(1);
-
-      yield* db
-        .update(schema.user)
-        .set({ name, disabled: remaining.length === 0, updatedAt: now() })
-        .where(eq(schema.user.id, userId));
     } else {
       yield* db
         .update(schema.user)
@@ -448,11 +483,16 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
 
     if (updated) return json(userResource(updated.user, updated.member));
 
-    // Deactivation removed the membership, so a lookup can no longer answer.
-    // Report the account row, which may also have been renamed by this patch.
+    // Deactivation removed this tenant's membership, so `findUser` can no
+    // longer answer from the member join. Only a deactivation owns that state;
+    // any other patch that loses the row to a concurrent removal is a 404.
+    if (!deactivated) return scimError(404, "User not found");
+
     const user = yield* db.query.user.findFirst({ where: { id: userId } });
 
-    return user ? json(userResource(user, current.member)) : scimError(404, "User not found");
+    return user
+      ? json(inactiveUserResource(user, current.member))
+      : scimError(404, "User not found");
   });
 
 const deleteUser = (ctx: ScimContext, userId: string) =>
@@ -463,28 +503,35 @@ const deleteUser = (ctx: ScimContext, userId: string) =>
 
     if (isBuiltInOwnerMember(current.member) && (yield* ownerCount(ctx)) <= 1)
       return scimError(409, "Cannot remove the last owner");
-    ctx.changedUserIds.add(userId);
     const db = yield* Db;
-    yield* db
-      .delete(schema.member)
-      .where(
-        and(eq(schema.member.organizationId, ctx.organizationId), eq(schema.member.userId, userId)),
-      );
-    // A directory deletion must also drop the group memberships and IdP
-    // identity rows scoped to this tenant.
-    yield* clearTenantUserDirectoryState(db, ctx.organizationId, userId);
+    // Delete the membership and everything it unlocked together, so a failure
+    // cannot leave directory group rows or an SSO identity behind.
+    yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        yield* tx
+          .delete(schema.member)
+          .where(
+            and(
+              eq(schema.member.organizationId, ctx.organizationId),
+              eq(schema.member.userId, userId),
+            ),
+          );
+        yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
 
-    const remaining = yield* db
-      .select({ id: schema.member.id })
-      .from(schema.member)
-      .where(eq(schema.member.userId, userId))
-      .limit(1);
+        const remaining = yield* tx
+          .select({ id: schema.member.id })
+          .from(schema.member)
+          .where(eq(schema.member.userId, userId))
+          .limit(1);
 
-    if (remaining.length === 0)
-      yield* db
-        .update(schema.user)
-        .set({ disabled: true, updatedAt: now() })
-        .where(eq(schema.user.id, userId));
+        if (remaining.length === 0)
+          yield* tx
+            .update(schema.user)
+            .set({ disabled: true, updatedAt: now() })
+            .where(eq(schema.user.id, userId));
+      }),
+    );
+    ctx.changedUserIds.add(userId);
 
     return HttpServerResponse.empty({ status: 204 });
   });

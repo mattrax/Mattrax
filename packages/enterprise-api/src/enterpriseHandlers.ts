@@ -8584,20 +8584,24 @@ export const createEnterpriseService = ({
               .set({ status: "canceled", tokenHash: null, updatedAt: now() })
               .where(eq(schema.invitation.id, invitation.id));
 
-        yield* db.delete(schema.member).where(eq(schema.member.id, memberId));
-        // A removed member must not keep granting user-assigned policies.
-        yield* db
-          .delete(schema.deviceUser)
-          .where(
-            and(
-              eq(schema.deviceUser.organizationId, tenantId),
-              eq(schema.deviceUser.userId, member.userId),
-            ),
-          );
-        // The tenant's directory groups and SSO identity are tenant-scoped
-        // access grants too; leaving them would keep policies applying and let
-        // a later sync restore the membership.
-        yield* clearTenantUserDirectoryState(db, tenantId, member.userId);
+        // The membership and its tenant-scoped grants go together: directory
+        // groups still apply policies, and the SSO identity row would keep
+        // pointing at a user who is no longer a member.
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx.delete(schema.member).where(eq(schema.member.id, memberId));
+            // A removed member must not keep granting user-assigned policies.
+            yield* tx
+              .delete(schema.deviceUser)
+              .where(
+                and(
+                  eq(schema.deviceUser.organizationId, tenantId),
+                  eq(schema.deviceUser.userId, member.userId),
+                ),
+              );
+            yield* clearTenantUserDirectoryState(tx, tenantId, member.userId);
+          }),
+        );
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
         yield* refreshDevicePolicies(tenantId, [
           ...new Set(linkedDevices.map((device) => device.deviceId)),

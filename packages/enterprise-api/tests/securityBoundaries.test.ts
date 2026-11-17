@@ -1,9 +1,11 @@
 import { Effect } from "effect";
+import { HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
   EnterpriseForbidden,
+  EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
@@ -166,7 +168,12 @@ const seedDirectoryAccess = (db: any, organizationId: string, userId: string, su
     userId,
     createdAt: timestamp,
   });
+
+  return { groupId, objectId: `object-${suffix}` };
 };
+
+/** Decode the JSON body the SCIM handlers attach to a response. */
+const responseJson = async (response: any) => HttpServerResponse.toWeb(response).json();
 
 describe("tenant membership boundaries", () => {
   it("rejects an authenticated non-member from tenant data and hides the tenant", async () => {
@@ -951,7 +958,7 @@ describe("SCIM provisioning boundary", () => {
     return context.db.store.user.find((row: any) => row.email === email);
   };
 
-  it("DELETE /Users clears the tenant's group membership and SSO identity only", async () => {
+  it("DELETE /Users clears only the removed user's tenant grants", async () => {
     const owner = await makeContext();
     const tenant = await createTenant(owner, "acme");
     const other = await createTenant(owner, "beta");
@@ -961,8 +968,22 @@ describe("SCIM provisioning boundary", () => {
 
     const provisioned = await provisionScimUser(owner, tenant.id, token, "deleted@example.com");
 
-    seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
+    const bystander = await makeContext({
+      db: owner.db,
+      user: { id: "user-bystander", name: "Bystander", email: "bystander@example.com" },
+    });
+
+    const acme = seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
     seedDirectoryAccess(owner.db, other.id, provisioned.id, "beta");
+    // The same group and tenant still contain another user: cleanup must strip
+    // only the removed user's rows.
+    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
+    owner.db.store.sso_identity.push({
+      organizationId: tenant.id,
+      objectId: "object-bystander",
+      userId: bystander.user.id,
+      createdAt: new Date(),
+    });
 
     const response = await runEffect(
       Effect.provideService(
@@ -985,8 +1006,9 @@ describe("SCIM provisioning boundary", () => {
         (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
       ),
     ).toBe(false);
-    // The removed tenant's grants are gone, including the IdP identity that
-    // would let the next sync restore the membership.
+    // The removed tenant's grants are gone. This drops the explicit directory
+    // link; the tenant's email-based auto-provisioning can still match the
+    // account later, but the stale identity row does not survive.
     expect(
       owner.db.store.user_group_member
         .filter((row: any) => row.userId === provisioned.id)
@@ -997,29 +1019,191 @@ describe("SCIM provisioning boundary", () => {
         .filter((row: any) => row.userId === provisioned.id)
         .map((row: any) => row.organizationId),
     ).toEqual([other.id]);
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: acme.groupId,
+      userId: bystander.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
+    );
   });
 
-  it("PATCH /Users active=false clears the tenant's group membership and SSO identity", async () => {
+  it("PATCH /Users active=false reports inactive, cleans up and is idempotent", async () => {
     const owner = await makeContext();
     const tenant = await createTenant(owner, "acme");
-    const other = await createTenant(owner, "beta");
     const token = "scim-deactivate-token";
 
     await setupScim(owner, tenant.id, token);
 
     const provisioned = await provisionScimUser(owner, tenant.id, token, "inactive@example.com");
 
+    const bystander = await makeContext({
+      db: owner.db,
+      user: { id: "user-bystander", name: "Bystander", email: "bystander@example.com" },
+    });
+
+    const acme = seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
+
+    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
+    owner.db.store.sso_identity.push({
+      organizationId: tenant.id,
+      objectId: "object-bystander",
+      userId: bystander.user.id,
+      createdAt: new Date(),
+    });
+
+    const deactivate = () =>
+      runEffect(
+        Effect.provideService(
+          scimHandler(
+            scimRequest({
+              token,
+              tenantId: tenant.id,
+              method: "PATCH",
+              path: `/Users/${provisioned.id}`,
+              body: { Operations: [{ op: "replace", path: "active", value: false }] },
+            }),
+          ),
+          Db,
+          owner.db,
+        ),
+      );
+
+    const response = await deactivate();
+
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toMatchObject({ id: provisioned.id, active: false });
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
+      ),
+    ).toBe(false);
+    expect(owner.db.store.user.find((row: any) => row.id === provisioned.id)?.disabled).toBe(true);
+    expect(
+      owner.db.store.user_group_member
+        .filter((row: any) => row.userId === provisioned.id)
+        .map((row: any) => row.groupId),
+    ).toEqual([]);
+    expect(owner.db.store.sso_identity.filter((row: any) => row.userId === provisioned.id)).toEqual(
+      [],
+    );
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: acme.groupId,
+      userId: bystander.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
+    );
+
+    // A retried deactivation must not fail once the membership is gone.
+    const retry = await deactivate();
+
+    expect(retry.status).toBe(200);
+    expect(await responseJson(retry)).toMatchObject({ id: provisioned.id, active: false });
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
+      ),
+    ).toBe(false);
+  });
+
+  it("PATCH /Users active=false reports inactive for a multi-tenant user", async () => {
+    const owner = await makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const other = await createTenant(owner, "beta");
+    const token = "scim-multi-tenant-token";
+
+    await setupScim(owner, tenant.id, token);
+
+    const provisioned = await provisionScimUser(owner, tenant.id, token, "multi@example.com");
+
+    // The account also belongs to another tenant, so deactivating it here must
+    // leave the global account enabled while reporting this tenant inactive.
+    addMember(owner.db, other.id, provisioned, "member");
     seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
     seedDirectoryAccess(owner.db, other.id, provisioned.id, "beta");
 
-    const response = await runEffect(
+    const deactivate = () =>
+      runEffect(
+        Effect.provideService(
+          scimHandler(
+            scimRequest({
+              token,
+              tenantId: tenant.id,
+              method: "PATCH",
+              path: `/Users/${provisioned.id}`,
+              body: { Operations: [{ op: "replace", path: "active", value: false }] },
+            }),
+          ),
+          Db,
+          owner.db,
+        ),
+      );
+
+    const response = await deactivate();
+
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toMatchObject({ id: provisioned.id, active: false });
+    expect(owner.db.store.user.find((row: any) => row.id === provisioned.id)?.disabled).toBe(false);
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === other.id && row.userId === provisioned.id,
+      ),
+    ).toBe(true);
+    expect(
+      owner.db.store.user_group_member
+        .filter((row: any) => row.userId === provisioned.id)
+        .map((row: any) => row.groupId),
+    ).toEqual(["group-beta"]);
+    expect(
+      owner.db.store.sso_identity
+        .filter((row: any) => row.userId === provisioned.id)
+        .map((row: any) => row.organizationId),
+    ).toEqual([other.id]);
+
+    const retry = await deactivate();
+
+    expect(retry.status).toBe(200);
+    expect(await responseJson(retry)).toMatchObject({ id: provisioned.id, active: false });
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === other.id && row.userId === provisioned.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses to remove the last owner without touching directory state", async () => {
+    const owner = await makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const token = "scim-owner-token";
+
+    await setupScim(owner, tenant.id, token);
+
+    const grants = seedDirectoryAccess(owner.db, tenant.id, owner.user.id, "owner");
+
+    const deletion = await runEffect(
+      Effect.provideService(
+        scimHandler(
+          scimRequest({
+            token,
+            tenantId: tenant.id,
+            method: "DELETE",
+            path: `/Users/${owner.user.id}`,
+          }),
+        ),
+        Db,
+        owner.db,
+      ),
+    );
+
+    const deactivation = await runEffect(
       Effect.provideService(
         scimHandler(
           scimRequest({
             token,
             tenantId: tenant.id,
             method: "PATCH",
-            path: `/Users/${provisioned.id}`,
+            path: `/Users/${owner.user.id}`,
             body: { Operations: [{ op: "replace", path: "active", value: false }] },
           }),
         ),
@@ -1028,22 +1212,20 @@ describe("SCIM provisioning boundary", () => {
       ),
     );
 
-    expect(response.status).toBe(200);
+    expect(deletion.status).toBe(409);
+    expect(deactivation.status).toBe(409);
     expect(
       owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
+        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
       ),
-    ).toBe(false);
-    expect(
-      owner.db.store.user_group_member
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.groupId),
-    ).toEqual(["group-beta"]);
-    expect(
-      owner.db.store.sso_identity
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.organizationId),
-    ).toEqual([other.id]);
+    ).toBe(true);
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: grants.groupId,
+      userId: owner.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: tenant.id, userId: owner.user.id }),
+    );
   });
 });
 
@@ -1338,10 +1520,23 @@ describe("tenant member removal", () => {
       user: { id: "user-member", name: "Member", email: "member@example.com" },
     });
 
+    const bystander = await makeContext({
+      db: owner.db,
+      user: { id: "user-bystander", name: "Bystander", email: "bystander@example.com" },
+    });
+
     const membership = addMember(owner.db, tenant.id, member.user, "member");
 
-    seedDirectoryAccess(owner.db, tenant.id, member.user.id, "acme");
+    const acme = seedDirectoryAccess(owner.db, tenant.id, member.user.id, "acme");
     seedDirectoryAccess(owner.db, other.id, member.user.id, "beta");
+    // Another user in the same tenant group must keep their membership.
+    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
+    owner.db.store.sso_identity.push({
+      organizationId: tenant.id,
+      objectId: "object-bystander",
+      userId: bystander.user.id,
+      createdAt: new Date(),
+    });
 
     await runEffect(
       owner.service.removeTenantUser(request(owner.headers), tenant.id, membership.id),
@@ -1360,5 +1555,40 @@ describe("tenant member removal", () => {
         .filter((row: any) => row.userId === member.user.id)
         .map((row: any) => row.organizationId),
     ).toEqual([other.id]);
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: acme.groupId,
+      userId: bystander.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
+    );
+  });
+
+  it("leaves directory state intact when the last owner cannot be removed", async () => {
+    const owner = await makeContext();
+    const tenant = await createTenant(owner, "acme");
+
+    const membership = owner.db.store.member.find(
+      (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+    );
+
+    const grants = seedDirectoryAccess(owner.db, tenant.id, owner.user.id, "owner");
+
+    await expect(
+      runEffect(owner.service.removeTenantUser(request(owner.headers), tenant.id, membership.id)),
+    ).rejects.toBeInstanceOf(EnterpriseLastTenantUser);
+
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      ),
+    ).toBe(true);
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: grants.groupId,
+      userId: owner.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: tenant.id, userId: owner.user.id }),
+    );
   });
 });

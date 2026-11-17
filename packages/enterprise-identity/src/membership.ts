@@ -10,8 +10,10 @@ type MembershipDatabase = Pick<EnterpriseDb, "select" | "delete">;
  * The membership row is the tenant's own record and is removed by the caller,
  * which also enforces the owner safeguards. This clears what would otherwise
  * survive that removal: the user's membership of the tenant's directory
- * groups (and the policies those grant) and the IdP identity that lets a later
- * sync re-provision the member.
+ * groups (and the policies those grant) and the IdP identity row that still
+ * links the account to this directory. Removing the identity row does not by
+ * itself prevent a later sync from matching the same account by email when the
+ * tenant has auto-provisioning enabled; it only drops the explicit link.
  */
 export const clearTenantUserDirectoryState = (
   db: MembershipDatabase,
