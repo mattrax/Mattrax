@@ -7,11 +7,36 @@ filters, sorting, pagination, CSV export and bulk delete.
 
 **Devices** supports:
 
-- Free text search across management name, device-reported name, serial, model and
-  asset tag.
+- Free text search across the columns the table shows (see
+  [What search matches](#what-search-matches)).
 - Filters: status, platform, group, health, push state, last seen.
 - Sort by name, health, last seen, enrollment date or status.
 - API pagination up to 200 rows per page; the dashboard shows 50.
+
+### What search matches
+
+Search is case-insensitive and substring-based (`LIKE '%text%'`), across:
+
+| Column            | Examples                                     |
+| ----------------- | -------------------------------------------- |
+| Name              | management name and device-reported name     |
+| Serial, asset tag | `C02XK1AB`, `ASSET-42`                       |
+| Model             | model name, model identifier, `dmIdentifier` |
+| Platform          | `Apple`, `Windows`, `Android`                |
+| Status            | `enrolled`, `unenrolling`                    |
+| OS                | version, edition and build                   |
+| Groups            | group names, not only the group filter       |
+| Notes             | device notes                                 |
+| Attributes        | values of registered attributes              |
+| Timestamps        | enrollment and last seen (UTC)               |
+
+Enrollment and last-seen timestamps are stored, searched and shown in **UTC**. A query is
+treated as a timestamp only when it is a real four-digit year (`2026`), an ISO-like date
+(`2026-11-10`, `2026-11`, `2026-11-10 05:06`), a slash date (`10/11/2026`,
+interpreted as both day/month and month/day because the order is ambiguous), a
+time (`05:06`) or a month name form (`Nov`, `4 Nov 2026`, `Nov 4 2026`). Other
+numbers (`2`, `26`, `4`) are matched as text against the columns above; use the
+**Last seen** filter or `notSeenSince`/`staleDays` for relative dates.
 
 ### Keyboard
 
@@ -48,7 +73,7 @@ Query parameters:
 
 | Parameter            | Values                                                                  |
 | -------------------- | ----------------------------------------------------------------------- |
-| `q`                  | Free text                                                               |
+| `q`                  | Free text (see [What search matches](#what-search-matches))             |
 | `status`             | `enrolling`, `enrolled`, `unenrolling`, `unenrolled`                    |
 | `proto`              | `apple`, `win`, `android`                                               |
 | `groupId`            | Group id                                                                |
@@ -149,9 +174,10 @@ response lists a status per row. An export from the Devices page can be edited a
 re-imported unchanged. Imports are capped at 1,000 rows and do not create devices: a
 serial that is not in the tenant fails that row.
 
-The device list's search box matches attribute values. The toolbar also filters on one
-registered attribute (select attributes filter on their options); the filter is stored in
-the URL with the other device filters, so a view can be shared.
+The device list's search box matches attribute values as well as the built-in columns.
+The toolbar also filters on one registered attribute (select attributes filter on their
+options); the filter is stored in the URL with the other device filters, so a view can be
+shared.
 
 ### Enrollment questions
 

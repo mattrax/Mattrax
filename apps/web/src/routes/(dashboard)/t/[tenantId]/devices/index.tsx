@@ -7,7 +7,7 @@ import {
   DeviceStatusBadge,
   EmptyState,
   ErrorText,
-  formatDate,
+  formatDeviceDate,
   LinkButton,
   Page,
   PageHeader,
@@ -1213,7 +1213,7 @@ export default function DevicesPage() {
             header: "Last seen",
             sort: (row) => row.lastSeenAt,
             sortId: "lastSeenAt",
-            cell: (row) => formatDate(row.lastSeenAt),
+            cell: (row) => formatDeviceDate(row.lastSeenAt),
           },
         ]}
       />

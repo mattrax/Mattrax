@@ -120,7 +120,17 @@ export type DeviceHealthFilter = typeof DeviceHealthFilter.Type;
  * a bounded default page size and treats an empty query as "all devices".
  */
 export const DeviceSearchQuery = Schema.Struct({
-  /** Matches name, serial, model, `dmIdentifier` and asset tag. */
+  /**
+   * Free text, matched case-insensitively against the columns the device table
+   * shows: name (management and device-reported), serial, model, model
+   * identifier, platform label, status, OS version/edition/build, group names,
+   * asset tag, notes, attribute values and `enrolledAt`/`lastSeenAt`.
+   *
+   * Timestamps are matched in UTC using `YYYY-MM-DD`, `HH:mm`, `DD/MM/YYYY`
+   * (either order; slash dates are ambiguous) and month-name forms such as
+   * `4 Mar 2026`. A bare number only counts as a date when it is a real
+   * four-digit year.
+   */
   q: Schema.optional(Schema.String),
   /** Shareable structured filter encoded by `formatDeviceQueryText`. */
   query: Schema.optional(Schema.String),

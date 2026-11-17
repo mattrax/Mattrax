@@ -183,6 +183,61 @@ const likeRegex = (pattern: string) => {
   return new RegExp(`${source}$`, "i");
 };
 
+const MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+const MONTHS_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+/**
+ * Render a UTC date the way MySQL's `date_format` does for the tokens the
+ * device search uses. The fake runs without a database, so SQL that formats a
+ * column (rather than comparing it) needs a local implementation.
+ */
+const mysqlDateFormat = (date: Date, format: string) => {
+  const pad = (value: number) => String(value).padStart(2, "0");
+
+  const replacements = new Map<string, string>([
+    ["%Y", String(date.getUTCFullYear())],
+    ["%y", String(date.getUTCFullYear()).slice(-2)],
+    ["%m", pad(date.getUTCMonth() + 1)],
+    ["%c", String(date.getUTCMonth() + 1)],
+    ["%d", pad(date.getUTCDate())],
+    ["%e", String(date.getUTCDate())],
+    ["%H", pad(date.getUTCHours())],
+    ["%i", pad(date.getUTCMinutes())],
+    ["%s", pad(date.getUTCSeconds())],
+    ["%b", MONTHS_SHORT[date.getUTCMonth()]!],
+    ["%M", MONTHS_LONG[date.getUTCMonth()]!],
+  ]);
+
+  return format.replaceAll(/%[YymcdeHisbM]/g, (token) => replacements.get(token) ?? token);
+};
+
 const rowValue = (row: Row, table: string | undefined, column: string) => {
   const name = camel(column);
   const key = table ? `${table}.${name}` : name;
@@ -195,6 +250,38 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
 
   if (isNull) return rowValue(row, isNull[1], isNull[2]!) == null;
 
+  // `date_format("device"."last_seen_at", '%Y-%m-%d') like $1`.
+  const dateFormatLike = sql.match(
+    /^date_format\("([^"]+)"\."([^"]+)",\s*'([^']*)'\)\s+like\s+\$(\d+)$/i,
+  );
+
+  if (dateFormatLike) {
+    const value = rowValue(row, dateFormatLike[1], dateFormatLike[2]!);
+
+    if (value == null) return false;
+
+    const date =
+      value instanceof Date ? value : Schema.is(Schema.String)(value) ? new Date(value) : null;
+
+    if (!date || Number.isNaN(date.getTime())) return false;
+
+    return likeRegex(String(params[Number(dateFormatLike[4]) - 1])).test(
+      mysqlDateFormat(date, dateFormatLike[3]!),
+    );
+  }
+
+  // A subquery bound as a single parameter (`in $1`, `not in $1`). The caller
+  // resolves the parameter to the ids the subquery selects.
+  const inParam = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+(not\s+)?in\s+\$(\d+)$/i);
+
+  if (inParam) {
+    const list = params[Number(inParam[4]) - 1];
+    const values = Array.isArray(list) ? list.map((entry) => comparable(entry)) : [];
+    const found = values.includes(comparable(rowValue(row, inParam[1], inParam[2]!)));
+
+    return inParam[3] ? !found : found;
+  }
+
   const inList = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+in\s+\(([^)]*)\)$/i);
 
   if (inList) {
@@ -203,6 +290,24 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
     );
 
     return values.includes(rowValue(row, inList[1], inList[2]!));
+  }
+
+  // Column-to-column comparison, which is how drizzle renders a join's ON
+  // clause (`"organization"."id" = "member"."organization_id"`).
+  const columnComparison = sql.match(
+    /^(?:"([^"]+)"\.)?"([^"]+)"\s*(=|<>|!=)\s*(?:"([^"]+)"\.)?"([^"]+)"$/i,
+  );
+
+  if (columnComparison) {
+    const left = rowValue(row, columnComparison[1], columnComparison[2]!);
+    const right = rowValue(row, columnComparison[4], columnComparison[5]!);
+
+    // SQL comparisons against NULL are never true.
+    if (left == null || right == null) return false;
+
+    const equal = compareComparable(comparable(left), comparable(right)) === 0;
+
+    return columnComparison[3] === "=" ? equal : !equal;
   }
 
   const comparison = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s*(<=|>=|<|>|=|like)\s*\$(\d+)$/i);
@@ -251,12 +356,26 @@ const matchesSql = (sql: string, params: any[], row: Row): boolean => {
   return matchesLeaf(text, params, row);
 };
 
+/**
+ * Params that hold a select builder (an `inArray`/`notInArray` subquery) are
+ * evaluated to the ids it selects so the outer SQL can stay a string match.
+ */
+type SelectExecutor = { execute(): Row[] };
+
+const isSelectExecutor = (value: unknown): value is SelectExecutor =>
+  value instanceof SelectBuilder;
+
+const resolveParams = (params: any[]) =>
+  params.map((param) =>
+    isSelectExecutor(param) ? param.execute().map((selected) => Object.values(selected)[0]) : param,
+  );
+
 const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
 
   if (!query) return true;
 
-  return matchesSql(query.sql, query.params, row);
+  return matchesSql(query.sql, resolveParams(query.params), row);
 };
 
 /**
@@ -358,6 +477,7 @@ class SelectBuilder {
   private readonly fields?: any;
   private table = "";
   private joined?: string;
+  private joinCondition?: any;
   private condition: any;
   private limitCount?: number;
   private offsetCount?: number;
@@ -374,8 +494,9 @@ class SelectBuilder {
     return this;
   }
 
-  innerJoin(table: any) {
+  innerJoin(table: any, on?: any) {
     this.joined = tableName(table);
+    this.joinCondition = on;
 
     return this;
   }
@@ -471,6 +592,7 @@ class SelectBuilder {
     return value;
   }
 
+  /** Nested-loop join over the single joined table, using the ON condition. */
   private joinRows() {
     const left = this.store[this.table] ?? [];
     const right = this.store[this.joined!] ?? [];
@@ -478,11 +600,9 @@ class SelectBuilder {
 
     for (const a of left) {
       for (const b of right) {
-        if (this.table === "member" && this.joined === "organization" && a.organizationId === b.id)
-          rows.push({ ...prefix(this.table, a), ...prefix(this.joined, b) });
+        const combined = { ...prefix(this.table, a), ...prefix(this.joined!, b) };
 
-        if (this.table === "member" && this.joined === "user" && a.userId === b.id)
-          rows.push({ ...prefix(this.table, a), ...prefix(this.joined, b) });
+        if (!this.joinCondition || matches(this.joinCondition, combined)) rows.push(combined);
       }
     }
 

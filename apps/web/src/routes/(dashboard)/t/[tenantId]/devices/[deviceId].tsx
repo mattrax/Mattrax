@@ -23,6 +23,7 @@ import {
   ErrorText,
   Field,
   formatDate,
+  formatDeviceDate,
   Page,
   PageBreadcrumbs,
   PageSkeleton,
@@ -876,13 +877,13 @@ export default function DeviceDetailPage() {
       {
         label: "Last seen",
         value: device.lastSeenAt ? (
-          <span title={formatDate(device.lastSeenAt)}>{relativeTime(device.lastSeenAt)}</span>
+          <span title={formatDeviceDate(device.lastSeenAt)}>{relativeTime(device.lastSeenAt)}</span>
         ) : undefined,
       },
       {
         label: "Enrolled",
         value: device.enrolledAt ? (
-          <span title={formatDate(device.enrolledAt)}>{relativeTime(device.enrolledAt)}</span>
+          <span title={formatDeviceDate(device.enrolledAt)}>{relativeTime(device.enrolledAt)}</span>
         ) : undefined,
       },
     ].filter((entry) => entry.value !== undefined && entry.value !== null && entry.value !== "");
@@ -1422,7 +1423,7 @@ export default function DeviceDetailPage() {
                         <div class="grid gap-4 sm:grid-cols-2">
                           <div class="space-y-2">
                             <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-                              Last seen {formatDate(health.data!.health.lastSeenAt)}
+                              Last seen {formatDeviceDate(health.data!.health.lastSeenAt)}
                               <Show when={health.data!.health.stale}>
                                 <Chip tone="warning">Stale</Chip>
                               </Show>

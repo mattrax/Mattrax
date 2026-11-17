@@ -26,10 +26,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
-import {
-  appleEnrollmentProfileResponse,
-  createEnterpriseService,
-} from "@mattrax/enterprise-api";
+import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
@@ -3376,114 +3373,244 @@ describe("enterprise policy validation and enrollment", () => {
   it("searches every column the device table shows", async () => {
     const { db, service, headers } = await makeContext();
 
-    const tenant = await runEffect(
-      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    const first = await runEffect(
+      service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
 
-    const seen = new Date("2026-03-04T05:06:07.000Z");
-    const later = new Date("2026-09-20T18:00:00.000Z");
+    const second = await runEffect(
+      service.createTenant(request(headers), { name: "Second", slug: "second" }),
+    );
+
+    // Distinct enrolled/last-seen instants so each column can be searched on
+    // its own; the decoy in the second tenant shares every non-timestamp value.
+    const macEnrolled = new Date("2026-03-04T05:06:07.000Z");
+    const macSeen = new Date("2026-05-06T07:08:09.000Z");
+    const winEnrolled = new Date("2026-10-11T00:00:00.000Z");
+    const winSeen = new Date("2026-07-08T09:10:11.000Z");
+    const decoySeen = new Date("2026-09-09T09:09:09.000Z");
 
     db.store.device.push(
       {
         id: "device-mac",
-        organizationId: tenant.id,
+        organizationId: first.id,
         proto: "apple",
         status: "enrolled",
         name: "Ada's MacBook",
         serial: "C02SERIAL",
         model: "MacBook Pro",
+        modelIdentifier: "Mac16,1",
         assetTag: "ASSET-42",
         osVersion: "14.4.1",
         osEdition: "Sonoma",
         osBuild: "23E224",
         notes: "Design laptop",
-        enrolledAt: seen,
-        lastSeenAt: seen,
+        enrolledAt: macEnrolled,
+        lastSeenAt: macSeen,
       },
       {
         id: "device-win",
-        organizationId: tenant.id,
+        organizationId: first.id,
         proto: "win",
         status: "unenrolling",
         name: "Build Server",
         serial: "WINSERIAL",
         model: "ThinkPad X1",
+        modelIdentifier: "21HM",
         assetTag: "ASSET-99",
         osVersion: "10.0.22631",
         osEdition: "Enterprise",
         osBuild: "22631.4169",
         notes: "Lab machine",
-        enrolledAt: later,
-        lastSeenAt: later,
+        enrolledAt: winEnrolled,
+        lastSeenAt: winSeen,
+      },
+      {
+        id: "device-decoy",
+        organizationId: second.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Search Decoy",
+        serial: "DECOY-SERIAL",
+        model: "MacBook Pro",
+        modelIdentifier: "Mac16,1",
+        assetTag: "ASSET-42",
+        osVersion: "14.4.1",
+        osEdition: "Sonoma",
+        osBuild: "23E224",
+        notes: "Design laptop",
+        enrolledAt: macEnrolled,
+        lastSeenAt: decoySeen,
       },
     );
 
-    db.store.enterprise_group.push({
-      id: "group-design",
-      organizationId: tenant.id,
-      name: "Design Guild",
-      createdAt: seen,
-      updatedAt: seen,
-    });
-    db.store.group_device.push({ groupId: "group-design", deviceId: "device-mac" });
-    db.store.device_attribute.push({
-      organizationId: tenant.id,
-      deviceId: "device-win",
-      attributeId: "attribute-owner",
-      value: "Platform Team",
-    });
+    db.store.enterprise_group.push(
+      {
+        id: "group-design",
+        organizationId: first.id,
+        name: "Design Guild",
+        createdAt: macEnrolled,
+        updatedAt: macEnrolled,
+      },
+      {
+        id: "group-ada",
+        organizationId: first.id,
+        name: "Ada Group",
+        createdAt: macEnrolled,
+        updatedAt: macEnrolled,
+      },
+      {
+        id: "group-decoy",
+        organizationId: second.id,
+        name: "Design Guild",
+        createdAt: macEnrolled,
+        updatedAt: macEnrolled,
+      },
+    );
+    db.store.group_device.push(
+      { groupId: "group-design", deviceId: "device-mac" },
+      { groupId: "group-ada", deviceId: "device-mac" },
+      { groupId: "group-decoy", deviceId: "device-decoy" },
+    );
+    db.store.device_attribute.push(
+      {
+        organizationId: first.id,
+        deviceId: "device-mac",
+        attributeId: "attribute-owner",
+        value: "Platform Team",
+      },
+      {
+        organizationId: second.id,
+        deviceId: "device-decoy",
+        attributeId: "attribute-owner",
+        value: "Platform Team",
+      },
+    );
 
-    const ids = async (query: DeviceSearchQuery) => {
-      const found = await runEffect(
-        service.searchDevices(request(headers), tenant.id, { limit: 50, ...query }),
-      );
+    const search = async (tenantId: string, query: DeviceSearchQuery) =>
+      runEffect(service.searchDevices(request(headers), tenantId, { limit: 50, ...query }));
 
-      return found.devices.map((row: any) => row.id);
-    };
+    const ids = async (query: DeviceSearchQuery) =>
+      (await search(first.id, query)).devices.map((row: any) => row.id);
 
-    // Platform: the table shows labels, the column stores short codes.
+    // Platform labels (stored as short codes), status and the OS/model columns.
     expect(await ids({ q: "windows" })).toEqual(["device-win"]);
-    expect(await ids({ q: "apple" })).toEqual(["device-mac"]);
-    // Status and OS fields.
+    expect(await ids({ q: "Apple" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "linux" })).toEqual([]);
     expect(await ids({ q: "unenrolling" })).toEqual(["device-win"]);
+    expect(await ids({ q: "mac16" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "14.4.1" })).toEqual(["device-mac"]);
     expect(await ids({ q: "sonoma" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "23e224" })).toEqual(["device-mac"]);
     expect(await ids({ q: "22631" })).toEqual(["device-win"]);
-    // Group names, not just group ids.
+
+    // Group names and attribute values, without leaving the tenant.
     expect(await ids({ q: "design guild" })).toEqual(["device-mac"]);
     expect(await ids({ q: "guild" })).toEqual(["device-mac"]);
-    // Timestamps, as the table renders them and as ISO dates.
-    expect(await ids({ q: "2026-03-04" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "platform team" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "search decoy" })).toEqual([]);
+
+    // Each timestamp column is searchable on its own.
+    expect(await ids({ q: "2026-03-04" })).toEqual(["device-mac"]); // enrolled
+    expect(await ids({ q: "2026-05-06" })).toEqual(["device-mac"]); // last seen
+    expect(await ids({ q: "2026-10-11" })).toEqual(["device-win"]); // enrolled
+    expect(await ids({ q: "2026-07-08" })).toEqual(["device-win"]); // last seen
+    expect(await ids({ q: "2026-09-09" })).toEqual([]); // other tenant only
     expect(await ids({ q: "4 mar 2026" })).toEqual(["device-mac"]);
-    expect(await ids({ q: "2026-09-20" })).toEqual(["device-win"]);
-    // Attribute columns remain searchable.
-    expect(await ids({ q: "platform team" })).toEqual(["device-win"]);
+    expect(await ids({ q: "05:06" })).toEqual(["device-mac"]);
+    // Slash dates are accepted in either order; `10/11/2026` is month-first
+    // here (11 October 2026, the Windows device's enrolment).
+    expect(await ids({ q: "10/11/2026" })).toEqual(["device-win"]);
+
+    // The second tenant's decoy is not reachable through the first tenant.
+    expect(
+      (await search(second.id, { q: "design guild" })).devices.map((row: any) => row.id),
+    ).toEqual(["device-decoy"]);
+    expect(
+      (await search(second.id, { q: "2026-09-09" })).devices.map((row: any) => row.id),
+    ).toEqual(["device-decoy"]);
+    expect(
+      (await search(second.id, { q: "platform team" })).devices.map((row: any) => row.id),
+    ).toEqual(["device-decoy"]);
+
+    // A device can match several branches, but the OR must not duplicate it.
+    const deduped = await search(first.id, { q: "ada" });
+    expect(deduped.total).toBe(1);
+    expect(deduped.devices.map((row: any) => row.id)).toEqual(["device-mac"]);
+
     // Filters still combine with the free-text search.
     expect(await ids({ q: "build", status: "unenrolling" })).toEqual(["device-win"]);
     expect(await ids({ q: "design", status: "unenrolling" })).toEqual([]);
-    // No false positives: unknown text and reversed words match nothing.
+
+    // No false positives: unknown text, reversed words and raw ids match nothing.
     expect(await ids({ q: "zzz" })).toEqual([]);
     expect(await ids({ q: "guild design" })).toEqual([]);
     expect(await ids({ q: "device-mac" })).toEqual([]);
 
     // Sorting and paging still work with the wider search, and the CSV export
     // reuses the same WHERE clause.
-    const sorted = await runEffect(
-      service.searchDevices(request(headers), tenant.id, {
-        q: "2026",
-        sort: "lastSeenAt",
-        direction: "desc",
-      }),
-    );
+    const sorted = await search(first.id, {
+      q: "2026",
+      sort: "lastSeenAt",
+      direction: "desc",
+    });
 
     expect(sorted.devices.map((row: any) => row.id)).toEqual(["device-win", "device-mac"]);
 
     const exported = await runEffect(
-      service.exportDevices(request(headers), tenant.id, { q: "design guild" }),
+      service.exportDevices(request(headers), first.id, { q: "design guild" }),
     );
 
     expect(exported.rowCount).toBe(1);
     expect(exported.csv).toContain("Ada's MacBook");
     expect(exported.csv).not.toContain("Build Server");
+  });
+
+  it("treats bare numbers as text, not timestamps", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(
+      {
+        id: "device-plain",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Plain Device",
+        serial: "SERIAL",
+        model: "Model",
+        enrolledAt: new Date("2026-03-04T00:00:00.000Z"),
+        lastSeenAt: new Date("2026-05-06T00:00:00.000Z"),
+      },
+      {
+        id: "device-rack",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Rack 26",
+        serial: "RACK",
+        model: "Model",
+        enrolledAt: new Date("2026-03-04T00:00:00.000Z"),
+        lastSeenAt: new Date("2026-05-06T00:00:00.000Z"),
+      },
+    );
+
+    const ids = async (q: string) => {
+      const found = await runEffect(
+        service.searchDevices(request(headers), tenant.id, { q, limit: 50 }),
+      );
+
+      return found.devices.map((row: any) => row.id);
+    };
+
+    // If a bare number were treated as a date, these would match every device
+    // enrolled or last seen in 2026.
+    expect(await ids("2")).toEqual(["device-rack"]); // the name, not the fleet
+    expect(await ids("4")).toEqual([]); // "2026-03-04" contains a 4
+    expect(await ids("26")).toEqual(["device-rack"]);
+    expect(await ids("2026")).toEqual(["device-plain", "device-rack"]);
   });
 
   it("signals truncation and neutralises formula cells in CSV exports", async () => {

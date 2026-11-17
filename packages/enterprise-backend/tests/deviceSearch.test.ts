@@ -7,8 +7,7 @@ import {
   csvEscape,
   deviceSearchPlatforms,
   deviceSearchStatuses,
-  deviceTimestampMatchesSearch,
-  deviceTimestampSearchText,
+  deviceSearchTimestampFormats,
   isDeviceTimestampSearch,
   normalizeDeviceSearchQuery,
   platformLabel,
@@ -195,41 +194,43 @@ describe("device searchable columns", () => {
   it("recognises timestamp-shaped queries", () => {
     const timestampQueries = [
       "2026",
+      "1999",
       "2026-11",
       "2026-11-10",
+      "2026-11-10 05:06",
       "10/11/2026",
+      "4/3",
       "12:30",
       "Nov",
-      "10 Nov 2026",
+      "4 Nov 2026",
+      "Nov 4 2026",
     ];
 
     for (const value of timestampQueries) expect(isDeviceTimestampSearch(value)).toBe(true);
 
-    for (const value of ["MacBook", "MacBook 14", "SERIAL-1", "", "C02X"])
+    // Bare short numbers are ordinary searches, not dates. Only a real
+    // four-digit year is treated as a timestamp.
+    for (const value of ["2", "26", "4", "1", "42", "123", "20261", "1899"])
+      expect(isDeviceTimestampSearch(value)).toBe(false);
+
+    for (const value of ["MacBook", "MacBook 14", "SERIAL-1", "", "C02X", "14.4.1"])
       expect(isDeviceTimestampSearch(value)).toBe(false);
   });
 
-  it("formats timestamps into searchable text", () => {
-    const text = deviceTimestampSearchText(new Date("2026-03-04T05:06:07.000Z"));
-
-    expect(text).toContain("2026-03-04T05:06:07.000Z");
-    expect(text).toContain("2026-03-04");
-    expect(text).toContain("05:06");
-    expect(text).toContain("4 mar 2026");
-    expect(text).toContain("4 march 2026");
-    expect(deviceTimestampSearchText("not a date")).toBe("");
-  });
-
-  it("matches a timestamp representation without false positives", () => {
-    const lastSeen = new Date("2026-03-04T05:06:07.000Z");
-    const values = [lastSeen, new Date("2026-09-20T18:00:00.000Z")];
-
-    expect(deviceTimestampMatchesSearch("2026-03-04", values)).toBe(true);
-    expect(deviceTimestampMatchesSearch("4 mar 2026", values)).toBe(true);
-    expect(deviceTimestampMatchesSearch("05:06", values)).toBe(true);
-    expect(deviceTimestampMatchesSearch("2026-03-05", values)).toBe(false);
-    expect(deviceTimestampMatchesSearch("4 apr 2026", values)).toBe(false);
-    expect(deviceTimestampMatchesSearch("2026", [])).toBe(false);
+  it("maps a timestamp query to the formats it matches", () => {
+    expect(deviceSearchTimestampFormats("2026-03-04")).toEqual(["%Y-%m-%d %H:%i"]);
+    expect(deviceSearchTimestampFormats("2026")).toEqual(["%Y-%m-%d %H:%i"]);
+    expect(deviceSearchTimestampFormats("05:06")).toEqual(["%H:%i"]);
+    // Slash dates are ambiguous, so both orders (padded and not) are matched.
+    expect(deviceSearchTimestampFormats("10/11/2026")).toEqual([
+      "%e/%c/%Y",
+      "%d/%m/%Y",
+      "%c/%e/%Y",
+      "%m/%d/%Y",
+    ]);
+    expect(deviceSearchTimestampFormats("4 mar 2026")).toContain("%e %b %Y");
+    expect(deviceSearchTimestampFormats("4 mar 2026")).toContain("%e %M %Y");
+    expect(deviceSearchTimestampFormats("2")).toEqual([]);
   });
 });
 

@@ -231,61 +231,66 @@ const MONTH_WORDS = [
 
 const MONTH_ABBREVIATIONS = MONTH_WORDS.map((month) => month.slice(0, 3));
 
-/** `10 nov 2026`, `nov 2026`, `november`, or a bare numeric date/time fragment. */
+/** Only real four-digit years count as a date; `2`, `26` and `4` do not. */
+const TIMESTAMP_YEAR_QUERY = /^(?:19|20)\d{2}$/;
+
+/** `2026`, `2026-11`, `2026-11-10`, `2026-11-10 05:06`. */
+const TIMESTAMP_ISO_QUERY = /^\d{4}-\d{1,2}(?:-\d{1,2})?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/;
+
+/** `10/11` or `10/11/2026`, either day-first or month-first. */
+const TIMESTAMP_SLASH_QUERY = /^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/;
+
+const TIMESTAMP_TIME_QUERY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+
+/** `nov`, `november`, `nov 2026`, `4 nov 2026`, `nov 4 2026`. */
 const TIMESTAMP_MONTH_QUERY = new RegExp(
-  `^(?:\\d{1,2}\\s+)?(?:${[...MONTH_ABBREVIATIONS, ...MONTH_WORDS].join("|")})(?:\\s+\\d{2,4})?$`,
+  `^(?:(?:\\d{1,2}\\s+)?(?:${[...MONTH_ABBREVIATIONS, ...MONTH_WORDS].join("|")})(?:\\s+\\d{1,2})?(?:\\s+\\d{2,4})?)$`,
   "i",
 );
 
-const TIMESTAMP_NUMERIC_QUERY =
-  /^(?:\d{1,4}|\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?|\d{1,2}:\d{2}(?::\d{2})?)$/;
+/**
+ * MySQL `date_format` patterns a timestamp query is matched against.
+ *
+ * Timestamps are stored as UTC `datetime` values. Formatting them in SQL keeps
+ * the search set-based (no per-device scan, no id list) and lets month names
+ * and slash-separated dates be matched without knowing the reader's locale.
+ * `%e`/`%c` are the unpadded day/month, so both `4/3/2026` and `04/03/2026`
+ * forms match.
+ */
+const ISO_TIMESTAMP_FORMATS = ["%Y-%m-%d %H:%i"];
+
+const TIME_TIMESTAMP_FORMATS = ["%H:%i"];
+
+/** Both day-first and month-first, because `10/11/2026` is ambiguous. */
+const SLASH_TIMESTAMP_FORMATS = ["%e/%c/%Y", "%d/%m/%Y", "%c/%e/%Y", "%m/%d/%Y"];
+
+const MONTH_TIMESTAMP_FORMATS = ["%e %b %Y", "%e %M %Y", "%b %e %Y", "%M %e %Y"];
 
 /**
- * Whether a free-text query could be looking for a timestamp. Only then does
- * the search read device timestamps, so ordinary name/serial searches stay a
- * single index-friendly query.
+ * The timestamp representations a free-text query asks for, or `[]` when it is
+ * an ordinary name/serial/model search.
+ *
+ * Detection is deliberately narrow: bare numbers are only dates when they are
+ * a real four-digit year. This keeps a query like "26" from matching every
+ * device with a 2026 timestamp.
  */
-export const isDeviceTimestampSearch = (text: string): boolean => {
+export const deviceSearchTimestampFormats = (text: string): ReadonlyArray<string> => {
   const value = text.trim();
 
-  if (!value) return false;
+  if (!value) return [];
 
-  return TIMESTAMP_MONTH_QUERY.test(value) || TIMESTAMP_NUMERIC_QUERY.test(value);
+  if (TIMESTAMP_YEAR_QUERY.test(value) || TIMESTAMP_ISO_QUERY.test(value))
+    return ISO_TIMESTAMP_FORMATS;
+
+  if (TIMESTAMP_TIME_QUERY.test(value)) return TIME_TIMESTAMP_FORMATS;
+
+  if (TIMESTAMP_SLASH_QUERY.test(value)) return SLASH_TIMESTAMP_FORMATS;
+
+  if (TIMESTAMP_MONTH_QUERY.test(value)) return MONTH_TIMESTAMP_FORMATS;
+
+  return [];
 };
 
-/**
- * The text a timestamp contributes to search. `LIKE` over a `datetime` column
- * would be database-dialect specific, so timestamps are matched in application
- * code and the device ids are passed to SQL. Dates are shown in UTC; the ISO
- * form, `YYYY-MM-DD`, `HH:mm` and a `4 Mar 2026` form are all searchable.
- */
-export const deviceTimestampSearchText = (value: Date | string): string => {
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) return "";
-  const iso = date.toISOString();
-  const day = date.getUTCDate();
-  const month = MONTH_WORDS[date.getUTCMonth()]!;
-
-  return [
-    iso,
-    iso.slice(0, 10),
-    `${iso.slice(0, 10)} ${iso.slice(11, 16)}`,
-    `${day} ${MONTH_ABBREVIATIONS[date.getUTCMonth()]} ${date.getUTCFullYear()}`,
-    `${day} ${month} ${date.getUTCFullYear()}`,
-  ].join(" ");
-};
-
-/** Whether any provided timestamp text contains the query (case-insensitive). */
-export const deviceTimestampMatchesSearch = (
-  text: string,
-  values: ReadonlyArray<Date | string | null | undefined>,
-): boolean => {
-  const needle = text.trim().toLowerCase();
-
-  if (!needle) return false;
-
-  return values.some(
-    (value) => value != null && deviceTimestampSearchText(value).includes(needle),
-  );
-};
+/** Whether the query asks for a timestamp representation at all. */
+export const isDeviceTimestampSearch = (text: string): boolean =>
+  deviceSearchTimestampFormats(text).length > 0;

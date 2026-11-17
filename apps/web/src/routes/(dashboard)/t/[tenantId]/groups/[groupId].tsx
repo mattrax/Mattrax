@@ -12,6 +12,7 @@ import {
   Panel,
   QueryError,
   formatDate,
+  formatDeviceDate,
 } from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { MdmTable } from "~/components/mdm/table";
@@ -753,7 +754,7 @@ export default function GroupDetailPage() {
                     {
                       id: "lastSeen",
                       header: "Last seen",
-                      cell: (device) => formatDate(device.lastSeenAt),
+                      cell: (device) => formatDeviceDate(device.lastSeenAt),
                     },
                   ]}
                 />

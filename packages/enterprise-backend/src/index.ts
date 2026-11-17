@@ -6,7 +6,11 @@ export {
 
 export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/enterprise-billing";
 
-export { BillingService, BillingServiceLive, makeStripeBillingService } from "@mattrax/enterprise-billing";
+export {
+  BillingService,
+  BillingServiceLive,
+  makeStripeBillingService,
+} from "@mattrax/enterprise-billing";
 
 export { licenseBillingRoutes } from "@mattrax/enterprise-billing";
 
@@ -95,7 +99,11 @@ export {
   recordAccountAudit,
 } from "./Account/accountAudit.ts";
 
-export type { AccountAuditAction, AccountAuditInput, ClientDescriptor } from "./Account/accountAudit.ts";
+export type {
+  AccountAuditAction,
+  AccountAuditInput,
+  ClientDescriptor,
+} from "./Account/accountAudit.ts";
 
 export {
   RECOVERY_COMPLETION_TTL_MILLIS,
@@ -228,7 +236,11 @@ export {
   updateScript,
 } from "./Policy/scripts.ts";
 
-export type { AssignmentPatchResult, ScriptResultIngestion, ScriptSweepResult } from "./Policy/scripts.ts";
+export type {
+  AssignmentPatchResult,
+  ScriptResultIngestion,
+  ScriptSweepResult,
+} from "./Policy/scripts.ts";
 
 export {
   ANDROID_NOTIFICATION_TYPES,
@@ -578,8 +590,7 @@ export {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
   deviceSearchStatuses,
-  deviceTimestampMatchesSearch,
-  deviceTimestampSearchText,
+  deviceSearchTimestampFormats,
   isDeviceTimestampSearch,
   normalizeDeviceSearchQuery,
   platformLabel,
@@ -587,11 +598,19 @@ export {
   type DeviceSearchFilters,
 } from "./Device/deviceSearch.ts";
 
-export { ENROLLMENT_ATTEMPT_DEDUPE_MS, ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT } from "./Device/enrollmentAttempts.ts";
+export {
+  ENROLLMENT_ATTEMPT_DEDUPE_MS,
+  ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT,
+} from "./Device/enrollmentAttempts.ts";
 
 export { canEnrollDevice } from "./Device/enrollmentLimit.ts";
 
-export { tokenScopes, EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "./Identity/enterpriseAuth.ts";
+export {
+  tokenScopes,
+  EMAIL_CODE_TTL_MS,
+  emailCodeHash,
+  generateEmailCode,
+} from "./Identity/enterpriseAuth.ts";
 
 export {
   EscrowKeyError,

@@ -251,8 +251,7 @@ import {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
   deviceSearchStatuses,
-  deviceTimestampMatchesSearch,
-  isDeviceTimestampSearch,
+  deviceSearchTimestampFormats,
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
@@ -409,7 +408,11 @@ import {
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
 import { ensureScepCa, importScepCa, replaceScepCa, rotateScepCa } from "@mattrax/scep";
-import { listUserSessions, revokeAllUserSessions, revokeUserSession } from "@mattrax/enterprise-backend";
+import {
+  listUserSessions,
+  revokeAllUserSessions,
+  revokeUserSession,
+} from "@mattrax/enterprise-backend";
 import {
   R2Storage,
   R2StorageLive,
@@ -3826,9 +3829,8 @@ export const createEnterpriseService = ({
         const query = filters.q;
         const pattern = `%${escapeLike(query)}%`;
 
-        // Every branch is an explicit id list or a plain column predicate, so
-        // the search stays a single `WHERE` for the caller (and exports reuse
-        // it unchanged).
+        // Every branch is a plain predicate or a set-based subquery, so the
+        // caller keeps one `WHERE` (search and CSV export share it).
         const search: SQL[] = [
           like(schema.device.name, pattern),
           like(schema.device.physicalName, pattern),
@@ -3843,8 +3845,9 @@ export const createEnterpriseService = ({
           like(schema.device.osBuild, pattern),
         ];
 
-        // Platform and status are stored as short codes but shown as labels, so
-        // `windows` has to find `win` and `enrolled` has to find `enrolled`.
+        // The platform column stores `apple`/`win`/`android` while the table
+        // renders `Apple`/`Windows`/`Android`, so "windows" can only match by
+        // label. Status values are stored verbatim, where the table shows them.
         const platforms = deviceSearchPlatforms(query);
         const statuses = deviceSearchStatuses(query);
 
@@ -3852,80 +3855,60 @@ export const createEnterpriseService = ({
 
         if (statuses.length > 0) search.push(inArray(schema.device.status, statuses));
 
-        // Group names: resolve matching groups, then their members. Resolving
-        // up front (rather than joining) keeps this tenant-scoped and leaves
-        // one membership query per search.
-        const matchingGroups = yield* db
-          .select({ id: schema.enterpriseGroup.id })
-          .from(schema.enterpriseGroup)
-          .where(
-            and(
-              eq(schema.enterpriseGroup.organizationId, organizationId),
-              like(schema.enterpriseGroup.name, pattern),
-            ),
-          );
-
-        if (matchingGroups.length > 0) {
-          const members = yield* db
-            .select({ deviceId: schema.groupDevice.deviceId })
-            .from(schema.groupDevice)
-            .where(
-              inArray(
-                schema.groupDevice.groupId,
-                matchingGroups.map((group: { id: string }) => group.id),
+        // Group names are a column the table shows. The subquery keeps the
+        // membership lookup in SQL and tenant-scoped by the group row it joins.
+        search.push(
+          inArray(
+            schema.device.id,
+            db
+              .select({ deviceId: schema.groupDevice.deviceId })
+              .from(schema.groupDevice)
+              .innerJoin(
+                schema.enterpriseGroup,
+                eq(schema.groupDevice.groupId, schema.enterpriseGroup.id),
+              )
+              .where(
+                and(
+                  eq(schema.enterpriseGroup.organizationId, organizationId),
+                  like(schema.enterpriseGroup.name, pattern),
+                ),
               ),
-            );
+          ),
+        );
 
-          if (members.length > 0)
-            search.push(
-              inArray(
-                schema.device.id,
-                members.map((member: { deviceId: string }) => member.deviceId),
+        // Attribute values are visible as extra table columns.
+        search.push(
+          inArray(
+            schema.device.id,
+            db
+              .select({ deviceId: schema.deviceAttribute.deviceId })
+              .from(schema.deviceAttribute)
+              .where(
+                and(
+                  eq(schema.deviceAttribute.organizationId, organizationId),
+                  like(schema.deviceAttribute.value, pattern),
+                ),
               ),
-            );
-        }
+          ),
+        );
 
-        // Timestamps are formatted in application code (formatting a datetime
-        // in SQL is dialect-specific) and only inspected when the query looks
-        // like a date, so ordinary searches do not scan the column.
-        if (isDeviceTimestampSearch(query)) {
-          const timestamps = yield* db
-            .select({
-              id: schema.device.id,
-              lastSeenAt: schema.device.lastSeenAt,
-              enrolledAt: schema.device.enrolledAt,
-            })
-            .from(schema.device)
-            .where(eq(schema.device.organizationId, organizationId));
+        // Timestamps are stored in UTC. Matching them through `date_format`
+        // keeps the search set-based; the helper only returns formats for
+        // date-shaped queries, so name/serial searches never touch the column.
+        const timestampFormats = deviceSearchTimestampFormats(query);
 
-          const matching = timestamps
-            .filter((row: { lastSeenAt: Date; enrolledAt: Date }) =>
-              deviceTimestampMatchesSearch(query, [row.lastSeenAt, row.enrolledAt]),
-            )
-            .map((row: { id: string }) => row.id);
+        if (timestampFormats.length > 0) {
+          const timestamps = or(
+            ...timestampFormats.flatMap((format) => {
+              const patternFor = (column: AnyColumn) =>
+                like(sql`date_format(${column}, ${sql.raw(`'${format}'`)})`, pattern);
 
-          if (matching.length > 0) search.push(inArray(schema.device.id, matching));
-        }
-
-        // Attribute values are visible as extra table columns; resolve the
-        // matching devices first so the branch is an explicit id list too.
-        const attributeMatches = yield* db
-          .select({ deviceId: schema.deviceAttribute.deviceId })
-          .from(schema.deviceAttribute)
-          .where(
-            and(
-              eq(schema.deviceAttribute.organizationId, organizationId),
-              like(schema.deviceAttribute.value, pattern),
-            ),
+              return [patternFor(schema.device.lastSeenAt), patternFor(schema.device.enrolledAt)];
+            }),
           );
 
-        if (attributeMatches.length > 0)
-          search.push(
-            inArray(
-              schema.device.id,
-              attributeMatches.map((row: { deviceId: string }) => row.deviceId),
-            ),
-          );
+          if (timestamps) search.push(timestamps);
+        }
 
         const condition = or(...search);
 

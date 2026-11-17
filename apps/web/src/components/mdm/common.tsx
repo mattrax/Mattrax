@@ -545,7 +545,7 @@ export function PlatformBadge(props: { proto: string }) {
   );
 }
 
-export function formatDate(value?: string | null) {
+const formatTimestamp = (value: string | null | undefined, timeZone?: string) => {
   if (!value) return "Unknown";
   const date = new Date(value);
 
@@ -554,7 +554,22 @@ export function formatDate(value?: string | null) {
   return date.toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
+    ...(timeZone ? { timeZone } : {}),
   });
+};
+
+export function formatDate(value?: string | null) {
+  return formatTimestamp(value);
+}
+
+/**
+ * The device timestamps the search can match (enrollment and last seen) are
+ * stored and searched in UTC. Rendering them in UTC means the day and clock
+ * time a reader sees are the ones they can type into search (`2026-11-10`,
+ * `4 Nov 2026`, `05:06`), even when the browser is in another time zone.
+ */
+export function formatDeviceDate(value?: string | null) {
+  return formatTimestamp(value, "UTC");
 }
 
 export function relativeTime(value?: string | null) {
