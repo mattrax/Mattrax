@@ -115,16 +115,19 @@ export const apiWorker = {
     ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: bindings.secret(),
     ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: bindings.secret(),
     ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: bindings.secret(),
-    /** Local-only mailbox flag. Never set in production. */
-    // Previews opt into the guarded debug mailbox so verification codes are
-    // readable without sending real mail. The secret itself stays a Worker
-    // secret (shared by every deployment of this Worker).
-    // Safe to default on: `isDevMailboxEnabled` still requires a loopback
-    // origin, or an explicit ALLOW_REMOTE opt-in with a secret.
-    DEV_MAILBOX: bindings.text(
-      process.env.DEV_MAILBOX ?? (process.env.NODE_ENV === "production" ? "" : "true"),
-    ),
-    DEV_MAILBOX_ALLOW_REMOTE: bindings.text(process.env.DEV_MAILBOX_ALLOW_REMOTE ?? ""),
+    /**
+     * Local-only mailbox flag. Only declare the text bindings when a build
+     * explicitly opts in: a deployed Worker may already carry secrets with
+     * these names, and `cf` refuses to silently replace secrets with text.
+     * `isDevMailboxEnabled` still requires a loopback origin, or an explicit
+     * ALLOW_REMOTE opt-in with the shared secret.
+     */
+    ...(process.env.DEV_MAILBOX
+      ? { DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX) }
+      : {}),
+    ...(process.env.DEV_MAILBOX_ALLOW_REMOTE
+      ? { DEV_MAILBOX_ALLOW_REMOTE: bindings.text(process.env.DEV_MAILBOX_ALLOW_REMOTE) }
+      : {}),
     DEV_MAILBOX_SECRET: bindings.secret(),
     /** Days without a check-in before the maintenance job marks a device unenrolled. */
     MAINTENANCE_STALE_DEVICE_DAYS: bindings.text("30"),
