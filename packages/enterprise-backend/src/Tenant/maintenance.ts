@@ -7,14 +7,24 @@ import {
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
   sweepDeviceCommands,
+  sweepWindowsStateCommands,
   syncDynamicGroupsForTenant,
+  WINDOWS_STATE_COMMAND_RETENTION_DAYS,
 } from "@mattrax/mdm-apple";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
 import { loadCredentialHealth, type CredentialHealth } from "../Device/credentialHealth.ts";
+import {
+  sweepCredentialIssuance,
+  type DomainCertificateRequester,
+} from "../Device/credentialIssuance.ts";
 import { purgeExpiredScepCaTrust, rotateDueScepCas } from "../Scep/scepLifecycle.ts";
-import { runServerCertificateCheck, type ServerCertificateProbe } from "../Scep/serverCertificate.ts";
+import {
+  runServerCertificateCheck,
+  type ServerCertificateProbe,
+} from "../Scep/serverCertificate.ts";
 import { reconcileSubscriptionSweep } from "@mattrax/enterprise-billing";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import type { EffectStripeClient } from "@mattrax/effect-stripe";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
 import { syncScheduledVppAssets } from "@mattrax/apple-business-manager";
@@ -152,6 +162,27 @@ export type MaintenanceOptions = {
    */
   readonly commandRetentionDays?: number;
   /**
+   * Windows policy and inventory command rows older than this many days are
+   * deleted. Defaults to `WINDOWS_STATE_COMMAND_RETENTION_DAYS` (30). These
+   * rows are regenerated from device state on every check-in, so they are
+   * ephemeral delivery bookkeeping rather than an action queue. Set to `0` to
+   * keep them indefinitely.
+   */
+  readonly windowsCommandRetentionDays?: number;
+  /**
+   * Detect credentials and the deployment domain that have no certificate and
+   * trigger issuance. Defaults to true. A missing tenant SCEP CA is generated
+   * when the tenant has active devices; a missing APNs certificate starts the
+   * manual flow by generating the pending CSR key.
+   */
+  readonly credentialIssuance?: boolean;
+  /**
+   * Host hook used to request a certificate for a deployment origin whose TLS
+   * probe observed none. Omit it on platforms that renew the origin out of band
+   * (Cloudflare, or an operator-managed proxy); the run then only reports it.
+   */
+  readonly requestDomainCertificate?: DomainCertificateRequester;
+  /**
    * Terminal script-execution rows older than this many days are deleted.
    * Defaults to 30. Queued runs expire first; they are never pruned while
    * active. Set to `0` to keep script results indefinitely.
@@ -214,6 +245,20 @@ export type MaintenanceResult = {
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Windows state-generated command rows deleted by retention. */
+  readonly purgedWindowsCommands: number;
+  /** Tenant SCEP CAs generated because the tenant had none. */
+  readonly scepCasIssued: number;
+  /** Tenants whose SCEP CA could not be generated; retried next run. */
+  readonly scepCasFailed: number;
+  /** Active Apple tenants with no APNs certificate. */
+  readonly missingApnsCertificates: number;
+  /** Pending APNs CSR keys generated for those tenants. */
+  readonly apnsCsrsGenerated: number;
+  /** 1 when the deployment origin has no observed TLS certificate. */
+  readonly missingDomainCertificates: number;
+  /** Origin certificate issuance hooks that completed this run. */
+  readonly domainCertificateRequests: number;
   /** Queued script runs whose deadline elapsed during this run. */
   readonly expiredScriptRuns: number;
   /** Terminal script-execution rows deleted by retention. */
@@ -413,6 +458,9 @@ export const runMaintenance = (
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
 
+    /** Latest origin observation, reused by the missing-certificate sweep. */
+    let serverCertificateState: ServerCertificateInfo | null = null;
+
     const result = {
       expiredInvitations: 0,
       staleDevices: 0,
@@ -435,6 +483,13 @@ export const runMaintenance = (
       securityInfoRefreshes: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      purgedWindowsCommands: 0,
+      scepCasIssued: 0,
+      scepCasFailed: 0,
+      missingApnsCertificates: 0,
+      apnsCsrsGenerated: 0,
+      missingDomainCertificates: 0,
+      domainCertificateRequests: 0,
       expiredScriptRuns: 0,
       purgedScriptRuns: 0,
       purgedTenantDeletionLogs: 0,
@@ -663,6 +718,34 @@ export const runMaintenance = (
       );
 
       result.serverCertificateChecked = check.checked ? 1 : 0;
+      serverCertificateState = check.state;
+    }
+
+    // 5e. Missing-certificate issuance. A tenant with active devices but no
+    //     SCEP CA cannot sign an enrolment profile or issue a device identity,
+    //     so generate it here instead of waiting for the first device request.
+    //     A missing APNs certificate starts its manual flow by generating the
+    //     pending CSR key; Apple still has to sign the certificate. An origin
+    //     with no observed certificate is handed to the host's issuance hook.
+    //     Runs before the credential alerts so they describe the repaired state;
+    //     failures are isolated per tenant and retried by the next run.
+    if (options.credentialIssuance !== false) {
+      const issuance = yield* sweepCredentialIssuance(db, {
+        now,
+        authSecret: options.authSecret,
+        domain:
+          options.serverCertificateOrigin && serverCertificateState
+            ? { origin: options.serverCertificateOrigin, state: serverCertificateState }
+            : undefined,
+        requestDomainCertificate: options.requestDomainCertificate,
+      });
+
+      result.scepCasIssued = issuance.scepCasIssued;
+      result.scepCasFailed = issuance.scepCasFailed;
+      result.missingApnsCertificates = issuance.missingApnsCertificates;
+      result.apnsCsrsGenerated = issuance.apnsCsrsGenerated;
+      result.missingDomainCertificates = issuance.missingDomainCertificates;
+      result.domainCertificateRequests = issuance.domainCertificateRequests;
     }
 
     // 6. Credential expiry warnings. APNs and SCEP CA expiries are otherwise
@@ -873,6 +956,17 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+
+    // 10a. Windows policy/inventory rows are regenerated from device state on
+    //      every check-in and are written without an expiry, so the generic
+    //      sweep above never classifies them as terminal. Prune them by age
+    //      with their own bound; a returning device gets a fresh row.
+    const windowsCommands = yield* sweepWindowsStateCommands(db, {
+      now,
+      retentionDays: options.windowsCommandRetentionDays ?? WINDOWS_STATE_COMMAND_RETENTION_DAYS,
+    });
+
+    result.purgedWindowsCommands = windowsCommands.pruned;
 
     // 10b. Script queue housekeeping. A manual run that no device collected
     //      before its deadline must not fire weeks later, and script output can

@@ -65,6 +65,7 @@ foreign key and the email snapshot stays until retention prunes the row.
 | Session descriptor     | `account_session_context` | Deleted with its session (revocation) or when the session expires       |
 | Email-change tokens    | `account_email_change`    | One hour; rows stay for reference until the account is deleted          |
 | Recovery ceremony      | `account_recovery`        | 30 minutes to prove, 15 minutes to complete; rows stay with the account |
+| Device commands        | `device_command`          | Terminal history after 90 days; Windows state rows after 30 days        |
 
 Session descriptors never contain a raw client address. The address is hashed with
 `AUTH_SECRET` (`SHA-256("<secret>:ip:<address>")`, first 128 bits) and only the
@@ -72,6 +73,19 @@ browser/platform family is taken from the `User-Agent` — no version, locale or
 header. The descriptor is captured on the session's first authenticated request, because
 the auth library owns session creation and its row has no request context. A deployment
 without `AUTH_SECRET` stores no address-derived value at all.
+
+### Credential issuance
+
+Daily maintenance also detects credentials that have no certificate and repairs what it
+can. A tenant with active devices but no SCEP CA gets one generated (sealed with
+`AUTH_SECRET`), so its first enrolment does not have to bootstrap the CA and a tenant
+whose row was never created is repaired. A missing APNs certificate starts the manual
+issuance flow by generating and sealing the pending CSR key, so the administrator can
+download the request from **Settings → Management → Apple push** and have Apple sign it;
+the certificate itself still requires the account owner. The deployment origin is the only
+domain with a certificate in the schema; when the TLS probe observed no leaf certificate,
+the host's `requestDomainCertificate` hook is called so a Cloudflare/ACME integration can
+issue one. Custom tenant hostnames are not modelled yet.
 
 Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
 IP address.

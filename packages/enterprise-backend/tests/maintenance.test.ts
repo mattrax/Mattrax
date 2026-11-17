@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
+import { sweepWindowsStateCommands } from "@mattrax/mdm-apple";
 import { sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { runMaintenance } from "../src/Tenant/maintenance.ts";
@@ -478,5 +479,279 @@ describe("maintenance SCEP CA rotation", () => {
 
     expect(result.scepCaRotated).toBe(0);
     expect(db.store.scep_ca[0]!.certPem).toBe(previous.certPem);
+  });
+});
+
+describe("maintenance Windows state command retention", () => {
+  const command = (id: string, ageDays: number, requestType: string, status = "sent") => ({
+    id,
+    organizationId: "org-1",
+    deviceId: "device-1",
+    requestType,
+    payload: { kind: "Replace", locURI: `./Vendor/MSFT/${id}` },
+    status,
+    dedupeKey: null,
+    expiresAt: null,
+    resultStatus: null,
+    resultDetail: null,
+    createdAt: new Date(now.getTime() - ageDays * DAY),
+    updatedAt: new Date(now.getTime() - ageDays * DAY),
+  });
+
+  it("prunes old Windows policy and inventory rows without touching imperative commands", async () => {
+    const db = makeDb();
+    db.store.device_command.push(
+      command("old-policy", 31, "WindowsPolicyReplace"),
+      command("boundary-policy", 30, "WindowsPolicyReplace"),
+      command("old-delete", 45, "WindowsPolicyDelete"),
+      command("old-inventory", 60, "WindowsInventoryGet"),
+      command("fresh-inventory", 2, "WindowsApplicationInventoryGet"),
+      command("imperative", 31, "DeviceLock", "expired"),
+    );
+
+    const result = await run(db);
+    expect(result.purgedWindowsCommands).toBe(3);
+    expect(db.store.device_command.map((row: { id: string }) => row.id).sort()).toEqual([
+      "boundary-policy",
+      "fresh-inventory",
+      "imperative",
+    ]);
+
+    // Idempotent: a second run has nothing left to delete.
+    expect((await run(db)).purgedWindowsCommands).toBe(0);
+  });
+
+  it("can be disabled with a retention of 0", async () => {
+    const db = makeDb();
+    db.store.device_command.push(command("old-policy", 365, "WindowsPolicyReplace"));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        dynamicGroups: false,
+        applicationInventory: false,
+        windowsCommandRetentionDays: 0,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedWindowsCommands).toBe(0);
+    expect(db.store.device_command).toHaveLength(1);
+  });
+
+  it("bounds one sweep so a large backlog is drained over several runs", async () => {
+    const db = makeDb();
+    db.store.device_command.push(
+      command("one", 60, "WindowsPolicyReplace"),
+      command("two", 60, "WindowsPolicyReplace"),
+      command("three", 60, "WindowsPolicyReplace"),
+    );
+
+    const first = await runEffect(sweepWindowsStateCommands(db, { now, limit: 2 }));
+    expect(first.pruned).toBe(2);
+    expect(db.store.device_command).toHaveLength(1);
+
+    const second = await runEffect(sweepWindowsStateCommands(db, { now, limit: 2 }));
+    expect(second.pruned).toBe(1);
+    expect(db.store.device_command).toHaveLength(0);
+  });
+});
+
+describe("maintenance credential issuance", () => {
+  const authSecret = "maintenance-issuance-secret";
+
+  const tenant = (id: string) => ({ id, name: id, slug: id, createdAt: now, updatedAt: now });
+
+  const device = (id: string, organizationId: string, proto: "apple" | "win" | "android") => ({
+    id,
+    organizationId,
+    proto,
+    status: "enrolled",
+    name: id,
+    enrolledAt: new Date(now.getTime() - DAY),
+    lastSeenAt: now,
+  });
+
+  const runIssuance = (
+    db: ReturnType<typeof makeDb>,
+    overrides: Parameters<typeof runMaintenance>[0] = {},
+  ) =>
+    runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        dynamicGroups: false,
+        applicationInventory: false,
+        authSecret,
+        ...overrides,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+  it("can be disabled for hosts that issue credentials out of band", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("org-1"));
+    db.store.device.push(device("device-1", "org-1", "apple"));
+
+    const result = await runIssuance(db, { credentialIssuance: false });
+    expect(result.scepCasIssued).toBe(0);
+    expect(result.missingApnsCertificates).toBe(0);
+    expect(result.apnsCsrsGenerated).toBe(0);
+    expect(db.store.scep_ca).toHaveLength(0);
+    expect(db.store.apple_push_key).toHaveLength(0);
+  });
+
+  it("generates a missing SCEP CA for a tenant with active devices", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("org-1"));
+    db.store.device.push(device("device-1", "org-1", "win"));
+
+    const first = await runIssuance(db);
+    expect(first.scepCasIssued).toBe(1);
+    expect(first.scepCasFailed).toBe(0);
+    expect(db.store.scep_ca).toHaveLength(1);
+    expect(db.store.scep_ca[0]).toMatchObject({ organizationId: "org-1" });
+
+    // The CA exists now, so the next run issues nothing.
+    const second = await runIssuance(db);
+    expect(second.scepCasIssued).toBe(0);
+    expect(db.store.scep_ca).toHaveLength(1);
+  });
+
+  it("does not issue a CA for a tenant without devices that use SCEP", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("org-1"), tenant("org-2"));
+    db.store.device.push(
+      { ...device("device-1", "org-1", "win"), status: "unenrolled" },
+      device("device-2", "org-2", "android"),
+    );
+
+    const result = await runIssuance(db);
+    expect(result.scepCasIssued).toBe(0);
+    expect(db.store.scep_ca).toHaveLength(0);
+  });
+
+  it("reports a missing CA without throwing when no sealing secret is configured", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("org-1"));
+    db.store.device.push(device("device-1", "org-1", "apple"));
+
+    const result = await runIssuance(db, { authSecret: undefined });
+    expect(result.scepCasIssued).toBe(0);
+    expect(result.scepCasFailed).toBe(1);
+    expect(db.store.scep_ca).toHaveLength(0);
+    // Without a sealing secret neither the CA nor a pending APNs key can exist.
+    expect(result.missingApnsCertificates).toBe(1);
+    expect(result.apnsCsrsGenerated).toBe(0);
+    expect(db.store.apple_push_key).toHaveLength(0);
+  });
+
+  it("counts active Apple tenants without an APNs certificate", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("apple-org"), tenant("windows-org"));
+
+    db.store.device.push(
+      device("apple-device", "apple-org", "apple"),
+      device("windows-device", "windows-org", "win"),
+    );
+
+    const result = await runIssuance(db);
+    expect(result.missingApnsCertificates).toBe(1);
+    expect(result.apnsCsrsGenerated).toBe(1);
+    expect(db.store.apple_push_key).toHaveLength(1);
+    expect(db.store.apple_push_key[0]).toMatchObject({ organizationId: "apple-org" });
+
+    // The pending key is reused rather than rotated on the next daily run.
+    const second = await runIssuance(db);
+    expect(second.missingApnsCertificates).toBe(1);
+    expect(second.apnsCsrsGenerated).toBe(0);
+    expect(db.store.apple_push_key).toHaveLength(1);
+  });
+
+  it("requests issuance for an origin whose probe returned no certificate", async () => {
+    const db = makeDb();
+    const request = vi.fn(() => Effect.succeed(undefined));
+
+    const result = await runIssuance(db, {
+      serverCertificateOrigin: "https://e.mattrax.app",
+      serverCertificateProbe: () =>
+        Effect.succeed({
+          hostname: "e.mattrax.app",
+          port: 443,
+          subject: null,
+          issuer: null,
+          serialNumber: null,
+          fingerprintSha256: null,
+          notBefore: null,
+          notAfter: null,
+          authorized: false,
+          authorizationError: null,
+          chainLength: 0,
+        }),
+      requestDomainCertificate: request,
+    });
+
+    expect(result.missingDomainCertificates).toBe(1);
+    expect(result.domainCertificateRequests).toBe(1);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({
+      origin: "https://e.mattrax.app",
+      hostname: "e.mattrax.app",
+      reason: "missing",
+    });
+  });
+
+  it("does not request issuance when the origin certificate is healthy", async () => {
+    const db = makeDb();
+    const request = vi.fn(() => Effect.succeed(undefined));
+
+    const result = await runIssuance(db, {
+      serverCertificateOrigin: "https://e.mattrax.app",
+      serverCertificateProbe: () =>
+        Effect.succeed({
+          hostname: "e.mattrax.app",
+          port: 443,
+          subject: "CN=e.mattrax.app",
+          issuer: "CN=Test CA",
+          serialNumber: "2a",
+          fingerprintSha256: "a".repeat(64),
+          notBefore: new Date(now.getTime() - 30 * DAY),
+          notAfter: new Date(now.getTime() + 60 * DAY),
+          authorized: true,
+          authorizationError: null,
+          chainLength: 2,
+        }),
+      requestDomainCertificate: request,
+    });
+
+    expect(result.missingDomainCertificates).toBe(0);
+    expect(result.domainCertificateRequests).toBe(0);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("isolates a failing issuance hook and retries on the next run", async () => {
+    const db = makeDb();
+    const request = vi.fn(() => Effect.fail(new Error("ACME unavailable")));
+
+    const first = await runIssuance(db, {
+      serverCertificateOrigin: "https://e.mattrax.app",
+      serverCertificateProbe: () => Effect.fail(new Error("TLS handshake failed")),
+      serverCertificateIntervalMinutes: 0,
+      requestDomainCertificate: request,
+    });
+
+    expect(first.missingDomainCertificates).toBe(1);
+    expect(first.domainCertificateRequests).toBe(0);
+    expect(request).toHaveBeenCalledTimes(1);
+
+    // A failed request leaves the observation missing, so the next run retries.
+    await runIssuance(db, {
+      serverCertificateOrigin: "https://e.mattrax.app",
+      serverCertificateProbe: () => Effect.fail(new Error("TLS handshake failed")),
+      serverCertificateIntervalMinutes: 0,
+      requestDomainCertificate: request,
+    });
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });

@@ -473,6 +473,11 @@ export {
 
 export type { CredentialHealth, DeviceCertificateRecord } from "./Device/credentialHealth.ts";
 
+export type {
+  DomainCertificateRequest,
+  DomainCertificateRequester,
+} from "./Device/credentialIssuance.ts";
+
 export {
   loadScepCaState,
   loadTrustedScepCaCertificates,

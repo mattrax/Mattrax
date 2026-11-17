@@ -353,7 +353,10 @@ as `expiresAt` by `GET /api/v1/tenants/:tenantId/devices/:id/commands`, alongsid
 
 Windows policy `Replace`/`Delete` commands and inventory `Get` requests are stored in the
 same command history as imperative actions, with a stable row id per OMA-URI, so a device
-status can always be matched to the command that caused it.
+status can always be matched to the command that caused it. Because those rows are derived
+from device state rather than operator work, daily maintenance prunes them after 30 days
+(`WINDOWS_STATE_COMMAND_RETENTION_DAYS`), independent of the 90-day terminal-command
+window. A device that checks in later simply gets a fresh row with the same id.
 
 Queueing is idempotent: a request identical to one already queued or in flight on the same
 device returns that command with `deduplicated: true` instead of inserting a second one.
