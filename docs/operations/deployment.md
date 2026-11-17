@@ -25,8 +25,8 @@ Repository secrets (Settings → Secrets and variables → Actions → Secrets):
 | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `CLOUDFLARE_API_TOKEN`                                                                                                          | Token with Workers Scripts:Edit, Workers R2 Storage:Edit, Workers Routes:Edit and Account Settings:Read on the account. |
 | `CLOUDFLARE_ACCOUNT_ID`                                                                                                         | Account that owns both Workers.                                                                                         |
-| `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`                                         | Production MySQL connection used by `pnpm cloud db:migrate`.                                                              |
-| `PREVIEW_DATABASE_HOST`, `PREVIEW_DATABASE_PORT`, `PREVIEW_DATABASE_USER`, `PREVIEW_DATABASE_PASSWORD`, `PREVIEW_DATABASE_NAME` | The shared preview MySQL database. Every PR migrates and uses it.                                                       |
+| `DATABASE_URL`                                                                                                                                   | Production MySQL connection string used by `pnpm cloud db:migrate`.                                                       |
+| `PREVIEW_DATABASE_URL`                                                                                                                           | Optional. Shared preview MySQL connection string. When absent (together with the preview Hyperdrive/bucket), PR Preview deployments are skipped. |
 
 Repository variables (Settings → Secrets and variables → Actions → Variables):
 
@@ -53,10 +53,13 @@ Worker, so they only need to be set once (for example with `cf secrets put`):
 
 ## Cloudflare resources
 
-1. **Preview database + Hyperdrive.** Create a MySQL database for previews and a
-   Hyperdrive configuration pointing at it, then set `PREVIEW_HYPERDRIVE_ID`.
-   Migrations from every PR are applied to it before the preview Workers are
-   uploaded, so keep it disposable rather than pointing it at production.
+1. **Preview database + Hyperdrive.** Optional. Create a MySQL database for
+   previews and a Hyperdrive configuration pointing at it, then set
+   `PREVIEW_DATABASE_URL`, `PREVIEW_HYPERDRIVE_ID` and
+   `PREVIEW_STORAGE_BUCKET`. Migrations from every PR are applied to it before
+   the preview Workers are uploaded, so keep it disposable rather than pointing
+   it at production. Without all three, the workflow skips Preview deployments
+   instead of falling back to production.
 2. **Preview R2 bucket.** Create the bucket named by `PREVIEW_STORAGE_BUCKET`.
 3. **Preview URLs.** The deploy expects each Worker Preview to have a generated
    URL. In the Cloudflare dashboard open each Worker → Settings → Domains and

@@ -16,9 +16,9 @@ name: Deploy
 #   CLOUDFLARE_API_TOKEN      Workers Scripts:Edit, Workers R2 Storage:Edit,
 #                             Workers Routes:Edit and Account Settings:Read
 #   CLOUDFLARE_ACCOUNT_ID     the account that owns both Workers
-#   DATABASE_*                production MySQL connection (host/port/user/
-#                             password/name) used by Drizzle migrations
-#   PREVIEW_DATABASE_*        the shared preview MySQL connection, same names
+#   DATABASE_URL              production MySQL connection used by migrations
+#   PREVIEW_DATABASE_URL      optional shared preview MySQL connection; when
+#                             absent, PR Preview deployments are skipped
 #
 # Required repository variables:
 #   PREVIEW_HYPERDRIVE_ID     Hyperdrive config pointing at the preview database
@@ -84,20 +84,18 @@ jobs:
 
       # Fail with the missing names instead of a driver error deep inside
       # Drizzle. The full setup is documented in docs/operations/deployment.md.
-      - name: Check deployment configuration
+      # Production uses a single DATABASE_URL. Preview deployments are opt-in:
+      # without a preview database URL and Hyperdrive config they are skipped
+      # rather than silently migrating or binding production.
+      - name: Resolve deployment configuration
+        id: config
         env:
-          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
-          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
-          DATABASE_USER: ${{ secrets.DATABASE_USER }}
-          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
-          PREVIEW_DATABASE_HOST: ${{ secrets.PREVIEW_DATABASE_HOST }}
-          PREVIEW_DATABASE_PORT: ${{ secrets.PREVIEW_DATABASE_PORT }}
-          PREVIEW_DATABASE_USER: ${{ secrets.PREVIEW_DATABASE_USER }}
-          PREVIEW_DATABASE_PASSWORD: ${{ secrets.PREVIEW_DATABASE_PASSWORD }}
-          PREVIEW_DATABASE_NAME: ${{ secrets.PREVIEW_DATABASE_NAME }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PREVIEW_DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
           PREVIEW_HYPERDRIVE_ID: ${{ vars.PREVIEW_HYPERDRIVE_ID }}
           PREVIEW_STORAGE_BUCKET: ${{ vars.PREVIEW_STORAGE_BUCKET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           missing=()
 
@@ -105,19 +103,17 @@ jobs:
             [ -n "${!name}" ] || missing+=("$name")
           done
 
-          prefix="DATABASE_"
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            prefix="PREVIEW_DATABASE_"
-          fi
-
-          for suffix in HOST PORT USER PASSWORD NAME; do
-            name="${prefix}${suffix}"
-            [ -n "${!name}" ] || missing+=("$name")
-          done
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            [ -n "$PREVIEW_HYPERDRIVE_ID" ] || missing+=(PREVIEW_HYPERDRIVE_ID)
-            [ -n "$PREVIEW_STORAGE_BUCKET" ] || missing+=(PREVIEW_STORAGE_BUCKET)
+            preview="true"
+            for name in PREVIEW_DATABASE_URL PREVIEW_HYPERDRIVE_ID PREVIEW_STORAGE_BUCKET; do
+              if [ -z "${!name}" ]; then
+                preview="false"
+                echo "::notice::Skipping the Preview deployment: $name is not configured."
+              fi
+            done
+            echo "preview=$preview" >> "$GITHUB_OUTPUT"
+          else
+            [ -n "$DATABASE_URL" ] || missing+=("DATABASE_URL")
           fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -128,23 +124,15 @@ jobs:
       - name: Apply production migrations
         if: github.event_name == 'push'
         env:
-          DATABASE_HOST: ${{ secrets.DATABASE_HOST }}
-          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
-          DATABASE_USER: ${{ secrets.DATABASE_USER }}
-          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm cloud db:migrate
 
       - name: Apply preview migrations
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         env:
           # Every PR shares the preview database; migrations are additive and
           # run before either Preview is uploaded.
-          DATABASE_HOST: ${{ secrets.PREVIEW_DATABASE_HOST }}
-          DATABASE_PORT: ${{ secrets.PREVIEW_DATABASE_PORT }}
-          DATABASE_USER: ${{ secrets.PREVIEW_DATABASE_USER }}
-          DATABASE_PASSWORD: ${{ secrets.PREVIEW_DATABASE_PASSWORD }}
-          DATABASE_NAME: ${{ secrets.PREVIEW_DATABASE_NAME }}
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
         run: pnpm cloud db:migrate
 
       - name: Deploy production
@@ -159,7 +147,7 @@ jobs:
       # id, email links).
       - name: Create the dashboard Preview (bootstrap URL)
         id: web-bootstrap
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/web
         run: |
           set -o pipefail
@@ -175,7 +163,7 @@ jobs:
 
       - name: Create the API Preview
         id: api-preview
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/cloud
         env:
           ORIGIN: ${{ steps.web-bootstrap.outputs.url }}
@@ -197,7 +185,7 @@ jobs:
 
       - name: Create the dashboard Preview
         id: web-preview
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/web
         env:
           API_URL: ${{ steps.api-preview.outputs.url }}
@@ -214,7 +202,7 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Comment the Preview
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: preview
