@@ -233,6 +233,10 @@ const syncUsersPage = (
             .from(schema.userGroup)
             .where(eq(schema.userGroup.organizationId, organizationId));
 
+          // Kept inline rather than using clearTenantUserDirectoryState: a
+          // directory sync must delete only the graph object it no longer sees
+          // and reuses the tenant's group list selected here, whereas the
+          // shared helper is user-scoped and reloads groups per call.
           if (orgGroups.length)
             yield* database.delete(schema.userGroupMember).where(
               and(
@@ -636,6 +640,9 @@ export const syncEntraDirectory = (options: {
               ),
             );
 
+          // Inline for the same reason as the page sync path above: only the
+          // reconciled object's identity row may be removed, and the group list
+          // is selected once for the whole tenant.
           if (orgGroups.length)
             yield* db.delete(schema.userGroupMember).where(
               and(

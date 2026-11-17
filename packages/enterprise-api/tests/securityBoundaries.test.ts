@@ -1095,11 +1095,14 @@ describe("SCIM provisioning boundary", () => {
       expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
     );
 
-    // A retried deactivation must not fail once the membership is gone.
+    // A retried deactivation must not fail once the membership is gone. The
+    // response is empty because there is no tenant-scoped member row left to
+    // render, and reading the global account row could expose another tenant's
+    // user for an id this token does not own.
     const retry = await deactivate();
 
-    expect(retry.status).toBe(200);
-    expect(await responseJson(retry)).toMatchObject({ id: provisioned.id, active: false });
+    expect(retry.status).toBe(204);
+    expect(await HttpServerResponse.toWeb(retry).text()).toBe("");
     expect(
       owner.db.store.member.some(
         (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
@@ -1163,13 +1166,69 @@ describe("SCIM provisioning boundary", () => {
 
     const retry = await deactivate();
 
-    expect(retry.status).toBe(200);
-    expect(await responseJson(retry)).toMatchObject({ id: provisioned.id, active: false });
+    expect(retry.status).toBe(204);
+    expect(await HttpServerResponse.toWeb(retry).text()).toBe("");
     expect(
       owner.db.store.member.some(
         (row: any) => row.organizationId === other.id && row.userId === provisioned.id,
       ),
     ).toBe(true);
+  });
+
+  it("does not disclose a user that belongs only to another tenant", async () => {
+    const owner = await makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const other = await createTenant(owner, "beta");
+    const token = "scim-cross-tenant-token";
+
+    await setupScim(owner, tenant.id, token);
+
+    const foreign = await makeContext({
+      db: owner.db,
+      user: { id: "user-foreign", name: "Foreign Person", email: "foreign@example.com" },
+    });
+
+    addMember(owner.db, other.id, foreign.user, "member");
+    const grants = seedDirectoryAccess(owner.db, other.id, foreign.user.id, "foreign");
+
+    const response = await runEffect(
+      Effect.provideService(
+        scimHandler(
+          scimRequest({
+            token,
+            tenantId: tenant.id,
+            method: "PATCH",
+            path: `/Users/${foreign.user.id}`,
+            body: { Operations: [{ op: "replace", path: "active", value: false }] },
+          }),
+        ),
+        Db,
+        owner.db,
+      ),
+    );
+
+    // The id is not a member of this token's tenant, so the handler must answer
+    // without reading the deployment-global account row it does not own.
+    expect(response.status).toBe(204);
+    expect(await HttpServerResponse.toWeb(response).text()).toBe("");
+    expect(owner.db.store.user.find((row: any) => row.id === foreign.user.id)).toMatchObject({
+      email: "foreign@example.com",
+    });
+    expect(
+      owner.db.store.user.find((row: any) => row.id === foreign.user.id)?.disabled,
+    ).toBeFalsy();
+    expect(
+      owner.db.store.member.some(
+        (row: any) => row.organizationId === other.id && row.userId === foreign.user.id,
+      ),
+    ).toBe(true);
+    expect(owner.db.store.user_group_member).toContainEqual({
+      groupId: grants.groupId,
+      userId: foreign.user.id,
+    });
+    expect(owner.db.store.sso_identity).toContainEqual(
+      expect.objectContaining({ organizationId: other.id, userId: foreign.user.id }),
+    );
   });
 
   it("refuses to remove the last owner without touching directory state", async () => {

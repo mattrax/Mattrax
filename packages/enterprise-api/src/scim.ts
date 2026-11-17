@@ -165,17 +165,17 @@ const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
     : null;
 };
 
-const userResource = (user: UserRow, member: MemberRow | null) => ({
+const userResource = (user: UserRow, member: MemberRow) => ({
   schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
   id: user.id,
   userName: user.email,
   name: { formatted: user.name, givenName: user.name },
   emails: [{ value: user.email, primary: true }],
   active: !user.disabled,
-  roles: member ? [{ value: member.role }] : [],
+  roles: [{ value: member.role }],
   meta: {
     resourceType: "User",
-    created: iso(member?.createdAt ?? user.createdAt),
+    created: iso(member.createdAt),
     lastModified: iso(user.updatedAt),
   },
 });
@@ -184,7 +184,7 @@ const userResource = (user: UserRow, member: MemberRow | null) => ({
  * SCIM reports `active` per tenant, so a deactivated user is inactive even when
  * the global account stays enabled because it still belongs to other tenants.
  */
-const inactiveUserResource = (user: UserRow, member: MemberRow | null) => ({
+const inactiveUserResource = (user: UserRow, member: MemberRow) => ({
   ...userResource(user, member),
   active: false,
 });
@@ -382,14 +382,16 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
 
     if (!current) {
       // Deactivation is idempotent: an IdP may retry after the membership was
-      // already removed, and the tenant is in the requested state. DELETE
-      // still reports 404 for a user that is not a member, because that is a
-      // different statement about the resource.
+      // already removed, and the tenant is in the requested state. Answer with
+      // no content rather than a resource: the membership join is the only
+      // tenant-scoped way to load the user, so rendering one here would have to
+      // read the deployment-global account row and leak another tenant's PII
+      // for an id this token does not own. DELETE still reports 404 for a user
+      // that is not a member, because that is a different statement about the
+      // resource.
       if (!deactivationRequested) return scimError(404, "User not found");
 
-      const user = yield* db.query.user.findFirst({ where: { id: userId } });
-
-      return user ? json(inactiveUserResource(user, null)) : scimError(404, "User not found");
+      return HttpServerResponse.empty({ status: 204 });
     }
 
     let active = !current.user.disabled;
@@ -457,6 +459,9 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
               ),
             );
           yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
+          // Device-user links stay: ScimMembershipNotifier resolves the devices
+          // to refresh from them after this response. The admin removal path
+          // collects those ids first and refreshes them itself.
 
           const remaining = yield* tx
             .select({ id: schema.member.id })
@@ -517,6 +522,8 @@ const deleteUser = (ctx: ScimContext, userId: string) =>
             ),
           );
         yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
+        // Device-user links stay so ScimMembershipNotifier can resolve the
+        // devices to refresh, as on the deactivation path above.
 
         const remaining = yield* tx
           .select({ id: schema.member.id })
