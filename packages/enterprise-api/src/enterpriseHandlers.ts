@@ -208,6 +208,7 @@ import {
   type DeviceActivitySourceKeyset,
 } from "@mattrax/enterprise-backend";
 import {
+  clearTenantUserDirectoryState,
   hasOwnerRole,
   isBuiltInOwnerMember,
   normalizePermissions,
@@ -8593,6 +8594,10 @@ export const createEnterpriseService = ({
               eq(schema.deviceUser.userId, member.userId),
             ),
           );
+        // The tenant's directory groups and SSO identity are tenant-scoped
+        // access grants too; leaving them would keep policies applying and let
+        // a later sync restore the membership.
+        yield* clearTenantUserDirectoryState(db, tenantId, member.userId);
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
         yield* refreshDevicePolicies(tenantId, [
           ...new Set(linkedDevices.map((device) => device.deviceId)),

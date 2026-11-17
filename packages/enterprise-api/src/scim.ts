@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
-import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
+import { clearTenantUserDirectoryState, isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
@@ -422,6 +422,9 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
             eq(schema.member.userId, userId),
           ),
         );
+      // Deactivation is a directory removal too: directory groups and the IdP
+      // identity must not keep granting access or re-provision the member.
+      yield* clearTenantUserDirectoryState(db, ctx.organizationId, userId);
 
       const remaining = yield* db
         .select({ id: schema.member.id })
@@ -443,9 +446,13 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
 
     const updated = yield* findUser(ctx, userId);
 
-    return updated
-      ? json(userResource(updated.user, updated.member))
-      : scimError(404, "User not found");
+    if (updated) return json(userResource(updated.user, updated.member));
+
+    // Deactivation removed the membership, so a lookup can no longer answer.
+    // Report the account row, which may also have been renamed by this patch.
+    const user = yield* db.query.user.findFirst({ where: { id: userId } });
+
+    return user ? json(userResource(user, current.member)) : scimError(404, "User not found");
   });
 
 const deleteUser = (ctx: ScimContext, userId: string) =>
@@ -463,6 +470,9 @@ const deleteUser = (ctx: ScimContext, userId: string) =>
       .where(
         and(eq(schema.member.organizationId, ctx.organizationId), eq(schema.member.userId, userId)),
       );
+    // A directory deletion must also drop the group memberships and IdP
+    // identity rows scoped to this tenant.
+    yield* clearTenantUserDirectoryState(db, ctx.organizationId, userId);
 
     const remaining = yield* db
       .select({ id: schema.member.id })
