@@ -13,6 +13,7 @@ import {
   withSecurityHeaders,
 } from "./security";
 import { createSeoHandler } from "./seo";
+import { DEPLOYMENT_ID } from "~/lib/deployment";
 import { isCacheablePublicPage } from "~/lib/public-routes";
 
 const seoResponse = createSeoHandler(docsRoutes);
@@ -68,15 +69,17 @@ export default {
 
     const canonical = canonicalHostUrl(url);
 
-    if (canonical) return withSecurityHeaders(request, Response.redirect(canonical, 308));
+    if (canonical)
+      return withSecurityHeaders(request, Response.redirect(canonical, 308), DEPLOYMENT_ID);
 
-    if (guardPath(url.pathname) === "not-found") return withSecurityHeaders(request, notFound());
+    if (guardPath(url.pathname) === "not-found")
+      return withSecurityHeaders(request, notFound(), DEPLOYMENT_ID);
 
     // `robots.txt` and `sitemap.xml` need the request origin, so the asset
     // layer sends exactly those two paths here (`assets.runWorkerFirst`).
     const seo = seoResponse(request);
 
-    if (seo) return withSecurityHeaders(request, seo);
+    if (seo) return withSecurityHeaders(request, seo, DEPLOYMENT_ID);
 
     // Public shells are identical for every visitor, so each colo keeps a
     // short copy. This is a per-colo edge cache, not a shared origin cache:
@@ -89,7 +92,7 @@ export default {
     if (edgeCache) {
       const cached = await edgeCache.match(request);
 
-      if (cached) return withSecurityHeaders(request, cached);
+      if (cached) return withSecurityHeaders(request, cached, DEPLOYMENT_ID);
     }
 
     const response = await handleRequest(request);
@@ -102,7 +105,7 @@ export default {
         ? asNotFound(response)
         : response;
 
-    const hardened = withSecurityHeaders(request, finalResponse);
+    const hardened = withSecurityHeaders(request, finalResponse, DEPLOYMENT_ID);
 
     if (
       edgeCache &&

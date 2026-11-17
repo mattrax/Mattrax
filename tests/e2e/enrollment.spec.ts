@@ -170,6 +170,21 @@ test.describe("device enrollment", () => {
     expect(removed.status()).toBe(404);
   });
 
+  test("shows an expired state with a reload action after the link is reset", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Reset Link Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    await api(page, `/api/v1/tenants/${tenant.id}/enrollment/reset`, { method: "POST" });
+
+    await gotoHydrated(page, `/enroll/${enrollment.id}`);
+    await expect(page.getByRole("alert")).toContainText(/this enrollment link has expired/i);
+    await expect(page.getByRole("alert")).toContainText(/ask for the current link/i);
+    await expect(page.getByRole("link", { name: /reload page/i })).toHaveAttribute(
+      "href",
+      `/enroll/${enrollment.id}`,
+    );
+  });
+
   test("shows a QR code for the public enrollment link", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "QR Tenant");
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
@@ -251,5 +266,28 @@ test.describe("device enrollment", () => {
     );
 
     expect(enrollment.maxDevices).toBe(0);
+  });
+});
+
+test.describe("enrollment platform preselection", () => {
+  test.use({
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  });
+
+  test("opens the tab matching the browser's operating system", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Windows Preselect Tenant");
+    const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
+
+    await gotoHydrated(page, `/enroll/${enrollment.id}`);
+
+    await expect(page.getByRole("tab", { name: /^Windows$/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.locator("#windows-discovery-url")).toBeVisible();
+    // The other tabs remain reachable; preselecting is not hiding them.
+    await expect(page.getByRole("tab", { name: /^Apple$/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /^Android$/ })).toBeVisible();
   });
 });

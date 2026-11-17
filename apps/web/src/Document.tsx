@@ -1,5 +1,6 @@
 import { HydrationScript, getRequestEvent, isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
+import { DEPLOYMENT_ID, DEPLOYMENT_META_NAME } from "~/lib/deployment";
 import { requiresJavaScript } from "~/lib/public-routes";
 import { getPreloadedSession } from "~/lib/session-store";
 import { getPostHogConfig } from "~/lib/posthog-config-store";
@@ -35,6 +36,9 @@ export default function Document(props: { children?: JSX.Element }) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Read by the client's skew protection to tell which build rendered
+            this tab; `GET /version` reports the build serving new requests. */}
+        <meta name={DEPLOYMENT_META_NAME} content={DEPLOYMENT_ID} />
         <link rel="icon" href="/favicon.ico" />
         <link rel="ard" href="/.well-known/ard.json" />
         {/* Replaced by the theme bootstrap below before the first paint. */}

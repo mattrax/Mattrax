@@ -118,6 +118,12 @@ describe("securityHeaders", () => {
     expect(headers["cache-control"]).toBeUndefined();
     expect(headers.vary).toBeUndefined();
   });
+
+  it("advertises the build serving the response", () => {
+    const headers = securityHeaders({ ...httpsHtml, buildId: "commit-abc123" });
+
+    expect(headers["x-mattrax-build"]).toBe("commit-abc123");
+  });
 });
 
 describe("normalisePath", () => {

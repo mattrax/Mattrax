@@ -18,6 +18,11 @@ import {
   type PlatformEnrollment,
   type WindowsEnrollment,
 } from "~/lib/enterprise";
+import {
+  ENROLLMENT_PLATFORMS,
+  preferredEnrollmentPlatform,
+  type EnrollmentPlatform,
+} from "~/lib/enrollment-platform";
 import { lookupPublicEnrollment, submitPublicEnrollmentAnswers } from "~/lib/enrollment.server";
 import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 
@@ -80,6 +85,24 @@ function EnrollPage(props: { id: string; code: string }) {
     return `${window.location.origin}${path}`;
   });
 
+  const reloadHref = () => {
+    const base = `/enroll/${encodeURIComponent(props.id)}`;
+
+    return props.code ? `${base}?code=${encodeURIComponent(props.code)}` : base;
+  };
+
+  const cardDescription = () => {
+    const status = data().status;
+
+    if (status === "expired") return "This enrollment link is no longer valid.";
+
+    if (status === "invalid") return "This enrollment link is not valid.";
+
+    if (status === "unavailable") return "Enrollment is temporarily unavailable.";
+
+    return "Choose how to enroll this device.";
+  };
+
   const branding = () => found()?.branding;
 
   const authenticated = () => {
@@ -131,25 +154,19 @@ function EnrollPage(props: { id: string; code: string }) {
             <CardTitle>
               <h1>Enroll in {brandName()}</h1>
             </CardTitle>
-            <CardDescription>Choose how to enroll this device.</CardDescription>
+            <CardDescription>{cardDescription()}</CardDescription>
           </CardHeader>
           <CardContent>
+            <Show when={data().status === "expired"}>
+              <EnrollmentLinkProblem status="expired" reloadHref={reloadHref()} />
+            </Show>
+
             <Show when={data().status === "invalid"}>
-              <div
-                role="alert"
-                class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-              >
-                This enrollment link is invalid or unavailable. Contact your administrator.
-              </div>
+              <EnrollmentLinkProblem status="invalid" reloadHref={reloadHref()} />
             </Show>
 
             <Show when={data().status === "unavailable"}>
-              <div
-                role="alert"
-                class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-              >
-                Enrollment is temporarily unavailable. Check your connection and try again.
-              </div>
+              <EnrollmentLinkProblem status="unavailable" reloadHref={reloadHref()} />
             </Show>
 
             <Show when={found()?.authenticated === false}>
@@ -258,8 +275,6 @@ function EnrollPage(props: { id: string; code: string }) {
   );
 }
 
-type Platform = "apple" | "windows" | "android";
-
 const attributeInputType = (type: string): "text" | "number" | "date" => {
   if (type === "number") return "number";
 
@@ -267,6 +282,49 @@ const attributeInputType = (type: string): "text" | "number" | "date" => {
 
   return "text";
 };
+
+type EnrollmentLinkProblemStatus = "expired" | "invalid" | "unavailable";
+
+const linkProblemCopy = (status: EnrollmentLinkProblemStatus) => {
+  if (status === "expired")
+    return {
+      title: "This enrollment link has expired",
+      message:
+        "It may have been reset by your administrator or replaced with a new link. Ask for the current link, then open it on this device.",
+    };
+
+  if (status === "invalid")
+    return {
+      title: "This enrollment link is not valid",
+      message:
+        "Check that you opened the complete link from your administrator. A copy or chat preview can drop part of it.",
+    };
+
+  return {
+    title: "Enrollment is temporarily unavailable",
+    message:
+      "Check your connection and try again. Your administrator can confirm the link still works.",
+  };
+};
+
+function EnrollmentLinkProblem(props: { status: EnrollmentLinkProblemStatus; reloadHref: string }) {
+  const copy = () => linkProblemCopy(props.status);
+
+  return (
+    <div
+      role="alert"
+      class="space-y-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+    >
+      <div>
+        <p class="font-medium">{copy().title}</p>
+        <p class="mt-1 text-xs leading-relaxed">{copy().message}</p>
+      </div>
+      <Button as="a" href={props.reloadHref} variant="outline" size="sm" class="w-full">
+        Reload page
+      </Button>
+    </div>
+  );
+}
 
 const attributeOptionLabel = (type: string, option: string) => {
   if (type !== "boolean") return option;
@@ -459,7 +517,7 @@ function EnrollmentOptions(props: {
 }) {
   // Always show every platform tab so an administrator can explain why a
   // platform is unavailable (the payload carries the backend error).
-  const platforms = (): Platform[] => ["apple", "windows", "android"];
+  const platforms = (): EnrollmentPlatform[] => [...ENROLLMENT_PLATFORMS];
 
   const firstAvailable = () =>
     (
@@ -470,12 +528,23 @@ function EnrollmentOptions(props: {
       ] as const
     ).find(([, value]) => isAvailable(value))?.[0] ?? "apple";
 
-  const [tab, setTab] = createSignal<Platform>(firstAvailable());
+  // The server chooses from the request's user agent and the browser repeats
+  // the same choice after hydration, so the tab is never the generic default on
+  // a device that already says what it is.
+  const initialPlatform = () => {
+    const userAgent = isServer
+      ? getRequestEvent()?.request.headers.get("user-agent")
+      : navigator.userAgent;
+
+    return preferredEnrollmentPlatform(userAgent, firstAvailable());
+  };
+
+  const [tab, setTab] = createSignal<EnrollmentPlatform>(initialPlatform());
   const active = () => tab();
 
-  const tabRefs = new Map<Platform, HTMLButtonElement>();
+  const tabRefs = new Map<EnrollmentPlatform, HTMLButtonElement>();
 
-  const selectTab = (next: Platform) => {
+  const selectTab = (next: EnrollmentPlatform) => {
     setTab(next);
     tabRefs.get(next)?.focus();
   };
@@ -553,7 +622,7 @@ function EnrollmentOptions(props: {
   );
 }
 
-function TabPanel(props: { platform: Platform; children: JSX.Element }) {
+function TabPanel(props: { platform: EnrollmentPlatform; children: JSX.Element }) {
   return (
     <div
       role="tabpanel"
@@ -568,7 +637,7 @@ function TabPanel(props: { platform: Platform; children: JSX.Element }) {
 }
 
 function TabButton(props: {
-  platform: Platform;
+  platform: EnrollmentPlatform;
   active: boolean;
   onSelect: () => void;
   ref?: (element: HTMLButtonElement) => void;

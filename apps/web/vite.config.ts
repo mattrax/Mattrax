@@ -26,6 +26,18 @@ const extensions = ["js", "jsx", "ts", "tsx"];
  */
 const nodeTarget = process.env.MATTRAX_TARGET?.toLowerCase() === "node";
 
+/**
+ * Identifies the bundle a browser is running. A deploy from CI uses the commit
+ * SHA; a local production build falls back to the time the config was read.
+ * The value is compiled into the server bundle so every response can advertise
+ * it and `GET /version` agrees with the HTML the tab is running.
+ */
+const buildId =
+  process.env.MATTRAX_BUILD_ID?.trim() ||
+  process.env.CF_VERSION_METADATA_ID?.trim() ||
+  process.env.GITHUB_SHA?.trim() ||
+  `local-${Date.now()}`;
+
 const serverDirectory = fileURLToPath(new URL("./src/server/", import.meta.url));
 
 const docsSourceDirectory = fileURLToPath(new URL("../../docs/", import.meta.url));
@@ -150,6 +162,11 @@ export default defineConfig(({ command }) => ({
     : {}),
   resolve: {
     tsconfigPaths: true,
+  },
+  // Compile the deployment id into the server bundle. `deployment.ts` is the
+  // only reader; the browser learns the running build from the document meta.
+  define: {
+    __MATTRAX_BUILD_ID__: JSON.stringify(buildId),
   },
   // Pre-bundle the client's critical dependencies once. SSR dependency
   // discovery is disabled by the `mattraxe:stable-ssr-deps` plugin below.

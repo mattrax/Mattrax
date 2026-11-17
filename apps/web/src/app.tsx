@@ -6,6 +6,8 @@ import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
+import { NewVersionNotice } from "~/components/new-version-notice";
+import { installSkewProtection } from "~/lib/skew-protection";
 import { installTheme } from "~/lib/theme";
 import {
   SITE_DEFAULT_ORIGIN,
@@ -17,6 +19,10 @@ import {
 import "./app.css";
 
 const Router = createRouter({ routes: fileRoutes(pageRoutes) });
+
+// Listen before hydration so a route chunk from a previous deployment that has
+// already been evicted is still recovered. The module is inert on the server.
+if (!isServer) installSkewProtection();
 
 /** Public origin for absolute social URLs; localhost and self-hosted deployments keep their own host. */
 function siteOrigin() {
@@ -95,6 +101,7 @@ export default function App() {
             <Loading fallback={<BootSplash />}>{props.children}</Loading>
           </Errored>
           <GlobalErrorBanner />
+          <NewVersionNotice />
         </Head>
       )}
     </Router>

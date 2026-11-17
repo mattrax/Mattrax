@@ -249,6 +249,8 @@ export interface SecurityHeaderContext {
   status?: number;
   /** A response that sets cookies is personal even on a public path. */
   hasSetCookie?: boolean;
+  /** Build serving the response; lets a long-lived tab notice a new deploy. */
+  buildId?: string;
 }
 
 /** The header set produced for one response; HTML-only entries are optional. */
@@ -268,6 +270,7 @@ export interface SecurityHeaderSet {
   "cache-control"?: string;
   "cdn-cache-control"?: string;
   vary?: string;
+  "x-mattrax-build"?: string;
 }
 
 /**
@@ -292,6 +295,10 @@ export function securityHeaders(context: SecurityHeaderContext): SecurityHeaderS
 
   if (new URL(context.url).protocol === "https:") {
     headers["strict-transport-security"] = HSTS_POLICY;
+  }
+
+  if (context.buildId) {
+    headers["x-mattrax-build"] = context.buildId;
   }
 
   if (context.contentType.includes("text/html")) {
@@ -324,7 +331,11 @@ export function securityHeaders(context: SecurityHeaderContext): SecurityHeaderS
 }
 
 /** Apply {@link securityHeaders} to a response without altering its body. */
-export function withSecurityHeaders(request: Request, response: Response): Response {
+export function withSecurityHeaders(
+  request: Request,
+  response: Response,
+  buildId?: string,
+): Response {
   const headers = new Headers(response.headers);
 
   const built = securityHeaders({
@@ -332,6 +343,7 @@ export function withSecurityHeaders(request: Request, response: Response): Respo
     contentType: headers.get("content-type") ?? "",
     status: response.status,
     hasSetCookie: headers.has("set-cookie"),
+    buildId,
   });
 
   const vary = built.vary;

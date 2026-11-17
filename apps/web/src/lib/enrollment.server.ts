@@ -9,6 +9,7 @@ import {
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
+import { enrollmentLookupFailure } from "~/lib/enrollment-lookup";
 
 /**
  * The API serialises optional numbers as `null` in the public enrollment
@@ -56,6 +57,7 @@ const decodeEnrollmentResponse = Schema.decodeUnknownOption(EnrollmentResponse);
  */
 export type PublicEnrollmentLookup =
   | { readonly status: "found"; readonly enrollment: EnrollmentResponse }
+  | { readonly status: "expired" }
   | { readonly status: "invalid" }
   | { readonly status: "unavailable" };
 
@@ -90,9 +92,7 @@ export async function lookupPublicEnrollment(
     return { status: "unavailable" };
   }
 
-  if (response.status === 404) return { status: "invalid" };
-
-  if (!response.ok) return { status: "unavailable" };
+  if (!response.ok) return { status: enrollmentLookupFailure(response.status) };
 
   const body = await response.json().catch(() => undefined);
 
