@@ -1073,6 +1073,17 @@ describe("Windows tenant enrollment tokens", () => {
       ],
     });
 
+    db.store[tableName(schema.autopilotDevice)] = [
+      {
+        __table: tableName(schema.autopilotDevice),
+        organizationId: "org-early",
+        serial: "DEVICE-1",
+        enrollmentState: "enrolled",
+        profileStatus: "assigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
     db.store[tableName(schema.deviceCommand)] = [
       {
         __table: tableName(schema.deviceCommand),
@@ -1111,6 +1122,45 @@ describe("Windows tenant enrollment tokens", () => {
     });
     expect(dbRows(db, tableName(schema.deviceCommand))).toEqual([]);
     expect(dbRows(db, tableName(schema.groupDevice))).toEqual([]);
+  });
+
+  it("leaves a previous tenant's Windows device when there is no Autopilot proof", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+
+    const { backend, db } = await setup({
+      windowsOrganizationId: null,
+      devices: [
+        {
+          id: "old-tenant-device",
+          organizationId: "org-late",
+          proto: "win",
+          status: "enrolled",
+          name: "OLD DEVICE",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+
+    const token = await createWindowsTenantToken("org-early", authSecret);
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken: token }));
+    await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(policy.authToken, await makeCsr(), "device-1"),
+        tenantToken: token,
+      }),
+    );
+
+    const devices = dbRows(db, tableName(schema.device));
+    expect(devices).toHaveLength(2);
+    expect(devices.find((row) => row.id === "old-tenant-device")).toMatchObject({
+      organizationId: "org-late",
+      dmIdentifier: "device-1",
+    });
+    expect(devices.find((row) => row.organizationId === "org-early")).toMatchObject({
+      dmIdentifier: "device-1",
+    });
   });
 
   it("rejects a WSTEP token issued to another tenant", async () => {

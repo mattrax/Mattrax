@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { SYSTEM_AUDIT_ACTIONS, writeSystemAudit } from "./audit.js";
 
 /**
  * The device row and everything that hangs off it.
@@ -49,6 +50,11 @@ export type DepartedTenantDevice = {
 export const deleteDepartedTenantDevice = (input: {
   readonly db: EnterpriseDb;
   readonly device: DepartedTenantDevice;
+  /** Tenant that accepted the device and will own the new row. */
+  readonly newOrganizationId: string;
+  readonly reason?: string;
+  /** Enables the `device.unenrolled` webhook for the losing tenant. */
+  readonly authSecret?: string;
   readonly now?: Date;
 }): Effect.Effect<void, unknown> => {
   const { db, device } = input;
@@ -61,35 +67,59 @@ export const deleteDepartedTenantDevice = (input: {
   );
 
   return Effect.gen(function* () {
-    if (certificateDeviceIds.length > 0)
-      yield* db
-        .update(s.scepIssuedCertificate)
-        .set({ revokedAt: now })
-        .where(
-          and(
-            eq(s.scepIssuedCertificate.organizationId, device.organizationId),
-            inArray(s.scepIssuedCertificate.deviceId, certificateDeviceIds),
-            isNull(s.scepIssuedCertificate.revokedAt),
-          ),
-        );
+    yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        if (certificateDeviceIds.length > 0)
+          yield* tx
+            .update(s.scepIssuedCertificate)
+            .set({ revokedAt: now })
+            .where(
+              and(
+                eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+                inArray(s.scepIssuedCertificate.deviceId, certificateDeviceIds),
+                isNull(s.scepIssuedCertificate.revokedAt),
+              ),
+            );
 
-    // References that stay valid when the device row disappears.
-    yield* db
-      .update(s.abmDevice)
-      .set({ deviceId: null })
-      .where(eq(s.abmDevice.deviceId, device.id));
-    yield* db
-      .update(s.autopilotDevice)
-      .set({ deviceId: null })
-      .where(eq(s.autopilotDevice.deviceId, device.id));
-    yield* db
-      .update(s.devicePreRegistration)
-      .set({ consumedDeviceId: null, updatedAt: now })
-      .where(eq(s.devicePreRegistration.consumedDeviceId, device.id));
+        // References that stay valid when the device row disappears.
+        yield* tx
+          .update(s.abmDevice)
+          .set({ deviceId: null })
+          .where(eq(s.abmDevice.deviceId, device.id));
+        yield* tx
+          .update(s.autopilotDevice)
+          .set({ deviceId: null })
+          .where(eq(s.autopilotDevice.deviceId, device.id));
+        yield* tx
+          .update(s.devicePreRegistration)
+          .set({ consumedDeviceId: null, updatedAt: now })
+          .where(eq(s.devicePreRegistration.consumedDeviceId, device.id));
 
-    for (const table of deviceChildTables)
-      yield* db.delete(table).where(eq(table.deviceId, device.id));
+        for (const table of deviceChildTables)
+          yield* tx.delete(table).where(eq(table.deviceId, device.id));
 
-    yield* db.delete(s.device).where(eq(s.device.id, device.id));
+        yield* tx.delete(s.device).where(eq(s.device.id, device.id));
+      }),
+    );
+
+    // Audit only after the delete committed. A failed cleanup must not leave a
+    // deletion record for a device the losing tenant still owns.
+    yield* writeSystemAudit(
+      db,
+      {
+        organizationId: device.organizationId,
+        action: SYSTEM_AUDIT_ACTIONS.deviceDeleted,
+        targetType: "device",
+        targetId: device.id,
+        metadata: {
+          reason: input.reason ?? "re-enrolled in another tenant",
+          previousTenantId: device.organizationId,
+          newTenantId: input.newOrganizationId,
+          deviceId: device.id,
+          dmIdentifier: device.dmIdentifier ?? null,
+        },
+      },
+      { authSecret: input.authSecret },
+    );
   });
 };

@@ -149,7 +149,7 @@ describe("Management Backend HTTP E2E", () => {
       }),
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(204);
     expect(receivedEvent).toBeDefined();
     expect(receivedEvent).toMatchObject(Schema.TaggedStruct("Authenticate", {}).make({}));
     await dispose();
@@ -546,7 +546,7 @@ describe("Management webhook signing", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(204);
     expect(received).toBe(true);
     await dispose();
   });

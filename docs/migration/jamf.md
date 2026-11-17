@@ -38,8 +38,10 @@ it.
 Moving a serial removes it from the Jamf server. Do this in batches, not all at once.
 
 :::warning Zero-touch
-Mattrax does not yet return the ADE profile inside `Authenticate`. Plan to install the
-signed profile URL during the pilot. See [ABM](/platforms/apple/abm).
+Apple's documented protocol ignores the body of an `Authenticate` response, so Mattrax's
+inline ADE profile is unverified and must not be relied on for zero-touch. Register the
+tenant's signed ADE profile `url` in Apple Business Manager / Apple Configurator, or install
+the signed profile URL during the pilot. See [ABM](/platforms/apple/abm).
 :::
 
 ## Profiles

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/http-api";
 import {
   CheckinScope,
   AppleDeviceEvent,
@@ -87,7 +87,10 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   .add(
     HttpApiEndpoint.post("appleDeviceEvent", "/apple/event", {
       payload: Schema.Struct({ scope: CheckinScope, event: AppleDeviceEvent }),
-      success: AppleDeviceEventResult,
+      // Older peers return 204 with no body; the profile is only present when
+      // this backend has one to hand back. Keeping NoContent in the union makes
+      // both responses valid for the generated client.
+      success: Schema.Union([AppleDeviceEventResult, HttpApiSchema.NoContent]),
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

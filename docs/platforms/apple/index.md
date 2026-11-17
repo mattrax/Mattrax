@@ -187,18 +187,19 @@ first use, and resetting or reconfiguring the enrollment invalidates it.
 
 ### Check-in lifecycle
 
-| Message                 | What Mattrax does                                                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Authenticate`          | Resolves the tenant from the SCEP certificate OU, creates or finds the device, applies a matching pre-registration, binds the certificate serial              |
-| `UserAuthenticate`      | Validates the user against the authenticated device and answers with an empty `DigestChallenge` (no password); `410` for a user it will not manage            |
-| `TokenUpdate`           | Stores push token, push magic and topic; moves `enrolling → enrolled`; writes `device.enrolled`. A user channel is stored per user                            |
-| `CheckOut`              | Marks the device `unenrolled`, clears push credentials, revokes device certificates; a user channel removes only that user                                    |
-| `DeclarativeManagement` | Serves DDM tokens, declaration items, declarations and status. A user channel gets an empty declaration set                                                   |
-| `GetToken`              | Rejected with `400`: the Managed Apple Account and watch-pairing token services are not implemented, and the profile does not advertise `com.apple.mdm.token` |
-| Command result          | Updates the command row, parses `SecurityInfo` and `InstalledApplicationList`; a user result only touches that user's rows                                    |
+| Message                 | What Mattrax does                                                                                                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Authenticate`          | Resolves the tenant from the SCEP certificate OU, creates or finds the device, applies a matching pre-registration, binds the certificate serial. It also returns a best-effort inline ADE profile for an ABM-assigned serial, though Apple's documented protocol ignores the response body |
+| `UserAuthenticate`      | Validates the user against the authenticated device and answers with an empty `DigestChallenge` (no password); `410` for a user it will not manage                                                                                                                                          |
+| `TokenUpdate`           | Stores push token, push magic and topic; moves `enrolling → enrolled`; writes `device.enrolled`. A user channel is stored per user                                                                                                                                                          |
+| `CheckOut`              | Marks the device `unenrolled`, clears push credentials, revokes device certificates; a user channel removes only that user                                                                                                                                                                  |
+| `DeclarativeManagement` | Serves DDM tokens, declaration items, declarations and status. A user channel gets an empty declaration set                                                                                                                                                                                 |
+| `GetToken`              | Rejected with `400`: the Managed Apple Account and watch-pairing token services are not implemented, and the profile does not advertise `com.apple.mdm.token`                                                                                                                               |
+| Command result          | Updates the command row, parses `SecurityInfo` and `InstalledApplicationList`; a user result only touches that user's rows                                                                                                                                                                  |
 
 A new identity cannot take over an already-enrolled UDID with a different certificate
-fingerprint.
+fingerprint. Reclaiming a row by serial also requires an ABM assignment, a pre-registration,
+or a stale/unenrolled row; a self-asserted serial alone is refused.
 
 ### User channel
 
@@ -356,7 +357,9 @@ pending actions, and a reported inventory reconciles installs that already lande
   `/api/v1/abm/ade/enroll` and sets `await_device_configured`. Apple's Business API does not
   expose cloud-configuration registration, so that URL is registered by the ABM
   administrator (Apple Business Manager / Apple Configurator) once per tenant. See
-  [ABM](/platforms/apple/abm).
+  [ABM](/platforms/apple/abm). The inline `EnrollmentProfile` in the `Authenticate`
+  response is unverified: Apple's protocol reference says the response body is ignored, and
+  it is not a substitute for registering the ADE profile `url`.
 - `mttx.apple.device` currently exposes only the camera restriction. Use a custom
   `.mobileconfig` or a DDM declaration for everything else.
 - `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded `.pkg`

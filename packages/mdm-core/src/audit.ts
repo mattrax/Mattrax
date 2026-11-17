@@ -12,6 +12,7 @@ export const SYSTEM_AUDIT_ACTOR = "system";
 /** Low-cardinality system audit actions. Keep this list stable for filters. */
 export const SYSTEM_AUDIT_ACTIONS = {
   deviceEnrolled: "device.enrolled",
+  deviceDeleted: "device.deleted",
   deviceAwaitingSetup: "device.awaiting_setup",
   deviceSetupComplete: "device.setup_complete",
   deviceCheckedOut: "device.checked_out",

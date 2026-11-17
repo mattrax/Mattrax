@@ -1,7 +1,13 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
+import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
-import { InternalServerError, ManagementBackend } from "@mattrax/management-backend";
+import {
+  AppleDeviceEvent,
+  CheckinScope,
+  InternalServerError,
+  ManagementBackend,
+} from "@mattrax/management-backend";
 import { managementWebhookGroup } from "./http.ts";
 
 const encoder = new TextEncoder();
@@ -85,12 +91,32 @@ export const managementWebhookHandlers = (
   options: ManagementWebhookOptions = {},
 ) =>
   handlers
-    .handle("appleDeviceEvent", ({ request, payload }) =>
+    .handleRaw("appleDeviceEvent", ({ request }) =>
       Effect.gen(function* () {
+        const body = yield* request.arrayBuffer.pipe(
+          Effect.mapError(() => new InternalServerError()),
+        );
+
+        let payload: { readonly scope: CheckinScope; readonly event: AppleDeviceEvent };
+
+        try {
+          payload = Schema.decodeUnknownSync(
+            Schema.Struct({ scope: CheckinScope, event: AppleDeviceEvent }),
+          )(JSON.parse(new TextDecoder().decode(body)));
+        } catch {
+          return HttpServerResponse.empty({ status: 400 });
+        }
+
         yield* verifySignature(request, "appleDeviceEvent", payload, options.secret);
         const backend = yield* ManagementBackend;
 
-        return (yield* backend.appleDeviceEvent(payload.scope, payload.event)) ?? {};
+        const result = yield* backend.appleDeviceEvent(payload.scope, payload.event);
+
+        // Preserve the historical empty 204 for the common case. Only a backend
+        // with an inline ADE profile returns a body.
+        return result?.enrollmentProfile
+          ? HttpServerResponse.jsonUnsafe(result)
+          : HttpServerResponse.empty({ status: 204 });
       }),
     )
     .handle("appleManagementCheckin", ({ request, payload }) =>

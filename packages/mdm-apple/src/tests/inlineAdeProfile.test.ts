@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -24,8 +24,14 @@ const decode = (value: string) => {
   return bytes;
 };
 
-const setup = () => {
-  const db = makeDb({
+const setup = (
+  options: {
+    readonly abmDevice?: Partial<Row>;
+    readonly enrollmentRow?: boolean;
+    readonly appleProfileSigning?: { certificatePem?: string; privateKeyPem?: string };
+  } = {},
+) => {
+  const initial = {
     [tableName(schema.organization)]: [
       {
         id: "org-1",
@@ -34,18 +40,6 @@ const setup = () => {
         logo: null,
         metadata: null,
         stripeCustomerId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    [tableName(schema.enterpriseEnrollment)]: [
-      {
-        id: "enrollment-1",
-        organizationId: "org-1",
-        enabledApple: true,
-        enabledWindows: false,
-        enabledAndroid: false,
-        maxDevices: 100,
         createdAt: now,
         updatedAt: now,
       },
@@ -71,6 +65,18 @@ const setup = () => {
         updatedAt: now,
       },
     ],
+    [tableName(schema.enterpriseEnrollment)]: [
+      {
+        id: "enrollment-1",
+        organizationId: "org-1",
+        enabledApple: true,
+        enabledWindows: false,
+        enabledAndroid: false,
+        maxDevices: 100,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
     [tableName(schema.abmDevice)]: [
       {
         organizationId: "org-1",
@@ -80,12 +86,22 @@ const setup = () => {
         profileStatus: "assigned",
         createdAt: now,
         updatedAt: now,
+        ...options.abmDevice,
       },
     ],
-  });
+  };
+
+  const db = makeDb(initial);
+
+  if (options.enrollmentRow === false) db.store[tableName(schema.enterpriseEnrollment)] = [];
 
   // SAFETY: The fake store implements only the query chains these tests exercise.
-  const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+  const backend = ManagementBackendEnterpriseLive.make({
+    db: db as any,
+    origin,
+    authSecret,
+    appleProfileSigning: options.appleProfileSigning,
+  });
 
   return { db, backend };
 };
@@ -98,18 +114,18 @@ const scope = {
   mdmOrigin,
 };
 
+const authenticate = (serialNumber = "C02ADE") => ({
+  _tag: "Authenticate" as const,
+  serialNumber,
+  model: "MacBookPro18,3",
+  enrollmentMode: "device" as const,
+});
+
 describe("Apple Authenticate ADE profile", () => {
   it("returns a signed profile for a fresh ADE device", async () => {
     const { db, backend } = setup();
 
-    const result = await run(
-      backend.appleDeviceEvent(scope, {
-        _tag: "Authenticate" as const,
-        serialNumber: "C02ADE",
-        model: "MacBookPro18,3",
-        enrollmentMode: "device" as const,
-      }),
-    );
+    const result = await run(backend.appleDeviceEvent(scope, authenticate()));
 
     expect(result?.enrollmentProfile).toEqual(expect.any(String));
 
@@ -122,27 +138,32 @@ describe("Apple Authenticate ADE profile", () => {
     expect(challenges[0]).toMatchObject({ organizationId: "org-1", enrollmentId: "enrollment-1" });
   });
 
+  it("creates the enrollment row when the tenant has none", async () => {
+    const { db, backend } = setup({ enrollmentRow: false });
+
+    const result = await run(backend.appleDeviceEvent(scope, authenticate()));
+
+    expect(result?.enrollmentProfile).toEqual(expect.any(String));
+    expect(dbRows(db, tableName(schema.enterpriseEnrollment))).toHaveLength(1);
+  });
+
   it("does not return a second profile for an existing device", async () => {
     const { backend } = setup();
 
-    await run(
-      backend.appleDeviceEvent(scope, {
-        _tag: "Authenticate" as const,
-        serialNumber: "C02ADE",
-        model: "MacBookPro18,3",
-        enrollmentMode: "device" as const,
-      }),
-    );
+    await run(backend.appleDeviceEvent(scope, authenticate()));
+
+    await expect(run(backend.appleDeviceEvent(scope, authenticate()))).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["unassigned", { enrollmentState: "UNASSIGNED" }],
+    ["removed", { enrollmentState: "REMOVED" }],
+    ["removed profile", { enrollmentState: "ASSIGNED", profileStatus: "removed" }],
+  ])("returns no profile for a %s ABM device", async (_label, abmDevice) => {
+    const { backend } = setup({ abmDevice });
 
     await expect(
-      run(
-        backend.appleDeviceEvent(scope, {
-          _tag: "Authenticate" as const,
-          serialNumber: "C02ADE",
-          model: "MacBookPro18,3",
-          enrollmentMode: "device" as const,
-        }),
-      ),
+      run(backend.appleDeviceEvent({ ...scope, udid: "ade-udid-2" }, authenticate())),
     ).resolves.toBeUndefined();
   });
 
@@ -150,17 +171,17 @@ describe("Apple Authenticate ADE profile", () => {
     const { backend } = setup();
 
     await expect(
-      run(
-        backend.appleDeviceEvent(
-          { ...scope, udid: "ade-udid-2" },
-          {
-            _tag: "Authenticate" as const,
-            serialNumber: "C02OTHER",
-            model: "MacBookPro18,3",
-            enrollmentMode: "device" as const,
-          },
-        ),
-      ),
+      run(backend.appleDeviceEvent({ ...scope, udid: "ade-udid-3" }, authenticate("C02OTHER"))),
     ).resolves.toBeUndefined();
+  });
+
+  it("treats a signing failure as no profile instead of failing Authenticate", async () => {
+    const { db, backend } = setup({
+      appleProfileSigning: { certificatePem: "not-a-cert", privateKeyPem: "not-a-key" },
+    });
+
+    await expect(run(backend.appleDeviceEvent(scope, authenticate()))).resolves.toBeUndefined();
+
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
   });
 });

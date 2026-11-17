@@ -424,10 +424,13 @@ whether a delivered install landed (when the catalogue entry resolves to a bundl
 install that is still assigned to the device and provably missing is queued again, up to
 three attempts per day. A device that unenrolls or re-enrolls closes out its old commands.
 
-When a device re-enrols into a **different** tenant, its previous tenant's device row and
-relations (commands, policies, memberships, secrets and inventory) are removed immediately
-instead of waiting for stale-unenrol. Identity certificates issued to the old row are
-revoked, so the old tenant cannot be pushed to or authenticated by the device.
+When a device re-enrols into a **different** tenant, the Apple and Windows enrollment paths
+remove the previous tenant's device row and relations (commands, policies, memberships,
+secrets and inventory) once that tenant has proof the hardware moved (ABM/Autopilot or a
+pre-registration), instead of waiting for stale-unenrol. Identity certificates issued to the
+old row are revoked, and the old tenant gets a `device.deleted` audit event. Android devices
+are bound to a single Android Enterprise and are not migrated through this path, so their
+old row still waits for stale-unenrol.
 
 The same deadline applies on every platform: Windows SyncML delivers every queued command in
 one session but expires or retries each row on the same rules, and Android commands are

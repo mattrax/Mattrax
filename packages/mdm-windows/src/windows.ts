@@ -1180,12 +1180,70 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // them once this enrollment is durable; otherwise the previous tenant
         // retains a managed device (and its policies, commands and seats)
         // until the stale-device sweep.
+        //
+        // The DeviceID is asserted by the client, so deletion also requires
+        // tenant-owned proof that the hardware belongs here: an Autopilot
+        // record or a pre-registration.
         const departedDevices = (yield* db
           .select()
           .from(s.device)
-          .where(eq(s.device.dmIdentifier, deviceIdentifier))).filter(
-          (row) => row.organizationId !== organizationId,
+          .where(
+            and(eq(s.device.proto, "win"), eq(s.device.dmIdentifier, deviceIdentifier)),
+          )).filter((row) => row.organizationId !== organizationId);
+
+        const normalisedDeviceIdentifier = deviceIdentifier.toUpperCase();
+
+        const [autopilotBySerial] = yield* db
+          .select()
+          .from(s.autopilotDevice)
+          .where(
+            and(
+              eq(s.autopilotDevice.organizationId, organizationId),
+              eq(s.autopilotDevice.serial, normalisedDeviceIdentifier),
+            ),
+          )
+          .limit(1);
+
+        const [autopilotByAzureId] = yield* db
+          .select()
+          .from(s.autopilotDevice)
+          .where(
+            and(
+              eq(s.autopilotDevice.organizationId, organizationId),
+              eq(s.autopilotDevice.azureAdDeviceId, deviceIdentifier),
+            ),
+          )
+          .limit(1);
+
+        const [autopilotByDevice] = existing
+          ? yield* db
+              .select()
+              .from(s.autopilotDevice)
+              .where(
+                and(
+                  eq(s.autopilotDevice.organizationId, organizationId),
+                  eq(s.autopilotDevice.deviceId, existing.id),
+                ),
+              )
+              .limit(1)
+          : [];
+
+        const autopilotProof = Boolean(
+          autopilotBySerial || autopilotByAzureId || autopilotByDevice,
         );
+
+        const [preRegistrationProof] = yield* db
+          .select()
+          .from(s.devicePreRegistration)
+          .where(
+            and(
+              eq(s.devicePreRegistration.organizationId, organizationId),
+              eq(s.devicePreRegistration.serial, deviceIdentifier),
+            ),
+          )
+          .limit(1);
+
+        const arrivalProof = autopilotProof || Boolean(preRegistrationProof);
 
         // `maxDevices === 0` means unlimited for the tenant.
         if (!existing && enrollment.maxDevices > 0) {
@@ -1316,19 +1374,36 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         // This enrollment is durable, so the previous tenant's copy can go.
         // Cleanup is best effort: failing it must not reject a device the new
-        // tenant has already enrolled.
-        yield* Effect.forEach(
-          departedDevices,
-          (departed) =>
-            deleteDepartedTenantDevice({ db, device: departed }).pipe(
-              Effect.catch((error) =>
-                Effect.logWarning(
-                  `Failed to clean up Windows device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+        // tenant has already enrolled. Without Autopilot/pre-registration proof
+        // the old row is left to the stale sweep; a self-asserted DeviceID is
+        // not enough to delete another tenant's device.
+        if (departedDevices.length > 0 && !arrivalProof)
+          yield* Effect.logWarning(
+            `Leaving previous-tenant Windows device(s) ${departedDevices
+              .map((device) => device.id)
+              .join(
+                ", ",
+              )} in place: tenant ${organizationId} has no Autopilot record or pre-registration for ${deviceIdentifier}`,
+          );
+        else
+          yield* Effect.forEach(
+            departedDevices,
+            (departed) =>
+              deleteDepartedTenantDevice({
+                db,
+                device: departed,
+                newOrganizationId: organizationId,
+                reason: "Windows enrollment used the same DeviceID in another tenant",
+                authSecret,
+              }).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning(
+                    `Failed to clean up Windows device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+                  ),
                 ),
               ),
-            ),
-          { concurrency: 1, discard: true },
-        );
+            { concurrency: 1, discard: true },
+          );
 
         return {
           deviceId: deviceIdentifier,

@@ -113,6 +113,7 @@ import type { AnyColumn, SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
   certificateDeviceIdsFor,
+  buildAdeEnrollmentProfile,
   createWindowsTenantToken,
   dispatchWebhookEvent,
   enterpriseEnrollmentProfile,
@@ -407,7 +408,13 @@ import {
   signAppleProfilePlist,
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
-import { ensureScepCa, importScepCa, replaceScepCa, rotateScepCa } from "@mattrax/scep";
+import {
+  ensureScepCa,
+  importScepCa,
+  replaceScepCa,
+  rotateScepCa,
+  ScepError,
+} from "@mattrax/scep";
 import {
   listUserSessions,
   revokeAllUserSessions,
@@ -4394,37 +4401,30 @@ export const createEnterpriseService = ({
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found." }));
 
       const branding = resolveTenantBranding(organization);
-      const enrollment = yield* getOrCreateEnrollment(input.organizationId);
 
-      const { challenge } = yield* issueScepChallenge(db, {
-        enrollmentId: enrollment.id,
+      // The same builder backs the inline Authenticate response in the MDM
+      // backend, so the two delivery paths cannot drift.
+      return yield* buildAdeEnrollmentProfile({
+        db,
+        origin,
+        authSecret,
         organizationId: input.organizationId,
-        authSecret: authSecret ?? "",
+        topic: apns.topic,
+        organizationName: branding.displayName,
+        supportEmail: branding.supportEmail,
+        profileUuid: input.profileUuid,
+        displayName: input.displayName,
         ttlSeconds: enrollmentProfileTtlSeconds,
+        sign: (plist) => signAppleEnrollmentProfile(plist, input.organizationId),
       }).pipe(
-        Effect.mapError(
-          () =>
-            new EnterpriseBadRequest({
-              message: "Could not create the SCEP challenge for the ADE profile.",
-            }),
+        Effect.mapError((error) =>
+          error instanceof ScepError
+            ? new EnterpriseBadRequest({
+                message: "Could not create the SCEP challenge for the ADE profile.",
+              })
+            : error,
         ),
       );
-
-      const plist = yield* serializePlist(
-        enterpriseEnrollmentProfile({
-          origin,
-          topic: apns.topic,
-          organizationId: input.organizationId,
-          organizationName: branding.displayName,
-          supportEmail: branding.supportEmail,
-          challenge,
-          displayName: input.displayName,
-          identifier: `com.mattrax.ade.${input.profileUuid}`,
-          profileUuid: input.profileUuid,
-        }),
-      );
-
-      return yield* signAppleEnrollmentProfile(plist, input.organizationId);
     });
 
   /**
@@ -9070,7 +9070,7 @@ export const createEnterpriseService = ({
           where: { serial: machine.serial },
         });
 
-        if (!device || device.enrollmentState === "REMOVED")
+        if (!device || device.enrollmentState === "REMOVED" || device.profileStatus === "removed")
           return yield* Effect.fail(
             new EnterpriseNotFound({
               message: "This serial is not an assigned device in Apple Business Manager.",
@@ -9141,7 +9141,7 @@ export const createEnterpriseService = ({
           where: { organizationId: signed.organizationId, serial: signed.serial },
         });
 
-        if (!device || device.enrollmentState === "REMOVED")
+        if (!device || device.enrollmentState === "REMOVED" || device.profileStatus === "removed")
           return yield* Effect.fail(
             new EnterpriseNotFound({
               message: "This ABM device is no longer in the organization.",

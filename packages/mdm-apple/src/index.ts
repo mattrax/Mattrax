@@ -19,7 +19,6 @@ import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax
 import { PlistValue, serializePlist } from "@mattrax/plist";
 import {
   appleOsFamily,
-  buildAppleEnrollmentProfile,
   buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
   buildAppleManifest,
@@ -32,6 +31,7 @@ import {
   isApplePackageUpload,
   verifyAppleAssetToken,
 } from "@mattrax/dm-apple";
+import { buildAdeEnrollmentProfile } from "./adeProfile.js";
 import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import { resolveAssignedScriptIds, scriptAgentToken } from "@mattrax/enterprise-domain";
 import {
@@ -65,7 +65,6 @@ import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { setupIsReady } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
-import { issueScepChallenge } from "@mattrax/mdm-core";
 import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { ensureScepCa } from "@mattrax/scep";
 import {
@@ -154,6 +153,13 @@ const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A6
 export const DEVICE_INFORMATION_STATUS_ITEMS = DEVICE_INFORMATION_BASE_STATUS_ITEMS;
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
+/**
+ * A serial-only Apple re-enrollment may reclaim a row the tenant already owns
+ * when the row has gone quiet for this long, even without an ABM assignment or
+ * pre-registration. Matches the default maintenance stale-device window.
+ */
+const APPLE_SERIAL_RECLAIM_STALE_MS = 30 * 24 * 60 * 60 * 1000;
 
 const now = () => new Date();
 
@@ -1438,7 +1444,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           )
           .limit(1);
 
-        if (!abmDevice) return undefined;
+        // A device Apple removed from ABM must not receive a profile even if a
+        // stale row still says ASSIGNED.
+        if (!abmDevice || abmDevice.profileStatus === "removed") return undefined;
 
         const [abm] = yield* db
           .select()
@@ -1458,57 +1466,40 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           .where(eq(s.organization.id, input.organizationId))
           .limit(1);
 
-        const [enrollmentRow] = yield* db
-          .select()
-          .from(s.enterpriseEnrollment)
-          .where(eq(s.enterpriseEnrollment.organizationId, input.organizationId))
-          .limit(1);
-
         const profileUuid = abmDevice.assignedProfileUuid ?? abm?.profileUuid;
         const topic = apnsCertificate?.topic;
-        const tenant = organization;
 
-        if (!profileUuid || !topic || !tenant || !enrollmentRow) return undefined;
+        if (!profileUuid || !topic || !organization) return undefined;
 
-        const branding = resolveTenantBranding(tenant);
+        const branding = resolveTenantBranding(organization);
 
-        const { challenge } = yield* issueScepChallenge(db, {
-          enrollmentId: enrollmentRow.id,
-          organizationId: input.organizationId,
+        const signed = yield* buildAdeEnrollmentProfile({
+          db,
+          origin,
           authSecret,
+          organizationId: input.organizationId,
+          topic,
+          organizationName: branding.displayName,
+          supportEmail: branding.supportEmail,
+          profileUuid,
+          displayName: `${branding.displayName} Automated Device Enrollment`,
           ttlSeconds: enrollmentProfileTtlSeconds,
-        });
+          sign: (plist) =>
+            appleProfileSigner
+              ? Effect.tryPromise(() => appleProfileSigner.sign(plist))
+              : Effect.gen(function* () {
+                  const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
+                    organizationId: input.organizationId,
+                  });
 
-        const plist = yield* serializePlist(
-          Schema.decodeUnknownSync(PlistValue)(
-            enterpriseEnrollmentProfile({
-              origin,
-              topic,
-              organizationId: input.organizationId,
-              organizationName: branding.displayName,
-              supportEmail: branding.supportEmail,
-              challenge,
-              displayName: `${branding.displayName} Automated Device Enrollment`,
-              identifier: `com.mattrax.ade.${profileUuid}`,
-              profileUuid,
-            }),
-          ),
-        );
-
-        const signed = appleProfileSigner
-          ? yield* Effect.tryPromise(() => appleProfileSigner.sign(plist))
-          : yield* Effect.gen(function* () {
-              const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
-                organizationId: input.organizationId,
-              });
-
-              return yield* Effect.tryPromise(() =>
-                signAppleProfilePlist(plist, {
-                  certificatePem: ca.certPem,
-                  privateKey: ca.privateKey,
+                  return yield* Effect.tryPromise(() =>
+                    signAppleProfilePlist(plist, {
+                      certificatePem: ca.certPem,
+                      privateKey: ca.privateKey,
+                    }),
+                  );
                 }),
-              );
-            });
+        });
 
         return base64EncodeBytes(signed);
       }).pipe(
@@ -2643,6 +2634,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .where(
                     and(
                       eq(s.device.organizationId, organizationId),
+                      eq(s.device.proto, "apple"),
                       eq(s.device.dmIdentifier, scope.udid),
                     ),
                   )
@@ -2654,14 +2646,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // after an ABM reassignment) and enrol again. Its previous
                 // tenant must not keep a managed row that only the stale-device
                 // sweep would eventually hide.
+                //
+                // The serial and UDID in an Authenticate body are asserted by
+                // the device, so they are not proof that the hardware moved.
+                // Deletion is gated below on an ABM assignment, a matching
+                // pre-registration or a row this tenant already owns.
                 const bySerial = serialNumber
-                  ? yield* db.select().from(s.device).where(eq(s.device.serial, serialNumber))
+                  ? yield* db
+                      .select()
+                      .from(s.device)
+                      .where(and(eq(s.device.proto, "apple"), eq(s.device.serial, serialNumber)))
                   : [];
 
                 const byUdid = yield* db
                   .select()
                   .from(s.device)
-                  .where(eq(s.device.dmIdentifier, scope.udid));
+                  .where(and(eq(s.device.proto, "apple"), eq(s.device.dmIdentifier, scope.udid)));
 
                 const departedById = new Map<string, (typeof byUdid)[number]>();
 
@@ -2683,11 +2683,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .limit(1)
                   : [];
 
-                // A same-serial device may already exist under an older UDID,
-                // with or without a pre-registration. Reuse that row instead
-                // of hitting the tenant's `(organization, serial)` unique
-                // index: Apple can report a new UDID for the same hardware
-                // after a wipe, restore or profile reinstall.
+                const [abmAssignment] = serialNumber
+                  ? yield* db
+                      .select()
+                      .from(s.abmDevice)
+                      .where(
+                        and(
+                          eq(s.abmDevice.organizationId, organizationId),
+                          eq(s.abmDevice.serial, serialNumber),
+                          eq(s.abmDevice.enrollmentState, "ASSIGNED"),
+                        ),
+                      )
+                      .limit(1)
+                  : [];
+
+                const arrivalProof = Boolean(preRegistration || abmAssignment || existingByUdid);
+
+                // A same-serial device may already exist under an older UDID.
+                // Reuse that row instead of hitting the tenant's
+                // `(organization, serial)` unique index, but only when this
+                // tenant has independent proof of the hardware (ABM/pre-
+                // registration) or the slot is already gone/stale. Otherwise a
+                // device asserting another device's serial could take it over.
                 const [existingBySerial] =
                   !existingByUdid && serialNumber
                     ? yield* db
@@ -2696,11 +2713,29 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         .where(
                           and(
                             eq(s.device.organizationId, organizationId),
+                            eq(s.device.proto, "apple"),
                             eq(s.device.serial, serialNumber),
                           ),
                         )
                         .limit(1)
                     : [];
+
+                if (existingBySerial) {
+                  const staleCutoff = Date.now() - APPLE_SERIAL_RECLAIM_STALE_MS;
+
+                  const reclaimable =
+                    Boolean(preRegistration || abmAssignment) ||
+                    existingBySerial.status === "unenrolled" ||
+                    existingBySerial.lastSeenAt.getTime() < staleCutoff;
+
+                  if (!reclaimable) {
+                    yield* Effect.logWarning(
+                      `Refusing to reclaim Apple serial ${serialNumber} (device ${existingBySerial.id}) for tenant ${organizationId}: no ABM assignment, pre-registration, or stale/unenrolled row`,
+                    );
+
+                    return yield* Effect.fail(new UnknownDevice());
+                  }
+                }
 
                 const existing = existingByUdid ?? existingBySerial;
 
@@ -2921,21 +2956,37 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // device with no row in either tenant. Certificate revocation
                 // and child-row cleanup are best effort: they must not fail an
                 // enrollment that the current tenant has already accepted.
-                yield* Effect.forEach(
-                  departedDevices,
-                  (departed) =>
-                    deleteDepartedTenantDevice({
-                      db,
-                      device: departed,
-                    }).pipe(
-                      Effect.catch((error) =>
-                        Effect.logWarning(
-                          `Failed to clean up device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+                //
+                // `arrivalProof` is what makes the serial/UDID trustworthy. A
+                // device that merely asserts another tenant's serial must not
+                // be able to delete that tenant's fleet entry.
+                if (departedDevices.length > 0 && !arrivalProof)
+                  yield* Effect.logWarning(
+                    `Leaving previous-tenant Apple device(s) ${departedDevices
+                      .map((device) => device.id)
+                      .join(
+                        ", ",
+                      )} in place: tenant ${organizationId} has no ABM assignment, pre-registration or existing row proving the hardware moved`,
+                  );
+                else
+                  yield* Effect.forEach(
+                    departedDevices,
+                    (departed) =>
+                      deleteDepartedTenantDevice({
+                        db,
+                        device: departed,
+                        newOrganizationId: organizationId,
+                        reason: "Apple Authenticate enrolled the same serial in another tenant",
+                        authSecret,
+                      }).pipe(
+                        Effect.catch((error) =>
+                          Effect.logWarning(
+                            `Failed to clean up device ${departed.id} from tenant ${departed.organizationId}: ${String(error)}`,
+                          ),
                         ),
                       ),
-                    ),
-                  { concurrency: 1, discard: true },
-                );
+                    { concurrency: 1, discard: true },
+                  );
 
                 // A device that did not already exist is a fresh enrollment.
                 // If ABM assigned it to this tenant, hand Setup Assistant the
@@ -4479,30 +4530,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     );
 }
 
-export const enterpriseEnrollmentProfile = (config: {
-  origin: string;
-  topic: string;
-  organizationId: string;
-  organizationName?: string;
-  supportEmail?: string;
-  challenge?: string;
-  displayName?: string;
-  identifier?: string;
-  profileUuid?: string;
-}) =>
-  buildAppleEnrollmentProfile({
-    origin: config.origin,
-    topic: config.topic,
-    organizationId: config.organizationId,
-    organizationName: config.organizationName ?? "Mattrax",
-    supportEmail: config.supportEmail,
-    challenge: config.challenge ?? crypto.randomUUID(),
-    displayName: config.displayName,
-    identifier: config.identifier,
-    profileUuid: config.profileUuid,
-  });
-
 export const policyHash = jsonHash;
+
+export * from "./adeProfile.js";
 
 export {
   SYSTEM_AUDIT_ACTOR,
