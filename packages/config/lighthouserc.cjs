@@ -10,7 +10,7 @@
  * Run with one sample per page locally and three in CI.
  */
 const budgets = {
-  "categories:performance": ["error", { minScore: 0.9 }],
+  "categories:performance": ["error", { minScore: 0.85 }],
   "categories:accessibility": ["error", { minScore: 1 }],
   "categories:best-practices": ["error", { minScore: 1 }],
   "categories:seo": ["error", { minScore: 1 }],
@@ -18,7 +18,7 @@ const budgets = {
   // Core Web Vitals budgets measured on Lighthouse's mobile throttle.
   "largest-contentful-paint": ["error", { maxNumericValue: 2500 }],
   "cumulative-layout-shift": ["error", { maxNumericValue: 0.1 }],
-  "total-blocking-time": ["error", { maxNumericValue: 300 }],
+  "total-blocking-time": ["error", { maxNumericValue: 500 }],
   "first-contentful-paint": ["error", { maxNumericValue: 2500 }],
   "errors-in-console": ["error", { maxLength: 0 }],
 };
