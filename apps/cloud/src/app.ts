@@ -25,6 +25,7 @@ import {
   mcpOAuthRoutes,
   scriptAgentHandlers,
   scriptHandlers,
+  scimRoutes,
   ScimMembershipNotifier,
 } from "@mattrax/enterprise-api";
 import { appleMdmApi } from "@mattrax/dm-apple";
@@ -270,6 +271,7 @@ const apiLayer = Layer.mergeAll(
   HttpApiBuilder.layer(apiRoot).pipe(Layer.provide(handlersLayer)),
   appleMdmRoutes,
   scepRoutes,
+  scimRoutes,
   licenseBillingRoutes({ priceId: apiEnv.STRIPE_LICENSE_PRICE_ID }),
 );
 
