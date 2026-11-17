@@ -24,7 +24,17 @@ const CHUNK_RELOAD_KEY = "mattrax:skew:chunk-reload";
 
 const ANNOUNCED_DEPLOYMENT_KEY = "mattrax:skew:announced";
 
-const CHUNK_RELOAD_COOLDOWN_MS = 60_000;
+/**
+ * A query marker that survives the reload itself.
+ *
+ * `sessionStorage` is the normal guard, but browser policy can make it throw on
+ * every access. The marker is written into the URL before reloading and read
+ * once on the next boot, so even without storage a broken bundle gets exactly
+ * one automatic reload rather than an infinite loop.
+ */
+export const CHUNK_RELOAD_PARAM = "__chunk_reload";
+
+export const CHUNK_RELOAD_COOLDOWN_MS = 60_000;
 
 const DEPLOYMENT_POLL_INTERVAL_MS = 5 * 60_000;
 
@@ -73,6 +83,77 @@ export function isChunkLoadFailure(message: string): boolean {
   return CHUNK_ERROR_FRAGMENTS.some((fragment) => normalised.includes(fragment));
 }
 
+/** True when a URL is a build asset served from this origin. */
+export function isChunkAssetUrl(candidate: string, origin: string): boolean {
+  try {
+    const url = new URL(candidate, origin);
+
+    return url.origin === origin && url.pathname.startsWith("/assets/");
+  } catch {
+    return false;
+  }
+}
+
+const MESSAGE_ASSET_URL = /(?:https?:\/\/[^\s"'<>]+|\/assets\/[^\s"'<>]+)/i;
+
+/**
+ * Extract the failing module URL from a browser error message, but only when
+ * it is one of this deployment's assets.
+ *
+ * Messages differ by browser and some (notably Safari) omit the URL entirely.
+ * Without a same-origin `/assets/` URL the failure is not provably a stale
+ * chunk, so detection fails closed instead of reloading for a third-party
+ * module outage.
+ */
+export function chunkFailureAssetUrl(message: string, origin: string): string | undefined {
+  if (!isChunkLoadFailure(message)) return undefined;
+
+  const match = MESSAGE_ASSET_URL.exec(message);
+
+  if (!match?.[0]) return undefined;
+
+  const candidate = match[0].replace(/[.,;:]+$/, "");
+
+  return isChunkAssetUrl(candidate, origin) ? candidate : undefined;
+}
+
+/**
+ * Remove the one-shot reload marker from a URL without touching other query
+ * parameters. `attempted` tells the installer that the current document was
+ * already produced by an automatic reload.
+ */
+export function stripChunkReloadMarker(href: string) {
+  const url = new URL(href);
+  const attempted = url.searchParams.has(CHUNK_RELOAD_PARAM);
+
+  if (attempted) url.searchParams.delete(CHUNK_RELOAD_PARAM);
+
+  return { attempted, url: url.href };
+}
+
+/**
+ * The URL to reload to, or `undefined` when this document must not reload
+ * again. The marker is checked in the URL as well as in the caller's state so a
+ * reload that happened before this module initialised is still respected.
+ */
+export function chunkReloadTarget(input: {
+  readonly href: string;
+  readonly storage: DeploymentStorage | undefined;
+  readonly now: number;
+  readonly alreadyAttempted?: boolean;
+  readonly cooldownMs?: number;
+}): string | undefined {
+  const url = new URL(input.href);
+
+  if (input.alreadyAttempted || url.searchParams.has(CHUNK_RELOAD_PARAM)) return undefined;
+
+  if (!chunkReloadAllowed(input.storage, input.now, input.cooldownMs)) return undefined;
+
+  url.searchParams.set(CHUNK_RELOAD_PARAM, "1");
+
+  return url.href;
+}
+
 /**
  * Claim the single automatic reload allowed inside `cooldownMs`.
  *
@@ -114,6 +195,22 @@ export function markDeploymentAnnounced(
 ): void {
   writeStorage(storage, ANNOUNCED_DEPLOYMENT_KEY, build);
 }
+
+/**
+ * Persist an announcement only once the notice has actually mounted.
+ *
+ * Polling can observe a build change more than once before render; the
+ * in-memory guard handles that without claiming the notice was shown.
+ */
+export const markDeploymentNoticeShown = (build: string): void => {
+  if (typeof window === "undefined") return;
+
+  try {
+    markDeploymentAnnounced(window.sessionStorage, build);
+  } catch {
+    // Storage can be disabled; the in-memory guard still suppresses repeats.
+  }
+};
 
 /**
  * Forget the announcement when the user acts on it.
@@ -175,32 +272,53 @@ export function installSkewProtection(): void {
   const meta = document.querySelector(`meta[name="${DEPLOYMENT_META_NAME}"]`);
   let currentBuild = meta?.getAttribute("content")?.trim() || undefined;
   let announcedBuild = storageValue(storage, ANNOUNCED_DEPLOYMENT_KEY);
-  let lastChunkReload = 0;
   let lastCheck = 0;
   let checking = false;
 
-  const reloadForChunkError = () => {
-    const now = Date.now();
+  // A marker left by the previous boot means this document is already the
+  // result of the one automatic reload. Strip it from the address bar (so a
+  // shared/reloaded URL is clean) while remembering it for this page lifetime.
+  const landing = stripChunkReloadMarker(window.location.href);
+  let chunkReloadAttempted = landing.attempted;
 
-    // The storage timestamp is the cross-reload guard; this one covers
-    // deployments where storage is unavailable.
-    if (now - lastChunkReload < CHUNK_RELOAD_COOLDOWN_MS) return;
+  if (landing.attempted) {
+    try {
+      window.history.replaceState(window.history.state, "", landing.url);
+    } catch {
+      // The marker still prevents a second reload; only the URL stays marked.
+    }
+  }
 
-    if (!chunkReloadAllowed(storage, now)) return;
+  const reloadForChunkError = (): boolean => {
+    const target = chunkReloadTarget({
+      href: window.location.href,
+      storage,
+      now: Date.now(),
+      alreadyAttempted: chunkReloadAttempted,
+    });
 
-    lastChunkReload = now;
-    window.location.reload();
+    if (!target) return false;
+
+    chunkReloadAttempted = true;
+    window.location.replace(target);
+
+    return true;
   };
 
   const onPreloadError = (event: Event) => {
-    // Vite throws the rejection after dispatching this event; preventing the
-    // default keeps the console clean while the reload takes over.
-    event.preventDefault();
-    reloadForChunkError();
+    // Vite throws the rejection after dispatching this event; prevent the
+    // default only when a reload is actually taking over.
+    if (!(event instanceof CustomEvent)) return;
+
+    const detail: unknown = event.detail;
+    const message = detail instanceof Error ? detail.message : "";
+
+    if (chunkFailureAssetUrl(message, window.location.origin) && reloadForChunkError())
+      event.preventDefault();
   };
 
   const onError = (event: ErrorEvent) => {
-    if (isChunkLoadFailure(event.message)) reloadForChunkError();
+    if (chunkFailureAssetUrl(event.message, window.location.origin)) reloadForChunkError();
   };
 
   // Resource errors do not bubble. A failed same-origin script under `/assets/`
@@ -212,14 +330,7 @@ export function installSkewProtection(): void {
 
     if (!(target instanceof HTMLScriptElement)) return;
 
-    try {
-      const source = new URL(target.src, window.location.href);
-
-      if (source.origin !== window.location.origin || !source.pathname.startsWith("/assets/"))
-        return;
-    } catch {
-      return;
-    }
+    if (!isChunkAssetUrl(target.src, window.location.origin)) return;
 
     reloadForChunkError();
   };
@@ -227,7 +338,8 @@ export function installSkewProtection(): void {
   const onUnhandledRejection = (event: PromiseRejectionEvent) => {
     const reason = event.reason;
 
-    if (reason instanceof Error && isChunkLoadFailure(reason.message)) reloadForChunkError();
+    if (reason instanceof Error && chunkFailureAssetUrl(reason.message, window.location.origin))
+      reloadForChunkError();
   };
 
   const pollDeployment = async () => {
@@ -257,7 +369,6 @@ export function installSkewProtection(): void {
       if (!shouldAnnounceDeployment(storage, currentBuild, incomingBuild)) return;
 
       announcedBuild = incomingBuild;
-      markDeploymentAnnounced(storage, incomingBuild);
       setPendingDeployment(incomingBuild);
     } catch {
       // Offline or a transient failure: the next poll retries.
@@ -281,7 +392,11 @@ export function installSkewProtection(): void {
   window.addEventListener("error", onResourceError, true);
   window.addEventListener("unhandledrejection", onUnhandledRejection);
   window.addEventListener("online", checkDeployment);
-  window.addEventListener("pageshow", checkDeployment);
+  window.addEventListener("pageshow", (event) => {
+    // `pageshow` also fires for the initial load; the 10s hydration delay below
+    // owns that case. Only a restored bfcache entry needs an immediate probe.
+    if (event.persisted) checkDeployment();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") checkDeployment();
   });

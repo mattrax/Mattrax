@@ -170,19 +170,20 @@ test.describe("device enrollment", () => {
     expect(removed.status()).toBe(404);
   });
 
-  test("shows an expired state with a reload action after the link is reset", async ({ page }) => {
+  test("shows a neutral no-longer-valid state after the link is reset", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Reset Link Tenant");
     const enrollment = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/enrollment`);
 
     await api(page, `/api/v1/tenants/${tenant.id}/enrollment/reset`, { method: "POST" });
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
-    await expect(page.getByRole("alert")).toContainText(/this enrollment link has expired/i);
-    await expect(page.getByRole("alert")).toContainText(/ask for the current link/i);
-    await expect(page.getByRole("link", { name: /reload page/i })).toHaveAttribute(
-      "href",
-      `/enroll/${enrollment.id}`,
-    );
+    await expect(page.getByText("This enrollment link is no longer valid.")).toBeVisible();
+    await expect(page.getByRole("alert")).toContainText(/ask your administrator for a new link/i);
+    await expect(page.getByRole("alert")).toContainText(/reset or replaced/i);
+    await expect(
+      page.getByRole("alert").getByRole("link", { name: /contact administrator/i }),
+    ).toHaveAttribute("href", /^mailto:/);
+    await expect(page.getByRole("link", { name: /reload page/i })).toHaveCount(0);
   });
 
   test("shows a QR code for the public enrollment link", async ({ page }) => {
@@ -281,6 +282,7 @@ test.describe("enrollment platform preselection", () => {
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
 
+    await expect(page.getByRole("tablist")).toHaveAttribute("data-enrollment-platform", "windows");
     await expect(page.getByRole("tab", { name: /^Windows$/ })).toHaveAttribute(
       "aria-selected",
       "true",

@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { deploymentIdFromResponse } from "./deployment-meta";
 import {
+  CHUNK_RELOAD_PARAM,
+  chunkFailureAssetUrl,
   chunkReloadAllowed,
+  chunkReloadTarget,
   clearDeploymentAnnouncement,
   type DeploymentStorage,
+  isChunkAssetUrl,
   isChunkLoadFailure,
   markDeploymentAnnounced,
   shouldAnnounceDeployment,
+  stripChunkReloadMarker,
 } from "./skew-protection";
 
 const memoryStorage = (): DeploymentStorage => {
@@ -34,6 +39,51 @@ describe("chunk load failures", () => {
   it("leaves ordinary application errors alone", () => {
     expect(isChunkLoadFailure("Cannot read properties of undefined")).toBe(false);
     expect(isChunkLoadFailure("The device list request failed")).toBe(false);
+  });
+});
+
+describe("chunk failure attribution", () => {
+  const origin = "https://e.mattrax.app";
+
+  it("accepts only same-origin build assets", () => {
+    expect(isChunkAssetUrl("https://e.mattrax.app/assets/devices-abc.js", origin)).toBe(true);
+    expect(isChunkAssetUrl("/assets/app.css", origin)).toBe(true);
+    expect(isChunkAssetUrl("https://cdn.example.com/assets/devices.js", origin)).toBe(false);
+    expect(isChunkAssetUrl("https://e.mattrax.app/media/devices.js", origin)).toBe(false);
+  });
+
+  it("extracts a same-origin asset URL from a browser message", () => {
+    expect(
+      chunkFailureAssetUrl(
+        "Failed to fetch dynamically imported module: https://e.mattrax.app/assets/devices-abc.js",
+        origin,
+      ),
+    ).toBe("https://e.mattrax.app/assets/devices-abc.js");
+
+    expect(chunkFailureAssetUrl("Unable to preload CSS for /assets/app.css", origin)).toBe(
+      "/assets/app.css",
+    );
+  });
+
+  it("ignores third-party import failures", () => {
+    expect(
+      chunkFailureAssetUrl(
+        "Failed to fetch dynamically imported module: https://cdn.example.com/assets/analytics.js",
+        origin,
+      ),
+    ).toBeUndefined();
+
+    expect(
+      chunkFailureAssetUrl(
+        "Importing a module script failed: https://cdn.example.com/assets/analytics.js",
+        origin,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("fails closed when the message has no verifiable URL", () => {
+    expect(chunkFailureAssetUrl("Importing a module script failed.", origin)).toBeUndefined();
+    expect(chunkFailureAssetUrl("Loading chunk 42 failed.", origin)).toBeUndefined();
   });
 });
 
@@ -67,6 +117,66 @@ describe("chunk reload guard", () => {
     };
 
     expect(chunkReloadAllowed(storage, 1_000)).toBe(true);
+  });
+
+  it("reloads once when storage is blocked and the marker survives the reload", () => {
+    const storage: DeploymentStorage = {
+      getItem: () => {
+        throw new Error("storage disabled");
+      },
+      setItem: () => {
+        throw new Error("storage disabled");
+      },
+      removeItem: () => {
+        throw new Error("storage disabled");
+      },
+    };
+
+    const first = stripChunkReloadMarker("https://e.mattrax.app/dashboard");
+
+    const target = chunkReloadTarget({
+      href: first.url,
+      storage,
+      now: 1_000,
+      alreadyAttempted: first.attempted,
+    });
+
+    expect(target).toContain(CHUNK_RELOAD_PARAM);
+
+    if (!target) throw new Error("expected a reload target");
+
+    const second = stripChunkReloadMarker(target);
+
+    expect(second.attempted).toBe(true);
+    expect(
+      chunkReloadTarget({
+        href: second.url,
+        storage,
+        now: 2_000,
+        alreadyAttempted: second.attempted,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("refuses a second reload while the URL still carries the marker", () => {
+    const storage = memoryStorage();
+
+    expect(
+      chunkReloadTarget({
+        href: `https://e.mattrax.app/dashboard?${CHUNK_RELOAD_PARAM}=1`,
+        storage,
+        now: 1_000,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("keeps unrelated query parameters when stripping the marker", () => {
+    const stripped = stripChunkReloadMarker(
+      `https://e.mattrax.app/enroll/abc?code=secret&${CHUNK_RELOAD_PARAM}=1`,
+    );
+
+    expect(stripped.attempted).toBe(true);
+    expect(stripped.url).toBe("https://e.mattrax.app/enroll/abc?code=secret");
   });
 });
 

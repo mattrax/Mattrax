@@ -1,8 +1,9 @@
-import { Show } from "solid-js";
+import { createEffect, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { RefreshCw, X } from "~/components/ui/icons";
 import {
   dismissDeploymentNotice,
+  markDeploymentNoticeShown,
   pendingDeployment,
   reloadForDeployment,
 } from "~/lib/skew-protection";
@@ -13,10 +14,24 @@ import {
  * an in-progress form, and a tab that keeps working does not need interrupting.
  */
 export function NewVersionNotice() {
+  let announced: string | null = null;
+
+  // Persist only after the notice has rendered. Polling dedupes while it is
+  // pending with its own in-memory guard, so this is the first durable write.
+  createEffect(
+    () => pendingDeployment(),
+    (build) => {
+      if (!build || build === announced) return;
+
+      announced = build;
+      markDeploymentNoticeShown(build);
+    },
+  );
+
   return (
     <Show when={pendingDeployment()}>
       {(build) => (
-        <div class="pointer-events-none fixed inset-x-0 top-4 z-[65] flex justify-center px-4">
+        <div class="pointer-events-none fixed inset-x-0 top-24 z-[65] flex flex-col items-center gap-2 px-4">
           <div
             role="status"
             aria-live="polite"
@@ -50,10 +65,10 @@ export function NewVersionNotice() {
             >
               <X class="size-3.5" />
             </button>
-            {/* The build id is useful when a reload does not pick up the new
-                deployment; keep it out of the way of the copy. */}
-            <span class="sr-only">Build {build()}</span>
           </div>
+          {/* Outside the live region: assistive technology should announce the
+              update, not an opaque build id. */}
+          <span class="sr-only">Build {build()}</span>
         </div>
       )}
     </Show>

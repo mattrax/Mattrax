@@ -15,3 +15,23 @@ const headers = {
 export const GET = () => Response.json({ build: DEPLOYMENT_ID }, { headers });
 
 export const HEAD = () => new Response(null, { headers });
+
+const methodNotAllowed = () =>
+  new Response("Method Not Allowed", {
+    status: 405,
+    headers: { allow: "GET, HEAD", "cache-control": "no-store" },
+  });
+
+export const POST = methodNotAllowed;
+
+export const PUT = methodNotAllowed;
+
+export const PATCH = methodNotAllowed;
+
+export const DELETE = methodNotAllowed;
+
+export const OPTIONS = methodNotAllowed;
+
+export const TRACE = methodNotAllowed;
+
+export const CONNECT = methodNotAllowed;

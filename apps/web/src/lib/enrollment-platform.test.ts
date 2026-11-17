@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { detectEnrollmentPlatform, preferredEnrollmentPlatform } from "./enrollment-platform";
+import {
+  detectEnrollmentPlatform,
+  preferredEnrollmentPlatform,
+  resolveInitialEnrollmentPlatform,
+} from "./enrollment-platform";
 import { enrollmentLookupFailure } from "./enrollment-lookup";
 
 describe("enrollment platform detection", () => {
@@ -46,15 +50,41 @@ describe("enrollment platform detection", () => {
       "android",
     );
   });
+
+  it("uses the server-authored marker during hydration instead of the browser UA", () => {
+    expect(
+      resolveInitialEnrollmentPlatform({
+        marker: "windows",
+        userAgent:
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        fallback: "apple",
+      }),
+    ).toBe("windows");
+
+    expect(
+      resolveInitialEnrollmentPlatform({
+        marker: "not-a-platform",
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        fallback: "apple",
+      }),
+    ).toBe("windows");
+  });
 });
 
 describe("enrollment lookup failures", () => {
-  it("treats a missing or gone link as expired", () => {
-    expect(enrollmentLookupFailure(404)).toBe("expired");
-    expect(enrollmentLookupFailure(410)).toBe("expired");
+  it("treats an unknown or gone link as neutral, not expired", () => {
+    expect(enrollmentLookupFailure(404)).toBe("invalid");
+    expect(enrollmentLookupFailure(410)).toBe("invalid");
   });
 
-  it("keeps outages retryable", () => {
+  it("shows expired only for an explicit API signal", () => {
+    expect(enrollmentLookupFailure(404, true)).toBe("expired");
+    expect(enrollmentLookupFailure(410, true)).toBe("expired");
+  });
+
+  it("keeps authorization, throttling and server errors retryable", () => {
+    expect(enrollmentLookupFailure(401)).toBe("unavailable");
+    expect(enrollmentLookupFailure(403)).toBe("unavailable");
     expect(enrollmentLookupFailure(408)).toBe("unavailable");
     expect(enrollmentLookupFailure(429)).toBe("unavailable");
     expect(enrollmentLookupFailure(500)).toBe("unavailable");
@@ -63,6 +93,5 @@ describe("enrollment lookup failures", () => {
 
   it("treats other client errors as an invalid link", () => {
     expect(enrollmentLookupFailure(400)).toBe("invalid");
-    expect(enrollmentLookupFailure(403)).toBe("invalid");
   });
 });

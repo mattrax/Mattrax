@@ -9,7 +9,7 @@ import {
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
-import { enrollmentLookupFailure } from "~/lib/enrollment-lookup";
+import { ENROLLMENT_STATUS_HEADER, enrollmentLookupFailure } from "~/lib/enrollment-lookup";
 
 /**
  * The API serialises optional numbers as `null` in the public enrollment
@@ -91,6 +91,10 @@ export async function lookupPublicEnrollment(
   } catch {
     return { status: "unavailable" };
   }
+
+  const explicitlyExpired = response.headers.get(ENROLLMENT_STATUS_HEADER) === "expired";
+
+  if (explicitlyExpired) return { status: "expired" };
 
   if (!response.ok) return { status: enrollmentLookupFailure(response.status) };
 

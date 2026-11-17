@@ -20,7 +20,9 @@ import {
 } from "~/lib/enterprise";
 import {
   ENROLLMENT_PLATFORMS,
-  preferredEnrollmentPlatform,
+  ENROLLMENT_PLATFORM_ATTRIBUTE,
+  ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE,
+  resolveInitialEnrollmentPlatform,
   type EnrollmentPlatform,
 } from "~/lib/enrollment-platform";
 import { lookupPublicEnrollment, submitPublicEnrollmentAnswers } from "~/lib/enrollment.server";
@@ -94,13 +96,9 @@ function EnrollPage(props: { id: string; code: string }) {
   const cardDescription = () => {
     const status = data().status;
 
-    if (status === "expired") return "This enrollment link is no longer valid.";
+    if (status === "found") return "Choose how to enroll this device.";
 
-    if (status === "invalid") return "This enrollment link is not valid.";
-
-    if (status === "unavailable") return "Enrollment is temporarily unavailable.";
-
-    return "Choose how to enroll this device.";
+    return linkProblemCopy(status).description;
   };
 
   const branding = () => found()?.branding;
@@ -158,15 +156,27 @@ function EnrollPage(props: { id: string; code: string }) {
           </CardHeader>
           <CardContent>
             <Show when={data().status === "expired"}>
-              <EnrollmentLinkProblem status="expired" reloadHref={reloadHref()} />
+              <EnrollmentLinkProblem
+                status="expired"
+                reloadHref={reloadHref()}
+                supportEmail={supportEmail()}
+              />
             </Show>
 
             <Show when={data().status === "invalid"}>
-              <EnrollmentLinkProblem status="invalid" reloadHref={reloadHref()} />
+              <EnrollmentLinkProblem
+                status="invalid"
+                reloadHref={reloadHref()}
+                supportEmail={supportEmail()}
+              />
             </Show>
 
             <Show when={data().status === "unavailable"}>
-              <EnrollmentLinkProblem status="unavailable" reloadHref={reloadHref()} />
+              <EnrollmentLinkProblem
+                status="unavailable"
+                reloadHref={reloadHref()}
+                supportEmail={supportEmail()}
+              />
             </Show>
 
             <Show when={found()?.authenticated === false}>
@@ -286,28 +296,37 @@ const attributeInputType = (type: string): "text" | "number" | "date" => {
 type EnrollmentLinkProblemStatus = "expired" | "invalid" | "unavailable";
 
 const linkProblemCopy = (status: EnrollmentLinkProblemStatus) => {
-  if (status === "expired")
+  if (status === "unavailable")
     return {
-      title: "This enrollment link has expired",
+      description: "Enrollment is temporarily unavailable.",
+      title: "Try again in a moment",
       message:
-        "It may have been reset by your administrator or replaced with a new link. Ask for the current link, then open it on this device.",
+        "Check your connection, then reload this page. Your administrator can confirm the link still works.",
+      action: "reload" as const,
     };
 
-  if (status === "invalid")
+  if (status === "expired")
     return {
-      title: "This enrollment link is not valid",
+      description: "This enrollment link has expired.",
+      title: "Ask your administrator for a new link",
       message:
-        "Check that you opened the complete link from your administrator. A copy or chat preview can drop part of it.",
+        "Expired links cannot be used to enroll. Request a fresh link, then open it on this device.",
+      action: "contact" as const,
     };
 
   return {
-    title: "Enrollment is temporarily unavailable",
-    message:
-      "Check your connection and try again. Your administrator can confirm the link still works.",
+    description: "This enrollment link is no longer valid.",
+    title: "Ask your administrator for a new link",
+    message: "It may have been reset or replaced. Open the current link on this device.",
+    action: "contact" as const,
   };
 };
 
-function EnrollmentLinkProblem(props: { status: EnrollmentLinkProblemStatus; reloadHref: string }) {
+function EnrollmentLinkProblem(props: {
+  status: EnrollmentLinkProblemStatus;
+  reloadHref: string;
+  supportEmail: string;
+}) {
   const copy = () => linkProblemCopy(props.status);
 
   return (
@@ -319,9 +338,24 @@ function EnrollmentLinkProblem(props: { status: EnrollmentLinkProblemStatus; rel
         <p class="font-medium">{copy().title}</p>
         <p class="mt-1 text-xs leading-relaxed">{copy().message}</p>
       </div>
-      <Button as="a" href={props.reloadHref} variant="outline" size="sm" class="w-full">
-        Reload page
-      </Button>
+      <Show
+        when={copy().action === "reload"}
+        fallback={
+          <Button
+            as="a"
+            href={`mailto:${props.supportEmail}`}
+            variant="outline"
+            size="sm"
+            class="w-full"
+          >
+            Contact administrator
+          </Button>
+        }
+      >
+        <Button as="a" href={props.reloadHref} variant="outline" size="sm" class="w-full">
+          Reload page
+        </Button>
+      </Show>
     </div>
   );
 }
@@ -528,18 +562,33 @@ function EnrollmentOptions(props: {
       ] as const
     ).find(([, value]) => isAvailable(value))?.[0] ?? "apple";
 
-  // The server chooses from the request's user agent and the browser repeats
-  // the same choice after hydration, so the tab is never the generic default on
-  // a device that already says what it is.
-  const initialPlatform = () => {
-    const userAgent = isServer
-      ? getRequestEvent()?.request.headers.get("user-agent")
-      : navigator.userAgent;
+  // The server resolves the tab from the request's user agent and writes it
+  // onto the tab list. During hydration the client reads that marker rather
+  // than asking a user agent that might disagree; only a client-side navigation
+  // (no server marker) falls back to `navigator.userAgent`.
+  const initial = (() => {
+    const fallback = firstAvailable();
 
-    return preferredEnrollmentPlatform(userAgent, firstAvailable());
-  };
+    if (isServer)
+      return resolveInitialEnrollmentPlatform({
+        userAgent: getRequestEvent()?.request.headers.get("user-agent"),
+        fallback,
+      });
 
-  const [tab, setTab] = createSignal<EnrollmentPlatform>(initialPlatform());
+    const marker = document
+      .querySelector(
+        `[${ENROLLMENT_PLATFORM_ATTRIBUTE}][${ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE}="${props.id ?? ""}"]`,
+      )
+      ?.getAttribute(ENROLLMENT_PLATFORM_ATTRIBUTE);
+
+    return resolveInitialEnrollmentPlatform({
+      marker,
+      userAgent: navigator.userAgent,
+      fallback,
+    });
+  })();
+
+  const [tab, setTab] = createSignal<EnrollmentPlatform>(initial);
   const active = () => tab();
 
   const tabRefs = new Map<EnrollmentPlatform, HTMLButtonElement>();
@@ -576,6 +625,8 @@ function EnrollmentOptions(props: {
         role="tablist"
         aria-label="Enrollment platform"
         tabindex={-1}
+        data-enrollment-platform={initial}
+        data-enrollment-for={props.id}
         class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1"
         onKeyDown={handleTabKeyDown}
       >

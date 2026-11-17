@@ -1,14 +1,31 @@
 /**
  * Which enrollment tab to open first.
  *
- * The server and the browser both have a user agent, so the same choice is made
- * on both sides of hydration. Detection is deliberately narrow: an unknown
- * platform falls back to the first usable tab rather than guessing.
+ * The server resolves this from the request's user agent and writes the answer
+ * onto the tab list. During hydration the client reads that marker instead of
+ * asking a possibly different user agent, so the two renders agree. A purely
+ * client-side navigation has no server marker and falls back to the browser's
+ * own user agent.
  */
 
 export const ENROLLMENT_PLATFORMS = ["apple", "windows", "android"] as const;
 
 export type EnrollmentPlatform = (typeof ENROLLMENT_PLATFORMS)[number];
+
+/** DOM marker carrying the platform resolved by the server render. */
+export const ENROLLMENT_PLATFORM_ATTRIBUTE = "data-enrollment-platform";
+
+/** Scopes that marker to the enrollment link it was resolved for. */
+export const ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE = "data-enrollment-for";
+
+const PLATFORM_MARKER = new Set<string>(ENROLLMENT_PLATFORMS);
+
+/** Narrow an untrusted attribute value before using it as a tab key. */
+export function isEnrollmentPlatform(
+  value: string | null | undefined,
+): value is EnrollmentPlatform {
+  return value !== null && value !== undefined && PLATFORM_MARKER.has(value);
+}
 
 /** Map a browser user agent onto the platform it is most likely enrolling. */
 export function detectEnrollmentPlatform(
@@ -41,4 +58,18 @@ export function preferredEnrollmentPlatform(
   fallback: EnrollmentPlatform,
 ): EnrollmentPlatform {
   return detectEnrollmentPlatform(userAgent) ?? fallback;
+}
+
+/**
+ * Resolve the initial tab. A server-authored marker always wins so hydration
+ * does not recompute from a different source; otherwise use the user agent.
+ */
+export function resolveInitialEnrollmentPlatform(input: {
+  readonly marker?: string | null;
+  readonly userAgent?: string | null;
+  readonly fallback: EnrollmentPlatform;
+}): EnrollmentPlatform {
+  if (isEnrollmentPlatform(input.marker)) return input.marker;
+
+  return preferredEnrollmentPlatform(input.userAgent, input.fallback);
 }
