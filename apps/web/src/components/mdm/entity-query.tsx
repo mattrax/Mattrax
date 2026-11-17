@@ -1,7 +1,5 @@
+import { FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
 import { Match, Schema } from "effect";
-import { createEffect, createSignal, For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
 
 type FieldKind = "text" | "number" | "select";
 
@@ -174,188 +172,52 @@ export const matchesEntityQuery = <T,>(
   return true;
 };
 
+const toFilterField = <T,>(field: EntityField<T>): FilterField => ({
+  id: field.id,
+  label: field.label,
+  kind: field.kind,
+  options: field.options,
+  operators: opsFor(field),
+  defaultOperator: defaultFor(field).op,
+  defaultValue: defaultFor(field).value || undefined,
+  placeholder: "Value",
+});
+
+const fieldsToFilterFields = <T,>(fields: ReadonlyArray<EntityField<T>>): FilterField[] =>
+  fields.map((field) => toFilterField(field));
+
+const toFilterConditions = (conditions: ReadonlyArray<EntityCondition>): FilterCondition[] =>
+  conditions.map((condition) => ({
+    field: condition.field,
+    operator: condition.op,
+    values: condition.value === "" ? [] : [condition.value],
+  }));
+
+const fromFilterConditions = (conditions: ReadonlyArray<FilterCondition>): EntityCondition[] =>
+  conditions.map((condition) => ({
+    field: condition.field,
+    op: condition.operator,
+    value: condition.values[0] ?? "",
+  }));
+
+/**
+ * The condition editor for entity tables (groups, policies, applications).
+ * Conditions are still encoded in the URL by the page; this only edits them.
+ */
 export function EntityQueryBar<T>(props: {
   fields: ReadonlyArray<EntityField<T>>;
   conditions: ReadonlyArray<EntityCondition>;
   onChange: (conditions: EntityCondition[]) => void;
+  label?: string;
+  disabled?: boolean;
 }) {
-  const [text, setText] = createSignal(formatEntityQuery(props.conditions));
-  createEffect(
-    () => props.conditions,
-    (conditions) => {
-      setText(formatEntityQuery(conditions));
-    },
-  );
-  const fieldsById = (id: string) => props.fields.find((field) => field.id === id);
-
-  const applyText = () => {
-    const parsed = parseEntityQuery(text(), props.fields);
-    props.onChange(parsed);
-    setText(formatEntityQuery(parsed));
-  };
-
   return (
-    <Show
-      when={props.conditions.length > 0}
-      fallback={
-        <div class="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={() => {
-              const field = props.fields[0];
-
-              if (field) props.onChange([defaultFor(field)]);
-            }}
-          >
-            Filter
-          </Button>
-          <span class="text-[10.5px] text-muted-foreground">
-            Add conditions to narrow this table. The query is stored in the URL.
-          </span>
-        </div>
-      }
-    >
-      <div class="animate-in space-y-2 rounded-lg border border-border bg-surface p-2.5 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <p class="text-[11.5px] font-medium text-muted-foreground">Match every condition</p>
-          <div class="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => {
-                const field = props.fields[0];
-
-                if (field) props.onChange([...props.conditions, defaultFor(field)]);
-              }}
-            >
-              Add condition
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                props.onChange([]);
-                setText("");
-              }}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
-        <div class="space-y-1.5">
-          <For each={props.conditions}>
-            {(condition, index) => {
-              const field = () => fieldsById(condition.field) ?? props.fields[0];
-
-              return (
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <select
-                    aria-label="Filter field"
-                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
-                    value={condition.field}
-                    onChange={(event) => {
-                      const next = [...props.conditions];
-
-                      const selected = props.fields.find(
-                        (item) => item.id === event.currentTarget.value,
-                      );
-
-                      if (selected) next[index()] = defaultFor(selected);
-                      props.onChange(next);
-                    }}
-                  >
-                    <For each={props.fields}>
-                      {(item) => <option value={item.id}>{item.label}</option>}
-                    </For>
-                  </select>
-                  <select
-                    aria-label="Filter operator"
-                    class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
-                    value={condition.op}
-                    onChange={(event) => {
-                      const next = [...props.conditions];
-                      next[index()] = { ...condition, op: event.currentTarget.value };
-                      props.onChange(next);
-                    }}
-                  >
-                    <For each={opsFor(field())}>
-                      {(item) => <option value={item.value}>{item.label}</option>}
-                    </For>
-                  </select>
-                  <Show
-                    when={field()?.kind === "select"}
-                    fallback={
-                      <Input
-                        aria-label="Filter value"
-                        class="h-8 w-40"
-                        type={field()?.kind === "number" ? "number" : "text"}
-                        value={condition.value}
-                        onInput={(event) => {
-                          const next = [...props.conditions];
-                          next[index()] = {
-                            ...condition,
-                            value: event.currentTarget.value,
-                          };
-                          props.onChange(next);
-                        }}
-                      />
-                    }
-                  >
-                    <select
-                      aria-label="Filter value"
-                      class="h-8 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/30"
-                      value={condition.value}
-                      onChange={(event) => {
-                        const next = [...props.conditions];
-                        next[index()] = { ...condition, value: event.currentTarget.value };
-                        props.onChange(next);
-                      }}
-                    >
-                      <For each={field()?.options ?? []}>
-                        {(item) => <option value={item.value}>{item.label}</option>}
-                      </For>
-                    </select>
-                  </Show>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    class="ml-auto text-muted-foreground"
-                    onClick={() =>
-                      props.onChange(props.conditions.filter((_, position) => position !== index()))
-                    }
-                  >
-                    Remove
-                  </Button>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-        <div class="space-y-1">
-          <label class="text-[11px] font-medium text-muted-foreground" for="entity-query-text">
-            Query text
-          </label>
-          <Input
-            id="entity-query-text"
-            class="h-8 font-mono text-[11.5px]"
-            value={text()}
-            placeholder={`${props.fields[0]?.id ?? "name"} contains value`}
-            onInput={(event) => setText(event.currentTarget.value)}
-            onBlur={applyText}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.isComposing) {
-                event.preventDefault();
-                applyText();
-              }
-            }}
-          />
-        </div>
-      </div>
-    </Show>
+    <FilterBar
+      fields={fieldsToFilterFields(props.fields)}
+      conditions={toFilterConditions(props.conditions)}
+      onChange={(conditions) => props.onChange(fromFilterConditions(conditions))}
+      label={props.label}
+      disabled={props.disabled}
+    />
   );
 }

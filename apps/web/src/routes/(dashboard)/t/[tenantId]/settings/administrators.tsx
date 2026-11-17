@@ -6,6 +6,7 @@ import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError, formatDate, relativeTime } from "~/components/mdm/common";
 import { errorMessage } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
+import { FilterBar, type FilterField } from "@mattrax/ui";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -168,6 +169,20 @@ const matchesFilter = (item: TenantInvitation, filter: InvitationFilter) => {
       return true;
   }
 };
+
+const invitationFilterFields: FilterField[] = [
+  {
+    id: "invitationStatus",
+    label: "Invitation status",
+    kind: "select",
+    operators: [{ value: "is", label: "is" }],
+    options: [
+      { value: "active", label: "Pending and expired" },
+      { value: "accepted", label: "Accepted" },
+      { value: "canceled", label: "Canceled and replaced" },
+    ],
+  },
+];
 
 export default function AdministratorsSettingsPage() {
   const params = useParams();
@@ -1003,34 +1018,23 @@ export default function AdministratorsSettingsPage() {
           )}
         </Show>
 
-        <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5 sm:px-5">
-          <label
-            class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground"
-            for="invitation-filter"
-          >
-            Status
-          </label>
-          <select
-            id="invitation-filter"
-            class={cn(selectClass, "w-auto max-w-[60%]")}
-            value={filter()}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
+        <div class="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5 sm:px-5">
+          <FilterBar
+            fields={invitationFilterFields}
+            conditions={
+              filter() === "all"
+                ? []
+                : [{ field: "invitationStatus", operator: "is", values: [filter()] }]
+            }
+            onChange={(next) => {
+              const value = next[0]?.values[0];
 
-              if (
-                value === "active" ||
-                value === "accepted" ||
-                value === "canceled" ||
-                value === "all"
-              )
-                setFilter(value);
+              setFilter(
+                value === "active" || value === "accepted" || value === "canceled" ? value : "all",
+              );
             }}
-          >
-            <option value="active">Pending and expired</option>
-            <option value="accepted">Accepted</option>
-            <option value="canceled">Canceled and replaced</option>
-            <option value="all">All invitations</option>
-          </select>
+            label="Filter"
+          />
         </div>
 
         <Show

@@ -30,6 +30,14 @@ export function X(props: SvgProps) {
   );
 }
 
+export function Filter(props: SvgProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 5h18l-7 8v5.5L10 21v-8L3 5Z" />
+    </Icon>
+  );
+}
+
 export function Check(props: SvgProps) {
   return (
     <Icon {...props}>

@@ -15,6 +15,7 @@ import {
   type WebhookEventType,
   type WebhookTestResponse,
 } from "@mattrax/enterprise-domain/client";
+import { FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import {
@@ -93,6 +94,51 @@ export default function IntegrationsSettingsPage() {
     qc.invalidateQueries({
       queryKey: enterpriseKeys.webhookDeliveries(params.tenantId, endpointId()),
     });
+
+  const deliveryFilterFields: FilterField[] = [
+    {
+      id: "event",
+      label: "Event",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        ...WEBHOOK_EVENT_TYPES.map((event) => ({
+          value: event,
+          label: WEBHOOK_EVENT_LABELS[event],
+        })),
+        { value: WEBHOOK_TEST_EVENT, label: "Test delivery" },
+      ],
+    },
+    {
+      id: "status",
+      label: "Delivery status",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        { value: "succeeded", label: "Succeeded" },
+        { value: "failed", label: "Failed" },
+      ],
+    },
+  ];
+
+  const deliveryFilterConditions = createMemo<FilterCondition[]>(() => {
+    const conditions: FilterCondition[] = [];
+
+    if (eventFilter()) conditions.push({ field: "event", operator: "is", values: [eventFilter()] });
+
+    if (statusFilter())
+      conditions.push({ field: "status", operator: "is", values: [statusFilter()] });
+
+    return conditions;
+  });
+
+  const applyDeliveryFilters = (next: ReadonlyArray<FilterCondition>) => {
+    const event = next.find((condition) => condition.field === "event")?.values[0] ?? "";
+    const status = next.find((condition) => condition.field === "status")?.values[0] ?? "";
+
+    setEventFilter(event);
+    setStatusFilter(status === "succeeded" || status === "failed" ? status : "");
+  };
 
   const deliveryFilters = createMemo(() => {
     const status = statusFilter();
@@ -520,11 +566,13 @@ export default function IntegrationsSettingsPage() {
                   </div>
                 }
               >
-                <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-                  <label class="flex min-w-0 flex-1 flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Endpoint
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <label class="flex min-w-0 items-center gap-2">
+                    <span class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Endpoint
+                    </span>
                     <select
-                      class="h-9 min-w-0 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
+                      class="h-8 min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 text-[12px] text-foreground outline-none transition-colors hover:border-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/25"
                       value={endpointId()}
                       onChange={(event) => setEndpointId(event.currentTarget.value)}
                     >
@@ -533,37 +581,12 @@ export default function IntegrationsSettingsPage() {
                       </For>
                     </select>
                   </label>
-                  <label class="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Event
-                    <select
-                      class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
-                      value={eventFilter()}
-                      onChange={(event) => setEventFilter(event.currentTarget.value)}
-                    >
-                      <option value="">All events</option>
-                      <For each={WEBHOOK_EVENT_TYPES}>
-                        {(event) => <option value={event}>{WEBHOOK_EVENT_LABELS[event]}</option>}
-                      </For>
-                      <option value={WEBHOOK_TEST_EVENT}>Test delivery</option>
-                    </select>
-                  </label>
-                  <label class="flex flex-col gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Status
-                    <select
-                      class="h-9 rounded-lg border border-input bg-background px-3 text-[13px] normal-case tracking-normal text-foreground"
-                      value={statusFilter()}
-                      onChange={(event) => {
-                        const value = event.currentTarget.value;
-
-                        if (value === "" || value === "succeeded" || value === "failed")
-                          setStatusFilter(value);
-                      }}
-                    >
-                      <option value="">Any status</option>
-                      <option value="succeeded">Succeeded</option>
-                      <option value="failed">Failed</option>
-                    </select>
-                  </label>
+                  <FilterBar
+                    fields={deliveryFilterFields}
+                    conditions={deliveryFilterConditions()}
+                    onChange={applyDeliveryFilters}
+                    label="Filter"
+                  />
                 </div>
 
                 <ErrorText error={deliveriesQuery.error} />

@@ -44,12 +44,27 @@ export {
   CircleCheck,
   Eye,
   EyeOff,
+  Filter,
   Info,
   Plus,
   Search,
   TriangleAlert,
   X,
 } from "./icons";
+
+export {
+  defaultFilter,
+  FilterBar,
+  filterOperatorLabel,
+  filterOperators,
+  filterValueLabel,
+  type FilterBarProps,
+  type FilterCondition,
+  type FilterField,
+  type FilterFieldKind,
+  type FilterOperator,
+  type FilterOption,
+} from "./filter";
 
 export { Field, FieldError, FieldHint, Input, Label, Textarea } from "./input";
 

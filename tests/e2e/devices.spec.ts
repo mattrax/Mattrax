@@ -1,15 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("device fleet management", () => {
   test("searches, filters and exports the device list", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Fleet Tenant");
 
     // The filter bar is rendered and paginates even with no devices.
-    await expect(page.getByLabel("Filter by status")).toBeVisible();
-    await expect(page.getByLabel("Filter by platform")).toBeVisible();
-    await expect(page.getByLabel("Filter by group")).toBeVisible();
-    await expect(page.getByLabel("Filter by last seen")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
     await expect(page.getByText("Page 1 of 1")).toBeVisible();
     await expect(page.getByRole("button", { name: /previous/i })).toBeDisabled();
 
@@ -147,10 +144,12 @@ test.describe("device fleet management", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("abcd");
 
     // Other controls still round-trip through the URL.
-    await page.getByLabel("Filter by status").selectOption("enrolled");
+    await addFilter(page, "Status", "Enrolled");
     await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBe("enrolled");
-    await page.getByLabel("Filter by platform").selectOption("apple");
+    await addFilter(page, "Platform", "Apple");
     await expect.poll(() => new URL(page.url()).searchParams.get("proto")).toBe("apple");
+    await expect(page.getByRole("button", { name: /Status is Enrolled/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
     await page.getByLabel("Sort devices").selectOption("lastSeenAt");
     await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("lastSeenAt");
 
@@ -161,24 +160,24 @@ test.describe("device fleet management", () => {
     });
 
     await gotoHydrated(page, page.url());
-    await page.getByLabel("Filter by group").selectOption(group.id);
+    await addFilter(page, "Group", "Field Ops");
     await expect.poll(() => new URL(page.url()).searchParams.get("groupId")).toBe(group.id);
-    await page.getByLabel("Filter by health").selectOption("critical");
+    await addFilter(page, "Health", "Critical");
     await expect.poll(() => new URL(page.url()).searchParams.get("health")).toBe("critical");
-    await page.getByLabel("Filter by push delivery").selectOption("failing");
+    await addFilter(page, "Push delivery", "Failing");
     await expect.poll(() => new URL(page.url()).searchParams.get("push")).toBe("failing");
-    await page.getByLabel("Filter by last seen").selectOption("7");
+    await addFilter(page, "Last seen", "Not in 7 days");
     await expect.poll(() => new URL(page.url()).searchParams.get("staleDays")).toBe("7");
 
     // The URL is the source of truth after a reload.
     await gotoHydrated(page, page.url());
     await expect(search).toHaveValue("abcd");
-    await expect(page.getByLabel("Filter by status")).toHaveValue("enrolled");
-    await expect(page.getByLabel("Filter by platform")).toHaveValue("apple");
-    await expect(page.getByLabel("Filter by group")).toHaveValue(group.id);
-    await expect(page.getByLabel("Filter by health")).toHaveValue("critical");
-    await expect(page.getByLabel("Filter by push delivery")).toHaveValue("failing");
-    await expect(page.getByLabel("Filter by last seen")).toHaveValue("7");
+    await expect(page.getByRole("button", { name: /Status is Enrolled/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Group is Field Ops/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Health is Critical/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Push delivery is Failing/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Last seen is Not in 7 days/ })).toBeVisible();
     await expect(page.getByLabel("Sort devices")).toHaveValue("lastSeenAt");
 
     // Clearing filters clears both the controls and the URL.
@@ -187,11 +186,7 @@ test.describe("device fleet management", () => {
       .first()
       .click();
     await expect(search).toHaveValue("");
-    await expect(page.getByLabel("Filter by status")).toHaveValue("");
-    await expect(page.getByLabel("Filter by group")).toHaveValue("");
-    await expect(page.getByLabel("Filter by health")).toHaveValue("");
-    await expect(page.getByLabel("Filter by push delivery")).toHaveValue("");
-    await expect(page.getByLabel("Filter by last seen")).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.toString()).toBe("");
   });
 

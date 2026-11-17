@@ -1,7 +1,7 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
-import { Option, Schema } from "effect";
+import { Match, Option, Schema } from "effect";
 import {
   ErrorText,
   formatDeviceDate,
@@ -15,9 +15,23 @@ import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Badge, EmptyState, NativeSelect } from "@mattrax/ui";
-import { Laptop } from "~/components/ui/icons";
+import {
+  Badge,
+  EmptyState,
+  FilterBar,
+  type FilterCondition,
+  type FilterField,
+  NativeSelect,
+} from "@mattrax/ui";
+import {
+  Activity,
+  Laptop,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  UsersRound,
+  Wifi,
+} from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   Dialog,
@@ -99,9 +113,6 @@ const summaryTones = {
   danger: "text-destructive",
   brand: "text-brand",
 } as const;
-
-/** Compact filter controls: one quiet row above the table, not a form. */
-const filterClass = "h-7 min-w-[7rem] text-[12px] text-muted-foreground";
 
 type HealthReason = { code: string; label: string; severity: string };
 
@@ -564,6 +575,201 @@ export default function DevicesPage() {
     placeholderData: { rows: [] },
   }));
 
+  const filterFields = createMemo<FilterField[]>(() => {
+    const attributes = (attributeDefinitions.data?.rows ?? []).filter(
+      (definition) => definition.visibility === "visible",
+    );
+
+    return [
+      {
+        id: "status",
+        label: "Status",
+        icon: Activity,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "enrolling", label: "Enrolling" },
+          { value: "enrolled", label: "Enrolled" },
+          { value: "unenrolling", label: "Unenrolling" },
+          { value: "unenrolled", label: "Unenrolled" },
+        ],
+      },
+      {
+        id: "proto",
+        label: "Platform",
+        icon: Laptop,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "apple", label: "Apple" },
+          { value: "win", label: "Windows" },
+          { value: "android", label: "Android" },
+        ],
+      },
+      {
+        id: "groupId",
+        label: "Group",
+        icon: UsersRound,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: (groups.data?.rows ?? []).map((group) => ({ value: group.id, label: group.name })),
+      },
+      {
+        id: "health",
+        label: "Health",
+        icon: ShieldCheck,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "healthy", label: "Healthy" },
+          { value: "attention", label: "Attention" },
+          { value: "critical", label: "Critical" },
+          { value: "stale", label: "Stale" },
+          { value: "unknown", label: "Unknown" },
+        ],
+      },
+      {
+        id: "push",
+        label: "Push delivery",
+        icon: Wifi,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "failing", label: "Failing" },
+          { value: "invalid", label: "Invalid token" },
+        ],
+      },
+      ...attributes.map<FilterField>((definition) => {
+        const kind = Match.value(definition.type).pipe(
+          Match.when("select", () => "select" as const),
+          Match.when("boolean", () => "select" as const),
+          Match.when("number", () => "number" as const),
+          Match.orElse(() => "text" as const),
+        );
+
+        const options = Match.value(definition.type).pipe(
+          Match.when("boolean", () => [
+            { value: "true", label: "Yes" },
+            { value: "false", label: "No" },
+          ]),
+          Match.when("select", () =>
+            (definition.options ?? []).map((option) => ({ value: option, label: option })),
+          ),
+          Match.orElse(() => undefined),
+        );
+
+        return {
+          id: `attr:${definition.key}`,
+          label: definition.label,
+          icon: SlidersHorizontal,
+          group: "Attributes",
+          kind,
+          operators: [{ value: "is", label: "is" }],
+          options,
+          placeholder: "Attribute value",
+        };
+      }),
+      {
+        id: "staleDays",
+        label: "Last seen",
+        icon: RefreshCw,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "7", label: "Not in 7 days" },
+          { value: "30", label: "Not in 30 days" },
+          { value: "90", label: "Not in 90 days" },
+        ],
+      },
+    ];
+  });
+
+  const filterConditions = createMemo<FilterCondition[]>(() => {
+    const conditions: FilterCondition[] = [];
+
+    if (status()) conditions.push({ field: "status", operator: "is", values: [status()] });
+
+    if (proto()) conditions.push({ field: "proto", operator: "is", values: [proto()] });
+
+    if (groupId()) conditions.push({ field: "groupId", operator: "is", values: [groupId()] });
+
+    if (health()) conditions.push({ field: "health", operator: "is", values: [health()] });
+
+    if (push()) conditions.push({ field: "push", operator: "is", values: [push()] });
+
+    if (staleDays()) conditions.push({ field: "staleDays", operator: "is", values: [staleDays()] });
+
+    if (attributeKey())
+      conditions.push({
+        field: `attr:${attributeKey()}`,
+        operator: "is",
+        values: attributeValue() ? [attributeValue()] : [],
+      });
+
+    return conditions;
+  });
+
+  const applyFilters = (next: ReadonlyArray<FilterCondition>) => {
+    setStatus("");
+    setProto("");
+    setGroupId("");
+    setHealth("");
+    setPush("");
+    setStaleDays("");
+    setAttributeKey("");
+    setAttributeValue("");
+
+    for (const condition of next) {
+      const value = condition.values[0] ?? "";
+
+      if (!value) continue;
+
+      if (condition.field.startsWith("attr:")) {
+        setAttributeKey(condition.field.slice("attr:".length));
+        setAttributeValue(value);
+        continue;
+      }
+
+      if (condition.field === "status")
+        setStatus(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]),
+            )(value),
+          ) ?? "",
+        );
+      else if (condition.field === "proto")
+        setProto(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Literals(["apple", "win", "android"]))(value),
+          ) ?? "",
+        );
+      else if (condition.field === "groupId") setGroupId(value);
+      else if (condition.field === "health")
+        setHealth(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.Literals(["healthy", "attention", "critical", "unknown", "stale"]),
+            )(value),
+          ) ?? "",
+        );
+      else if (condition.field === "push")
+        setPush(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
+          ) ?? "",
+        );
+      else if (condition.field === "staleDays")
+        setStaleDays(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Literals(["7", "30", "90"]))(value),
+          ) ?? "",
+        );
+    }
+
+    setPage(0);
+  };
+
   /** One table column per visible custom attribute. */
   const attributeColumns = () =>
     (attributeDefinitions.data?.rows ?? [])
@@ -808,268 +1014,85 @@ export default function DevicesPage() {
         }}
         searchPlaceholder="Search name, serial, model, platform, group, notes…"
         toolbar={
-          <div class="flex flex-wrap items-center gap-1.5">
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by status"
-              value={status()}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                const status = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(
-                    Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]),
-                  )(value),
-                );
-
-                setStatus(status ?? "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any status</option>
-              <option value="enrolling">Enrolling</option>
-              <option value="enrolled">Enrolled</option>
-              <option value="unenrolling">Unenrolling</option>
-              <option value="unenrolled">Unenrolled</option>
-            </NativeSelect>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by platform"
-              value={proto()}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                const proto = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(Schema.Literals(["apple", "win", "android"]))(value),
-                );
-
-                setProto(proto ?? "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any platform</option>
-              <option value="apple">Apple</option>
-              <option value="win">Windows</option>
-              <option value="android">Android</option>
-            </NativeSelect>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by group"
-              value={groupId()}
-              onChange={(event) => {
-                setGroupId(event.currentTarget.value);
-                setPage(0);
-              }}
-            >
-              <option value="" selected={!groupId()}>
-                Any group
-              </option>
-              {groups.data?.rows.map((group) => (
-                <option value={group.id} selected={group.id === groupId()}>
-                  {group.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by health"
-              value={health()}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                const health = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(
-                    Schema.Literals(["healthy", "attention", "critical", "unknown", "stale"]),
-                  )(value),
-                );
-
-                setHealth(health ?? "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any health</option>
-              <option value="healthy">Healthy</option>
-              <option value="attention">Attention</option>
-              <option value="critical">Critical</option>
-              <option value="stale">Stale (7d)</option>
-              <option value="unknown">Unknown</option>
-            </NativeSelect>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by push delivery"
-              value={push()}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                const push = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
-                );
-
-                setPush(push ?? "");
-                setPage(0);
-              }}
-            >
-              <option value="">Any push state</option>
-              <option value="failing">Push failing</option>
-              <option value="invalid">Invalid token</option>
-            </NativeSelect>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by attribute"
-              value={attributeKey()}
-              onChange={(event) => {
-                setAttributeKey(event.currentTarget.value);
-                setAttributeValue("");
-                setPage(0);
-              }}
-            >
-              <option value="">Any attribute</option>
-              <For
-                each={(attributeDefinitions.data?.rows ?? []).filter(
-                  (definition) => definition.visibility === "visible",
-                )}
-              >
-                {(definition) => <option value={definition.key}>{definition.label}</option>}
-              </For>
-            </NativeSelect>
-            <Show when={attributeKey()}>
-              {(() => {
-                const definition = () =>
-                  (attributeDefinitions.data?.rows ?? []).find(
-                    (candidate) => candidate.key === attributeKey(),
-                  );
-
-                return (
-                  <Show
-                    when={definition()?.type === "select" || definition()?.type === "boolean"}
-                    fallback={
-                      <Input
-                        class="h-7 w-36 text-[12px]"
-                        aria-label="Attribute value"
-                        placeholder="Attribute value"
-                        value={attributeValue()}
-                        onInput={(event) => setAttributeValue(event.currentTarget.value)}
-                        onChange={() => setPage(0)}
-                      />
-                    }
-                  >
-                    <NativeSelect
-                      class={filterClass}
-                      aria-label="Attribute value"
-                      value={attributeValue()}
-                      onChange={(event) => {
-                        setAttributeValue(event.currentTarget.value);
-                        setPage(0);
-                      }}
-                    >
-                      <option value="">Any value</option>
-                      <For
-                        each={
-                          definition()?.type === "boolean"
-                            ? ["true", "false"]
-                            : (definition()?.options ?? [])
-                        }
-                      >
-                        {(option) => (
-                          <option value={option}>
-                            {definition()?.type === "boolean"
-                              ? option === "true"
-                                ? "Yes"
-                                : "No"
-                              : option}
-                          </option>
-                        )}
-                      </For>
-                    </NativeSelect>
-                  </Show>
-                );
-              })()}
-            </Show>
-            <NativeSelect
-              class={filterClass}
-              aria-label="Filter by last seen"
-              value={staleDays()}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-
-                const staleDays = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(Schema.Literals(["7", "30", "90"]))(value),
-                );
-
-                setStaleDays(staleDays ?? "");
-                setPage(0);
-              }}
-            >
-              <option value="">Seen any time</option>
-              <option value="7">Not seen in 7 days</option>
-              <option value="30">Not seen in 30 days</option>
-              <option value="90">Not seen in 90 days</option>
-            </NativeSelect>
-            <div class="flex flex-wrap items-center gap-1">
-              <NativeSelect
-                class={filterClass}
-                aria-label="Sort devices"
-                value={sort()?.id ?? "name"}
-                onChange={(event) => {
-                  setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
-                  setPage(0);
-                }}
-              >
-                <option value="name">Sort: name</option>
-                <option value="health">Sort: health</option>
-                <option value="lastSeenAt">Sort: last seen</option>
-                <option value="enrolledAt">Sort: enrolled</option>
-                <option value="status">Sort: status</option>
-              </NativeSelect>
-              <Button
-                variant="ghost"
-                size="xs"
-                class="shrink-0 text-muted-foreground"
-                onClick={() => {
-                  setSort({
-                    id: sort()?.id ?? "name",
-                    dir: sort()?.dir === "desc" ? "asc" : "desc",
-                  });
-                  setPage(0);
-                }}
-              >
-                {sort()?.dir === "desc" ? "Descending" : "Ascending"}
-              </Button>
-              <Show when={hasFilters()}>
-                <Button variant="ghost" size="xs" class="shrink-0" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              </Show>
-              <Button
-                variant="ghost"
-                size="xs"
-                class="ml-auto shrink-0 text-muted-foreground"
-                aria-expanded={queryOpen() ? "true" : "false"}
-                onClick={() => setQueryOpen((value) => !value)}
-              >
-                Advanced query
-                <Show when={deviceQuery()?.all?.length}>
-                  <Badge variant="subtle" class="tabular-nums">
-                    {deviceQuery()!.all!.length}
-                  </Badge>
-                </Show>
-              </Button>
-              <Show when={deviceQuery()}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="shrink-0"
-                  onClick={() => {
-                    setDeviceQuery(null);
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <FilterBar
+                fields={filterFields()}
+                conditions={filterConditions()}
+                onChange={applyFilters}
+                hideClear
+              />
+              <div class="ml-auto flex flex-wrap items-center gap-1.5">
+                <NativeSelect
+                  class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
+                  aria-label="Sort devices"
+                  value={sort()?.id ?? "name"}
+                  onChange={(event) => {
+                    setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
                     setPage(0);
                   }}
                 >
-                  Clear query
+                  <option value="name">Sort: name</option>
+                  <option value="health">Sort: health</option>
+                  <option value="lastSeenAt">Sort: last seen</option>
+                  <option value="enrolledAt">Sort: enrolled</option>
+                  <option value="status">Sort: status</option>
+                </NativeSelect>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                  onClick={() => {
+                    setSort({
+                      id: sort()?.id ?? "name",
+                      dir: sort()?.dir === "desc" ? "asc" : "desc",
+                    });
+                    setPage(0);
+                  }}
+                >
+                  {sort()?.dir === "desc" ? "Descending" : "Ascending"}
                 </Button>
-              </Show>
+                <Show when={hasFilters()}>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </Button>
+                </Show>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                  aria-expanded={queryOpen() ? "true" : "false"}
+                  onClick={() => setQueryOpen((value) => !value)}
+                >
+                  Advanced query
+                  <Show when={deviceQuery()?.all?.length}>
+                    <Badge variant="subtle" class="tabular-nums">
+                      {deviceQuery()!.all!.length}
+                    </Badge>
+                  </Show>
+                </Button>
+                <Show when={deviceQuery()}>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                    onClick={() => {
+                      setDeviceQuery(null);
+                      setPage(0);
+                    }}
+                  >
+                    Clear query
+                  </Button>
+                </Show>
+              </div>
             </div>
             <Show when={queryOpen()}>
-              <div class="mt-1 w-full animate-in rounded-lg border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+              <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
                 <DeviceQueryBuilder
                   compact
                   query={deviceQuery()}

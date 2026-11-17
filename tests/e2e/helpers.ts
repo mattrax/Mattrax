@@ -305,6 +305,47 @@ export async function api<T = unknown>(page: Page, path: string, init?: ApiReque
 }
 
 /**
+ * Add a condition through the Linear-style filter bar: open the field list,
+ * pick the field, then pick its value. Works from both the empty "Filter"
+ * button and the compact "Add filter" button.
+ */
+export async function addFilter(page: Page, field: string, value: string) {
+  const empty = page.getByRole("button", { name: "Filter", exact: true });
+
+  if ((await empty.count()) > 0) await empty.click();
+  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+
+  await page
+    .getByRole("listbox", { name: "Filter by" })
+    .getByRole("option", { name: field, exact: true })
+    .click();
+  await page
+    .getByRole("listbox", { name: `${field} value` })
+    .getByRole("option", { name: value, exact: true })
+    .click();
+}
+
+/** Add a text-value filter: pick the field, type the value, apply. */
+export async function addTextFilter(page: Page, field: string, value: string) {
+  const empty = page.getByRole("button", { name: "Filter", exact: true });
+
+  if ((await empty.count()) > 0) await empty.click();
+  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+
+  await page
+    .getByRole("listbox", { name: "Filter by" })
+    .getByRole("option", { name: field, exact: true })
+    .click();
+  await page.getByLabel(`${field} value`).fill(value);
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+}
+
+/** Remove one filter chip by its field label. */
+export async function removeFilter(page: Page, field: string) {
+  await page.getByRole("button", { name: `Remove ${field} filter` }).click();
+}
+
+/**
  * Complete the step-up dialog for a sensitive action. Accounts created by
  * `register` always have a passkey, so the passkey factor is used.
  */

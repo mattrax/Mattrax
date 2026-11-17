@@ -171,6 +171,37 @@ test.describe("dashboard accessibility", () => {
     }
   });
 
+  test("filter surfaces have no axe violations", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Filters");
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+    await settle(page);
+
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await settle(page, 250);
+    await expectNoViolations(page, "filter field picker", {
+      include: '[data-slot="popover-content"]',
+    });
+
+    await page
+      .getByRole("listbox", { name: "Filter by" })
+      .getByRole("option", { name: "Status", exact: true })
+      .click();
+    await settle(page, 250);
+    await expectNoViolations(page, "filter value picker", {
+      include: '[data-slot="popover-content"]',
+    });
+
+    await page
+      .getByRole("listbox", { name: "Status value" })
+      .getByRole("option", { name: "Enrolled", exact: true })
+      .click();
+    await settle(page, 350);
+    await expectNoViolations(page, "device filters applied", { allow: knownContrast });
+
+    await page.getByRole("button", { name: "Remove Status filter" }).click();
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
+  });
+
   test("overlay open states have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Overlays");
     const base = `/t/${tenant.slug}`;
