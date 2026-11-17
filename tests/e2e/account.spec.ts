@@ -38,7 +38,7 @@ test.describe("account", () => {
     await expect(page.getByText("E2E token").first()).toBeVisible();
     await expect(page.getByText(/Read & write · All tenants/)).toBeVisible();
 
-    const tokens = page.locator("section").filter({ hasText: "API tokens" });
+    const tokens = page.getByRole("region", { name: "API tokens" });
     await tokens
       .getByRole("button", { name: /revoke/i })
       .first()
