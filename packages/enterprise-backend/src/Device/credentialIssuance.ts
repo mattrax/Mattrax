@@ -1,5 +1,5 @@
-import { Effect, Exit } from "effect";
-import { and, eq, inArray } from "drizzle-orm";
+import { Effect, Exit, Schema } from "effect";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { ensureScepCa } from "@mattrax/scep";
@@ -18,16 +18,19 @@ import { loadCredentialHealth } from "./credentialHealth.ts";
  * - A tenant with active devices but no SCEP CA cannot sign an enrolment
  *   profile or issue a device identity. The CA is lazily generated on first use
  *   by the protocol endpoints; doing it here means a tenant is ready before its
- *   first device arrives, and repairs a tenant whose row was never created.
+ *   first device arrives. It is only minted when the tenant has no SCEP
+ *   history: a missing CA with issued identities could be a lost row or a bad
+ *   restore, and minting another trust root would fork the fleet. Those tenants
+ *   are told to restore or import their CA instead.
  * - An APNs push certificate cannot be issued by the server because Apple
  *   requires the account owner to sign a CSR. The sweep still starts the flow
  *   by generating and sealing the pending CSR key (the same key
  *   `getApnsCsr` would create) so the administrator can download the signed
  *   request, and reports the certificate as missing until it is uploaded.
  * - The deployment origin is the only domain model in this schema. If the TLS
- *   probe observed no certificate, the host's issuance hook is invoked so a
- *   Cloudflare/ACME integration can act. Custom tenant hostnames do not exist
- *   yet (tracked separately), so there is nothing else to iterate.
+ *   probe completed but observed no leaf certificate, the host's issuance hook
+ *   is invoked so a Cloudflare/ACME integration can act. A failed probe is
+ *   reported separately; an outage must not look like a missing certificate.
  *
  * Only one active CA per tenant is ever created, so repeated daily runs are
  * idempotent; a failure is isolated per tenant and retried on the next run.
@@ -39,8 +42,8 @@ const ACTIVE_DEVICE_STATUSES = ["enrolling", "enrolled"] as const;
 export type DomainCertificateRequest = {
   readonly origin: string;
   readonly hostname: string;
-  /** `missing` means the probe returned no leaf; `probe_failed` is an outage. */
-  readonly reason: "missing" | "probe_failed";
+  /** The probe completed and returned no leaf certificate. */
+  readonly reason: "missing";
 };
 
 /**
@@ -61,8 +64,10 @@ export type CredentialIssuanceResult = {
   readonly missingApnsCertificates: number;
   /** Pending APNs CSR keys generated so an administrator can sign them. */
   readonly apnsCsrsGenerated: number;
-  /** 1 when the origin probe observed no usable certificate. */
+  /** 1 when the origin probe completed but returned no leaf certificate. */
   readonly missingDomainCertificates: number;
+  /** 1 when the origin probe failed; this is an outage, not a missing certificate. */
+  readonly domainCertificateProbeFailed: number;
   /** Origin issuance hooks that completed successfully. */
   readonly domainCertificateRequests: number;
 };
@@ -92,6 +97,95 @@ const emptyTenantIssuance = (): TenantIssuance => ({
   missingApnsCertificates: 0,
   apnsCsrsGenerated: 0,
 });
+
+/** Audit action for a CA minted by maintenance. */
+export const SCEP_CA_AUTO_ISSUED_ACTION = "scep_ca.auto_issued";
+
+/** Audit action for a CA maintenance refused or failed to mint. */
+export const SCEP_CA_ISSUANCE_FAILED_ACTION = "scep_ca.issuance_failed";
+
+const systemAuditId = () => `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`;
+
+/** UTC day start used to dedupe failure audits, matching the rotation sweep. */
+const utcDayStart = (now: Date): Date =>
+  new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+/**
+ * Write a system audit entry. Audit failure must not turn a successful CA
+ * issuance into a maintenance failure, so it is logged and swallowed.
+ */
+const recordSystemAudit = (
+  db: EnterpriseDb,
+  input: {
+    readonly organizationId: string;
+    readonly action: string;
+    readonly now: Date;
+    readonly metadata: Schema.Json;
+  },
+): Effect.Effect<void, never> =>
+  Effect.gen(function* () {
+    yield* db.insert(s.auditLog).values({
+      id: systemAuditId(),
+      organizationId: input.organizationId,
+      actorUserId: null,
+      actorEmail: "system",
+      action: input.action,
+      targetType: "scep_ca",
+      targetId: null,
+      metadata: input.metadata,
+      createdAt: input.now,
+    });
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Failed to write maintenance audit entry", input.action, cause),
+    ),
+    Effect.map(() => undefined),
+  );
+
+/**
+ * Record a failed issuance once per tenant per UTC day. The audit trail is the
+ * dedupe store, matching the SCEP rotation failure pattern; otherwise a
+ * repeatedly failing tenant would add a row on every run.
+ */
+const recordIssuanceFailureOncePerDay = (
+  db: EnterpriseDb,
+  input: {
+    readonly organizationId: string;
+    readonly now: Date;
+    readonly reason: string;
+    readonly detail?: string;
+  },
+): Effect.Effect<void, never> =>
+  Effect.gen(function* () {
+    const dayStart = utcDayStart(input.now);
+
+    const [recent] = yield* db
+      .select({ id: s.auditLog.id })
+      .from(s.auditLog)
+      .where(
+        and(
+          eq(s.auditLog.organizationId, input.organizationId),
+          eq(s.auditLog.action, SCEP_CA_ISSUANCE_FAILED_ACTION),
+          gte(s.auditLog.createdAt, dayStart),
+        ),
+      )
+      .limit(1);
+
+    if (recent) return;
+
+    yield* recordSystemAudit(db, {
+      organizationId: input.organizationId,
+      action: SCEP_CA_ISSUANCE_FAILED_ACTION,
+      now: input.now,
+      metadata: input.detail
+        ? { reason: input.reason, detail: input.detail }
+        : { reason: input.reason },
+    });
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Failed to record SCEP CA issuance failure", input.organizationId, cause),
+    ),
+  );
 
 const hasActiveDevice = (
   db: EnterpriseDb,
@@ -181,23 +275,53 @@ const ensureApnsCsr = (
   });
 
 /**
- * Issue a tenant's missing SCEP CA when it has devices to serve. The CA is
- * sealed with `AUTH_SECRET`, so a deployment without one cannot issue and is
- * counted as a failure rather than silently generating an unreadable key.
+ * Issue a tenant's missing SCEP CA when it has devices to serve and no SCEP
+ * history. A CA that disappeared while certificate rows or retired anchors
+ * remain is a lost/restored row, not a first-use bootstrap: minting a new CA
+ * would leave every existing identity chained to an untrusted root. Those
+ * tenants get a daily audit telling them to restore or import instead.
  */
 const issueMissingScepCa = (
   db: EnterpriseDb,
   organization: { readonly id: string; readonly name: string },
   options: CredentialIssuanceOptions,
+  history: {
+    readonly certificates: number;
+    readonly retiring: number;
+    readonly untrustedIdentities: number;
+  },
 ): Effect.Effect<"issued" | "failed" | "skipped", unknown> =>
   Effect.gen(function* () {
     if (!(yield* hasActiveDevice(db, organization.id, ["apple", "win"]))) return "skipped";
+
+    if (history.certificates > 0 || history.retiring > 0 || history.untrustedIdentities > 0) {
+      yield* Effect.logError(
+        "SCEP CA is missing but the tenant has SCEP history; restore or import the CA instead of minting a new trust root",
+        organization.id,
+        history,
+      );
+
+      yield* recordIssuanceFailureOncePerDay(db, {
+        organizationId: organization.id,
+        now: options.now,
+        reason: "identity_history_present",
+        detail: `${history.certificates} certificates, ${history.retiring} retiring CAs, ${history.untrustedIdentities} untrusted identities`,
+      });
+
+      return "failed";
+    }
 
     if (!options.authSecret) {
       yield* Effect.logError(
         "SCEP CA issuance skipped: AUTH_SECRET is not configured",
         organization.id,
       );
+
+      yield* recordIssuanceFailureOncePerDay(db, {
+        organizationId: organization.id,
+        now: options.now,
+        reason: "auth_secret_missing",
+      });
 
       return "failed";
     }
@@ -215,6 +339,13 @@ const issueMissingScepCa = (
         organization.name,
       );
 
+      yield* recordSystemAudit(db, {
+        organizationId: organization.id,
+        action: SCEP_CA_AUTO_ISSUED_ACTION,
+        now: options.now,
+        metadata: { reason: "missing_ca" },
+      });
+
       return "issued";
     }
 
@@ -223,6 +354,12 @@ const issueMissingScepCa = (
       organization.id,
       issued.cause,
     );
+
+    yield* recordIssuanceFailureOncePerDay(db, {
+      organizationId: organization.id,
+      now: options.now,
+      reason: "generation_failed",
+    });
 
     return "failed";
   });
@@ -253,7 +390,11 @@ const inspectTenantCredentials = (
     const result = emptyTenantIssuance();
 
     if (!health.scepCa.configured) {
-      const outcome = yield* issueMissingScepCa(db, organization, options);
+      const outcome = yield* issueMissingScepCa(db, organization, options, {
+        certificates: health.deviceCertificates.total,
+        retiring: health.scepCa.retiring.length,
+        untrustedIdentities: health.scepCa.untrustedIdentities,
+      });
 
       if (outcome === "issued") result.scepCasIssued = 1;
       else if (outcome === "failed") result.scepCasFailed = 1;
@@ -292,37 +433,62 @@ const inspectTenantCredentials = (
   });
 
 /**
- * The origin is deployment-wide, not tenant-scoped. A probe from this run can
- * leave `expiresAt` null when the handshake failed or presented no leaf
- * certificate; either way there is no usable certificate to renew.
+ * The origin is deployment-wide, not tenant-scoped. `runServerCertificateCheck`
+ * records `notAfter: null` both when the handshake failed and when it completed
+ * without a leaf, so the `error` field is the discriminator: an outage is
+ * reported as a probe failure and must never trigger certificate issuance.
  */
 const requestMissingDomainCertificate = (
   options: CredentialIssuanceOptions,
 ): Effect.Effect<
-  Pick<CredentialIssuanceResult, "missingDomainCertificates" | "domainCertificateRequests">,
+  Pick<
+    CredentialIssuanceResult,
+    "missingDomainCertificates" | "domainCertificateProbeFailed" | "domainCertificateRequests"
+  >,
   unknown
 > =>
   Effect.gen(function* () {
     const domain = options.domain;
 
     if (!domain || domain.state.expiresAt !== null) {
-      return { missingDomainCertificates: 0, domainCertificateRequests: 0 };
+      return {
+        missingDomainCertificates: 0,
+        domainCertificateProbeFailed: 0,
+        domainCertificateRequests: 0,
+      };
+    }
+
+    if (domain.state.error !== null) {
+      yield* Effect.logWarning(
+        "Origin TLS certificate probe failed; not treating it as a missing certificate",
+        domain.origin,
+        domain.state.error,
+      );
+
+      return {
+        missingDomainCertificates: 0,
+        domainCertificateProbeFailed: 1,
+        domainCertificateRequests: 0,
+      };
     }
 
     if (!options.requestDomainCertificate) {
       yield* Effect.logError(
         "The deployment origin has no observed TLS certificate and no issuance hook is configured",
         domain.origin,
-        domain.state.error ?? "no leaf certificate",
       );
 
-      return { missingDomainCertificates: 1, domainCertificateRequests: 0 };
+      return {
+        missingDomainCertificates: 1,
+        domainCertificateProbeFailed: 0,
+        domainCertificateRequests: 0,
+      };
     }
 
     const request: DomainCertificateRequest = {
       origin: domain.origin,
       hostname: domain.state.hostname ?? new URL(domain.origin).hostname,
-      reason: domain.state.error ? "probe_failed" : "missing",
+      reason: "missing",
     };
 
     const requested = yield* Effect.exit(options.requestDomainCertificate(request));
@@ -334,10 +500,18 @@ const requestMissingDomainCertificate = (
         requested.cause,
       );
 
-      return { missingDomainCertificates: 1, domainCertificateRequests: 0 };
+      return {
+        missingDomainCertificates: 1,
+        domainCertificateProbeFailed: 0,
+        domainCertificateRequests: 0,
+      };
     }
 
-    return { missingDomainCertificates: 1, domainCertificateRequests: 1 };
+    return {
+      missingDomainCertificates: 1,
+      domainCertificateProbeFailed: 0,
+      domainCertificateRequests: 1,
+    };
   });
 
 /**

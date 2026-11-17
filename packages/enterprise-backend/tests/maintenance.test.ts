@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
 import { sweepWindowsStateCommands } from "@mattrax/mdm-apple";
-import { sealSecret } from "@mattrax/crypto";
+import { createApnsCsrDer, importApnsKeyJwk } from "@mattrax/apns";
+import { openSecret, sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { runMaintenance } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
@@ -506,6 +508,7 @@ describe("maintenance Windows state command retention", () => {
       command("old-delete", 45, "WindowsPolicyDelete"),
       command("old-inventory", 60, "WindowsInventoryGet"),
       command("fresh-inventory", 2, "WindowsApplicationInventoryGet"),
+      command("old-unenroll", 31, "WindowsUnenroll"),
       command("imperative", 31, "DeviceLock", "expired"),
     );
 
@@ -515,10 +518,23 @@ describe("maintenance Windows state command retention", () => {
       "boundary-policy",
       "fresh-inventory",
       "imperative",
+      "old-unenroll",
     ]);
 
     // Idempotent: a second run has nothing left to delete.
     expect((await run(db)).purgedWindowsCommands).toBe(0);
+  });
+
+  it("does not double-count a terminal row drained by the generic sweep", async () => {
+    const db = makeDb();
+    db.store.device_command.push(command("drained", 120, "WindowsPolicyReplace", "succeeded"));
+
+    const result = await run(db);
+
+    // The generic terminal-command retention runs first and owns the row.
+    expect(result.purgedCommands).toBe(1);
+    expect(result.purgedWindowsCommands).toBe(0);
+    expect(db.store.device_command).toHaveLength(0);
   });
 
   it("can be disabled with a retention of 0", async () => {
@@ -612,11 +628,52 @@ describe("maintenance credential issuance", () => {
     expect(first.scepCasFailed).toBe(0);
     expect(db.store.scep_ca).toHaveLength(1);
     expect(db.store.scep_ca[0]).toMatchObject({ organizationId: "org-1" });
+    expect(
+      db.store.audit_log.filter((row: { action: string }) => row.action === "scep_ca.auto_issued"),
+    ).toHaveLength(1);
 
     // The CA exists now, so the next run issues nothing.
     const second = await runIssuance(db);
     expect(second.scepCasIssued).toBe(0);
     expect(db.store.scep_ca).toHaveLength(1);
+    expect(
+      db.store.audit_log.filter((row: { action: string }) => row.action === "scep_ca.auto_issued"),
+    ).toHaveLength(1);
+  });
+
+  it("does not mint a CA when the tenant still has SCEP identity history", async () => {
+    const db = makeDb();
+    db.store.organization.push(tenant("org-1"));
+    db.store.device.push(device("device-1", "org-1", "apple"));
+    db.store.scep_issued_certificate.push({
+      serial: "s1",
+      organizationId: "org-1",
+      deviceId: "device-1",
+      notAfter: new Date(now.getTime() + 30 * DAY),
+      revokedAt: null,
+      createdAt: new Date(now.getTime() - 10 * DAY),
+    });
+
+    const first = await runIssuance(db);
+    expect(first.scepCasIssued).toBe(0);
+    expect(first.scepCasFailed).toBe(1);
+    expect(db.store.scep_ca).toHaveLength(0);
+
+    const failures = () =>
+      db.store.audit_log.filter(
+        (row: { action: string }) => row.action === "scep_ca.issuance_failed",
+      );
+
+    expect(failures()).toHaveLength(1);
+    expect(failures()[0]).toMatchObject({
+      organizationId: "org-1",
+      metadata: { reason: "identity_history_present" },
+    });
+
+    // The refusal is audited once per UTC day, not once per run.
+    await runIssuance(db);
+    expect(failures()).toHaveLength(1);
+    expect(db.store.scep_ca).toHaveLength(0);
   });
 
   it("does not issue a CA for a tenant without devices that use SCEP", async () => {
@@ -661,6 +718,44 @@ describe("maintenance credential issuance", () => {
     expect(result.apnsCsrsGenerated).toBe(1);
     expect(db.store.apple_push_key).toHaveLength(1);
     expect(db.store.apple_push_key[0]).toMatchObject({ organizationId: "apple-org" });
+
+    // The stored key is sealed, and it is the key behind the CSR an operator
+    // would download: open it, rebuild the request and compare the public keys.
+    const pending = db.store.apple_push_key[0]!;
+
+    const privateJwk: JsonWebKey = JSON.parse(
+      await openSecret(authSecret, pending.encryptedPrivateKeyJwk),
+    );
+
+    expect(privateJwk).toMatchObject({ kty: "RSA" });
+
+    const privateKey = await importApnsKeyJwk(privateJwk);
+
+    const publicKey = await crypto.subtle.importKey(
+      "jwk",
+      { kty: privateJwk.kty, n: privateJwk.n, e: privateJwk.e, ext: true },
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      true,
+      ["verify"],
+    );
+
+    const csr = pkijs.CertificationRequest.fromBER(
+      await createApnsCsrDer(
+        { privateKey, publicKey },
+        { organization: "apple-org", organizationalUnit: "apple-org" },
+      ),
+    );
+
+    const csrSpki = Buffer.from(
+      await crypto.subtle.exportKey("spki", await csr.getPublicKey()),
+    ).toString("hex");
+
+    const keySpki = Buffer.from(await crypto.subtle.exportKey("spki", publicKey)).toString("hex");
+
+    expect(csrSpki).toBe(keySpki);
+    expect(csr.subject.typesAndValues.some((attribute) => attribute.type === "2.5.4.11")).toBe(
+      true,
+    );
 
     // The pending key is reused rather than rotated on the next daily run.
     const second = await runIssuance(db);
@@ -734,9 +829,24 @@ describe("maintenance credential issuance", () => {
     const db = makeDb();
     const request = vi.fn(() => Effect.fail(new Error("ACME unavailable")));
 
+    const missingLeaf = () =>
+      Effect.succeed({
+        hostname: "e.mattrax.app",
+        port: 443,
+        subject: null,
+        issuer: null,
+        serialNumber: null,
+        fingerprintSha256: null,
+        notBefore: null,
+        notAfter: null,
+        authorized: false,
+        authorizationError: null,
+        chainLength: 0,
+      });
+
     const first = await runIssuance(db, {
       serverCertificateOrigin: "https://e.mattrax.app",
-      serverCertificateProbe: () => Effect.fail(new Error("TLS handshake failed")),
+      serverCertificateProbe: missingLeaf,
       serverCertificateIntervalMinutes: 0,
       requestDomainCertificate: request,
     });
@@ -748,10 +858,27 @@ describe("maintenance credential issuance", () => {
     // A failed request leaves the observation missing, so the next run retries.
     await runIssuance(db, {
       serverCertificateOrigin: "https://e.mattrax.app",
-      serverCertificateProbe: () => Effect.fail(new Error("TLS handshake failed")),
+      serverCertificateProbe: missingLeaf,
       serverCertificateIntervalMinutes: 0,
       requestDomainCertificate: request,
     });
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not request issuance when the TLS probe itself failed", async () => {
+    const db = makeDb();
+    const request = vi.fn(() => Effect.succeed(undefined));
+
+    const result = await runIssuance(db, {
+      serverCertificateOrigin: "https://e.mattrax.app",
+      serverCertificateProbe: () => Effect.fail(new Error("TLS handshake failed")),
+      requestDomainCertificate: request,
+    });
+
+    // An outage leaves notAfter null too, but it is not a missing certificate.
+    expect(result.missingDomainCertificates).toBe(0);
+    expect(result.domainCertificateProbeFailed).toBe(1);
+    expect(result.domainCertificateRequests).toBe(0);
+    expect(request).not.toHaveBeenCalled();
   });
 });

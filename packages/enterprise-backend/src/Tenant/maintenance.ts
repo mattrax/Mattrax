@@ -1,4 +1,4 @@
-import { Cause, Effect, Option, Schema } from "effect";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import {
@@ -257,6 +257,8 @@ export type MaintenanceResult = {
   readonly apnsCsrsGenerated: number;
   /** 1 when the deployment origin has no observed TLS certificate. */
   readonly missingDomainCertificates: number;
+  /** 1 when the origin TLS probe failed; an outage is not a missing certificate. */
+  readonly domainCertificateProbeFailed: number;
   /** Origin certificate issuance hooks that completed this run. */
   readonly domainCertificateRequests: number;
   /** Queued script runs whose deadline elapsed during this run. */
@@ -489,6 +491,7 @@ export const runMaintenance = (
       missingApnsCertificates: 0,
       apnsCsrsGenerated: 0,
       missingDomainCertificates: 0,
+      domainCertificateProbeFailed: 0,
       domainCertificateRequests: 0,
       expiredScriptRuns: 0,
       purgedScriptRuns: 0,
@@ -728,24 +731,35 @@ export const runMaintenance = (
     //     pending CSR key; Apple still has to sign the certificate. An origin
     //     with no observed certificate is handed to the host's issuance hook.
     //     Runs before the credential alerts so they describe the repaired state;
-    //     failures are isolated per tenant and retried by the next run.
+    //     failures are isolated per tenant and retried by the next run. The
+    //     whole step is bounded and exited here so a hanging host hook cannot
+    //     abort the rest of maintenance (including the Windows sweep below).
     if (options.credentialIssuance !== false) {
-      const issuance = yield* sweepCredentialIssuance(db, {
-        now,
-        authSecret: options.authSecret,
-        domain:
-          options.serverCertificateOrigin && serverCertificateState
-            ? { origin: options.serverCertificateOrigin, state: serverCertificateState }
-            : undefined,
-        requestDomainCertificate: options.requestDomainCertificate,
-      });
+      const issuanceExit = yield* Effect.suspend(() =>
+        sweepCredentialIssuance(db, {
+          now,
+          authSecret: options.authSecret,
+          domain:
+            options.serverCertificateOrigin && serverCertificateState
+              ? { origin: options.serverCertificateOrigin, state: serverCertificateState }
+              : undefined,
+          requestDomainCertificate: options.requestDomainCertificate,
+        }),
+      ).pipe(Effect.timeout("30 seconds"), Effect.exit);
 
-      result.scepCasIssued = issuance.scepCasIssued;
-      result.scepCasFailed = issuance.scepCasFailed;
-      result.missingApnsCertificates = issuance.missingApnsCertificates;
-      result.apnsCsrsGenerated = issuance.apnsCsrsGenerated;
-      result.missingDomainCertificates = issuance.missingDomainCertificates;
-      result.domainCertificateRequests = issuance.domainCertificateRequests;
+      if (Exit.isFailure(issuanceExit)) {
+        yield* Effect.logError("Credential issuance sweep failed", issuanceExit.cause);
+      } else {
+        const issuance = issuanceExit.value;
+
+        result.scepCasIssued = issuance.scepCasIssued;
+        result.scepCasFailed = issuance.scepCasFailed;
+        result.missingApnsCertificates = issuance.missingApnsCertificates;
+        result.apnsCsrsGenerated = issuance.apnsCsrsGenerated;
+        result.missingDomainCertificates = issuance.missingDomainCertificates;
+        result.domainCertificateProbeFailed = issuance.domainCertificateProbeFailed;
+        result.domainCertificateRequests = issuance.domainCertificateRequests;
+      }
     }
 
     // 6. Credential expiry warnings. APNs and SCEP CA expiries are otherwise

@@ -74,21 +74,30 @@ header. The descriptor is captured on the session's first authenticated request,
 the auth library owns session creation and its row has no request context. A deployment
 without `AUTH_SECRET` stores no address-derived value at all.
 
+Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
+IP address.
+
 ### Credential issuance
 
 Daily maintenance also detects credentials that have no certificate and repairs what it
 can. A tenant with active devices but no SCEP CA gets one generated (sealed with
-`AUTH_SECRET`), so its first enrolment does not have to bootstrap the CA and a tenant
-whose row was never created is repaired. A missing APNs certificate starts the manual
-issuance flow by generating and sealing the pending CSR key, so the administrator can
-download the request from **Settings → Management → Apple push** and have Apple sign it;
-the certificate itself still requires the account owner. The deployment origin is the only
-domain with a certificate in the schema; when the TLS probe observed no leaf certificate,
-the host's `requestDomainCertificate` hook is called so a Cloudflare/ACME integration can
-issue one. Custom tenant hostnames are not modelled yet.
+`AUTH_SECRET`) only when it has no SCEP history. If issued certificates, retired CA
+anchors or untrusted identities remain, minting a new CA would fork the trust root and
+strand those identities; the run logs an audit event telling the operator to restore or
+import the original CA instead. Successful generation is audited as
+`scep_ca.auto_issued`, and a refused or failed attempt as `scep_ca.issuance_failed` once
+per tenant per day.
 
-Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
-IP address.
+A missing APNs certificate starts the manual issuance flow by generating and sealing the
+pending CSR key, so the administrator can download the request from
+**Settings → Management → Apple push** and have Apple sign it; the certificate itself
+still requires the account owner.
+
+The deployment origin is the only domain with a certificate in the schema. When the TLS
+probe completes but returns no leaf certificate, the host's `requestDomainCertificate`
+hook is called so a Cloudflare/ACME integration can issue one. A probe outage is counted
+separately and never treated as a missing certificate. Custom tenant hostnames are not
+modelled yet.
 
 ## Operator account recovery
 

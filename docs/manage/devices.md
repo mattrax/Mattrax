@@ -355,8 +355,10 @@ Windows policy `Replace`/`Delete` commands and inventory `Get` requests are stor
 same command history as imperative actions, with a stable row id per OMA-URI, so a device
 status can always be matched to the command that caused it. Because those rows are derived
 from device state rather than operator work, daily maintenance prunes them after 30 days
-(`WINDOWS_STATE_COMMAND_RETENTION_DAYS`), independent of the 90-day terminal-command
-window. A device that checks in later simply gets a fresh row with the same id.
+by default, independently of the 90-day terminal-command window. Pass
+`windowsCommandRetentionDays` to `runMaintenance` to change the window; `0` keeps the rows
+indefinitely. Pruning only removes delivery bookkeeping: if a setting needs to be delivered
+again later, the deterministic id means the new row reuses its identity.
 
 Queueing is idempotent: a request identical to one already queued or in flight on the same
 device returns that command with `deduplicated: true` instead of inserting a second one.
