@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { bootstrapTenant, gotoHydrated } from "./helpers";
 
-test("keeps the dashboard stable and animates the active nav indicator", async ({ page }) => {
+test("keeps the dashboard stable and tracks the active nav item", async ({ page }) => {
   const tenant = await bootstrapTenant(page, "UX Tenant");
   await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
@@ -11,17 +11,26 @@ test("keeps the dashboard stable and animates the active nav indicator", async (
 
   expect(gutter).toContain("stable");
 
-  const indicator = page.locator('nav[aria-label="Primary"] span[aria-hidden="true"]');
-  await expect(indicator).toBeVisible();
-  const before = await indicator.getAttribute("style");
+  const primary = page.getByRole("navigation", { name: "Primary" });
+  await expect(primary.getByRole("link", { name: "Devices", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 
-  await page.getByRole("link", { name: "Groups", exact: true }).click();
+  await primary.getByRole("link", { name: "Groups", exact: true }).click();
   // Navigation starts from an id or slug URL; the tenant layout settles on the
   // canonical slug after hydration.
   await page.waitForURL(new RegExp(`/t/(${tenant.id}|${tenant.slug})/groups$`));
   await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups$`));
 
-  await expect.poll(() => indicator.getAttribute("style"), { timeout: 2_000 }).not.toBe(before);
+  await expect(primary.getByRole("link", { name: "Groups", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(primary.getByRole("link", { name: "Devices", exact: true })).not.toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 });
 
 test("writes a readable session presence cookie and the me shell cache", async ({ page }) => {

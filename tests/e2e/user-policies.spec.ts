@@ -109,6 +109,6 @@ test.describe("per-user policy assignment", () => {
 
     await gotoHydrated(page, `/t/${tenant.id}/settings/identity/directory`);
     await expect(page.getByText("Synced users and groups")).toBeVisible();
-    await expect(page.getByText(me.user.email)).toBeVisible();
+    await expect(page.locator("#main").getByText(me.user.email)).toBeVisible();
   });
 });

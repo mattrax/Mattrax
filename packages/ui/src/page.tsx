@@ -7,11 +7,11 @@ import { cn } from "./lib/cn";
  * actions aligned to the right. Used by every dashboard route so the title
  * always sits on the same baseline.
  */
-function PageHeader(props: ComponentProps<"header">) {
+function PageHeader(props: ComponentProps<"div">) {
   const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <header
+    <div
       data-slot="page-header"
       class={cn(
         "flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between",

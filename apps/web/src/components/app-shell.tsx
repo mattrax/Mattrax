@@ -292,7 +292,7 @@ function UserMenu(props: {
             : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
         )}
         title={user()?.name ?? "Account"}
-        aria-label={user()?.image ? "Account menu" : `${initials(user()?.name)}, account menu`}
+        aria-label={`${user()?.name ?? "Account"}${user()?.email ? `, ${user()!.email}` : ""}, account menu`}
       >
         <Show
           when={sidebar()}
@@ -313,9 +313,6 @@ function UserMenu(props: {
           <span class="min-w-0 flex-1">
             <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
               {user()?.name ?? "Account"}
-            </span>
-            <span class="mt-0.5 block truncate text-[10.5px] leading-3.5 text-muted-foreground">
-              {user()?.email}
             </span>
           </span>
           <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
