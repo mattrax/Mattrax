@@ -25,7 +25,9 @@ const credentialsFromUrl = (value: string) => {
     password: decodeURIComponent(url.password),
     database: url.pathname.replace(/^\/+/, ""),
     ssl: {
-      rejectUnauthorized: !["DISABLED", "false", "0"].includes(sslMode.toUpperCase()),
+      // MySQL's REQUIRED means "encrypt but do not verify the chain"; only the
+      // VERIFY_* modes ask the driver to validate it.
+      rejectUnauthorized: ["VERIFY_CA", "VERIFY_IDENTITY", "TRUE"].includes(sslMode.toUpperCase()),
     },
   };
 };
