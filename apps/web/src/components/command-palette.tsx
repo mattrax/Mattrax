@@ -3,6 +3,7 @@ import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { Portal } from "@solidjs/web";
 import { Button } from "~/components/ui/button";
 import { useTenantRouteParams } from "~/lib/route-params";
 import { routes } from "~/lib/routes";
@@ -1055,6 +1056,14 @@ export function CommandPalette() {
       return;
     }
 
+    // The combobox is the only focusable control in the palette, so Tab must
+    // not walk out behind the overlay. Options are reached with the arrow keys.
+    if (event.key === "Tab") {
+      event.preventDefault();
+
+      return;
+    }
+
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActive((value) => Math.min(value + 1, Math.max(0, items().length - 1)));
@@ -1087,6 +1096,7 @@ export function CommandPalette() {
       dialog out of the accessibility tree. Everything this palette needs —
       overlay, trap, Escape, focus restore — is a handful of lines here.
     */}
+      <Portal>
       <Show when={open()}>
         <div
           class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
@@ -1277,6 +1287,7 @@ export function CommandPalette() {
           </div>
         </div>
       </Show>
+      </Portal>
     </>
   );
 }
