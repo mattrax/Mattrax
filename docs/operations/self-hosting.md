@@ -33,6 +33,18 @@ The image also contains the built documentation, served at `/docs/` on the same
 origin, and `/sitemap.xml`/`/robots.txt` advertise that origin rather than a
 hosted one.
 
+## Building a lean image
+
+`pnpm build:image` builds the local image with zstd layers at level 3 and forces
+recompression of any layer that arrived as gzip. containerd 2.x reads zstd, and
+a new node unpacks zstd layers faster than gzip; Kubernetes clusters that still
+run an older runtime should use a plain `docker build` instead.
+
+The Dockerfile also prunes the deployed `node_modules` (type declarations,
+source maps, readmes, changelogs, tests and examples) in the same layer as the
+production install. Docker layers are additive, so cleaning in a later `RUN`
+would ship the files twice. Licences are kept.
+
 ## Requirements
 
 - Docker 24 or newer.

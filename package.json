@@ -28,11 +28,12 @@
     "lint": "vp lint",
     "lint:fix": "vp lint --fix",
     "bundle:check": "tsx scripts/bundle-budget.ts",
-    "lighthouse": "lhci autorun --config=packages/config/lighthouserc.cjs",
+    "lighthouse": "pnpm --filter @mattrax/web build:selfhost && lhci autorun --config=packages/config/lighthouserc.cjs",
     "build:selfhost": "pnpm doc:build && pnpm docker build:api && pnpm --filter @mattrax/web build:selfhost && node apps/docker/scripts/stage.ts . dist-selfhost",
     "license:issue": "pnpm cloud license:issue",
     "cloud": "pnpm --filter @mattrax/cloud --",
-    "docker": "pnpm --filter @mattrax/docker --"
+    "docker": "pnpm --filter @mattrax/docker --",
+    "build:image": "docker buildx build --load --output type=docker,compression=zstd,compression-level=3,force-compression=true -f apps/docker/Dockerfile -t mattrax-selfhost:local ."
   },
   "devDependencies": {
     "@axe-core/playwright": "catalog:",

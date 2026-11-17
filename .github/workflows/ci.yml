@@ -9,6 +9,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only checkout. Every job only reads the repository; uploaded artifacts
+# use the runner's scoped token, not a repository permission.
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Unit tests, typecheck and docs
@@ -42,11 +47,6 @@ jobs:
     name: Lighthouse budgets
     runs-on: ubuntu-latest
     needs: check
-    # The budgets are production budgets, but the run starts `pnpm web dev` as
-    # requested: Vite serves unbundled modules, so timing assertions miss until
-    # the collect step targets compressed production assets. Keep the report
-    # visible without blocking merges for a tooling artefact.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

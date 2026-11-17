@@ -175,8 +175,15 @@ const staticFiles = (pathname: string): string[] => {
     return [];
   }
 
-  // Dotfiles are never assets (and keep `..` out of the join below).
-  if (decoded.split("/").some((segment) => segment.startsWith("."))) return [];
+  // Dotfiles are never assets (and keep `..` out of the join below). The
+  // `.well-known` directory is the exception: ARD and security.txt are public
+  // discovery documents.
+  if (
+    decoded
+      .split("/")
+      .some((segment) => segment.startsWith(".") && segment !== ".well-known")
+  )
+    return [];
 
   // Drop trailing slashes so `/docs/` and `/docs` produce the same candidates;
   // `path.join` would otherwise keep the slash and break the `.html` sibling.

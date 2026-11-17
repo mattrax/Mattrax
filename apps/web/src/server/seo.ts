@@ -100,6 +100,9 @@ export function createSeoHandler(docsRoutes: readonly string[]): SeoHandler {
     return new Response(request.method === "HEAD" ? null : body, {
       headers: {
         "content-type": isSitemap ? "application/xml; charset=utf-8" : "text/plain; charset=utf-8",
+        // Lighthouse fetches these while rendering; an explicit length lets
+        // the Node host finish the response without chunked framing.
+        "content-length": String(new TextEncoder().encode(body).byteLength),
         "cache-control": CACHE_CONTROL,
       },
     });

@@ -40,10 +40,12 @@ RUN node apps/docker/scripts/stage.ts /repo /out
 
 # A production-only install of the runtime host. The API and dashboard bundles
 # carry their own dependencies; the host only needs the migration runner's
-# MySQL client.
+# MySQL client. Prune and clean in the same layer: a later `RUN` would store the
+# files again as another layer (and unpacking pays for every file it writes).
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm --filter @mattrax/docker deploy --prod --legacy \
       --config.allow-unused-patches=true /out/selfhost \
+    && node apps/docker/scripts/prune-node-modules.mjs /out/selfhost/node_modules \
     && rm -rf /out/selfhost/node_modules/.pnpm/@types+node@* \
       /out/selfhost/node_modules/.pnpm/undici-types@* \
     && find /out/selfhost/node_modules -xtype l -delete
