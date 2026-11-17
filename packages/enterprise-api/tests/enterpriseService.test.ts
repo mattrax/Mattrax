@@ -23,7 +23,7 @@ import {
   EnterpriseUnauthorized,
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
-import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/management-backend-enterprise";
+import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
 import {
   appleEnrollmentProfileResponse,

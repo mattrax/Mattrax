@@ -8,8 +8,8 @@ import {
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
-} from "../src/deviceSearch.js";
-import { canEnrollDevice } from "../src/enrollmentLimit.js";
+} from "../src/Device/deviceSearch.ts";
+import { canEnrollDevice } from "../src/Device/enrollmentLimit.ts";
 
 /** Query parameters as a URL delivers them, before the helper coerces them. */
 type RawSearchParams = {

@@ -52,13 +52,13 @@ export {
   normalizeWebhookDeliveryQuery,
   webhookDeliveryDetail,
   webhookDeliveryInfo,
-} from "./webhookDeliveries.js";
+} from "./Webhook/webhookDeliveries.ts";
 
 export type {
   ListWebhookDeliveriesInput,
   LoadWebhookDeliveryInput,
   NormalizedWebhookDeliveryQuery,
-} from "./webhookDeliveries.js";
+} from "./Webhook/webhookDeliveries.ts";
 
 export {
   AUDIT_EXPORT_MAX_ROWS,
@@ -74,14 +74,14 @@ export {
   encodeAuditOffsetCursor,
   escapeLike,
   normalizeAuditSearchQuery,
-} from "./auditLog.js";
+} from "./Account/auditLog.ts";
 
 export type {
   AuditCursor,
   AuditExportEntry,
   AuditSearchFilters,
   DecodedAuditCursor,
-} from "./auditLog.js";
+} from "./Account/auditLog.ts";
 
 export {
   ACCOUNT_AUDIT,
@@ -93,9 +93,9 @@ export {
   hashClientAddress,
   parseUserAgent,
   recordAccountAudit,
-} from "./accountAudit.js";
+} from "./Account/accountAudit.ts";
 
-export type { AccountAuditAction, AccountAuditInput, ClientDescriptor } from "./accountAudit.js";
+export type { AccountAuditAction, AccountAuditInput, ClientDescriptor } from "./Account/accountAudit.ts";
 
 export {
   RECOVERY_COMPLETION_TTL_MILLIS,
@@ -110,9 +110,9 @@ export {
   redeemRecoveryToken,
   requestAccountRecovery,
   verifyAccountRecoveryProof,
-} from "./recovery.js";
+} from "./Account/recovery.ts";
 
-export type { RecoveryLimiter } from "./recovery.js";
+export type { RecoveryLimiter } from "./Account/recovery.ts";
 
 export {
   listUserSessions,
@@ -120,13 +120,13 @@ export {
   revokeAllUserSessions,
   revokeUserSession,
   SESSION_CONTEXT_REFRESH_MILLIS,
-} from "./sessions.js";
+} from "./Account/sessions.ts";
 
-export type { AccountSession } from "./sessions.js";
+export type { AccountSession } from "./Account/sessions.ts";
 
-export { makeApplePush } from "./push.js";
+export { makeApplePush } from "./Device/push.ts";
 
-export type { ApplePush, ApplePushOptions } from "./push.js";
+export type { ApplePush, ApplePushOptions } from "./Device/push.ts";
 
 export {
   ABM_BUSINESS_BASE_URL,
@@ -226,9 +226,9 @@ export {
   sha256Hex,
   sweepScriptExecutions,
   updateScript,
-} from "./scripts.js";
+} from "./Policy/scripts.ts";
 
-export type { AssignmentPatchResult, ScriptResultIngestion, ScriptSweepResult } from "./scripts.js";
+export type { AssignmentPatchResult, ScriptResultIngestion, ScriptSweepResult } from "./Policy/scripts.ts";
 
 export {
   ANDROID_NOTIFICATION_TYPES,
@@ -248,7 +248,7 @@ export {
   pruneAndroidPubSubMessages,
   setAndroidEnabled,
   syncAndroidPoliciesForTenant,
-} from "./android.js";
+} from "./Device/android.ts";
 
 export type {
   AndroidDeliveryConfig,
@@ -260,9 +260,9 @@ export type {
   AndroidServiceAccount,
   AndroidSignupOrganization,
   AndroidSyncResult,
-} from "./android.js";
+} from "./Device/android.ts";
 
-export { makeSsoStrategy } from "./sso.js";
+export { makeSsoStrategy } from "./Identity/sso.ts";
 
 export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
@@ -275,19 +275,19 @@ export {
   SSR_TOKEN_TTL_MILLIS,
   type SignedSsrToken,
   type SignSsrTokenInput,
-} from "./ssrToken.js";
+} from "./Account/ssrToken.ts";
 
-export { invitationEmail } from "./invitationEmail.js";
+export { invitationEmail } from "./Mail/invitationEmail.ts";
 
-export type { InvitationEmail, InvitationEmailInput } from "./invitationEmail.js";
+export type { InvitationEmail, InvitationEmailInput } from "./Mail/invitationEmail.ts";
 
-export { onboardingFollowUpEmail, welcomeEmail } from "./onboardingEmail.js";
+export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.ts";
 
 export type {
   OnboardingEmail,
   OnboardingFollowUpEmailInput,
   WelcomeEmailInput,
-} from "./onboardingEmail.js";
+} from "./Tenant/onboardingEmail.ts";
 
 export {
   DEFAULT_ONBOARDING_REPLY_TO,
@@ -297,7 +297,7 @@ export {
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
-} from "./onboardingEmails.js";
+} from "./Tenant/onboardingEmails.ts";
 
 export type {
   OnboardingEmailRunResult,
@@ -307,7 +307,7 @@ export type {
   WelcomeEmailOutcome,
   WelcomeEmailSweepOptions,
   WelcomeEmailSweepResult,
-} from "./onboardingEmails.js";
+} from "./Tenant/onboardingEmails.ts";
 
 export type { EmailReplyTo, EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 
@@ -341,7 +341,7 @@ export {
   enqueueEmail,
   purgeEmailOutbox,
   sendTransactionalEmail,
-} from "./emailOutbox.js";
+} from "./Mail/emailOutbox.ts";
 
 export type {
   DrainEmailOutboxOptions,
@@ -351,38 +351,38 @@ export type {
   EnqueueEmailOutcome,
   SendTransactionalEmailInput,
   TransactionalEmailOutcome,
-} from "./emailOutbox.js";
+} from "./Mail/emailOutbox.ts";
 
 export { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
-export { makeAuthLive, sessionCookie } from "./auth.js";
+export { makeAuthLive, sessionCookie } from "./Account/auth.ts";
 
 export { makeAppAuth } from "@mattrax/enterprise-domain";
 
-export type { AppAuthService, AuthLiveOptions } from "./auth.js";
+export type { AppAuthService, AuthLiveOptions } from "./Account/auth.ts";
 
-export { makeEnterpriseAuthLive } from "./enterpriseAuth.js";
+export { makeEnterpriseAuthLive } from "./Identity/enterpriseAuth.ts";
 
-export type { EnterpriseAuthOptions } from "./enterpriseAuth.js";
+export type { EnterpriseAuthOptions } from "./Identity/enterpriseAuth.ts";
 
 export {
   detectEnrollmentPlatform,
   evaluateEnrollmentAttempt,
   ENROLLMENT_ATTEMPT_OUTCOMES,
   ENROLLMENT_ATTEMPT_PLATFORMS,
-} from "./enrollmentAttempts.js";
+} from "./Device/enrollmentAttempts.ts";
 
 export type {
   EnrollmentAttemptEvaluation,
   EnrollmentAttemptOutcome,
   EnrollmentAttemptPlatform,
-} from "./enrollmentAttempts.js";
+} from "./Device/enrollmentAttempts.ts";
 
 export {
   runMaintenance,
   loadCredentialAlertRecipients,
   loadTenantAdminRecipients,
-} from "./maintenance.js";
+} from "./Tenant/maintenance.ts";
 
 export type {
   CredentialAlertRecipient,
@@ -390,7 +390,7 @@ export type {
   CredentialExpiryNotifier,
   MaintenanceOptions,
   MaintenanceResult,
-} from "./maintenance.js";
+} from "./Tenant/maintenance.ts";
 
 export {
   BACKUP_CONCURRENCY,
@@ -402,7 +402,7 @@ export {
   pruneBackups,
   runScheduledBackups,
   runTenantBackup,
-} from "./backup.js";
+} from "./Tenant/backup.ts";
 
 export type {
   BackupActor,
@@ -413,11 +413,11 @@ export type {
   RunTenantBackupOptions,
   ScheduledBackupsResult,
   TenantBackupResult,
-} from "./backup.js";
+} from "./Tenant/backup.ts";
 
-export { buildTenantExport } from "./tenantExport.js";
+export { buildTenantExport } from "./Tenant/tenantExport.ts";
 
-export type { TenantExportBundle } from "./tenantExport.js";
+export type { TenantExportBundle } from "./Tenant/tenantExport.ts";
 
 export {
   ENTRA_GRAPH_NOT_CONFIGURED,
@@ -450,13 +450,13 @@ export {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/management-backend-enterprise";
+} from "@mattrax/mdm-apple";
 
 export type {
   WebhookDeliveryOutcome,
   WebhookRetryOptions,
   WebhookRetryResult,
-} from "@mattrax/management-backend-enterprise";
+} from "@mattrax/mdm-apple";
 
 export {
   APNS_RENEWAL_URL,
@@ -469,9 +469,9 @@ export {
   parseCertificateNotAfter,
   serverCertificateInfo,
   summarizeDeviceCertificates,
-} from "./credentialHealth.js";
+} from "./Device/credentialHealth.ts";
 
-export type { CredentialHealth, DeviceCertificateRecord } from "./credentialHealth.js";
+export type { CredentialHealth, DeviceCertificateRecord } from "./Device/credentialHealth.ts";
 
 export {
   loadScepCaState,
@@ -479,14 +479,14 @@ export {
   purgeExpiredScepCaTrust,
   rotateDueScepCas,
   scepCaStateFromRows,
-} from "./scepLifecycle.js";
+} from "./Scep/scepLifecycle.ts";
 
 export type {
   ScepCaRotationSweepResult,
   ScepCaState,
   ScepIssuedIdentity,
   ScepRetiredCaState,
-} from "./scepLifecycle.js";
+} from "./Scep/scepLifecycle.ts";
 
 export {
   SERVER_CERTIFICATE_CHECK_INTERVAL_MINUTES,
@@ -497,14 +497,14 @@ export {
   probeServerCertificate,
   runServerCertificateCheck,
   serverCertificatePeerFromDer,
-} from "./serverCertificate.js";
+} from "./Scep/serverCertificate.ts";
 
 export type {
   ServerCertificateCheckResult,
   ServerCertificatePeer,
   ServerCertificateProbe,
   ServerCertificateProbeOptions,
-} from "./serverCertificate.js";
+} from "./Scep/serverCertificate.ts";
 
 // Composition helpers used by @mattrax/enterprise-api. They remain internal to
 // the backend; the API package is the only consumer outside this package.
@@ -521,7 +521,7 @@ export {
   mergeAttributeValues,
   normalizeDefinitionOptions,
   parseAttributeCsv,
-} from "./attributes.js";
+} from "./Policy/attributes.ts";
 
 export {
   AUTOPILOT_IMPORT_MAX_BYTES,
@@ -540,9 +540,9 @@ export {
   updateAutopilotProfile,
   validateAutopilotProfileInput,
   type AutopilotProfileValues,
-} from "./autopilot.js";
+} from "./Autopilot/autopilot.ts";
 
-export { setBackupRetention, deleteBackupRun, BackupActionError } from "./backup.js";
+export { setBackupRetention, deleteBackupRun, BackupActionError } from "./Tenant/backup.ts";
 
 export {
   deviceBucket,
@@ -550,7 +550,7 @@ export {
   normalizeWidgetLayout,
   softwareBucket,
   toBuckets,
-} from "./dashboardQuery.js";
+} from "./Policy/dashboardQuery.ts";
 
 export {
   DEVICE_ACTIVITY_AUDIT_PREFIX,
@@ -560,14 +560,14 @@ export {
   deviceActivitySourceKeyset,
   normalizeDeviceActivityLimit,
   type DeviceActivitySourceKeyset,
-} from "./deviceActivity.js";
+} from "./Device/deviceActivity.ts";
 
 export {
   countDeviceHealth,
   deriveDeviceHealth,
   groupDeviceHealthReasons,
   normalizeDeviceHealth,
-} from "./deviceHealth.js";
+} from "./Device/deviceHealth.ts";
 
 export {
   DEVICE_EXPORT_MAX_ROWS,
@@ -575,13 +575,13 @@ export {
   platformLabel,
   toCsv,
   type DeviceSearchFilters,
-} from "./deviceSearch.js";
+} from "./Device/deviceSearch.ts";
 
-export { ENROLLMENT_ATTEMPT_DEDUPE_MS, ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT } from "./enrollmentAttempts.js";
+export { ENROLLMENT_ATTEMPT_DEDUPE_MS, ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT } from "./Device/enrollmentAttempts.ts";
 
-export { canEnrollDevice } from "./enrollmentLimit.js";
+export { canEnrollDevice } from "./Device/enrollmentLimit.ts";
 
-export { tokenScopes, EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "./enterpriseAuth.js";
+export { tokenScopes, EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "./Identity/enterpriseAuth.ts";
 
 export {
   EscrowKeyError,
@@ -590,9 +590,9 @@ export {
   loadTenantEscrowKey,
   revealRecoveryKey,
   uploadTenantEscrowKey,
-} from "./fdeEscrow.js";
+} from "./Device/fdeEscrow.ts";
 
-export { extractMobileconfigPlist, parseMobileconfigPreview } from "./mobileconfig.js";
+export { extractMobileconfigPlist, parseMobileconfigPreview } from "./Policy/mobileconfig.ts";
 
 export {
   R2Storage,
@@ -601,35 +601,35 @@ export {
   bytesToBase64,
   sha256Hex as storageSha256Hex,
   type R2Bucket,
-} from "./policyApplicationStorage.js";
+} from "./Policy/policyApplicationStorage.ts";
 
-export { applePushService, summarizeApplePushHealth } from "./push.js";
+export { applePushService, summarizeApplePushHealth } from "./Device/push.ts";
 
-export { cookieValue } from "./ssrToken.js";
+export { cookieValue } from "./Account/ssrToken.ts";
 
-export { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.js";
+export { restoreTenantFromBackup, TenantRestoreError } from "./Tenant/tenantRestore.ts";
 
 export {
   teardownTenant,
   TenantTeardownStepFailed,
   type DeviceUnenrollSummary,
   type UnreachableDevice,
-} from "./tenantTeardown.js";
+} from "./Tenant/tenantTeardown.ts";
 
 export {
   isMsiInstaller,
   isMsiProductCode,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
-} from "./windowsApplications.js";
+} from "./Device/windowsApplications.ts";
 
-export type { DeviceActivityPage } from "./deviceActivity.js";
+export type { DeviceActivityPage } from "./Device/deviceActivity.ts";
 
-export type { RecoveryRequestResult, RecoveryVerifyResult } from "./recovery.js";
+export type { RecoveryRequestResult, RecoveryVerifyResult } from "./Account/recovery.ts";
 
-export type { TenantRestoreResult } from "./tenantRestore.js";
+export type { TenantRestoreResult } from "./Tenant/tenantRestore.ts";
 
-export type { SubscriptionReclamation } from "./tenantTeardown.js";
+export type { SubscriptionReclamation } from "./Tenant/tenantTeardown.ts";
 
 export type {
   EnterpriseConfiguration,
@@ -644,6 +644,6 @@ export type {
   EnterpriseOrganization,
   EnterprisePolicy,
   EnterpriseSchema,
-} from "./schema.js";
+} from "./schema.ts";
 
-export { createEnterpriseSchema } from "./schema.js";
+export { createEnterpriseSchema } from "./schema.ts";

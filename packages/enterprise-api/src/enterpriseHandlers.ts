@@ -146,7 +146,7 @@ import {
   WebhookPayload,
   writeSystemAudit,
   type CommandPayload,
-} from "@mattrax/management-backend-enterprise";
+} from "@mattrax/mdm-apple";
 import {
   AUTOPILOT_IMPORT_MAX_BYTES,
   AUTOPILOT_IMPORT_MAX_ROWS,
@@ -171,7 +171,7 @@ import {
   issueScepChallenge,
   parseAppleApplicationConfiguration,
   validateConfiguration,
-} from "@mattrax/management-backend-enterprise";
+} from "@mattrax/mdm-apple";
 import { serializePlist } from "@mattrax/plist";
 import { certificateDer } from "@mattrax/scep";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/enterprise-backend";

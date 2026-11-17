@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { Passkey } from "@yielded/auth";
 import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
 import { isoCBOR } from "@simplewebauthn/server/helpers";
-import { passkeyProfile } from "../src/auth.js";
+import { passkeyProfile } from "../src/Account/auth.ts";
 
 /**
  * These tests drive the maintained WebAuthn verifier with software-generated

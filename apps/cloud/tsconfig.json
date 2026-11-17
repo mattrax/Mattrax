@@ -38,7 +38,7 @@
       "path": "../../packages/dm-windows"
     },
     {
-      "path": "../../packages/management-backend-enterprise"
+      "path": "../../packages/mdm-apple"
     },
     {
       "path": "../../packages/management-backend-http"

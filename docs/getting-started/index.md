@@ -31,7 +31,7 @@ vendor tenant.
 │ API + MDM + SCIM + SSO + billing              apps/cloud       │
 │        │                                                     │
 │        ├── enterprise-backend  (tenants, policies, devices)  │
-│        ├── management-backend-enterprise (Apple/Windows)     │
+│        ├── mdm-apple / mdm-core / mdm-windows     │
 │        └── dm-android          (AMAPI + Pub/Sub)             │
 └──────────────────────────────────────────────────────────────┘
 

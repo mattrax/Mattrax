@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Passkey } from "@yielded/auth";
 import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
 import { authRequirementForSubject, hasMfaFactor } from "@mattrax/enterprise-core";
-import { passkeyProfile } from "../src/auth.js";
+import { passkeyProfile } from "../src/Account/auth.ts";
 
 const buildVerifier = (profile: ReturnType<typeof passkeyProfile>) =>
   Effect.runPromise(

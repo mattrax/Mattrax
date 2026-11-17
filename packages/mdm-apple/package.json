@@ -1,0 +1,30 @@
+{
+  "name": "@mattrax/mdm-apple",
+  "private": true,
+  "description": "Apple MDM management backend composition",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/apns": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/management-backend": "workspace:*",
+    "@mattrax/mdm-core": "workspace:*",
+    "@mattrax/mdm-windows": "workspace:*",
+    "@mattrax/net": "workspace:*",
+    "@mattrax/plist": "workspace:*",
+    "@mattrax/scep": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "asn1js": "catalog:",
+    "pkijs": "catalog:"
+  }
+}

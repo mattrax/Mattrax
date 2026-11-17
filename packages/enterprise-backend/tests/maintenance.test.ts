@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
-import { runMaintenance } from "../src/maintenance.js";
+import { runMaintenance } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const DAY = 24 * 60 * 60 * 1000;

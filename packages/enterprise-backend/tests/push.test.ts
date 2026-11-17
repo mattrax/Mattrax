@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
-import { makeApplePush } from "../src/push.js";
+import { makeApplePush } from "../src/Device/push.ts";
 import {
   classifyApplePushFailure,
   describeApplePushFailure,
   summarizeApplePushHealth,
-} from "../src/push.js";
+} from "../src/Device/push.ts";
 
 describe("classifyApplePushFailure", () => {
   it("treats Apple's invalid-token reasons as invalid_token", () => {

@@ -9,7 +9,9 @@
   "files": [],
   "references": [
     { "path": "./packages/management-backend" },
-    { "path": "./packages/management-backend-enterprise" },
+    { "path": "./packages/mdm-core" },
+    { "path": "./packages/mdm-windows" },
+    { "path": "./packages/mdm-apple" },
     { "path": "./packages/management-backend-http" },
     { "path": "./packages/apns" },
     { "path": "./packages/net" },

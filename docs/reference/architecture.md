@@ -9,7 +9,7 @@ boundary keeps protocol handling independent from product state.
 | ------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
 | Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` | Wire protocols and payloads                    |
 | Management contract | `management-backend`, `management-backend-http`                 | Interface and HMAC webhook binding             |
-| Hosted management   | `management-backend-enterprise`, `apps/cloud`                   | Enterprise implementation                      |
+| Hosted management   | `mdm-apple`, `mdm-core`, `mdm-windows`, `apps/cloud`                   | Enterprise implementation                      |
 | Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
@@ -213,7 +213,7 @@ so Android devices are skipped with a reason.
 | `apps/cloud/src/index.ts`                               | Worker composition and request pipeline |
 | `packages/enterprise-domain/src/enterprise.ts`          | REST contract                           |
 | `packages/enterprise-backend/src/enterpriseHandlers.ts` | Enterprise handlers                     |
-| `packages/management-backend-enterprise/src/index.ts`   | Apple/Windows management                |
+| `packages/mdm-apple/src/index.ts`   | Apple/Windows management                |
 | `packages/enterprise-core/src/schema.ts`                | Database schema                         |
 | `packages/management-backend-http/src/layer.ts`         | Webhook signing                         |
 | `packages/scep/src/pkcs7.ts`                            | SCEP CA and certificate issuance        |

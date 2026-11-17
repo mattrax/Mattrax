@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BRAND_COLOR } from "@mattrax/enterprise-domain";
-import { invitationEmail, type InvitationEmailInput } from "../src/invitationEmail.js";
+import { invitationEmail, type InvitationEmailInput } from "../src/Mail/invitationEmail.ts";
 
 const base: InvitationEmailInput = {
   tenantName: "Acme",

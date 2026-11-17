@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
-import { createEnterpriseSchema } from "../src/schema.js";
+import { createEnterpriseSchema } from "../src/schema.ts";
 
 export const schema = createEnterpriseSchema();
 

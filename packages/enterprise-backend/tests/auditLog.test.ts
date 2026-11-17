@@ -10,7 +10,7 @@ import {
   encodeAuditOffsetCursor,
   escapeLike,
   normalizeAuditSearchQuery,
-} from "../src/auditLog.js";
+} from "../src/Account/auditLog.ts";
 
 describe("normalizeAuditSearchQuery", () => {
   it("applies bounded defaults", () => {

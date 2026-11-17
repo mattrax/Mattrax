@@ -72,7 +72,7 @@ piece can be tested in isolation:
 | ------------------- | ------------------------------------------------- |
 | Protocol            | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist` |
 | Management contract | `management-backend`, `management-backend-http`   |
-| Hosted management   | `management-backend-enterprise`, `apps/cloud`     |
+| Hosted management   | `mdm-apple`, `mdm-core`, `apps/cloud`     |
 | Product contracts   | `enterprise-domain`                               |
 | Product backends    | `enterprise-backend`                              |
 | Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)    |

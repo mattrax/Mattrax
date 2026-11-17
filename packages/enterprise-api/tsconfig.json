@@ -20,7 +20,7 @@
     { "path": "../enterprise-domain" },
     { "path": "../enterprise-identity" },
     { "path": "../enterprise-tokens" },
-    { "path": "../management-backend-enterprise" },
+    { "path": "../mdm-apple" },
     { "path": "../plist" },
     { "path": "../scep" }
   ],

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Effect, Layer, Redacted } from "effect";
 import { Schema as AuthSchema, Totp } from "@yielded/auth";
 import * as WebCrypto from "@yielded/auth/WebCrypto";
-import { deriveTotpSecretKey } from "../src/auth.ts";
+import { deriveTotpSecretKey } from "../src/Account/auth.ts";
 
 const secretKeys = (key: Uint8Array) =>
   Layer.succeed(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AttributeDefinition } from "../src/attributes.js";
+import type { AttributeDefinition } from "../src/Policy/attributes.ts";
 import {
   attributeCsvCells,
   attributeCsvHeaders,
@@ -7,8 +7,8 @@ import {
   definitionInputProblem,
   mergeAttributeValues,
   parseAttributeCsv,
-} from "../src/attributes.js";
-import { normalizeDeviceSearchQuery } from "../src/deviceSearch.js";
+} from "../src/Policy/attributes.ts";
+import { normalizeDeviceSearchQuery } from "../src/Device/deviceSearch.ts";
 
 const definition = (overrides: Partial<AttributeDefinition> = {}): AttributeDefinition => ({
   id: "attr-1",

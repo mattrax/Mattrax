@@ -5,7 +5,7 @@ import {
   deriveDeviceHealth,
   groupDeviceHealthReasons,
   DEVICE_STALE_AFTER_DAYS,
-} from "../src/deviceHealth.js";
+} from "../src/Device/deviceHealth.ts";
 
 const now = new Date("2026-11-10T12:00:00.000Z");
 

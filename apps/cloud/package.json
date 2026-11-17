@@ -36,7 +36,7 @@
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
-    "@mattrax/management-backend-enterprise": "workspace:*",
+    "@mattrax/mdm-apple": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "@yielded/auth": "catalog:",

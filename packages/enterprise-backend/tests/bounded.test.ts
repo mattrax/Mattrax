@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
-import { forEachBounded, chunk } from "../src/bounded.js";
-import { makeApplePush } from "../src/push.js";
+import { forEachBounded, chunk } from "../src/bounded.ts";
+import { makeApplePush } from "../src/Device/push.ts";
 
 describe("forEachBounded", () => {
   it("never exceeds the concurrency limit", async () => {

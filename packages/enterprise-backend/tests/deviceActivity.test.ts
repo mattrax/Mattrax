@@ -11,7 +11,7 @@ import {
   encodeDeviceActivityCursor,
   normalizeDeviceActivityLimit,
   type DeviceActivityPage,
-} from "../src/deviceActivity.js";
+} from "../src/Device/deviceActivity.ts";
 
 const at = (value: string) => new Date(value);
 

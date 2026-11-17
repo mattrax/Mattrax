@@ -148,7 +148,7 @@ describe("SCEP challenge", () => {
 
   // Characterisation: this helper is deliberately stateless, so it can only
   // prove a value was minted for an enrollment. One-time use is enforced by the
-  // persisted challenge store in `@mattrax/management-backend-enterprise`, which
+  // persisted challenge store in `@mattrax/mdm-apple`, which
   // is covered by that package's `scep.test.ts`.
   it("can verify the same challenge more than once", async () => {
     const now = 1_700_000_000;

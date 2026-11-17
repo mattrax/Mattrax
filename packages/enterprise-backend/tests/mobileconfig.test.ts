@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { parseMobileconfigPreview, payloadCategory } from "../src/mobileconfig.js";
+import { parseMobileconfigPreview, payloadCategory } from "../src/Policy/mobileconfig.ts";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
   try {

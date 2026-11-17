@@ -4,7 +4,7 @@ import {
   welcomeEmail,
   type OnboardingFollowUpEmailInput,
   type WelcomeEmailInput,
-} from "../src/onboardingEmail.js";
+} from "../src/Tenant/onboardingEmail.ts";
 
 const welcome: WelcomeEmailInput = {
   firstName: "Ada",

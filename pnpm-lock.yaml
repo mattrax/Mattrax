@@ -420,7 +420,7 @@ snapshots:
 				"@mattrax/enterprise-backend": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
-				"@mattrax/management-backend-enterprise": "workspace:*",
+				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"@yielded/auth": "catalog:",
@@ -701,7 +701,7 @@ snapshots:
 				"@mattrax/enterprise-identity": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
 				"@mattrax/entra-id": "workspace:*",
-				"@mattrax/management-backend-enterprise": "workspace:*",
+				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"drizzle-orm": "catalog:",
@@ -734,7 +734,7 @@ snapshots:
 				"@mattrax/enterprise-identity": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
 				"@mattrax/entra-id": "workspace:*",
-				"@mattrax/management-backend-enterprise": "workspace:*",
+				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
@@ -850,8 +850,8 @@ snapshots:
 			},
 		},
 
-		"packages/management-backend-enterprise": {
-			"name": "@mattrax/management-backend-enterprise",
+		"packages/mdm-apple": {
+			"name": "@mattrax/mdm-apple",
 			"dependencies": {
 				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
@@ -859,6 +859,8 @@ snapshots:
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
@@ -880,6 +882,46 @@ snapshots:
 			},
 			"devDependencies": {
 				"@types/node": "catalog:",
+			},
+		},
+
+		"packages/mdm-core": {
+			"name": "@mattrax/mdm-core",
+			"dependencies": {
+				"@mattrax/apns": "workspace:*",
+				"@mattrax/crypto": "workspace:*",
+				"@mattrax/dm-apple": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/net": "workspace:*",
+				"@mattrax/plist": "workspace:*",
+				"@mattrax/scep": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/mdm-windows": {
+			"name": "@mattrax/mdm-windows",
+			"dependencies": {
+				"@mattrax/enterprise-core": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/scep": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
 			},
 		},
 

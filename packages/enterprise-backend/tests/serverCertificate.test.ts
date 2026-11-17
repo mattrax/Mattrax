@@ -9,8 +9,8 @@ import {
   probeServerCertificate,
   runServerCertificateCheck,
   serverCertificatePeerFromDer,
-} from "../src/serverCertificate.js";
-import { serverCertificateInfo } from "../src/credentialHealth.js";
+} from "../src/Scep/serverCertificate.ts";
+import { serverCertificateInfo } from "../src/Device/credentialHealth.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {

@@ -6,7 +6,7 @@ import {
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
-} from "../src/onboardingEmails.js";
+} from "../src/Tenant/onboardingEmails.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, runEffect } from "./helpers.js";

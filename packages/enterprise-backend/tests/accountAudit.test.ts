@@ -4,7 +4,7 @@ import {
   clientDescriptor,
   hashClientAddress,
   parseUserAgent,
-} from "../src/accountAudit.js";
+} from "../src/Account/accountAudit.ts";
 import { runEffect } from "./helpers.js";
 
 const agents = {

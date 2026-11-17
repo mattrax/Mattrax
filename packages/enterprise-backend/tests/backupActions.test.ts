@@ -6,7 +6,7 @@ import {
   readTenantBackup,
   setBackupRetention,
   type BackupActionError,
-} from "../src/backup.js";
+} from "../src/Tenant/backup.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | null) => failure?.reason;

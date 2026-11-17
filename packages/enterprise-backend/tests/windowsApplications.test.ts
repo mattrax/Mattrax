@@ -6,7 +6,7 @@ import {
   MSI_INSTALL_LOCURI_PREFIX,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
-} from "../src/windowsApplications.js";
+} from "../src/Device/windowsApplications.ts";
 
 const productId = "1803A630-3C38-4D2B-9B9A-0CB37243539C";
 

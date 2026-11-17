@@ -1,0 +1,29 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ],
+    "outDir": "./dist"
+  },
+  "references": [
+    {
+      "path": "../enterprise-core"
+    },
+    {
+      "path": "../enterprise-domain"
+    },
+    {
+      "path": "../mdm-core"
+    },
+    {
+      "path": "../scep"
+    },
+    {
+      "path": "../management-backend"
+    }
+  ],
+  "include": [
+    "src"
+  ]
+}

@@ -12,10 +12,10 @@ import {
   enqueueEmail,
   purgeEmailOutbox,
   sendTransactionalEmail,
-} from "../src/emailOutbox.js";
+} from "../src/Mail/emailOutbox.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { OutboundEmailMessage } from "@mattrax/email";
-import { runMaintenance } from "../src/maintenance.js";
+import { runMaintenance } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-16T10:00:00.000Z");

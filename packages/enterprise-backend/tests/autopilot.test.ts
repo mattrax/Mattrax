@@ -15,7 +15,7 @@ import {
   parseAutopilotCsv,
   syncAutopilotDevices,
   validateAutopilotProfileInput,
-} from "../src/autopilot.js";
+} from "../src/Autopilot/autopilot.ts";
 import { makeDb } from "./helpers.js";
 
 const organizationId = "org-1";

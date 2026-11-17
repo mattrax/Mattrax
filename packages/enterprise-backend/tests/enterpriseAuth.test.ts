@@ -9,9 +9,9 @@ import {
   EnterpriseNotConfigured,
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
-import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
+import { makeEnterpriseAuthLive } from "../src/Identity/enterpriseAuth.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import { signStepUpGrant } from "../src/stepUp.js";
+import { signStepUpGrant } from "../src/Account/stepUp.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";

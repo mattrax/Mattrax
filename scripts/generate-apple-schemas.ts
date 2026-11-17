@@ -13,7 +13,7 @@ const OUT_DIR = path.resolve(process.cwd(), "packages/dm-apple/src/generated");
 
 /**
  * `supportedOS` metadata is emitted alongside the policy schemas because
- * policy delivery (management-backend-enterprise) must import it inside the
+ * policy delivery (mdm-apple) must import it inside the
  * Worker, where the generated schema sources are not bundled.
  */
 const SUPPORT_OUT_DIR = OUT_DIR;

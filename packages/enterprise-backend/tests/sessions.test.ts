@@ -4,7 +4,7 @@ import {
   listUserSessions,
   revokeAllUserSessions,
   revokeUserSession,
-} from "../src/sessions.js";
+} from "../src/Account/sessions.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 // Session expiry is compared with the real clock, so fixtures must be too.

@@ -7,8 +7,8 @@ import {
   StepUpService,
   StepUpUnavailable,
 } from "@mattrax/enterprise-domain";
-import { makeEnterpriseAuthLive } from "../src/enterpriseAuth.js";
-import { signStepUpGrant } from "../src/stepUp.js";
+import { makeEnterpriseAuthLive } from "../src/Identity/enterpriseAuth.ts";
+import { signStepUpGrant } from "../src/Account/stepUp.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";

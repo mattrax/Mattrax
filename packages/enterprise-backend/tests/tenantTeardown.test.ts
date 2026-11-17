@@ -8,7 +8,7 @@ import {
   type DeviceUnenrollSummary,
   type TenantTeardownDependencies,
   type TenantTeardownStepFailed,
-} from "../src/tenantTeardown.js";
+} from "../src/Tenant/tenantTeardown.ts";
 import { makeDb, runEffect, schema } from "./helpers.js";
 
 const failureStep = (failure: TenantTeardownStepFailed | null) => failure?.step;

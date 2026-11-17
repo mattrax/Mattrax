@@ -14,8 +14,8 @@ import {
   loadCredentialHealth,
   parseCertificateNotAfter,
   summarizeDeviceCertificates,
-} from "../src/credentialHealth.js";
-import { runMaintenance, type CredentialExpiryNotifier } from "../src/maintenance.js";
+} from "../src/Device/credentialHealth.ts";
+import { runMaintenance, type CredentialExpiryNotifier } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {

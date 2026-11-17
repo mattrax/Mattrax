@@ -22,7 +22,7 @@ import {
   syncAndroidPoliciesForTenant,
   withStatusReporting,
   type AndroidDeliveryConfig,
-} from "../src/android.js";
+} from "../src/Device/android.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";

@@ -1,13 +1,13 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { R2Bucket } from "@mattrax/enterprise-core";
-import type { BackupActionError } from "../src/backup.js";
+import type { BackupActionError } from "../src/Tenant/backup.ts";
 import {
   parseTenantRestoreBundle,
   restoreTenantFromBackup,
   type TenantRestoreError,
-} from "../src/tenantRestore.js";
-import { buildTenantExport } from "../src/tenantExport.js";
+} from "../src/Tenant/tenantRestore.ts";
+import { buildTenantExport } from "../src/Tenant/tenantExport.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | TenantRestoreError | null) => failure?.reason;

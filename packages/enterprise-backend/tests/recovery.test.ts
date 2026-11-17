@@ -12,7 +12,7 @@ import {
   RECOVERY_WINDOW_MILLIS,
   requestAccountRecovery,
   verifyAccountRecoveryProof,
-} from "../src/recovery.js";
+} from "../src/Account/recovery.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { makeDb, runEffect } from "./helpers.js";
 

@@ -8,7 +8,7 @@ import {
   purgeExpiredScepCaTrust,
   rotateDueScepCas,
   scepCaStateFromRows,
-} from "../src/scepLifecycle.js";
+} from "../src/Scep/scepLifecycle.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {

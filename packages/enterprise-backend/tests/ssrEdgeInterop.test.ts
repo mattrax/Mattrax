@@ -8,7 +8,7 @@ import {
   verifySsrRevision as verifyRevisionAtEdge,
   verifySsrToken as verifyAtEdge,
 } from "../../../apps/web/src/server/ssr-token.ts";
-import { signSsrRevision, signSsrToken } from "../src/ssrToken.js";
+import { signSsrRevision, signSsrToken } from "../src/Account/ssrToken.ts";
 
 const secret = "interop-secret-that-is-long-enough-for-hmac";
 

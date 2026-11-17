@@ -252,7 +252,7 @@ export default defineConfig(({ command }) => ({
                 "@mattrax/enterprise-domain",
                 "@mattrax/plist",
                 "@mattrax/dm-apple",
-                "@mattrax/management-backend-enterprise",
+                "@mattrax/mdm-apple",
               ],
             },
           },
