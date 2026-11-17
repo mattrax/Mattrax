@@ -385,7 +385,13 @@ export default function AccountPage() {
       : "All tenants";
 
   const queryClient = useQueryClient();
-  const [defaultTenantId, setDefaultTenantId] = createSignal("");
+
+  // Seed from the query's SSR/preloaded value so the first paint already shows
+  // the saved choice instead of flashing the empty option.
+  const [defaultTenantId, setDefaultTenantId] = createSignal(
+    me.data?.user.defaultTenantId ?? "",
+  );
+
   const [defaultTenantPending, setDefaultTenantPending] = createSignal(false);
   const [defaultTenantError, setDefaultTenantError] = createSignal<string | null>(null);
   const [defaultTenantSaved, setDefaultTenantSaved] = createSignal(false);
@@ -398,6 +404,12 @@ export default function AccountPage() {
       if (!defaultTenantPending()) setDefaultTenantId(value ?? "");
     },
   );
+
+  const chooseDefaultTenant = (value: string) => {
+    setDefaultTenantId(value);
+    setDefaultTenantError(null);
+    setDefaultTenantSaved(false);
+  };
 
   const saveDefaultTenant = async (value: string | null) => {
     setDefaultTenantPending(true);
@@ -412,6 +424,8 @@ export default function AccountPage() {
       setDefaultTenantSaved(true);
       setTimeout(() => setDefaultTenantSaved(false), 3000);
     } catch (error) {
+      // Put the rejected choice back to what the server still holds.
+      setDefaultTenantId(me.data?.user.defaultTenantId ?? "");
       setDefaultTenantError(
         errorMessage(raisedFailure(error), "Could not update your default tenant. Try again."),
       );
@@ -549,59 +563,66 @@ export default function AccountPage() {
         description="Where Mattrax opens when you sign in on a new device or browser. With no default, the tenant you last opened on this browser is used instead."
       >
         <Show
-          when={tenants().length > 0}
+          when={!(me.isPending && me.data === undefined)}
           fallback={
-            <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-              You don't belong to a tenant yet, so there is nothing to choose. Create or join a
-              tenant first.
-            </p>
+            <div class="h-8 w-full max-w-sm animate-pulse rounded-lg bg-hover" aria-hidden="true" />
           }
         >
-          <form
-            onSubmit={handleDefaultTenantSave}
-            class="flex flex-col gap-3 sm:flex-row sm:items-end"
+          <Show
+            when={tenants().length > 0}
+            fallback={
+              <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                You don't belong to a tenant yet, so there is nothing to choose. Create or join a
+                tenant first.
+              </p>
+            }
           >
-            <div class="min-w-0 flex-1">
-              <Field
-                label="Default tenant"
-                hint={
-                  me.data?.user.defaultTenantId
-                    ? `Currently ${tenantLabel(me.data.user.defaultTenantId)}.`
-                    : "No default tenant is set."
-                }
-              >
-                <select
-                  id="default-tenant"
-                  class={selectClass}
-                  value={defaultTenantId()}
-                  disabled={defaultTenantPending()}
-                  onChange={(e) => setDefaultTenantId(e.currentTarget.value)}
+            <form
+              onSubmit={handleDefaultTenantSave}
+              class="flex flex-col gap-3 sm:flex-row sm:items-end"
+            >
+              <div class="min-w-0 flex-1">
+                <Field
+                  label="Default tenant"
+                  hint={
+                    me.data?.user.defaultTenantId
+                      ? `Currently ${tenantLabel(me.data.user.defaultTenantId)}.`
+                      : "No default tenant is set."
+                  }
                 >
-                  <option value="">Last opened on this browser</option>
-                  <For each={tenants()}>
-                    {(tenant) => (
-                      <option value={tenant.id}>{tenant.displayName ?? tenant.name}</option>
-                    )}
-                  </For>
-                </select>
-              </Field>
-            </div>
-            <div class="flex gap-2">
-              <Show when={me.data?.user.defaultTenantId}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={defaultTenantPending()}
-                  onClick={() => void saveDefaultTenant(null)}
-                >
-                  Clear
+                  <select
+                    id="default-tenant"
+                    class={selectClass}
+                    value={defaultTenantId()}
+                    disabled={defaultTenantPending()}
+                    onChange={(e) => chooseDefaultTenant(e.currentTarget.value)}
+                  >
+                    <option value="">Last opened on this browser</option>
+                    <For each={tenants()}>
+                      {(tenant) => (
+                        <option value={tenant.id}>{tenant.displayName ?? tenant.name}</option>
+                      )}
+                    </For>
+                  </select>
+                </Field>
+              </div>
+              <div class="flex gap-2">
+                <Show when={me.data?.user.defaultTenantId}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={defaultTenantPending()}
+                    onClick={() => void saveDefaultTenant(null)}
+                  >
+                    Clear
+                  </Button>
+                </Show>
+                <Button type="submit" disabled={defaultTenantPending()}>
+                  {defaultTenantPending() ? "Saving…" : "Save"}
                 </Button>
-              </Show>
-              <Button type="submit" disabled={defaultTenantPending()}>
-                {defaultTenantPending() ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </form>
+              </div>
+            </form>
+          </Show>
         </Show>
         <Show when={defaultTenantError()}>
           {(msg) => (
@@ -611,7 +632,9 @@ export default function AccountPage() {
           )}
         </Show>
         <Show when={defaultTenantSaved()}>
-          <p class="mt-2 text-[12.5px] text-success-foreground">Default tenant updated.</p>
+          <p role="status" aria-live="polite" class="mt-2 text-[12.5px] text-success-foreground">
+            Default tenant updated.
+          </p>
         </Show>
       </Panel>
 

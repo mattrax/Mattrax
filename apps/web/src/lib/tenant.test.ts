@@ -73,9 +73,25 @@ describe("landing tenant precedence", () => {
     ).toBe(globex);
   });
 
-  it("accepts a slug for either preference", () => {
-    expect(resolveLandingTenant(tenants, { defaultTenantId: "globex" })).toBe(globex);
+  it("matches the account default by id only", () => {
+    expect(resolveLandingTenant(tenants, { defaultTenantId: globex.id })).toBe(globex);
+    // The API stores ids; a slug-shaped default is not a membership id and must
+    // not hijack the landing choice.
+    expect(resolveLandingTenant(tenants, { defaultTenantId: "globex" })).toBe(acme);
+  });
+
+  it("resolves a slug for the browser's last-used key", () => {
     expect(resolveLandingTenant(tenants, { lastTenantId: "acme" })).toBe(acme);
+    expect(resolveLandingTenant(tenants, { lastTenantId: globex.id })).toBe(globex);
+  });
+
+  it("prefers an exact id over a slug collision for the last-used key", () => {
+    const colliding = [
+      { id: "shared", slug: "shared-id", name: "Id match" },
+      { id: "tenant-other", slug: "shared", name: "Slug match" },
+    ];
+
+    expect(resolveLandingTenant(colliding, { lastTenantId: "shared" })).toBe(colliding[0]);
   });
 
   it("falls back to the last tenant when the default is not a membership", () => {

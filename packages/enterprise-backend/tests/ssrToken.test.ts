@@ -80,6 +80,29 @@ describe("SSR bootstrap token", () => {
     ]);
   });
 
+  it("round-trips the account default tenant", async () => {
+    const signed = await run(
+      signSsrToken(
+        secret,
+        input({ user: { ...input().user, defaultTenantId: "tenant-1" } }),
+      ),
+    );
+
+    const payload = await run(verifySsrToken(secret, signed!.token));
+
+    expect(payload.user.defaultTenantId).toBe("tenant-1");
+  });
+
+  it("accepts tokens minted before the default tenant existed", async () => {
+    const legacyUser = { ...input().user };
+    delete legacyUser.defaultTenantId;
+
+    const signed = await run(signSsrToken(secret, input({ user: legacyUser })));
+    const payload = await run(verifySsrToken(secret, signed!.token));
+
+    expect(payload.user).not.toHaveProperty("defaultTenantId");
+  });
+
   it("signs no token for an unverified account", async () => {
     const signed = await run(signSsrToken(secret, input({ emailVerified: false })));
 

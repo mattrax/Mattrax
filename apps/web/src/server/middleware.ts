@@ -9,12 +9,13 @@ import { isCacheablePublicPage } from "~/lib/public-routes";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { setPostHogConfig } from "~/lib/posthog-config-store";
 import {
+  expireSsrToken,
   preloadSession,
   redactBootstrapResponse,
   ssrClearCookie,
   ssrRevisionClearCookie,
 } from "./preload";
-import { isBootstrapPath, normalisePath } from "./security";
+import { isBootstrapPath, isProfileUpdatePath, normalisePath } from "./security";
 import { verifySsrRevision, verifySsrToken } from "./ssr-token";
 
 const api = createAPIHandler(routes);
@@ -200,9 +201,18 @@ const middleware: StartMiddleware = async (event, next) => {
     ? await redactBootstrapResponse(response)
     : response;
 
+  // Profile writes can change the shell cached in the SSR token; force the
+  // next navigation to bootstrap once instead of serving the old snapshot.
+  const profileUpdate =
+    event.request.method === "PATCH" &&
+    isProfileUpdatePath(new URL(event.request.url).pathname) &&
+    response.ok;
+
+  const afterProfileUpdate = profileUpdate ? expireSsrToken(proxied) : proxied;
+
   // Seed the client-visible presence cookie from the server's session check.
   // API responses already mirror session cookie rotations themselves.
-  if (event.request.method !== "GET" || !isHtml(proxied)) return proxied;
+  if (event.request.method !== "GET" || !isHtml(afterProfileUpdate)) return afterProfileUpdate;
   const presence = getPreloadedSession(event.request);
 
   if (
@@ -212,10 +222,10 @@ const middleware: StartMiddleware = async (event, next) => {
     !outcome.clearSsrCookie &&
     !outcome.clearSsrRevisionCookie
   )
-    return proxied;
+    return afterProfileUpdate;
 
   const secure = new URL(event.request.url).protocol === "https:";
-  const headers = new Headers(proxied.headers);
+  const headers = new Headers(afterProfileUpdate.headers);
 
   if (outcome.setSsrCookie) headers.append("set-cookie", outcome.setSsrCookie);
 
@@ -234,9 +244,9 @@ const middleware: StartMiddleware = async (event, next) => {
       ),
     );
 
-  return new Response(proxied.body, {
-    status: proxied.status,
-    statusText: proxied.statusText,
+  return new Response(afterProfileUpdate.body, {
+    status: afterProfileUpdate.status,
+    statusText: afterProfileUpdate.statusText,
     headers,
   });
 };

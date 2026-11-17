@@ -2,7 +2,7 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import { MeResponse } from "@mattrax/enterprise-domain/client";
+import { MeResponse, type UpdateMeRequest } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
@@ -750,7 +750,7 @@ export const authClient = {
 
       return state;
     }),
-  updateUser: (payload: { name?: string; image?: string | null }) =>
+  updateUser: (payload: UpdateMeRequest) =>
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>
     result(() =>

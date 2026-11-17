@@ -22,7 +22,21 @@ const makeContext = (options: { readonly defaultTenantId?: string | null } = {})
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  // A second account owns tenant-b. The current user must still be rejected
+  // when trying to default to it: membership checks must be scoped to the
+  // caller, not just to the requested tenant.
+  const otherUser = {
+    id: "user-2",
+    name: "Other Owner",
+    email: "other@example.com",
+    emailVerified: true,
+    image: null,
+    defaultTenantId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  db.store.user.push(user, otherUser);
   db.store.organization.push(
     {
       id: "tenant-a",
@@ -47,15 +61,26 @@ const makeContext = (options: { readonly defaultTenantId?: string | null } = {})
       updatedAt: now,
     },
   );
-  db.store.member.push({
-    id: "member-a",
-    organizationId: "tenant-a",
-    userId: user.id,
-    role: "owner",
-    customRoleId: null,
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.member.push(
+    {
+      id: "member-a",
+      organizationId: "tenant-a",
+      userId: user.id,
+      role: "owner",
+      customRoleId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "member-b",
+      organizationId: "tenant-b",
+      userId: otherUser.id,
+      role: "owner",
+      customRoleId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
 
   const auth = {
     requireUser: () => Effect.succeed({ user }),
@@ -96,13 +121,17 @@ describe("account default tenant", () => {
     expect(me.user.defaultTenantId).toBe("tenant-a");
   });
 
-  it("rejects a tenant the account does not belong to", async () => {
+  it("rejects a tenant another account belongs to", async () => {
     const { db, service, headers } = makeContext();
 
     await expect(
       runEffect(service.updateMe(request(headers), { defaultTenantId: "tenant-b" })),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
-    expect(db.store.user[0]!.defaultTenantId).toBeNull();
+
+    expect(db.store.user.find((entry) => entry.id === "user-1")!.defaultTenantId).toBeNull();
+    // The other owner's membership must not authorise this caller, and their
+    // own row stays untouched.
+    expect(db.store.user.find((entry) => entry.id === "user-2")!.defaultTenantId).toBeNull();
   });
 
   it("clears the default without changing the rest of the profile", async () => {

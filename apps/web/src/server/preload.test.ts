@@ -11,6 +11,7 @@ import {
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  expireSsrToken,
   preloadSession,
   redactBootstrapResponse,
   ssrClearCookie,
@@ -32,6 +33,7 @@ const me: MeResponse = {
     totpEnabled: false,
     passkeyEnabled: false,
     mfaRequired: false,
+    defaultTenantId: "tenant-1",
   },
   tenants: [
     {
@@ -99,6 +101,7 @@ const verifyRevision = async (
 const bootstrapResponse = (
   ssrToken: string | null = "signed-token",
   revisionToken: string | null = "revision-token",
+  shell: MeResponse = me,
 ) =>
   Response.json({
     session: {
@@ -106,7 +109,7 @@ const bootstrapResponse = (
       subjectId: "user-1",
       claims: { name: "Owner", email: "owner@example.com", emailVerified: true },
     },
-    me,
+    me: shell,
     ssrToken,
     ssrTokenExpiresAt: ssrToken ? Date.now() + 300_000 : null,
     ssrRevision: revisionToken,
@@ -144,6 +147,48 @@ describe("SSR preload", () => {
     expect(outcome.setSsrCookie).toBeUndefined();
     expect(outcome.session?.sessionId).toBe("session-1");
     expect(outcome.session?.me?.tenants[0]?.permissions).toContain("devices.write");
+  });
+
+  it("bootstraps the changed default after a profile update expires the warm token", async () => {
+    let bootstrapCalls = 0;
+
+    // A warm token minted before the account changed its default tenant.
+    const stale = await preloadSession(htmlRequest([sessionCookie, ssrCookie, revisionCookie]), {
+      secret,
+      verifyToken: async () => tokenPayload(),
+      verifyRevision,
+      fetchBootstrap: async () => {
+        bootstrapCalls++;
+
+        throw new Error("a warm token must not call bootstrap");
+      },
+    });
+
+    expect(bootstrapCalls).toBe(0);
+    expect(stale.session?.me?.user.defaultTenantId).toBe("tenant-1");
+
+    // PATCH /api/v1/me expires both SSR cookies, so the next document arrives
+    // with only the session cookie and must bootstrap the new shell once.
+    const updated: MeResponse = {
+      ...me,
+      user: { ...me.user, defaultTenantId: null },
+    };
+
+    const fresh = await preloadSession(htmlRequest([sessionCookie]), {
+      secret,
+      verifyToken: verifyFreshToken("fresh-token"),
+      verifyRevision,
+      fetchBootstrap: async () => {
+        bootstrapCalls++;
+
+        return bootstrapResponse("fresh-token", "revision-token", updated);
+      },
+    });
+
+    expect(bootstrapCalls).toBe(1);
+    expect(fresh.session?.me?.user.defaultTenantId).toBeNull();
+    expect(fresh.setSsrCookie).toBeDefined();
+    expect(fresh.setSsrRevisionCookie).toContain("revision-token");
   });
 
   it("keeps a warm token for a canonical slug URL", async () => {
@@ -562,6 +607,15 @@ describe("SSR preload", () => {
       expect(bootstrapCalls, path).toBe(0);
       expect(outcome, path).toEqual({});
     }
+  });
+
+  it("expires the warm token pair after a profile change", async () => {
+    const response = expireSsrToken(Response.json({ status: "ok" }));
+    const cookies = response.headers.getSetCookie();
+
+    expect(cookies).toContain(ssrClearCookie());
+    expect(cookies).toContain(ssrRevisionClearCookie());
+    expect(await response.json()).toEqual({ status: "ok" });
   });
 
   it("builds matching set and clear cookies", () => {

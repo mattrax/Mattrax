@@ -110,6 +110,25 @@ export const ssrRevisionClearCookie = (): string =>
   `${SSR_REVISION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 
 /**
+ * Expire the SSR token pair on a response without touching its body.
+ *
+ * A successful profile update can change values baked into a warm token
+ * (`name`, `defaultTenantId`), so the next navigation must bootstrap once
+ * instead of painting the previous snapshot for the rest of the TTL.
+ */
+export const expireSsrToken = (response: Response): Response => {
+  const headers = new Headers(response.headers);
+  headers.append("set-cookie", ssrClearCookie());
+  headers.append("set-cookie", ssrRevisionClearCookie());
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+};
+
+/**
  * Re-attach the permissions a built-in-role token omitted for size. Custom
  * roles always carry theirs; an absent set still fails closed to the role key.
  */

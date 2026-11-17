@@ -70,6 +70,15 @@ export function isBootstrapPath(pathname: string): boolean {
   return normalisePath(pathname) === "/api/v1/bootstrap";
 }
 
+/**
+ * True when the path routes to the account profile update endpoint, however it
+ * is spelled. A successful PATCH changes values baked into the warm SSR token,
+ * so the edge expires that token rather than serving the previous snapshot.
+ */
+export function isProfileUpdatePath(pathname: string): boolean {
+  return normalisePath(pathname) === "/api/v1/me";
+}
+
 /** True when `pathname` is owned by another layer rather than the page router. */
 export function isPassthroughPath(pathname: string): boolean {
   return PASSTHROUGH_PREFIXES.some(

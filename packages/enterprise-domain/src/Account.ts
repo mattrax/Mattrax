@@ -62,6 +62,8 @@ export const UpdateMeRequest = Schema.Struct({
   defaultTenantId: Schema.optional(NullableString),
 });
 
+export type UpdateMeRequest = typeof UpdateMeRequest.Type;
+
 
 export const AuthUser = UserInfo;
 

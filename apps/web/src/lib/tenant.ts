@@ -64,6 +64,11 @@ export type TenantLandingPreference = {
  * device or incognito session still starts where the account chose. Either
  * value is ignored once the membership disappears, and an account with no
  * preference falls back to the server's first membership, exactly as before.
+ *
+ * The account default is always an id, so it matches by id only. The
+ * browser-scoped value may be a slug saved before the shell learned the id, so
+ * it prefers an exact id and only then falls back to a slug; otherwise a slug
+ * collision could land on the wrong tenant.
  */
 export function resolveLandingTenant<T extends TenantKey>(
   tenants: readonly T[] | undefined,
@@ -74,13 +79,14 @@ export function resolveLandingTenant<T extends TenantKey>(
   const { defaultTenantId, lastTenantId } = preference;
 
   const preferred = defaultTenantId
-    ? tenants.find((tenant) => tenantMatchesKey(tenant, defaultTenantId))
+    ? tenants.find((tenant) => tenant.id === defaultTenantId)
     : undefined;
 
   if (preferred) return preferred;
 
   const remembered = lastTenantId
-    ? tenants.find((tenant) => tenantMatchesKey(tenant, lastTenantId))
+    ? (tenants.find((tenant) => tenant.id === lastTenantId) ??
+      tenants.find((tenant) => tenant.slug === lastTenantId))
     : undefined;
 
   return remembered ?? tenants[0];

@@ -8,6 +8,7 @@ import {
   isBootstrapPath,
   isKnownPagePath,
   isPassthroughPath,
+  isProfileUpdatePath,
   mergeVary,
   canonicalHostUrl,
   normalisePath,
@@ -156,6 +157,25 @@ describe("normalisePath", () => {
     "does not treat %s as the bootstrap endpoint",
     (pathname) => {
       expect(isBootstrapPath(pathname)).toBe(false);
+    },
+  );
+
+  it.each([
+    "/api/v1/me",
+    "/api/v1/me/",
+    "/api//v1//me",
+    "/API/V1/ME",
+    "/api/v1/%6de",
+    "/api%2Fv1%2Fme",
+    "/api/v1/me/;jsessionid=abc",
+  ])("recognises %s as the profile update endpoint", (pathname) => {
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it.each(["/api/v1/me/email", "/api/v1/members", "/apifoo/v1/me", "/me"])(
+    "does not treat %s as the profile update endpoint",
+    (pathname) => {
+      expect(isProfileUpdatePath(pathname)).toBe(false);
     },
   );
 });
