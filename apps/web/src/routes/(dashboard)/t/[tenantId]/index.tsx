@@ -31,12 +31,15 @@ import { routes } from "~/lib/routes";
 
 /** Preview widgets share the built-in layout, but stat, chart, table and note
  * rows are capped so an empty fleet never leaves a page-tall blank surface. */
-const PREVIEW_HEIGHT_CAP: Record<string, number> = {
-  stat: 2,
-  pie: 4,
-  table: 4,
-  markdown: 2,
-};
+function previewHeight(type: string): number | undefined {
+  if (type === "stat") return 2;
+
+  if (type === "pie" || type === "table") return 4;
+
+  if (type === "markdown") return 2;
+
+  return undefined;
+}
 
 const previewWidgets = (): DashboardWidget[] => {
   const widgets = defaultOverviewWidgets().map((widget, index) => ({
@@ -47,7 +50,7 @@ const previewWidgets = (): DashboardWidget[] => {
     x: widget.x,
     y: widget.y,
     w: widget.w,
-    h: Math.min(widget.h, PREVIEW_HEIGHT_CAP[widget.type] ?? widget.h),
+    h: Math.min(widget.h, previewHeight(widget.type) ?? widget.h),
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   }));

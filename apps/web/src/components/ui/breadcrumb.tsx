@@ -1,7 +1,6 @@
 
 import { splitProps } from "~/lib/solid";
 import type { ComponentProps } from "@solidjs/web";
-import type { JSX } from "@solidjs/web";
 import { ChevronRight, Ellipsis } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 
@@ -44,7 +43,7 @@ function BreadcrumbLink(props: ComponentProps<"a">) {
       )}
       {...others}
     >
-      {local.children as JSX.Element}
+      {local.children}
     </a>
   );
 }
