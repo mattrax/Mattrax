@@ -54,6 +54,12 @@ export const UpdateMeRequest = Schema.Struct({
   /** Same 120-character ceiling as registration. */
   name: Schema.optional(Schema.String.check(Schema.isMaxLength(120))),
   image: Schema.optional(NullableString),
+  /**
+   * Account-level landing tenant. `null` clears the choice and restores the
+   * browser's last-used tenant; the account must be a member of any non-null
+   * value.
+   */
+  defaultTenantId: Schema.optional(NullableString),
 });
 
 

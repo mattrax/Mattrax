@@ -565,6 +565,9 @@ export type ApplicationInstallerPayload = {
 
 export const enterprise = {
   me: () => accountEndpoint((api) => api.me({})),
+  /** Account-level profile fields, including the default landing tenant. */
+  updateMe: (payload: { name?: string; image?: string | null; defaultTenantId?: string | null }) =>
+    accountEndpoint((api) => api.updateMe({ payload })),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
   listTenants: () => endpoint((api) => api.listTenants({})),

@@ -21,6 +21,11 @@ export const UserInfo = Schema.Struct({
    * sees `true` here as well.
    */
   mfaRequired: Schema.Boolean,
+  /**
+   * Account-level tenant to land on when no tenant is in the URL. Null when
+   * the account has not chosen one or is no longer a member of it.
+   */
+  defaultTenantId: Schema.optional(NullableString),
 });
 
 export type UserInfo = typeof UserInfo.Type;

@@ -47,6 +47,14 @@ export const user = mysqlTable(
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
     stripeCustomerId: shortText("stripe_customer_id"),
+    /**
+     * Account-level landing tenant, independent of the browser's last-used
+     * tenant. Only honoured while the account is a member; membership loss
+     * leaves the stale id here and both the API and the shell ignore it.
+     */
+    defaultTenantId: id("default_tenant_id").references(() => organization.id, {
+      onDelete: "set null",
+    }),
     disabled: boolean("disabled").notNull().default(false),
     /** Where this account came from; directory sync updates it on creation. */
     source: varchar("source", { length: 16, enum: ["manual", "scim", "graph"] })

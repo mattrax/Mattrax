@@ -4754,11 +4754,20 @@ export const createEnterpriseService = ({
     readonly image?: string | null;
     readonly totpEnabled?: boolean | null;
     readonly passkeyEnabled?: boolean | null;
+    readonly defaultTenantId?: string | null;
   }) =>
     Effect.gen(function* () {
       // Do not disclose tenant membership to an unverified account. The
       // verification screen only needs the user record.
       const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
+
+      // A stale choice (the account left the tenant) is reported as null so
+      // every client applies the same precedence without extra membership
+      // checks.
+      const defaultTenantId =
+        user.defaultTenantId && tenants.some((tenant) => tenant.id === user.defaultTenantId)
+          ? user.defaultTenantId
+          : null;
 
       const memberships = yield* db.query.member.findMany({
         where: { userId: user.id },
@@ -4796,6 +4805,7 @@ export const createEnterpriseService = ({
           totpEnabled: user.totpEnabled === true,
           passkeyEnabled: user.passkeyEnabled === true,
           mfaRequired,
+          defaultTenantId,
         },
         tenants,
       };
@@ -5133,12 +5143,35 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         yield* identifyUser(user);
-        const body: { name?: string; image?: string | null } = payload;
+
+        const body: { name?: string; image?: string | null; defaultTenantId?: string | null } =
+          payload;
+
+        // The select submits an empty string when nothing is chosen; both that
+        // and `null` mean "clear the account default".
+        const defaultTenantId = body.defaultTenantId === "" ? null : body.defaultTenantId;
+
+        // A default tenant is a promise the account can land there, so a
+        // non-member choice is rejected rather than stored and quietly
+        // ignored later. Clearing it is always allowed.
+        if (defaultTenantId) {
+          const membership = yield* db.query.member.findFirst({
+            where: { userId: user.id, organizationId: defaultTenantId },
+          });
+
+          if (!membership)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "You are not a member of that tenant." }),
+            );
+        }
+
         yield* db
           .update(schema.user)
           .set({
             name: body.name ?? user.name,
             image: body.image === undefined ? user.image : body.image,
+            defaultTenantId:
+              body.defaultTenantId === undefined ? user.defaultTenantId : defaultTenantId,
             updatedAt: now(),
           })
           .where(eq(schema.user.id, user.id));

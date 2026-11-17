@@ -3,6 +3,7 @@ import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { readLastTenant } from "~/components/app-shell";
+import { resolveLandingTenant } from "~/lib/tenant";
 import { Page, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Sparkles } from "~/components/ui/icons";
@@ -42,11 +43,19 @@ export default function DashboardRedirectPage() {
   });
 
   createEffect(
-    () => me.data?.tenants,
-    (tenants) => {
+    () => ({
+      tenants: me.data?.tenants,
+      defaultTenantId: me.data?.user.defaultTenantId,
+    }),
+    ({ tenants, defaultTenantId }) => {
       if (tenantId() || !tenants?.length) return;
-      const remembered = readLastTenant();
-      setTenantId(tenants.find((tenant) => tenant.id === remembered)?.id ?? tenants[0]!.id);
+
+      const landing = resolveLandingTenant(tenants, {
+        defaultTenantId,
+        lastTenantId: readLastTenant(),
+      });
+
+      if (landing) setTenantId(landing.id);
     },
   );
 

@@ -4,6 +4,7 @@ import {
   rememberTenantAlias,
   rememberTenants,
   resetTenantDirectory,
+  resolveLandingTenant,
   resolveTenant,
   resolveTenantId,
 } from "./tenant";
@@ -59,5 +60,48 @@ describe("tenant URL resolution", () => {
 
     expect(resolveTenantId("tenant-new")).toBe("tenant-new");
     expect(resolveTenantId(undefined)).toBeUndefined();
+  });
+});
+
+describe("landing tenant precedence", () => {
+  it("prefers the account default over the browser's last tenant", () => {
+    expect(
+      resolveLandingTenant(tenants, {
+        defaultTenantId: globex.id,
+        lastTenantId: acme.id,
+      }),
+    ).toBe(globex);
+  });
+
+  it("accepts a slug for either preference", () => {
+    expect(resolveLandingTenant(tenants, { defaultTenantId: "globex" })).toBe(globex);
+    expect(resolveLandingTenant(tenants, { lastTenantId: "acme" })).toBe(acme);
+  });
+
+  it("falls back to the last tenant when the default is not a membership", () => {
+    expect(
+      resolveLandingTenant(tenants, {
+        defaultTenantId: "tenant-left",
+        lastTenantId: acme.id,
+      }),
+    ).toBe(acme);
+  });
+
+  it("ignores a stale last tenant and lands on the first membership", () => {
+    expect(
+      resolveLandingTenant(tenants, {
+        defaultTenantId: null,
+        lastTenantId: "tenant-left",
+      }),
+    ).toBe(acme);
+  });
+
+  it("preserves the last-used tenant when no default is set", () => {
+    expect(resolveLandingTenant(tenants, { lastTenantId: globex.id })).toBe(globex);
+  });
+
+  it("returns nothing when the account has no memberships", () => {
+    expect(resolveLandingTenant([], { defaultTenantId: acme.id })).toBeUndefined();
+    expect(resolveLandingTenant(undefined, { lastTenantId: acme.id })).toBeUndefined();
   });
 });

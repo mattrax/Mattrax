@@ -1,0 +1,2 @@
+ALTER TABLE `user` ADD `default_tenant_id` varchar(255);--> statement-breakpoint
+ALTER TABLE `user` ADD CONSTRAINT `user_default_tenant_id_organization_id_fkey` FOREIGN KEY (`default_tenant_id`) REFERENCES `organization`(`id`) ON DELETE SET NULL;

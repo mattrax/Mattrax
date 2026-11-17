@@ -122,8 +122,15 @@ describe("migration foreign-key delete rules", () => {
 
     expect(organizationKeys.length).toBeGreaterThan(0);
 
+    // Account preferences outlive the tenant they name: deleting a tenant must
+    // not delete the accounts that pointed at it. The API and shell ignore a
+    // stale choice until it is replaced.
+    const setNullOnTenantDeletion = new Set(["user_default_tenant_id_organization_id_fkey"]);
+
     for (const expected of organizationKeys) {
-      expect(sql.get(expected.name)?.onDelete, expected.name).toBe("CASCADE");
+      expect(sql.get(expected.name)?.onDelete, expected.name).toBe(
+        setNullOnTenantDeletion.has(expected.name) ? "SET NULL" : "CASCADE",
+      );
     }
   });
 });

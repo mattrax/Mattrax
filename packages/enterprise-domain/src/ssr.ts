@@ -98,6 +98,8 @@ export const SsrTokenUser = Schema.Struct({
   totpEnabled: Schema.Boolean,
   passkeyEnabled: Schema.Boolean,
   mfaRequired: Schema.Boolean,
+  /** Account-level landing tenant; mirrors the `me` payload. */
+  defaultTenantId: Schema.optional(NullableString),
 });
 
 export type SsrTokenUser = typeof SsrTokenUser.Type;

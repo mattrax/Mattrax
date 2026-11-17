@@ -50,6 +50,42 @@ export function resolveTenant<T extends TenantKey>(
   return pendingId ? tenants.find((tenant) => tenant.id === pendingId) : undefined;
 }
 
+export type TenantLandingPreference = {
+  /** Account-level choice from `/me`; only honoured while it is a membership. */
+  readonly defaultTenantId?: string | null;
+  /** Browser-scoped last-used tenant. */
+  readonly lastTenantId?: string | null;
+};
+
+/**
+ * Where an unscoped page (`/dashboard`, the shell's tenant picker) should land.
+ *
+ * The account-level default wins over the browser's last-used tenant so a new
+ * device or incognito session still starts where the account chose. Either
+ * value is ignored once the membership disappears, and an account with no
+ * preference falls back to the server's first membership, exactly as before.
+ */
+export function resolveLandingTenant<T extends TenantKey>(
+  tenants: readonly T[] | undefined,
+  preference: TenantLandingPreference = {},
+): T | undefined {
+  if (!tenants || tenants.length === 0) return undefined;
+
+  const { defaultTenantId, lastTenantId } = preference;
+
+  const preferred = defaultTenantId
+    ? tenants.find((tenant) => tenantMatchesKey(tenant, defaultTenantId))
+    : undefined;
+
+  if (preferred) return preferred;
+
+  const remembered = lastTenantId
+    ? tenants.find((tenant) => tenantMatchesKey(tenant, lastTenantId))
+    : undefined;
+
+  return remembered ?? tenants[0];
+}
+
 /**
  * The memberships the current request/session can address. The API client only
  * speaks tenant ids, while the router carries slugs, so every `/api` call

@@ -36,6 +36,7 @@ import {
 } from "~/components/ui/icons";
 import { meQueryOptions } from "~/lib/enterprise";
 import { routes } from "~/lib/routes";
+import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
 import {
   SETTINGS_READ_PERMISSIONS,
@@ -395,11 +396,11 @@ export function AppShell(props: {
     }
 
     const known = me.data?.tenants ?? [];
-    const remembered = lastTenant();
 
-    if (remembered && known.some((tenant) => tenant.id === remembered)) return remembered;
-
-    return known[0]?.id;
+    return resolveLandingTenant(known, {
+      defaultTenantId: me.data?.user.defaultTenantId,
+      lastTenantId: lastTenant(),
+    })?.id;
   });
 
   createEffect(
