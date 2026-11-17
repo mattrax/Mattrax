@@ -22,6 +22,7 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
   StepUpRequired,
+  type DeviceSearchQuery,
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
@@ -3370,6 +3371,119 @@ describe("enterprise policy validation and enrollment", () => {
     await expect(
       runEffect(service.searchDevices(request(headers), first.id, { groupId: "group-second" })),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("searches every column the device table shows", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const seen = new Date("2026-03-04T05:06:07.000Z");
+    const later = new Date("2026-09-20T18:00:00.000Z");
+
+    db.store.device.push(
+      {
+        id: "device-mac",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Ada's MacBook",
+        serial: "C02SERIAL",
+        model: "MacBook Pro",
+        assetTag: "ASSET-42",
+        osVersion: "14.4.1",
+        osEdition: "Sonoma",
+        osBuild: "23E224",
+        notes: "Design laptop",
+        enrolledAt: seen,
+        lastSeenAt: seen,
+      },
+      {
+        id: "device-win",
+        organizationId: tenant.id,
+        proto: "win",
+        status: "unenrolling",
+        name: "Build Server",
+        serial: "WINSERIAL",
+        model: "ThinkPad X1",
+        assetTag: "ASSET-99",
+        osVersion: "10.0.22631",
+        osEdition: "Enterprise",
+        osBuild: "22631.4169",
+        notes: "Lab machine",
+        enrolledAt: later,
+        lastSeenAt: later,
+      },
+    );
+
+    db.store.enterprise_group.push({
+      id: "group-design",
+      organizationId: tenant.id,
+      name: "Design Guild",
+      createdAt: seen,
+      updatedAt: seen,
+    });
+    db.store.group_device.push({ groupId: "group-design", deviceId: "device-mac" });
+    db.store.device_attribute.push({
+      organizationId: tenant.id,
+      deviceId: "device-win",
+      attributeId: "attribute-owner",
+      value: "Platform Team",
+    });
+
+    const ids = async (query: DeviceSearchQuery) => {
+      const found = await runEffect(
+        service.searchDevices(request(headers), tenant.id, { limit: 50, ...query }),
+      );
+
+      return found.devices.map((row: any) => row.id);
+    };
+
+    // Platform: the table shows labels, the column stores short codes.
+    expect(await ids({ q: "windows" })).toEqual(["device-win"]);
+    expect(await ids({ q: "apple" })).toEqual(["device-mac"]);
+    // Status and OS fields.
+    expect(await ids({ q: "unenrolling" })).toEqual(["device-win"]);
+    expect(await ids({ q: "sonoma" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "22631" })).toEqual(["device-win"]);
+    // Group names, not just group ids.
+    expect(await ids({ q: "design guild" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "guild" })).toEqual(["device-mac"]);
+    // Timestamps, as the table renders them and as ISO dates.
+    expect(await ids({ q: "2026-03-04" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "4 mar 2026" })).toEqual(["device-mac"]);
+    expect(await ids({ q: "2026-09-20" })).toEqual(["device-win"]);
+    // Attribute columns remain searchable.
+    expect(await ids({ q: "platform team" })).toEqual(["device-win"]);
+    // Filters still combine with the free-text search.
+    expect(await ids({ q: "build", status: "unenrolling" })).toEqual(["device-win"]);
+    expect(await ids({ q: "design", status: "unenrolling" })).toEqual([]);
+    // No false positives: unknown text and reversed words match nothing.
+    expect(await ids({ q: "zzz" })).toEqual([]);
+    expect(await ids({ q: "guild design" })).toEqual([]);
+    expect(await ids({ q: "device-mac" })).toEqual([]);
+
+    // Sorting and paging still work with the wider search, and the CSV export
+    // reuses the same WHERE clause.
+    const sorted = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        q: "2026",
+        sort: "lastSeenAt",
+        direction: "desc",
+      }),
+    );
+
+    expect(sorted.devices.map((row: any) => row.id)).toEqual(["device-win", "device-mac"]);
+
+    const exported = await runEffect(
+      service.exportDevices(request(headers), tenant.id, { q: "design guild" }),
+    );
+
+    expect(exported.rowCount).toBe(1);
+    expect(exported.csv).toContain("Ada's MacBook");
+    expect(exported.csv).not.toContain("Build Server");
   });
 
   it("signals truncation and neutralises formula cells in CSV exports", async () => {

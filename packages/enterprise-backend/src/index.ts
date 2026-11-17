@@ -576,6 +576,11 @@ export {
 
 export {
   DEVICE_EXPORT_MAX_ROWS,
+  deviceSearchPlatforms,
+  deviceSearchStatuses,
+  deviceTimestampMatchesSearch,
+  deviceTimestampSearchText,
+  isDeviceTimestampSearch,
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,

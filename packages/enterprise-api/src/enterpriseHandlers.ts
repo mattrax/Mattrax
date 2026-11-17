@@ -249,6 +249,10 @@ import {
 } from "@mattrax/entra-id";
 import {
   DEVICE_EXPORT_MAX_ROWS,
+  deviceSearchPlatforms,
+  deviceSearchStatuses,
+  deviceTimestampMatchesSearch,
+  isDeviceTimestampSearch,
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
@@ -3819,31 +3823,111 @@ export const createEnterpriseService = ({
       const conditions: SQL[] = [eq(schema.device.organizationId, organizationId)];
 
       if (filters.q) {
-        const pattern = `%${escapeLike(filters.q)}%`;
+        const query = filters.q;
+        const pattern = `%${escapeLike(query)}%`;
 
-        const attributeMatch = inArray(
-          schema.device.id,
-          db
-            .select({ deviceId: schema.deviceAttribute.deviceId })
-            .from(schema.deviceAttribute)
-            .where(
-              and(
-                eq(schema.deviceAttribute.organizationId, organizationId),
-                like(schema.deviceAttribute.value, pattern),
-              ),
-            ),
-        );
-
-        const condition = or(
+        // Every branch is an explicit id list or a plain column predicate, so
+        // the search stays a single `WHERE` for the caller (and exports reuse
+        // it unchanged).
+        const search: SQL[] = [
           like(schema.device.name, pattern),
           like(schema.device.physicalName, pattern),
           like(schema.device.serial, pattern),
           like(schema.device.model, pattern),
+          like(schema.device.modelIdentifier, pattern),
           like(schema.device.dmIdentifier, pattern),
           like(schema.device.assetTag, pattern),
           like(schema.device.notes, pattern),
-          attributeMatch,
-        );
+          like(schema.device.osVersion, pattern),
+          like(schema.device.osEdition, pattern),
+          like(schema.device.osBuild, pattern),
+        ];
+
+        // Platform and status are stored as short codes but shown as labels, so
+        // `windows` has to find `win` and `enrolled` has to find `enrolled`.
+        const platforms = deviceSearchPlatforms(query);
+        const statuses = deviceSearchStatuses(query);
+
+        if (platforms.length > 0) search.push(inArray(schema.device.proto, platforms));
+
+        if (statuses.length > 0) search.push(inArray(schema.device.status, statuses));
+
+        // Group names: resolve matching groups, then their members. Resolving
+        // up front (rather than joining) keeps this tenant-scoped and leaves
+        // one membership query per search.
+        const matchingGroups = yield* db
+          .select({ id: schema.enterpriseGroup.id })
+          .from(schema.enterpriseGroup)
+          .where(
+            and(
+              eq(schema.enterpriseGroup.organizationId, organizationId),
+              like(schema.enterpriseGroup.name, pattern),
+            ),
+          );
+
+        if (matchingGroups.length > 0) {
+          const members = yield* db
+            .select({ deviceId: schema.groupDevice.deviceId })
+            .from(schema.groupDevice)
+            .where(
+              inArray(
+                schema.groupDevice.groupId,
+                matchingGroups.map((group: { id: string }) => group.id),
+              ),
+            );
+
+          if (members.length > 0)
+            search.push(
+              inArray(
+                schema.device.id,
+                members.map((member: { deviceId: string }) => member.deviceId),
+              ),
+            );
+        }
+
+        // Timestamps are formatted in application code (formatting a datetime
+        // in SQL is dialect-specific) and only inspected when the query looks
+        // like a date, so ordinary searches do not scan the column.
+        if (isDeviceTimestampSearch(query)) {
+          const timestamps = yield* db
+            .select({
+              id: schema.device.id,
+              lastSeenAt: schema.device.lastSeenAt,
+              enrolledAt: schema.device.enrolledAt,
+            })
+            .from(schema.device)
+            .where(eq(schema.device.organizationId, organizationId));
+
+          const matching = timestamps
+            .filter((row: { lastSeenAt: Date; enrolledAt: Date }) =>
+              deviceTimestampMatchesSearch(query, [row.lastSeenAt, row.enrolledAt]),
+            )
+            .map((row: { id: string }) => row.id);
+
+          if (matching.length > 0) search.push(inArray(schema.device.id, matching));
+        }
+
+        // Attribute values are visible as extra table columns; resolve the
+        // matching devices first so the branch is an explicit id list too.
+        const attributeMatches = yield* db
+          .select({ deviceId: schema.deviceAttribute.deviceId })
+          .from(schema.deviceAttribute)
+          .where(
+            and(
+              eq(schema.deviceAttribute.organizationId, organizationId),
+              like(schema.deviceAttribute.value, pattern),
+            ),
+          );
+
+        if (attributeMatches.length > 0)
+          search.push(
+            inArray(
+              schema.device.id,
+              attributeMatches.map((row: { deviceId: string }) => row.deviceId),
+            ),
+          );
+
+        const condition = or(...search);
 
         if (condition) conditions.push(condition);
       }

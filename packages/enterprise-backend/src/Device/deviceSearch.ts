@@ -175,3 +175,117 @@ export const platformLabel = (proto: DeviceProtocolValue) =>
     Match.when("win", () => "Windows"),
     Match.orElse(() => "Android"),
   );
+
+const DEVICE_PROTOCOLS: ReadonlyArray<DeviceProtocolValue> = ["apple", "win", "android"];
+
+/**
+ * Statuses the table renders. Kept in the same order as the `device.status`
+ * column enum in the schema.
+ */
+const DEVICE_SEARCH_STATUSES: ReadonlyArray<DeviceStatusValue> = [
+  "enrolling",
+  "enrolled",
+  "unenrolling",
+  "unenrolled",
+];
+
+/**
+ * Protos whose human-readable platform label matches the query text.
+ *
+ * The column stores `apple`/`win`/`android`, but the device table shows
+ * `Apple`/`Windows`/`Android`, so a raw `LIKE` on the column would never find
+ * "windows" (or would find "win" only by accident). Matching the label keeps
+ * search consistent with what the table displays.
+ */
+export const deviceSearchPlatforms = (text: string): DeviceProtocolValue[] => {
+  const needle = text.trim().toLowerCase();
+
+  if (!needle) return [];
+
+  return DEVICE_PROTOCOLS.filter((proto) => platformLabel(proto).toLowerCase().includes(needle));
+};
+
+/** Statuses whose stored value contains the query text, mirroring the column. */
+export const deviceSearchStatuses = (text: string): DeviceStatusValue[] => {
+  const needle = text.trim().toLowerCase();
+
+  if (!needle) return [];
+
+  return DEVICE_SEARCH_STATUSES.filter((status) => status.includes(needle));
+};
+
+const MONTH_WORDS = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+] as const;
+
+const MONTH_ABBREVIATIONS = MONTH_WORDS.map((month) => month.slice(0, 3));
+
+/** `10 nov 2026`, `nov 2026`, `november`, or a bare numeric date/time fragment. */
+const TIMESTAMP_MONTH_QUERY = new RegExp(
+  `^(?:\\d{1,2}\\s+)?(?:${[...MONTH_ABBREVIATIONS, ...MONTH_WORDS].join("|")})(?:\\s+\\d{2,4})?$`,
+  "i",
+);
+
+const TIMESTAMP_NUMERIC_QUERY =
+  /^(?:\d{1,4}|\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?|\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?|\d{1,2}:\d{2}(?::\d{2})?)$/;
+
+/**
+ * Whether a free-text query could be looking for a timestamp. Only then does
+ * the search read device timestamps, so ordinary name/serial searches stay a
+ * single index-friendly query.
+ */
+export const isDeviceTimestampSearch = (text: string): boolean => {
+  const value = text.trim();
+
+  if (!value) return false;
+
+  return TIMESTAMP_MONTH_QUERY.test(value) || TIMESTAMP_NUMERIC_QUERY.test(value);
+};
+
+/**
+ * The text a timestamp contributes to search. `LIKE` over a `datetime` column
+ * would be database-dialect specific, so timestamps are matched in application
+ * code and the device ids are passed to SQL. Dates are shown in UTC; the ISO
+ * form, `YYYY-MM-DD`, `HH:mm` and a `4 Mar 2026` form are all searchable.
+ */
+export const deviceTimestampSearchText = (value: Date | string): string => {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+  const iso = date.toISOString();
+  const day = date.getUTCDate();
+  const month = MONTH_WORDS[date.getUTCMonth()]!;
+
+  return [
+    iso,
+    iso.slice(0, 10),
+    `${iso.slice(0, 10)} ${iso.slice(11, 16)}`,
+    `${day} ${MONTH_ABBREVIATIONS[date.getUTCMonth()]} ${date.getUTCFullYear()}`,
+    `${day} ${month} ${date.getUTCFullYear()}`,
+  ].join(" ");
+};
+
+/** Whether any provided timestamp text contains the query (case-insensitive). */
+export const deviceTimestampMatchesSearch = (
+  text: string,
+  values: ReadonlyArray<Date | string | null | undefined>,
+): boolean => {
+  const needle = text.trim().toLowerCase();
+
+  if (!needle) return false;
+
+  return values.some(
+    (value) => value != null && deviceTimestampSearchText(value).includes(needle),
+  );
+};

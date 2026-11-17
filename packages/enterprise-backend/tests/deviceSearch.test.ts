@@ -5,6 +5,11 @@ import {
   DEVICE_SEARCH_DEFAULT_LIMIT,
   DEVICE_SEARCH_MAX_LIMIT,
   csvEscape,
+  deviceSearchPlatforms,
+  deviceSearchStatuses,
+  deviceTimestampMatchesSearch,
+  deviceTimestampSearchText,
+  isDeviceTimestampSearch,
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
@@ -165,6 +170,66 @@ describe("csv", () => {
     expect(platformLabel("apple")).toBe("Apple");
     expect(platformLabel("win")).toBe("Windows");
     expect(platformLabel("android")).toBe("Android");
+  });
+});
+
+describe("device searchable columns", () => {
+  it("matches platforms by the label the table shows", () => {
+    expect(deviceSearchPlatforms("windows")).toEqual(["win"]);
+    expect(deviceSearchPlatforms("WIN")).toEqual(["win"]);
+    expect(deviceSearchPlatforms("apple")).toEqual(["apple"]);
+    expect(deviceSearchPlatforms("android")).toEqual(["android"]);
+    // `win` is a prefix of the Windows label, so it finds the same devices.
+    expect(deviceSearchPlatforms("win")).toEqual(["win"]);
+    expect(deviceSearchPlatforms("linux")).toEqual([]);
+  });
+
+  it("matches statuses by their stored value", () => {
+    expect(deviceSearchStatuses("enrolling")).toEqual(["enrolling", "unenrolling"]);
+    expect(deviceSearchStatuses("unenrolled")).toEqual(["unenrolled"]);
+    // The table shows the raw status, so a substring behaves like the client.
+    expect(deviceSearchStatuses("enrolled")).toEqual(["enrolled", "unenrolled"]);
+    expect(deviceSearchStatuses("retired")).toEqual([]);
+  });
+
+  it("recognises timestamp-shaped queries", () => {
+    const timestampQueries = [
+      "2026",
+      "2026-11",
+      "2026-11-10",
+      "10/11/2026",
+      "12:30",
+      "Nov",
+      "10 Nov 2026",
+    ];
+
+    for (const value of timestampQueries) expect(isDeviceTimestampSearch(value)).toBe(true);
+
+    for (const value of ["MacBook", "MacBook 14", "SERIAL-1", "", "C02X"])
+      expect(isDeviceTimestampSearch(value)).toBe(false);
+  });
+
+  it("formats timestamps into searchable text", () => {
+    const text = deviceTimestampSearchText(new Date("2026-03-04T05:06:07.000Z"));
+
+    expect(text).toContain("2026-03-04T05:06:07.000Z");
+    expect(text).toContain("2026-03-04");
+    expect(text).toContain("05:06");
+    expect(text).toContain("4 mar 2026");
+    expect(text).toContain("4 march 2026");
+    expect(deviceTimestampSearchText("not a date")).toBe("");
+  });
+
+  it("matches a timestamp representation without false positives", () => {
+    const lastSeen = new Date("2026-03-04T05:06:07.000Z");
+    const values = [lastSeen, new Date("2026-09-20T18:00:00.000Z")];
+
+    expect(deviceTimestampMatchesSearch("2026-03-04", values)).toBe(true);
+    expect(deviceTimestampMatchesSearch("4 mar 2026", values)).toBe(true);
+    expect(deviceTimestampMatchesSearch("05:06", values)).toBe(true);
+    expect(deviceTimestampMatchesSearch("2026-03-05", values)).toBe(false);
+    expect(deviceTimestampMatchesSearch("4 apr 2026", values)).toBe(false);
+    expect(deviceTimestampMatchesSearch("2026", [])).toBe(false);
   });
 });
 
