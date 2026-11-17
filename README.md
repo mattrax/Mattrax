@@ -70,12 +70,13 @@ piece can be tested in isolation:
 
 | Layer               | Packages / apps                                   |
 | ------------------- | ------------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist` |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` |
 | Management contract | `management-backend`, `management-backend-http`   |
-| Hosted management   | `mdm-apple`, `mdm-core`, `apps/cloud`     |
-| Product contracts   | `enterprise-domain`                               |
-| Product backends    | `enterprise-backend`                              |
+| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`            |
+| Product contracts   | `enterprise-domain` (entity modules + HTTP)       |
+| Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-billing`, `enterprise-identity`, `entra-id`, `apple-business-manager` |
 | Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)    |
+| Hosted services     | `cloud-services`                                  |
 | Surfaces            | `apps/web` (dashboard, landing, docs)             |
 
 ## Cloud

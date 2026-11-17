@@ -5,16 +5,38 @@ boundary keeps protocol handling independent from product state.
 
 ## Layers
 
-| Layer               | Packages / apps                                                 | Responsibility                                 |
-| ------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` | Wire protocols and payloads                    |
-| Management contract | `management-backend`, `management-backend-http`                 | Interface and HMAC webhook binding             |
-| Hosted management   | `mdm-apple`, `mdm-core`, `mdm-windows`, `apps/cloud`                   | Enterprise implementation                      |
-| Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
-| Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
-| Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Hosted services     | `cloud-services`                                                | Mail, SSO, analytics, rate limits, readiness   |
-| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                     | Dashboard, API and push relay                  |
+| Layer               | Packages / apps                                                                 | Responsibility                                 |
+| ------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`                 | Wire protocols and payloads                    |
+| Management contract | `management-backend`, `management-backend-http`                                 | Interface and HMAC webhook binding             |
+| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`                                          | Shared policy/command engine and platform backends |
+| Product contracts   | `enterprise-domain`                                                             | Effect entity modules and HTTP contracts       |
+| Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-identity`, `enterprise-tokens`, `enterprise-billing`, `entra-id`, `apple-business-manager`, `email` | API composition, domain services and integrations |
+| Data                | `enterprise-core`                                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
+| Hosted services     | `cloud-services`                                                                | Mail, SSO, analytics, rate limits, readiness   |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                     | Dashboard, API and push relay                  |
+
+## Module conventions
+
+The domain and service packages follow Cap's Effect layout:
+
+- `enterprise-domain` keeps one PascalCase module per entity (`Device.ts`,
+  `Tenant.ts`, `Application.ts`, …). Each module owns its IDs, schemas, models,
+  errors, RPC/HTTP groups and pure helpers. `enterprise-domain/src/Http/` owns
+  the HTTP groups and shared parameter declarations; `enterprise.ts` is only a
+  compatibility barrel.
+- Service packages expose implementations, not contracts. An integration gets
+  its own package when it has a distinct external dependency or deployment
+  concern: `entra-id`, `apple-business-manager`, `enterprise-billing`,
+  `enterprise-tokens`, `email`.
+- `enterprise-api` is the HTTP composition root. It binds the domain contract
+  to `enterprise-backend` services and the platform MDM backends; it does not
+  own policy, storage or protocol logic.
+- `enterprise-backend` groups implementations by entity (`Account/`, `Tenant/`,
+  `Device/`, `Policy/`, `Scep/`, …) and exports the composition helpers the API
+  package needs.
+- `mdm-core` owns the shared policy, command, SCEP and webhook engine;
+  `mdm-apple` and `mdm-windows` own only their platform-specific backend.
 
 ## Cloud topology
 

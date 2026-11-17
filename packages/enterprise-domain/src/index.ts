@@ -69,3 +69,43 @@ export {
 } from "./applicationInstallers.js";
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
+
+// Entity modules, grouped the way Cap's web-domain exposes them. Consumers can
+// use either the flat named exports above or the namespace form.
+export * as Account from "./Account.ts";
+
+export * as Android from "./Android.ts";
+
+export * as Apple from "./Apple.ts";
+
+export * as Application from "./Application.ts";
+
+export * as Audit from "./Audit.ts";
+
+export * as Autopilot from "./Autopilot.ts";
+
+export * as Backup from "./Backup.ts";
+
+export * as Billing from "./Billing.ts";
+
+export * as Common from "./Common.ts";
+
+export * as Credential from "./Credential.ts";
+
+export * as Device from "./Device.ts";
+
+export * as Directory from "./Directory.ts";
+
+export * as Enrollment from "./Enrollment.ts";
+
+export * as Group from "./Group.ts";
+
+export * as Http from "./Http/index.ts";
+
+export * as Policy from "./Policy.ts";
+
+export * as Scim from "./Scim.ts";
+
+export * as Search from "./Search.ts";
+
+export * as Tenant from "./Tenant.ts";
