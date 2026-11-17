@@ -6,7 +6,16 @@ import {
   type GoogleError,
 } from "@mattrax/dm-android";
 import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
-import { env as apiEnv } from "./env.js";
+
+/** Deployment bindings needed to construct Android Management delivery. */
+export type AndroidEnvironment = {
+  readonly ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON?: string;
+  readonly ANDROID_MANAGEMENT_PROJECT_ID?: string;
+  readonly ANDROID_MANAGEMENT_PUBSUB_TOPIC?: string;
+  readonly ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION?: string;
+  readonly ANDROID_MANAGEMENT_PUBSUB_AUDIENCE?: string;
+  readonly ANDROID_MANAGEMENT_PUBSUB_JWKS_URI?: string;
+};
 
 const ServiceAccountJson = Schema.Struct({
   client_email: Schema.String,
@@ -25,8 +34,11 @@ const ServiceAccountJson = Schema.Struct({
  */
 let cachedAndroidConfig: AndroidDeliveryConfig | null | undefined;
 
-export const androidDeliveryConfig = (): AndroidDeliveryConfig | undefined => {
+export const androidDeliveryConfig = (
+  apiEnv: AndroidEnvironment,
+): AndroidDeliveryConfig | undefined => {
   if (cachedAndroidConfig !== undefined) return cachedAndroidConfig ?? undefined;
+
   const raw = apiEnv.ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON;
 
   if (!raw?.trim()) {

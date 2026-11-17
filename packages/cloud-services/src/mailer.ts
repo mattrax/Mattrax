@@ -40,6 +40,22 @@ export type MailerSelection = {
   readonly detail: string;
 };
 
+/**
+ * The `send_email` binding surface used by the Cloudflare transport. Keeping
+ * this structural avoids depending on the generated Worker globals from a
+ * shared package.
+ */
+export interface SendEmail {
+  send(message: {
+    readonly to: string | ReadonlyArray<string>;
+    readonly from: EmailAddress | string;
+    readonly replyTo?: EmailAddress | string;
+    readonly subject: string;
+    readonly text?: string;
+    readonly html?: string;
+  }): Promise<{ readonly messageId: string }>;
+}
+
 /** The subset of the Worker environment the mailer reads. */
 export type MailerEnv = {
   readonly ORIGIN: string;

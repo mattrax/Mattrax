@@ -72,16 +72,15 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
-import { DAILY_CRON, HOURLY_CRON } from "./crons.js";
-import { androidDeliveryConfig, androidManagementLayer } from "./android.js";
-import { ssoRoutes } from "./sso.js";
-import { AzureOidcLive } from "@mattrax/azure-oidc";
-import { AzureGraphFetchLive } from "@mattrax/azure-graph";
-import { AzureGraph } from "@mattrax/azure-graph";
-import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
-import { FetchHttpClient } from "effect/http";
-import { isDevMailboxEnabled, listDevEmails, timingSafeStringEqual } from "./devMailbox.js";
 import {
+  DAILY_CRON,
+  HOURLY_CRON,
+  androidDeliveryConfig,
+  androidManagementLayer,
+  ssoRoutes,
+  isDevMailboxEnabled,
+  listDevEmails,
+  timingSafeStringEqual,
   errorResponse,
   logRequest,
   readErrorTag,
@@ -90,22 +89,30 @@ import {
   tenantIdFromPath,
   withDefaultNoStore,
   withRequestId,
-} from "./observability.js";
-import { createRateLimiter, rateLimitBindingsFromEnv, rateLimitResponse } from "./rateLimit.js";
-import {
+  createRateLimiter,
+  rateLimitBindingsFromEnv,
+  rateLimitResponse,
   authEventForRequest,
   authOutcomeFromResponse,
   createRequestAnalytics,
   shouldReportError,
   shouldTrackApiRequest,
+  checkReadiness,
+  mailerReadiness,
+  selectMailer,
+  createProbeCache,
+  clearsSsrShell,
+  withClearedSsrShell,
+  withSessionPresence,
+  credentialExpiryEmail,
   type AnalyticsProperties,
-} from "./analytics.js";
-import { checkReadiness } from "./readiness.js";
-import { mailerReadiness, selectMailer } from "./mailer.js";
-import { createProbeCache } from "./probeCache.js";
-import { clearsSsrShell, withClearedSsrShell } from "./sessionShell.js";
-import { withSessionPresence } from "./sessionPresence.js";
-import { credentialExpiryEmail } from "./credentialEmail.js";
+  type SendEmail,
+} from "@mattrax/cloud-services";
+import { AzureOidcLive } from "@mattrax/azure-oidc";
+import { AzureGraphFetchLive } from "@mattrax/azure-graph";
+import { AzureGraph } from "@mattrax/azure-graph";
+import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
+import { FetchHttpClient } from "effect/http";
 
 const rateLimiter = createRateLimiter({
   // Node deployments behind a reverse proxy must opt in before their
@@ -403,7 +410,8 @@ if (apiEnv.MATTRAX_ONBOARDING_SINCE && !onboardingSince)
 const resolveMailer = (env: Env) =>
   selectMailer({
     ORIGIN: env.ORIGIN,
-    EMAIL: env.EMAIL,
+    // SAFETY: the Worker binding implements the structured `send` overload used by the adapter.
+    EMAIL: env.EMAIL as SendEmail | undefined,
     MATTRAX_EMAIL_DISABLED: apiEnv.MATTRAX_EMAIL_DISABLED,
     MAIL_TRANSPORT: apiEnv.MAIL_TRANSPORT,
     MAIL_FROM: apiEnv.MAIL_FROM,
@@ -467,7 +475,7 @@ const entraSyncJob = (env: Env) =>
           ),
     );
 
-    const androidConfig = androidDeliveryConfig();
+    const androidConfig = androidDeliveryConfig(apiEnv);
 
     const applePush = makeApplePush({
       db,
@@ -533,7 +541,7 @@ const reportLicenseUsage = (db: EnterpriseDb, env: Env) =>
   });
 
 const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
-  const androidConfig = androidDeliveryConfig();
+  const androidConfig = androidDeliveryConfig(apiEnv);
 
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,

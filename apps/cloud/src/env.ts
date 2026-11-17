@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { env as cfEnv } from "cloudflare:workers";
-import type { RateLimitBindingLike } from "./rateLimit.js";
+import type { RateLimitBindingLike } from "@mattrax/cloud-services";
 
 declare global {
   interface Env {

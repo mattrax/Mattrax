@@ -13,6 +13,7 @@ boundary keeps protocol handling independent from product state.
 | Product contracts   | `enterprise-domain`                                             | Effect HTTP contracts and schemas              |
 | Product backends    | `enterprise-backend`                                            | Handlers, services, integrations               |
 | Data                | `enterprise-core`                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
+| Hosted services     | `cloud-services`                                                | Mail, SSO, analytics, rate limits, readiness   |
 | Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                     | Dashboard, API and push relay                  |
 
 ## Cloud topology
@@ -55,6 +56,10 @@ The container uses the same application code with Node entry points instead of W
 - `apps/cloud` owns the shared runtime (`app.ts`: routes, auth, MDM handlers and
   scheduled jobs) and the Cloudflare entry with the Workers crypto layer and
   bindings.
+- `packages/cloud-services` owns the hosted-service building blocks used by that
+  runtime — transport selection, SSO, analytics, rate limiting, request
+  observability, readiness probes and session cookie treatment. The Worker and
+  the Docker host share them; neither app reaches into the other for them.
 - `apps/docker` owns the self-hosted Node entry, its Vite build and the
   `Dockerfile`; it supplies scrypt, the filesystem R2 adapter, SMTP and
   process-environment bindings, then hosts the dashboard in the same process.

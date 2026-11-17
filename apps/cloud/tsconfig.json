@@ -1,13 +1,18 @@
 {
   "extends": "../../packages/config/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "module": "esnext",
     "moduleResolution": "bundler",
     "erasableSyntaxOnly": true,
     "outDir": "./dist"
   },
   "references": [
+    {
+      "path": "../../packages/cloud-services"
+    },
     {
       "path": "../../packages/enterprise-domain"
     },
@@ -27,13 +32,7 @@
       "path": "../../packages/dm-apple"
     },
     {
-      "path": "../../packages/dm-android"
-    },
-    {
       "path": "../../packages/dm-windows"
-    },
-    {
-      "path": "../../packages/management-backend"
     },
     {
       "path": "../../packages/management-backend-enterprise"
@@ -42,15 +41,18 @@
       "path": "../../packages/management-backend-http"
     },
     {
-      "path": "../../packages/plist"
-    },
-    {
       "path": "../../packages/scep"
     },
     {
       "path": "../../packages/crypto"
     }
   ],
-  "include": ["src", "package.json", ".cloudflare/types"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src",
+    "package.json",
+    ".cloudflare/types"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
