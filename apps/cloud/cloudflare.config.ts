@@ -122,9 +122,11 @@ export const apiWorker = {
      * `isDevMailboxEnabled` still requires a loopback origin, or an explicit
      * ALLOW_REMOTE opt-in with the shared secret.
      */
-    ...(process.env.DEV_MAILBOX
-      ? { DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX) }
-      : {}),
+    ...(process.env.MATTRAX_PRODUCTION === "true"
+      ? {}
+      : {
+          DEV_MAILBOX: bindings.text(process.env.DEV_MAILBOX ?? "true"),
+        }),
     ...(process.env.DEV_MAILBOX_ALLOW_REMOTE
       ? { DEV_MAILBOX_ALLOW_REMOTE: bindings.text(process.env.DEV_MAILBOX_ALLOW_REMOTE) }
       : {}),

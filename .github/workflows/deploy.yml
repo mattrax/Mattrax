@@ -142,6 +142,7 @@ jobs:
         env:
           ORIGIN: ${{ vars.PRODUCTION_ORIGIN || 'https://e.mattrax.app' }}
           STRIPE_LICENSE_PRICE_ID: ${{ vars.STRIPE_LICENSE_PRICE_ID }}
+          MATTRAX_PRODUCTION: "true"
         run: pnpm cloud deploy:prod
 
       - name: Deploy dashboard Worker
