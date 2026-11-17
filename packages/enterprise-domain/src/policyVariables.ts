@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { ATTRIBUTE_KEY_PATTERN } from "./attributes.ts";
+import { ATTRIBUTE_KEY_PATTERN } from "./attributes.js";
 
 /**
  * Policy variables.

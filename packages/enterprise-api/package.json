@@ -32,6 +32,8 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "asn1js": "catalog:",
+    "pkijs": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

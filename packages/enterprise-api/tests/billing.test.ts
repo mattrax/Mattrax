@@ -5,7 +5,7 @@ import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { EnterpriseStripeError, EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { reconcileSubscriptionQuantity } from "@mattrax/enterprise-billing";
-import { runMaintenance } from "../src/maintenance.js";
+import { runMaintenance } from "@mattrax/enterprise-backend";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";

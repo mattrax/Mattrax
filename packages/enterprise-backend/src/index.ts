@@ -216,6 +216,7 @@ export {
   listScripts,
   patchScriptAssignments,
   recordScriptAgentResult,
+  queueScriptRun,
   runScript,
   scriptAgentSync,
   scriptAssignedDeviceIds,
@@ -266,7 +267,9 @@ export { makeSsoStrategy } from "./sso.js";
 export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
+  signSsrRevision,
   signSsrToken,
+  verifySsrRevision,
   verifySsrToken,
   SSR_TOKEN_COOKIE,
   SSR_TOKEN_TTL_MILLIS,
@@ -602,10 +605,7 @@ export {
 
 export { applePushService, summarizeApplePushHealth } from "./push.js";
 
-export {
-  cookieValue,
-  signSsrRevision,
-} from "./ssrToken.js";
+export { cookieValue } from "./ssrToken.js";
 
 export { restoreTenantFromBackup, TenantRestoreError } from "./tenantRestore.js";
 
@@ -645,3 +645,5 @@ export type {
   EnterprisePolicy,
   EnterpriseSchema,
 } from "./schema.js";
+
+export { createEnterpriseSchema } from "./schema.js";

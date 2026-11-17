@@ -709,6 +709,8 @@ snapshots:
 			},
 			"devDependencies": {
 				"@types/node": "catalog:",
+				"asn1js": "catalog:",
+				"pkijs": "catalog:",
 				"typescript": "catalog:",
 				"vitest": "catalog:",
 			},
@@ -748,7 +750,6 @@ snapshots:
 				"pkijs": "catalog:",
 			},
 			"devDependencies": {
-				"@mattrax/enterprise-api": "workspace:*",
 				"@types/node": "catalog:",
 			},
 		},

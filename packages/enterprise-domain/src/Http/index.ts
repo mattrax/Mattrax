@@ -1,0 +1,56 @@
+import { Effect } from "effect";
+import { HttpApi } from "effect/http-api";
+import { HttpApiClient } from "effect/http-api";
+import type { HttpClient } from "effect/http";
+
+import { enterpriseAccountApi } from "./AccountApi.js";
+import { enterpriseAdeApi } from "./AdeApi.js";
+import { enterpriseAttributeApi } from "./AttributeApi.js";
+import { enterpriseApi } from "./EnterpriseApi.js";
+
+export * from "./AccountApi.js";
+
+export * from "./AdeApi.js";
+
+export * from "./AttributeApi.js";
+
+export * from "./EnterpriseApi.js";
+
+export * from "./Params.js";
+
+export * from "./ScriptApi.js";
+
+export const enterpriseHttpApi: HttpApi.HttpApi<
+  "MattraxEnterprise",
+  | typeof enterpriseAccountApi
+  | typeof enterpriseApi
+  | typeof enterpriseAdeApi
+  | typeof enterpriseAttributeApi
+> = HttpApi.make("MattraxEnterprise")
+  .add(enterpriseAccountApi)
+  .add(enterpriseApi)
+  .add(enterpriseAdeApi)
+  .add(enterpriseAttributeApi);
+
+/** The flattened client groups the dashboard can call. */
+export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
+  HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseAdeApi> &
+  HttpApiClient.Client<typeof enterpriseAttributeApi>;
+
+export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
+
+/**
+ * Build the browser-safe enterprise client. Declared here so the composed API
+ * type never has to be serialised into a `.d.ts`.
+ */
+export const makeEnterpriseClient = (
+  options?: EnterpriseClientOptions,
+): Effect.Effect<EnterpriseClient, never, HttpClient.HttpClient> =>
+  // SAFETY: `HttpApiClient.make` builds exactly the groups composed above; the
+  // assertion names that intersection and removes the generated union.
+  HttpApiClient.make(enterpriseHttpApi, options) as Effect.Effect<
+    EnterpriseClient,
+    never,
+    HttpClient.HttpClient
+  >;

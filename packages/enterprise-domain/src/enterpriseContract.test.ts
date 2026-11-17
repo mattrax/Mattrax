@@ -9,7 +9,7 @@ import {
   enterpriseApi,
   enterpriseAttributeApi,
 } from "./enterprise.ts";
-import { Registration } from "./auth.ts";
+import { Registration } from "./auth.js";
 
 const endpoints = {
   ...enterpriseAccountApi.endpoints,

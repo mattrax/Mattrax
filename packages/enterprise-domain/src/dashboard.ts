@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { DeviceQuery } from "./deviceQuery.ts";
+import { DeviceQuery } from "./deviceQuery.js";
 
 /** Widgets supported by the dashboard grid. */
 export const DashboardWidgetType = Schema.Literals(["table", "pie", "stat", "markdown"]);

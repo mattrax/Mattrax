@@ -14,7 +14,7 @@ export {
 
 export * from "./enterprise.ts";
 
-export * from "./errors.ts";
+export * from "./Errors.ts";
 
 export * from "./rbac.ts";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_ROLE_PERMISSIONS } from "./rbac.ts";
+import { BUILT_IN_ROLE_PERMISSIONS } from "./rbac.js";
 import { ssrTenantPermissions, type SsrTokenTenant } from "./ssr.ts";
 
 const tenant = (overrides: Partial<SsrTokenTenant> = {}): SsrTokenTenant => ({

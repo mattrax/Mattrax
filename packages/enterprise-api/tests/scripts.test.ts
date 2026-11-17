@@ -23,7 +23,7 @@ import {
   scriptAssignedDeviceIds,
   sweepScriptExecutions,
   updateScript,
-} from "../src/scripts.js";
+} from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";

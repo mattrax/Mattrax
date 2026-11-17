@@ -40,7 +40,6 @@
     "pkijs": "catalog:"
   },
   "devDependencies": {
-    "@mattrax/enterprise-api": "workspace:*",
     "@types/node": "catalog:"
   }
 }

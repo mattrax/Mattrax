@@ -1,4 +1,324 @@
+import { HttpApiSchema } from "effect/http-api";
+import { STEP_UP_ACTIONS } from "./stepUp.js";
 import { Schema } from "effect";
+import { StepUpRequired } from "./stepUp.js";
+import { StepUpUnavailable } from "./stepUp.js";
+
+export const NullableString = Schema.NullOr(Schema.String);
+
+export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
+
+export class EnterpriseUnauthorized extends Schema.TaggedError<EnterpriseUnauthorized>()(
+  "EnterpriseUnauthorized",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseBadRequest extends Schema.TaggedError<EnterpriseBadRequest>()(
+  "EnterpriseBadRequest",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>()(
+  "EnterpriseForbidden",
+  {
+    message: Schema.String,
+  },
+) {}
+
+/** A tenant member's RBAC role does not grant the endpoint's permission. */
+export class EnterprisePermissionDenied extends Schema.TaggedError<EnterprisePermissionDenied>()(
+  "EnterprisePermissionDenied",
+  {
+    message: Schema.String,
+    permission: Schema.String,
+    roleName: Schema.String,
+    roleKind: Schema.Literals(["built-in", "custom"]),
+  },
+) {}
+
+export class EnterpriseConflict extends Schema.TaggedError<EnterpriseConflict>()(
+  "EnterpriseConflict",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseNotFound extends Schema.TaggedError<EnterpriseNotFound>()(
+  "EnterpriseNotFound",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseTenantHasMembers extends Schema.TaggedError<EnterpriseTenantHasMembers>()(
+  "EnterpriseTenantHasMembers",
+  {
+    message: Schema.String,
+  },
+) {}
+
+/**
+ * A teardown step could not finish, so the tenant was left in place for a
+ * retry rather than half-deleted. `step` names the reclamation that failed.
+ */
+export class EnterpriseTenantTeardownFailed extends Schema.TaggedError<EnterpriseTenantTeardownFailed>()(
+  "EnterpriseTenantTeardownFailed",
+  {
+    message: Schema.String,
+    step: Schema.String,
+  },
+) {}
+
+export class EnterpriseLastTenantUser extends Schema.TaggedError<EnterpriseLastTenantUser>()(
+  "EnterpriseLastTenantUser",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseDbError extends Schema.TaggedError<EnterpriseDbError>()(
+  "EnterpriseDbError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseStripeError extends Schema.TaggedError<EnterpriseStripeError>()(
+  "EnterpriseStripeError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseR2FileNotFound extends Schema.TaggedError<EnterpriseR2FileNotFound>()(
+  "EnterpriseR2FileNotFound",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export class EnterpriseR2InternalError extends Schema.TaggedError<EnterpriseR2InternalError>()(
+  "EnterpriseR2InternalError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+/** The deployment has no Google Android Management credentials. */
+export class EnterpriseNotConfigured extends Schema.TaggedError<EnterpriseNotConfigured>()(
+  "EnterpriseNotConfigured",
+  {
+    message: Schema.String,
+  },
+) {}
+
+/** Google rejected an Android Management request. */
+export class EnterpriseUpstreamError extends Schema.TaggedError<EnterpriseUpstreamError>()(
+  "EnterpriseUpstreamError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+/**
+ * A failure that was not individually modelled by an endpoint. The backend
+ * logs the original cause; clients get a stable, serializable fallback instead
+ * of an empty 500 response.
+ */
+export class EnterpriseInternal extends Schema.TaggedError<EnterpriseInternal>()(
+  "EnterpriseInternal",
+  {
+    message: Schema.String,
+  },
+) {}
+
+export const EnterpriseAuthRequiredErrors = [
+  EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
+  // Every authenticated endpoint maps unexpected failures to this typed 500.
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
+
+export const EnterpriseTenantReadErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+  // Tenant policy can deny reads, for example when MFA enrollment is required.
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterprisePermissionDenied.pipe(HttpApiSchema.status(403)),
+] as const;
+
+/** Read endpoints that validate user input (filters, cursors) can return 400. */
+export const EnterpriseTenantValidatedReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+
+export const EnterpriseTenantWriteErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+
+export const EnterpriseTenantDeleteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseTenantHasMembers.pipe(HttpApiSchema.status(409)),
+  // A failed reclamation keeps the tenant so the operator can retry.
+  EnterpriseTenantTeardownFailed.pipe(HttpApiSchema.status(409)),
+] as const;
+
+export const EnterpriseBackupWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseTenantUserRemoveErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseLastTenantUser.pipe(HttpApiSchema.status(409)),
+] as const;
+
+export const EnterprisePolicyApplicationUploadErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterprisePolicyApplicationDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseBillingPortalErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+/** Billing reads call Stripe too, so an outage is a typed 502, not a 500. */
+export const EnterpriseBillingReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseTenantExportErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+] as const;
+
+export const EnterpriseTenantBackupDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseTenantImportErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+] as const;
+
+export const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
+
+export const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
+
+export const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
+
+export const EnterpriseAndroidReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseAndroidErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseAppleReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseAppleWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseNoDomainErrors = [
+  ...EnterpriseDbErrors,
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseAccountErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+] as const;
+
+/** Sensitive account/tenant actions also require a recent step-up. */
+export const EnterpriseStepUpRequired = [StepUpRequired.pipe(HttpApiSchema.status(403))] as const;
+
+export const EnterpriseAutopilotReadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseAutopilotWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
+
+export const EnterpriseStepUpErrors = [...EnterpriseAccountErrors, ...EnterpriseStepUpRequired] as const;
+
+export const EnterpriseStepUpFactorErrors = [
+  ...EnterpriseStepUpErrors,
+  StepUpUnavailable.pipe(HttpApiSchema.status(400)),
+] as const;
+
+export const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
+
+export const EnterprisePublicEmailErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  // A deployment with no mail transport, or a broken one, fails here rather
+  // than surfacing as an undeclared handler error (HTTP 500).
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+] as const;
+
+export const EnterprisePublicNotFoundErrors = [
+  ...EnterpriseDbErrors,
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+] as const;
+
+export const EnterprisePublicEnrollmentProfileErrors = [
+  ...EnterprisePublicNotFoundErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+] as const;
+
+export const EnterprisePublicAdeProfileErrors = [
+  ...EnterprisePublicEnrollmentProfileErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
+] as const;
 
 /**
  * Internal diagnostics for backend errors.

@@ -13,7 +13,7 @@ import {
   listTenantBackups,
   backupObjectKey,
   describeBackupError,
-} from "../src/backup.js";
+} from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 

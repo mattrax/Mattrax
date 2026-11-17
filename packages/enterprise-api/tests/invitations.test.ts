@@ -8,7 +8,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import { sendTransactionalEmail } from "../src/emailOutbox.js";
+import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";

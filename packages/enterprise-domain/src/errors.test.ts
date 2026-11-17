@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defaultErrorCode, diagnoseError, errorDiagnostic } from "./errors.ts";
-import { EnterpriseBadRequest } from "./enterprise.ts";
+import { defaultErrorCode, diagnoseError, errorDiagnostic } from "./Errors.ts";
+import { EnterpriseBadRequest } from "./Errors.js";
 
 describe("enterprise error diagnostics", () => {
   it("keeps operational detail off the serialized message", () => {
