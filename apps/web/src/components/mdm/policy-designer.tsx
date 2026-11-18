@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { DocumentationLink } from "~/components/mdm/documentation-link";
 import {
   Dialog,
   DialogContent,
@@ -69,6 +70,10 @@ import {
   type SearchIndex,
   typeLabel,
 } from "~/lib/policy-designer/catalog";
+import {
+  collectionDocumentationUrl,
+  propertyDocumentationUrl,
+} from "~/lib/policy-designer/documentation";
 import {
   PLATFORM_ORDER,
   buildPolicyBundle,
@@ -841,6 +846,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const activeSelection = createMemo(() =>
     selections().find((selection) => selection.collectionId === activeKey()),
   );
+
+  const activeDocumentation = createMemo(() => {
+    const key = activeKey();
+
+    if (!key || isThirdPartyCollectionId(key)) return undefined;
+    const collection = activeCollection() ?? activeSummary();
+
+    if (!collection) return undefined;
+
+    return collectionDocumentationUrl(platform(), collection);
+  });
 
   const activeMatchKeys = createMemo<Set<string> | null>(() => {
     const key = activeKey();
@@ -2367,6 +2383,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             In policy
                           </Badge>
                         </Show>
+                        <Show when={activeDocumentation()}>
+                          {(href) => (
+                            <DocumentationLink
+                              href={href()}
+                              source={platform() === "apple" ? "Apple" : "Microsoft"}
+                              subject={collection().name}
+                              class="h-5 px-1 text-[10px]"
+                            />
+                          )}
+                        </Show>
                       </div>
                       <p class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
                         {collection().identifier}
@@ -2674,6 +2700,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                               platform={platform()}
                                               value={value()}
                                               id={fieldId(platform(), property)}
+                                              documentationUrl={propertyDocumentationUrl(
+                                                platform(),
+                                                property,
+                                                activeCollection()?.source,
+                                              )}
                                               changed={isChangedValue(property, value())}
                                               searchMatch={Boolean(activeMatchKeys()?.has(key()))}
                                               issue={fieldIssue(selection().collectionId, key())}
@@ -2917,6 +2948,7 @@ type PropertyFieldProps = {
   platform: PlatformId;
   value: PolicyValue | undefined;
   id: string;
+  documentationUrl?: string;
   changed: boolean;
   searchMatch: boolean;
   issue?: ValidationIssue;
@@ -3110,6 +3142,16 @@ function PropertyField(props: PropertyFieldProps) {
           </Show>
           <Show when={props.searchMatch}>
             <span class="text-brand">Matches search</span>
+          </Show>
+          <Show when={props.documentationUrl}>
+            {(href) => (
+              <DocumentationLink
+                href={href()}
+                source="Microsoft"
+                subject={props.property.name}
+                class="h-5 px-1 text-[10px]"
+              />
+            )}
           </Show>
         </div>
         <Show when={props.issue}>

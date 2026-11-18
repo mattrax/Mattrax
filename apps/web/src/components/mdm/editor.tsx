@@ -13,6 +13,7 @@ import {
   Switch,
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
+import { DocumentationLink } from "~/components/mdm/documentation-link";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ChevronDown } from "~/components/ui/icons";
@@ -21,6 +22,11 @@ import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import {
+  APPLE_PROFILE_DOCS,
+  WINDOWS_CSP_DOCS,
+  appleDocumentationUrl,
+} from "~/lib/policy-designer/documentation";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
@@ -71,6 +77,13 @@ const isCustomProfileKind = (kind: string) => /^mttx\.apple\.custom\.[^.]+$/.tes
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent p-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+
+/** Apple's page for the restrictions payload this section edits. */
+const APPLE_RESTRICTIONS_DOCS = appleDocumentationUrl({
+  kind: "profile",
+  identifier: "com.apple.applicationaccess",
+  name: "Restrictions",
+});
 
 const sections = [
   { id: "custom", label: "Profiles", hint: "mobileconfig" },
@@ -482,9 +495,16 @@ function DeviceSection(props: {
 
   return (
     <div class="space-y-4">
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Basic restrictions applied to every device in this policy's scope.
-      </p>
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+          Basic restrictions applied to every device in this policy's scope.
+        </p>
+        <DocumentationLink
+          href={APPLE_RESTRICTIONS_DOCS}
+          source="Apple"
+          subject="the Restrictions payload"
+        />
+      </div>
       <label class="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/15 p-3 text-[13px] transition-colors hover:bg-muted/30">
         <span>
           <strong class="block font-medium text-foreground">Allow camera</strong>
@@ -513,10 +533,17 @@ function WindowsSection(props: {
 
   return (
     <div class="space-y-4">
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Deploy a Windows MDM OMA-URI. The value is delivered on the device's next SyncML check-in.
-        Use Advanced JSON to configure multiple nodes.
-      </p>
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+          Deploy a Windows MDM OMA-URI. The value is delivered on the device's next SyncML check-in.
+          Use Advanced JSON to configure multiple nodes.
+        </p>
+        <DocumentationLink
+          href={WINDOWS_CSP_DOCS}
+          source="Microsoft"
+          subject="the Windows Policy CSP"
+        />
+      </div>
       <label class="space-y-1.5 text-sm">
         <span class="text-[12.5px] font-medium text-foreground/90">OMA-URI</span>
         <Input
@@ -633,6 +660,11 @@ function CustomSection(props: {
             when you need to edit the profile here.
           </p>
         </div>
+        <DocumentationLink
+          href={APPLE_PROFILE_DOCS}
+          source="Apple"
+          subject="configuration profiles"
+        />
         <Button onClick={upload}>Upload profile</Button>
       </div>
 
