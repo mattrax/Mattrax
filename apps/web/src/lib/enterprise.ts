@@ -272,8 +272,14 @@ export const enterpriseKeys = {
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
   backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
+  /** Every cached list of one entity, ignoring any group filter. */
+  listPrefix: (tenantId: RouteParam, entity: Entity) =>
+    ["enterprise", "list", keyTenant(tenantId), entity] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
+  /** Every cached device search for a tenant, ignoring the active filters. */
+  deviceSearchPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "device-search", keyTenant(tenantId)] as const,
   deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     ["enterprise", "device-search", keyTenant(tenantId), query] as const,
   deviceHealth: (tenantId: RouteParam, id: RouteParam) =>
