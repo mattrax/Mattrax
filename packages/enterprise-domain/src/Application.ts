@@ -77,6 +77,21 @@ export const ApplicationListResponse = Schema.Struct({
   applications: Schema.Array(ApplicationRow),
 });
 
+/**
+ * A catalogue application surfaced by the command palette. It carries only the
+ * fields the result row renders, not the installer/assignment detail that the
+ * applications page fetches.
+ */
+export const ApplicationSearchRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  platform: ApplicationPlatform,
+  /** Bundle id, package name or store id when the catalogue holds one. */
+  identifier: Schema.optional(NullableString),
+});
+
+export type ApplicationSearchRow = typeof ApplicationSearchRow.Type;
+
 export const ApplicationNode = Schema.Struct({
   ...ApplicationRow.fields,
   groups: Schema.Array(GroupRelation),

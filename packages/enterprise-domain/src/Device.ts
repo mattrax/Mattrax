@@ -306,6 +306,27 @@ export const ApplicationInventoryResponse = Schema.Struct({
 
 export type ApplicationInventoryResponse = typeof ApplicationInventoryResponse.Type;
 
+/**
+ * One installed software result for the command palette.
+ *
+ * The inventory has a row per device, so search aggregates by bundle id,
+ * version and publisher: the palette shows one result per app/version with the
+ * number of devices that reported it.
+ */
+export const SoftwareSearchRow = Schema.Struct({
+  /** Display name reported by the device, falling back to the bundle id. */
+  name: Schema.String,
+  /** Apple bundle id, Android package name or Windows product key. */
+  bundleId: Schema.String,
+  version: Schema.optional(NullableString),
+  /** Vendor (`Publisher` on Windows, otherwise an app-store vendor). */
+  publisher: Schema.optional(NullableString),
+  /** Distinct devices reporting this app/version/publisher. */
+  deviceCount: Schema.Number,
+});
+
+export type SoftwareSearchRow = typeof SoftwareSearchRow.Type;
+
 /** Decrypted FileVault recovery key. Never returned by list/detail endpoints. */
 export const DeviceRecoveryKeyResponse = Schema.Struct({
   recoveryKey: Schema.String,

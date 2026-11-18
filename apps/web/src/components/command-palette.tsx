@@ -10,9 +10,11 @@ import { routes } from "~/lib/routes";
 import {
   Activity,
   BookOpen,
+  Boxes,
   Laptop,
   LayoutDashboard,
   LogOut,
+  Package,
   Plus,
   Search,
   Settings,
@@ -31,6 +33,7 @@ import {
   type Command,
   type CommandShortcut,
 } from "~/lib/commands";
+import { groupRank, searchRowCommand } from "~/lib/command-palette-search";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { reportGlobalError } from "~/lib/global-errors";
@@ -79,25 +82,6 @@ function readRecents(): Recent[] {
   }
 }
 
-const GROUP_ORDER = [
-  "Recent",
-  "This page",
-  "Actions",
-  "Navigation",
-  "Settings",
-  "Queries",
-  "Devices",
-  "People",
-  "Groups",
-  "Policies",
-];
-
-const groupRank = (group: string) => {
-  const index = GROUP_ORDER.indexOf(group);
-
-  return index === -1 ? GROUP_ORDER.length : index;
-};
-
 const iconForGroup = (group: string): Command["icon"] => {
   if (group === "Devices") return Laptop;
 
@@ -106,6 +90,10 @@ const iconForGroup = (group: string): Command["icon"] => {
   if (group === "Groups") return UsersRound;
 
   if (group === "Policies") return ShieldCheck;
+
+  if (group === "Applications") return Package;
+
+  if (group === "Software") return Boxes;
 
   if (group === "Settings") return Settings;
 
@@ -600,65 +588,19 @@ export function CommandPalette() {
     if (!id || results.status !== "success") return [];
 
     return (results.data?.rows ?? []).flatMap((row): Command[] => {
-      if ("proto" in row) {
-        if (!can("devices.read")) return [];
+      const command = searchRowCommand(row, id);
 
-        return [
-          {
-            id: `device-${row.id}`,
-            title: row.name,
-            subtitle: [row.serial, row.model].filter(Boolean).join(" · ") || "Device",
-            group: "Devices",
-            icon: Laptop,
-            href: routes.tenant(id).device(row.id),
-            run: () => navigate(routes.tenant(id).device(row.id)),
-          },
-        ];
-      }
-
-      if ("email" in row) {
-        if (!can("members.read")) return [];
-
-        return [
-          {
-            id: `person-${row.id}`,
-            title: row.name,
-            subtitle: `${row.email} · ${row.role}`,
-            group: "People",
-            icon: User,
-            href: routes.tenant(id).settingsAdministrators(),
-            run: () => navigate(routes.tenant(id).settingsAdministrators()),
-          },
-        ];
-      }
-
-      if ("devicesCount" in row) {
-        if (!can("groups.read")) return [];
-
-        return [
-          {
-            id: `group-${row.id}`,
-            title: row.name,
-            subtitle: `${row.devicesCount ?? 0} devices`,
-            group: "Groups",
-            icon: UsersRound,
-            href: routes.tenant(id).group(row.id),
-            run: () => navigate(routes.tenant(id).group(row.id)),
-          },
-        ];
-      }
-
-      if (!can("policies.read")) return [];
+      if (!command || !can(command.permission)) return [];
 
       return [
         {
-          id: `policy-${row.id}`,
-          title: row.name,
-          subtitle: "Policy",
-          group: "Policies",
-          icon: ShieldCheck,
-          href: routes.tenant(id).policy(row.id),
-          run: () => navigate(routes.tenant(id).policy(row.id)),
+          id: command.id,
+          title: command.title,
+          subtitle: command.subtitle,
+          group: command.group,
+          icon: iconForGroup(command.group),
+          href: command.href,
+          run: () => navigate(command.href),
         },
       ];
     });
@@ -1099,8 +1041,8 @@ export function CommandPalette() {
             >
               <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
               <DialogPrimitive.Description class="sr-only">
-                Search settings, devices, policies, people, and commands. Use the arrow keys to move
-                through results and Enter to run the highlighted one.
+                Search settings, devices, applications, software, policies, people, and commands.
+                Use the arrow keys to move through results and Enter to run the highlighted one.
               </DialogPrimitive.Description>
 
               <div class="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -1113,7 +1055,7 @@ export function CommandPalette() {
                   aria-expanded={items().length > 0 ? "true" : "false"}
                   aria-controls="command-palette-list"
                   aria-autocomplete="list"
-                  aria-label="Search settings, devices, policies, people or commands"
+                  aria-label="Search settings, devices, applications, software, policies, people or commands"
                   aria-activedescendant={
                     items()[active()] ? `command-palette-option-${active()}` : undefined
                   }
@@ -1271,7 +1213,8 @@ export function CommandPalette() {
                   <div class="px-3 py-8 text-center">
                     <p class="text-[13px] text-muted-foreground">No results.</p>
                     <p class="mt-1 text-[11px] text-muted-foreground">
-                      Try a device, policy, person, setting or a query like “devices critical”.
+                      Try a device, application, software title, policy, person, setting or a query
+                      like “devices critical”.
                     </p>
                   </div>
                 </Show>

@@ -3818,6 +3818,72 @@ export const createEnterpriseService = ({
   const escapeLike = (value: string) =>
     value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
 
+  const compareText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
+
+  /**
+   * Collapse per-device inventory rows into one command-palette result per
+   * app/version/publisher.
+   *
+   * The grouping runs in memory over the rows the `LIKE` already narrowed:
+   * the count needs every matching device, but only the sorted, sliced output
+   * is returned, so the caller still sees at most `limit` rows. Choosing the
+   * smallest name and sorting explicitly keeps the result independent of the
+   * order MySQL happened to return the inventory in.
+   */
+  const aggregateSoftwareSearchRows = (
+    rows: ReadonlyArray<{
+      readonly deviceId: string;
+      readonly bundleId: string;
+      readonly name: string | null;
+      readonly version: string | null;
+      readonly publisher: string | null;
+    }>,
+    limit: number,
+  ) => {
+    type Group = {
+      bundleId: string;
+      name: string | null;
+      version: string | null;
+      publisher: string | null;
+      devices: Set<string>;
+    };
+
+    const groups = new Map<string, Group>();
+
+    for (const row of rows) {
+      const key = [row.bundleId, row.version ?? "", row.publisher ?? ""].join("\u0000");
+
+      const group = groups.get(key) ?? {
+        bundleId: row.bundleId,
+        name: null,
+        version: row.version,
+        publisher: row.publisher,
+        devices: new Set<string>(),
+      };
+
+      if (row.name && (!group.name || row.name < group.name)) group.name = row.name;
+      group.devices.add(row.deviceId);
+      groups.set(key, group);
+    }
+
+    return [...groups.values()]
+      .map((group) => ({
+        name: group.name ?? group.bundleId,
+        bundleId: group.bundleId,
+        version: group.version,
+        publisher: group.publisher,
+        deviceCount: group.devices.size,
+      }))
+      .sort(
+        (left, right) =>
+          compareText(left.name, right.name) ||
+          compareText(left.bundleId, right.bundleId) ||
+          compareText(left.version ?? "", right.version ?? "") ||
+          compareText(left.publisher ?? "", right.publisher ?? ""),
+      )
+      .slice(0, limit);
+  };
+
   /**
    * Build the tenant-scoped `WHERE` clause shared by the device search and CSV
    * export endpoints. Group filtering resolves the membership list up front
@@ -14952,7 +15018,7 @@ export const createEnterpriseService = ({
         const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
 
         if (!term) return { rows: [] };
-        const pattern = `%${term.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+        const pattern = `%${escapeLike(term)}%`;
 
         const devices = yield* db
           .select()
@@ -14968,6 +15034,7 @@ export const createEnterpriseService = ({
               ),
             ),
           )
+          .orderBy(asc(schema.device.name), asc(schema.device.id))
           .limit(limit);
 
         const groups = yield* db
@@ -14979,6 +15046,7 @@ export const createEnterpriseService = ({
               like(schema.enterpriseGroup.name, pattern),
             ),
           )
+          .orderBy(asc(schema.enterpriseGroup.name), asc(schema.enterpriseGroup.id))
           .limit(limit);
 
         const policies = yield* db
@@ -14990,6 +15058,7 @@ export const createEnterpriseService = ({
               like(schema.policy.name, pattern),
             ),
           )
+          .orderBy(asc(schema.policy.name), asc(schema.policy.id))
           .limit(limit);
 
         // Member names and addresses are the same data `listDirectory` gates
@@ -15010,7 +15079,62 @@ export const createEnterpriseService = ({
                   or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
                 ),
               )
+              .orderBy(asc(schema.user.name), asc(schema.user.id))
               .limit(limit)
+          : [];
+
+        // Catalogue entries are not device data: the palette links to the
+        // application page, which itself requires `applications.read`.
+        const applications = hasPermission(ctx.role.permissions, "applications.read")
+          ? yield* db
+              .select({
+                id: schema.application.id,
+                name: schema.application.name,
+                platform: schema.application.platform,
+                bundleId: schema.application.bundleId,
+                storeId: schema.application.storeId,
+              })
+              .from(schema.application)
+              .where(
+                and(
+                  eq(schema.application.organizationId, ctx.organization.id),
+                  or(
+                    like(schema.application.name, pattern),
+                    like(schema.application.bundleId, pattern),
+                    like(schema.application.storeId, pattern),
+                  ),
+                ),
+              )
+              .orderBy(asc(schema.application.name), asc(schema.application.id))
+              .limit(limit)
+          : [];
+
+        // The same permission guards the tenant software inventory that the
+        // palette links to. Inventory rows are per device, so aggregation runs
+        // before the limit is applied.
+        const software = hasPermission(ctx.role.permissions, "applications.read")
+          ? yield* db
+              .select({
+                deviceId: schema.deviceApplication.deviceId,
+                bundleId: schema.deviceApplication.bundleId,
+                name: schema.deviceApplication.name,
+                version: schema.deviceApplication.version,
+                shortVersion: schema.deviceApplication.shortVersion,
+                publisher: schema.deviceApplication.publisher,
+              })
+              .from(schema.deviceApplication)
+              .where(
+                and(
+                  eq(schema.deviceApplication.organizationId, ctx.organization.id),
+                  or(
+                    like(schema.deviceApplication.name, pattern),
+                    like(schema.deviceApplication.bundleId, pattern),
+                    like(schema.deviceApplication.version, pattern),
+                    like(schema.deviceApplication.shortVersion, pattern),
+                    like(schema.deviceApplication.publisher, pattern),
+                  ),
+                ),
+              )
           : [];
 
         return {
@@ -15019,6 +15143,13 @@ export const createEnterpriseService = ({
             ...groups.map((row: EnterpriseGroup) => rowGroup(row)),
             ...(yield* Effect.all(policies.map((row) => rowPolicy(row)))),
             ...users,
+            ...applications.map((row) => ({
+              id: row.id,
+              name: row.name,
+              platform: row.platform,
+              identifier: row.bundleId ?? row.storeId ?? null,
+            })),
+            ...aggregateSoftwareSearchRows(software, limit),
           ],
         };
       }),
