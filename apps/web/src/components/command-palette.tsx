@@ -113,11 +113,11 @@ const iconForGroup = (group: string): Command["icon"] => {
   return LayoutDashboard;
 };
 
-export function CommandPalette() {
+export function CommandPalette(props: { initialOpen?: boolean } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const tenantParams = useTenantRouteParams();
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(props.initialOpen ?? false);
   const { can, canAny } = useCan();
   const [query, setQuery] = createSignal("");
   const [debouncedQuery, setDebouncedQuery] = createSignal("");

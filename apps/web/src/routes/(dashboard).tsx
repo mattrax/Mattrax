@@ -2,11 +2,18 @@ import { useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, createSignal, Errored, type ParentProps, onSettled, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  Errored,
+  lazy,
+  type ParentProps,
+  onSettled,
+  Show,
+} from "solid-js";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
-import { CommandPalette } from "~/components/command-palette";
 import { StepUpDialog } from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
@@ -28,6 +35,59 @@ function DashboardBootScreen() {
         <p class="text-[12px] text-muted-foreground">Loading your tenant…</p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The palette is a large, interaction-only surface. Keep it out of the entry
+ * graph so it never delays the first paint, then mount it right after the shell
+ * settles: its global shortcuts (Cmd/Ctrl+K, `g d`, …) belong to the shell, so
+ * leaving it unmounted until the first keypress would break keyboard users.
+ */
+const LazyCommandPalette = lazy(() =>
+  import("~/components/command-palette").then((module) => ({ default: module.CommandPalette })),
+);
+
+const loadCommandPalette = () => import("~/components/command-palette");
+
+function CommandPaletteLauncher() {
+  const [mounted, setMounted] = createSignal(false);
+  // Read once by the palette when it mounts, never reactive: a request that
+  // arrives after mount is handled by the palette's own listeners.
+  let openOnMount = false;
+
+  onSettled(() => {
+    const open = () => {
+      openOnMount = true;
+      setMounted(true);
+    };
+
+    const shortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      event.preventDefault();
+      open();
+    };
+
+    // Warm the chunk in the next task: it loads as a separate request after the
+    // shell, so it never delays the first render and the shortcuts work at once.
+    const prefetch = setTimeout(() => {
+      void loadCommandPalette().then(() => setMounted(true));
+    }, 0);
+
+    window.addEventListener("mattrax:open-command-palette", open);
+    window.addEventListener("keydown", shortcut, true);
+
+    return () => {
+      window.removeEventListener("mattrax:open-command-palette", open);
+      window.removeEventListener("keydown", shortcut, true);
+      clearTimeout(prefetch);
+    };
+  });
+
+  return (
+    <Show when={mounted()}>
+      <LazyCommandPalette initialOpen={openOnMount} />
+    </Show>
   );
 }
 
@@ -191,7 +251,7 @@ function DashboardLayout(props: ParentProps) {
         >
           <AppShell user={user()} onSignOut={handleSignOut}>
             {props.children}
-            <CommandPalette />
+            <CommandPaletteLauncher />
             <StepUpDialog />
           </AppShell>
         </Show>
