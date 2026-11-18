@@ -413,3 +413,62 @@ describe("onboarding email marker migration", () => {
     });
   });
 });
+
+describe("ownership transfer migration", () => {
+  const names = migrationNames();
+
+  const transferMigrations = names.filter((name) =>
+    readMigration(name).includes("CREATE TABLE `tenant_ownership_transfer`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(transferMigrations).toHaveLength(1);
+  });
+
+  it("creates a tenant-scoped transfer with a single-use token", () => {
+    const sql = readMigration(transferMigrations[0]!);
+    expect(sql).toContain("`id` varchar(255) PRIMARY KEY");
+    expect(sql).toContain("`organization_id` varchar(255) NOT NULL");
+    expect(sql).toContain("`requested_by_user_id` varchar(255) NOT NULL");
+    expect(sql).toContain("`target_user_id` varchar(255) NOT NULL");
+    expect(sql).toContain("`status` varchar(32) NOT NULL");
+    expect(sql).toContain("`token_hash` varchar(255)");
+    expect(sql).toContain("`expires_at` datetime(3) NOT NULL");
+    expect(sql).toContain("`accepted_at` datetime(3)");
+    expect(sql).toContain("`cancelled_at` datetime(3)");
+    expect(sql).toContain("UNIQUE INDEX(`token_hash`)");
+    expect(sql).toContain("ON DELETE CASCADE");
+    // Terminal rows keep their digest so the emailed link still previews but
+    // cannot be accepted; only the expiry is non-null by necessity.
+    expect(sql).not.toMatch(/`token_hash` varchar\(255\) NOT NULL/);
+  });
+
+  it("ships a snapshot with the expected columns", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+
+    const columns = new Map(
+      snapshot.ddl
+        .filter(
+          (entry) => entry.entityType === "columns" && entry.table === "tenant_ownership_transfer",
+        )
+        .map((entry) => [entry.name, entry]),
+    );
+
+    expect(columns.get("id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(columns.get("organization_id")).toMatchObject({
+      type: "varchar(255)",
+      notNull: true,
+    });
+    expect(columns.get("requested_by_user_id")).toMatchObject({
+      type: "varchar(255)",
+      notNull: true,
+    });
+    expect(columns.get("target_user_id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(columns.get("status")).toMatchObject({ type: "varchar(32)", notNull: true });
+    expect(columns.get("token_hash")).toMatchObject({ type: "varchar(255)", notNull: false });
+    expect(columns.get("expires_at")).toMatchObject({ type: "datetime(3)", notNull: true });
+    expect(columns.get("accepted_at")).toMatchObject({ type: "datetime(3)", notNull: false });
+    expect(columns.get("cancelled_at")).toMatchObject({ type: "datetime(3)", notNull: false });
+    expect(columns.get("created_at")).toMatchObject({ type: "datetime(3)", notNull: true });
+  });
+});

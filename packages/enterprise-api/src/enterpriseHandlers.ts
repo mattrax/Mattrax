@@ -233,6 +233,7 @@ import {
   updateScript,
 } from "@mattrax/enterprise-backend";
 import { invitationEmail } from "@mattrax/enterprise-backend";
+import { ownershipTransferEmail } from "@mattrax/enterprise-backend";
 import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import { EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "@mattrax/enterprise-backend";
@@ -1169,6 +1170,12 @@ const validRoles = (role: string) => {
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** Ownership transfer links live as long as an invitation. */
+const OWNERSHIP_TRANSFER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The role a requester falls back to once ownership has moved. */
+const OWNERSHIP_TRANSFER_DEMOTED_ROLE = "admin";
+
 const MAX_PENDING_INVITATIONS_PER_TENANT = 50;
 
 const INVITATION_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1211,17 +1218,54 @@ const invitationRoleName = (
     : "Member";
 };
 
-const newInvitationToken = () =>
+const newOneTimeToken = () =>
   bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
 
-const invitationTokenHash = (token: string) =>
+const oneTimeTokenHash = (token: string) =>
   sha256Hex(bytesToArrayBuffer(new TextEncoder().encode(token)));
 
 const invitationUrl = (origin: string, token: string) =>
   `${origin.replace(/\/+$/, "")}/accept-invitation?token=${encodeURIComponent(token)}`;
+
+const ownershipTransferUrl = (origin: string, token: string) =>
+  `${origin.replace(/\/+$/, "")}/accept-ownership?token=${encodeURIComponent(token)}`;
+
+/** Preview state for a token; terminal rows keep their digest for this read. */
+const ownershipTransferPreviewState = (transfer: { status: string; expiresAt: Date }) => {
+  if (transfer.status === "pending")
+    return transfer.expiresAt <= now() ? ("expired" as const) : ("valid" as const);
+
+  if (transfer.status === "accepted") return "accepted" as const;
+
+  if (transfer.status === "cancelled") return "cancelled" as const;
+
+  if (transfer.status === "expired") return "expired" as const;
+
+  return "unknown" as const;
+};
+
+/**
+ * Who is allowed to end a pending handover. Either party can stop their own
+ * transfer, and any owner can intervene; everyone else is refused.
+ */
+const ownershipTransferCancelActor = (
+  pending: { readonly requestedByUserId: string; readonly targetUserId: string },
+  caller: {
+    readonly id: string;
+    readonly member: { readonly role: string; readonly customRoleId?: string | null };
+  },
+) => {
+  if (pending.requestedByUserId === caller.id) return "requester" as const;
+
+  if (pending.targetUserId === caller.id) return "target" as const;
+
+  if (isBuiltInOwnerMember(caller.member)) return "owner" as const;
+
+  return undefined;
+};
 
 type InvitationAuditMetadata = {
   email: string;
@@ -2082,6 +2126,81 @@ export const createEnterpriseService = ({
       // `queued`, `duplicate` and the local mailbox all mean the admin can
       // stop worrying: the message exists. `failed`/`skipped` keep the
       // existing "copy this link" UI.
+      return outcome === "queued" || outcome === "duplicate" || outcome === "delivered";
+    });
+
+  /**
+   * Compose and queue the ownership handover notice. Best effort: the request
+   * is already durable when this runs, and the response carries the link so
+   * the owner can forward it if the transport or outbox is unavailable.
+   */
+  const sendOwnershipTransferEmail = (
+    organization: {
+      readonly id: string;
+      readonly name: string;
+      readonly displayName?: string | null;
+      readonly logo?: string | null;
+      readonly supportEmail?: string | null;
+      readonly brandColor?: string | null;
+    },
+    requesterName: string,
+    input: {
+      readonly email: string;
+      readonly acceptUrl: string;
+      readonly expiresAt: Date;
+      /** One message per transfer generation; a retry cannot queue it twice. */
+      readonly idempotencyKey: string;
+    },
+  ) =>
+    Effect.gen(function* () {
+      if (!email) {
+        yield* Effect.logWarning(
+          "Ownership transfer email skipped: the deployment has no email binding",
+        );
+
+        return false;
+      }
+
+      const branding = resolveTenantBranding(organization);
+
+      const message = ownershipTransferEmail({
+        tenantName: branding.displayName,
+        logoUrl: branding.logo,
+        brandColor: branding.brandColor,
+        requesterName,
+        targetEmail: input.email,
+        acceptUrl: input.acceptUrl,
+        expiresAt: input.expiresAt,
+        supportEmail: branding.supportEmail,
+      });
+
+      const configuredSupport = organization.supportEmail?.trim();
+
+      const replyTo =
+        configuredSupport && INVITATION_EMAIL_PATTERN.test(configuredSupport)
+          ? { name: branding.displayName, email: configuredSupport }
+          : undefined;
+
+      const outcome = yield* sendTransactionalEmail({
+        db,
+        email,
+        template: "ownership_transfer",
+        recipient: input.email,
+        organizationId: organization.id,
+        dedupeKey: `ownership_transfer:${input.idempotencyKey}`,
+        message: {
+          to: input.email,
+          from: {
+            name: branding.displayName,
+            email: invitationFromEmail ?? DEFAULT_INVITATION_FROM,
+          },
+          replyTo,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        },
+      });
+
       return outcome === "queued" || outcome === "duplicate" || outcome === "delivered";
     });
 
@@ -8053,8 +8172,8 @@ export const createEnterpriseService = ({
         const invitationId = id();
         const timestamp = now();
         const expiresAt = new Date(timestamp.getTime() + INVITATION_TTL_MS);
-        const rawToken = newInvitationToken();
-        const tokenHash = yield* invitationTokenHash(rawToken);
+        const rawToken = newOneTimeToken();
+        const tokenHash = yield* oneTimeTokenHash(rawToken);
         const inviteUrl = invitationUrl(origin, rawToken);
         const roleLabel = customRole?.name ?? BUILT_IN_ROLE_LABEL_BY_ROLE.get(role) ?? role;
 
@@ -8122,7 +8241,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const tokenHash = yield* invitationTokenHash(body.token);
+        const tokenHash = yield* oneTimeTokenHash(body.token);
 
         const invitation = yield* db.query.invitation.findFirst({
           where: { tokenHash },
@@ -8287,7 +8406,7 @@ export const createEnterpriseService = ({
     previewInvitation: (_request, query) =>
       Effect.gen(function* () {
         const invitation = yield* db.query.invitation.findFirst({
-          where: { tokenHash: yield* invitationTokenHash(query.token) },
+          where: { tokenHash: yield* oneTimeTokenHash(query.token) },
         });
 
         if (!invitation) return { state: "unknown" as const };
@@ -8506,6 +8625,453 @@ export const createEnterpriseService = ({
 
         return ok;
       }),
+    getTenantOwnershipTransfer: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+
+        const pending = yield* db.query.tenantOwnershipTransfer.findFirst({
+          where: { organizationId: tenantId, status: "pending" },
+        });
+
+        if (!pending) return { transfer: null };
+
+        const timestamp = now();
+
+        // An expired request is no longer pending and must not block a new
+        // one. Its digest stays so the emailed link still previews as expired.
+        if (pending.expiresAt <= timestamp) {
+          yield* db
+            .update(schema.tenantOwnershipTransfer)
+            .set({ status: "expired", updatedAt: timestamp })
+            .where(
+              and(
+                eq(schema.tenantOwnershipTransfer.id, pending.id),
+                eq(schema.tenantOwnershipTransfer.status, "pending"),
+              ),
+            );
+
+          yield* audit(ctx, "member.ownership_transfer_expired", "ownership_transfer", pending.id, {
+            targetUserId: pending.targetUserId,
+          });
+
+          return { transfer: null };
+        }
+
+        const requester = yield* db.query.user.findFirst({
+          where: { id: pending.requestedByUserId },
+        });
+
+        const target = yield* db.query.user.findFirst({ where: { id: pending.targetUserId } });
+
+        if (!requester || !target) return { transfer: null };
+
+        return {
+          transfer: {
+            id: pending.id,
+            status: "pending" as const,
+            isExpired: false,
+            requestedBy: { id: requester.id, name: requester.name, email: requester.email },
+            target: { id: target.id, name: target.name, email: target.email },
+            createdAt: iso(pending.createdAt),
+            expiresAt: iso(pending.expiresAt),
+            acceptedAt: pending.acceptedAt ? iso(pending.acceptedAt) : null,
+            cancelledAt: pending.cancelledAt ? iso(pending.cancelledAt) : null,
+          },
+        };
+      }),
+    requestTenantOwnershipTransfer: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        // Ownership is built-in authority, never a custom-role delegation.
+        if (!isBuiltInOwnerMember(ctx.member))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Only a tenant owner can transfer ownership" }),
+          );
+
+        const targetUserId = payload.targetUserId.trim();
+
+        if (!targetUserId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose a member to take over ownership" }),
+          );
+
+        if (targetUserId === ctx.user.id)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "You already own this tenant" }),
+          );
+
+        const targetMember = yield* db.query.member.findFirst({
+          where: { organizationId: tenantId, userId: targetUserId },
+        });
+
+        if (!targetMember)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+
+        if (isBuiltInOwnerMember(targetMember))
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "That member is already a tenant owner" }),
+          );
+
+        const targetUser = yield* db.query.user.findFirst({ where: { id: targetUserId } });
+
+        if (!targetUser)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+
+        const rawToken = newOneTimeToken();
+        const tokenHash = yield* oneTimeTokenHash(rawToken);
+        const acceptUrl = ownershipTransferUrl(origin, rawToken);
+        const timestamp = now();
+        const expiresAt = new Date(timestamp.getTime() + OWNERSHIP_TRANSFER_TTL_MS);
+        const transferId = id();
+        let expiredTransferId: string | undefined;
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const pending = yield* tx.query.tenantOwnershipTransfer.findFirst({
+              where: { organizationId: tenantId, status: "pending" },
+            });
+
+            if (pending) {
+              if (pending.expiresAt > timestamp)
+                return yield* Effect.fail(
+                  new EnterpriseConflict({
+                    message:
+                      "An ownership transfer is already pending. Cancel it or wait for it to expire.",
+                  }),
+                );
+
+              yield* tx
+                .update(schema.tenantOwnershipTransfer)
+                .set({ status: "expired", updatedAt: timestamp })
+                .where(eq(schema.tenantOwnershipTransfer.id, pending.id));
+              expiredTransferId = pending.id;
+            }
+
+            yield* tx.insert(schema.tenantOwnershipTransfer).values({
+              id: transferId,
+              organizationId: tenantId,
+              requestedByUserId: ctx.user.id,
+              targetUserId,
+              status: "pending",
+              tokenHash,
+              expiresAt,
+              acceptedAt: null,
+              cancelledAt: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+          }),
+        );
+
+        const emailSent = yield* sendOwnershipTransferEmail(ctx.organization, ctx.user.name, {
+          email: targetUser.email,
+          acceptUrl,
+          expiresAt,
+          idempotencyKey: transferId,
+        });
+
+        if (expiredTransferId)
+          yield* audit(
+            ctx,
+            "member.ownership_transfer_expired",
+            "ownership_transfer",
+            expiredTransferId,
+            { supersededBy: transferId },
+          );
+
+        yield* audit(ctx, "member.ownership_transfer_requested", "ownership_transfer", transferId, {
+          targetUserId,
+          targetEmail: targetUser.email,
+          expiresAt: iso(expiresAt),
+          emailSent,
+        });
+
+        return {
+          id: transferId,
+          targetUserId,
+          acceptUrl,
+          expiresAt: iso(expiresAt),
+          emailSent,
+        };
+      }),
+    cancelTenantOwnershipTransfer: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+
+        const pending = yield* db.query.tenantOwnershipTransfer.findFirst({
+          where: { organizationId: tenantId, status: "pending" },
+        });
+
+        if (!pending)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "No ownership transfer is pending" }),
+          );
+
+        // Either party can stop the handover, and any owner can intervene.
+        const actor = ownershipTransferCancelActor(pending, {
+          id: ctx.user.id,
+          member: ctx.member,
+        });
+
+        if (!actor)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only the requester, the target or a tenant owner can cancel this transfer",
+            }),
+          );
+
+        const timestamp = now();
+
+        const cancelled = yield* db
+          .update(schema.tenantOwnershipTransfer)
+          .set({ status: "cancelled", cancelledAt: timestamp, updatedAt: timestamp })
+          .where(
+            and(
+              eq(schema.tenantOwnershipTransfer.id, pending.id),
+              eq(schema.tenantOwnershipTransfer.status, "pending"),
+            ),
+          );
+
+        if (cancelled.affectedRows !== 1)
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "This ownership transfer is no longer pending" }),
+          );
+
+        yield* audit(ctx, "member.ownership_transfer_cancelled", "ownership_transfer", pending.id, {
+          targetUserId: pending.targetUserId,
+          requestedByUserId: pending.requestedByUserId,
+          actor,
+        });
+
+        return ok;
+      }),
+    acceptTenantOwnershipTransfer: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before accepting this transfer.",
+            }),
+          );
+
+        const tokenHash = yield* oneTimeTokenHash(payload.token);
+
+        const transfer = yield* db.query.tenantOwnershipTransfer.findFirst({
+          where: { tokenHash },
+        });
+
+        if (!transfer)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message: "This ownership transfer link is invalid or has already been used",
+            }),
+          );
+
+        if (transfer.status === "accepted")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This ownership transfer has already been accepted",
+            }),
+          );
+
+        if (transfer.status === "cancelled")
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "This ownership transfer was cancelled" }),
+          );
+
+        if (transfer.status === "expired")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "This ownership transfer has expired" }),
+          );
+
+        if (transfer.status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This ownership transfer can no longer be accepted",
+            }),
+          );
+
+        const timestamp = now();
+
+        if (transfer.expiresAt <= timestamp) {
+          yield* db
+            .update(schema.tenantOwnershipTransfer)
+            .set({ status: "expired", updatedAt: timestamp })
+            .where(
+              and(
+                eq(schema.tenantOwnershipTransfer.id, transfer.id),
+                eq(schema.tenantOwnershipTransfer.status, "pending"),
+              ),
+            );
+
+          yield* audit(
+            { user, organization: { id: transfer.organizationId } },
+            "member.ownership_transfer_expired",
+            "ownership_transfer",
+            transfer.id,
+            { targetUserId: transfer.targetUserId },
+          );
+
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "This ownership transfer has expired" }),
+          );
+        }
+
+        if (transfer.targetUserId !== user.id)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Sign in with the account this transfer was sent to",
+            }),
+          );
+
+        // Defensive: the request path refuses self-transfers, but a direct row
+        // must never let one owner "accept" their own handover.
+        if (transfer.requestedByUserId === user.id)
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: "You cannot accept your own ownership transfer" }),
+          );
+
+        const targetMember = yield* db.query.member.findFirst({
+          where: { organizationId: transfer.organizationId, userId: user.id },
+        });
+
+        const requesterMember = yield* db.query.member.findFirst({
+          where: { organizationId: transfer.organizationId, userId: transfer.requestedByUserId },
+        });
+
+        // A stale request is closed rather than applied: the target must still
+        // be a member and the requester must still be an owner. Applying it
+        // otherwise would change roles nobody currently agreed to.
+        const staleReason = !targetMember
+          ? "You are no longer a member of this tenant"
+          : !requesterMember || !isBuiltInOwnerMember(requesterMember)
+            ? "The owner who requested this transfer is no longer an owner"
+            : undefined;
+
+        if (staleReason) {
+          yield* db
+            .update(schema.tenantOwnershipTransfer)
+            .set({ status: "cancelled", cancelledAt: timestamp, updatedAt: timestamp })
+            .where(
+              and(
+                eq(schema.tenantOwnershipTransfer.id, transfer.id),
+                eq(schema.tenantOwnershipTransfer.status, "pending"),
+              ),
+            );
+
+          yield* audit(
+            { user, organization: { id: transfer.organizationId } },
+            "member.ownership_transfer_cancelled",
+            "ownership_transfer",
+            transfer.id,
+            {
+              targetUserId: transfer.targetUserId,
+              requestedByUserId: transfer.requestedByUserId,
+              actor: "system",
+              reason: staleReason,
+            },
+          );
+
+          return yield* Effect.fail(new EnterpriseConflict({ message: staleReason }));
+        }
+
+        // The target is promoted before the requester is demoted, so the
+        // tenant never has zero owners mid-transaction. Clearing the target's
+        // custom role is required: owner authority is built-in only, and a
+        // still-assigned custom role would quietly neutralise the promotion.
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const claimed = yield* tx
+              .update(schema.tenantOwnershipTransfer)
+              .set({ status: "accepted", acceptedAt: timestamp, updatedAt: timestamp })
+              .where(
+                and(
+                  eq(schema.tenantOwnershipTransfer.id, transfer.id),
+                  eq(schema.tenantOwnershipTransfer.status, "pending"),
+                ),
+              );
+
+            if (claimed.affectedRows !== 1)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "This ownership transfer has already been used",
+                }),
+              );
+
+            yield* tx
+              .update(schema.member)
+              .set({ role: "owner", customRoleId: null, updatedAt: timestamp })
+              .where(eq(schema.member.id, targetMember!.id));
+
+            yield* tx
+              .update(schema.member)
+              .set({
+                role: OWNERSHIP_TRANSFER_DEMOTED_ROLE,
+                customRoleId: null,
+                updatedAt: timestamp,
+              })
+              .where(eq(schema.member.id, requesterMember!.id));
+          }),
+        );
+
+        yield* audit(
+          { user, organization: { id: transfer.organizationId } },
+          "member.ownership_transfer_accepted",
+          "tenant",
+          transfer.organizationId,
+          {
+            transferId: transfer.id,
+            fromUserId: transfer.requestedByUserId,
+            toUserId: transfer.targetUserId,
+            previousTargetRole: targetMember!.role,
+            previousTargetRoleId: targetMember!.customRoleId ?? null,
+            requesterRole: OWNERSHIP_TRANSFER_DEMOTED_ROLE,
+          },
+        );
+
+        return { tenantId: transfer.organizationId };
+      }),
+    previewTenantOwnershipTransfer: (_request, query) =>
+      Effect.gen(function* () {
+        const transfer = yield* db.query.tenantOwnershipTransfer.findFirst({
+          where: { tokenHash: yield* oneTimeTokenHash(query.token) },
+        });
+
+        if (!transfer) return { state: "unknown" as const };
+
+        const state = ownershipTransferPreviewState(transfer);
+
+        // A cancelled token reveals nothing beyond its state.
+        if (state === "cancelled" || state === "unknown") return { state };
+
+        const organization = yield* db.query.organization.findFirst({
+          where: { id: transfer.organizationId },
+        });
+
+        if (!organization) return { state: "unknown" as const };
+
+        const requester = yield* db.query.user.findFirst({
+          where: { id: transfer.requestedByUserId },
+        });
+
+        const target = yield* db.query.user.findFirst({ where: { id: transfer.targetUserId } });
+
+        return {
+          state,
+          tenant: {
+            name: organization.name,
+            displayName: organization.displayName ?? null,
+            logo: organization.logo ?? null,
+            brandColor: organization.brandColor ?? null,
+          },
+          requestedByName: requester?.name,
+          targetEmailMasked: target ? maskInvitationEmail(target.email) : undefined,
+          expiresAt: iso(transfer.expiresAt),
+        };
+      }),
     resendTenantInvitation: (request, tenantId, invitationId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -8534,8 +9100,8 @@ export const createEnterpriseService = ({
             })
           : undefined;
 
-        const rawToken = newInvitationToken();
-        const tokenHash = yield* invitationTokenHash(rawToken);
+        const rawToken = newOneTimeToken();
+        const tokenHash = yield* oneTimeTokenHash(rawToken);
         const timestamp = now();
         const expiresAt = new Date(timestamp.getTime() + INVITATION_TTL_MS);
         const sendCount = (invitation.sendCount ?? 1) + 1;
@@ -17491,6 +18057,31 @@ export const enterpriseHandlers = (
     .handle("cancelTenantInvitation", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.cancelTenantInvitation(request, params.tenantId, params.invitationId),
+      ),
+    )
+    .handle("getTenantOwnershipTransfer", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantOwnershipTransfer(request, params.tenantId),
+      ),
+    )
+    .handle("requestTenantOwnershipTransfer", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.requestTenantOwnershipTransfer(request, params.tenantId, payload),
+      ),
+    )
+    .handle("cancelTenantOwnershipTransfer", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.cancelTenantOwnershipTransfer(request, params.tenantId),
+      ),
+    )
+    .handle("acceptTenantOwnershipTransfer", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.acceptTenantOwnershipTransfer(request, payload),
+      ),
+    )
+    .handle("previewTenantOwnershipTransfer", ({ request, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewTenantOwnershipTransfer(request, query),
       ),
     )
     .handle("patchTenantUser", ({ request, params, payload }) =>

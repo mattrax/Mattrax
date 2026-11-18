@@ -333,6 +333,104 @@ export const PatchTenantUserRequest = Schema.Struct({
   roleId: Schema.optional(NullableString),
 });
 
+export const OwnershipTransferStatus = Schema.Literals([
+  "pending",
+  "accepted",
+  "cancelled",
+  "expired",
+]);
+
+export type OwnershipTransferStatus = typeof OwnershipTransferStatus.Type;
+
+export const OwnershipTransferUser = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+});
+
+export type OwnershipTransferUser = typeof OwnershipTransferUser.Type;
+
+/**
+ * A pending (or recently terminal) ownership transfer. The settings page only
+ * ever sees the pending row; the fields below describe who requested it, who
+ * must accept it and when the link stops working.
+ */
+export const TenantOwnershipTransfer = Schema.Struct({
+  id: Schema.String,
+  status: OwnershipTransferStatus,
+  /** True when a pending transfer is past its expiry. */
+  isExpired: Schema.Boolean,
+  requestedBy: OwnershipTransferUser,
+  target: OwnershipTransferUser,
+  createdAt: Schema.String,
+  expiresAt: Schema.String,
+  acceptedAt: Schema.optional(NullableString),
+  cancelledAt: Schema.optional(NullableString),
+});
+
+export type TenantOwnershipTransfer = typeof TenantOwnershipTransfer.Type;
+
+export const TenantOwnershipTransferResponse = Schema.Struct({
+  transfer: Schema.NullOr(TenantOwnershipTransfer),
+});
+
+export type TenantOwnershipTransferResponse = typeof TenantOwnershipTransferResponse.Type;
+
+export const RequestTenantOwnershipTransferRequest = Schema.Struct({
+  targetUserId: Schema.String,
+});
+
+export type RequestTenantOwnershipTransferRequest =
+  typeof RequestTenantOwnershipTransferRequest.Type;
+
+export const RequestTenantOwnershipTransferResponse = Schema.Struct({
+  id: Schema.String,
+  targetUserId: Schema.String,
+  /** The emailed link; returned so the owner can forward it if mail fails. */
+  acceptUrl: Schema.String,
+  expiresAt: Schema.String,
+  emailSent: Schema.Boolean,
+});
+
+export type RequestTenantOwnershipTransferResponse =
+  typeof RequestTenantOwnershipTransferResponse.Type;
+
+export const OwnershipTransferPreviewState = Schema.Literals([
+  "valid",
+  "expired",
+  "accepted",
+  "cancelled",
+  "unknown",
+]);
+
+export type OwnershipTransferPreviewState = typeof OwnershipTransferPreviewState.Type;
+
+export const OwnershipTransferPreviewQuery = Schema.Struct({ token: Schema.String });
+
+export const OwnershipTransferPreviewResponse = Schema.Struct({
+  state: OwnershipTransferPreviewState,
+  tenant: Schema.optional(InvitationPreviewTenant),
+  /** Name only: the requester is an owner the target already knows. */
+  requestedByName: Schema.optional(Schema.String),
+  targetEmailMasked: Schema.optional(Schema.String),
+  expiresAt: Schema.optional(Schema.String),
+});
+
+export type OwnershipTransferPreviewResponse = typeof OwnershipTransferPreviewResponse.Type;
+
+export const AcceptTenantOwnershipTransferRequest = Schema.Struct({
+  token: Schema.String,
+});
+
+export type AcceptTenantOwnershipTransferRequest = typeof AcceptTenantOwnershipTransferRequest.Type;
+
+export const AcceptTenantOwnershipTransferResponse = Schema.Struct({
+  tenantId: Schema.String,
+});
+
+export type AcceptTenantOwnershipTransferResponse =
+  typeof AcceptTenantOwnershipTransferResponse.Type;
+
 export const SsoConfigResponse = Schema.Struct({
   enabled: Schema.Boolean,
   azureTenantId: Schema.optional(NullableString),

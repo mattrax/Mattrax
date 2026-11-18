@@ -25,6 +25,7 @@ import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 /** Templates that can be queued. Kept small so operations sees a known set. */
 export const EMAIL_OUTBOX_TEMPLATES = [
   "invitation",
+  "ownership_transfer",
   "email_verification",
   "registration_verification",
   "email_change_confirm",

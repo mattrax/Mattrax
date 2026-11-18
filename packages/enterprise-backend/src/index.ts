@@ -295,6 +295,13 @@ export { invitationEmail } from "./Mail/invitationEmail.ts";
 
 export type { InvitationEmail, InvitationEmailInput } from "./Mail/invitationEmail.ts";
 
+export { ownershipTransferEmail } from "./Mail/ownershipTransferEmail.ts";
+
+export type {
+  OwnershipTransferEmail,
+  OwnershipTransferEmailInput,
+} from "./Mail/ownershipTransferEmail.ts";
+
 export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.ts";
 
 export type {

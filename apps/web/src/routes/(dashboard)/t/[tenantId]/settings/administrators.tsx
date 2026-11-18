@@ -23,6 +23,7 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
+  type RequestTenantOwnershipTransferResponse,
   type TenantInvitation,
   type TenantRole,
 } from "~/lib/enterprise";
@@ -51,6 +52,14 @@ type RoleChoice = {
 
 const roleValue = (user: { role: string; roleId?: string | null }) =>
   user.roleId ? `role:${user.roleId}` : `builtin:${user.role}`;
+
+/** Owner authority is the built-in role only, never a custom-role delegation. */
+const isBuiltInOwnerUser = (user: { role: string; roleId?: string | null }) =>
+  !user.roleId &&
+  user.role
+    .split(",")
+    .map((value) => value.trim())
+    .includes("owner");
 
 const selectClass =
   "h-11 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:h-8 sm:text-[12.5px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 sm:w-auto";
@@ -208,6 +217,8 @@ export default function AdministratorsSettingsPage() {
     queryFn: () => enterprise.listInvitations(params.tenantId),
   }));
 
+  const ownershipTransfer = useQuery(() => enterpriseQueries.ownershipTransfer(params.tenantId));
+
   const roles = useQuery(() => enterpriseQueries.roles(params.tenantId));
 
   const invitationOptions = useQuery(() => enterpriseQueries.invitationOptions(params.tenantId));
@@ -269,6 +280,15 @@ export default function AdministratorsSettingsPage() {
   const [cancelTarget, setCancelTarget] = createSignal<TenantInvitation | null>(null);
   const [filter, setFilter] = createSignal<InvitationFilter>("active");
 
+  const [transferTarget, setTransferTarget] = createSignal("");
+  const [transferConfirm, setTransferConfirm] = createSignal(false);
+
+  const [transferResult, setTransferResult] = createSignal<
+    (RequestTenantOwnershipTransferResponse & { targetName: string; targetEmail: string }) | null
+  >(null);
+
+  const [transferToCancel, setTransferToCancel] = createSignal(false);
+
   const [roleEditing, setRoleEditing] = createSignal<TenantRole | null>(null);
   const [roleFormOpen, setRoleFormOpen] = createSignal(false);
   const [roleName, setRoleName] = createSignal("");
@@ -278,6 +298,27 @@ export default function AdministratorsSettingsPage() {
   const [roleError, setRoleError] = createSignal<string | null>(null);
 
   const selectedChoice = () => roleChoices().find((choice) => choice.value === role());
+
+  const transferCandidates = createMemo(() => {
+    const selfId = session().data?.user?.id;
+
+    return (users.data?.users ?? []).filter(
+      (user) => user.userId !== selfId && !isBuiltInOwnerUser(user),
+    );
+  });
+
+  // Keep the transfer picker on a valid member as the list loads or changes.
+  createEffect(
+    () =>
+      transferCandidates()
+        .map((user) => user.userId)
+        .join(","),
+    () => {
+      const current = transferCandidates().find((user) => user.userId === transferTarget());
+
+      if (!current) setTransferTarget(transferCandidates()[0]?.userId ?? "");
+    },
+  );
 
   // Keep the invite form on an assignable option whenever the actor's ceiling
   // changes (for example after a role edit) or the initial default is blocked.
@@ -404,6 +445,43 @@ export default function AdministratorsSettingsPage() {
     meta: { inlineError: true },
     mutationFn: (memberId: string) => enterprise.removeUser(params.tenantId, memberId),
     onSuccess: refreshAccess,
+  }));
+
+  const requestOwnershipTransfer = useMutation(() => ({
+    meta: { inlineError: true },
+    mutationFn: () => {
+      const target = transferCandidates().find((user) => user.userId === transferTarget());
+
+      if (!target) throw new Error("Choose a member to take over ownership");
+
+      return enterprise.requestOwnershipTransfer(params.tenantId, target.userId);
+    },
+    onSuccess: async (result) => {
+      const target = users.data?.users.find((user) => user.userId === result.targetUserId);
+
+      setTransferResult({
+        ...result,
+        targetName: target?.name ?? "the new owner",
+        targetEmail: target?.email ?? "",
+      });
+      setCopied(null);
+      setTransferConfirm(false);
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.ownershipTransfer(params.tenantId),
+      });
+    },
+  }));
+
+  const cancelOwnershipTransfer = useMutation(() => ({
+    meta: { inlineError: true },
+    mutationFn: () => enterprise.cancelOwnershipTransfer(params.tenantId),
+    onSuccess: async () => {
+      setTransferResult(null);
+      setTransferToCancel(false);
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.ownershipTransfer(params.tenantId),
+      });
+    },
   }));
 
   const changeRole = useMutation(() => ({
@@ -542,11 +620,14 @@ export default function AdministratorsSettingsPage() {
     <div class="grid gap-5 xl:grid-cols-2">
       <QueryError
         class="xl:col-span-2"
-        error={users.error ?? invitations.error ?? invitationOptions.error}
+        error={
+          users.error ?? invitations.error ?? invitationOptions.error ?? ownershipTransfer.error
+        }
         onRetry={() => {
           void users.refetch();
           void invitations.refetch();
           void invitationOptions.refetch();
+          void ownershipTransfer.refetch();
         }}
       />
 
@@ -975,6 +1056,158 @@ export default function AdministratorsSettingsPage() {
         </div>
       </Panel>
 
+      <Show when={isOwner() || Boolean(ownershipTransfer.data?.transfer)}>
+        <Panel
+          title="Ownership transfer"
+          description="Hand tenant ownership to another member. Ownership only moves when they accept the emailed link."
+          class="xl:col-span-2"
+        >
+          <Show when={transferResult()}>
+            {(result) => (
+              <div class="mb-4 rounded-lg border border-success/25 bg-success/[0.06] p-3 text-sm">
+                <p role="status" aria-live="polite" class="font-medium text-foreground">
+                  {result().emailSent
+                    ? "Transfer email sent"
+                    : "Email could not be sent — share this link"}
+                </p>
+                <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Sent to <span class="font-medium text-foreground">{result().targetEmail}</span>.
+                  Ownership moves only when they accept. Expires{" "}
+                  <time datetime={result().expiresAt}>{formatDate(result().expiresAt)}</time>.
+                </p>
+                <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-xs text-muted-foreground">
+                  {result().acceptUrl}
+                </code>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    class="min-h-11 sm:min-h-0"
+                    variant="outline"
+                    aria-label={`Copy ownership transfer link for ${result().targetEmail}`}
+                    onClick={() => void copyLink(result().acceptUrl, "transfer")}
+                  >
+                    Copy link
+                  </Button>
+                  <span role="status" aria-live="polite" class="text-xs text-success-foreground">
+                    {copied() === "transfer" ? "Link copied to clipboard." : ""}
+                  </span>
+                </div>
+              </div>
+            )}
+          </Show>
+
+          <Show
+            when={ownershipTransfer.data?.transfer}
+            fallback={
+              <Show when={isOwner()}>
+                <Show
+                  when={transferCandidates().length > 0}
+                  fallback={
+                    <p class="text-[13px] text-muted-foreground">
+                      Invite another member before transferring ownership. Owners cannot take over
+                      from each other.
+                    </p>
+                  }
+                >
+                  <form
+                    class="flex flex-col gap-2 sm:flex-row sm:items-center"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+
+                      if (transferCandidates().length === 0) return;
+
+                      setTransferConfirm(true);
+                    }}
+                  >
+                    <select
+                      class={cn(selectClass, "min-w-0 flex-1 sm:w-auto")}
+                      value={transferTarget()}
+                      onChange={(event) => setTransferTarget(event.currentTarget.value)}
+                      aria-label="Member to take over ownership"
+                      disabled={
+                        requestOwnershipTransfer.isPending ||
+                        users.isPending ||
+                        ownershipTransfer.isPending
+                      }
+                    >
+                      <For each={transferCandidates()}>
+                        {(candidate) => (
+                          <option value={candidate.userId}>
+                            {candidate.name} ({candidate.email})
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                    <Button
+                      type="submit"
+                      class="min-h-11 shrink-0"
+                      disabled={
+                        requestOwnershipTransfer.isPending ||
+                        ownershipTransfer.isPending ||
+                        !transferTarget()
+                      }
+                    >
+                      {requestOwnershipTransfer.isPending ? "Requesting…" : "Request transfer"}
+                    </Button>
+                  </form>
+                  <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    The new owner must accept the email link. You stay an owner until then, and
+                    become an administrator when ownership moves.
+                  </p>
+                  <ErrorText error={requestOwnershipTransfer.error} />
+                </Show>
+              </Show>
+            }
+          >
+            {(transfer) => {
+              const canCancel = () =>
+                isOwner() ||
+                transfer().target.id === session().data?.user?.id ||
+                transfer().requestedBy.id === session().data?.user?.id;
+
+              return (
+                <div class="rounded-lg border border-warning/25 bg-warning/[0.06] p-3">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Chip tone="warning">Pending</Chip>
+                    <span class="text-[13px] text-foreground">
+                      Ownership is waiting for acceptance.
+                    </span>
+                  </div>
+                  <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
+                    <dt class="text-muted-foreground">Requested by</dt>
+                    <dd class="min-w-0 truncate font-medium text-foreground">
+                      {transfer().requestedBy.name} ({transfer().requestedBy.email})
+                    </dd>
+                    <dt class="text-muted-foreground">New owner</dt>
+                    <dd class="min-w-0 truncate font-medium text-foreground">
+                      {transfer().target.name} ({transfer().target.email})
+                    </dd>
+                    <dt class="text-muted-foreground">Expires</dt>
+                    <dd class="text-foreground">
+                      <time datetime={transfer().expiresAt}>
+                        {relativeExpiry(transfer().expiresAt)}
+                      </time>
+                    </dd>
+                  </dl>
+                  <Show when={canCancel()}>
+                    <Button
+                      class="mt-3 min-h-11 sm:min-h-0"
+                      size="sm"
+                      variant="destructive"
+                      disabled={cancelOwnershipTransfer.isPending}
+                      onClick={() => setTransferToCancel(true)}
+                    >
+                      Cancel transfer
+                    </Button>
+                  </Show>
+                  <ErrorText error={cancelOwnershipTransfer.error} />
+                </div>
+              );
+            }}
+          </Show>
+        </Panel>
+      </Show>
+
       <Panel
         title="Invitations"
         description="Pending invitations and their delivery history."
@@ -1243,6 +1476,27 @@ export default function AdministratorsSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={transferConfirm()}
+        onOpenChange={setTransferConfirm}
+        title="Transfer tenant ownership?"
+        description="The new owner must accept the email link. Until they do, you stay an owner. After acceptance you become an administrator and lose owner-only actions such as deleting or exporting the tenant."
+        confirmLabel="Send transfer request"
+        pending={requestOwnershipTransfer.isPending}
+        onConfirm={() => requestOwnershipTransfer.mutate()}
+      />
+
+      <ConfirmDialog
+        open={transferToCancel()}
+        onOpenChange={setTransferToCancel}
+        title="Cancel ownership transfer?"
+        description="The emailed link stops working and ownership stays with the current owner. You can request a new transfer later."
+        confirmLabel="Cancel transfer"
+        destructive
+        pending={cancelOwnershipTransfer.isPending}
+        onConfirm={() => cancelOwnershipTransfer.mutate()}
+      />
 
       <ConfirmDialog
         open={roleToDelete() !== null}

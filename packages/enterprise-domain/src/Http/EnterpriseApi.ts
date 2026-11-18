@@ -156,6 +156,13 @@ import { InvitationPreviewQuery } from "../Tenant.js";
 import { InvitationPreviewResponse } from "../Tenant.js";
 import { InviteTenantUserRequest } from "../Tenant.js";
 import { ListTenantInvitationsQuery } from "../Tenant.js";
+import { AcceptTenantOwnershipTransferRequest } from "../Tenant.js";
+import { AcceptTenantOwnershipTransferResponse } from "../Tenant.js";
+import { OwnershipTransferPreviewQuery } from "../Tenant.js";
+import { OwnershipTransferPreviewResponse } from "../Tenant.js";
+import { RequestTenantOwnershipTransferRequest } from "../Tenant.js";
+import { RequestTenantOwnershipTransferResponse } from "../Tenant.js";
+import { TenantOwnershipTransferResponse } from "../Tenant.js";
 import { MobileconfigPreview } from "../Policy.js";
 import { PatchApplicationRequest } from "../Application.js";
 import { PatchDeviceRequest } from "../Device.js";
@@ -728,6 +735,57 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         success: Schema.Struct({ status: Schema.Literal("ok") }),
       },
     ),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantOwnershipTransfer", "/v1/tenants/:tenantId/ownership-transfer", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: TenantOwnershipTransferResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "requestTenantOwnershipTransfer",
+      "/v1/tenants/:tenantId/ownership-transfer",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: RequestTenantOwnershipTransferRequest,
+        success: RequestTenantOwnershipTransferResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "cancelTenantOwnershipTransfer",
+      "/v1/tenants/:tenantId/ownership-transfer",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("acceptTenantOwnershipTransfer", "/v1/ownership-transfer/accept", {
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        ...EnterpriseDbErrors,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+        EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
+      payload: AcceptTenantOwnershipTransferRequest,
+      success: AcceptTenantOwnershipTransferResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("previewTenantOwnershipTransfer", "/v1/ownership-transfer/preview", {
+      error: EnterpriseNoDomainErrors,
+      query: OwnershipTransferPreviewQuery,
+      success: OwnershipTransferPreviewResponse,
+    }),
   )
   .add(
     HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", {

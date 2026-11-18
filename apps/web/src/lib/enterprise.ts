@@ -207,6 +207,9 @@ export type {
   PatchTenantRoleRequest,
   TenantInvitation,
   TenantUser,
+  TenantOwnershipTransfer,
+  OwnershipTransferPreviewResponse,
+  RequestTenantOwnershipTransferResponse,
   UserInfo,
   VppAssetInfo,
   VppAssetsResponse,
@@ -286,6 +289,8 @@ export const enterpriseKeys = {
     ["enterprise", "tenant-invitations", keyTenant(tenantId)] as const,
   invitationOptions: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitation-options", keyTenant(tenantId)] as const,
+  ownershipTransfer: (tenantId: RouteParam) =>
+    ["enterprise", "tenant-ownership-transfer", keyTenant(tenantId)] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", keyTenant(tenantId)] as const,
   android: (tenantId: RouteParam) => ["enterprise", "android", keyTenant(tenantId)] as const,
   abm: (tenantId: RouteParam) => ["enterprise", "abm", keyTenant(tenantId)] as const,
@@ -1987,6 +1992,27 @@ export const enterprise = {
   /** Accept an invitation for the signed-in account. */
   acceptInvitation: (token: string) =>
     endpoint((api) => api.acceptInvitation({ payload: { token } })),
+  getOwnershipTransfer: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getTenantOwnershipTransfer({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  requestOwnershipTransfer: (tenantId: RouteParam, targetUserId: string) =>
+    endpoint((api) =>
+      api.requestTenantOwnershipTransfer({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { targetUserId },
+      }),
+    ),
+  cancelOwnershipTransfer: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.cancelTenantOwnershipTransfer({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  /** Public preview of an ownership-transfer token; safe while signed out. */
+  previewOwnershipTransfer: (token: string) =>
+    endpoint((api) => api.previewTenantOwnershipTransfer({ query: { token } })),
+  /** Accept an ownership transfer for the signed-in target account. */
+  acceptOwnershipTransfer: (token: string) =>
+    endpoint((api) => api.acceptTenantOwnershipTransfer({ payload: { token } })),
   patchUser: (
     tenantId: RouteParam,
     memberId: RouteParam,
@@ -2311,6 +2337,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.invitationOptions(tenantId),
       queryFn: () => enterprise.invitationOptions(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  ownershipTransfer: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.ownershipTransfer(tenantId),
+      queryFn: () => enterprise.getOwnershipTransfer(tenantId),
       enabled: Boolean(tenantId),
     }),
   apns: (tenantId: RouteParam) =>

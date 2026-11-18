@@ -217,6 +217,10 @@ const MEMBER_READ = new Set([
   "listTenantUsers",
   "listTenantInvitations",
   "getTenantInvitationOptions",
+  "getTenantOwnershipTransfer",
+  // A target may decline a transfer without holding member-management rights,
+  // so cancel is a read-level member action with an explicit actor check.
+  "cancelTenantOwnershipTransfer",
 ]);
 
 const MEMBER_WRITE = new Set([
@@ -225,6 +229,7 @@ const MEMBER_WRITE = new Set([
   "resendTenantInvitation",
   "patchTenantUser",
   "removeTenantUser",
+  "requestTenantOwnershipTransfer",
 ]);
 
 const ROLE_READ = new Set(["listTenantRoles"]);
@@ -343,6 +348,8 @@ export const permissionForMethod = (method: string): Permission | undefined => {
   if (
     method === "acceptInvitation" ||
     method === "previewInvitation" ||
+    method === "acceptTenantOwnershipTransfer" ||
+    method === "previewTenantOwnershipTransfer" ||
     method === "getEnrollment" ||
     method === "submitEnrollmentAnswers"
   )

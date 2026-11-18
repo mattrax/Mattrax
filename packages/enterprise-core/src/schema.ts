@@ -888,6 +888,49 @@ export const invitation = mysqlTable(
   ],
 );
 
+/**
+ * A pending handover of tenant ownership from one owner to another member.
+ *
+ * Ownership never moves until the target accepts the emailed link. The row
+ * carries one single-use token digest and is terminal once accepted, cancelled
+ * or expired; only a `pending` row blocks a new request. The acceptance
+ * transaction promotes the target before demoting the requester, so the tenant
+ * always has at least one owner.
+ */
+export const tenantOwnershipTransfer = mysqlTable(
+  "tenant_ownership_transfer",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** The owner handing ownership over; demoted on acceptance. */
+    requestedByUserId: id("requested_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** The member who becomes the new owner when they accept. */
+    targetUserId: id("target_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** `pending`, `accepted`, `cancelled` or `expired`. */
+    status: varchar("status", { length: 32 }).notNull(),
+    /** SHA-256 of the one-time acceptance token; the raw token is only emailed. */
+    tokenHash: varchar("token_hash", { length: 255 }),
+    expiresAt: timestamp("expires_at").notNull(),
+    acceptedAt: timestamp("accepted_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // Nullable so terminal rows can keep their digest for previews; MySQL
+    // permits multiple NULLs in a unique index.
+    uniqueIndex("tenant_ownership_transfer_token_unique").on(table.tokenHash),
+    index("tenant_ownership_transfer_organization_idx").on(table.organizationId, table.status),
+    index("tenant_ownership_transfer_target_idx").on(table.targetUserId, table.status),
+  ],
+);
+
 export const subscription = mysqlTable(
   "subscription",
   {
@@ -3300,6 +3343,7 @@ export const relations = defineRelations(
     stepUpTotpState,
     registrationVerification,
     invitation,
+    tenantOwnershipTransfer,
     subscription,
     stripeEvent,
     accountApiToken,
@@ -3459,6 +3503,20 @@ export const relations = defineRelations(
         to: r.organization.id,
       }),
       inviter: r.one.user({ from: r.invitation.inviterId, to: r.user.id }),
+    },
+    tenantOwnershipTransfer: {
+      organization: r.one.organization({
+        from: r.tenantOwnershipTransfer.organizationId,
+        to: r.organization.id,
+      }),
+      requestedBy: r.one.user({
+        from: r.tenantOwnershipTransfer.requestedByUserId,
+        to: r.user.id,
+      }),
+      target: r.one.user({
+        from: r.tenantOwnershipTransfer.targetUserId,
+        to: r.user.id,
+      }),
     },
     ssoDomain: {
       organization: r.one.organization({
