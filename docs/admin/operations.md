@@ -537,6 +537,7 @@ completion returns `404 tenant not found`.
 Tenant bundles are not a database backup. Also back up:
 
 - MySQL with `mysqldump --single-transaction --quick --routines --triggers`.
+  The nightly workflow described in [Backups](/operations/backups) does this.
 - The R2 bucket.
 - `AUTH_SECRET`, `CLOUD_APPLE_VENDOR_CERT`/`KEY`, Stripe secrets and Entra secrets.
 
