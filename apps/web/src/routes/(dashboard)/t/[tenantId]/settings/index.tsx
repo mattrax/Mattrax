@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
@@ -28,7 +28,9 @@ import {
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
@@ -70,6 +72,18 @@ const responseFailure = async (response: Response, fallback: string) => {
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // Backups are permission-gated, so the page keeps that query disabled for
+    // roles that cannot read them; warm only the tenant general form here.
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
+    ]);
+  },
+};
+
 export default function GeneralSettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -82,10 +96,7 @@ export default function GeneralSettingsPage() {
   const canRunBackup = () => can("backups.write");
   const canDelete = () => can("tenant.delete");
 
-  const tenant = useQuery(() => ({
-    queryKey: enterpriseKeys.tenant(params.tenantId),
-    queryFn: () => enterprise.getTenant(params.tenantId),
-  }));
+  const tenant = useQuery(() => enterpriseQueries.tenant(params.tenantId));
 
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
@@ -242,8 +253,7 @@ export default function GeneralSettingsPage() {
   // Backups are an operational admin surface. Skip the request entirely for
   // roles that cannot read it instead of retrying a 403 on every visit.
   const backups = useQuery(() => ({
-    queryKey: enterpriseKeys.backups(params.tenantId),
-    queryFn: () => enterprise.listTenantBackups(params.tenantId),
+    ...enterpriseQueries.backups(params.tenantId),
     enabled: canBackups(),
     retry: false,
   }));

@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -16,6 +16,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Search } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries, type DeviceRow } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 const precedence = [
@@ -28,6 +30,24 @@ const precedence = [
   "Between included policies providing the same kind, highest priority wins.",
 ];
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () =>
+        queryClient.ensureQueryData(
+          enterpriseQueries.item(params.tenantId, "policy", params.policyId),
+        ),
+      () =>
+        queryClient.ensureQueryData(
+          enterpriseQueries.policyAssignments(params.tenantId, params.policyId),
+        ),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
+    ]);
+  },
+};
+
 export default function PolicyAssignmentsPage() {
   const params = useParams();
   const qc = useQueryClient();
@@ -39,10 +59,7 @@ export default function PolicyAssignmentsPage() {
     enterpriseQueries.policyAssignments(params.tenantId, params.policyId),
   );
 
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
-  }));
+  const devices = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 

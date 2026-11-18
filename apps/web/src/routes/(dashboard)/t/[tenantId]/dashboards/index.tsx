@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
@@ -19,8 +19,20 @@ import { Input } from "~/components/ui/input";
 import { LayoutDashboard, Plus, Star } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";
+import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";
+import { queryClient as appQueryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => appQueryClient.ensureQueryData(enterpriseQueries.dashboards(params.tenantId)),
+    ]);
+  },
+};
 
 export default function DashboardsPage() {
   const params = useParams();

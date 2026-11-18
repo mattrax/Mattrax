@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
@@ -10,10 +10,27 @@ import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // Above the fold: the enrollment link and platform readiness. The question
+    // builder, pre-registrations and activity log load with the page.
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.enrollment(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.scepCa(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.android(params.tenantId)),
+    ]);
+  },
+};
 
 export default function EnrollmentSettingsPage() {
   const params = useParams();
@@ -21,45 +38,25 @@ export default function EnrollmentSettingsPage() {
   const { can } = useCan();
   const writable = () => can("enrollment.write");
 
-  const enrollment = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollment(params.tenantId),
-    queryFn: () => enterprise.getTenantEnrollment(params.tenantId),
-  }));
+  const enrollment = useQuery(() => enterpriseQueries.enrollment(params.tenantId));
 
-  const apns = useQuery(() => ({
-    queryKey: enterpriseKeys.apns(params.tenantId),
-    queryFn: () => enterprise.getApns(params.tenantId),
-  }));
+  const apns = useQuery(() => enterpriseQueries.apns(params.tenantId));
 
-  const scepCa = useQuery(() => ({
-    queryKey: enterpriseKeys.scepCa(params.tenantId),
-    queryFn: () => enterprise.getTenantScepCa(params.tenantId),
-  }));
+  const scepCa = useQuery(() => enterpriseQueries.scepCa(params.tenantId));
 
-  const androidEnterprise = useQuery(() => ({
-    queryKey: enterpriseKeys.android(params.tenantId),
-    queryFn: () => enterprise.getTenantAndroid(params.tenantId),
-  }));
+  const androidEnterprise = useQuery(() => enterpriseQueries.android(params.tenantId));
 
-  const attempts = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
-    queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
-  }));
+  const attempts = useQuery(() => enterpriseQueries.enrollmentAttempts(params.tenantId, 20));
 
-  const preRegistrations = useQuery(() => ({
-    queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
-    queryFn: () => enterprise.listDevicePreRegistrations(params.tenantId),
-  }));
+  const preRegistrations = useQuery(() =>
+    enterpriseQueries.devicePreRegistrations(params.tenantId),
+  );
 
-  const attributeDefinitions = useQuery(() => ({
-    queryKey: enterpriseKeys.attributes(params.tenantId),
-    queryFn: () => enterprise.listAttributes(params.tenantId),
-  }));
+  const attributeDefinitions = useQuery(() => enterpriseQueries.attributes(params.tenantId));
 
-  const enrollmentQuestions = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
-    queryFn: () => enterprise.listEnrollmentQuestions(params.tenantId),
-  }));
+  const enrollmentQuestions = useQuery(() =>
+    enterpriseQueries.enrollmentQuestions(params.tenantId),
+  );
 
   const [questionRows, setQuestionRows] = createSignal<
     Array<{ key: string; prompt: string; required: boolean | null }>

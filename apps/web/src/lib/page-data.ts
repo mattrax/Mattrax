@@ -9,6 +9,7 @@ import { isServer } from "@solidjs/web";
  * browser-only concern: SSR has no authenticated API transport here, and a
  * failed preload must never block navigation, so every loader is settled.
  */
+// oxlint-disable-next-line anti-slop/no-unknown-returns -- loaders warm arbitrary query keys; their values are only awaited and discarded.
 export const preloadPage = (loaders: ReadonlyArray<() => Promise<unknown>>): Promise<void> => {
   if (isServer) return Promise.resolve();
 
