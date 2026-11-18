@@ -2704,6 +2704,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                                 platform(),
                                                 property,
                                                 activeCollection()?.source,
+                                                selection().collectionId,
                                               )}
                                               changed={isChangedValue(property, value())}
                                               searchMatch={Boolean(activeMatchKeys()?.has(key()))}

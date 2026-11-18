@@ -1,4 +1,5 @@
 import type { Collection, PlatformId, Property } from "./catalog";
+import { isThirdPartyCollectionId } from "./thirdPartyApps";
 
 /**
  * Documentation links for catalogue entries.
@@ -267,11 +268,27 @@ export const appleDocumentationUrl = (
 };
 
 /**
+ * Whether a raw `PayloadType` names an Apple payload rather than a third-party
+ * one. Uploaded mobileconfigs often carry vendor payloads such as
+ * `com.google.Chrome`; those have no page in Apple's Device Management docs and
+ * must not be labelled as Apple documentation.
+ */
+export const isApplePayloadType = (payloadType: string | undefined) =>
+  Boolean(
+    payloadType &&
+    (payloadType === "Configuration" ||
+      payloadType.startsWith("com.apple.") ||
+      Object.hasOwn(PROFILE_SLUGS, payloadType)),
+  );
+
+/**
  * The page for a raw `PayloadType` value, used when a mobileconfig is previewed
- * outside the catalogue (uploaded profiles). Unknown types link to the payload
- * index for the same reason as above.
+ * outside the catalogue (uploaded profiles). Unknown Apple types link to the
+ * payload index; third-party payloads return undefined so no misleading Apple
+ * link is rendered.
  */
 export const applePayloadDocumentationUrl = (payloadType: string | undefined) => {
+  if (!isApplePayloadType(payloadType)) return undefined;
   const slug = payloadType ? slugFor(PROFILE_SLUGS, payloadType) : undefined;
 
   return slug ? `${APPLE_DOCS}/${slug}` : APPLE_PROFILE_DOCS;
@@ -315,12 +332,21 @@ export const collectionDocumentationUrl = (
   return undefined;
 };
 
-/** The documentation URL for a setting being edited, or undefined. */
+/**
+ * The documentation URL for a setting being edited, or undefined.
+ *
+ * Third-party Windows settings are compiled from vendor data, not from
+ * Microsoft's Policy CSP, so they must not inherit the generic CSP reference
+ * link the catalogue collections use.
+ */
 export const propertyDocumentationUrl = (
   platform: PlatformId,
   property: Pick<Property, "source">,
   collectionSource: string | undefined,
+  collectionId?: string,
 ): string | undefined => {
+  if (collectionId && isThirdPartyCollectionId(collectionId)) return undefined;
+
   if (platform === "windows")
     return windowsPropertyDocumentationUrl(collectionSource, property.source);
 

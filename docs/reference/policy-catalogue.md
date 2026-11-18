@@ -105,12 +105,14 @@ The designer and the policy editor link each entry to the vendor's documentation
 
 - **Windows** uses the `source` URL the catalogue already carries per property,
   falling back to the collection's Policy CSP reference when a property has no
-  source of its own.
+  source of its own. Third-party app settings are compiled from vendor data,
+  not from Policy CSP, so they do not receive the generic Microsoft link.
 - **Apple** has no stable URL scheme for payload and declaration types, so
   `apps/web/src/lib/policy-designer/documentation.ts` holds a curated map from
   catalogue identifiers to `developer.apple.com` pages. Types Apple documents
   more than once (for example `com.apple.MCX`) are keyed by identifier and
-  collection name.
+  collection name. Mobileconfig payloads that are not Apple payloads (for
+  example `com.google.Chrome`) get no Apple documentation link.
 
 Types missing from the curated map (legacy payloads Apple no longer documents,
 custom payloads and future catalogue additions) link to

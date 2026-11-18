@@ -141,12 +141,12 @@ export function MobileconfigPreview(props: { content: string }) {
                       <span class="font-medium text-foreground">
                         {item.displayName ?? item.type ?? "Payload"}
                       </span>
-                      <Show when={item.type}>
-                        {(type) => (
+                      <Show when={applePayloadDocumentationUrl(item.type)}>
+                        {(href) => (
                           <DocumentationLink
-                            href={applePayloadDocumentationUrl(type())}
+                            href={href()}
                             source="Apple"
-                            subject={item.displayName ?? type()}
+                            subject={item.displayName ?? item.type ?? "this payload"}
                             class="ml-auto"
                           />
                         )}
