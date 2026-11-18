@@ -267,6 +267,63 @@ describe("enterprise API tokens", () => {
     ).resolves.toMatchObject({ status: "ok" });
   });
 
+  it("refreshes a bearer token's last-used time at most once per window", async () => {
+    const now = new Date();
+    const recent = new Date(now.getTime() - 60_000);
+    const stale = new Date(now.getTime() - 60 * 60_000);
+
+    const context = makeContext({
+      ...seedAccountAndTenant(),
+      account_api_token: [
+        {
+          id: "token-recent",
+          accountId: "user-1",
+          name: "Recent",
+          tokenPrefix: "mtx_recent",
+          tokenHash: await sha256("mtx_recent_usage"),
+          scopes: ["read"],
+          tenantId: null,
+          lastUsedAt: recent,
+          expiresAt: null,
+          revokedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "token-stale",
+          accountId: "user-1",
+          name: "Stale",
+          tokenPrefix: "mtx_stale",
+          tokenHash: await sha256("mtx_stale_usage"),
+          scopes: ["read"],
+          tenantId: null,
+          lastUsedAt: stale,
+          expiresAt: null,
+          revokedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    const getBearer = (token: string) =>
+      new Request(`${origin}/api/v1/account/api-tokens`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    await context.run((auth) => auth.listApiTokens(getBearer("mtx_recent_usage")));
+    await context.run((auth) => auth.listApiTokens(getBearer("mtx_stale_usage")));
+
+    const byId = new Map(context.db.store.account_api_token.map((row) => [row.id, row]));
+
+    // A dashboard fans out several calls with the same token; a recent use is
+    // not rewritten on every one of them.
+    expect(byId.get("token-recent")!.lastUsedAt).toEqual(recent);
+    // Once the window has passed the usage is recorded.
+    expect(byId.get("token-stale")!.lastUsedAt!.getTime()).toBeGreaterThan(stale.getTime());
+  });
+
   it("stops an API token from minting a broader or cross-tenant token", async () => {
     const now = new Date();
     const raw = "mtx_existing_read_token";

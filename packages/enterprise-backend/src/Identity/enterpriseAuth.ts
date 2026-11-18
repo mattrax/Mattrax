@@ -198,6 +198,13 @@ const sha256Base64Url = (value: string) =>
 
 export const EMAIL_CODE_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * How often a bearer token's `last_used_at` is refreshed. A dashboard load can
+ * fan out several SSR calls with the same token; writing on each one adds a
+ * round trip to every request for metadata nobody reads at that resolution.
+ */
+export const API_TOKEN_USED_REFRESH_MILLIS = 5 * 60 * 1000;
+
 /** An email change must complete within the hour, like a password reset link. */
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
 
@@ -411,10 +418,19 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           });
 
           if (!item || (item.expiresAt && item.expiresAt <= new Date())) return undefined;
-          yield* db
-            .update(schema.accountApiToken)
-            .set({ lastUsedAt: new Date(), updatedAt: new Date() })
-            .where(eq(schema.accountApiToken.id, item.id));
+
+          // `last_used_at` is operator metadata, not an authorization input.
+          // Refreshing it on every request costs a write round trip on every
+          // bearer-authenticated call (SSR and MCP traffic), so it follows the
+          // same five-minute floor as the session context.
+          const usedAt = item.lastUsedAt;
+          const at = new Date();
+
+          if (!usedAt || at.getTime() - usedAt.getTime() >= API_TOKEN_USED_REFRESH_MILLIS)
+            yield* db
+              .update(schema.accountApiToken)
+              .set({ lastUsedAt: at, updatedAt: at })
+              .where(eq(schema.accountApiToken.id, item.id));
 
           return item;
         });
