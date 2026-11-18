@@ -3998,14 +3998,25 @@ export const createEnterpriseService = ({
   const compareText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
   /**
+   * Upper bound on inventory rows read for one search.
+   *
+   * Search runs per keystroke, so a tenant-wide scan of every device/application
+   * pair is not acceptable. The query orders rows deterministically before
+   * applying this cap; when the cap is reached, device counts only cover the
+   * rows that were read. That trade-off is deliberate: the alternative is an
+   * unbounded per-keystroke read.
+   */
+  const SOFTWARE_SEARCH_MAX_ROWS = 10_000;
+
+  /**
    * Collapse per-device inventory rows into one command-palette result per
    * app/version/publisher.
    *
-   * The grouping runs in memory over the rows the `LIKE` already narrowed:
-   * the count needs every matching device, but only the sorted, sliced output
-   * is returned, so the caller still sees at most `limit` rows. Choosing the
-   * smallest name and sorting explicitly keeps the result independent of the
-   * order MySQL happened to return the inventory in.
+   * The count needs every matching device in the capped set, but only the
+   * sorted, sliced output is returned, so the caller still sees at most
+   * `limit` rows. Choosing the smallest name/short version and sorting
+   * explicitly keeps the result independent of the order MySQL returned the
+   * inventory in.
    */
   const aggregateSoftwareSearchRows = (
     rows: ReadonlyArray<{
@@ -4013,6 +4024,7 @@ export const createEnterpriseService = ({
       readonly bundleId: string;
       readonly name: string | null;
       readonly version: string | null;
+      readonly shortVersion: string | null;
       readonly publisher: string | null;
     }>,
     limit: number,
@@ -4021,6 +4033,7 @@ export const createEnterpriseService = ({
       bundleId: string;
       name: string | null;
       version: string | null;
+      shortVersion: string | null;
       publisher: string | null;
       devices: Set<string>;
     };
@@ -4034,11 +4047,16 @@ export const createEnterpriseService = ({
         bundleId: row.bundleId,
         name: null,
         version: row.version,
+        shortVersion: null,
         publisher: row.publisher,
         devices: new Set<string>(),
       };
 
       if (row.name && (!group.name || row.name < group.name)) group.name = row.name;
+
+      if (row.shortVersion && (!group.shortVersion || row.shortVersion < group.shortVersion))
+        group.shortVersion = row.shortVersion;
+
       group.devices.add(row.deviceId);
       groups.set(key, group);
     }
@@ -4048,6 +4066,7 @@ export const createEnterpriseService = ({
         name: group.name ?? group.bundleId,
         bundleId: group.bundleId,
         version: group.version,
+        shortVersion: group.shortVersion,
         publisher: group.publisher,
         deviceCount: group.devices.size,
       }))
@@ -15762,46 +15781,59 @@ export const createEnterpriseService = ({
         if (!term) return { rows: [] };
         const pattern = `%${escapeLike(term)}%`;
 
-        const devices = yield* db
-          .select()
-          .from(schema.device)
-          .where(
-            and(
-              eq(schema.device.organizationId, ctx.organization.id),
-              or(
-                like(schema.device.name, pattern),
-                like(schema.device.serial, pattern),
-                like(schema.device.model, pattern),
-                like(schema.device.dmIdentifier, pattern),
-              ),
-            ),
-          )
-          .orderBy(asc(schema.device.name), asc(schema.device.id))
-          .limit(limit);
+        // Tenant-level read is not enough to enumerate an entity class:
+        // serials, group names and policy names need their section permission,
+        // the same as the corresponding list endpoints.
+        const canReadDevices = hasPermission(ctx.role.permissions, "devices.read");
+        const canReadGroups = hasPermission(ctx.role.permissions, "groups.read");
+        const canReadPolicies = hasPermission(ctx.role.permissions, "policies.read");
 
-        const groups = yield* db
-          .select()
-          .from(schema.enterpriseGroup)
-          .where(
-            and(
-              eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-              like(schema.enterpriseGroup.name, pattern),
-            ),
-          )
-          .orderBy(asc(schema.enterpriseGroup.name), asc(schema.enterpriseGroup.id))
-          .limit(limit);
+        const devices = canReadDevices
+          ? yield* db
+              .select()
+              .from(schema.device)
+              .where(
+                and(
+                  eq(schema.device.organizationId, ctx.organization.id),
+                  or(
+                    like(schema.device.name, pattern),
+                    like(schema.device.serial, pattern),
+                    like(schema.device.model, pattern),
+                    like(schema.device.dmIdentifier, pattern),
+                  ),
+                ),
+              )
+              .orderBy(asc(schema.device.name), asc(schema.device.id))
+              .limit(limit)
+          : [];
 
-        const policies = yield* db
-          .select()
-          .from(schema.policy)
-          .where(
-            and(
-              eq(schema.policy.organizationId, ctx.organization.id),
-              like(schema.policy.name, pattern),
-            ),
-          )
-          .orderBy(asc(schema.policy.name), asc(schema.policy.id))
-          .limit(limit);
+        const groups = canReadGroups
+          ? yield* db
+              .select()
+              .from(schema.enterpriseGroup)
+              .where(
+                and(
+                  eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                  like(schema.enterpriseGroup.name, pattern),
+                ),
+              )
+              .orderBy(asc(schema.enterpriseGroup.name), asc(schema.enterpriseGroup.id))
+              .limit(limit)
+          : [];
+
+        const policies = canReadPolicies
+          ? yield* db
+              .select()
+              .from(schema.policy)
+              .where(
+                and(
+                  eq(schema.policy.organizationId, ctx.organization.id),
+                  like(schema.policy.name, pattern),
+                ),
+              )
+              .orderBy(asc(schema.policy.name), asc(schema.policy.id))
+              .limit(limit)
+          : [];
 
         // Member names and addresses are the same data `listDirectory` gates
         // behind `members.read`; tenant-level read must not bypass it.
@@ -15855,28 +15887,40 @@ export const createEnterpriseService = ({
         // palette links to. Inventory rows are per device, so aggregation runs
         // before the limit is applied.
         const software = hasPermission(ctx.role.permissions, "applications.read")
-          ? yield* db
-              .select({
-                deviceId: schema.deviceApplication.deviceId,
-                bundleId: schema.deviceApplication.bundleId,
-                name: schema.deviceApplication.name,
-                version: schema.deviceApplication.version,
-                shortVersion: schema.deviceApplication.shortVersion,
-                publisher: schema.deviceApplication.publisher,
-              })
-              .from(schema.deviceApplication)
-              .where(
-                and(
-                  eq(schema.deviceApplication.organizationId, ctx.organization.id),
-                  or(
-                    like(schema.deviceApplication.name, pattern),
-                    like(schema.deviceApplication.bundleId, pattern),
-                    like(schema.deviceApplication.version, pattern),
-                    like(schema.deviceApplication.shortVersion, pattern),
-                    like(schema.deviceApplication.publisher, pattern),
+          ? yield* (
+              db
+                .select({
+                  deviceId: schema.deviceApplication.deviceId,
+                  bundleId: schema.deviceApplication.bundleId,
+                  name: schema.deviceApplication.name,
+                  version: schema.deviceApplication.version,
+                  shortVersion: schema.deviceApplication.shortVersion,
+                  publisher: schema.deviceApplication.publisher,
+                })
+                .from(schema.deviceApplication)
+                .where(
+                  and(
+                    eq(schema.deviceApplication.organizationId, ctx.organization.id),
+                    or(
+                      like(schema.deviceApplication.name, pattern),
+                      like(schema.deviceApplication.bundleId, pattern),
+                      like(schema.deviceApplication.version, pattern),
+                      like(schema.deviceApplication.shortVersion, pattern),
+                      like(schema.deviceApplication.publisher, pattern),
+                    ),
                   ),
-                ),
-              )
+                )
+                // Deterministic order before the raw-row cap so truncation (if it
+                // happens) keeps the same subset on every query.
+                .orderBy(
+                  asc(schema.deviceApplication.bundleId),
+                  asc(schema.deviceApplication.version),
+                  asc(schema.deviceApplication.publisher),
+                  asc(schema.deviceApplication.name),
+                  asc(schema.deviceApplication.deviceId),
+                )
+                .limit(SOFTWARE_SEARCH_MAX_ROWS)
+            )
           : [];
 
         const androidByDevice = yield* androidDeviceAccessFor(
@@ -15895,6 +15939,7 @@ export const createEnterpriseService = ({
               name: row.name,
               platform: row.platform,
               identifier: row.bundleId ?? row.storeId ?? null,
+              storeId: row.storeId,
             })),
             ...aggregateSoftwareSearchRows(software, limit),
           ],

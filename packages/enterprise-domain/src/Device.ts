@@ -352,6 +352,8 @@ export const SoftwareSearchRow = Schema.Struct({
   /** Apple bundle id, Android package name or Windows product key. */
   bundleId: Schema.String,
   version: Schema.optional(NullableString),
+  /** Apple `shortVersion`; matched by search but not shown in the hint. */
+  shortVersion: Schema.optional(NullableString),
   /** Vendor (`Publisher` on Windows, otherwise an app-store vendor). */
   publisher: Schema.optional(NullableString),
   /** Distinct devices reporting this app/version/publisher. */

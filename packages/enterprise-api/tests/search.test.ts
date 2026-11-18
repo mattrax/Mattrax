@@ -109,6 +109,7 @@ const installed = (overrides: {
   bundleId: string;
   name: string | null;
   version: string | null;
+  shortVersion?: string | null;
   publisher?: string | null;
 }) => ({
   deviceId: overrides.deviceId,
@@ -116,7 +117,7 @@ const installed = (overrides: {
   bundleId: overrides.bundleId,
   name: overrides.name,
   version: overrides.version,
-  shortVersion: null,
+  shortVersion: overrides.shortVersion ?? null,
   publisher: overrides.publisher ?? null,
   bundleSize: null,
   dynamicSize: null,
@@ -148,6 +149,7 @@ describe("tenant search", () => {
         bundleId: "com.figma.Desktop",
         name: "Figma",
         version: "116.1",
+        shortVersion: "116.1.3",
         publisher: "Figma Inc.",
       }),
       installed({
@@ -155,6 +157,7 @@ describe("tenant search", () => {
         bundleId: "com.figma.Desktop",
         name: "Figma",
         version: "116.1",
+        shortVersion: "116.1.2",
         publisher: "Figma Inc.",
       }),
       installed({
@@ -178,16 +181,19 @@ describe("tenant search", () => {
         name: "Figma",
         platform: "apple",
         identifier: "com.figma.Desktop",
+        storeId: null,
       },
     ]);
 
     // Two devices reported 116.1; one reported 117.0. The device row count is
-    // collapsed, not returned once per device.
+    // collapsed, not returned once per device. `shortVersion` uses the smallest
+    // reported value so the row does not depend on device order.
     expect(software).toEqual([
       {
         name: "Figma",
         bundleId: "com.figma.Desktop",
         version: "116.1",
+        shortVersion: "116.1.2",
         publisher: "Figma Inc.",
         deviceCount: 2,
       },
@@ -195,6 +201,7 @@ describe("tenant search", () => {
         name: "Figma",
         bundleId: "com.figma.Desktop",
         version: "117.0",
+        shortVersion: null,
         publisher: "Figma Inc.",
         deviceCount: 1,
       },
@@ -211,7 +218,13 @@ describe("tenant search", () => {
     const result = await search(context, "slack-store");
 
     expect(result.rows).toEqual([
-      { id: "app-slack", name: "Slack", platform: "win", identifier: "slack-store" },
+      {
+        id: "app-slack",
+        name: "Slack",
+        platform: "win",
+        identifier: "slack-store",
+        storeId: "slack-store",
+      },
     ]);
   });
 
@@ -226,10 +239,22 @@ describe("tenant search", () => {
     );
 
     expect((await search(context, "100%")).rows).toEqual([
-      { id: "app-literal", name: "100% Coverage", platform: "apple", identifier: null },
+      {
+        id: "app-literal",
+        name: "100% Coverage",
+        platform: "apple",
+        identifier: null,
+        storeId: null,
+      },
     ]);
     expect((await search(context, "a_b")).rows).toEqual([
-      { id: "app-underscore", name: "a_b tool", platform: "apple", identifier: null },
+      {
+        id: "app-underscore",
+        name: "a_b tool",
+        platform: "apple",
+        identifier: null,
+        storeId: null,
+      },
     ]);
   });
 
@@ -249,6 +274,82 @@ describe("tenant search", () => {
     const result = await search(context, "figma");
 
     expect(result.rows).toEqual([]);
+  });
+
+  it("does not expose devices, groups or policies without their section permissions", async () => {
+    const context = makeContext({ kind: "custom", permissions: ["tenant.read"] });
+
+    context.db.store.device.push({
+      id: "device-1",
+      organizationId: "org-1",
+      proto: "apple",
+      name: "Acme Mac",
+      serial: "C02ACME",
+      model: "MacBook Pro",
+      status: "enrolled",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    context.db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Acme Staff",
+      kind: "manual",
+      createdAt: now,
+      updatedAt: now,
+    });
+    context.db.store.policy.push({
+      id: "policy-1",
+      organizationId: "org-1",
+      name: "Acme Baseline",
+      priority: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await search(context, "acme");
+
+    expect(result.rows).toEqual([]);
+  });
+
+  it("returns only the entity groups the role can read", async () => {
+    const context = makeContext({
+      kind: "custom",
+      permissions: ["tenant.read", "devices.read"],
+    });
+
+    context.db.store.device.push({
+      id: "device-1",
+      organizationId: "org-1",
+      proto: "apple",
+      name: "Acme Mac",
+      serial: "C02ACME",
+      model: "MacBook Pro",
+      status: "enrolled",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    context.db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Acme Staff",
+      kind: "manual",
+      createdAt: now,
+      updatedAt: now,
+    });
+    context.db.store.policy.push({
+      id: "policy-1",
+      organizationId: "org-1",
+      name: "Acme Baseline",
+      priority: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await search(context, "acme");
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ id: "device-1", name: "Acme Mac", proto: "apple" });
   });
 
   it("returns applications and software to a custom role that holds applications.read", async () => {

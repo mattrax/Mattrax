@@ -51,6 +51,8 @@ export type SearchRowCommand = {
   >;
   readonly href: string;
   readonly permission: SearchRowPermission;
+  /** Fields the server matched that the row does not render. */
+  readonly keywords?: ReadonlyArray<string>;
 };
 
 const PLATFORM_LABELS = {
@@ -116,6 +118,10 @@ export const searchRowCommand = (
       group: "Software",
       href: tenant.software(),
       permission: "applications.read",
+      // The server also matches the identifier and `shortVersion`, which the
+      // row does not render. Without these the palette's client-side filter
+      // would discard legitimate hits.
+      keywords: [row.bundleId, row.shortVersion].filter((value): value is string => Boolean(value)),
     };
 
   if ("platform" in row)
@@ -126,6 +132,8 @@ export const searchRowCommand = (
       group: "Applications",
       href: tenant.application(row.id),
       permission: "applications.read",
+      // A catalogue entry can be matched by store id alone (no bundle id).
+      keywords: [row.storeId].filter((value): value is string => Boolean(value)),
     };
 
   if ("priority" in row)
@@ -139,4 +147,33 @@ export const searchRowCommand = (
     };
 
   return undefined;
+};
+
+/** Fields a palette command is filtered on: everything rendered plus keywords. */
+export type SearchMatchableCommand = {
+  readonly title: string;
+  readonly subtitle?: string;
+  readonly group: string;
+  readonly keywords?: ReadonlyArray<string>;
+};
+
+/**
+ * Client-side filter for palette commands.
+ *
+ * It must include the hidden `keywords` from `searchRowCommand`, otherwise a
+ * server hit matched only by a bundle id or store id would be filtered out.
+ */
+export const matchesSearchTerm = (command: SearchMatchableCommand, term: string) => {
+  const tokens = term.split(/\s+/).filter(Boolean);
+
+  const haystack = [
+    command.title,
+    command.subtitle ?? "",
+    command.group,
+    ...(command.keywords ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return tokens.every((token) => haystack.includes(token));
 };

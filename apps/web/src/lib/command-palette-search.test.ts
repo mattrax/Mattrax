@@ -6,7 +6,7 @@ import type {
   PolicyRow,
   SoftwareSearchRow,
 } from "@mattrax/enterprise-domain/client";
-import { groupRank, searchRowCommand } from "./command-palette-search";
+import { groupRank, matchesSearchTerm, searchRowCommand } from "./command-palette-search";
 
 const deviceRow = (overrides: Partial<DeviceRow>): DeviceRow => ({
   id: "device-1",
@@ -41,6 +41,7 @@ const applicationRow = (overrides: Partial<ApplicationSearchRow>): ApplicationSe
   name: "Figma",
   platform: "apple",
   identifier: "com.figma.Desktop",
+  storeId: null,
   ...overrides,
 });
 
@@ -48,6 +49,7 @@ const softwareRow = (overrides: Partial<SoftwareSearchRow>): SoftwareSearchRow =
   name: "Figma",
   bundleId: "com.figma.Desktop",
   version: "116.1",
+  shortVersion: "116.1.2",
   publisher: "Figma Inc.",
   deviceCount: 1,
   ...overrides,
@@ -75,6 +77,7 @@ describe("command palette search rows", () => {
       group: "Applications",
       href: "/t/tenant-1/applications/app-1",
       permission: "applications.read",
+      keywords: [],
     });
   });
 
@@ -86,12 +89,32 @@ describe("command palette search rows", () => {
       group: "Software",
       href: "/t/tenant-1/software",
       permission: "applications.read",
+      keywords: ["com.figma.Desktop", "116.1.2"],
     });
 
     expect(
       searchRowCommand(softwareRow({ name: "Slack", version: null, publisher: null }), "tenant-1")
         ?.subtitle,
     ).toBe("1 device");
+  });
+
+  it("keeps server hits that only match a hidden field", () => {
+    const software = searchRowCommand(softwareRow({}), "tenant-1");
+
+    const application = searchRowCommand(
+      applicationRow({ identifier: null, storeId: "slack-store" }),
+      "tenant-1",
+    );
+
+    if (!software || !application) throw new Error("expected palette commands");
+
+    // These fields are not in the rendered title/subtitle; without keywords the
+    // palette's own filter would show "No results" for a valid server hit.
+    expect(matchesSearchTerm(software, "com.figma.desktop")).toBe(true);
+    expect(matchesSearchTerm(software, "116.1.2")).toBe(true);
+    expect(matchesSearchTerm(application, "slack-store")).toBe(true);
+    expect(matchesSearchTerm(application, "figma")).toBe(true);
+    expect(matchesSearchTerm(software, "not-a-match")).toBe(false);
   });
 
   it("keeps the existing device, group and policy destinations", () => {

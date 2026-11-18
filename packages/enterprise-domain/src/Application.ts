@@ -88,6 +88,8 @@ export const ApplicationSearchRow = Schema.Struct({
   platform: ApplicationPlatform,
   /** Bundle id, package name or store id when the catalogue holds one. */
   identifier: Schema.optional(NullableString),
+  /** Canonical store id, kept so store-only matches survive client filtering. */
+  storeId: Schema.optional(NullableString),
 });
 
 export type ApplicationSearchRow = typeof ApplicationSearchRow.Type;

@@ -33,7 +33,7 @@ import {
   type Command,
   type CommandShortcut,
 } from "~/lib/commands";
-import { groupRank, searchRowCommand } from "~/lib/command-palette-search";
+import { groupRank, matchesSearchTerm, searchRowCommand } from "~/lib/command-palette-search";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { reportGlobalError } from "~/lib/global-errors";
@@ -124,7 +124,6 @@ export function CommandPalette() {
   };
 
   const base = () => tenant()?.overview() ?? "";
-  const [truncated, setTruncated] = createSignal(false);
 
   // Debounce search in the input handler so shortcut registration is not
   // delayed by derived work.
@@ -133,7 +132,6 @@ export function CommandPalette() {
   const updateQuery = (value: string) => {
     setQuery(value);
     setActive(0);
-    setTruncated(false);
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => setDebouncedQuery(value.trim()), 180);
   };
@@ -142,16 +140,11 @@ export function CommandPalette() {
 
   const results = useQuery(() => ({
     queryKey: enterpriseKeys.search(tenantId(), debouncedQuery(), SEARCH_LIMIT),
-    queryFn: async () => {
-      const result = await enterprise.search(tenantId(), {
+    queryFn: () =>
+      enterprise.search(tenantId(), {
         q: debouncedQuery(),
         limit: SEARCH_LIMIT,
-      });
-
-      setTruncated((result.rows?.length ?? 0) >= SEARCH_LIMIT);
-
-      return result;
-    },
+      }),
     enabled: open() && Boolean(tenantId()) && debouncedQuery().length > 0,
   }));
 
@@ -600,10 +593,25 @@ export function CommandPalette() {
           group: command.group,
           icon: iconForGroup(command.group),
           href: command.href,
+          keywords: command.keywords,
           run: () => navigate(command.href),
         },
       ];
     });
+  });
+
+  /**
+   * The server caps each result group at `SEARCH_LIMIT`, not the merged list.
+   * Truncation therefore means "this group may have more", and the palette
+   * keeps every returned row so a broad term cannot silently drop later groups
+   * such as Applications or Software.
+   */
+  const truncated = createMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const item of serverItems()) counts.set(item.group, (counts.get(item.group) ?? 0) + 1);
+
+    return [...counts.values()].some((count) => count >= SEARCH_LIMIT);
   });
 
   const allCommands = createMemo<Command[]>(() => [
@@ -612,21 +620,6 @@ export function CommandPalette() {
     ...serverItems(),
     ...(deviceQuery() ? [deviceQuery()!] : []),
   ]);
-
-  const matches = (command: Command, term: string) => {
-    const tokens = term.split(/\s+/).filter(Boolean);
-
-    const haystack = [
-      command.title,
-      command.subtitle ?? "",
-      command.group,
-      ...(command.keywords ?? []),
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    return tokens.every((token) => haystack.includes(token));
-  };
 
   const items = createMemo<Command[]>(() => {
     const term = query().trim().toLowerCase();
@@ -656,9 +649,7 @@ export function CommandPalette() {
       return [...recent, ...pageCommands, ...actions];
     }
 
-    return allCommands()
-      .filter((command) => matches(command, term))
-      .slice(0, 50);
+    return allCommands().filter((command) => matchesSearchTerm(command, term));
   });
 
   const grouped = createMemo(() => {
@@ -727,7 +718,6 @@ export function CommandPalette() {
   const resetSearch = () => {
     setQuery("");
     setDebouncedQuery("");
-    setTruncated(false);
   };
 
   /** Run a non-navigation command and close the palette. */
@@ -771,7 +761,7 @@ export function CommandPalette() {
     if (count === 0) return "No results.";
 
     return `${count} result${count === 1 ? "" : "s"}${
-      truncated() ? `, showing the first ${SEARCH_LIMIT}` : ""
+      truncated() ? `, showing the first ${SEARCH_LIMIT} per type` : ""
     }.`;
   });
 
@@ -1230,7 +1220,7 @@ export function CommandPalette() {
                   when={truncated()}
                   fallback={<span class="hidden sm:inline">Shortcuts work outside this menu</span>}
                 >
-                  <span>Showing first {SEARCH_LIMIT} matches</span>
+                  <span>Showing first {SEARCH_LIMIT} per type</span>
                 </Show>
               </div>
             </DialogPrimitive.Content>
