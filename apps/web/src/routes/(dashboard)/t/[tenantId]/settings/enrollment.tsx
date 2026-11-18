@@ -2,6 +2,7 @@ import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
+import type { EnrollmentQuestionRow } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { QrCode } from "~/components/mdm/qr-code";
@@ -11,6 +12,8 @@ import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { TenantEnrollmentInfo } from "~/lib/enterprise";
+import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { toast } from "~/components/toast";
@@ -87,12 +90,39 @@ export default function EnrollmentSettingsPage() {
           sortOrder: index,
         })),
       }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({
+    onMutate: async () => {
+      const prompts = new Map(questionRows().map((row) => [row.key, row] as const));
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.enrollmentQuestions(params.tenantId),
+        "rows",
+        (rows: EnrollmentQuestionRow[]) =>
+          rows.map((row): EnrollmentQuestionRow => {
+            const question = prompts.get(row.key);
+
+            if (!question) return row;
+
+            // An empty prompt falls back to the attribute's own label, which is
+            // what the API stores as `null`.
+            return {
+              ...row,
+              label: question.prompt || row.label,
+              // `null` means "inherit the attribute's requirement"; the resolved
+              // boolean is unknown until the settled refetch.
+              required: question.required ?? row.required,
+            };
+          }),
+      );
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSuccess: () => toast.success("Enrollment questions saved"),
+    onSettled: () => {
+      // The public enrollment page reads the same questions from `enrollment`.
+      void qc.invalidateQueries({
         queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
       });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
-      toast.success("Enrollment questions saved");
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
     },
   }));
 
@@ -154,10 +184,25 @@ export default function EnrollmentSettingsPage() {
         enabledAndroid: android(),
       });
     },
-    onSuccess: async () => {
-      setEdit(false);
-      await invalidate();
+    onMutate: async () => {
+      if (maxDevices() < 0) return;
+
+      return optimisticUpdate<TenantEnrollmentInfo>(
+        qc,
+        enterpriseKeys.enrollment(params.tenantId),
+        (current) => ({
+          ...current,
+          code: code() || null,
+          maxDevices: maxDevices(),
+          enabledApple: apple(),
+          enabledWindows: windows(),
+          enabledAndroid: android(),
+        }),
+      );
     },
+    onSuccess: () => setEdit(false),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void invalidate(),
   }));
 
   const reset = useMutation(() => ({

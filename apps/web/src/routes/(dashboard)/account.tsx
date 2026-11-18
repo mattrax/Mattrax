@@ -22,6 +22,8 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
+import type { McpConnectionInfo } from "~/lib/enterprise";
+import { optimisticallyPatchMe, optimisticallyUpdateCollection } from "~/lib/optimistic";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /** "2h ago" style label for a session's last authenticated request. */
@@ -152,14 +154,26 @@ export default function AccountPage() {
     setNameSuccess(false);
     setNamePending(true);
 
-    const result = await authClient.updateUser({ name: name() });
-    setNamePending(false);
+    const nextName = name();
+    const restore = await optimisticallyPatchMe(queryClient, { name: nextName });
 
-    if (result.error) {
-      setNameError(errorMessage(raisedFailure(result.error), "Failed to update name"));
-    } else {
+    try {
+      const result = await authClient.updateUser({ name: nextName });
+
+      if (result.error) {
+        restore();
+        setNameError(errorMessage(raisedFailure(result.error), "Failed to update name"));
+
+        return;
+      }
+
       setNameSuccess(true);
       setTimeout(() => setNameSuccess(false), 3000);
+    } catch (error) {
+      restore();
+      setNameError(errorMessage(raisedFailure(error), "Failed to update name"));
+    } finally {
+      setNamePending(false);
     }
   };
 
@@ -289,6 +303,12 @@ export default function AccountPage() {
       return;
     }
 
+    // Drop the row immediately; a failed revoke puts it back.
+    const previous = sessions();
+    setSessions((value) =>
+      value ? { sessions: value.sessions.filter((item) => item.id !== id) } : value,
+    );
+
     try {
       const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
         method: "DELETE",
@@ -297,13 +317,16 @@ export default function AccountPage() {
       });
 
       if (!response.ok) {
+        setSessions(previous);
         setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
 
         return;
       }
 
+      // Already gone from the list above; the refetch confirms it.
       await refetchSessions();
     } catch (error) {
+      setSessions(previous);
       setSessionsError(
         errorMessage(raisedFailure(error), "Could not revoke that session. Try again."),
       );
@@ -351,10 +374,24 @@ export default function AccountPage() {
     setRevoking(connectionId);
     setConnectionError(null);
 
+    // The row flips to "Revoked" immediately; the list refetch reconciles.
+    const restore = await optimisticallyUpdateCollection(
+      queryClient,
+      enterpriseKeys.mcpConnections(),
+      "connections",
+      (connections: McpConnectionInfo[]) =>
+        connections.map((connection): McpConnectionInfo =>
+          connection.id === connectionId
+            ? { ...connection, revokedAt: new Date().toISOString() }
+            : connection,
+        ),
+    );
+
     try {
       await enterprise.revokeMcpConnection(connectionId);
       await connections.refetch();
     } catch (error) {
+      restore();
       setConnectionError(errorMessage(raisedFailure(error), "Could not revoke this MCP client"));
     } finally {
       setRevoking(null);
@@ -416,15 +453,18 @@ export default function AccountPage() {
     setDefaultTenantError(null);
     setDefaultTenantSaved(false);
 
+    const restore = await optimisticallyPatchMe(queryClient, { defaultTenantId: value });
+
     try {
       await enterprise.updateMe({ defaultTenantId: value });
       setDefaultTenantId(value ?? "");
-      // The shell reads the same payload to pick the unscoped landing tenant.
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
       setDefaultTenantSaved(true);
       setTimeout(() => setDefaultTenantSaved(false), 3000);
+      // The shell reads the same payload to pick the unscoped landing tenant.
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     } catch (error) {
       // Put the rejected choice back to what the server still holds.
+      restore();
       setDefaultTenantId(me.data?.account.defaultTenantId ?? "");
       setDefaultTenantError(
         errorMessage(raisedFailure(error), "Could not update your default tenant. Try again."),
@@ -476,10 +516,23 @@ export default function AccountPage() {
     setTokenError(null);
     setRevokingToken(tokenId);
 
+    // Mark the row revoked before the request; a failure restores the list.
+    const previous = tokens();
+    setTokens((value) =>
+      value
+        ? {
+            tokens: value.tokens.map((token) =>
+              token.id === tokenId ? { ...token, revokedAt: new Date().toISOString() } : token,
+            ),
+          }
+        : value,
+    );
+
     try {
       await authClient.revokeApiToken(tokenId);
       await refetchTokens();
     } catch (error) {
+      setTokens(previous);
       setTokenError(errorMessage(raisedFailure(error), "Could not revoke that token. Try again."));
     } finally {
       setRevokingToken(null);

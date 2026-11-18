@@ -18,6 +18,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries, type ScriptInfo } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
+import { optimisticUpdate } from "~/lib/optimistic";
 import { AccessDenied, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";
 
@@ -56,16 +57,25 @@ export default function ScriptsPage() {
 
   const setEnabled = useMutation(() => ({
     mutationFn: (enabled: boolean) => enterprise.patchScriptSettings(params.tenantId, { enabled }),
-    onSuccess: async (result) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
+    onMutate: (enabled) =>
+      optimisticUpdate<Awaited<ReturnType<typeof enterprise.listScripts>>>(
+        qc,
+        enterpriseKeys.scripts(params.tenantId),
+        (current) => ({ ...current, enabled }),
+      ),
+    onError: (error, _enabled, restore) => {
+      restore?.();
+      toast.error("Could not update script settings", { description: String(error) });
+    },
+    onSuccess: (result) => {
       toast.success(result.enabled ? "Scripts enabled" : "Scripts disabled", {
         description: result.enabled
           ? "Assigned script profiles will be delivered on the next check-in."
           : "Assigned script profiles are removed and new runs are rejected.",
       });
     },
-    onError: (error) =>
-      toast.error("Could not update script settings", { description: String(error) }),
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) }),
   }));
 
   const rows = () => [...(scripts.data?.scripts ?? [])];

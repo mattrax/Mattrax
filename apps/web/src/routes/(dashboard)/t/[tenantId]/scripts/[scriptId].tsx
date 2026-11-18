@@ -23,8 +23,17 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
+  type ScriptAssignmentsResponse,
+  type ScriptDetail,
   type ScriptExecutionInfo,
+  type ScriptInfo,
 } from "~/lib/enterprise";
+import {
+  combineRestores,
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+  optimisticUpdate,
+} from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { ReadOnlyNotice, AccessDenied, useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";
@@ -157,10 +166,43 @@ export default function ScriptDetailPage() {
         description: values.description || null,
         environment: values.environment.filter((entry) => entry.name.trim()),
       }),
-    onSuccess: async () => {
-      await invalidate();
-      toast.success("Script saved");
+    onMutate: async (values) => {
+      const environment = values.environment.filter((entry) => entry.name.trim());
+
+      const patch = {
+        name: values.name,
+        description: values.description || null,
+        language: values.language,
+        runAs: values.runAs,
+        timeoutSeconds: values.timeoutSeconds,
+        environment,
+        trigger: values.trigger,
+      };
+
+      const restores = await Promise.all([
+        optimisticUpdate<ScriptDetail>(
+          qc,
+          enterpriseKeys.script(params.tenantId, params.scriptId),
+          (current) => ({
+            ...current,
+            body: values.body,
+            script: { ...current.script, ...patch },
+          }),
+        ),
+        optimisticallyUpdateCollection(
+          qc,
+          enterpriseKeys.scripts(params.tenantId),
+          "scripts",
+          (rows: ScriptInfo[]) =>
+            rows.map((row) => (row.id === params.scriptId ? { ...row, ...patch } : row)),
+        ),
+      ]);
+
+      return combineRestores(restores);
     },
+    onError: (_error, _values, restore) => restore?.(),
+    onSuccess: () => toast.success("Script saved"),
+    onSettled: () => void invalidate(),
   }));
 
   const saveAssignments = useMutation(() => ({
@@ -182,18 +224,69 @@ export default function ScriptDetailPage() {
         },
       });
     },
-    onSuccess: async () => {
-      await invalidate();
+    onMutate: async () => {
+      // Names come from the assignment payload, then the catalogue lists for
+      // anything only the local checkbox state knows about.
+      const names = new Map<string, string>([
+        ...(assignments.data?.groups ?? []).map((group) => [group.id, group.name] as const),
+        ...(groups.data?.rows ?? []).map((group) => [group.id, group.name] as const),
+        ...(assignments.data?.devices ?? []).map((device) => [device.id, device.name] as const),
+        ...(devices.data?.rows ?? []).map((device) => [device.id, device.name] as const),
+      ]);
+
+      const relation = (ids: Set<string>) =>
+        [...ids].map((id) => ({ id, name: names.get(id) ?? id }));
+
+      return optimisticUpdate<ScriptAssignmentsResponse>(
+        qc,
+        enterpriseKeys.scriptAssignments(params.tenantId, params.scriptId),
+        () => ({
+          groups: relation(groupIds()),
+          devices: relation(selectedDeviceIds()),
+        }),
+      );
+    },
+    onError: (error, _variables, restore) => {
+      restore?.();
+      toast.error("Could not save assignments", { description: String(error) });
+    },
+    onSuccess: () =>
       toast.success("Assignments saved", {
         description: "Devices receive the profile on their next check-in.",
-      });
-    },
-    onError: (error) => toast.error("Could not save assignments", { description: String(error) }),
+      }),
+    onSettled: () => void invalidate(),
   }));
 
   const run = useMutation(() => ({
     mutationFn: () => enterprise.runScript(params.tenantId, params.scriptId, {}),
-    onSuccess: async (result) => {
+    onMutate: async () => {
+      const now = new Date().toISOString();
+
+      const restores = await Promise.all([
+        optimisticUpdate<ScriptDetail>(
+          qc,
+          enterpriseKeys.script(params.tenantId, params.scriptId),
+          (current) => ({
+            ...current,
+            script: { ...current.script, lastRunAt: now, lastRunStatus: "queued" },
+          }),
+        ),
+        optimisticallyUpdateCollection(
+          qc,
+          enterpriseKeys.scripts(params.tenantId),
+          "scripts",
+          (rows: ScriptInfo[]) =>
+            rows.map((row) =>
+              row.id === params.scriptId
+                ? { ...row, lastRunAt: now, lastRunStatus: "queued" as const }
+                : row,
+            ),
+        ),
+      ]);
+
+      return combineRestores(restores);
+    },
+    onSuccess: (result) => {
       const skipped = result.targets.filter((target) => target.skippedReason);
       setMessage(
         `Queued ${result.queued} run${result.queued === 1 ? "" : "s"}${
@@ -209,15 +302,24 @@ export default function ScriptDetailPage() {
         });
       else
         toast.success("Run queued", { description: "Devices collect it on their next check-in." });
-      await invalidate();
     },
-    onError: (error) => toast.error("Could not queue the run", { description: String(error) }),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      toast.error("Could not queue the run", { description: String(error) });
+    },
+    // Run history rows are created server-side, so this is where they appear.
+    onSettled: () => void invalidate(),
   }));
 
   const remove = useMutation(() => ({
     mutationFn: () => enterprise.deleteScript(params.tenantId, params.scriptId),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
+    onMutate: () =>
+      optimisticallyRemoveCollectionItems(qc, enterpriseKeys.scripts(params.tenantId), "scripts", [
+        params.scriptId!,
+      ]),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
       toast.success("Script deleted");
       navigate(`/t/${params.tenantId}/scripts`);
     },

@@ -29,6 +29,13 @@ import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { BackupRunInfo, MeResponse, TenantDetail } from "~/lib/enterprise";
+import {
+  combineRestores,
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+  optimisticUpdate,
+} from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
@@ -207,7 +214,35 @@ export default function GeneralSettingsPage() {
         supportEmail: supportEmail() || null,
         brandColor: brandColor() || null,
       }),
-    onSuccess: async () => {
+    onMutate: async () => {
+      const patch = {
+        name: name(),
+        slug: slug(),
+        displayName: displayName() || null,
+        logo: logo() || null,
+        supportEmail: supportEmail() || null,
+        brandColor: brandColor() || null,
+      };
+
+      const tenantId = tenant.data?.id;
+
+      const restores = await Promise.all([
+        optimisticUpdate<TenantDetail>(qc, enterpriseKeys.tenant(params.tenantId), (current) => ({
+          ...current,
+          ...patch,
+        })),
+        // The shell and tenant switcher read branding from the membership list.
+        optimisticUpdate<MeResponse>(qc, enterpriseKeys.me(), (current) => ({
+          ...current,
+          tenants: current.tenants.map((membership) =>
+            membership.id === tenantId ? { ...membership, ...patch } : membership,
+          ),
+        })),
+      ]);
+
+      return combineRestores(restores);
+    },
+    onSuccess: () => {
       setBaseline(profile());
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -221,9 +256,11 @@ export default function GeneralSettingsPage() {
 
         return;
       }
-
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
 
@@ -301,19 +338,47 @@ export default function GeneralSettingsPage() {
       run.retention === "pinned"
         ? enterprise.unpinTenantBackup(params.tenantId, run.id)
         : enterprise.pinTenantBackup(params.tenantId, run.id),
-    onMutate: () => setBackupActionError(null),
-    onSuccess: () => refetchBackups(),
-    onError: setBackupActionError,
+    onMutate: async (run) => {
+      const pinned = run.retention !== "pinned";
+      setBackupActionError(null);
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.backups(params.tenantId),
+        "backups",
+        (rows: BackupRunInfo[]) =>
+          rows.map((row): BackupRunInfo =>
+            row.id === run.id ? { ...row, retention: pinned ? "pinned" : "default" } : row,
+          ),
+      );
+    },
+    onSuccess: () => void refetchBackups(),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setBackupActionError(error);
+    },
   }));
 
   const removeBackup = useMutation(() => ({
     mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
-    onMutate: () => setBackupActionError(null),
-    onSuccess: async () => {
-      setDeleteBackupTarget(null);
-      await refetchBackups();
+    onMutate: async (id) => {
+      setBackupActionError(null);
+
+      return optimisticallyRemoveCollectionItems(
+        qc,
+        enterpriseKeys.backups(params.tenantId),
+        "backups",
+        [id],
+      );
     },
-    onError: setBackupActionError,
+    onSuccess: () => {
+      setDeleteBackupTarget(null);
+      void refetchBackups();
+    },
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setBackupActionError(error);
+    },
   }));
 
   const restoreBackup = useMutation(() => ({

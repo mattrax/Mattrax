@@ -24,10 +24,17 @@ import {
   enterpriseKeys,
   enterpriseQueries,
   type RequestTenantOwnershipTransferResponse,
+  type TenantAccount,
   type TenantInvitation,
+  type TenantOwnershipTransfer,
   type TenantRole,
 } from "~/lib/enterprise";
 import { ReadOnlyNotice, useTenantPermissions } from "~/lib/permissions";
+import {
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+  optimisticUpdate,
+} from "~/lib/optimistic";
 import { cn } from "~/lib/utils";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -165,6 +172,14 @@ type ResendNotice = {
 };
 
 type InvitationFilter = "active" | "accepted" | "canceled" | "all";
+
+/**
+ * Rows created optimistically have no server id yet. They are shown until the
+ * settled refetch replaces them, but never offer row actions that need an id.
+ */
+const OPTIMISTIC_ROW_PREFIX = "optimistic:";
+
+const isOptimisticRow = (id: string) => id.startsWith(OPTIMISTIC_ROW_PREFIX);
 
 const matchesFilter = (item: TenantInvitation, filter: InvitationFilter) => {
   const status = effectiveStatus(item);
@@ -379,6 +394,28 @@ export default function AdministratorsSettingsPage() {
     ]);
   };
 
+  /** The invitation row the invite form submitted, before the server answers. */
+  const optimisticInvitation = (): TenantInvitation => {
+    const choice = selectedChoice();
+    const author = session().data?.user;
+    const timestamp = new Date().toISOString();
+
+    return {
+      id: `${OPTIMISTIC_ROW_PREFIX}${timestamp}`,
+      email: email().trim(),
+      role: choice?.roleId ? "member" : (choice?.role ?? "member"),
+      roleId: choice?.roleId ?? null,
+      roleName: choice?.label ?? "Member",
+      status: "pending",
+      isExpired: false,
+      invitedBy: author ? { id: author.id, name: author.name, email: author.email } : undefined,
+      createdAt: timestamp,
+      expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      lastSentAt: timestamp,
+      sendCount: 1,
+    };
+  };
+
   const invalidateRoleData = async () => {
     await Promise.all([
       qc.invalidateQueries({ queryKey: enterpriseKeys.roles(params.tenantId) }),
@@ -411,7 +448,17 @@ export default function AdministratorsSettingsPage() {
         ...invitation,
       });
     },
-    onSuccess: async (result) => {
+    onMutate: async () => {
+      const invitation = optimisticInvitation();
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.invitations(params.tenantId),
+        "invitations",
+        (rows: TenantInvitation[]) => [invitation, ...rows],
+      );
+    },
+    onSuccess: (result) => {
       const sentTo = email().trim();
       const roleName = selectedChoice()?.label ?? "Member";
 
@@ -426,14 +473,31 @@ export default function AdministratorsSettingsPage() {
       setMintedLinks((current) => ({ ...current, [result.id]: result.inviteUrl }));
       setCopied(null);
       setEmail("");
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) }),
   }));
 
   const resend = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (item: TenantInvitation) => enterprise.resendInvitation(params.tenantId, item.id),
-    onSuccess: async (result, item) => {
+    onMutate: async (item) => {
+      const timestamp = new Date().toISOString();
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.invitations(params.tenantId),
+        "invitations",
+        (rows: TenantInvitation[]) =>
+          rows.map((row): TenantInvitation =>
+            row.id === item.id
+              ? { ...row, lastSentAt: timestamp, sendCount: row.sendCount + 1 }
+              : row,
+          ),
+      );
+    },
+    onSuccess: (result, item) => {
       setRowError(null);
       setMintedLinks((current) => ({ ...current, [item.id]: result.inviteUrl }));
       setResendNotice({
@@ -442,15 +506,29 @@ export default function AdministratorsSettingsPage() {
         expiresAt: result.expiresAt,
         emailSent: result.emailSent,
       });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
-    onError: (error, item) => setRowError({ id: item.id, error }),
+    onError: (error, item, restore) => {
+      restore?.();
+      setRowError({ id: item.id, error });
+    },
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) }),
   }));
 
   const cancelInvitation = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (item: TenantInvitation) => enterprise.cancelInvitation(params.tenantId, item.id),
-    onSuccess: async (_result, item) => {
+    onMutate: async (item) =>
+      optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.invitations(params.tenantId),
+        "invitations",
+        (rows: TenantInvitation[]) =>
+          rows.map((row): TenantInvitation =>
+            row.id === item.id ? { ...row, status: "canceled" } : row,
+          ),
+      ),
+    onSuccess: (_result, item) => {
       setRowError(null);
 
       if (copied() === item.id) setCopied(null);
@@ -460,15 +538,27 @@ export default function AdministratorsSettingsPage() {
       if (inviteResult()?.id === item.id) setInviteResult(null);
 
       if (resendNotice()?.email === item.email) setResendNotice(null);
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
-    onError: (error, item) => setRowError({ id: item.id, error }),
+    onError: (error, item, restore) => {
+      restore?.();
+      setRowError({ id: item.id, error });
+    },
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) }),
   }));
 
   const removeAccount = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (accountId: string) => enterprise.removeAccount(params.tenantId, accountId),
-    onSuccess: refreshAccess,
+    onMutate: async (accountId) =>
+      optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.accounts(params.tenantId),
+        "accounts",
+        (rows: TenantAccount[]) => rows.filter((row) => row.accountId !== accountId),
+      ),
+    onError: (_error, _accountId, restore) => restore?.(),
+    onSettled: () => void refreshAccess(),
   }));
 
   const requestOwnershipTransfer = useMutation(() => ({
@@ -482,7 +572,7 @@ export default function AdministratorsSettingsPage() {
 
       return enterprise.requestOwnershipTransfer(params.tenantId, target.accountId);
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       const target = accounts.data?.accounts.find(
         (candidate) => candidate.accountId === result.targetAccountId,
       );
@@ -494,22 +584,28 @@ export default function AdministratorsSettingsPage() {
       });
       setCopied(null);
       setTransferConfirm(false);
-      await qc.invalidateQueries({
-        queryKey: enterpriseKeys.ownershipTransfer(params.tenantId),
-      });
     },
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.ownershipTransfer(params.tenantId) }),
   }));
 
   const cancelOwnershipTransfer = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: () => enterprise.cancelOwnershipTransfer(params.tenantId),
-    onSuccess: async () => {
+    // The outcome is entirely predictable: there is no pending transfer left.
+    onMutate: async () =>
+      optimisticUpdate<{ transfer: TenantOwnershipTransfer | null }>(
+        qc,
+        enterpriseKeys.ownershipTransfer(params.tenantId),
+        () => ({ transfer: null }),
+      ),
+    onSuccess: () => {
       setTransferResult(null);
       setTransferToCancel(false);
-      await qc.invalidateQueries({
-        queryKey: enterpriseKeys.ownershipTransfer(params.tenantId),
-      });
     },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.ownershipTransfer(params.tenantId) }),
   }));
 
   const changeRole = useMutation(() => ({
@@ -522,7 +618,29 @@ export default function AdministratorsSettingsPage() {
           ? { roleId: role.slice(5), role: "member" }
           : { role: role.slice(8), roleId: null },
       ),
-    onSuccess: refreshAccess,
+    onMutate: async ({ accountId, role }) => {
+      const choice = accountRoleChoices().find((option) => option.value === role);
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.accounts(params.tenantId),
+        "accounts",
+        (rows: TenantAccount[]) =>
+          rows.map((row): TenantAccount =>
+            row.accountId === accountId
+              ? {
+                  ...row,
+                  role: choice?.roleId ? "member" : (choice?.role ?? row.role),
+                  roleId: choice?.roleId ?? null,
+                  roleName: choice?.label ?? row.roleName,
+                  roleKind: choice?.roleId ? "custom" : "built-in",
+                }
+              : row,
+          ),
+      );
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void refreshAccess(),
   }));
 
   const visiblePermissionGroups = createMemo(() =>
@@ -574,14 +692,41 @@ export default function AdministratorsSettingsPage() {
 
       return { status: "ok" };
     },
-    onSuccess: async () => {
+    onMutate: async () => {
+      const editing = roleEditing();
+
+      // A create has no id until the server answers, so only an edit can be
+      // written to the role list ahead of the response.
+      if (!editing) return;
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.roles(params.tenantId),
+        "roles",
+        (rows: TenantRole[]) =>
+          rows.map((row) =>
+            row.id === editing.id
+              ? {
+                  ...row,
+                  name: roleName().trim(),
+                  description: roleDescription().trim() || null,
+                  permissions: [...rolePermissions()],
+                }
+              : row,
+          ),
+      );
+    },
+    onSuccess: () => {
       setRoleError(null);
       setRoleFormOpen(false);
       setRoleEditing(null);
       setRoleBlocked(false);
-      await invalidateRoleData();
+      void invalidateRoleData();
     },
-    onError: (error) => setRoleError(errorMessage(error)),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setRoleError(errorMessage(error));
+    },
   }));
 
   const [roleToDelete, setRoleToDelete] = createSignal<{ id: string; name: string } | null>(null);
@@ -589,11 +734,18 @@ export default function AdministratorsSettingsPage() {
   const removeRole = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (roleId: string) => enterprise.deleteRole(params.tenantId, roleId),
-    onSuccess: async () => {
+    onMutate: async (roleId) =>
+      optimisticallyRemoveCollectionItems(qc, enterpriseKeys.roles(params.tenantId), "roles", [
+        roleId,
+      ]),
+    onSuccess: () => {
       setRoleToDelete(null);
-      await invalidateRoleData();
+      void invalidateRoleData();
     },
-    onError: (error) => setRoleError(errorMessage(error)),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setRoleError(errorMessage(error));
+    },
   }));
 
   const openCreateRole = () => {
@@ -1316,11 +1468,14 @@ export default function AdministratorsSettingsPage() {
                 const status = () => effectiveStatus(item);
 
                 const canResend = () =>
+                  !isOptimisticRow(item.id) &&
                   can("members.write") &&
                   (status() === "pending" || status() === "expired" || status() === "superseded");
 
                 const canCancel = () =>
-                  can("members.write") && (status() === "pending" || status() === "expired");
+                  !isOptimisticRow(item.id) &&
+                  can("members.write") &&
+                  (status() === "pending" || status() === "expired");
 
                 return (
                   <li class="flex flex-col gap-3 px-4 py-3 sm:px-5">

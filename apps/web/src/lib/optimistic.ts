@@ -3,6 +3,7 @@ import {
   enterpriseKeys,
   type DeviceRow,
   type Entity,
+  type MeResponse,
   type RowFor,
 } from "~/lib/enterprise";
 
@@ -106,3 +107,59 @@ export const optimisticallyRemoveDevices = (
     };
   });
 };
+
+/** Combine rollbacks from several optimistic writes into one handler. */
+export const combineRestores = (restores: ReadonlyArray<() => void>) => () => {
+  for (const restore of restores) restore();
+};
+
+/** The minimum shape of a row in a cached settings collection. */
+type CollectionRow = { id: string };
+
+/**
+ * Rewrite one cached collection response such as `{ accounts: [...] }`.
+ * Settings payloads (accounts, invitations, webhooks, SCIM tokens) are not
+ * entity lists, so the entity helpers above do not apply to them. The row type
+ * is named at the call site because the response type is not inferable from a
+ * key alone.
+ */
+export const optimisticallyUpdateCollection = <K extends string, T>(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+  collection: K,
+  update: (rows: T[]) => T[],
+) =>
+  optimisticUpdate<Record<K, T[]>>(queryClient, queryKey, (current) => {
+    const next = { ...current, [collection]: update(current[collection]) };
+
+    // SAFETY: spread preserves every other property of `current`; the computed
+    // key is `K`, so the result still satisfies `Record<K, T[]>`.
+    return next as Record<K, T[]>;
+  });
+
+/** Drop rows from a cached collection response such as `{ endpoints: [...] }`. */
+export const optimisticallyRemoveCollectionItems = <K extends string>(
+  queryClient: QueryClient,
+  queryKey: readonly unknown[],
+  collection: K,
+  ids: Iterable<string>,
+) => {
+  const removed = new Set(ids);
+
+  return optimisticallyUpdateCollection<K, CollectionRow>(
+    queryClient,
+    queryKey,
+    collection,
+    (rows) => rows.filter((row) => !removed.has(row.id)),
+  );
+};
+
+/** Patch the signed-in account's `/me` payload before the server answers. */
+export const optimisticallyPatchMe = (
+  queryClient: QueryClient,
+  patch: Partial<MeResponse["account"]>,
+) =>
+  optimisticUpdate<MeResponse>(queryClient, enterpriseKeys.me(), (current) => ({
+    ...current,
+    account: { ...current.account, ...patch },
+  }));

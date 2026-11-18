@@ -21,8 +21,13 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
+  type AndroidEnterpriseInfo,
+  type AppleBusinessManagerInfo,
+  type AutopilotDeviceInfo,
   type AutopilotProfileInfo,
+  type VppInfo,
 } from "~/lib/enterprise";
+import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
@@ -85,7 +90,22 @@ export default function ManagementSettingsPage() {
 
   const toggleAndroid = useMutation(() => ({
     mutationFn: (enabled: boolean) => enterprise.patchTenantAndroid(params.tenantId, { enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
+    onMutate: async (enabled) =>
+      optimisticUpdate<AndroidEnterpriseInfo>(
+        qc,
+        enterpriseKeys.android(params.tenantId),
+        (current) => ({
+          ...current,
+          // The API flips the stored status to `active` or `disabled`; the
+          // enterprise name and device count are reconciled on settle.
+          status: enabled ? "active" : "disabled",
+          available: enabled ? current.available : false,
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    onError: (_error, _enabled, restore) => restore?.(),
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
   }));
 
   const [email, setEmail] = createSignal("");
@@ -156,7 +176,25 @@ export default function ManagementSettingsPage() {
 
   const deleteAbm = useMutation(() => ({
     mutationFn: () => enterprise.deleteAppleBusinessManagerToken(params.tenantId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) }),
+    onMutate: async () =>
+      optimisticUpdate<AppleBusinessManagerInfo>(
+        qc,
+        enterpriseKeys.abm(params.tenantId),
+        (current) => ({
+          ...current,
+          configured: false,
+          status: "unconfigured",
+          credentialType: null,
+          appleOrgId: null,
+          appleOrgName: null,
+          tokenExpiresAt: null,
+          mdmServerId: null,
+          lastError: null,
+          assignedCount: 0,
+        }),
+      ),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) }),
   }));
 
   const uploadVpp = useMutation(() => ({
@@ -180,7 +218,21 @@ export default function ManagementSettingsPage() {
 
   const deleteVpp = useMutation(() => ({
     mutationFn: () => enterprise.deleteVppToken(params.tenantId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.vpp(params.tenantId) }),
+    onMutate: async () =>
+      optimisticUpdate<VppInfo>(qc, enterpriseKeys.vpp(params.tenantId), (current) => ({
+        ...current,
+        configured: false,
+        status: "unconfigured",
+        appleOrgId: null,
+        tokenExpiresAt: null,
+        lastError: null,
+        assets: 0,
+        totalLicenses: 0,
+        availableLicenses: 0,
+        assignedLicenses: 0,
+      })),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.vpp(params.tenantId) }),
   }));
 
   const [autopilotContent, setAutopilotContent] = createSignal("");
@@ -257,7 +309,15 @@ export default function ManagementSettingsPage() {
 
   const deleteAutopilotDevice = useMutation(() => ({
     mutationFn: (serial: string) => enterprise.deleteAutopilotDevice(params.tenantId, serial),
-    onSuccess: invalidateAutopilot,
+    onMutate: async (serial) =>
+      optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.autopilotDevices(params.tenantId),
+        "devices",
+        (devices: AutopilotDeviceInfo[]) => devices.filter((device) => device.serial !== serial),
+      ),
+    onError: (_error, _serial, restore) => restore?.(),
+    onSettled: () => void invalidateAutopilot(),
   }));
 
   const saveAutopilotProfile = useMutation(() => ({
@@ -280,16 +340,60 @@ export default function ManagementSettingsPage() {
         ? enterprise.updateAutopilotProfile(params.tenantId, editing, payload)
         : enterprise.createAutopilotProfile(params.tenantId, payload);
     },
-    onSuccess: async () => {
-      resetProfileForm();
-      await invalidateAutopilot();
+    onMutate: async () => {
+      const editing = editingProfileId();
+
+      // Creates are server-numbered; only an edit can be shown ahead of the
+      // response.
+      if (!editing) return;
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.autopilotProfiles(params.tenantId),
+        "profiles",
+        (profiles: AutopilotProfileInfo[]) =>
+          profiles.map((profile): AutopilotProfileInfo =>
+            profile.id === editing
+              ? {
+                  ...profile,
+                  name: profileName(),
+                  description: profileDescription() || null,
+                  deploymentMode: profileMode(),
+                  joinType: profileJoinType(),
+                  deviceNameTemplate: profileNameTemplate() || null,
+                  locale: profileLocale() || null,
+                  timezone: profileTimezone() || null,
+                  enableDevicePreparation: profileDevicePreparation(),
+                  assignedGroupId: profileGroupId() || null,
+                }
+              : profile,
+          ),
+      );
     },
+    onSuccess: () => {
+      resetProfileForm();
+      void invalidateAutopilot();
+    },
+    onError: (_error, _variables, restore) => restore?.(),
   }));
 
   const assignAutopilotProfile = useMutation(() => ({
     mutationFn: (input: { profileId: string; groupId: string }) =>
       enterprise.assignAutopilotProfile(params.tenantId, input.profileId, input.groupId),
-    onSuccess: invalidateAutopilot,
+    onMutate: async (input) =>
+      optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.autopilotProfiles(params.tenantId),
+        "profiles",
+        (profiles: AutopilotProfileInfo[]) =>
+          profiles.map((profile): AutopilotProfileInfo =>
+            profile.id === input.profileId
+              ? { ...profile, assignedGroupId: input.groupId }
+              : profile,
+          ),
+      ),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void invalidateAutopilot(),
   }));
 
   const downloadCsr = async () => {
