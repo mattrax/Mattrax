@@ -17,8 +17,8 @@ const BUDGET = 2.5 * 1024 * 1024;
 const root = path.resolve(import.meta.dirname, "..");
 
 const workers = new Map<string, string>([
-  ["cloud", path.join(root, "apps/cloud/.cloudflare/output/v0/workers/default/bundle")],
-  ["web", path.join(root, "apps/web/.cloudflare/output/v0/workers/default/bundle")],
+  ["cloud", path.join(root, "apps/cloud/.cloudflare/output/v1/workers/default/bundle")],
+  ["web", path.join(root, "apps/web/.cloudflare/output/v1/workers/default/bundle")],
 ]);
 
 const selected = process.argv.slice(2);
