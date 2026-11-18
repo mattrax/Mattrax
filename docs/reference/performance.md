@@ -81,6 +81,92 @@ artefact, not a regression; use the production baseline above for the real
 numbers. The CI job is therefore advisory until the preview server compresses
 assets (or the job targets a deployed preview environment).
 
+## Bundle size
+
+Two numbers matter and they are measured separately:
+
+- **Upload size** is the gzipped Worker bundle, enforced by
+  `pnpm bundle:check` before every deploy (2.5 MiB per Worker; Cloudflare's
+  script limit is 3 MiB on the free plan).
+- **Shipped size** is every gzipped byte a visitor can download. For the client
+  that is each chunk under `.cloudflare/output/v1/workers/default/assets`, not
+  just the entry.
+
+`MATTRAX_PERF_REPORT=1 pnpm web build` emits rolldown's build report under
+`apps/web/node_modules/.rolldown/report/`. `perf-kit` reads the module graph
+from it (`pnpm --filter @mattrax/web exec perf-kit graph`) and ranks modules by
+the bytes a deferred import would remove from the initial load.
+
+### Baseline and current (2026-11-19)
+
+Measured from a worktree at `4a32126` and from the same tree afterwards, gzip,
+excluding source maps:
+
+| Bundle                                | Baseline | Now      | Change |
+| ------------------------------------- | -------- | -------- | ------ |
+| API Worker (`apps/cloud`)             | 1973 KiB | 1619 KiB | −17.9% |
+| Web Worker (SSR + assets)             | 1860 KiB | 1540 KiB | −17.2% |
+| Client JavaScript (all chunks)        | 766 KiB  | 653 KiB  | −14.7% |
+| Dashboard `/t/:id/devices` first load | 338 KiB  | 326 KiB  | −3.7%  |
+| `/` first load                        | 290 KiB  | 291 KiB  | +0.4%  |
+| `/login` first load                   | 280 KiB  | 281 KiB  | +0.4%  |
+
+Most of the client total came from dropping `posthog-js`; a first load that
+never asked for the old lazy SDK pays the new client's ~3 KiB instead, which is
+why the public pages are flat rather than smaller. The dashboard gains the
+deferred command palette.
+
+### What changed
+
+- **Analytics.** `posthog-js` (470 KB before tree-shaking) is replaced by a
+  small `/batch/` client that sends the same pageviews, identity, tenant groups,
+  exceptions, click autocapture and pageleave events, and shares its session id
+  with API-side capture. The package stays in `package.json` until the
+  supply-chain policy allows removing it, but nothing imports it.
+- **MySQL driver.** The API only ever connects with `utf8mb4`, an explicit `ssl`
+  object and no named profiles, so `iconv-lite`'s encoding tables, the
+  `aws-ssl-profiles` CA bundle and `tldts`' public-suffix trie are replaced by
+  local stand-ins (`apps/cloud/*.stub.ts`). The stand-ins run in dev too, so a
+  mismatch shows up in tests rather than only in production. `iconv-lite` must
+  keep answering `cesu8`: MySQL decodes the server greeting with it.
+- **SSR route configs.** Each `route.preload` that returns early for
+  `intent === "initial"` cannot do anything on the server, but the SSR router
+  still imported its module. `apps/web/vite.config.ts` resolves those configs to
+  an empty route in the server environment only, so client-side navigation keeps
+  preloading data and the Worker stops shipping a second copy of the page.
+  Add a page to that list only when its preload is a no-op for the initial load.
+- **Command palette.** It is the largest interaction-only surface, so it loads
+  as its own chunk right after the shell settles. Its global shortcuts stay
+  available: the launcher mounts it as soon as the chunk arrives, rather than
+  waiting for the first keypress.
+
+### Measured and rejected
+
+These looked like wins and were not, so the code stays simpler:
+
+- **`sideEffects` on `packages/ui`.** Marking the package side-effect-free moved
+  ~5 KiB _onto_ the client and landed page loads, because the component kit
+  split from one 51 KiB chunk into a dozen small ones and per-file gzip overhead
+  cost more than the tree-shaking saved.
+- **Subpath imports for the component kit.** Pointing the app's `ui/` shims at
+  `@mattrax/ui/button` (instead of the barrel) split the kit the same way and
+  made every page slightly heavier for the same reason.
+- **A scoped `tailwind-merge` configuration.** Replacing the default table with
+  ~260 hand-written groups saved only ~1 KiB, because the validators cost as
+  much as the data they replace.
+- **Lazy-loading analytics from the entry.** The exception boundary imports the
+  analytics client anyway, so the dynamic import added a loader chunk without
+  removing the module.
+
+### What stays
+
+- **Effect `Schema` and the typed API client.** The dashboard decodes every API
+  response and builds one typed client from the endpoint definitions; both are
+  in the ~45 KB shared chunk and removing either would mean hand-writing paths
+  and handwritten validation for 200+ endpoints.
+- **`@simplewebauthn/browser`.** It is already a lazy chunk, and its WebAuthn
+  JSON binding is the part of the credential flow least worth reimplementing.
+
 ## Static guards
 
 `packages/config/oxlint` runs through `pnpm lint` (and `vp lint`). Two rules
