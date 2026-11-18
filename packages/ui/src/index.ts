@@ -5,7 +5,7 @@
  * Import the stylesheet once from the app entry: `@mattrax/ui/styles.css`.
  */
 
-export { Badge, badgeVariants } from "./badge";
+export { Badge, badgeVariants, type BadgeProps } from "./badge";
 
 export { Button, buttonVariants, type ButtonProps } from "./button";
 
@@ -68,6 +68,8 @@ export {
 
 export { Field, FieldError, FieldHint, Input, Label, Textarea } from "./input";
 
+export { HoverCard, HoverCardContent, HoverCardTrigger } from "./hover-card";
+
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -123,7 +125,15 @@ export {
 
 export { Spinner } from "./spinner";
 
-export { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "./table";
+export {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./table";
 
 export { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from "./tabs";
 

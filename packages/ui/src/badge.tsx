@@ -23,7 +23,7 @@ const badgeVariants = cva(
   },
 );
 
-type BadgeProps = ComponentProps<"span"> &
+export type BadgeProps = ComponentProps<"span"> &
   VariantProps<typeof badgeVariants> & {
     /** Draws a coloured dot before the label. */
     dot?: "success" | "warning" | "destructive" | "info" | "neutral";

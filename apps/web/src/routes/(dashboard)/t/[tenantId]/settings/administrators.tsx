@@ -18,6 +18,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { UsersRound } from "~/components/ui/icons";
+import { EntityHoverCard } from "~/components/entity-hover-card";
 import { authClient } from "~/lib/auth";
 import {
   enterprise,
@@ -35,6 +36,7 @@ import {
   optimisticallyUpdateCollection,
   optimisticUpdate,
 } from "~/lib/optimistic";
+import { initials } from "~/lib/names";
 import { cn } from "~/lib/utils";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -144,15 +146,6 @@ async function copyToClipboard(value: string) {
   textarea.remove();
 
   return copied;
-}
-
-function initials(name: string | undefined | null) {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-
-  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
-
-  return parts[0]?.[0]?.toUpperCase() ?? "?";
 }
 
 type InviteResult = {
@@ -1153,7 +1146,10 @@ export default function AdministratorsSettingsPage() {
 
                 return (
                   <li class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                    <div class="flex min-w-0 items-center gap-3">
+                    <EntityHoverCard
+                      preview={{ kind: "user", account }}
+                      class="flex min-w-0 items-center gap-3"
+                    >
                       <span
                         class="flex size-7 shrink-0 items-center justify-center rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border"
                         aria-hidden="true"
@@ -1171,7 +1167,7 @@ export default function AdministratorsSettingsPage() {
                           {account.roleName ?? account.role}
                         </span>
                       </div>
-                    </div>
+                    </EntityHoverCard>
                     <div class="flex shrink-0 flex-wrap items-center gap-2">
                       <Show
                         when={!isSelf() && can("members.write")}
@@ -1286,8 +1282,8 @@ export default function AdministratorsSettingsPage() {
                   when={transferCandidates().length > 0}
                   fallback={
                     <p class="text-[13px] text-muted-foreground">
-                      Invite another administrator before transferring ownership. Owners cannot
-                      take over from each other.
+                      Invite another administrator before transferring ownership. Owners cannot take
+                      over from each other.
                     </p>
                   }
                 >

@@ -9,6 +9,7 @@ import {
   PageHeader,
   relativeTime,
 } from "~/components/mdm/common";
+import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import {
   EntityQueryBar,
@@ -220,12 +221,13 @@ export default function PoliciesPage() {
             search: (row) => `${row.name} ${row.notes ?? ""}`,
             cell: (row) => (
               <span class="block min-w-0">
-                <a
-                  class="block truncate font-medium hover:underline"
+                <EntityHoverCard
+                  preview={{ kind: "policy", policy: row }}
                   href={routes.tenant(params.tenantId).policy(row.id)}
+                  class="block truncate font-medium hover:underline"
                 >
                   {row.name}
-                </a>
+                </EntityHoverCard>
                 <Show when={row.notes}>
                   <span class="mt-0.5 block max-w-[38ch] truncate text-[11px] text-muted-foreground">
                     {row.notes}

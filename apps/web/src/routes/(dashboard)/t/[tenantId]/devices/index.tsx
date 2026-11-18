@@ -12,6 +12,7 @@ import {
   QueryError,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
+import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, type MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
@@ -1344,12 +1345,13 @@ export default function DevicesPage() {
             sort: (row) => row.name,
             search: (row) => row.name,
             cell: (row) => (
-              <a
-                class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
+              <EntityHoverCard
+                preview={{ kind: "device", device: row }}
                 href={routes.tenant(params.tenantId).device(row.id)}
+                class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
               >
                 {row.name}
-              </a>
+              </EntityHoverCard>
             ),
           },
           {

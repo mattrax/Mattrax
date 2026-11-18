@@ -2,6 +2,7 @@ import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, Show } from "solid-js";
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
+import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import {
   EntityQueryBar,
@@ -155,12 +156,13 @@ export default function GroupsPage() {
             search: (row) => row.name,
             cell: (row) => (
               <div class="min-w-0">
-                <a
-                  class="font-medium text-foreground hover:underline"
+                <EntityHoverCard
+                  preview={{ kind: "group", group: row }}
                   href={routes.tenant(params.tenantId).group(row.id)}
+                  class="font-medium text-foreground hover:underline"
                 >
                   {row.name}
-                </a>
+                </EntityHoverCard>
                 <Show when={row.notes?.trim()}>
                   {(notes) => (
                     <span class="mt-0.5 block max-w-[320px] truncate text-[11px] text-muted-foreground">
