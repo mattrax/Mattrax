@@ -77,6 +77,7 @@ import {
   policyConfigurationVariableProblem,
   policyVariableInfo,
   validateAttributeValue,
+  windowsActivationStatusFromLicenseStatus,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { StripeClientLike } from "@mattrax/effect-stripe";
@@ -2888,6 +2889,12 @@ export const createEnterpriseService = ({
       | "domainName"
       | "entraDeviceId"
       | "securityUpdatedAt"
+      | "windowsActivationStatus"
+      | "windowsActivationLicenseStatus"
+      | "windowsActivationEdition"
+      | "windowsActivationChannel"
+      | "windowsActivationLicenseName"
+      | "windowsActivationUpdatedAt"
     >,
   ) => ({
     bitLockerEnabled: row.bitLockerEnabled,
@@ -2896,6 +2903,19 @@ export const createEnterpriseService = ({
     secureBootState: row.secureBootState,
     domainName: row.domainName,
     entraDeviceId: row.entraDeviceId,
+    // Activation comes from the agent's WMI sample, not the OMA-DM inventory,
+    // so it has its own timestamp. A device without a report has no activation
+    // block at all rather than an invented "unknown".
+    activation: row.windowsActivationUpdatedAt
+      ? {
+          status: row.windowsActivationStatus ?? ("unknown" as const),
+          licenseStatus: row.windowsActivationLicenseStatus,
+          licenseName: row.windowsActivationLicenseName,
+          productKeyChannel: row.windowsActivationChannel,
+          edition: row.windowsActivationEdition,
+          updatedAt: iso(row.windowsActivationUpdatedAt),
+        }
+      : undefined,
     updatedAt: row.securityUpdatedAt ? iso(row.securityUpdatedAt) : null,
   });
 
@@ -3136,6 +3156,7 @@ export const createEnterpriseService = ({
         : row.fileVaultEnabled
           ? ("enabled" as const)
           : ("disabled" as const),
+    windowsActivationStatus: row.proto === "win" ? (row.windowsActivationStatus ?? null) : null,
     batteryHealth: row.batteryHealth,
     capabilities: row.capabilities,
     modelNumber: row.modelNumber,
@@ -4244,6 +4265,19 @@ export const createEnterpriseService = ({
         );
       }
 
+      if (filters.activation) {
+        // Only Windows can report activation. `unknown` also covers Windows
+        // devices that have not run the agent yet; every other platform never
+        // matches, so a Mac can never appear in an "unactivated" filter.
+        conditions.push(eq(schema.device.proto, "win"));
+
+        const activation = schema.device.windowsActivationStatus;
+
+        if (filters.activation === "unknown")
+          conditions.push(or(eq(activation, "unknown"), isNull(activation)) ?? sql`false`);
+        else conditions.push(eq(activation, filters.activation));
+      }
+
       if (filters.push) {
         // Resolve matching devices from `device_apple` up front, like the
         // health filter. The final device condition remains tenant-scoped, so
@@ -4268,7 +4302,19 @@ export const createEnterpriseService = ({
       return and(...conditions);
     });
 
-  const deviceOrderColumn = (sort: DeviceSearchFilters["sort"]) => {
+  /** Administrative order for activation sorting: activated, not, unknown. */
+  const activationSortRank = (status: string | null | undefined): number => {
+    switch (status) {
+      case "activated":
+        return 0;
+      case "not-activated":
+        return 1;
+      default:
+        return 2;
+    }
+  };
+
+  const deviceOrderColumn = (sort: DeviceSearchFilters["sort"]): AnyColumn | SQL => {
     switch (sort) {
       case "lastSeenAt":
         return schema.device.lastSeenAt;
@@ -4276,6 +4322,9 @@ export const createEnterpriseService = ({
         return schema.device.enrolledAt;
       case "status":
         return schema.device.status;
+      case "activation":
+        // Keep the states in administrative order rather than alphabetical.
+        return sql`case ${schema.device.windowsActivationStatus} when 'activated' then 0 when 'not-activated' then 1 else 2 end`;
       default:
         return schema.device.name;
     }
@@ -12072,6 +12121,68 @@ export const createEnterpriseService = ({
           duplicate: result.duplicate,
         };
       }),
+    reportWindowsActivation: (request, payload) =>
+      Effect.gen(function* () {
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseInternal({
+              message: "Windows activation reports require a configured AUTH_SECRET.",
+            }),
+          );
+
+        const header = request.headers.authorization;
+
+        const token = header?.toLowerCase().startsWith("bearer ")
+          ? header.slice(7).trim()
+          : undefined;
+
+        if (!token)
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        const deviceId = yield* Effect.promise(() => verifyScriptAgentToken(token, authSecret));
+
+        if (!deviceId)
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        const device = yield* db.query.device.findFirst({ where: { id: deviceId } });
+
+        if (!device || device.status !== "enrolled")
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        // Activation is a Windows concept: accepting a report for another
+        // platform would invent a state the device cannot have.
+        if (device.proto !== "win")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Only Windows devices report activation state.",
+            }),
+          );
+
+        const text = (value: string | null | undefined) => {
+          const trimmed = value?.trim();
+
+          return trimmed ? trimmed.slice(0, 255) : null;
+        };
+
+        const sampledAt = payload.sampledAt ? new Date(payload.sampledAt) : null;
+
+        const activationStatus = windowsActivationStatusFromLicenseStatus(payload.licenseStatus);
+
+        yield* db
+          .update(schema.device)
+          .set({
+            windowsActivationStatus: activationStatus,
+            windowsActivationLicenseStatus: payload.licenseStatus ?? null,
+            windowsActivationEdition: text(payload.edition),
+            windowsActivationChannel: text(payload.productKeyChannel),
+            windowsActivationLicenseName: text(payload.licenseName),
+            windowsActivationUpdatedAt:
+              sampledAt && Number.isFinite(sampledAt.getTime()) ? sampledAt : now(),
+          })
+          .where(eq(schema.device.id, device.id));
+
+        return { status: "ok" as const, activation: activationStatus };
+      }),
     deviceAction: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -15784,6 +15895,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.status;
               case "health":
                 return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
+              case "activation":
+                return activationSortRank(snapshot.row.windowsActivationStatus);
               default:
                 return snapshot.row.name;
             }
@@ -16337,6 +16450,8 @@ export const createEnterpriseService = ({
                 return snapshot.row.status;
               case "health":
                 return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
+              case "activation":
+                return activationSortRank(snapshot.row.windowsActivationStatus);
               default:
                 return snapshot.row.name;
             }
@@ -16395,6 +16510,7 @@ export const createEnterpriseService = ({
             "Asset tag",
             "Model number",
             "FileVault",
+            "Activation",
             "Battery health",
             "Capabilities",
             "Inventory updated",
@@ -16419,6 +16535,7 @@ export const createEnterpriseService = ({
               : row.fileVaultEnabled
                 ? "Enabled"
                 : "Disabled",
+            row.proto === "win" ? (row.windowsActivationStatus ?? "Not reported") : "",
             row.batteryHealth,
             capabilityText(
               Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.capabilities)),
@@ -18789,5 +18906,10 @@ export const scriptAgentHandlers = (
     .handle("reportScriptAgentResult", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.reportScriptAgentResult(request, payload),
+      ),
+    )
+    .handle("reportWindowsActivation", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.reportWindowsActivation(request, payload),
       ),
     );

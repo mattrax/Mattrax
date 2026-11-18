@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { WindowsActivationStatus } from "./deviceInventory.js";
 
 /**
  * The shared device query language.
@@ -71,6 +72,16 @@ const FileVaultCondition = Schema.Struct({
   value: DeviceFileVault,
 });
 
+/**
+ * Windows activation state. Only Windows devices can match: every other
+ * platform has no activation state and must not be treated as unactivated.
+ */
+const ActivationCondition = Schema.Struct({
+  field: Schema.Literal("activation"),
+  op: Schema.optional(Schema.Literals(["eq", "ne"])),
+  value: WindowsActivationStatus,
+});
+
 const ApplicationCondition = Schema.Struct({
   field: Schema.Literal("application"),
   /** `has` matches a bundle id or application name; `lacks` is its inverse. */
@@ -86,6 +97,7 @@ export const DeviceCondition = Schema.Union([
   HealthCondition,
   DaysCondition,
   FileVaultCondition,
+  ActivationCondition,
   ApplicationCondition,
 ]);
 
@@ -146,6 +158,8 @@ export type DeviceQueryDevice = {
   readonly enrolledAt?: Date | string | null;
   readonly fileVaultStatus?: string | null;
   readonly fileVaultEnabled?: boolean | null;
+  /** Windows activation state reported by the agent; null on other platforms. */
+  readonly windowsActivationStatus?: string | null;
   readonly health?: {
     readonly level: typeof DeviceHealthLevel.Type;
     readonly stale: boolean;
@@ -277,6 +291,23 @@ const fileVaultState = (device: DeviceQueryDevice): "enabled" | "disabled" | "un
   return "unknown";
 };
 
+/**
+ * Windows activation state a condition can match.
+ *
+ * Non-Windows devices return `null`, not `unknown`: a Mac or Android device
+ * cannot report activation, so `activation is unknown` must not sweep it into
+ * the same bucket as a Windows device whose agent has not reported yet.
+ */
+const activationState = (device: DeviceQueryDevice): WindowsActivationStatus | null => {
+  if (normalized(device.proto) !== "win") return null;
+
+  const status = normalized(device.windowsActivationStatus);
+
+  if (status === "activated" || status === "not-activated" || status === "unknown") return status;
+
+  return "unknown";
+};
+
 const matchesApplication = (
   device: DeviceQueryDevice,
   condition: Extract<DeviceCondition, { field: "application" }>,
@@ -369,6 +400,16 @@ const matchesCondition = (
 
     case "fileVault":
       return fileVaultState(device) === condition.value;
+    case "activation": {
+      const actual = activationState(device);
+
+      if (actual === null) return false;
+
+      const matches = actual === condition.value;
+
+      return condition.op === "ne" ? !matches : matches;
+    }
+
     case "application":
       return matchesApplication(device, condition);
     default:
@@ -422,6 +463,8 @@ const operatorText = (condition: DeviceCondition): string => {
       return op === "lacks" ? "lacks" : "has";
     case "fileVault":
       return "is";
+    case "activation":
+      return op === "ne" ? "is not" : "is";
     case "staleDays":
     case "enrolledDays":
     case "osVersion": {
@@ -543,6 +586,16 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
       if (!Schema.is(DeviceFileVault)(value)) return null;
 
       return op === "is" ? { field, op: "eq", value } : null;
+    }
+
+    case "activation": {
+      if (!Schema.is(WindowsActivationStatus)(value)) return null;
+
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
     }
 
     case "application":

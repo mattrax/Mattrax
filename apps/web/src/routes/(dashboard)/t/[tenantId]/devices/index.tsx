@@ -96,6 +96,7 @@ const FILTER_PARAM_KEYS = [
   "staleDays",
   "health",
   "push",
+  "activation",
   "attributeKey",
   "attributeValue",
   "sort",
@@ -129,6 +130,19 @@ const healthMeta = {
   critical: { variant: "destructive", dot: "destructive", label: "Critical" },
   unknown: { variant: "outline", dot: "neutral", label: "Unknown" },
 } as const;
+
+type DeviceActivationStatus = "activated" | "not-activated" | "unknown";
+
+type DeviceActivationFilter = DeviceActivationStatus | "";
+
+const activationMeta = {
+  activated: { variant: "success", dot: "success", label: "Activated" },
+  "not-activated": { variant: "warning", dot: "warning", label: "Not activated" },
+  unknown: { variant: "outline", dot: "neutral", label: "Unknown" },
+} as const;
+
+const isActivationStatus = (value: string): value is DeviceActivationStatus =>
+  value === "activated" || value === "not-activated" || value === "unknown";
 
 const isStatus = (value: string): value is keyof typeof statusMeta => value in statusMeta;
 
@@ -174,6 +188,22 @@ function DeviceHealthTag(props: { level: string; reasons?: ReadonlyArray<HealthR
           </ul>
         </TooltipContent>
       </Tooltip>
+    </Show>
+  );
+}
+
+/** Windows activation, when the agent has reported it. */
+function DeviceActivationTag(props: { status?: string | null }) {
+  const meta = () =>
+    props.status && isActivationStatus(props.status) ? activationMeta[props.status] : null;
+
+  return (
+    <Show when={meta()} fallback={<span class="text-muted-foreground">—</span>}>
+      {(value) => (
+        <Badge variant={value().variant} dot={value().dot}>
+          {value().label}
+        </Badge>
+      )}
     </Show>
   );
 }
@@ -235,6 +265,8 @@ export default function DevicesPage() {
 
   const initialPush = (): "failing" | "invalid" | "" => search().push ?? "";
 
+  const initialActivation = (): DeviceActivationFilter => search().activation ?? "";
+
   const initialSort = (): MdmSortState => ({
     id: search().sort ?? "name",
     dir: search().direction ?? "asc",
@@ -248,6 +280,7 @@ export default function DevicesPage() {
   const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
+  const [activation, setActivation] = createSignal<DeviceActivationFilter>(initialActivation());
   const [attributeKey, setAttributeKey] = createSignal(search().attributeKey ?? "");
   const [attributeValue, setAttributeValue] = createSignal(search().attributeValue ?? "");
   const [sort, setSort] = createSignal<MdmSortState>(initialSort());
@@ -395,6 +428,7 @@ export default function DevicesPage() {
       staleDays: staleDays(),
       health: health(),
       push: push(),
+      activation: activation(),
       attributeKey: attributeKey(),
       attributeValue: attributeValue(),
       sort: sort()?.id ?? "name",
@@ -423,6 +457,8 @@ export default function DevicesPage() {
       if (state.health) next.health = state.health;
 
       if (state.push) next.push = state.push;
+
+      if (state.activation) next.activation = state.activation;
 
       if (state.attributeKey) next.attributeKey = state.attributeKey;
 
@@ -454,6 +490,7 @@ export default function DevicesPage() {
     staleDays: initialStale(),
     health: initialHealth(),
     push: initialPush(),
+    activation: initialActivation(),
     attributeKey: search().attributeKey ?? "",
     attributeValue: search().attributeValue ?? "",
     sort: initialSort(),
@@ -474,6 +511,7 @@ export default function DevicesPage() {
         staleDays: staleDays(),
         health: health(),
         push: push(),
+        activation: activation(),
         attributeKey: attributeKey(),
         attributeValue: attributeValue(),
         sort: sort(),
@@ -497,6 +535,11 @@ export default function DevicesPage() {
       if (filters.health !== local.health) setHealth(filters.health);
 
       if (filters.push !== local.push) setPush(filters.push);
+
+      if (filters.activation !== local.activation) {
+        setActivation(filters.activation);
+        setPage(0);
+      }
 
       if (filters.attributeKey !== local.attributeKey) {
         setAttributeKey(filters.attributeKey);
@@ -523,10 +566,20 @@ export default function DevicesPage() {
     { defer: true },
   );
 
-  const sortField = (): "name" | "lastSeenAt" | "enrolledAt" | "status" | "health" => {
+  const sortField = ():
+    | "name"
+    | "lastSeenAt"
+    | "enrolledAt"
+    | "status"
+    | "health"
+    | "activation" => {
     const id = sort()?.id;
 
-    return id === "lastSeenAt" || id === "enrolledAt" || id === "status" || id === "health"
+    return id === "lastSeenAt" ||
+      id === "enrolledAt" ||
+      id === "status" ||
+      id === "health" ||
+      id === "activation"
       ? id
       : "name";
   };
@@ -539,6 +592,7 @@ export default function DevicesPage() {
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
     push: push() || undefined,
+    activation: activation() || undefined,
     attributes:
       attributeKey() && attributeValue()
         ? JSON.stringify({ [attributeKey()]: attributeValue() })
@@ -639,6 +693,19 @@ export default function DevicesPage() {
           { value: "invalid", label: "Invalid token" },
         ],
       },
+      {
+        id: "activation",
+        label: "Windows activation",
+        icon: ShieldCheck,
+        group: "Windows",
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "activated", label: "Activated" },
+          { value: "not-activated", label: "Not activated" },
+          { value: "unknown", label: "Unknown" },
+        ],
+      },
       ...attributes.map<FilterField>((definition) => {
         const kind = Match.value(definition.type).pipe(
           Match.when("select", () => "select" as const),
@@ -697,6 +764,9 @@ export default function DevicesPage() {
 
     if (push()) conditions.push({ field: "push", operator: "is", values: [push()] });
 
+    if (activation())
+      conditions.push({ field: "activation", operator: "is", values: [activation()] });
+
     if (staleDays()) conditions.push({ field: "staleDays", operator: "is", values: [staleDays()] });
 
     if (attributeKey())
@@ -715,6 +785,7 @@ export default function DevicesPage() {
     setGroupId("");
     setHealth("");
     setPush("");
+    setActivation("");
     setStaleDays("");
     setAttributeKey("");
     setAttributeValue("");
@@ -759,6 +830,8 @@ export default function DevicesPage() {
             Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
           ) ?? "",
         );
+      else if (condition.field === "activation")
+        setActivation(isActivationStatus(value) ? value : "");
       else if (condition.field === "staleDays")
         setStaleDays(
           Option.getOrUndefined(
@@ -830,6 +903,7 @@ export default function DevicesPage() {
       staleDays() ||
       health() ||
       push() ||
+      activation() ||
       attributeKey() ||
       deviceQuery(),
     );
@@ -843,6 +917,7 @@ export default function DevicesPage() {
     setStaleDays("");
     setHealth("");
     setPush("");
+    setActivation("");
     setAttributeKey("");
     setAttributeValue("");
     setDeviceQuery(null);
@@ -1034,6 +1109,7 @@ export default function DevicesPage() {
                 >
                   <option value="name">Sort: name</option>
                   <option value="health">Sort: health</option>
+                  <option value="activation">Sort: activation</option>
                   <option value="lastSeenAt">Sort: last seen</option>
                   <option value="enrolledAt">Sort: enrolled</option>
                   <option value="status">Sort: status</option>
@@ -1225,6 +1301,17 @@ export default function DevicesPage() {
             id: "platform",
             header: "Platform",
             cell: (row) => <PlatformBadge proto={row.proto} />,
+          },
+          {
+            id: "activation",
+            header: "Activation",
+            // Sorted by the API in administrative order (activated,
+            // not-activated, unknown); the local comparator only matters if a
+            // row set is ever sorted on the client.
+            sort: (row) => row.windowsActivationStatus ?? "",
+            sortId: "activation",
+            cell: (row) => <DeviceActivationTag status={row.windowsActivationStatus} />,
+            defaultHidden: true,
           },
           {
             id: "serial",

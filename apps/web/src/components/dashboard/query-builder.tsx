@@ -154,6 +154,22 @@ export const QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
     ops: [{ value: "eq", label: "is" }],
   },
   {
+    id: "activation",
+    label: "Windows activation",
+    kind: "select",
+    defaultOp: "eq",
+    defaultValue: "not-activated",
+    options: [
+      { value: "activated", label: "Activated" },
+      { value: "not-activated", label: "Not activated" },
+      { value: "unknown", label: "Unknown" },
+    ],
+    ops: [
+      { value: "eq", label: "is" },
+      { value: "ne", label: "is not" },
+    ],
+  },
+  {
     id: "staleDays",
     label: "Days since check-in",
     kind: "number",
@@ -229,6 +245,7 @@ const fieldIcons = {
   platform: Laptop,
   status: Activity,
   health: ShieldCheck,
+  activation: ShieldCheck,
   staleDays: RefreshCw,
   enrolledDays: RefreshCw,
   application: SlidersHorizontal,

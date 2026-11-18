@@ -241,11 +241,43 @@ OMA-URI and SyncML status on the device.
 `WINDOWS_ORGANIZATION_ID` is only for a single-tenant deployment that still uses the old
 unscoped discovery URL. New deployments should use the tenant-scoped link.
 
+## Activation and licensing
+
+No OMA-DM CSP reports whether Windows is activated. The `WindowsLicensing` CSP is the only
+licensing-related CSP, and it reports the edition, edition-upgrade state and subscription
+licensing — not the base activation state. Microsoft exposes that state as
+`SoftwareLicensingProduct.LicenseStatus` over WMI, so it needs the on-device agent.
+
+The agent samples the active Windows SKU and posts the raw values to
+`POST /api/v1/windows-agent/activation` with the same device bearer token as the script
+channel:
+
+```powershell
+$os = Get-CimInstance Win32_OperatingSystem
+
+Get-CimInstance SoftwareLicensingProduct |
+  Where-Object { $_.PartialProductKey -and $_.Name -like 'Windows*' } |
+  Select-Object LicenseStatus, Name, ProductKeyChannel, @{ n = 'Edition'; e = { $os.Caption } }
+```
+
+The body maps those columns to `licenseStatus`, `licenseName`, `productKeyChannel` and
+`edition`; `sampledAt` is optional and defaults to the ingest time.
+
+The server keeps the raw `LicenseStatus` (0-6), licence name, product-key channel and the WMI
+edition, and normalises the state: `1` (Licensed) is `activated`; `0` (Unlicensed), the grace
+states (`2`-`4`), `5` (Notification) and `6` (Extended grace) are `not-activated`; a missing or
+unreadable value is `unknown`. Devices without the agent, and every non-Windows platform, have
+no activation state at all rather than an invented "not activated".
+
+The device page shows the state, licensed edition and channel, and the device list can filter
+and sort by activation (including "not activated"). Without the Windows agent the Windows
+device shows "Not reported" in the inventory and never matches the unactivated filter.
+
 ## Limitations
 
-- No BitLocker key escrow, Defender or OS-build compliance checks. Windows activation
-  status is not collected: the `WindowsLicensing` CSP reports edition-upgrade state, not
-  whether Windows is activated.
+- No BitLocker key escrow, Defender or OS-build compliance checks. Windows activation and
+  licensing are collected by the Windows agent (see above), not by OMA-DM: the
+  `WindowsLicensing` CSP reports edition-upgrade and subscription state, not base activation.
 - Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
   documented as mobile-only), so storage health may be unavailable for some laptops.
 - Inventory depends on the device answering `Get`; no push channel wakes it early.
@@ -272,6 +304,7 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 | `POST`      | `/api/v1/tenants/:tenantId/devices/:id/unenroll` |
 | `GET`       | `/api/v1/tenants/:tenantId/devices/:id/commands` |
 | `GET`       | `/api/v1/tenants/:tenantId/devices/:id/health`   |
+| `POST`      | `/api/v1/windows-agent/activation`               |
 | `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot`            |
 | `POST`      | `/api/v1/tenants/:tenantId/autopilot/import`     |
 | `POST`      | `/api/v1/tenants/:tenantId/autopilot/sync`       |

@@ -113,4 +113,75 @@ describe("device query", () => {
     expect(parseDeviceQueryText("nonsense is what")).toBeNull();
     expect(parseDeviceQueryText("platform is apple and nonsense is what")?.all).toHaveLength(1);
   });
+
+  it("matches only Windows devices on activation state", () => {
+    const windows = (status: string | null) =>
+      device({ proto: "win", osEdition: "Windows 11 Pro", windowsActivationStatus: status });
+
+    expect(
+      evaluateDeviceQuery(
+        { all: [{ field: "activation", value: "activated" }] },
+        windows("activated"),
+        {
+          now,
+        },
+      ),
+    ).toBe(true);
+    expect(
+      evaluateDeviceQuery(
+        { all: [{ field: "activation", op: "ne", value: "activated" }] },
+        windows("not-activated"),
+        { now },
+      ),
+    ).toBe(true);
+    // A Windows device that has not reported activation is unknown, not "not
+    // activated".
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "activation", value: "unknown" }] }, windows(null), {
+        now,
+      }),
+    ).toBe(true);
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "activation", value: "activated" }] }, windows(null), {
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("never matches a non-Windows device on activation", () => {
+    for (const value of ["activated", "not-activated", "unknown"] as const)
+      expect(
+        evaluateDeviceQuery(
+          { all: [{ field: "activation", value }] },
+          device({ proto: "apple", windowsActivationStatus: null }),
+          { now },
+        ),
+      ).toBe(false);
+
+    // `ne` must not accidentally select a platform that cannot report it.
+    expect(
+      evaluateDeviceQuery(
+        { all: [{ field: "activation", op: "ne", value: "unknown" }] },
+        device({ proto: "android", windowsActivationStatus: null }),
+        { now },
+      ),
+    ).toBe(false);
+  });
+
+  it("round-trips an activation clause through the URL text", () => {
+    const query = parseDeviceQueryText("activation is not-activated");
+
+    expect(query).toEqual({
+      version: 1,
+      all: [{ field: "activation", op: "eq", value: "not-activated" }],
+    });
+    expect(formatDeviceQueryText(query)).toBe("activation is not-activated");
+    expect(parseDeviceQueryText(formatDeviceQueryText(query))).toEqual(query);
+    expect(parseDeviceQueryText("activation is not activated")?.all?.[0]).toMatchObject({
+      field: "activation",
+      op: "ne",
+      value: "activated",
+    });
+    expect(parseDeviceQueryText("activation is something-else")).toBeNull();
+  });
 });

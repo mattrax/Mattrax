@@ -4,6 +4,7 @@ import {
   applicationsInventoryStale,
   normalizeReportedName,
   shouldApplyReportedName,
+  windowsActivationStatusFromLicenseStatus,
 } from "./deviceInventory.ts";
 
 describe("shouldApplyReportedName", () => {
@@ -57,6 +58,22 @@ describe("normalizeReportedName", () => {
     expect(normalizeReportedName("  Oscar's   MacBook  ")).toBe("Oscar's MacBook");
     expect(normalizeReportedName("   ")).toBeUndefined();
     expect(normalizeReportedName(null)).toBeUndefined();
+  });
+});
+
+describe("windowsActivationStatusFromLicenseStatus", () => {
+  it("treats only Licensed as activated", () => {
+    expect(windowsActivationStatusFromLicenseStatus(1)).toBe("activated");
+  });
+
+  it("groups every unlicensed, grace and notification state as not activated", () => {
+    for (const raw of [0, 2, 3, 4, 5, 6])
+      expect(windowsActivationStatusFromLicenseStatus(raw)).toBe("not-activated");
+  });
+
+  it("never guesses when the value is missing or out of range", () => {
+    for (const raw of [undefined, null, 7, -1, 1.5, Number.NaN])
+      expect(windowsActivationStatusFromLicenseStatus(raw)).toBe("unknown");
   });
 });
 

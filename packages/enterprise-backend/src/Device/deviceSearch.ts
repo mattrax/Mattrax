@@ -9,6 +9,7 @@ import {
   type DeviceSearchQuery,
   type DeviceSearchSort,
   type SortDirection,
+  type WindowsActivationStatus,
 } from "@mattrax/enterprise-domain";
 import { decodeAttributeFilter } from "../Policy/attributes.ts";
 
@@ -43,6 +44,8 @@ export type DeviceSearchFilters = {
   readonly push?: DevicePushFilter;
   /** ADE setup state, from `device_apple.awaiting_configuration`. */
   readonly setup?: "awaiting" | "complete";
+  /** Windows activation state reported by the Mattrax agent. */
+  readonly activation?: WindowsActivationStatus;
   /** Exact attribute filters keyed by registered attribute key. */
   readonly attributes?: Readonly<Record<string, string>>;
   /** Structured device query from a shareable table URL. */
@@ -131,6 +134,7 @@ export const normalizeDeviceSearchQuery = (
     health: query.health,
     push: query.push,
     setup: query.setup,
+    activation: query.activation,
     attributes: attributes && Object.keys(attributes).length ? attributes : undefined,
     limit: clamp(integer(query.limit, DEVICE_SEARCH_DEFAULT_LIMIT), 1, DEVICE_SEARCH_MAX_LIMIT),
     offset: Math.max(integer(query.offset, 0), 0),

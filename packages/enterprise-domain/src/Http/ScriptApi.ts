@@ -16,6 +16,8 @@ import { ScriptDetail } from "../scripts.js";
 import { ScriptExecutionsResponse } from "../scripts.js";
 import { ScriptListResponse } from "../scripts.js";
 import { ScriptSettings } from "../scripts.js";
+import { WindowsActivationReportRequest } from "../deviceInventory.js";
+import { WindowsActivationReportResponse } from "../deviceInventory.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
 import { EnterpriseBadRequest } from "../Errors.js";
 import { EnterpriseConflict } from "../Errors.js";
@@ -143,6 +145,16 @@ export const scriptAgentApi = HttpApiGroup.make("ScriptAgentApi")
       ],
       payload: ScriptAgentResultRequest,
       success: ScriptAgentResultResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("reportWindowsActivation", "/v1/windows-agent/activation", {
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
+      payload: WindowsActivationReportRequest,
+      success: WindowsActivationReportResponse,
     }),
   )
   .prefix("/api");

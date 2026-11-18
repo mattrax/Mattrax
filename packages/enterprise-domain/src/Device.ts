@@ -4,6 +4,7 @@ import { DeviceAttributeValues } from "./attributes.js";
 import { Schema } from "effect";
 import { AutopilotDeviceInfo } from "./Autopilot.js";
 import { NullableString } from "./Errors.js";
+import { WindowsActivationStatus } from "./deviceInventory.js";
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
 
@@ -43,6 +44,31 @@ export const AndroidDeviceInfo = Schema.Struct({
 export type AndroidDeviceInfo = typeof AndroidDeviceInfo.Type;
 
 /**
+ * Windows activation and licence state reported by the Mattrax agent.
+ *
+ * Windows does not expose activation through OMA-DM, so an agent samples
+ * `SoftwareLicensingProduct` over WMI and posts the raw values. Windows
+ * devices that have not run an agent, and every non-Windows device, have no
+ * activation state at all (never a false "not activated").
+ */
+export const WindowsActivationInfo = Schema.Struct({
+  /** Stable normalised state derived from `licenseStatus`. */
+  status: WindowsActivationStatus,
+  /** Raw `SoftwareLicensingProduct.LicenseStatus` (0-6). */
+  licenseStatus: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** Raw licence product name, for example `Windows(R), Professional edition`. */
+  licenseName: Schema.optional(NullableString),
+  /** Raw `ProductKeyChannel`, for example `Retail` or `Volume:MAK`. */
+  productKeyChannel: Schema.optional(NullableString),
+  /** Edition reported by WMI, for example `Microsoft Windows 11 Pro`. */
+  edition: Schema.optional(NullableString),
+  /** When the agent last reported activation state. */
+  updatedAt: Schema.optional(NullableString),
+});
+
+export type WindowsActivationInfo = typeof WindowsActivationInfo.Type;
+
+/**
  * Windows security and join state collected by the inventory `Get` set.
  *
  * `null` means the device has not reported the node (or rejected it), which is
@@ -62,6 +88,8 @@ export const WindowsSecurityInfo = Schema.Struct({
   domainName: Schema.optional(NullableString),
   /** `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
   entraDeviceId: Schema.optional(NullableString),
+  /** Activation and licence state from the agent's WMI sample, if any. */
+  activation: Schema.optional(WindowsActivationInfo),
   /** When the security snapshot was last written. */
   updatedAt: Schema.optional(NullableString),
 });
@@ -145,6 +173,11 @@ export const DeviceRow = Schema.Struct({
   inventoryUpdatedAt: Schema.optional(NullableString),
   /** Normalised FileVault state shared by DDM inventory and SecurityInfo. */
   fileVaultStatus: Schema.optional(Schema.NullOr(DeviceFileVaultStatus)),
+  /**
+   * Normalised Windows activation state reported by the Mattrax agent.
+   * `null` for non-Windows devices and Windows devices that have not run it.
+   */
+  windowsActivationStatus: Schema.optional(Schema.NullOr(WindowsActivationStatus)),
   /** `passcode.is-present`; absent on macOS, which has no device passcode. */
   passcodePresent: Schema.optional(Schema.NullOr(Schema.Boolean)),
   /** `passcode.is-compliant`. */

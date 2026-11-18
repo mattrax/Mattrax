@@ -472,3 +472,66 @@ describe("ownership transfer migration", () => {
     expect(columns.get("created_at")).toMatchObject({ type: "datetime(3)", notNull: true });
   });
 });
+
+const WINDOWS_ACTIVATION_COLUMNS = [
+  "windows_activation_status",
+  "windows_activation_license_status",
+  "windows_activation_edition",
+  "windows_activation_channel",
+  "windows_activation_license_name",
+  "windows_activation_updated_at",
+] as const;
+
+describe("Windows activation migration", () => {
+  const names = migrationNames();
+
+  const activationMigrations = names.filter((name) =>
+    readMigration(name).includes("`windows_activation_status`"),
+  );
+
+  it("is added by exactly one migration", () => {
+    expect(activationMigrations).toHaveLength(1);
+  });
+
+  it("adds nullable activation columns to the device table", () => {
+    const sql = readMigration(activationMigrations[0]!);
+    expect(sql).toContain("ALTER TABLE `device`");
+
+    for (const column of WINDOWS_ACTIVATION_COLUMNS) expect(sql).toContain(`\`${column}\``);
+    expect(sql).not.toContain("NOT NULL");
+  });
+
+  it("ships a snapshot with nullable columns of the expected types", () => {
+    const snapshot = readSnapshot(names.at(-1)!);
+
+    const columns = new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === "device")
+        .map((entry) => [entry.name, entry]),
+    );
+
+    const expected: Record<(typeof WINDOWS_ACTIVATION_COLUMNS)[number], string> = {
+      windows_activation_status: "varchar(16)",
+      windows_activation_license_status: "int",
+      windows_activation_edition: "varchar(255)",
+      windows_activation_channel: "varchar(255)",
+      windows_activation_license_name: "varchar(255)",
+      windows_activation_updated_at: "datetime(3)",
+    };
+
+    for (const [column, type] of Object.entries(expected)) {
+      const entry = columns.get(column);
+      expect(entry, `missing snapshot column ${column}`).toBeDefined();
+      expect(entry!.type).toBe(type);
+      expect(entry!.notNull).toBe(false);
+    }
+  });
+
+  it("does not leave the activation columns in a later migration", () => {
+    const [activationMigration] = activationMigrations;
+
+    for (const name of names.filter((candidate) => candidate > activationMigration!))
+      for (const column of WINDOWS_ACTIVATION_COLUMNS)
+        expect(readMigration(name)).not.toContain(`\`${column}\``);
+  });
+});

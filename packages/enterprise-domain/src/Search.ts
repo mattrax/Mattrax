@@ -10,6 +10,7 @@ import { GroupRelation } from "./Group.js";
 import { GroupRow } from "./Group.js";
 import { NullableString } from "./Errors.js";
 import { PolicyRow } from "./Policy.js";
+import { WindowsActivationStatus } from "./deviceInventory.js";
 
 export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) });
 
@@ -97,6 +98,8 @@ export const DeviceSearchSort = Schema.Literals([
   "status",
   /** Worst health first when ascending (critical, attention, unknown, healthy). */
   "health",
+  /** Windows activation: activated, not-activated, then unknown. */
+  "activation",
 ]);
 
 export type DeviceSearchSort = typeof DeviceSearchSort.Type;
@@ -151,6 +154,12 @@ export const DeviceSearchQuery = Schema.Struct({
    * `complete` matches devices that were released (or never awaited).
    */
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
+  /**
+   * Windows activation state reported by the Mattrax agent. Only Windows
+   * devices can match; `unknown` includes Windows devices that have not
+   * reported yet. Other platforms never match.
+   */
+  activation: Schema.optional(WindowsActivationStatus),
   /**
    * JSON object of attribute key → expected value, for example
    * `{"cost_centre":"EMEA"}`. Every entry must match for a device to be

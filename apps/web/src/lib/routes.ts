@@ -73,7 +73,17 @@ export const DEVICE_STALE_DAYS = ["7", "30", "90"] as const;
 
 export const DEVICE_PUSH_FILTERS = ["failing", "invalid"] as const;
 
-export const DEVICE_SORT_FIELDS = ["name", "lastSeenAt", "enrolledAt", "status", "health"] as const;
+/** Windows activation states reported by the Mattrax agent. */
+export const DEVICE_ACTIVATION_FILTERS = ["activated", "not-activated", "unknown"] as const;
+
+export const DEVICE_SORT_FIELDS = [
+  "name",
+  "lastSeenAt",
+  "enrolledAt",
+  "status",
+  "health",
+  "activation",
+] as const;
 
 export const SORT_DIRECTIONS = ["asc", "desc"] as const;
 
@@ -88,6 +98,7 @@ export const DeviceSearchParams = Schema.Struct({
   staleDays: Schema.optional(Schema.Literals(DEVICE_STALE_DAYS)),
   health: Schema.optional(Schema.Literals(DEVICE_HEALTH_FILTERS)),
   push: Schema.optional(Schema.Literals(DEVICE_PUSH_FILTERS)),
+  activation: Schema.optional(Schema.Literals(DEVICE_ACTIVATION_FILTERS)),
   sort: Schema.optional(Schema.Literals(DEVICE_SORT_FIELDS)),
   direction: Schema.optional(Schema.Literals(SORT_DIRECTIONS)),
   q: Schema.optional(Schema.String),
@@ -143,6 +154,7 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   const staleDays = literalValue(DEVICE_STALE_DAYS, values.staleDays);
   const health = literalValue(DEVICE_HEALTH_FILTERS, values.health);
   const push = literalValue(DEVICE_PUSH_FILTERS, values.push);
+  const activation = literalValue(DEVICE_ACTIVATION_FILTERS, values.activation);
   const sort = literalValue(DEVICE_SORT_FIELDS, values.sort);
   const direction = literalValue(SORT_DIRECTIONS, values.direction);
 
@@ -155,6 +167,8 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   if (health !== undefined) params.health = health;
 
   if (push !== undefined) params.push = push;
+
+  if (activation !== undefined) params.activation = activation;
 
   if (sort !== undefined) params.sort = sort;
 

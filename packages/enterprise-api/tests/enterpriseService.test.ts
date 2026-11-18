@@ -22,6 +22,7 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
   StepUpRequired,
+  scriptAgentToken,
   type DeviceSearchQuery,
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
@@ -3361,7 +3362,7 @@ describe("enterprise policy validation and enrollment", () => {
     expect(exported.rowCount).toBe(1);
     expect(csv).toContain("Name,Serial,Model,Platform,Status,OS version,OS build");
     expect(csv).toContain("First Mac,SERIAL-device-first,MacBook Pro,Apple,enrolled");
-    expect(csv).toContain("MLH12LL/A,Disabled,Service Recommended,declarative-management");
+    expect(csv).toContain("MLH12LL/A,Disabled,,Service Recommended,declarative-management");
     expect(csv).not.toContain("Second Mac");
 
     // A group belonging to another tenant is not addressable from this tenant.
@@ -4759,5 +4760,182 @@ describe("tenant SCEP CA", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.scep_ca[0]?.certPem).toBe(certificatePem);
+  });
+});
+
+describe("Windows activation reporting", () => {
+  const seedDevice = (
+    db: any,
+    organizationId: string,
+    input: {
+      id: string;
+      proto?: string;
+      status?: string;
+      windowsActivationStatus?: string | null;
+    },
+  ) => {
+    const now = new Date();
+
+    db.store.device.push({
+      id: input.id,
+      organizationId,
+      proto: input.proto ?? "win",
+      status: input.status ?? "enrolled",
+      name: input.id,
+      enrolledAt: now,
+      lastSeenAt: now,
+      windowsActivationStatus: input.windowsActivationStatus ?? null,
+    });
+  };
+
+  const authorization = async (deviceId: string) => ({
+    authorization: `Bearer ${await scriptAgentToken(deviceId, authSecret)}`,
+  });
+
+  const tenantFor = async () => {
+    const context = await makeContext();
+
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    return { ...context, tenantId: tenant.id };
+  };
+
+  it("stores the raw reading and a normalised state for a Windows device", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    const result = await runEffect(
+      service.reportWindowsActivation(request(await authorization("win-1")), {
+        licenseStatus: 5,
+        licenseName: "Windows(R), Professional edition",
+        productKeyChannel: "Retail",
+        edition: "Microsoft Windows 11 Pro",
+        sampledAt: "2026-11-18T10:00:00.000Z",
+      }),
+    );
+
+    expect(result).toEqual({ status: "ok", activation: "not-activated" });
+
+    const row = db.store.device.find((device: any) => device.id === "win-1");
+
+    expect(row).toMatchObject({
+      windowsActivationStatus: "not-activated",
+      windowsActivationLicenseStatus: 5,
+      windowsActivationEdition: "Microsoft Windows 11 Pro",
+      windowsActivationChannel: "Retail",
+      windowsActivationLicenseName: "Windows(R), Professional edition",
+    });
+    expect(row.windowsActivationUpdatedAt).toEqual(new Date("2026-11-18T10:00:00.000Z"));
+
+    const detail = await runEffect(service.getDevice(request(headers), tenantId, "win-1"));
+
+    expect(detail.windows?.security.activation).toMatchObject({
+      status: "not-activated",
+      licenseStatus: 5,
+      licenseName: "Windows(R), Professional edition",
+      productKeyChannel: "Retail",
+      edition: "Microsoft Windows 11 Pro",
+      updatedAt: "2026-11-18T10:00:00.000Z",
+    });
+  });
+
+  it("leaves activation absent until the agent reports it", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    const detail = await runEffect(service.getDevice(request(headers), tenantId, "win-1"));
+
+    expect(detail.windowsActivationStatus).toBeNull();
+    expect(detail.windows?.security.activation).toBeUndefined();
+  });
+
+  it("records an unreadable reading as unknown rather than not activated", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    const result = await runEffect(
+      service.reportWindowsActivation(request(await authorization("win-1")), {}),
+    );
+
+    expect(result.activation).toBe("unknown");
+  });
+
+  it("rejects a non-Windows device", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "mac-1", proto: "apple" });
+
+    await expect(
+      runEffect(
+        service.reportWindowsActivation(request(await authorization("mac-1")), {
+          licenseStatus: 1,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    const row = db.store.device.find((device: any) => device.id === "mac-1");
+
+    expect(row.windowsActivationStatus).toBeNull();
+  });
+
+  it("requires a valid device token", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    await expect(
+      runEffect(
+        service.reportWindowsActivation(request({ authorization: "Bearer forged" }), {
+          licenseStatus: 1,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseUnauthorized);
+  });
+
+  it("filters the device list by activation and never matches other platforms", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-activated", windowsActivationStatus: "activated" });
+    seedDevice(db, tenantId, { id: "win-not-activated", windowsActivationStatus: "not-activated" });
+    seedDevice(db, tenantId, { id: "win-unreported" });
+    seedDevice(db, tenantId, { id: "mac-1", proto: "apple" });
+
+    const notActivated = await runEffect(
+      service.searchDevices(request(headers), tenantId, { activation: "not-activated" }),
+    );
+
+    expect(notActivated.devices.map((device) => device.id)).toEqual(["win-not-activated"]);
+
+    const unknown = await runEffect(
+      service.searchDevices(request(headers), tenantId, { activation: "unknown" }),
+    );
+
+    expect(unknown.devices.map((device) => device.id)).toEqual(["win-unreported"]);
+
+    const mac = unknown.devices.find((device) => device.id === "mac-1");
+
+    expect(mac).toBeUndefined();
+  });
+
+  it("serialises activation on the device row and detail payload", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1", windowsActivationStatus: "activated" });
+
+    const search = await runEffect(service.searchDevices(request(headers), tenantId, {}));
+
+    expect(search.devices[0]?.windowsActivationStatus).toBe("activated");
+
+    seedDevice(db, tenantId, { id: "mac-2", proto: "apple" });
+
+    const macRow = await runEffect(service.getDevice(request(headers), tenantId, "mac-2"));
+
+    expect(macRow.windowsActivationStatus).toBeNull();
+    expect(macRow.windows).toBeNull();
   });
 });

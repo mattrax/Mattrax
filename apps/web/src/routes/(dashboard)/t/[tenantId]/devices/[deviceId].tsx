@@ -948,6 +948,18 @@ export default function DeviceDetailPage() {
         value: diskEncryptionLabel(),
       },
       {
+        label: "Windows activation",
+        value:
+          row()?.proto === "win" ? (
+            <span class="inline-flex flex-wrap items-center gap-2">
+              <Chip tone={activationTone()}>{activationStatusLabel() ?? "Not reported"}</Chip>
+              <Show when={windowsActivation()?.edition}>
+                {(edition) => <span class="text-muted-foreground">{edition()}</span>}
+              </Show>
+            </span>
+          ) : undefined,
+      },
+      {
         label: "Activation lock",
         value: activationLockLabel(),
       },
@@ -994,6 +1006,34 @@ export default function DeviceDetailPage() {
     if (bitLocker === null || bitLocker === undefined) return undefined;
 
     return bitLocker ? "BitLocker enabled" : "BitLocker disabled";
+  };
+
+  /**
+   * Activation is reported by the Windows agent's WMI sample, never by the
+   * OMA-DM inventory. Other platforms have no activation state at all.
+   */
+  const windowsActivation = () => row()?.windows?.security.activation;
+
+  const activationStatusLabel = () => {
+    const activation = windowsActivation();
+
+    if (!activation) return null;
+
+    if (activation.status === "activated") return "Activated";
+
+    if (activation.status === "not-activated") return "Not activated";
+
+    return "Unknown";
+  };
+
+  const activationTone = (): ChipTone => {
+    const status = windowsActivation()?.status;
+
+    if (status === "activated") return "success";
+
+    if (status === "not-activated") return "warning";
+
+    return "muted";
   };
 
   /**
@@ -1511,6 +1551,27 @@ export default function DeviceDetailPage() {
                         <MetaRow label="Battery health">
                           {row()!.batteryHealth ?? "Not reported"}
                         </MetaRow>
+                        <Show when={row()!.proto === "win"}>
+                          <MetaRow label="Windows activation">
+                            <Chip tone={activationTone()}>
+                              {activationStatusLabel() ?? "Not reported"}
+                            </Chip>
+                          </MetaRow>
+                          <Show when={windowsActivation()?.edition}>
+                            {(edition) => <MetaRow label="Licensed edition">{edition()}</MetaRow>}
+                          </Show>
+                          <Show when={windowsActivation()?.productKeyChannel}>
+                            {(channel) => <MetaRow label="Licence channel">{channel()}</MetaRow>}
+                          </Show>
+                          <Show when={windowsActivation()?.licenseStatus != null}>
+                            <MetaRow label="Licence status (raw)">
+                              {String(windowsActivation()!.licenseStatus)}
+                            </MetaRow>
+                          </Show>
+                          <MetaRow label="Activation updated">
+                            {formatDate(windowsActivation()?.updatedAt)}
+                          </MetaRow>
+                        </Show>
                         <MetaRow label="Model identifier">
                           {row()!.modelIdentifier ?? "Not reported"}
                         </MetaRow>

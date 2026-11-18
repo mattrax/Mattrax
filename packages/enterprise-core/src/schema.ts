@@ -1786,6 +1786,24 @@ export const device = mysqlTable(
     domainName: shortText("domain_name"),
     /** Windows `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
     entraDeviceId: shortText("entra_device_id"),
+    /**
+     * Windows activation state reported by the Mattrax agent's WMI sample.
+     * Null for non-Windows devices and Windows devices without the agent.
+     */
+    windowsActivationStatus: varchar("windows_activation_status", {
+      length: 16,
+      enum: ["activated", "not-activated", "unknown"],
+    }),
+    /** Raw `SoftwareLicensingProduct.LicenseStatus` (0-6). */
+    windowsActivationLicenseStatus: int("windows_activation_license_status"),
+    /** Raw `Win32_OperatingSystem.Caption` reported with activation. */
+    windowsActivationEdition: shortText("windows_activation_edition"),
+    /** Raw `ProductKeyChannel`, for example `Retail` or `Volume:MAK`. */
+    windowsActivationChannel: shortText("windows_activation_channel"),
+    /** Raw licence product name, for example `Windows(R), Professional edition`. */
+    windowsActivationLicenseName: shortText("windows_activation_license_name"),
+    /** When the agent last reported activation state. */
+    windowsActivationUpdatedAt: timestamp("windows_activation_updated_at"),
     /** When the last Windows security inventory snapshot was written. */
     securityUpdatedAt: timestamp("security_updated_at"),
     /** OMA-URIs whose `Replace` the Windows device acknowledged. */

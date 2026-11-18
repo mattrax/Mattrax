@@ -9,6 +9,9 @@
  * place rather than being re-implemented per protocol.
  */
 
+import { NullableString } from "./Errors.js";
+import { Schema } from "effect";
+
 /** Collapse whitespace and treat blank values as absent. */
 export const normalizeReportedName = (value: string | null | undefined): string | undefined => {
   const trimmed = value?.trim();
@@ -81,3 +84,68 @@ export const applicationsInventoryStale = (input: {
 
   return now.getTime() - updatedAt.getTime() > (input.maxAgeMs ?? APPLICATION_INVENTORY_STALE_MS);
 };
+
+/**
+ * Normalised Windows activation state.
+ *
+ * Windows exposes activation through `SoftwareLicensingProduct.LicenseStatus`
+ * (WMI), not through an OMA-DM CSP: the `WindowsLicensing` CSP only reports the
+ * edition, edition-upgrade state and subscription licensing. The on-device
+ * agent therefore samples WMI and reports the raw value to the server, which
+ * keeps both the raw number and this stable enum.
+ */
+export const WindowsActivationStatus = Schema.Literals(["activated", "not-activated", "unknown"]);
+
+export type WindowsActivationStatus = typeof WindowsActivationStatus.Type;
+
+/**
+ * Map a raw `SoftwareLicensingProduct.LicenseStatus` to the stable enum.
+ *
+ * `1` (Licensed) is the only value Windows reports as activated. `0`
+ * (Unlicensed), `2`/`3` (OOB/OOT grace), `4` (non-genuine grace), `5`
+ * (Notification, i.e. grace exhausted) and `6` (Extended grace) are all
+ * presented by Windows as "not activated", so administrators filtering for
+ * unactivated devices expect them together. A missing, non-integer or
+ * out-of-range value is `unknown`: only a real reading may claim a device is
+ * not activated.
+ */
+export const windowsActivationStatusFromLicenseStatus = (
+  raw: number | null | undefined,
+): WindowsActivationStatus => {
+  if (raw === 1) return "activated";
+
+  if (raw === null || raw === undefined || !Number.isInteger(raw)) return "unknown";
+
+  if (raw === 0 || (raw >= 2 && raw <= 6)) return "not-activated";
+
+  return "unknown";
+};
+
+/**
+ * One activation reading posted by the Mattrax agent.
+ *
+ * Every value is raw as reported by the device. `edition` comes from
+ * `Win32_OperatingSystem.Caption` (or the licence product name) because an
+ * edition upgrade and an activation change can disagree.
+ */
+export const WindowsActivationReportRequest = Schema.Struct({
+  /** `SoftwareLicensingProduct.LicenseStatus`; 0-6, or null when unreadable. */
+  licenseStatus: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** Licence product name, for example `Windows(R), Professional edition`. */
+  licenseName: Schema.optional(NullableString),
+  /** `ProductKeyChannel`, for example `Retail` or `Volume:MAK`. */
+  productKeyChannel: Schema.optional(NullableString),
+  /** Edition from WMI, for example `Microsoft Windows 11 Pro`. */
+  edition: Schema.optional(NullableString),
+  /** When the agent sampled WMI; defaults to the ingest time. */
+  sampledAt: Schema.optional(NullableString),
+});
+
+export type WindowsActivationReportRequest = typeof WindowsActivationReportRequest.Type;
+
+export const WindowsActivationReportResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  activation: WindowsActivationStatus,
+});
+
+export type WindowsActivationReportResponse = typeof WindowsActivationReportResponse.Type;
