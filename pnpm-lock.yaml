@@ -238,6 +238,8 @@ snapshots:
 					"specifier": "^19.3.0",
 					"version": "19.3.0",
 				},
+				"@ui-sdk/core": "0.1.0-beta.6",
+				"@ui-sdk/solid": "0.1.0-beta.6",
 				"@xmldom/xmldom": {
 					"specifier": "^0.9.12",
 					"version": "0.9.12",
@@ -494,6 +496,7 @@ snapshots:
 				"@fontsource-variable/geist": "catalog:",
 				"@kobalte/core": "catalog:",
 				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/ui": "workspace:*",
 				"@paralleldrive/cuid2": "catalog:",
 				"@simplewebauthn/browser": "catalog:",
 				"@solidjs/meta": "catalog:",
@@ -968,6 +971,28 @@ snapshots:
 		},
 
 		"packages/software": {},
+
+		"packages/ui": {
+			"name": "@mattrax/ui",
+			"dependencies": {
+				"@solidjs/router": "catalog:",
+				"@solidjs/web": "catalog:",
+				"@ui-sdk/core": "catalog:",
+				"@ui-sdk/solid": "catalog:",
+				"class-variance-authority": "catalog:",
+				"clsx": "catalog:",
+				"solid-js": "catalog:",
+				"tailwind-merge": "catalog:",
+			},
+			"devDependencies": {
+				"@tailwindcss/vite": "catalog:",
+				"tailwindcss": "catalog:",
+				"vite": {
+					"specifier": "npm:@voidzero-dev/vite-plus-core@^8.3.8000",
+					"version": "@voidzero-dev/vite-plus-core@8.3.8000",
+				},
+			},
+		},
 	},
 
 	"packages": {
@@ -5188,6 +5213,28 @@ snapshots:
 			"cpu": ["x64"],
 			"os": ["win32"],
 			"optional": true,
+		},
+
+		"@ui-sdk/core@0.1.0-beta.6": {
+			"integrity": "sha512-4JDArOSaTDRArUs+XXojXVNS1kf1D/aOMan6GIp8J9+cwAdijCypbClApS2jBc4SxgZbJCIDHsMlFOIPyEv8+g==",
+		},
+
+		"@ui-sdk/solid@0.1.0-beta.6": {
+			"integrity": "sha512-3sK9ctnOVBMLIgUPcMcaYq7PkGCGBNphRU3MQTNLDQU7KBlUESWfjDfAcwYV8bsV6cMIoltong6VeREK559OOQ==",
+			"peerDependencies": {
+				"@solidjs/web": {
+					"specifier": ">=2.0.0-rc.14 <3",
+					"version": "2.0.0",
+				},
+				"@ui-sdk/core": {
+					"specifier": "^0.1.0-beta.6",
+					"version": "0.1.0-beta.6",
+				},
+				"solid-js": {
+					"specifier": ">=2.0.0-rc.14 <3",
+					"version": "2.0.0",
+				},
+			},
 		},
 
 		"@ungap/structured-clone@1.4.0": {

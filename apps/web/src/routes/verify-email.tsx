@@ -7,6 +7,16 @@ import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
+import { Spinner } from "~/components/ui";
+
+const primaryLink =
+  "inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90";
+
+const outlineLink =
+  "inline-flex w-full items-center justify-center rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-stone-100";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
@@ -88,10 +98,7 @@ export default function VerifyEmailPage() {
               {message()}
             </p>
             <Show when={tokenStatus() === "ok"}>
-              <a
-                href={returnTo() ?? "/dashboard"}
-                class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
+              <a href={returnTo() ?? "/dashboard"} class={`${primaryLink} ${feedbackEnter}`}>
                 Continue to dashboard
               </a>
             </Show>
@@ -102,14 +109,11 @@ export default function VerifyEmailPage() {
                     ? `/verify-email?returnTo=${encodeURIComponent(returnTo()!)}`
                     : "/verify-email"
                 }
-                class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                class={`${primaryLink} ${feedbackEnter}`}
               >
                 Send a new verification email
               </a>
-              <a
-                href="/login"
-                class="inline-flex w-full items-center justify-center rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100"
-              >
+              <a href="/login" class={`${outlineLink} ${feedbackEnter}`}>
                 Back to sign in
               </a>
             </Show>
@@ -120,7 +124,13 @@ export default function VerifyEmailPage() {
           <Show
             when={!session().isPending}
             fallback={
-              <p role="status" class="text-center text-sm text-stone-500">
+              <p
+                role="status"
+                class="flex items-center justify-center gap-2 text-center text-sm text-stone-500"
+              >
+                <span aria-hidden="true">
+                  <Spinner class="size-3.5" />
+                </span>
                 Checking your session…
               </p>
             }
@@ -135,7 +145,7 @@ export default function VerifyEmailPage() {
                   </p>
                   <a
                     href={`/login?returnTo=${encodeURIComponent(returnTo() ?? "/dashboard")}`}
-                    class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    class={primaryLink}
                   >
                     Sign in
                   </a>
@@ -149,10 +159,7 @@ export default function VerifyEmailPage() {
                     <div class="space-y-5 text-center">
                       <h1 class="text-2xl font-semibold text-stone-900">Email verified</h1>
                       <p class="text-sm text-stone-500">{user().email} is already verified.</p>
-                      <a
-                        href={returnTo() ?? "/dashboard"}
-                        class="inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                      >
+                      <a href={returnTo() ?? "/dashboard"} class={primaryLink}>
                         Continue to dashboard
                       </a>
                     </div>

@@ -11,6 +11,17 @@ export const SITE_TITLE = "Mattrax";
 export const SITE_DESCRIPTION =
   "Enrollment, policy, inventory and remote actions for Apple, Windows and Android fleets, with a clean API, a real audit trail and a deployment model that fits how you work.";
 
+/** The landing page's search and social copy. */
+export const LANDING_TITLE = "MDM for Apple, Windows and Android fleets | Mattrax";
+
+export const LANDING_DESCRIPTION =
+  "Device management for Apple, Windows and Android from one MDM. Native protocols, a readable policy trace, audit export, self-host or cloud. Free in alpha.";
+
+export const LANDING_OG_TITLE = "Mattrax — device management without the black box";
+
+export const LANDING_OG_DESCRIPTION =
+  "One control plane for Apple, Windows and Android fleets. Native protocols, a policy trace you can read, and an audit trail you can export. Cloud or self-hosted.";
+
 /** Absolute path to the social preview card. */
 export const SITE_SOCIAL_IMAGE = "/assets/brand/og-image.jpg";
 
@@ -35,6 +46,33 @@ export const SITE_SAME_AS = [
  * preview hosts advertise themselves rather than this default.
  */
 export const SITE_DEFAULT_ORIGIN = "https://mattrax.app";
+
+/**
+ * `FAQPage` JSON-LD for the landing page.
+ *
+ * Only the questions rendered on the page belong here; the answers are the
+ * same plain text a reader sees, so the structured data cannot drift into a
+ * claim the page does not make.
+ */
+export function faqStructuredData(entries: readonly FaqEntry[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: entries.map((entry) => ({
+      "@type": "Question",
+      name: entry.question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: entry.answer,
+      },
+    })),
+  };
+}
+
+export type FaqEntry = {
+  readonly question: string;
+  readonly answer: string;
+};
 
 /**
  * `Organization` JSON-LD for the landing page.

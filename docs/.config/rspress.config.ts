@@ -65,13 +65,24 @@ export default defineConfig({
       message:
         '<p>Mattrax — device management infrastructure. <a href="https://mattrax.app">mattrax.app</a> · <a href="/docs/llms.txt">llms.txt</a> · <a href="/docs/api/">API</a></p>',
     },
-    nav: [],
+    // A couple of quiet shortcuts; the sidebar carries the full tree.
+    nav: [
+      { text: "Get started", link: "/getting-started/" },
+      { text: "API", link: "/api/" },
+    ],
+    socialLinks: [
+      {
+        icon: "github",
+        mode: "link",
+        content: "https://github.com/mattrax/Mattrax",
+      },
+    ],
     sidebar: {
       "/": [
         {
           text: "Getting started",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "What is Mattrax?", link: "/getting-started/" },
             { text: "Quick start", link: "/getting-started/quick-start" },
@@ -81,7 +92,7 @@ export default defineConfig({
         {
           text: "Apple",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Overview", link: "/platforms/apple/" },
             { text: "Apple Business Manager", link: "/platforms/apple/abm" },
@@ -93,7 +104,7 @@ export default defineConfig({
         {
           text: "Windows",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Overview", link: "/platforms/windows/" },
             { text: "Entra ID", link: "/platforms/windows/entra-id" },
@@ -104,7 +115,7 @@ export default defineConfig({
         {
           text: "Android",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Setup and enrollment", link: "/platforms/android/" },
             { text: "Policies", link: "/platforms/android/policies" },
@@ -113,7 +124,7 @@ export default defineConfig({
         {
           text: "Manage",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Devices", link: "/manage/devices" },
             { text: "Groups", link: "/manage/groups" },
@@ -127,7 +138,7 @@ export default defineConfig({
         {
           text: "Administration",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Overview", link: "/admin/" },
             { text: "Identity and access", link: "/admin/identity" },
@@ -138,7 +149,7 @@ export default defineConfig({
         {
           text: "Operations",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Configuration", link: "/operations/configuration" },
             { text: "Deployment", link: "/operations/deployment" },
@@ -149,7 +160,7 @@ export default defineConfig({
         {
           text: "API",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "REST API", link: "/api/" },
             { text: "CLI", link: "/api/cli" },
@@ -160,7 +171,7 @@ export default defineConfig({
         {
           text: "Migration",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Overview", link: "/migration/" },
             { text: "From Jamf", link: "/migration/jamf" },
@@ -171,7 +182,7 @@ export default defineConfig({
         {
           text: "Reference",
           collapsible: true,
-          collapsed: true,
+          collapsed: false,
           items: [
             { text: "Architecture", link: "/reference/architecture" },
             { text: "Performance and a11y budgets", link: "/reference/performance" },

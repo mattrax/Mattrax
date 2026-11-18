@@ -1,154 +1,102 @@
-import {
-  type BreadcrumbsLinkProps as BreadcrumbsLinkPrimitiveProps,
-  type BreadcrumbsRootProps,
-  type BreadcrumbsSeparatorProps as BreadcrumbsSeparatorPrimitiveProps,
-  Link,
-  Root,
-  Separator,
-} from "@kobalte/core/breadcrumbs";
-import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import type { ComponentProps, ValidComponent } from "@solidjs/web";
-import { splitProps } from "~/lib/solid";
 
-import { Ellipsis } from "~/components/ui/icons";
+import { splitProps } from "~/lib/solid";
+import type { ComponentProps } from "@solidjs/web";
+import { ChevronRight, Ellipsis } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 
-type BreadcrumbProps<T extends ValidComponent = "nav"> = PolymorphicProps<
-  T,
-  BreadcrumbsRootProps<T>
-> &
-  Pick<ComponentProps<T>, "class">;
+type BreadcrumbProps = ComponentProps<"nav">;
 
-const Breadcrumb = <T extends ValidComponent = "nav">(props: BreadcrumbProps<T>) => {
-  // SAFETY: `splitProps` must see the concrete component props type to remove
-  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
-  // change those keys.
-  const [local, others] = splitProps(props as BreadcrumbProps, ["class"]);
+function Breadcrumb(props: BreadcrumbProps) {
+  const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <Root
+    <nav
       aria-label="breadcrumb"
-      class={cn("z-breadcrumb", local.class)}
       data-slot="breadcrumb"
+      class={cn("min-w-0 text-[11.5px] text-muted-foreground", local.class)}
       {...others}
     />
   );
-};
+}
 
-type BreadcrumbListProps = ComponentProps<"ol">;
-
-const BreadcrumbList = (props: BreadcrumbListProps) => {
+function BreadcrumbList(props: ComponentProps<"ol">) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return (
-    <ol
-      class={cn("wrap-break-word z-breadcrumb-list flex flex-wrap items-center", local.class)}
-      data-slot="breadcrumb-list"
-      {...others}
-    />
-  );
-};
+  return <ol class={cn("flex flex-wrap items-center gap-1", local.class)} {...others} />;
+}
 
-type BreadcrumbItemProps = ComponentProps<"li">;
-
-const BreadcrumbItem = (props: BreadcrumbItemProps) => {
+function BreadcrumbItem(props: ComponentProps<"li">) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return (
-    <li
-      class={cn("z-breadcrumb-item inline-flex items-center", local.class)}
-      data-slot="breadcrumb-item"
-      {...others}
-    />
-  );
-};
+  return <li class={cn("inline-flex min-w-0 items-center gap-1", local.class)} {...others} />;
+}
 
-type BreadcrumbLinkProps<T extends ValidComponent = "a"> = PolymorphicProps<
-  T,
-  BreadcrumbsLinkPrimitiveProps<T>
-> &
-  Pick<ComponentProps<T>, "class">;
-
-const BreadcrumbLink = <T extends ValidComponent = "a">(props: BreadcrumbLinkProps<T>) => {
-  // SAFETY: `splitProps` must see the concrete component props type to remove
-  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
-  // change those keys.
-  const [local, others] = splitProps(props as BreadcrumbLinkProps, ["class"]);
+function BreadcrumbLink(props: ComponentProps<"a">) {
+  const [local, others] = splitProps(props, ["class", "href", "children"]);
 
   return (
-    <Link class={cn("z-breadcrumb-link", local.class)} data-slot="breadcrumb-link" {...others} />
-  );
-};
-
-type BreadcrumbPageProps = ComponentProps<"span">;
-
-const BreadcrumbPage = (props: BreadcrumbPageProps) => {
-  const [local, others] = splitProps(props, ["class"]);
-
-  return (
-    // biome-ignore lint/a11y/useFocusableInteractive: <exception for breadcrumb>
-    // biome-ignore lint/a11y/useSemanticElements: <exception for breadcrumb>
-    <span
-      aria-current="page"
-      aria-disabled="true"
-      class={cn("z-breadcrumb-page", local.class)}
-      data-slot="breadcrumb-page"
-      role="link"
-      {...others}
-    />
-  );
-};
-
-type BreadcrumbSeparatorProps<T extends ValidComponent = "span"> = PolymorphicProps<
-  T,
-  BreadcrumbsSeparatorPrimitiveProps<T>
-> &
-  Pick<ComponentProps<T>, "class">;
-
-const BreadcrumbSeparator = <T extends ValidComponent = "span">(
-  props: BreadcrumbSeparatorProps<T>,
-) => {
-  // SAFETY: `splitProps` must see the concrete component props type to remove
-  // the wrapper-owned keys; `T` only varies the polymorphic element and does not
-  // change those keys.
-  const [local, others] = splitProps(props as BreadcrumbSeparatorProps, ["class"]);
-
-  return (
-    <Separator
-      data-slot="breadcrumb-separator"
-      role="presentation"
-      aria-hidden="true"
-      class={cn("z-breadcrumb-separator", local.class)}
-      {...others}
-    />
-  );
-};
-
-type BreadcrumbEllipsisProps = ComponentProps<"span">;
-
-const BreadcrumbEllipsis = (props: BreadcrumbEllipsisProps) => {
-  const [local, others] = splitProps(props, ["class"]);
-
-  return (
-    <span
-      data-slot="breadcrumb-ellipsis"
-      role="presentation"
-      aria-hidden="true"
-      class={cn("z-breadcrumb-ellipsis flex items-center justify-center", local.class)}
+    <a
+      href={local.href ?? "#"}
+      class={cn(
+        "truncate rounded-sm outline-none transition-colors hover:text-foreground focus-visible:text-foreground",
+        local.class,
+      )}
       {...others}
     >
-      <Ellipsis />
+      {local.children}
+    </a>
+  );
+}
+
+function BreadcrumbPage(props: ComponentProps<"span">) {
+  const [local, others] = splitProps(props, ["class"]);
+
+  return (
+    <span
+      aria-current="page"
+      class={cn("truncate text-foreground", local.class)}
+      {...others}
+    />
+  );
+}
+
+function BreadcrumbSeparator(props: ComponentProps<"span">) {
+  const [local, others] = splitProps(props, ["class", "children"]);
+
+  return (
+    <span
+      role="presentation"
+      aria-hidden="true"
+      class={cn("flex shrink-0 items-center text-subtle-foreground/70", local.class)}
+      {...others}
+    >
+      {local.children ?? <ChevronRight class="size-3" />}
+    </span>
+  );
+}
+
+function BreadcrumbEllipsis(props: ComponentProps<"span">) {
+  const [local, others] = splitProps(props, ["class"]);
+
+  return (
+    <span
+      role="presentation"
+      aria-hidden="true"
+      class={cn("flex size-5 items-center justify-center", local.class)}
+      {...others}
+    >
+      <Ellipsis class="size-3.5" />
       <span class="sr-only">More</span>
     </span>
   );
-};
+}
 
 export {
   Breadcrumb,
-  BreadcrumbList,
+  BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
+  BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-  BreadcrumbEllipsis,
 };

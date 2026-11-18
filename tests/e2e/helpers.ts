@@ -305,15 +305,68 @@ export async function api<T = unknown>(page: Page, path: string, init?: ApiReque
 }
 
 /**
+ * Add a condition through the Linear-style filter bar: open the field list,
+ * pick the field, then pick its value. Works from both the empty "Filter"
+ * button and the compact "Add filter" button.
+ */
+export async function addFilter(page: Page, field: string, value: string) {
+  const empty = page.getByRole("button", { name: "Filter", exact: true });
+
+  if ((await empty.count()) > 0) await empty.click();
+  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+
+  await page
+    .getByRole("listbox", { name: "Filter by" })
+    .getByRole("option", { name: field, exact: true })
+    .click();
+  await page
+    .getByRole("listbox", { name: `${field} value` })
+    .getByRole("option", { name: value, exact: true })
+    .click();
+}
+
+/** Add a text-value filter: pick the field, type the value, apply. */
+export async function addTextFilter(page: Page, field: string, value: string) {
+  const empty = page.getByRole("button", { name: "Filter", exact: true });
+
+  if ((await empty.count()) > 0) await empty.click();
+  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+
+  await page
+    .getByRole("listbox", { name: "Filter by" })
+    .getByRole("option", { name: field, exact: true })
+    .click();
+  await page.getByLabel(`${field} value`).fill(value);
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+}
+
+/** Remove one filter chip by its field label. */
+export async function removeFilter(page: Page, field: string) {
+  await page.getByRole("button", { name: `Remove ${field} filter` }).click();
+}
+
+/**
  * Complete the step-up dialog for a sensitive action. Accounts created by
  * `register` always have a passkey, so the passkey factor is used.
  */
 export async function confirmStepUp(page: Page) {
   const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
-  await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+  // A grant remembered earlier in the session lets the request through without
+  // a prompt, so only drive the dialog when it actually opens.
+  const opened = await dialog
+    .waitFor({ state: "visible", timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!opened) return;
+
   await dialog.getByRole("button", { name: /^passkey$/i }).click();
   await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
+  // The modal's dismiss layer lingers while it animates out; a press in that
+  // window is treated as an outside press and swallowed.
+  await page.waitForTimeout(350);
 }
 
 /**

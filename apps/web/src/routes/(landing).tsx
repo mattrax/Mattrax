@@ -13,7 +13,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div
-      class={`flex min-h-screen flex-col bg-background font-sans text-foreground ${
+      class={`lx-layout flex min-h-screen flex-col bg-background font-sans text-foreground ${
         location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
       }`}
     >
@@ -58,7 +58,7 @@ function SkipLink() {
     <a
       href="#main-content"
       onClick={focusMain}
-      class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      class="sr-only z-[100] rounded-md bg-primary px-3 py-2 text-[12.5px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
     >
       Skip to content
     </a>
@@ -69,7 +69,7 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
   return (
     <a
       href={props.href}
-      class={`transition-colors ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+      class={`rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
       target={props.target}
     >
       {props.label}
@@ -79,7 +79,11 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
 
 function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
-    <a href={props.href} class="transition-colors hover:text-foreground" target={props.target}>
+    <a
+      href={props.href}
+      class="touch-target rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+      target={props.target}
+    >
       {props.label}
     </a>
   );
@@ -88,7 +92,7 @@ function FooterLink(props: { href: string; label: string; target?: string }) {
 const navigation = [
   { href: "/#platforms", label: "Platforms" },
   { href: "/#product", label: "Product" },
-  { href: "/#migration", label: "Migration" },
+  { href: "/#security", label: "Security" },
   { href: "/#pricing", label: "Pricing" },
   { href: "/docs/", label: "Docs", target: "_self" },
 ];
@@ -119,31 +123,37 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 border-b border-border bg-background">
-      <div class="mx-auto flex h-12 max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <a href="/" class="flex shrink-0 items-center gap-2.5" aria-label="Mattrax home">
-          <BrandLogo class="h-4" />
-        </a>
+    <header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
+      <div class="mx-auto flex h-14 w-full max-w-[var(--lx-max)] items-center justify-between gap-6 px-[var(--lx-gutter)]">
+        <div class="flex min-w-0 items-center gap-9">
+          <a
+            href="/"
+            class="touch-target flex min-h-11 shrink-0 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label="Mattrax home"
+          >
+            <BrandLogo class="h-3.5" />
+          </a>
 
-        <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
-          {navigation.map((item) => (
-            <NavigationLink
-              href={item.href}
-              label={item.label}
-              target={item.target}
-              active={isActive(item.href)}
-            />
-          ))}
-        </nav>
+          <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
+            {navigation.map((item) => (
+              <NavigationLink
+                href={item.href}
+                label={item.label}
+                target={item.target}
+                active={isActive(item.href)}
+              />
+            ))}
+          </nav>
+        </div>
 
-        <div class="flex shrink-0 items-center gap-2.5">
+        <div class="flex shrink-0 items-center gap-2">
           <Show when={!session().isPending && session().data?.user}>
             <Button
               as="a"
               href="/dashboard"
               variant="outline"
               size="sm"
-              class="hidden h-8 rounded-md border-border text-muted-foreground hover:bg-hover hover:text-foreground sm:inline-flex"
+              class="hidden h-7 px-2.5 text-[12px] sm:inline-flex"
             >
               Dashboard
             </Button>
@@ -162,7 +172,7 @@ function TopNavigation() {
             type="button"
             popovertarget="landing-site-menu"
             aria-label="Open navigation menu"
-            class="touch-target flex size-8 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground md:hidden"
+            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -171,7 +181,7 @@ function TopNavigation() {
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.8"
               stroke-linecap="round"
               aria-hidden="true"
             >
@@ -181,14 +191,14 @@ function TopNavigation() {
           <div
             id="landing-site-menu"
             popover="auto"
-            class="fixed inset-auto top-14 right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl md:hidden"
+            class="fixed inset-auto top-[3.75rem] right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-[mt-rise-in_140ms_var(--ease-swift)_both] md:hidden"
           >
             <nav aria-label="Site">
               {navigation.map((item) => (
                 <a
                   href={item.href}
                   target={item.target}
-                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground hover:bg-hover hover:text-foreground"
+                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
                 >
                   {item.label}
                 </a>
@@ -197,7 +207,7 @@ function TopNavigation() {
             <div class="mt-1 border-t border-border p-1">
               <a
                 href={session().data?.user ? "/dashboard" : "/register"}
-                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground"
+                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
               >
                 {session().data?.user ? "Open dashboard" : "Create an account"}
               </a>
@@ -212,21 +222,18 @@ function TopNavigation() {
 function Footer() {
   return (
     <footer class="border-t border-border bg-background">
-      <div class="mx-auto max-w-[1600px] px-4 py-12 sm:px-6 lg:px-8">
-        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+      <div class="mx-auto w-full max-w-[var(--lx-max)] px-[var(--lx-gutter)] py-14">
+        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
-            <a href="/" class="flex items-center gap-2.5" aria-label="Mattrax home">
-              <BrandLogo class="h-4" />
+            <a
+              href="/"
+              class="touch-target flex min-h-11 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              aria-label="Mattrax home"
+            >
+              <BrandLogo class="h-3.5" />
             </a>
-            <p class="mt-4 max-w-xs text-[12px] leading-5 text-muted-foreground">
+            <p class="mt-4 max-w-[15rem] text-[12px] leading-5 text-muted-foreground">
               Device management infrastructure for Apple, Windows and Android fleets.
-            </p>
-            <p class="mt-5 flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span class="size-1.5 rounded-full bg-success" />
-              All systems operational
-            </p>
-            <p class="mt-6 text-[11px] text-muted-foreground">
-              © {new Date().getFullYear()} Mattrax Technologies Inc.
             </p>
           </div>
 
@@ -234,7 +241,8 @@ function Footer() {
             title="Product"
             links={[
               { href: "/#platforms", label: "Platforms" },
-              { href: "/#product", label: "Features" },
+              { href: "/#product", label: "Product" },
+              { href: "/#security", label: "Security" },
               { href: "/#pricing", label: "Pricing" },
               { href: "/designer", label: "Policy designer" },
             ]}
@@ -244,7 +252,6 @@ function Footer() {
             links={[
               { href: "/docs/", label: "Documentation", target: "_self" },
               { href: "/docs/api/", label: "REST API", target: "_self" },
-              { href: "/docs/migration/", label: "Migration", target: "_self" },
             ]}
           />
           <FooterColumn
@@ -261,6 +268,11 @@ function Footer() {
             ]}
           />
         </div>
+
+        <div class="mt-12 flex flex-col gap-3 border-t border-border pt-5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} Mattrax Technologies Inc.</p>
+          <p>AGPL-3.0 source · free during alpha</p>
+        </div>
       </div>
     </footer>
   );
@@ -272,8 +284,8 @@ function FooterColumn(props: {
 }) {
   return (
     <div>
-      <p class="text-[11px] font-medium text-muted-foreground">{props.title}</p>
-      <ul class="mt-4 space-y-2.5 text-[12px] text-muted-foreground">
+      <p class="label-caps">{props.title}</p>
+      <ul class="mt-3.5 space-y-2 text-[12.5px] text-muted-foreground">
         {props.links.map((link) => (
           <li>
             <FooterLink href={link.href} label={link.label} target={link.target} />

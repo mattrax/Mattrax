@@ -294,7 +294,7 @@ function ScopeGroupsAction(props: {
                     [group.id]: value[group.id] === "all" ? "none" : "all",
                   }))
                 }
-                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none hover:bg-hover focus-visible:bg-hover"
+                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:bg-hover"
               >
                 <span>{group.name}</span>
                 <span class="text-muted-foreground">

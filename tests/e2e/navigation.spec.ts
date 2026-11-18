@@ -145,10 +145,11 @@ test.describe("top navigation", () => {
 });
 
 test.describe("mobile navigation", () => {
-  test("navigates from the scrollable top tabs", async ({ page }) => {
+  test("navigates from the mobile sidebar sheet", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const tenant = await bootstrapTenant(page, "Mobile Tenant");
-    await expect(page.getByRole("button", { name: "Switch tenant" })).toBeVisible();
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await expect(primaryNav(page)).toBeVisible();
     await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups`));
     await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();

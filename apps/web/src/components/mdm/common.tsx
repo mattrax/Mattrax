@@ -2,6 +2,23 @@ import { useLocation } from "@solidjs/router";
 import { Match } from "effect";
 import { createMemo, createUniqueId, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
+import {
+  Card,
+  EmptyState as UIEmptyState,
+  Page as UIPage,
+  PageActions,
+  PageDescription,
+  PageHeader as UIPageHeader,
+  PageHeaderBody,
+  PageTitle,
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import {
   Breadcrumb,
@@ -28,19 +45,17 @@ import { buildBreadcrumbs } from "~/lib/breadcrumbs";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
-/** The standard page frame: comfortable gutters, a compact masthead and a
- * column that stays readable on ultrawide displays. */
+/** The standard page frame: compact gutters and a column that stays readable
+ * on ultrawide displays. The shell's top bar already names the section, so
+ * pages start with their own masthead rather than another breadcrumb row. */
 export function Page(props: { children: JSX.Element; class?: string; wide?: boolean }) {
   return (
-    <div
-      class={cn(
-        "page-enter mx-auto flex w-full flex-1 flex-col gap-5 px-4 py-5 sm:gap-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8",
-        props.wide ? "max-w-none" : "max-w-[1280px]",
-        props.class,
-      )}
+    <UIPage
+      wide={props.wide}
+      class={cn("page-enter gap-5 px-4 py-4 sm:px-6 sm:py-5", props.class)}
     >
       {props.children}
-    </div>
+    </UIPage>
   );
 }
 
@@ -116,27 +131,27 @@ export function PageHeader(props: {
   meta?: JSX.Element;
 }) {
   return (
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div class="min-w-0">
-        <PageBreadcrumbs title={props.title} />
-        <h1 class="truncate text-[21px] font-[540] leading-[1.15] tracking-[-0.025em] text-foreground sm:text-[22px]">
-          {props.title}
-        </h1>
+    <UIPageHeader class="gap-3 border-0 pb-0 sm:items-center">
+      <PageHeaderBody>
+        <Show when={props.eyebrow}>
+          <div class="label-caps mb-1.5">{props.eyebrow}</div>
+        </Show>
+        <PageTitle class="text-[21px] font-[560] tracking-[-0.026em]">{props.title}</PageTitle>
         <Show when={props.description}>
-          <p class="mt-1.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">
+          <PageDescription class="mt-1 max-w-2xl text-[12.5px] leading-5">
             {props.description}
-          </p>
+          </PageDescription>
         </Show>
         <Show when={props.meta}>
-          <div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div class="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
             {props.meta}
           </div>
         </Show>
-      </div>
+      </PageHeaderBody>
       <Show when={props.actions}>
-        <div class="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>
+        <PageActions>{props.actions}</PageActions>
       </Show>
-    </div>
+    </UIPageHeader>
   );
 }
 
@@ -150,33 +165,31 @@ export function Panel(props: {
   actions?: JSX.Element;
   flush?: boolean;
 }) {
-  // A `section` only becomes a landmark when it has an accessible name. The
+  // A region only becomes a landmark when it has an accessible name. The
   // generated id keeps that name attached to *this* panel's heading.
   const headingId = createUniqueId();
   const titleId = () => (props.title ? `${headingId}-title` : undefined);
 
   return (
-    <section
+    <Card
+      role={props.title ? "region" : undefined}
       aria-labelledby={titleId()}
-      class={cn(
-        "relative overflow-hidden rounded-lg border border-border bg-card shadow-[var(--shadow-card)] transition-[border-color,translate] duration-200 ease-swift hover:border-input motion-safe:hover:-translate-y-px",
-        props.class,
-      )}
+      class={cn("relative overflow-hidden", props.class)}
     >
       <Show when={props.header ?? props.title}>
-        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
           <Show
             when={props.header}
             fallback={
               <div class="min-w-0 flex-1 basis-0">
                 <h2
                   id={titleId()}
-                  class="text-[15px] font-[540] leading-5 tracking-[-0.01em] text-foreground"
+                  class="text-[13px] font-[560] leading-5 tracking-[-0.012em] text-foreground"
                 >
                   {props.title}
                 </h2>
                 <Show when={props.description}>
-                  <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                  <p class="mt-0.5 text-[12px] leading-5 text-muted-foreground">
                     {props.description}
                   </p>
                 </Show>
@@ -191,7 +204,7 @@ export function Panel(props: {
         </div>
       </Show>
       <div class={props.flush ? "" : "p-4"}>{props.children}</div>
-    </section>
+    </Card>
   );
 }
 
@@ -217,24 +230,31 @@ export function StatCard(props: {
   const content = (
     <>
       <div class="flex items-center justify-between gap-2">
-        <p class="truncate text-[11.5px] font-[450] text-muted-foreground">{props.label}</p>
+        <div class="label-caps truncate">{props.label}</div>
         <Show when={props.icon}>
-          {(icon) => <span class="text-muted-foreground">{icon()({ class: "size-3.5" })}</span>}
+          {(icon) => (
+            <span class="text-subtle-foreground">{icon()({ class: "size-3.5" })}</span>
+          )}
         </Show>
       </div>
-      <p class={cn("mt-2 text-[24px] font-[540] leading-none tracking-[-0.035em]", toneClass())}>
-        {props.value}
-      </p>
+      <div class="mt-1.5 flex items-baseline gap-2">
+        <span
+          data-numeric
+          class={cn("text-[19px] font-[560] leading-none tracking-[-0.025em]", toneClass())}
+        >
+          {props.value}
+        </span>
+      </div>
       <Show when={props.hint}>
-        <p class="mt-1.5 truncate text-[11px] text-muted-foreground/85">{props.hint}</p>
+        <p class="mt-1 truncate text-[11.5px] text-muted-foreground">{props.hint}</p>
       </Show>
     </>
   );
 
   const classes = cn(
-    "group flex min-w-0 flex-col rounded-lg border border-border bg-surface p-3.5 text-left transition-[border-color,background-color,translate] duration-200 ease-swift",
+    "group flex min-w-0 flex-col rounded-xl border border-border bg-card p-3.5 text-left shadow-card",
     (props.href ?? props.onClick) &&
-      "hover:border-input hover:bg-hover motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+      "pressable hover:border-border-strong hover:shadow-popover focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
     props.class,
   );
 
@@ -263,20 +283,17 @@ export function EmptyState(props: {
   icon?: (props: { class?: string }) => JSX.Element;
 }) {
   return (
-    <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-border bg-surface px-6 py-10 text-center">
-      <div class="mb-3.5 flex size-10 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
-        <Show when={props.icon} fallback={<CircleAlert class="size-4.5" />}>
-          {(icon) => icon()({ class: "size-4.5" })}
+    <UIEmptyState
+      class="min-h-0 rounded-xl py-9"
+      icon={
+        <Show when={props.icon} fallback={<CircleAlert class="size-4" />}>
+          {(icon) => icon()({ class: "size-4" })}
         </Show>
-      </div>
-      <h2 class="text-[13.5px] font-semibold text-foreground">{props.title}</h2>
-      <p class="mt-1 max-w-sm text-[12.5px] leading-relaxed text-muted-foreground">
-        {props.description}
-      </p>
-      <Show when={props.action}>
-        <div class="mt-4">{props.action}</div>
-      </Show>
-    </div>
+      }
+      title={props.title}
+      description={props.description}
+      action={props.action}
+    />
   );
 }
 
@@ -312,35 +329,35 @@ export function DataTable<T>(props: {
 
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <div class="page-enter overflow-hidden rounded-lg border border-border bg-card">
-        <table class="w-full text-[13px]">
-          <caption class="sr-only">{caption()}</caption>
-          <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-            <tr>
-              <For each={props.columns}>
-                {(col) => (
-                  <th scope="col" class={cn("px-4 py-2.5 font-medium", col.class)}>
-                    {col.header}
-                  </th>
-                )}
-              </For>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <For each={props.rows}>
-              {(row) => (
-                <tr class="transition-colors hover:bg-hover">
-                  <For each={props.columns}>
-                    {(col) => (
-                      <td class={cn("px-4 py-3 align-middle", col.class)}>{col.cell(row)}</td>
-                    )}
-                  </For>
-                </tr>
+      <Table containerClass="page-enter" class="text-[12.5px]">
+        <TableCaption class="sr-only">{caption()}</TableCaption>
+        <TableHeader>
+          <TableRow class="bg-surface hover:bg-surface">
+            <For each={props.columns}>
+              {(col) => (
+                <TableHead scope="col" class={col.class}>
+                  {col.header}
+                </TableHead>
               )}
             </For>
-          </tbody>
-        </table>
-      </div>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <For each={props.rows}>
+            {(row) => (
+              <TableRow>
+                <For each={props.columns}>
+                  {(col) => (
+                    <TableCell class={cn("text-muted-foreground", col.class)}>
+                      {col.cell(row)}
+                    </TableCell>
+                  )}
+                </For>
+              </TableRow>
+            )}
+          </For>
+        </TableBody>
+      </Table>
     </Show>
   );
 }

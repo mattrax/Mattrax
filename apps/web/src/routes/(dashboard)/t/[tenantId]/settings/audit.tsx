@@ -4,7 +4,7 @@ import { useInfiniteQuery, type InfiniteData } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
+import { Badge, FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import {
   enterprise,
@@ -46,11 +46,6 @@ const responseFailure = async (response: Response, fallback: string) => {
 
   return new Error(presentation.tag ? presentation.message : fallback);
 };
-
-const inputClass =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [color-scheme:dark]";
-
-const selectClass = inputClass;
 
 /** Common actions offered as suggestions; any exact action name is accepted. */
 const KNOWN_ACTIONS = [
@@ -258,16 +253,6 @@ export default function AuditSettingsPage() {
     () => log.data?.pages.flatMap((page) => page.entries) ?? [],
   );
 
-  const hasFilters = () =>
-    Boolean(
-      action().trim() ||
-      actor().trim() ||
-      targetType().trim() ||
-      targetId().trim() ||
-      fromDate() ||
-      toDate(),
-    );
-
   const clearFilters = () => {
     clearTimeout(settleTimer);
     setAction("");
@@ -315,6 +300,102 @@ export default function AuditSettingsPage() {
     }
   };
 
+  const filterFields: FilterField[] = [
+    {
+      id: "action",
+      label: "Action",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: KNOWN_ACTIONS.map((value) => ({ value, label: value })),
+    },
+    {
+      id: "actor",
+      label: "Actor",
+      kind: "text",
+      operators: [{ value: "is", label: "is" }],
+      placeholder: "Email or user id",
+    },
+    {
+      id: "targetType",
+      label: "Target type",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        { value: "device", label: "Device" },
+        { value: "device_command", label: "Device command" },
+        { value: "group", label: "Group" },
+        { value: "policy", label: "Policy" },
+        { value: "application", label: "Application" },
+        { value: "user", label: "User" },
+        { value: "tenant", label: "Tenant" },
+        { value: "enrollment", label: "Enrollment" },
+        { value: "apns", label: "APNs" },
+        { value: "entra", label: "Entra" },
+        { value: "sso", label: "SSO" },
+        { value: "scim_token", label: "SCIM token" },
+      ],
+    },
+    {
+      id: "targetId",
+      label: "Target id",
+      kind: "text",
+      operators: [{ value: "contains", label: "contains" }],
+      placeholder: "Contains…",
+    },
+    {
+      id: "from",
+      label: "From",
+      kind: "date",
+      operators: [{ value: "on or after", label: "on or after" }],
+    },
+    {
+      id: "to",
+      label: "To",
+      kind: "date",
+      operators: [{ value: "on or before", label: "on or before" }],
+    },
+  ];
+
+  const filterConditions = createMemo<FilterCondition[]>(() => {
+    const conditions: FilterCondition[] = [];
+
+    if (action().trim())
+      conditions.push({ field: "action", operator: "is", values: [action().trim()] });
+
+    if (actor().trim())
+      conditions.push({ field: "actor", operator: "is", values: [actor().trim()] });
+
+    if (targetType())
+      conditions.push({ field: "targetType", operator: "is", values: [targetType()] });
+
+    if (targetId().trim())
+      conditions.push({ field: "targetId", operator: "contains", values: [targetId().trim()] });
+
+    if (fromDate())
+      conditions.push({ field: "from", operator: "on or after", values: [fromDate()] });
+
+    if (toDate()) conditions.push({ field: "to", operator: "on or before", values: [toDate()] });
+
+    return conditions;
+  });
+
+  const applyFilters = (next: ReadonlyArray<FilterCondition>) => {
+    clearFilters();
+
+    for (const condition of next) {
+      const value = condition.values[0] ?? "";
+
+      if (!value) continue;
+
+      if (condition.field === "action") setAction(value);
+      else if (condition.field === "actor") setActor(value);
+      else if (condition.field === "targetType") setTargetType(value);
+      else if (condition.field === "targetId") setTargetId(value);
+      else if (condition.field === "from") setFromDate(value);
+      else if (condition.field === "to") setToDate(value);
+    }
+  };
+
   return (
     <div class="grid gap-5">
       <QueryError error={log.error} onRetry={() => void log.refetch()} />
@@ -323,92 +404,13 @@ export default function AuditSettingsPage() {
         title="Audit log"
         description="A chronological record of tenant changes and device lifecycle events. Entries are append-only and retained for the lifetime of the tenant."
       >
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              Action
-            </span>
-            <input
-              class={inputClass}
-              list="audit-action-suggestions"
-              placeholder="e.g. device.enrolled"
-              value={action()}
-              onInput={(event) => setAction(event.currentTarget.value)}
-            />
-            <datalist id="audit-action-suggestions">
-              <For each={KNOWN_ACTIONS}>{(value) => <option value={value} />}</For>
-            </datalist>
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              Actor
-            </span>
-            <input
-              class={inputClass}
-              placeholder="Email or user id"
-              value={actor()}
-              onInput={(event) => setActor(event.currentTarget.value)}
-            />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              Target type
-            </span>
-            <select
-              class={selectClass}
-              value={targetType()}
-              onChange={(event) => setTargetType(event.currentTarget.value)}
-            >
-              <option value="">Any target</option>
-              <option value="device">Device</option>
-              <option value="device_command">Device command</option>
-              <option value="group">Group</option>
-              <option value="policy">Policy</option>
-              <option value="application">Application</option>
-              <option value="user">User</option>
-              <option value="tenant">Tenant</option>
-              <option value="enrollment">Enrollment</option>
-              <option value="apns">APNs</option>
-              <option value="entra">Entra</option>
-              <option value="sso">SSO</option>
-              <option value="scim_token">SCIM token</option>
-            </select>
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              Target id
-            </span>
-            <input
-              class={inputClass}
-              placeholder="Contains…"
-              value={targetId()}
-              onInput={(event) => setTargetId(event.currentTarget.value)}
-            />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              From
-            </span>
-            <input
-              type="date"
-              class={inputClass}
-              value={fromDate()}
-              max={toDate() || undefined}
-              onInput={(event) => setFromDate(event.currentTarget.value)}
-            />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-              To
-            </span>
-            <input
-              type="date"
-              class={inputClass}
-              value={toDate()}
-              min={fromDate() || undefined}
-              onInput={(event) => setToDate(event.currentTarget.value)}
-            />
-          </label>
+        <div class="space-y-3">
+          <FilterBar
+            fields={filterFields}
+            conditions={filterConditions()}
+            onChange={applyFilters}
+            label="Filter"
+          />
         </div>
 
         <Show when={rangeError()}>{(error) => <ErrorText error={error()} />}</Show>
@@ -433,11 +435,6 @@ export default function AuditSettingsPage() {
           >
             {exporting() === "json" ? "Exporting…" : "Export JSON"}
           </Button>
-          <Show when={hasFilters()}>
-            <Button variant="ghost" onClick={clearFilters}>
-              Clear filters
-            </Button>
-          </Show>
           <span role="status" aria-live="polite" class="text-xs text-muted-foreground">
             <Show
               when={entries().length > 0}

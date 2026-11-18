@@ -7,12 +7,17 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
-import { ChevronsUpDown, RefreshCw, Search as SearchIcon } from "~/components/ui/icons";
+import {
+  ChevronDown,
+  ChevronsUpDown,
+  RefreshCw,
+  Search as SearchIcon,
+} from "~/components/ui/icons";
+import { EmptyState, Kbd } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { announce } from "~/components/toast";
 import { chord, sequence, useCommands } from "~/lib/commands";
@@ -593,18 +598,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     },
   );
 
-  const sortIndicator = (column: MdmColumn<T>) => {
-    const value = sort();
-
-    if (value?.id !== sortColumnId(column)) return "";
-
-    return value.dir === "asc" ? " ↑" : " ↓";
-  };
-
   return (
-    <div class="space-y-3">
-      <div class="flex flex-wrap items-center justify-between gap-2.5">
-        <div class="flex min-w-0 flex-1 items-center gap-2 sm:max-w-md">
+    <div class="space-y-2.5">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex min-w-0 flex-1 items-center gap-1.5 sm:max-w-[420px]">
           <div
             ref={(element) => {
               searchRef = element;
@@ -617,16 +614,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               aria-label="Search table"
               value={search()}
               onInput={(e) => setSearch(e.currentTarget.value)}
-              class="h-8 w-full pl-8! pr-14 text-[12.5px]"
+              class="h-7 w-full pl-7.5! pr-12 text-[12.5px]"
             />
             <Tooltip>
               <TooltipTrigger
                 as="span"
                 tabindex={0}
                 aria-label="Search shortcuts"
-                class="absolute right-2 top-1/2 hidden -translate-y-1/2 cursor-default rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:inline"
+                class="absolute right-1.5 top-1/2 hidden -translate-y-1/2 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:inline-flex"
               >
-                {modKey()}F
+                <Kbd>{modKey()}F</Kbd>
               </TooltipTrigger>
               <TooltipContent>
                 <p class="text-[11px] font-medium">Search this list</p>
@@ -642,9 +639,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             </Button>
           </Show>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="ml-auto flex items-center gap-1.5">
           <Show when={props.isFetching && !props.loading}>
-            <span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
               <RefreshCw
                 class="size-3 animate-spin motion-reduce:animate-none"
                 aria-hidden="true"
@@ -660,72 +657,78 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 : `${rows().length} of ${props.rows?.length ?? 0}`}
           </span>
           <Show when={props.onRefresh}>
-            <Button
-              variant="outline"
-              size="sm"
-              class="gap-1.5"
-              aria-label="Refresh list"
-              disabled={props.loading || props.isFetching}
-              onClick={() => props.onRefresh?.()}
-            >
-              <RefreshCw
-                class={cn(
-                  "size-3.5",
-                  props.isFetching && "animate-spin motion-reduce:animate-none",
-                )}
-                aria-hidden="true"
-              />
-              <span class="hidden sm:inline">Refresh</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger as="span" class="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Refresh list"
+                  disabled={props.loading || props.isFetching}
+                  onClick={() => props.onRefresh?.()}
+                >
+                  <RefreshCw
+                    class={cn(
+                      "size-3.5",
+                      props.isFetching && "animate-spin motion-reduce:animate-none",
+                    )}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p class="text-[11px] font-medium">Refresh list</p>
+                <p class="mt-0.5 text-[11px]">
+                  Also <Kbd>R</Kbd>.
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </Show>
           <Tooltip>
             <TooltipTrigger as="span" class="inline-flex">
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  class={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
+                  class={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}
                   aria-label="Choose visible columns"
                 >
                   <ChevronsUpDown class="size-3.5" />
                   <span class="hidden sm:inline">Columns</span>
                 </DropdownMenuTrigger>
-                <DropdownMenuPortal>
-                  <DropdownMenuContent class="w-52 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
-                    <For each={props.columns}>
-                      {(column) => {
-                        const lastVisible = () =>
-                          isColumnVisible(column) && visibleColumns().length === 1;
+                <DropdownMenuContent class="w-52 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
+                  <For each={props.columns}>
+                    {(column) => {
+                      const lastVisible = () =>
+                        isColumnVisible(column) && visibleColumns().length === 1;
 
-                        return (
-                          <DropdownMenuCheckboxItem
-                            class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-hover"
-                            checked={isColumnVisible(column)}
-                            closeOnSelect={false}
-                            disabled={lastVisible()}
-                            title={
-                              lastVisible() ? "At least one column must stay visible" : undefined
-                            }
-                            onChange={(checked) => toggleColumn(column, checked)}
-                          >
-                            {column.header}
-                          </DropdownMenuCheckboxItem>
-                        );
-                      }}
-                    </For>
-                    <DropdownMenuSeparator class="mx-1 my-1 h-px bg-border" />
-                    <DropdownMenuItem
-                      class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
-                      onSelect={resetColumns}
-                    >
-                      Reset columns
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
-                      onSelect={showAllColumns}
-                    >
-                      Show all
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenuPortal>
+                      return (
+                        <DropdownMenuCheckboxItem
+                          class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-hover"
+                          checked={isColumnVisible(column)}
+                          closeOnSelect={false}
+                          disabled={lastVisible()}
+                          title={
+                            lastVisible() ? "At least one column must stay visible" : undefined
+                          }
+                          onCheckedChange={(checked) => toggleColumn(column, checked)}
+                        >
+                          {column.header}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    }}
+                  </For>
+                  <DropdownMenuSeparator class="mx-1 my-1 h-px bg-border" />
+                  <DropdownMenuItem
+                    class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                    onSelect={resetColumns}
+                  >
+                    Reset columns
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                    onSelect={showAllColumns}
+                  >
+                    Show all
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
               </DropdownMenu>
             </TooltipTrigger>
             <TooltipContent>
@@ -749,10 +752,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <QueryError error={props.error} />
       </Show>
       <Show when={!props.error && props.loading}>
-        <div class="overflow-hidden rounded-lg border border-border bg-card">
-          <div class="space-y-1.5 p-3">
-            <For each={[0, 1, 2, 3, 4]}>
-              {() => <div class="h-11 animate-pulse rounded-lg bg-surface" />}
+        <div class="overflow-hidden rounded-xl border border-border bg-card">
+          <div class="space-y-px p-0">
+            <For each={[0, 1, 2, 3, 4, 5]}>
+              {() => <div class="h-9 animate-pulse bg-surface/60" />}
             </For>
           </div>
         </div>
@@ -762,17 +765,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         fallback={
           !props.error && !props.loading ? (
             search().trim() ? (
-              <div class="flex min-h-56 flex-col items-center justify-center rounded-lg border border-border bg-surface px-6 py-10 text-center">
-                <p class="text-[13.5px] font-semibold text-foreground">
-                  No matches for “{search().trim()}”
-                </p>
-                <p class="mt-1 text-[12.5px] text-muted-foreground">
-                  Try a different name or clear the search.
-                </p>
-                <Button variant="outline" size="sm" class="mt-4" onClick={() => setSearch("")}>
-                  Clear search
-                </Button>
-              </div>
+              <EmptyState
+                icon={<SearchIcon />}
+                title={`No matches for “${search().trim()}”`}
+                description="Try a different name or clear the search."
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setSearch("")}>
+                    Clear search
+                  </Button>
+                }
+              />
             ) : (
               props.empty
             )
@@ -780,8 +782,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
-          <div class="page-enter overflow-x-auto rounded-lg border border-border bg-card shadow-[var(--card-highlight)]">
-            <p class="border-b border-border px-3 py-2 text-[11px] text-muted-foreground sm:hidden">
+          <div class="page-enter overflow-x-auto rounded-xl border border-border bg-card shadow-card">
+            <p class="border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
             </p>
             {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
@@ -789,7 +791,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               ref={(element) => {
                 tableRef = element;
               }}
-              class="w-full text-[13px]"
+              class="w-full caption-bottom border-collapse text-[12.5px]"
               onKeyDown={onTableKeyDown}
               onFocusIn={() => {
                 setTableFocused(true);
@@ -804,14 +806,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               }}
             >
               <caption class="sr-only">{props.caption ?? "Data table"}</caption>
-              <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground/90">
+              <thead class="border-b border-border bg-surface text-left">
                 <tr>
                   <Show when={selectable()}>
-                    <th scope="col" class="w-10 px-3 py-2.5 sm:px-4">
+                    <th scope="col" class="h-8 w-10 pl-4 pr-0">
                       <input
                         ref={(el) => (selectAllRef = el)}
                         type="checkbox"
-                        class="size-4 accent-[var(--brand-solid)]"
+                        class="size-3.5 accent-[var(--primary)]"
                         checked={allSelected()}
                         onChange={toggleAll}
                         aria-label={
@@ -833,17 +835,43 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                               : "descending"
                             : undefined
                         }
-                        class={cn("whitespace-nowrap px-3 py-2.5 font-medium sm:px-4", col.class)}
+                        class={cn(
+                          "label-caps h-8 whitespace-nowrap px-3 text-left align-middle",
+                          col.class,
+                        )}
                       >
                         <Show when={col.sort} fallback={col.header}>
-                          <button
-                            type="button"
-                            class="min-h-6 uppercase tracking-[0.12em] transition-colors hover:text-foreground"
-                            onClick={() => toggleSort(sortColumnId(col))}
-                          >
-                            {col.header}
-                            <span aria-hidden="true">{sortIndicator(col)}</span>
-                          </button>
+                          {(() => {
+                            const sorted = () => sort()?.id === sortColumnId(col);
+                            const ascending = () => sort()?.dir === "asc";
+
+                            return (
+                              <button
+                                type="button"
+                                class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                                onClick={() => toggleSort(sortColumnId(col))}
+                              >
+                                {col.header}
+                                <Show
+                                  when={sorted()}
+                                  fallback={
+                                    <ChevronsUpDown
+                                      class="size-3 text-subtle-foreground/70"
+                                      aria-hidden="true"
+                                    />
+                                  }
+                                >
+                                  <ChevronDown
+                                    class={cn(
+                                      "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
+                                      ascending() && "rotate-180",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                </Show>
+                              </button>
+                            );
+                          })()}
                         </Show>
                       </th>
                     )}
@@ -852,8 +880,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               </thead>
               <tbody
                 class={cn(
-                  "divide-y divide-border transition-[opacity,filter] duration-150 ease-swift",
-                  props.isFetching && "opacity-60 saturate-0",
+                  "divide-y divide-border transition-opacity duration-150 ease-swift",
+                  props.isFetching && "opacity-60",
                 )}
               >
                 <For each={rows()}>
@@ -869,16 +897,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                         onFocus={() => setActiveRow(rowIndex())}
                         onKeyDown={(event) => moveRow(event, rowIndex(), row)}
                         class={cn(
-                          "relative outline-none transition-[background-color,box-shadow] duration-150 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-                          isSelected(row.id) &&
-                            "bg-brand/[0.06] shadow-[inset_2px_0_0_var(--brand)]",
+                          "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                          props.rowHref && "cursor-pointer active:bg-active",
+                          isSelected(row.id) && "bg-surface",
                         )}
                       >
                         <Show when={selectable()}>
-                          <td class="relative z-10 px-3 py-3 sm:px-4">
+                          <td class="relative z-10 h-9 w-10 pl-4 pr-0 align-middle">
                             <input
                               type="checkbox"
-                              class="size-4 accent-[var(--brand-solid)]"
+                              class="size-3.5 accent-[var(--primary)]"
                               checked={isSelected(row.id)}
                               onChange={(e) => toggleRow(row, e.currentTarget.checked)}
                               aria-label={`Select ${row.name ?? row.id}`}
@@ -887,7 +915,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                         </Show>
                         <For each={visibleColumns()}>
                           {(col) => (
-                            <td class={cn("px-3 py-3 align-middle sm:px-4", col.class)}>
+                            <td class={cn("h-9 whitespace-nowrap px-3 align-middle", col.class)}>
                               {col.cell(row)}
                             </td>
                           )}
@@ -900,7 +928,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             </table>
           </div>
           <span
-            class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-lg bg-gradient-to-l from-card to-transparent sm:hidden"
+            class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-card to-transparent sm:hidden"
             aria-hidden="true"
           />
         </div>
@@ -912,13 +940,15 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <div
           role="group"
           aria-label="Bulk actions"
-          class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-lg border border-border bg-popover/95 px-4 py-2.5 shadow-2xl backdrop-blur-xl"
+          class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
         >
-          <span class="text-[12.5px] font-medium">
+          <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+            <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
             {allMatching()
               ? `${props.total ?? selectedCount()} matching rows`
               : `${selectedCount()} selected`}
           </span>
+          <span class="h-4 w-px bg-border" aria-hidden="true" />
           <Show when={showSelectAllMatching()}>
             <Button variant="link" size="sm" onClick={() => setAllMatching(true)}>
               Select all {props.total} matching this filter
@@ -929,7 +959,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             total: props.total ?? selectedRows().length,
             setAllMatching,
           })}
-          <Button variant="ghost" size="sm" onClick={clear}>
+          <Button variant="ghost" size="xs" onClick={clear}>
             Clear
           </Button>
         </div>

@@ -44,10 +44,10 @@ test.describe("dashboards", () => {
     await expect(page.getByRole("button", { name: /Advanced query/ })).toContainText("2");
     await expect(page).toHaveURL(/query=platform/);
     await page.getByRole("button", { name: /Advanced query/ }).click();
-    await expect(page.locator('select[aria-label="Condition field"]')).toHaveCount(2);
-    await expect(page.locator('select[aria-label="Condition field"]').first()).toHaveValue(
-      "platform",
-    );
+    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Days since check-in at least 14/ }),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Clear query" }).click();
     await expect(page).not.toHaveURL(/query=/);
   });

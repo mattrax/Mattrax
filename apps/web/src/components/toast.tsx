@@ -20,7 +20,7 @@ export type ToastOptions = {
   duration?: number | null;
 };
 
-type Toast = ToastOptions & { readonly id: number; readonly title: string };
+type Toast = ToastOptions & { readonly id: number; readonly title: string; leaving?: boolean };
 
 /**
  * One polite status region owns every spoken message, exactly like the plain
@@ -50,6 +50,8 @@ const [toasts, setToasts] = createSignal<ReadonlyArray<Toast>>([]);
 
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
+const leaving = new Set<number>();
+
 let nextId = 1;
 
 function clearTimer(id: number) {
@@ -61,7 +63,20 @@ function clearTimer(id: number) {
 
 function dismiss(id: number) {
   clearTimer(id);
-  setToasts((current) => current.filter((item) => item.id !== id));
+
+  // Let the card finish its exit before removing it, so a toast never
+  // disappears from under the pointer. Repeated dismissals are idempotent.
+  if (leaving.has(id)) return;
+
+  leaving.add(id);
+  setToasts((current) =>
+    current.map((item) => (item.id === id ? { ...item, leaving: true } : item)),
+  );
+
+  setTimeout(() => {
+    leaving.delete(id);
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }, 150);
 }
 
 function push(title: string, options: ToastOptions = {}): number {
@@ -121,8 +136,10 @@ function ToastCard(props: { toast: Toast }) {
 
   return (
     <li
+      data-leaving={props.toast.leaving ? "" : undefined}
       class={cn(
-        "page-enter pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-[var(--shadow-dialog)] backdrop-blur-xl sm:w-[22rem]",
+        "pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-[var(--shadow-dialog)] backdrop-blur-xl sm:w-[22rem]",
+        "animate-[mt-toast-in_180ms_var(--ease-swift)_both] data-leaving:animate-[mt-toast-out_140ms_var(--ease-swift)_both]",
         tone.class,
       )}
     >

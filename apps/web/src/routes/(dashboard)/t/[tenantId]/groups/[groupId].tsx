@@ -56,6 +56,9 @@ export default function GroupDetailPage() {
   const { can } = useCan();
   const editable = () => can("groups.write");
   const [edit, setEdit] = createSignal(false);
+  // Rules saved on an already-dynamic group are part of the page's entrance;
+  // only a manual → dynamic switch animates the rule builder into view.
+  const [revealRules, setRevealRules] = createSignal(false);
 
   const group = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
@@ -469,7 +472,10 @@ export default function GroupDetailPage() {
                     onChange={(e) => {
                       const value = Option.getOrUndefined(decodeGroupKind(e.currentTarget.value));
 
-                      if (value !== undefined) setKind(value);
+                      if (value !== undefined) {
+                        if (value === "dynamic" && kind() !== "dynamic") setRevealRules(true);
+                        setKind(value);
+                      }
                     }}
                   >
                     <option value="manual">Manual — choose devices</option>
@@ -486,7 +492,13 @@ export default function GroupDetailPage() {
                 />
               </Field>
               <Show when={kind() === "dynamic"}>
-                <div class="rounded-lg border border-border bg-surface p-3">
+                <div
+                  class={`rounded-lg border border-border bg-surface p-3 ${
+                    revealRules()
+                      ? "animate-in motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift"
+                      : ""
+                  }`}
+                >
                   <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
                 </div>
               </Show>
@@ -544,7 +556,7 @@ export default function GroupDetailPage() {
                     <For each={preview.data?.devices.slice(0, 25) ?? []}>
                       {(device) => (
                         <a
-                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors hover:bg-hover"
+                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover"
                           href={`/t/${params.tenantId}/devices/${device.id}`}
                         >
                           {device.name}
@@ -607,7 +619,7 @@ export default function GroupDetailPage() {
                       <tbody class="divide-y divide-border">
                         <For each={preview.data?.devices ?? []}>
                           {(device) => (
-                            <tr class="transition-colors hover:bg-hover">
+                            <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
                               <td class="px-4 py-2.5">
                                 <a
                                   class="font-medium text-foreground hover:underline"

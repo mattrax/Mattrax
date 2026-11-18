@@ -1403,7 +1403,7 @@ function Step(props: { index: number; active: boolean; title: string; body: stri
         class={cn(
           "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
           props.active
-            ? "bg-brand-solid text-brand-foreground shadow-[var(--brand-highlight)]"
+            ? "bg-primary text-primary-foreground"
             : "bg-hover text-muted-foreground",
         )}
       >

@@ -1,10 +1,15 @@
 import { DeviceCondition, DeviceQuery } from "@mattrax/enterprise-domain/client";
+import {
+  FilterBar,
+  type FilterCondition,
+  type FilterField,
+  type FilterOperator,
+} from "@mattrax/ui";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createSignal, For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { createEffect, createSignal, Show } from "solid-js";
+import { Activity, Laptop, RefreshCw, ShieldCheck, SlidersHorizontal } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
-import { cn } from "~/lib/utils";
 
 type FieldKind = "text" | "number" | "select";
 
@@ -197,18 +202,6 @@ const fieldById = (id: string) => QUERY_FIELDS.find((field) => field.id === id) 
 
 type Draft = { field: string; op: string; value: string };
 
-const toDraft = (condition: DeviceCondition): Draft => ({
-  field: condition.field,
-  op: condition.op ?? fieldById(condition.field).defaultOp,
-  value: String(condition.value),
-});
-
-const defaultDraft = (fieldId: string): Draft => {
-  const field = fieldById(fieldId);
-
-  return { field: field.id, op: field.defaultOp, value: field.defaultValue };
-};
-
 /** Build a typed condition from the generic editor values. */
 export const draftToCondition = (draft: Draft): DeviceCondition => {
   const field = fieldById(draft.field);
@@ -232,6 +225,50 @@ export const queryConditions = (
   query: DeviceQuery | null | undefined,
 ): ReadonlyArray<DeviceCondition> => query?.all ?? [];
 
+const fieldIcons = {
+  platform: Laptop,
+  status: Activity,
+  health: ShieldCheck,
+  staleDays: RefreshCw,
+  enrolledDays: RefreshCw,
+  application: SlidersHorizontal,
+  osEdition: SlidersHorizontal,
+} satisfies Partial<Record<string, typeof Activity>>;
+
+const filterFields: FilterField[] = QUERY_FIELDS.map((field) => ({
+  id: field.id,
+  label: field.label,
+  group: "Device",
+  // SAFETY: every id comes from QUERY_FIELDS, which is the only source of filterFields.
+  icon: fieldIcons[field.id as keyof typeof fieldIcons],
+  kind: field.kind,
+  options: field.options,
+  operators: field.ops.map<FilterOperator>((op) => ({ value: op.value, label: op.label })),
+  defaultOperator: field.defaultOp,
+  defaultValue: field.defaultValue || undefined,
+  placeholder: Match.value(field.id).pipe(
+    Match.when("osVersion", () => "14.4"),
+    Match.when("application", () => "com.apple.Safari"),
+    Match.orElse(() => "Value"),
+  ),
+}));
+
+const toFilterConditions = (query: DeviceQuery | null | undefined): FilterCondition[] =>
+  (query?.all ?? []).map((condition) => ({
+    field: condition.field,
+    operator: condition.op ?? fieldById(condition.field).defaultOp,
+    values:
+      condition.value === undefined || condition.value === "" ? [] : [String(condition.value)],
+  }));
+
+const toDeviceCondition = (condition: FilterCondition): DeviceCondition =>
+  draftToCondition({
+    field: condition.field,
+    op: condition.operator,
+    value: condition.values[0] ?? "",
+  });
+
+/** The condition editor shared by device tables, dynamic groups and widgets. */
 export function DeviceQueryBuilder(props: {
   query: DeviceQuery | null | undefined;
   onChange: (query: DeviceQuery | null) => void;
@@ -240,21 +277,18 @@ export function DeviceQueryBuilder(props: {
   /** Explain that a software widget filters the devices that reported apps. */
   dataset?: "devices" | "software";
 }) {
-  const drafts = () => queryConditions(props.query).map(toDraft);
+  const update = (conditions: FilterCondition[]) => {
+    const all = conditions.map(toDeviceCondition);
+    const any = props.query?.any ?? [];
+    const none = props.query?.none ?? [];
 
-  const update = (next: Draft[]) => {
-    if (next.length === 0) {
+    if (all.length === 0 && any.length === 0 && none.length === 0) {
       props.onChange(null);
 
       return;
     }
 
-    props.onChange({
-      version: 1,
-      all: next.map(draftToCondition),
-      any: props.query?.any,
-      none: props.query?.none,
-    });
+    props.onChange({ version: 1, all, any, none });
   };
 
   const [text, setText] = createSignal(formatDeviceQueryText(props.query));
@@ -272,153 +306,59 @@ export function DeviceQueryBuilder(props: {
   };
 
   return (
-    <div class={cn("space-y-3", props.compact && "space-y-2")}>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex items-center gap-2">
+    <div class={props.compact ? "space-y-2" : "space-y-3"}>
+      <Show when={!props.compact}>
+        <div class="flex flex-wrap items-center gap-2">
           <p class="text-[12.5px] font-medium text-foreground">Match devices</p>
           <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] text-muted-foreground">
             all conditions
           </span>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={props.disabled}
-          onClick={() => update([...drafts(), defaultDraft("platform")])}
-        >
-          Add condition
-        </Button>
-      </div>
-
-      <Show
-        when={drafts().length > 0}
-        fallback={
-          <p class="rounded-lg border border-dashed border-border p-3 text-[12px] text-muted-foreground">
-            {props.dataset === "software"
-              ? "No device filter. Every installed application reported by the fleet is included."
-              : "No conditions yet. This matches every device."}
-          </p>
-        }
-      >
-        <div class={cn("space-y-2", props.compact && "space-y-1.5")}>
-          <For each={drafts()}>
-            {(draft, index) => {
-              const field = () => fieldById(draft.field);
-
-              return (
-                <div class="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-surface p-1.5">
-                  <select
-                    aria-label="Condition field"
-                    class="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
-                    disabled={props.disabled}
-                    value={draft.field}
-                    onChange={(event) => {
-                      const next = [...drafts()];
-                      next[index()] = defaultDraft(event.currentTarget.value);
-                      update(next);
-                    }}
-                  >
-                    <For each={QUERY_FIELDS}>
-                      {(option) => <option value={option.id}>{option.label}</option>}
-                    </For>
-                  </select>
-                  <select
-                    aria-label="Condition operator"
-                    class="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
-                    disabled={props.disabled}
-                    value={draft.op}
-                    onChange={(event) => {
-                      const next = [...drafts()];
-                      next[index()] = { ...draft, op: event.currentTarget.value };
-                      update(next);
-                    }}
-                  >
-                    <For each={field().ops}>
-                      {(option) => <option value={option.value}>{option.label}</option>}
-                    </For>
-                  </select>
-                  <Show
-                    when={field().kind === "select"}
-                    fallback={
-                      <Input
-                        aria-label="Condition value"
-                        class="h-8 w-44 min-w-0 flex-1"
-                        type={field().kind === "number" ? "number" : "text"}
-                        min={field().kind === "number" ? 0 : undefined}
-                        placeholder={Match.value(field().id).pipe(
-                          Match.when("osVersion", () => "14.4"),
-                          Match.when("application", () => "com.apple.Safari"),
-                          Match.orElse(() => "Value"),
-                        )}
-                        disabled={props.disabled}
-                        value={draft.value}
-                        onInput={(event) => {
-                          const next = [...drafts()];
-                          next[index()] = { ...draft, value: event.currentTarget.value };
-                          update(next);
-                        }}
-                      />
-                    }
-                  >
-                    <select
-                      aria-label="Condition value"
-                      class="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
-                      disabled={props.disabled}
-                      value={draft.value}
-                      onChange={(event) => {
-                        const next = [...drafts()];
-                        next[index()] = { ...draft, value: event.currentTarget.value };
-                        update(next);
-                      }}
-                    >
-                      <For each={field().options ?? []}>
-                        {(option) => <option value={option.value}>{option.label}</option>}
-                      </For>
-                    </select>
-                  </Show>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    class="ml-auto text-muted-foreground"
-                    aria-label={`Remove ${field().label} condition`}
-                    disabled={props.disabled}
-                    onClick={() => update(drafts().filter((_, position) => position !== index()))}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              );
-            }}
-          </For>
-        </div>
       </Show>
 
-      <div class="space-y-1">
-        <label class="text-[11px] font-medium text-muted-foreground" for="device-query-text">
-          Query text
-        </label>
-        <Input
-          id="device-query-text"
-          class="h-8 font-mono text-[11.5px]"
-          disabled={props.disabled}
-          value={text()}
-          placeholder="platform is apple and staleDays at least 14"
-          onInput={(event) => setText(event.currentTarget.value)}
-          onBlur={applyText}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.isComposing) {
-              event.preventDefault();
-              applyText();
-            }
-          }}
-        />
-        <p class="text-[11px] text-muted-foreground">
-          Shareable syntax: <code class="font-mono">field operator value</code>, joined with{" "}
-          <code class="font-mono">and</code>.
+      <Show when={props.dataset === "software" && toFilterConditions(props.query).length === 0}>
+        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+          Every installed application reported by the fleet is included until you filter devices.
         </p>
-      </div>
+      </Show>
+
+      <FilterBar
+        fields={filterFields}
+        conditions={toFilterConditions(props.query)}
+        onChange={update}
+        label="Filter devices"
+        disabled={props.disabled}
+      />
+
+      <details class="group">
+        <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
+          <span class="transition-transform duration-[var(--duration-hover)] group-open:rotate-90">
+            ›
+          </span>
+          Edit as text
+        </summary>
+        <div class="mt-1.5 space-y-1">
+          <Input
+            id="device-query-text"
+            class="h-8 font-mono text-[11.5px]"
+            disabled={props.disabled}
+            value={text()}
+            placeholder="platform is apple and staleDays at least 14"
+            onInput={(event) => setText(event.currentTarget.value)}
+            onBlur={applyText}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.isComposing) {
+                event.preventDefault();
+                applyText();
+              }
+            }}
+          />
+          <p class="text-[10.5px] text-muted-foreground">
+            Shareable syntax: <code class="font-mono">field operator value</code>, joined with{" "}
+            <code class="font-mono">and</code>.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

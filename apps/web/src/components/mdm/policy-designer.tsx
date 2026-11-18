@@ -1478,7 +1478,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             type="button"
             disabled={loading() || !data()}
             onClick={() => applyTemplate(template.keys)}
-            class="w-full rounded-xl border border-border bg-card p-3 text-left transition-colors hover:border-foreground/20 hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            class="pressable w-full rounded-xl border border-border bg-card p-3 text-left hover:border-foreground/20 hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <strong class="block text-[13px] font-semibold text-foreground">
               {template.label}
@@ -1507,7 +1507,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             title={`Edit ${item.short} settings`}
             onClick={() => choosePlatform(item.id)}
             class={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none",
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none",
               platform() === item.id
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-card hover:text-foreground",
@@ -2192,7 +2192,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             >
                               <ChevronDown
                                 class={cn(
-                                  "size-3 shrink-0 text-muted-foreground transition-transform",
+                                  "size-3 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
                                   group.collapsed && "-rotate-90",
                                 )}
                               />
@@ -2451,7 +2451,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 aria-pressed={filterMode() === mode.id ? "true" : "false"}
                                 onClick={() => setFilterMode(mode.id)}
                                 class={cn(
-                                  "rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
+                                  "rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:outline-none",
                                   filterMode() === mode.id
                                     ? "bg-background text-foreground shadow-sm"
                                     : "text-muted-foreground hover:text-foreground",
@@ -2634,7 +2634,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                       >
                                         <ChevronDown
                                           class={cn(
-                                            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                                            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
                                             collapsed() && "-rotate-90",
                                           )}
                                         />
@@ -3245,7 +3245,7 @@ function PropertyField(props: PropertyFieldProps) {
                     aria-pressed={pressed() ? "true" : "false"}
                     onClick={() => props.onChange(option.value)}
                     class={cn(
-                      "flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none",
+                      "flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:outline-none",
                       pressed()
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground",

@@ -25,6 +25,8 @@ catalog:
   "@tailwindcss/vite": ^4.3.5
   "@tanstack/solid-query": 6.0.0-rc.5
   "@types/node": ^26.6.6
+  "@ui-sdk/core": 0.1.0-beta.6
+  "@ui-sdk/solid": 0.1.0-beta.6
   "@types/react": ^19.3.0
   "@xmldom/xmldom": ^0.9.12
   "@yielded/auth": 0.1.0-beta.47
@@ -93,12 +95,13 @@ allowBuilds:
   esbuild: true
   msw: true
   workerd: true
-
 # These releases were published inside pnpm 12's minimum release age window
 # (the Solid 2.0.0 line and the vite-plus 1.7.0 toolchain both shipped very
 # recently). Explicitly allow-listing them keeps the policy on for everything
 # else instead of disabling it.
 minimumReleaseAgeExclude:
+  - "@ui-sdk/core@0.1.0-beta.6"
+  - "@ui-sdk/solid@0.1.0-beta.6"
   - "@cloudflare/build-output-utils@1.0.0-rc.1"
   - "@cloudflare/config@1.0.0-rc.1"
   - "@cloudflare/runtime-types@0.1.30"

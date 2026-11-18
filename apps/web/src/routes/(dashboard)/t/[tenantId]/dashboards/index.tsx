@@ -155,11 +155,11 @@ export default function DashboardsPage() {
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <For each={dashboards.data!.dashboards}>
             {(dashboard) => (
-              <article class="group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 transition-colors hover:border-input">
+              <article class="group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:shadow-card">
                 <div class="flex items-start justify-between gap-2">
                   <a
                     href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
-                    class="min-w-0 flex-1"
+                    class="min-w-0 flex-1 rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                   >
                     <h2 class="truncate text-[13.5px] font-medium text-foreground group-hover:underline">
                       {dashboard.name}

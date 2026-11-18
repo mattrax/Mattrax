@@ -17,11 +17,13 @@ test.describe("tenant outbound webhooks", () => {
     await dialog.getByRole("button", { name: "Add endpoint" }).click();
 
     // The signing secret is shown exactly once.
-    const secretDialog = page.getByRole("dialog");
-    await expect(secretDialog.getByText("Signing secret")).toBeVisible();
-    const secret = await secretDialog.locator("input").inputValue();
+    const secretDialog = page.getByRole("dialog").filter({ hasText: "Signing secret" });
+    await expect(secretDialog).toBeVisible();
+    const secret = await secretDialog.getByRole("textbox").inputValue();
     expect(secret).toMatch(/^whsec_/);
     await secretDialog.getByRole("button", { name: "I have copied it" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.waitForTimeout(350);
 
     await expect(page.getByText("https://hooks.example.com/e2e")).toBeVisible();
     await expect(page.getByText("E2E receiver")).toBeVisible();
@@ -38,12 +40,14 @@ test.describe("tenant outbound webhooks", () => {
       .getByRole("dialog")
       .getByRole("button", { name: "Rotate secret", exact: true })
       .click();
-    const rotatedDialog = page.getByRole("dialog");
-    await expect(rotatedDialog.getByText("Signing secret")).toBeVisible();
-    const rotated = await rotatedDialog.locator("input").inputValue();
+    const rotatedDialog = page.getByRole("dialog").filter({ hasText: "Signing secret" });
+    await expect(rotatedDialog).toBeVisible();
+    const rotated = await rotatedDialog.getByRole("textbox").inputValue();
     expect(rotated).toMatch(/^whsec_/);
     expect(rotated).not.toBe(secret);
     await rotatedDialog.getByRole("button", { name: "I have copied it" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.waitForTimeout(350);
 
     // Delete.
     await page.getByRole("button", { name: "Delete", exact: true }).click();

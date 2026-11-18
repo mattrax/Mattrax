@@ -1,5 +1,7 @@
 import { Title } from "@solidjs/meta";
 import { BrandLogo } from "~/components/brand-logo";
+import { Button } from "~/components/ui/button";
+import { Spinner } from "~/components/ui";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";
@@ -9,7 +11,10 @@ import { authClient } from "~/lib/auth";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 const inputClass =
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-[13px]";
+  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-[13px]";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 /**
  * Self-service break-glass entry point.
@@ -111,7 +116,13 @@ export default function RecoverPage() {
           <div class="space-y-4 text-center">
             <h1 class="text-2xl font-semibold">Recover access</h1>
             <Show when={status() === "verifying" || status() === "signing_in"}>
-              <p role="status" class="text-[13px] text-muted-foreground">
+              <p
+                role="status"
+                class="flex items-center justify-center gap-2 text-[13px] text-muted-foreground"
+              >
+                <span aria-hidden="true">
+                  <Spinner class="size-3.5" />
+                </span>
                 {status() === "signing_in" ? "Signing you in…" : "Checking your recovery link…"}
               </p>
             </Show>
@@ -126,12 +137,12 @@ export default function RecoverPage() {
               </div>
             </Show>
             <Show when={status() === "error"}>
-              <p role="alert" class="text-[13px] text-destructive">
+              <p role="alert" class={`text-[13px] text-destructive ${feedbackEnter}`}>
                 {requestError() ?? "That recovery link is invalid or has expired."}
               </p>
               <a
                 href="/recover"
-                class="inline-flex text-[13px] font-medium text-brand underline underline-offset-2"
+                class="inline-flex text-[13px] font-medium text-brand underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-brand/80"
               >
                 Start again
               </a>
@@ -152,7 +163,9 @@ export default function RecoverPage() {
             <Show
               when={!requested()}
               fallback={
-                <div class="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-[13px] leading-relaxed text-success-foreground">
+                <div
+                  class={`rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-[13px] leading-relaxed text-success ${feedbackEnter}`}
+                >
                   If an account with that address exists and its email is verified, a recovery link
                   is on its way. It works once and expires in 30 minutes.
                 </div>
@@ -173,19 +186,20 @@ export default function RecoverPage() {
                     onInput={(event) => setEmail(event.currentTarget.value)}
                   />
                 </label>
-                <button
+                <Button
                   type="submit"
+                  class="h-9 w-full"
+                  pending={pending()}
                   disabled={pending() || !email().trim()}
-                  class="inline-flex h-9 w-full items-center justify-center rounded-lg bg-brand-solid px-3 text-[13px] font-medium text-brand-foreground transition-opacity disabled:opacity-60"
                 >
                   {pending() ? "Sending…" : "Send recovery link"}
-                </button>
+                </Button>
               </form>
             </Show>
 
             <Show when={requestError()}>
               {(message) => (
-                <p role="alert" class="text-[13px] text-destructive">
+                <p role="alert" class={`text-[13px] text-destructive ${feedbackEnter}`}>
                   {message()}
                 </p>
               )}
@@ -193,7 +207,10 @@ export default function RecoverPage() {
 
             <p class="text-center text-[12.5px] text-muted-foreground">
               Remembered a device?{" "}
-              <a href="/login" class="font-medium text-foreground underline underline-offset-2">
+              <a
+                href="/login"
+                class="font-medium text-foreground underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-muted-foreground"
+              >
                 Sign in
               </a>
             </p>

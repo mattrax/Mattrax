@@ -23,7 +23,7 @@ for (const theme of ["light", "dark"] as const) {
     expect(early.theme).toBe(theme);
     expect(early.dark).toBe(theme === "dark");
     expect(early.colorScheme).toBe(theme);
-    expect(early.meta).toBe(theme === "dark" ? "#08080a" : "#ffffff");
+    expect(early.meta).toBe(theme === "dark" ? "#10100f" : "#f6f6f3");
 
     await page.waitForTimeout(600);
 
@@ -34,7 +34,7 @@ for (const theme of ["light", "dark"] as const) {
 
     expect(settled.theme).toBe(theme);
     // The page canvas is the `--background` token: gray-1 in light, #08080a in dark.
-    expect(settled.body).toBe(theme === "dark" ? "rgb(8, 8, 10)" : "rgb(252, 252, 252)");
+    expect(settled.body).toBe(theme === "dark" ? "rgb(16, 16, 15)" : "rgb(246, 246, 243)");
   });
 }
 

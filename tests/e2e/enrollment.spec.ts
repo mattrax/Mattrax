@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, createTenant, gotoHydrated, stepUpGrant } from "./helpers";
+import {
+  addFilter,
+  api,
+  bootstrapTenant,
+  createTenant,
+  gotoHydrated,
+  stepUpGrant,
+} from "./helpers";
 
 test.describe("device enrollment", () => {
   test("renders the public enrollment page and hides disabled platforms", async ({ page }) => {
@@ -248,9 +255,9 @@ test.describe("device enrollment", () => {
   test("the health filter narrows the device list", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Health Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.getByLabel("Filter by health").selectOption("critical");
+    await addFilter(page, "Health", "Critical");
     await expect(page).toHaveURL(/health=critical/);
-    await expect(page.getByLabel("Filter by health")).toHaveValue("critical");
+    await expect(page.getByRole("button", { name: /Health is Critical/ })).toBeVisible();
   });
 
   test("saves maxDevices=0 as unlimited", async ({ page }) => {
@@ -260,6 +267,9 @@ test.describe("device enrollment", () => {
     await page.getByLabel("Maximum devices").fill("0");
     await page.getByRole("button", { name: /^save$/i }).click();
     await expect(page.getByLabel("Maximum devices")).toHaveValue("0");
+    // Wait for the save to close the editor before reading the stored value;
+    // the input keeps its typed value while the PATCH is still in flight.
+    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
 
     const enrollment = await api<{ id: string; maxDevices: number }>(
       page,

@@ -267,7 +267,7 @@ export default function PolicyAssignmentsPage() {
                   <For each={value().groups}>
                     {(group) => (
                       <a
-                        class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/15 px-2.5 py-2 text-[13px] transition-colors hover:border-input hover:bg-muted/40"
+                        class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/15 px-2.5 py-2 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:border-input hover:bg-muted/40 active:bg-muted/60"
                         href={`/t/${params.tenantId}/groups/${group.id}`}
                       >
                         <span class="min-w-0 truncate">{group.name}</span>
@@ -327,7 +327,7 @@ export default function PolicyAssignmentsPage() {
                   <div class="max-h-96 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                     <For each={deviceRows()}>
                       {(device: DeviceRow) => (
-                        <label class="flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted/30">
+                        <label class="flex items-center gap-2 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                           <span class="min-w-0 flex-1 truncate">{device.name}</span>
                           <span class="shrink-0 text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                             {device.proto}
@@ -366,7 +366,7 @@ export default function PolicyAssignmentsPage() {
                   {(text) => (
                     <p
                       role="status"
-                      class="rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground"
+                      class="animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
                     >
                       {text()}
                     </p>
@@ -435,7 +435,7 @@ export default function PolicyAssignmentsPage() {
                     <div class="max-h-80 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                       <For each={assignableUsers()}>
                         {(user) => (
-                          <label class="flex items-center gap-3 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted/30">
+                          <label class="flex items-center gap-3 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                             <span class="min-w-0 flex-1">
                               <span class="block truncate text-foreground">{user.name}</span>
                               <span class="block truncate text-[11px] text-muted-foreground">
@@ -504,7 +504,7 @@ export default function PolicyAssignmentsPage() {
                   <div class="max-h-80 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                     <For each={assignableUserGroups()}>
                       {(group) => (
-                        <label class="flex items-center gap-3 px-2.5 py-1.5 text-[13px] transition-colors hover:bg-muted/30">
+                        <label class="flex items-center gap-3 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                           <span class="min-w-0 flex-1 truncate">{group.name}</span>
                           <span class="shrink-0 text-[11px] text-muted-foreground">
                             {group.memberCount} members

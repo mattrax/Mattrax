@@ -172,6 +172,9 @@ export default defineConfig(({ command }) => ({
   // discovery is disabled by the `mattraxe:stable-ssr-deps` plugin below.
   optimizeDeps: {
     holdUntilCrawlEnd: true,
+    // ui-sdk reads primitives from one core entry; pre-bundling the core apart
+    // from the Solid adapter breaks its development identity checks.
+    exclude: ["@ui-sdk/core"],
     include: [
       "solid-js",
       "@solidjs/web",

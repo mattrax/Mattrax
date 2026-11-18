@@ -74,7 +74,9 @@ test.describe("groups and policies", () => {
 
     await page.getByRole("button", { name: /^edit$/i }).click();
     await expect(page.getByText("Match devices")).toBeVisible();
-    await expect(page.getByRole("button", { name: /add condition/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /OS version at least 14.4/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add filter" })).toBeVisible();
 
     await page.goto(`/t/${tenant.id}/groups`);
     await expect(page.getByRole("link", { name: "Apple Laptops" })).toBeVisible();

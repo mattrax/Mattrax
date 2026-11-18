@@ -93,6 +93,26 @@ const settle = async (page: Page, ms = 450) => {
   await page.waitForTimeout(ms);
 };
 
+/**
+ * Open a dropdown, retrying the trigger. A modal that just closed can consume
+ * the next press as its outside-press dismissal, so the first click on the
+ * page after an overlay is not guaranteed to activate anything.
+ */
+const openMenu = async (page: Page, trigger: import("@playwright/test").Locator) => {
+  await expect
+    .poll(
+      async () => {
+        if ((await page.locator('[data-slot="menu-content"]').count()) > 0) return 1;
+
+        await trigger.click();
+
+        return page.locator('[data-slot="menu-content"]').count();
+      },
+      { timeout: 8_000 },
+    )
+    .toBeGreaterThan(0);
+};
+
 const openPalette = async (page: Page) => {
   await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
   const input = page.locator('input[role="combobox"]');
@@ -151,6 +171,37 @@ test.describe("dashboard accessibility", () => {
     }
   });
 
+  test("filter surfaces have no axe violations", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Filters");
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+    await settle(page);
+
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await settle(page, 250);
+    await expectNoViolations(page, "filter field picker", {
+      include: '[data-slot="popover-content"]',
+    });
+
+    await page
+      .getByRole("listbox", { name: "Filter by" })
+      .getByRole("option", { name: "Status", exact: true })
+      .click();
+    await settle(page, 250);
+    await expectNoViolations(page, "filter value picker", {
+      include: '[data-slot="popover-content"]',
+    });
+
+    await page
+      .getByRole("listbox", { name: "Status value" })
+      .getByRole("option", { name: "Enrolled", exact: true })
+      .click();
+    await settle(page, 350);
+    await expectNoViolations(page, "device filters applied", { allow: knownContrast });
+
+    await page.getByRole("button", { name: "Remove Status filter" }).click();
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
+  });
+
   test("overlay open states have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Overlays");
     const base = `/t/${tenant.slug}`;
@@ -175,30 +226,33 @@ test.describe("dashboard accessibility", () => {
     });
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
+    await settle(page);
 
     // Tenant switcher.
-    await page.getByRole("button", { name: /Switch tenant/ }).click();
-    await settle(page, 300);
+    await openMenu(page, page.getByRole("button", { name: /Switch tenant/ }));
+    await settle(page, 450);
     await expectNoViolations(page, "tenant switcher open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
+    await settle(page);
 
     // User menu.
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await settle(page, 300);
+    await openMenu(page, page.getByRole("button", { name: /account menu/i }));
+    await settle(page, 450);
     await expectNoViolations(page, "user menu open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
+    await settle(page);
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await page.getByRole("button", { name: "Choose visible columns" }).click();
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toBeVisible();
+    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
     await settle(page, 300);
     await expectNoViolations(page, "column picker open", {
-      include: '[data-slot="dropdown-menu-content"]',
+      include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
 
@@ -236,19 +290,23 @@ test.describe("dashboard accessibility", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
     await expect(search).toBeFocused();
+    await settle(page);
 
     // User menu.
-    const account = page.getByRole("button", { name: "Account menu" });
-    await account.click();
+    const account = page.getByRole("button", { name: /account menu/i });
+    await openMenu(page, account);
+    await settle(page, 250);
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(account).toBeFocused();
+    await settle(page);
 
     // Column picker.
     const columns = page.getByRole("button", { name: "Choose visible columns" });
-    await columns.click();
+    await openMenu(page, columns);
+    await settle(page, 250);
     await page.keyboard.press("Escape");
-    await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(columns).toBeFocused();
   });
 

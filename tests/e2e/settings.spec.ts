@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 /**
  * Save the tenant profile and wait for the write. A follow-up read that races
@@ -28,8 +28,7 @@ test.describe("tenant settings", () => {
     const tenant = await bootstrapTenant(page, "Audit Export Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
 
-    const action = page.getByPlaceholder("e.g. device.enrolled");
-    await action.fill("tenant.created");
+    await addFilter(page, "Action", "tenant.created");
     await expect(page.getByText(/events? loaded/)).toBeVisible();
     await expect(page.getByText("No audit events match these filters.")).toBeHidden();
 
@@ -38,7 +37,11 @@ test.describe("tenant settings", () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^audit-log-\d{4}-\d{2}-\d{2}\.csv$/);
 
-    await action.fill("does.not.exist");
+    await page.getByRole("button", { name: /Action is tenant.created/ }).click();
+    await page
+      .getByRole("listbox", { name: "Action value" })
+      .getByRole("option", { name: "device.enrolled", exact: true })
+      .click();
     await expect(page.getByText("No audit events match these filters.")).toBeVisible();
 
     const invalidRange = await page.request.get(

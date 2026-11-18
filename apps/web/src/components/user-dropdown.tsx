@@ -1,13 +1,15 @@
 import { Show } from "solid-js";
-import { Button } from "~/components/ui/button";
 import {
+  Avatar,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
+} from "@mattrax/ui";
 import { LogOut } from "~/components/ui/icons";
 
 type DropdownUser = {
@@ -41,7 +43,7 @@ export function UserDropdown(props: UserDropdownProps) {
       when={!props.pending}
       fallback={
         <div
-          class={props.placeholderClass ?? "size-7 rounded-full bg-hover opacity-50 animate-pulse"}
+          class={props.placeholderClass ?? "size-7 animate-pulse rounded-full bg-hover opacity-50"}
         />
       }
     >
@@ -49,12 +51,7 @@ export function UserDropdown(props: UserDropdownProps) {
         when={props.user}
         fallback={
           props.signInHref ? (
-            <Button
-              as="a"
-              href={props.signInHref}
-              size="sm"
-              class="h-8 rounded-md bg-foreground px-3 text-[12.5px] text-primary-foreground hover:bg-foreground/90"
-            >
+            <Button as="a" href={props.signInHref} size="sm" class="touch-target">
               Sign in
             </Button>
           ) : null
@@ -65,7 +62,7 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuTrigger
               class={
                 props.triggerClass ??
-                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border transition-shadow hover:ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border outline-none transition-[box-shadow] duration-[var(--duration-hover)] ease-swift hover:ring-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
               }
               aria-label={
                 user().image ? "Account menu" : `${getInitials(user().name ?? "?")}, account menu`
@@ -75,43 +72,40 @@ export function UserDropdown(props: UserDropdownProps) {
                 when={user().image}
                 fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}
               >
-                <img src={user().image!} alt="" class="h-full w-full object-cover" />
+                <img src={user().image!} alt="" class="size-full object-cover" />
               </Show>
             </DropdownMenuTrigger>
 
-            <DropdownMenuContent
-              class={
-                props.contentClass ??
-                "w-[248px] overflow-hidden rounded-lg border border-border bg-popover p-0.5 shadow-[var(--shadow-popover)]"
-              }
-            >
+            <DropdownMenuContent class={props.contentClass ?? "w-[248px]"}>
               <DropdownMenuGroup>
-                <div class="px-2 py-2">
-                  <DropdownMenuLabel class="block truncate text-[13px] font-medium text-foreground">
-                    {user().name}
-                  </DropdownMenuLabel>
-                  <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
+                <div class="flex items-center gap-2.5 px-2 py-2">
+                  <Avatar size="sm" class="size-6 text-[9px]">
+                    <Show
+                      when={user().image}
+                      fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}
+                    >
+                      <img src={user().image!} alt="" class="size-full object-cover" />
+                    </Show>
+                  </Avatar>
+                  <div class="min-w-0">
+                    <DropdownMenuLabel class="block h-auto truncate py-0 text-[12.5px] font-[550] normal-case tracking-normal text-foreground">
+                      {user().name}
+                    </DropdownMenuLabel>
+                    <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
+                  </div>
                 </div>
               </DropdownMenuGroup>
 
-              <div class="pt-1">
-                <Show when={props.showDashboardLink}>
-                  <DropdownMenuItem
-                    as="a"
-                    href="/dashboard"
-                    class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-hover"
-                  >
-                    Dashboard
-                  </DropdownMenuItem>
-                </Show>
-                <DropdownMenuItem
-                  onSelect={() => props.onSignOut()}
-                  class="flex h-8 items-center rounded-[5px] px-2 text-[12.5px] text-foreground outline-none focus:bg-hover"
-                >
-                  <LogOut class="mr-2 size-4" />
-                  Sign out
+              <Show when={props.showDashboardLink}>
+                <DropdownMenuItem as="a" href="/dashboard">
+                  Dashboard
                 </DropdownMenuItem>
-              </div>
+              </Show>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => props.onSignOut()}>
+                <LogOut class="size-3.5 text-muted-foreground" />
+                Sign out
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}

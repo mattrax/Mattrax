@@ -1,281 +1,40 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "@mattrax/ui/styles.css";
 @import "@fontsource-variable/geist";
-@import "./styles/radix-colors.css";
-@import "./styles/base.css";
 
-@custom-variant dark (&:is(.dark, .dark *));
-
-@theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
-  --color-brand: var(--brand);
-  --color-brand-solid: var(--brand-solid);
-  --color-brand-foreground: var(--brand-foreground);
-  --color-brand-muted: var(--brand-muted);
-  --color-surface: var(--surface);
-  --color-surface-raised: var(--surface-raised);
-  --color-hover: var(--hover);
-  --color-active: var(--active);
-  --color-scrim: var(--scrim);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+/* The Latin subset served from `public/` so the document can preload the exact
+   file the fallback swaps to. Keep this unicode range in sync with the package. */
+@font-face {
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-display: optional;
+  font-weight: 100 900;
+  src: url("/fonts/geist-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Motion tokens. Built-in easings are too weak for UI entrances, so these
- * back every dashboard transition (`ease-swift`) and drawer move
- * (`ease-glide`). Shared with the imperative CSS below. */
-@theme {
-  --ease-swift: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-glide: cubic-bezier(0.32, 0.72, 0, 1);
-}
+/* Tailwind only scans the app by default; the shared component package lives
+   outside this app, so register it explicitly. */
+@source "../../../packages/ui/src";
 
-/*
- * Semantic token contract.
+/* ---------------------------------------------------------------------------
+ * Application-level layout
  *
- * Components never name a palette step: they use `bg-card`, `text-muted-foreground`,
- * `border-border`, `bg-brand-solid`, … and the two blocks below decide what those mean.
- * Every value points at a Radix Colors scale (see `styles/radix-colors.css`), so the
- * light and dark palettes carry the same perceptual ramp.
- *
- * Contrast rule: step 9 is a solid fill (pair it with `--*-foreground`), step 11 is
- * the text-safe sibling. `--brand` is the text/link colour; `--brand-solid` is the
- * fill. Mixing them is the usual way a Radix port fails WCAG AA.
- *
- * The `.theme-light` block repeats the light values: custom properties inherit their
- * resolved value, so an island inside a dark document cannot re-derive `--background`
- * from `var(--gray-1)` and must restate the contract.
- */
-:root,
-.theme-light {
-  --background: var(--gray-1);
-  --foreground: var(--gray-12);
-  /* Cards and popovers sit one step lighter than the page so elevation reads
-     without a heavy border; dark mode goes the other way (see below). */
-  --card: #ffffffff;
-  --card-foreground: var(--gray-12);
-  --popover: #ffffffff;
-  --popover-foreground: var(--gray-12);
-  --primary: var(--gray-12);
-  --primary-foreground: var(--gray-1);
-  --secondary: var(--gray-3);
-  --secondary-foreground: var(--gray-12);
-  --muted: var(--gray-3);
-  --muted-foreground: var(--gray-11);
-  --accent: var(--gray-3);
-  --accent-foreground: var(--gray-12);
-  --destructive: var(--red-11);
-  --border: var(--gray-a6);
-  --input: var(--gray-a7);
-  --ring: var(--violet-8);
-  --chart-1: var(--violet-9);
-  --chart-2: var(--blue-9);
-  --chart-3: var(--green-9);
-  --chart-4: var(--amber-9);
-  --chart-5: var(--red-9);
-  --radius: 0.375rem;
-  --brand: var(--violet-11);
-  --brand-solid: var(--violet-9);
-  --brand-foreground: #ffffffff;
-  --brand-muted: var(--violet-a3);
-  --surface: var(--gray-2);
-  --surface-raised: var(--gray-1);
-  --hover: var(--gray-a3);
-  --active: var(--gray-a4);
-  --scrim: var(--black-a8);
-  --success: var(--green-9);
-  --success-foreground: var(--green-12);
-  --warning: var(--amber-9);
-  --warning-foreground: var(--amber-12);
-  --sidebar: var(--gray-2);
-  --sidebar-foreground: var(--gray-12);
-  --sidebar-primary: var(--violet-9);
-  --sidebar-primary-foreground: var(--gray-1);
-  --sidebar-accent: var(--gray-4);
-  --sidebar-accent-foreground: var(--gray-12);
-  --sidebar-border: var(--gray-a6);
-  --sidebar-ring: var(--violet-8);
-  /* Elevation. Light separates surfaces with a border plus a soft shadow; dark
-     keeps a heavier shadow and relies on surface steps. */
-  --shadow-popover: 0 1px 2px rgb(16 16 16 / 0.06), 0 8px 24px rgb(16 16 16 / 0.1);
-  --shadow-dialog: 0 2px 6px rgb(16 16 16 / 0.08), 0 24px 48px rgb(16 16 16 / 0.14);
-  --shadow-card: 0 1px 2px rgb(16 16 16 / 0.04), 0 12px 32px -24px rgb(16 16 16 / 0.25);
-  /* A hairline of light along the top edge reads as a raised surface in dark
-     mode; in light mode it is a faint neutral line rather than a white one. */
-  --card-highlight: inset 0 1px 0 var(--gray-a3);
-  --brand-highlight: inset 0 1px 0 rgb(255 255 255 / 0.2);
-  --grid-line: var(--gray-a4);
-  --mask-opaque: #000000ff;
-  --brand-glow: color-mix(in oklab, var(--brand-solid) 16%, transparent);
-  --qr-background: #ffffffff;
-  --qr-foreground: #101010ff;
+ * The palette, type scale and component primitives live in @mattrax/ui. Only
+ * page-level scaffolding and compatibility rules belong here.
+ * ------------------------------------------------------------------------- */
+
+html {
+  scrollbar-gutter: stable;
+  min-height: 100%;
+  background-color: var(--background);
 }
 
-.dark {
-  --background: #08080aff;
-  --foreground: var(--gray-12);
-  --card: var(--gray-2);
-  --card-foreground: var(--gray-12);
-  --popover: var(--gray-3);
-  --popover-foreground: var(--gray-12);
-  --primary: var(--gray-12);
-  --primary-foreground: var(--gray-1);
-  --secondary: var(--gray-3);
-  --secondary-foreground: var(--gray-12);
-  --muted: var(--gray-3);
-  --muted-foreground: var(--gray-11);
-  --accent: var(--gray-4);
-  --accent-foreground: var(--gray-12);
-  --destructive: var(--red-11);
-  --border: var(--gray-a6);
-  --input: var(--gray-a7);
-  --ring: var(--violet-8);
-  --chart-1: var(--violet-9);
-  --chart-2: var(--blue-9);
-  --chart-3: var(--green-9);
-  --chart-4: var(--amber-9);
-  --chart-5: var(--red-9);
-  --brand: var(--violet-11);
-  --brand-solid: var(--violet-9);
-  --brand-foreground: #ffffffff;
-  --brand-muted: var(--violet-a3);
-  --surface: var(--gray-2);
-  --surface-raised: var(--gray-3);
-  --hover: var(--gray-a3);
-  --active: var(--gray-a4);
-  --scrim: rgb(0 0 0 / 0.6);
-  --success: var(--green-9);
-  --success-foreground: var(--green-12);
-  --warning: var(--amber-9);
-  --warning-foreground: var(--amber-12);
-  --sidebar: var(--gray-1);
-  --sidebar-foreground: var(--gray-12);
-  --sidebar-primary: var(--violet-9);
-  --sidebar-primary-foreground: var(--gray-1);
-  --sidebar-accent: var(--gray-3);
-  --sidebar-accent-foreground: var(--gray-12);
-  --sidebar-border: var(--gray-a6);
-  --sidebar-ring: var(--violet-8);
-  --shadow-popover: 0 2px 6px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.45);
-  --shadow-dialog: 0 2px 6px rgb(0 0 0 / 0.35), 0 24px 48px rgb(0 0 0 / 0.55);
-  --shadow-card: 0 12px 32px -24px rgb(0 0 0 / 0.9);
-  --card-highlight: inset 0 1px 0 var(--gray-a3);
-  --brand-highlight: inset 0 1px 0 rgb(255 255 255 / 0.2);
-  --grid-line: var(--gray-a3);
-  --mask-opaque: #000000ff;
-  --brand-glow: color-mix(in oklab, var(--brand-solid) 16%, transparent);
-  --qr-background: #ffffffff;
-  --qr-foreground: #101010ff;
-}
-
-/* Native controls, scrollbars and form widgets follow the active theme. The
-   resolved preference puts `.dark` on `<html>`; `.theme-light` is an explicit
-   island (public enrollment) and always opts back into light. */
-:root {
-  color-scheme: light;
-}
-
-.dark {
-  color-scheme: dark;
-}
-
-.theme-light {
-  color-scheme: light;
-}
-
-/* Users who ask for more contrast get stronger separation between surfaces and
-   hints; the palette, not individual components, carries the change. Steps 8/9
-   are Radix's strong-border steps and 12 is the maximum-contrast text step. */
-@media (prefers-contrast: more) {
-  :root,
-  .theme-light {
-    --border: var(--gray-a8);
-    --input: var(--gray-a9);
-    --muted-foreground: var(--gray-12);
-    --sidebar-border: var(--gray-a9);
-  }
-
-  .dark {
-    --border: var(--gray-a8);
-    --input: var(--gray-a9);
-    --muted-foreground: var(--gray-12);
-    --sidebar-border: var(--gray-a9);
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-    /* `svh` matches the smallest visible viewport; the extra height below it
-       must still be painted by the document so iOS Safari's overscroll and
-       home-indicator area never reveal the opposite theme's canvas. */
-    min-height: 100svh;
-  }
-  html {
-    @apply font-sans;
-    /* Reserve the scrollbar track so opening a dropdown (or any overlay that
-       toggles body overflow) cannot shift the centred dashboard. */
-    scrollbar-gutter: stable;
-    scrollbar-color: var(--border) transparent;
-    scrollbar-width: thin;
-  }
-  html::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  html::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  html::-webkit-scrollbar-thumb {
-    background: var(--border);
-    background-clip: padding-box;
-    border: 3px solid var(--background);
-    border-radius: 999px;
-  }
+body {
+  min-height: 100svh;
 }
 
 /* Dense setting rows go two-column only when the editor itself is wide
@@ -306,30 +65,21 @@
   }
 }
 
-/* ---------------------------------------------------------------------------
- * Console theme
- *
- * The dashboard, marketing site and auth pages share one semantic token
- * contract; these compatibility rules let the older content pages (which were
- * written against Tailwind's stone/green/amber/red utilities) inherit it
- * without rewriting every table, callout and status chip at once.
- * ------------------------------------------------------------------------- */
+@utility touch-target {
+  position: relative;
+}
 
-@layer components {
-  /*
-   * Page entrance. Applied by the shared `Page` frame, which remounts with the
-   * route, so it restarts on navigation without touching query state. Ends on
-   * `transform: none` so a finished animation never leaves a containing block
-   * behind for `position: fixed` children (e.g. the table selection bar).
-   */
-  .page-enter {
-    animation: mattax-page-in 200ms var(--ease-swift) backwards;
-  }
+/* Page entrance. Applied by the shared route frame, which remounts with the
+   route, so it restarts on navigation without touching query state. Ends on
+   `transform: none` so a finished animation never leaves a containing block
+   behind for `position: fixed` children (e.g. the table selection bar). */
+.page-enter {
+  animation: mattax-page-in 200ms var(--ease-swift) backwards;
+}
 
-  /* Indeterminate segment while the router resolves the next page. */
-  .route-progress {
-    animation: mattax-route-progress 1.1s linear infinite;
-  }
+/* Indeterminate segment while the router resolves the next page. */
+.route-progress {
+  animation: mattax-route-progress 1.1s linear infinite;
 }
 
 @keyframes mattax-page-in {
@@ -365,185 +115,32 @@
   }
 }
 
-/* ---------------------------------------------------------------------------
- * Motion
- *
- * Functional motion only: route feedback, spatial continuity for overlays and
- * press confirmation. Every rule animates `transform`/`opacity` (plus colour),
- * stays at or under 200ms and is opt-in for `prefers-reduced-motion`.
- *
- * These selectors are intentionally unlayered so they replace the stock
- * `animate-in`/`animate-out` utilities shipped in `styles/base.css` instead of
- * competing with them inside the utilities layer.
- * ------------------------------------------------------------------------- */
-
-@keyframes mattax-overlay-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes mattax-overlay-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes mattax-surface-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes mattax-surface-out {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
-}
-
-/* Trigger-anchored menus grow from the popper's origin, never the centre. */
-@keyframes mattax-menu-in {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  /* Dialog: calm 180ms entry, quicker 120ms exit. Modals are not anchored to
-   * a trigger, so they stay centred (no transform-origin override). */
-  [data-slot="dialog-overlay"][data-expanded] {
-    animation: mattax-overlay-in 160ms var(--ease-swift) both;
-  }
-
-  [data-slot="dialog-overlay"][data-closed] {
-    animation: mattax-overlay-out 120ms var(--ease-swift) both;
-  }
-
-  [data-slot="dialog-content"][data-expanded] {
-    animation: mattax-surface-in 180ms var(--ease-swift) both;
-  }
-
-  [data-slot="dialog-content"][data-closed] {
-    animation: mattax-surface-out 120ms var(--ease-swift) both;
-  }
-
-  /* Sheets share the surface entry/exit; on a full-height panel the same
-   * 2% scale reads as depth without drawing attention to the edges. */
-  [data-slot="sheet-overlay"][data-expanded] {
-    animation: mattax-overlay-in 160ms var(--ease-swift) both;
-  }
-
-  [data-slot="sheet-overlay"][data-closed] {
-    animation: mattax-overlay-out 120ms var(--ease-swift) both;
-  }
-
-  [data-slot="sheet-content"][data-expanded] {
-    animation: mattax-surface-in 200ms var(--ease-glide) both;
-  }
-
-  [data-slot="sheet-content"][data-closed] {
-    animation: mattax-surface-out 140ms var(--ease-glide) both;
-  }
-
-  /* Tenant/user/switcher menus: 160ms fade + 2% scale from the trigger. */
-  [data-slot="dropdown-menu-content"][data-expanded],
-  [data-slot="dropdown-menu-sub-content"][data-expanded] {
-    animation: mattax-menu-in 160ms var(--ease-swift) both;
-  }
-
-  /* Shared button primitive: a 1px press, no layout shift. `scale` is its own
-   * property in Tailwind v4, so it composes with translate/rotate utilities. */
-  [data-slot="button"]:not(:disabled):active {
-    scale: 0.985;
-  }
-}
-
-/* Keep button transitions to the properties that actually change. This also
- * replaces the primitive's `transition-all` (same specificity, unlayered). */
-[data-slot="button"] {
-  transition-property: color, background-color, border-color, opacity, box-shadow, scale;
-  transition-duration: 120ms;
-  transition-timing-function: var(--ease-swift);
-}
-
 /* Command palette: open-only entrance. Keeping it mounted for an exit would
- * complicate focus restore and scroll-lock teardown, so closing stays instant. */
+   complicate focus restore and scroll-lock teardown, so closing stays instant. */
 @media (prefers-reduced-motion: no-preference) {
   .palette-overlay {
-    animation: mattax-overlay-in 140ms var(--ease-swift) both;
+    animation: mattax-page-in 140ms var(--ease-swift) both;
   }
 
   .palette-card {
-    animation: mattax-menu-in 160ms var(--ease-swift) both;
-    transform-origin: top center;
+    animation: mattax-page-in 160ms var(--ease-swift) both;
   }
 }
 
-::selection {
-  background: color-mix(in oklab, var(--brand-solid) 35%, transparent);
-}
+/* ---------------------------------------------------------------------------
+ * Light islands
+ *
+ * Enrollment pages run inside a fixed light palette even when the dashboard is
+ * dark. The `.theme-light` token block lives in @mattrax/ui; these rules undo
+ * the few stone utilities the marketing and auth copy still uses.
+ * ------------------------------------------------------------------------- */
 
-html {
-  scrollbar-gutter: stable;
-  /* The `html` element is the canvas Safari paints behind the layout viewport,
-     including rubber-band overscroll and the home-indicator safe area. Keep it
-     on the same value as the app shell so no strip of the opposite theme can
-     appear. */
-  min-height: 100%;
-  background-color: var(--background);
-}
-
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 9999px;
-  background-clip: content-box;
-  background-color: var(--gray-a7);
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background-color: var(--gray-a8);
-}
-
-/* Light-palette helpers used by the pre-console pages. */
 .auth-page .bg-white,
 .auth-page .bg-white\/80,
 .auth-page .bg-white\/90 {
   background-color: var(--card);
 }
 
-/* The auth pages were written against the light stone palette. These remaps
-   point those utilities at the semantic tokens so they follow the active theme
-   instead of assuming a dark shell. */
 .bg-stone-50,
 .bg-stone-50\/60,
 .bg-stone-50\/80 {
@@ -588,32 +185,21 @@ html {
   border-color: var(--input);
 }
 
-/* Undo the stone remap inside a light island so the enrollment page keeps its
-   own palette regardless of the surrounding document theme. */
 .theme-light .text-stone-950,
 .theme-light .text-stone-900,
 .theme-light .text-stone-800 {
-  color: var(--gray-12);
+  color: var(--foreground);
 }
 
 .theme-light .text-stone-700,
-.theme-light .text-stone-600 {
-  color: var(--gray-11);
-}
-
+.theme-light .text-stone-600,
 .theme-light .text-stone-500,
 .theme-light .text-stone-400 {
-  color: var(--gray-11);
+  color: var(--muted-foreground);
 }
 
 .theme-light .bg-white {
-  background-color: #ffffffff;
-}
-
-.theme-light .border-stone-100,
-.theme-light .border-stone-200,
-.theme-light .border-stone-300 {
-  border-color: var(--border);
+  background-color: var(--card);
 }
 
 .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
@@ -633,7 +219,7 @@ html {
 .text-green-700,
 .text-green-800,
 .text-green-900 {
-  color: var(--success-foreground);
+  color: var(--success);
 }
 
 .bg-amber-50,
@@ -648,16 +234,16 @@ html {
 .text-amber-700,
 .text-amber-800,
 .text-amber-900 {
-  color: var(--warning-foreground);
+  color: var(--warning);
 }
 
 .bg-red-50,
 .bg-red-50\/60 {
-  background-color: color-mix(in oklab, var(--destructive) 12%, transparent);
+  background-color: color-mix(in oklab, var(--destructive) 10%, transparent);
 }
 
 .border-red-200 {
-  border-color: color-mix(in oklab, var(--destructive) 30%, transparent);
+  border-color: color-mix(in oklab, var(--destructive) 28%, transparent);
 }
 
 .text-red-600,
@@ -667,55 +253,15 @@ html {
 }
 
 .bg-blue-50 {
-  background-color: color-mix(in oklab, var(--brand) 12%, transparent);
+  background-color: color-mix(in oklab, var(--info) 10%, transparent);
 }
 
 .border-blue-200 {
-  border-color: color-mix(in oklab, var(--brand) 30%, transparent);
+  border-color: color-mix(in oklab, var(--info) 26%, transparent);
 }
 
 .text-blue-700 {
-  color: var(--brand);
-}
-
-input[type="checkbox"] {
-  border-radius: 4px;
-}
-
-select:not([multiple]) {
-  appearance: none;
-  border: 1px solid var(--border);
-  background-color: var(--card);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238d8d8d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.65rem center;
-  padding-right: 2rem;
-  color: var(--foreground);
-  transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
-}
-
-select:not([multiple]):hover {
-  border-color: color-mix(in oklab, var(--foreground) 22%, transparent);
-}
-
-select:not([multiple]):focus-visible {
-  outline: none;
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 22%, transparent);
-}
-
-/* Forced-colors mode strips background images, so the custom chevron above
-   disappears and the extra inline-end padding reads as an empty gap. Hand the
-   control back to the platform, which draws an arrow that follows the user's
-   palette. */
-@media (forced-colors: active) {
-  select:not([multiple]) {
-    appearance: auto;
-    background-image: none;
-    padding-right: 0.5rem;
-  }
+  color: var(--info);
 }
 
 /* ---------------------------------------------------------------------------
@@ -729,24 +275,15 @@ select:not([multiple]):focus-visible {
  * ------------------------------------------------------------------------- */
 
 @media (pointer: coarse) {
-  /* Icon-only controls: the account avatar, icon buttons and dropdown
-     triggers. */
   :is(
     .touch-target,
-    [data-slot="button"]:is(
-      .z-button-size-icon,
-      .z-button-size-icon-xs,
-      .z-button-size-icon-sm,
-      .z-button-size-icon-lg
-    ),
+    [data-slot="button"][data-size^="icon"],
     button[aria-haspopup],
     button[aria-label="Choose visible columns"]
   ) {
     position: relative;
   }
 
-  /* `overflow-hidden` on the avatar trigger would clip the expanded area, so
-     round the image directly and let the button overflow. */
   button[aria-haspopup]:has(> img) {
     overflow: visible;
   }
@@ -757,12 +294,7 @@ select:not([multiple]):focus-visible {
 
   :is(
     .touch-target,
-    [data-slot="button"]:is(
-      .z-button-size-icon,
-      .z-button-size-icon-xs,
-      .z-button-size-icon-sm,
-      .z-button-size-icon-lg
-    ),
+    [data-slot="button"][data-size^="icon"],
     button[aria-haspopup],
     button[aria-label="Choose visible columns"]
   )::after {
@@ -775,40 +307,14 @@ select:not([multiple]):focus-visible {
     transform: translate(-50%, -50%);
   }
 
-  /* A checkbox is a replaced element and cannot carry a hit-area
-     pseudo-element. Its label is the real target, so grow the row instead. */
   label:has(> input[type="checkbox"]),
   label:has(> input[type="radio"]) {
     min-height: 44px;
   }
 
-  /* Search fields cannot carry a pseudo-element either, so the control itself
-     grows on touch. */
   input[aria-label="Search table"] {
     min-height: 44px;
   }
-}
-
-/* Badge default carries the brand tint rather than the neutral primary fill;
-   step 11 text on a step-3 alpha is legible in both themes. */
-.z-badge-variant-default {
-  background-color: var(--brand-muted);
-  color: var(--brand);
-  border-color: color-mix(in oklab, var(--brand) 30%, transparent);
-}
-
-.z-badge-variant-secondary {
-  background-color: var(--secondary);
-  color: var(--secondary-foreground);
-}
-
-/* The primitives' stock scrim is a 10% black wash, which is nearly invisible
-   on a light page. Depth comes from the theme's scrim token instead. */
-[data-slot="dialog-overlay"],
-[data-slot="sheet-overlay"],
-[data-slot="drawer-overlay"],
-[data-slot="alert-dialog-overlay"] {
-  background-color: var(--scrim);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -816,27 +322,13 @@ select:not([multiple]):focus-visible {
     animation: none;
   }
 
-  /* Decorative loops: the hero status ping and skeleton pulses do not carry
-     information on their own, so they stop entirely. Placeholder shapes still
-     communicate "loading". */
   .animate-ping,
   .animate-pulse {
     animation: none;
   }
 
-  /* Keep the "route is resolving" feedback without movement: a gentle opacity
-   * pulse on a static segment. */
   .route-progress {
     animation: mattax-pulse-soft 1.4s ease-in-out infinite;
-  }
-
-  [data-slot="dialog-overlay"],
-  [data-slot="dialog-content"],
-  [data-slot="sheet-overlay"],
-  [data-slot="sheet-content"],
-  [data-slot="dropdown-menu-content"],
-  [data-slot="dropdown-menu-sub-content"] {
-    animation: none;
   }
 }
 
@@ -893,8 +385,6 @@ select:not([multiple]):focus-visible {
     min-height: 220px;
   }
 
-  /* KPI and note widgets are short by design. A fixed 220px minimum made four
-     numbers consume nearly a full mobile viewport and left large empty cards. */
   .dashboard-widget-stat {
     min-height: 96px;
   }
@@ -906,5 +396,122 @@ select:not([multiple]):focus-visible {
   .dashboard-drag-handle,
   .dashboard-resize-handle {
     display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Disclosure motion
+ *
+ * Native <details> is used for FAQs, advanced settings and audit rows. Modern
+ * Chrome can interpolate the content block size; elsewhere the panel still
+ * opens instantly, which is a safe fallback.
+ * ------------------------------------------------------------------------- */
+
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+
+  details::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 200ms var(--ease-swift),
+      content-visibility 200ms allow-discrete;
+  }
+
+  details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+details > summary {
+  transition: color 140ms var(--ease-swift), background-color 140ms var(--ease-swift);
+}
+
+details[open] > summary .disclosure-chevron {
+  transform: rotate(180deg);
+}
+
+.disclosure-chevron {
+  transition: transform 180ms var(--ease-swift);
+}
+
+/* Clickable cards and tiles share one press response. */
+.pressable {
+  transition:
+    transform 140ms var(--ease-swift),
+    border-color 140ms var(--ease-swift),
+    box-shadow 140ms var(--ease-swift),
+    background-color 140ms var(--ease-swift);
+}
+
+.pressable:active {
+  transform: scale(0.995);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pressable:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable:active,
+  .pressable:hover {
+    transform: none;
+  }
+
+  .disclosure-chevron,
+  details::details-content {
+    transition: none;
+  }
+}
+
+/* Directional affordances: only move for a real pointer, and stay static when
+   the OS asks for reduced motion. */
+.arrow-nudge {
+  transition: transform var(--duration-hover) var(--ease-swift);
+}
+
+.card-arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    transform var(--duration-hover) var(--ease-swift),
+    opacity var(--duration-hover) var(--ease-swift);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .arrow-nudge {
+    transform: translateX(2px);
+  }
+
+  .group:hover .card-arrow {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.group:focus-visible .arrow-nudge {
+  transform: translateX(2px);
+}
+
+.group:focus-visible .card-arrow {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow-nudge,
+  .card-arrow {
+    transition: none;
+  }
+
+  .group:hover .arrow-nudge,
+  .group:focus-visible .arrow-nudge,
+  .group:hover .card-arrow,
+  .group:focus-visible .card-arrow {
+    transform: none;
   }
 }

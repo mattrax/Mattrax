@@ -1,7 +1,11 @@
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import type { Schema } from "effect";
 import { authClient } from "~/lib/auth";
+import { Button } from "~/components/ui/button";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 /**
  * Six-digit email verification shared by registration and the standalone
@@ -192,26 +196,26 @@ export function EmailCodeForm(props: {
 
         <Show when={error()}>
           {(message) => (
-            <p id="verification-code-error" role="alert" class="text-sm text-red-600">
+            <p
+              id="verification-code-error"
+              role="alert"
+              class={`text-sm text-red-600 ${feedbackEnter}`}
+            >
               {message()}
             </p>
           )}
         </Show>
         <Show when={notice()}>
           {(message) => (
-            <p role="status" class="text-sm text-emerald-600">
+            <p role="status" class={`text-sm text-emerald-600 ${feedbackEnter}`}>
               {message()}
             </p>
           )}
         </Show>
 
-        <button
-          type="submit"
-          disabled={pending()}
-          class="w-full rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-        >
+        <Button type="submit" class="h-9 w-full text-sm" pending={pending()}>
           {pending() ? "Verifying…" : (props.submitLabel ?? "Verify email")}
-        </button>
+        </Button>
       </form>
 
       <div class="flex items-center justify-between gap-3 text-xs text-stone-500">
@@ -219,7 +223,7 @@ export function EmailCodeForm(props: {
           type="button"
           onClick={() => void send()}
           disabled={sending() || cooldown() > 0}
-          class="font-medium text-stone-700 underline underline-offset-2 hover:text-stone-900 disabled:no-underline disabled:opacity-60"
+          class="font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900 disabled:no-underline disabled:opacity-60"
         >
           <span>
             {sending()
@@ -236,7 +240,7 @@ export function EmailCodeForm(props: {
           <button
             type="button"
             onClick={() => props.onBack?.()}
-            class="font-medium text-stone-700 underline underline-offset-2 hover:text-stone-900"
+            class="font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900"
           >
             {props.backLabel ?? "Back"}
           </button>

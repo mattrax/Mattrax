@@ -8,12 +8,6 @@ import { Button } from "~/components/ui/button";
 import { useTenantRouteParams } from "~/lib/route-params";
 import { routes } from "~/lib/routes";
 import {
-  Dialog,
-  DialogBackgroundIsolation,
-  DialogOverlay,
-  DialogPortal,
-} from "~/components/ui/dialog";
-import {
   Activity,
   BookOpen,
   Laptop,
@@ -888,7 +882,7 @@ export function CommandPalette() {
       if (!isOpen || typeof window === "undefined") return;
 
       const onKeyDown = (event: KeyboardEvent) => {
-        if (event.key !== "Escape") return;
+        if (event.key !== "Escape" || !open()) return;
 
         event.preventDefault();
         event.stopPropagation();
@@ -1085,10 +1079,14 @@ export function CommandPalette() {
         open state authoritative while it is on screen (Escape, light dismiss and
         command selection all unmount it).
       */}
-        <Dialog defaultOpen onOpenChange={(next) => !next && setOpen(false)}>
-          <DialogPortal>
-            <DialogOverlay
-              class="palette-overlay bg-scrim backdrop-blur-sm"
+        <DialogPrimitive.Root
+          defaultOpen
+          modal={false}
+          onOpenChange={(next) => !next && setOpen(false)}
+        >
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay
+              class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
               onPointerDown={(event) => {
                 if (event.target === event.currentTarget) close();
               }}
@@ -1096,10 +1094,9 @@ export function CommandPalette() {
             <DialogPrimitive.Content
               data-slot="command-palette"
               aria-modal="true"
-              class="palette-card fixed inset-x-0 top-[10vh] z-50 mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
+              class="palette-card fixed inset-x-0 top-[10vh] z-[71] mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
               onKeyDown={onContentKeyDown}
             >
-              <DialogBackgroundIsolation />
               <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
               <DialogPrimitive.Description class="sr-only">
                 Search settings, devices, policies, people, and commands. Use the arrow keys to move
@@ -1123,6 +1120,14 @@ export function CommandPalette() {
                   value={query()}
                   onInput={(event) => updateQuery(event.currentTarget.value)}
                   onKeyDown={(event) => {
+                    if (event.key === "Tab") {
+                      // Non-modal dialog: keep Tab in the field rather than
+                      // letting it walk into the page behind the overlay.
+                      event.preventDefault();
+
+                      return;
+                    }
+
                     if (event.key === "Escape") {
                       event.preventDefault();
                       close();
@@ -1286,8 +1291,8 @@ export function CommandPalette() {
                 </Show>
               </div>
             </DialogPrimitive.Content>
-          </DialogPortal>
-        </Dialog>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       </Show>
     </>
   );

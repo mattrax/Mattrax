@@ -5,12 +5,16 @@ import { createEffect, createMemo, createSignal, onSettled, Show } from "solid-j
 import type { InvitationPreviewResponse } from "@mattrax/enterprise-domain/client";
 import { ErrorText } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
+import { Spinner } from "~/components/ui";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
 import { queryClient } from "~/lib/query-client";
 import { rememberTenantAlias } from "~/lib/tenant";
+
+/** Inline alerts arrive with a short rise so the state change is legible. */
+const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
 
 type AcceptResult = { tenantId: string; alreadyMember: boolean };
 
@@ -363,13 +367,16 @@ export default function AcceptInvitationPage() {
 
           <div class="mt-4 space-y-3 text-[12.5px] leading-relaxed text-muted-foreground">
             <Show when={stage() === "loading"}>
-              <p role="status" aria-live="polite">
+              <p role="status" aria-live="polite" class="flex items-center gap-2">
+                <span aria-hidden="true">
+                  <Spinner class="size-3.5" />
+                </span>
                 Checking your invitation…
               </p>
             </Show>
 
             <Show when={stage() === "missing"}>
-              <p role="alert" class="text-destructive">
+              <p role="alert" class={`text-destructive ${feedbackEnter}`}>
                 This page needs its invitation token. Open the link from your invitation email
                 again.
               </p>
@@ -383,27 +390,27 @@ export default function AcceptInvitationPage() {
             </Show>
 
             <Show when={stage() === "unknown"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 This invitation link is invalid, has already been used, or was replaced. Ask the
                 person who invited you to send a new invitation.
               </p>
             </Show>
 
             <Show when={stage() === "expired"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 This invitation expired before it was accepted. Ask a tenant administrator to resend
                 it.
               </p>
             </Show>
 
             <Show when={stage() === "canceled"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 This invitation was canceled. Ask a tenant administrator to send a new one.
               </p>
             </Show>
 
             <Show when={stage() === "superseded"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 This invitation was replaced by a newer link. Use the most recent invitation email.
               </p>
             </Show>
@@ -436,7 +443,12 @@ export default function AcceptInvitationPage() {
                   </Button>
                 }
               >
-                <Button class="min-h-11" onClick={() => void accept()} disabled={accepting()}>
+                <Button
+                  class="min-h-11"
+                  onClick={() => void accept()}
+                  pending={accepting()}
+                  disabled={accepting()}
+                >
                   {accepting() ? "Checking membership…" : "Continue to tenant"}
                 </Button>
                 <ErrorText error={acceptError()} />
@@ -444,7 +456,7 @@ export default function AcceptInvitationPage() {
             </Show>
 
             <Show when={stage() === "wrong-account"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 You're signed in as <span class="font-medium text-foreground">{user()?.email}</span>
                 , but this invitation was sent to{" "}
                 <span class="font-medium text-foreground">
@@ -458,7 +470,7 @@ export default function AcceptInvitationPage() {
             </Show>
 
             <Show when={stage() === "unverified"}>
-              <p role="alert">
+              <p role="alert" class={feedbackEnter}>
                 Verify <span class="font-medium text-foreground">{user()?.email}</span> before
                 accepting this invitation. Your invitation has not been used.
               </p>
@@ -503,6 +515,7 @@ export default function AcceptInvitationPage() {
               <Button
                 class="min-h-11 w-full sm:w-auto"
                 onClick={() => void accept()}
+                pending={accepting()}
                 disabled={accepting() || stage() === "joined"}
               >
                 {stage() === "joined"
