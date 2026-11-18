@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import type { Component } from "solid-js";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import {
   Popover,
   PopoverContent,
@@ -115,10 +115,69 @@ export const filterValueLabel = (field: FilterField, condition: FilterCondition)
     .filter((value) => value !== "")
     .map((value) => field.options?.find((option) => option.value === value)?.label ?? value);
 
-  return labels.length > 0 ? labels.join(", ") : "Any";
+  if (labels.length > 0) return labels.join(", ");
+
+  // An empty `in` list is a real predicate that matches nothing, unlike an
+  // empty single-value condition, which leaves the field unconstrained.
+  return condition.operator === "in" ? "None" : "Any";
 };
 
-const isMultiValue = (field: FilterField) => field.multiple === true;
+/**
+ * Multi-value operands use the same comma-separated grammar as the shareable
+ * text form: quotes protect commas inside a value.
+ */
+const quoteFilterValue = (value: string) =>
+  /[\s",]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+
+const unquoteFilterValue = (value: string) =>
+  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
+
+const splitFilterValues = (text: string): string[] => {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const character = text[index]!;
+
+    if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
+
+    if (!quoted && character === ",") {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  parts.push(current);
+
+  const values: string[] = [];
+
+  for (const part of parts) {
+    const value = unquoteFilterValue(part.trim());
+
+    if (value !== "") values.push(value);
+  }
+
+  return values;
+};
+
+const formatFilterValues = (values: ReadonlyArray<string>): string => {
+  const parts: string[] = [];
+
+  for (const value of values) {
+    const trimmed = value.trim();
+
+    if (trimmed !== "") parts.push(quoteFilterValue(trimmed));
+  }
+
+  return parts.join(", ");
+};
+
+const isMultiValue = (field: FilterField, operator: string) =>
+  operator === "in" || (field.kind === "select" && field.multiple === true);
 
 const surface =
   "w-[264px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0 transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift";
@@ -260,7 +319,7 @@ function ValueEditor(props: {
   });
 
   const toggle = (value: string) => {
-    if (isMultiValue(props.field)) {
+    if (isMultiValue(props.field, props.condition.operator)) {
       const next = props.condition.values.includes(value)
         ? props.condition.values.filter((item) => item !== value)
         : [...props.condition.values.filter((item) => item !== ""), value];
@@ -294,7 +353,9 @@ function ValueEditor(props: {
         <div
           role="listbox"
           aria-label={`${props.field.label} value`}
-          aria-multiselectable={isMultiValue(props.field) ? "true" : undefined}
+          aria-multiselectable={
+            isMultiValue(props.field, props.condition.operator) ? "true" : undefined
+          }
           class="max-h-[260px] overflow-y-auto overscroll-contain py-1"
         >
           <For each={options()}>
@@ -332,16 +393,67 @@ function TextValueEditor(props: {
   onChange: (values: string[]) => void;
 }) {
   return (
+    <Show
+      when={props.condition.operator === "in"}
+      fallback={
+        <div class="p-1">
+          <input
+            type={inputType(props.field.kind)}
+            value={props.condition.values[0] ?? ""}
+            min={props.field.kind === "number" ? 0 : undefined}
+            placeholder={props.field.placeholder ?? "Value"}
+            aria-label={`${props.field.label} value`}
+            onInput={(event) => props.onChange([event.currentTarget.value])}
+            class="h-8 w-full rounded-[6px] border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
+          />
+        </div>
+      }
+    >
+      <MultiTextValueEditor {...props} />
+    </Show>
+  );
+}
+
+/**
+ * Comma-separated editor for the `in` operator.
+ *
+ * The draft text is local so a trailing comma or space is not swallowed while
+ * the operator is typed. Values are still emitted on every keystroke, and the
+ * draft only resets when the parsed values and the parent's values diverge.
+ */
+function MultiTextValueEditor(props: {
+  field: FilterField;
+  condition: FilterCondition;
+  onChange: (values: string[]) => void;
+}) {
+  const [draft, setDraft] = createSignal(formatFilterValues(props.condition.values));
+
+  createEffect(
+    () => props.condition.values,
+    (values) => {
+      if (splitFilterValues(draft()).join("\u0000") !== values.join("\u0000"))
+        setDraft(formatFilterValues(values));
+    },
+  );
+
+  const update = (text: string) => {
+    setDraft(text);
+    props.onChange(splitFilterValues(text));
+  };
+
+  return (
     <div class="p-1">
       <input
-        type={inputType(props.field.kind)}
-        value={props.condition.values[0] ?? ""}
-        min={props.field.kind === "number" ? 0 : undefined}
-        placeholder={props.field.placeholder ?? "Value"}
-        aria-label={`${props.field.label} value`}
-        onInput={(event) => props.onChange([event.currentTarget.value])}
+        type="text"
+        inputmode={props.field.kind === "number" ? "decimal" : undefined}
+        value={draft()}
+        placeholder={props.field.placeholder ? `${props.field.placeholder}, …` : "Value, value"}
+        aria-label={`${props.field.label} values`}
+        onInput={(event) => update(event.currentTarget.value)}
+        onBlur={() => setDraft(formatFilterValues(props.condition.values))}
         class="h-8 w-full rounded-[6px] border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
       />
+      <p class="px-1 pt-1 text-[10.5px] text-muted-foreground">Separate values with commas.</p>
     </div>
   );
 }
@@ -445,7 +557,7 @@ function ConditionPanel(props: {
         <Show when={props.field.kind !== "select"}>
           <button
             type="button"
-            disabled={(props.condition.values[0] ?? "") === ""}
+            disabled={!props.condition.values.some((value) => value.trim() !== "")}
             class="h-6 rounded-[6px] bg-primary px-2 text-[11.5px] font-medium text-primary-foreground outline-none hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40"
             onClick={() => props.onDone(props.condition)}
           >

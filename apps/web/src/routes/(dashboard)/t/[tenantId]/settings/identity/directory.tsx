@@ -7,6 +7,7 @@ import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { directorySyncProgress } from "~/lib/directory-sync";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -32,7 +33,15 @@ export default function DirectorySyncPage() {
   const qc = useQueryClient();
   const { can } = useCan();
   const writable = () => can("identity.write");
-  const status = useQuery(() => enterpriseQueries.directorySync(params.tenantId));
+
+  const status = useQuery(() => ({
+    ...enterpriseQueries.directorySync(params.tenantId),
+    // A scheduled run writes `running` before it starts and `idle` when it
+    // finishes; poll only while that state is live so the progress row tells
+    // the truth without keeping the page busy forever.
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 3000 : false),
+  }));
+
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 
   const invalidate = async () => {
@@ -64,6 +73,14 @@ export default function DirectorySyncPage() {
         status.data?.lastCounts,
       ),
     );
+
+  const progress = () =>
+    directorySyncProgress({
+      isPending: sync.isPending,
+      isError: sync.isError,
+      data: sync.data ?? null,
+      remoteStatus: status.data?.status ?? null,
+    });
 
   const intervalOptions = () => {
     const minutes = status.data?.syncIntervalMinutes ?? 0;
@@ -180,7 +197,8 @@ export default function DirectorySyncPage() {
                       {value().enabled ? "Disable sync" : "Enable sync"}
                     </Button>
                     <Button
-                      disabled={!value().configured || sync.isPending}
+                      pending={sync.isPending}
+                      disabled={!value().configured}
                       title={
                         value().configured
                           ? undefined
@@ -188,11 +206,38 @@ export default function DirectorySyncPage() {
                       }
                       onClick={() => sync.mutate()}
                     >
-                      <RotateCcw class="size-4" />
-                      {sync.isPending ? "Syncing…" : "Sync now"}
+                      <Show when={!sync.isPending}>
+                        <RotateCcw class="size-4" />
+                      </Show>
+                      Sync now
                     </Button>
                   </Show>
                 </div>
+
+                <Show when={progress()}>
+                  {(current) => (
+                    <div class="mt-3 space-y-1.5" role="status" aria-live="polite">
+                      <Show when={current().state === "running"}>
+                        <div
+                          class="h-0.5 overflow-hidden rounded-full bg-border"
+                          aria-hidden="true"
+                        >
+                          <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+                        </div>
+                      </Show>
+                      <p
+                        class={cn(
+                          "text-[11.5px] leading-relaxed",
+                          current().state === "running" && "text-muted-foreground",
+                          current().state === "succeeded" && "text-success-foreground",
+                          current().state === "failed" && "text-destructive",
+                        )}
+                      >
+                        {current().message}
+                      </p>
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">

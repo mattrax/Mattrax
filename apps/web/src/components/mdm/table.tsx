@@ -240,6 +240,106 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     },
   );
 
+  // Row-move FLIP. Each render records where every row sits; the next render
+  // speaks the previous position back as a transform before paint. Web
+  // Animations only touch `transform`, and `fill: none` means a finished move
+  // leaves no containing block behind for fixed-position UI (the bulk bar) and
+  // cannot affect hit-testing once it settles. The first capture is skipped so
+  // a page load does not animate, and the whole effect is off under
+  // `prefers-reduced-motion`.
+  const rowAnimations = new WeakMap<HTMLElement, Animation>();
+  let rowTops = new Map<string, number>();
+  let rowTopsCaptured = false;
+  let rowMoveFrame: number | undefined;
+
+  const reducedMotion = () =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const animateRowMoves = () => {
+    const table = tableRef;
+
+    if (!table) {
+      // The table is showing the loading skeleton or no rows; a later render
+      // starts from a fresh capture instead of animating in from stale offsets.
+      rowTops = new Map();
+      rowTopsCaptured = true;
+
+      return;
+    }
+
+    const elements = table.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-id]");
+    const shouldAnimate = rowTopsCaptured && !reducedMotion() && elements.length <= 200;
+    const viewport = typeof window === "undefined" ? 0 : window.innerHeight;
+    const tableTop = table.getBoundingClientRect().top;
+    const nextTops = new Map<string, number>();
+    const moves: Array<{ element: HTMLTableRowElement; delta: number }> = [];
+
+    // Cancel before measuring: an interrupted move should snap to its settled
+    // layout position, not accumulate transforms.
+    for (const element of elements) {
+      rowAnimations.get(element)?.cancel();
+      rowAnimations.delete(element);
+    }
+
+    for (const element of elements) {
+      const id = element.dataset.rowId;
+
+      if (!id) continue;
+      // Table-relative, so page scrolling between renders is not mistaken for
+      // rows moving.
+      const top = element.getBoundingClientRect().top - tableTop;
+
+      nextTops.set(id, top);
+
+      if (!shouldAnimate) continue;
+      const previous = rowTops.get(id);
+
+      if (previous === undefined) continue;
+      const delta = previous - top;
+
+      // A move of more than a viewport is a page change, not a re-sort or a
+      // refetch; sliding that far would read as the whole table flying.
+      if (Math.abs(delta) < 1 || Math.abs(delta) > viewport) continue;
+      moves.push({ element, delta });
+    }
+
+    rowTops = nextTops;
+    rowTopsCaptured = true;
+
+    for (const move of moves) {
+      rowAnimations.set(
+        move.element,
+        move.element.animate(
+          [{ transform: `translateY(${move.delta}px)` }, { transform: "none" }],
+          { duration: 180, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+        ),
+      );
+    }
+  };
+
+  createEffect(
+    () =>
+      rows()
+        .map((row) => row.id)
+        .join("\u0000"),
+    () => {
+      // Track identity and order. The frame callback runs after Solid has
+      // committed the new order but before the browser paints, so the move is
+      // never shown as a jump first.
+      if (typeof requestAnimationFrame === "undefined") return;
+
+      if (rowMoveFrame !== undefined) cancelAnimationFrame(rowMoveFrame);
+      rowMoveFrame = requestAnimationFrame(() => {
+        rowMoveFrame = undefined;
+        animateRowMoves();
+      });
+    },
+  );
+
+  onCleanup(() => {
+    if (rowMoveFrame !== undefined) cancelAnimationFrame(rowMoveFrame);
+  });
+
   const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
   const allSelected = () => rows().length > 0 && selectedRows().length === rows().length;
 
@@ -893,6 +993,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                         ref={(element) => {
                           rowRefs[rowIndex()] = element;
                         }}
+                        data-row-id={row.id}
                         tabindex={props.rowHref ? (activeRow() === rowIndex() ? 0 : -1) : undefined}
                         onFocus={() => setActiveRow(rowIndex())}
                         onKeyDown={(event) => moveRow(event, rowIndex(), row)}
