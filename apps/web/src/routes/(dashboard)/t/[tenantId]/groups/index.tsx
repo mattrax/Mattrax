@@ -16,6 +16,9 @@ import { UsersRound } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 function MembershipBadge(props: { kind: GroupRow["kind"] }) {
   const dynamic = () => props.kind === "dynamic";
@@ -49,6 +52,18 @@ const fields: ReadonlyArray<EntityField<GroupRow>> = [
   { id: "devices", label: "Devices", kind: "number", get: (row) => row.devicesCount ?? 0 },
   { id: "policies", label: "Policies", kind: "number", get: (row) => row.policiesCount ?? 0 },
 ];
+
+export const route = {
+  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "group")),
+    ]);
+  },
+};
 
 export default function GroupsPage() {
   const params = useParams();

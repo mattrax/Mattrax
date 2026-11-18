@@ -104,6 +104,8 @@ import { errorMessage, raisedFailure } from "~/lib/errors";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 
@@ -405,6 +407,27 @@ function AbmPanel(props: {
     </DetailCard>
   );
 }
+
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; deviceId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const deviceId = params.deviceId;
+
+    if (intent === "initial" || !tenantId || !deviceId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "device", deviceId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.deviceUsers(tenantId, deviceId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.deviceApplications(tenantId, deviceId)),
+    ]);
+  },
+};
 
 export default function DeviceDetailPage() {
   const params = useParams();

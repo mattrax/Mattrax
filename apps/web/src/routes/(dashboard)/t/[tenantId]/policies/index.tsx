@@ -30,6 +30,9 @@ import {
 } from "~/lib/policy-delivery";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 const configurationCount = (row: PolicyRow) =>
   row.configurationCount ?? Object.keys(row.configurations ?? {}).length;
@@ -101,6 +104,18 @@ const fields: ReadonlyArray<EntityField<PolicyRow>> = [
     get: (row) => configurationCount(row),
   },
 ];
+
+export const route = {
+  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "policy")),
+    ]);
+  },
+};
 
 export default function PoliciesPage() {
   const params = useParams();

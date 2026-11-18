@@ -3,9 +3,12 @@ import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
-import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
-import { DashboardWidgetView } from "~/components/dashboard/widget";
+import {
+  DashboardWidgetView,
+  dashboardWidgetQueryRequest,
+} from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -257,6 +260,48 @@ export default function DashboardPage() {
   let cleanDrag: (() => void) | undefined;
 
   const widgets = () => dashboard.data?.widgets ?? [];
+
+  // One request for every data widget on this dashboard: the batch endpoint
+  // reads the tenant once and evaluates each query against that snapshot.
+  const queried = createMemo(() =>
+    widgets()
+      .filter((widget) => widget.type !== "markdown")
+      .map(dashboardWidgetQueryRequest),
+  );
+
+  const widgetBatch = useQuery(() => ({
+    queryKey: enterpriseKeys.dashboardQueryBatch(params.tenantId!, queried()),
+    queryFn: () => enterprise.queryDashboardBatch(params.tenantId!, queried()),
+    enabled: queried().length > 0,
+  }));
+
+  const batchIndex = createMemo(
+    () =>
+      new Map(
+        widgets()
+          .filter((widget) => widget.type !== "markdown")
+          .map((widget, index) => [widget.id, index] as const),
+      ),
+  );
+
+  const batchFor = (widget: DashboardWidget) => {
+    const index = batchIndex().get(widget.id);
+
+    if (index === undefined) return undefined;
+
+    return {
+      get data() {
+        return widgetBatch.data?.results[index];
+      },
+      get pending() {
+        return widgetBatch.isPending;
+      },
+      get error() {
+        return widgetBatch.error;
+      },
+      retry: () => void widgetBatch.refetch(),
+    };
+  };
   const currentLayout = (widget: DashboardWidget): Layout => layout()[widget.id] ?? widget;
 
   createEffect(
@@ -736,7 +781,11 @@ export default function DashboardPage() {
                     </Show>
                   </header>
                   <div class="min-h-0 flex-1 overflow-hidden">
-                    <DashboardWidgetView widget={widget} tenantId={params.tenantId!} />
+                    <DashboardWidgetView
+                      widget={widget}
+                      tenantId={params.tenantId!}
+                      batch={batchFor(widget)}
+                    />
                   </div>
                   <Show when={editing()}>
                     <button

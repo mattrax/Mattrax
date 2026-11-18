@@ -251,6 +251,10 @@ type EnterpriseAttributeClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseAttribute"];
 
+type EnterpriseDashboardClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseDashboard"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -324,6 +328,8 @@ export const enterpriseKeys = {
     ["enterprise", "dashboard", keyTenant(tenantId), id ?? ""] as const,
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
     ["enterprise", "dashboard-query", keyTenant(tenantId), request] as const,
+  dashboardQueryBatch: (tenantId: RouteParam, requests: ReadonlyArray<DashboardQueryRequest>) =>
+    ["enterprise", "dashboard-query-batch", keyTenant(tenantId), requests] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", keyTenant(tenantId)] as const,
   accountActivity: (query: AuditSearchQuery = {}) =>
     ["enterprise", "account-activity", query] as const,
@@ -513,6 +519,15 @@ function attributeEndpoint<A, E>(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAttribute),
     call,
     options,
+  );
+}
+
+function dashboardEndpoint<A, E>(
+  call: (api: EnterpriseDashboardClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
+    call,
   );
 }
 
@@ -821,6 +836,16 @@ export const enterprise = {
   queryDashboard: (tenantId: RouteParam, payload: DashboardQueryRequest) =>
     endpoint((api) =>
       api.queryDashboard({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  queryDashboardBatch: (
+    tenantId: RouteParam,
+    queries: ReadonlyArray<DashboardQueryRequest>,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.queryDashboardBatch({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { queries: [...queries] },
+      }),
     ),
   /** Returns CSV text; callers turn it into a file download. */
   exportDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>

@@ -17,6 +17,9 @@ import {
   policyToConfigurations,
   type PolicyDraft,
 } from "~/lib/policy-designer/build";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
@@ -36,6 +39,25 @@ const isDesignerConfiguration = (kind: string, value: Schema.Json | undefined) =
 const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
 const decodeConfigurations = Schema.decodeUnknownOption(Schema.JsonObject);
+
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; policyId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const policyId = params.policyId;
+
+    if (intent === "initial" || !tenantId || !policyId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "policy", policyId)),
+    ]);
+  },
+};
 
 export default function PolicyDesignerPage() {
   const params = useParams();

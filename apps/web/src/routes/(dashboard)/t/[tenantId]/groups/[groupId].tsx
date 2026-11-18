@@ -40,6 +40,9 @@ import {
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 const decodeGroupNode = Schema.decodeUnknownOption(GroupNode);
 
@@ -48,6 +51,31 @@ const decodeGroupKind = Schema.decodeUnknownOption(Schema.Literals(["manual", "d
 const decodeAssignmentMode = Schema.decodeUnknownOption(Schema.Literals(["include", "exclude"]));
 
 const GROUP_DEVICE_PAGE_SIZE = 50;
+
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; groupId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const groupId = params.groupId;
+
+    if (intent === "initial" || !tenantId || !groupId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "group", groupId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "policy")),
+      () =>
+        queryClient.ensureQueryData({
+          queryKey: [...enterpriseKeys.item(tenantId, "group", groupId), "preview"],
+          queryFn: () => enterprise.previewGroup(tenantId, groupId),
+        }),
+    ]);
+  },
+};
 
 export default function GroupDetailPage() {
   const params = useParams();

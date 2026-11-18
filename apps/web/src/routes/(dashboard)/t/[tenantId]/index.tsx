@@ -15,7 +15,10 @@ import {
 } from "@mattrax/ui";
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { MissingDevicesBanner } from "~/components/missing-devices-banner";
-import { DashboardWidgetView } from "~/components/dashboard/widget";
+import {
+  DashboardWidgetView,
+  dashboardWidgetQueryRequest,
+} from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Star } from "~/components/ui/icons";
@@ -29,6 +32,8 @@ import {
 } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 /** Preview widgets share the built-in layout, but stat, chart, table and note
  * rows are capped so an empty fleet never leaves a page-tall blank surface. */
@@ -82,6 +87,50 @@ const chartRamp = {
 };
 
 function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
+  // Every widget on the overview asks the same API for a slice of the same
+  // fleet, so they share one request: the batch endpoint reads the tenant once
+  // and evaluates each query against that snapshot.
+  const queried = createMemo(() =>
+    props.widgets
+      .filter((widget) => widget.type !== "markdown")
+      .map(dashboardWidgetQueryRequest),
+  );
+
+  const batch = useQuery(() => ({
+    queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queried()),
+    queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queried()),
+    enabled: queried().length > 0,
+  }));
+
+  const batchIndex = createMemo(
+    () =>
+      new Map(
+        props.widgets
+          .filter((widget) => widget.type !== "markdown")
+          .map((widget, index) => [widget.id, index] as const),
+      ),
+  );
+
+  /** The slice of the shared batch that belongs to one widget. */
+  const batchFor = (widget: DashboardWidget) => {
+    const index = batchIndex().get(widget.id);
+
+    if (index === undefined) return undefined;
+
+    return {
+      get data() {
+        return batch.data?.results[index];
+      },
+      get pending() {
+        return batch.isPending;
+      },
+      get error() {
+        return batch.error;
+      },
+      retry: () => void batch.refetch(),
+    };
+  };
+
   return (
     <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
       <For each={props.widgets}>
@@ -117,7 +166,11 @@ function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: 
               </Show>
             </header>
             <div class="min-h-0 flex-1 overflow-hidden">
-              <DashboardWidgetView widget={widget} tenantId={props.tenantId} />
+              <DashboardWidgetView
+                widget={widget}
+                tenantId={props.tenantId}
+                batch={batchFor(widget)}
+              />
             </div>
           </article>
         )}
@@ -298,6 +351,18 @@ function PreviewOverview(props: {
     </Page>
   );
 }
+
+export const route = {
+  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.dashboards(tenantId)),
+    ]);
+  },
+};
 
 export default function TenantOverviewPage() {
   const tenant = useTenantParam();

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/solid-query";
 import {
   DashboardQueryRequest,
+  DashboardQueryResponse,
   DashboardQueryRow,
   DeviceQuery,
 } from "@mattrax/enterprise-domain/client";
@@ -143,21 +144,38 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
   return String(value);
 };
 
-export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: string }) {
-  const config = () => configOf(props.widget);
-  const dataset = () => config().dataset ?? "devices";
-  const query = createMemo(() => config().query ?? { all: [] });
+/** The exact request a widget sends; shared with the page-level batch. */
+export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest => {
+  const config = configOf(widget);
 
-  const queryRequest = (groupBy?: string, limit?: number): DashboardQueryRequest => ({
-    dataset: dataset(),
-    query: query(),
-    groupBy,
-    limit,
+  return {
+    dataset: config.dataset ?? "devices",
+    query: config.query ?? { all: [] },
+    groupBy: config.dimension,
+    limit: config.limit,
     // Stats render only `total`, so the API can skip row projection and (for
     // device queries that do not reference installed apps) the application
     // inventory scan.
-    countOnly: props.widget.type === "stat",
-  });
+    countOnly: widget.type === "stat",
+  };
+};
+
+type DashboardWidgetBatch = {
+  readonly data: DashboardQueryResponse | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly retry: () => void;
+};
+
+export function DashboardWidgetView(props: {
+  widget: DashboardWidget;
+  tenantId: string;
+  /** Present when the page fetched every widget with one batched request. */
+  batch?: DashboardWidgetBatch;
+}) {
+  const config = () => configOf(props.widget);
+  const dataset = () => config().dataset ?? "devices";
+  const queryRequest = () => dashboardWidgetQueryRequest(props.widget);
 
   const columns = () => {
     const configured = config().columns;
@@ -166,14 +184,15 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
   };
 
   const result = useQuery(() => ({
-    queryKey: enterpriseKeys.dashboardQuery(
-      props.tenantId,
-      queryRequest(config().dimension, config().limit),
-    ),
-    queryFn: () =>
-      enterprise.queryDashboard(props.tenantId, queryRequest(config().dimension, config().limit)),
-    enabled: !isServer && props.widget.type !== "markdown",
+    queryKey: enterpriseKeys.dashboardQuery(props.tenantId, queryRequest()),
+    queryFn: () => enterprise.queryDashboard(props.tenantId, queryRequest()),
+    enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
+
+  const data = () => props.batch?.data ?? result.data;
+  const pending = () => props.batch?.pending ?? result.isPending;
+  const error = () => props.batch?.error ?? result.error;
+  const retry = () => (props.batch ? props.batch.retry() : void result.refetch());
 
   return (
     <Show
@@ -181,7 +200,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
       fallback={<Markdown content={markdownOf(props.widget)} />}
     >
       <Show
-        when={!result.isPending}
+        when={!pending()}
         fallback={
           <div
             role="status"
@@ -191,26 +210,26 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
         }
       >
         <Show
-          when={!result.error}
+          when={!error()}
           fallback={
             <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
               <p class="font-medium text-destructive">
-                {errorPresentation(raisedFailure(result.error)).title}
+                {errorPresentation(raisedFailure(error())).title}
               </p>
               <p class="mt-0.5 text-muted-foreground">
-                {errorPresentation(raisedFailure(result.error)).message}
+                {errorPresentation(raisedFailure(error())).message}
               </p>
               <button
                 type="button"
                 class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                onClick={() => void result.refetch()}
+                onClick={() => retry()}
               >
                 Try again
               </button>
             </div>
           }
         >
-          <Show when={result.data}>
+          <Show when={data()}>
             {(data) => (
               <Show
                 when={props.widget.type !== "stat"}
@@ -242,7 +261,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                       </div>
                     }
                   >
-                    <div class="overflow-x-auto" aria-busy={result.isFetching ? "true" : undefined}>
+                    <div class="overflow-x-auto" aria-busy={pending() ? "true" : undefined}>
                       <table class="w-full text-[11.5px]">
                         <caption class="sr-only">
                           {dataset() === "software" ? "Applications" : "Devices"} matching this

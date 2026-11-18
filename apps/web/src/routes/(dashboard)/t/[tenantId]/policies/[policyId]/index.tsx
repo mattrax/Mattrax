@@ -52,6 +52,9 @@ import {
   windowsWifiConfiguration,
   type WifiSecurity,
 } from "~/lib/policy-designer/presets";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
@@ -233,6 +236,30 @@ function ViewTabs(props: { base: string; active: "overview" | "assignments" | "d
     </nav>
   );
 }
+
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; policyId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const policyId = params.policyId;
+
+    if (intent === "initial" || !tenantId || !policyId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "policy", policyId)),
+      () =>
+        queryClient.ensureQueryData({
+          queryKey: [...enterpriseKeys.item(tenantId, "policy", policyId), "deployments"],
+          queryFn: () => enterprise.listPolicyDeployments(tenantId, policyId),
+        }),
+    ]);
+  },
+};
 
 export default function PolicyDetailPage() {
   const params = useParams();

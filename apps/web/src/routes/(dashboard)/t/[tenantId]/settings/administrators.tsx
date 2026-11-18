@@ -29,6 +29,8 @@ import {
 } from "~/lib/enterprise";
 import { ReadOnlyNotice, useTenantPermissions } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 /**
  * Owner-only permissions mirror the API ceiling (`OWNER_ONLY_PERMISSIONS`).
@@ -192,6 +194,26 @@ const invitationFilterFields: FilterField[] = [
     ],
   },
 ];
+
+export const route = {
+  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    return preloadPage([
+      () =>
+        queryClient.ensureQueryData({
+          queryKey: enterpriseKeys.accounts(tenantId),
+          queryFn: () => enterprise.listAccounts(tenantId),
+        }),
+      () => queryClient.ensureQueryData(enterpriseQueries.invitations(tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.roles(tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.invitationOptions(tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.ownershipTransfer(tenantId)),
+    ]);
+  },
+};
 
 export default function AdministratorsSettingsPage() {
   const params = useParams();
