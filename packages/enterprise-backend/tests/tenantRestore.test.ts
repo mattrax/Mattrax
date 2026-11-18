@@ -332,6 +332,7 @@ describe("in-place tenant restore", () => {
 
   it("restores directory users and their policy assignments", async () => {
     const { db, storage, objects, organization } = makeContext();
+
     const withDirectoryUsers = {
       ...bundle,
       directoryUsers: [
