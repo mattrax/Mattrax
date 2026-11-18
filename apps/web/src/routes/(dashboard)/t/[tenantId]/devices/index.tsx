@@ -77,18 +77,57 @@ const defaultDeviceSearch = {
   direction: "asc" as const,
 };
 
+/** Search parameters that make the destination key differ from the default page. */
+const deviceListOverrides = [
+  "q",
+  "status",
+  "proto",
+  "staleDays",
+  "health",
+  "push",
+  "activation",
+  "groupId",
+  "attributeKey",
+  "attributeValue",
+  "query",
+  "import",
+  "sort",
+  "direction",
+] as const;
+
 export const route = {
-  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+  preload: ({
+    params,
+    location,
+    intent,
+  }: {
+    params: { tenantId?: string };
+    location: { query: Record<string, unknown> };
+    intent: string;
+  }) => {
     const tenantId = params.tenantId;
 
     if (intent === "initial" || !tenantId) return;
 
+    // A link can carry a filter (`?health=missing`). Warming the unfiltered
+    // page would fetch 50 devices the destination never reads, so only the
+    // shared lookup data is preloaded in that case.
+    const filtered = deviceListOverrides.some((key) => {
+      const value = location.query[key];
+
+      return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
+    });
+
     return preloadPage([
-      () =>
-        queryClient.ensureQueryData({
-          queryKey: enterpriseKeys.deviceSearch(tenantId, defaultDeviceSearch),
-          queryFn: () => enterprise.searchDevices(tenantId, defaultDeviceSearch),
-        }),
+      ...(filtered
+        ? []
+        : [
+            () =>
+              queryClient.ensureQueryData({
+                queryKey: enterpriseKeys.deviceSearch(tenantId, defaultDeviceSearch),
+                queryFn: () => enterprise.searchDevices(tenantId, defaultDeviceSearch),
+              }),
+          ]),
       () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "group")),
       () =>
         queryClient.ensureQueryData({

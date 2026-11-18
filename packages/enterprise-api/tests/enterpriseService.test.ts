@@ -28,6 +28,7 @@ import {
   type DeviceSearchQuery,
 } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
+import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
 import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
@@ -340,6 +341,13 @@ describe("enterprise service tenant flow", () => {
     const afterDelete = await runEffect(service.listDashboards(request(headers), tenant.id));
     expect(afterDelete.dashboards).toHaveLength(1);
     expect(afterDelete.dashboards[0].isDefault).toBe(true);
+  });
+
+  it("maps the batched dashboard query to the dashboard read permission", () => {
+    expect(permissionForMethod("listDashboards")).toBe("dashboards.read");
+    expect(permissionForMethod("getDashboard")).toBe("dashboards.read");
+    expect(permissionForMethod("queryDashboard")).toBe("dashboards.read");
+    expect(permissionForMethod("queryDashboardBatch")).toBe("dashboards.read");
   });
 
   it("evaluates batched dashboard widget queries against one snapshot", async () => {

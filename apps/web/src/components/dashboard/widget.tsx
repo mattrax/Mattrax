@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQueries, useQuery } from "@tanstack/solid-query";
 import {
   DashboardQueryRequest,
   DashboardQueryResponse,
@@ -170,6 +170,9 @@ type DashboardWidgetBatch = {
 
 type DashboardWidgetBatchLookup = (widget: DashboardWidget) => DashboardWidgetBatch | undefined;
 
+/** The API caps one batch at 24 queries; extra widgets go in another request. */
+const DASHBOARD_BATCH_LIMIT = 24;
+
 const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchLookup>();
 
 /**
@@ -188,10 +191,22 @@ export function DashboardWidgetBatchProvider(props: {
     props.widgets.filter((widget) => widget.type !== "markdown").map(dashboardWidgetQueryRequest),
   );
 
-  const batch = useQuery(() => ({
-    queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queried()),
-    queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queried()),
-    enabled: queried().length > 0,
+  const chunks = createMemo(() => {
+    const requests = queried();
+    const groups: DashboardQueryRequest[][] = [];
+
+    for (let index = 0; index < requests.length; index += DASHBOARD_BATCH_LIMIT)
+      groups.push(requests.slice(index, index + DASHBOARD_BATCH_LIMIT));
+
+    return groups;
+  });
+
+  const batches = useQueries(() => ({
+    queries: chunks().map((queries) => ({
+      queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queries),
+      queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queries),
+      enabled: queries.length > 0,
+    })),
   }));
 
   const batchIndex = createMemo(
@@ -208,17 +223,21 @@ export function DashboardWidgetBatchProvider(props: {
 
     if (index === undefined) return undefined;
 
+    const chunk = Math.floor(index / DASHBOARD_BATCH_LIMIT);
+    const offset = index % DASHBOARD_BATCH_LIMIT;
+    const batch = () => batches[chunk];
+
     return {
       get data() {
-        return batch.data?.results[index];
+        return batch()?.data?.results[offset];
       },
       get pending() {
-        return batch.isPending;
+        return batch()?.isPending ?? true;
       },
       get error() {
-        return batch.error;
+        return batch()?.error;
       },
-      retry: () => void batch.refetch(),
+      retry: () => void batch()?.refetch(),
     };
   };
 

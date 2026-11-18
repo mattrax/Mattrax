@@ -115,7 +115,12 @@ const SCRIPT_WRITE = new Set([
   "runScript",
 ]);
 
-const DASHBOARD_READ = new Set(["listDashboards", "getDashboard", "queryDashboard"]);
+const DASHBOARD_READ = new Set([
+  "listDashboards",
+  "getDashboard",
+  "queryDashboard",
+  "queryDashboardBatch",
+]);
 
 const DASHBOARD_WRITE = new Set([
   "createDashboard",

@@ -1008,7 +1008,7 @@ export default function DeviceDetailPage() {
     onSuccess: () => void invalidate(),
     onError: (error, _payload, context) => {
       context?.restore();
-      toast.error("Could not unenroll the device", {
+      toast.error("Could not delete the device", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
     },
