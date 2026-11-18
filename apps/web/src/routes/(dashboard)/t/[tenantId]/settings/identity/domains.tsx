@@ -1,12 +1,24 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.domains(params.tenantId)),
+    ]);
+  },
+};
 
 export default function DomainsPage() {
   const params = useParams();

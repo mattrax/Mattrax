@@ -1,7 +1,8 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
+import type { EnrollmentQuestionRow } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { QrCode } from "~/components/mdm/qr-code";
@@ -10,10 +11,29 @@ import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { TenantEnrollmentInfo } from "~/lib/enterprise";
+import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // Above the fold: the enrollment link and platform readiness. The question
+    // builder, pre-registrations and activity log load with the page.
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.enrollment(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.scepCa(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.android(params.tenantId)),
+    ]);
+  },
+};
 
 export default function EnrollmentSettingsPage() {
   const params = useParams();
@@ -21,45 +41,25 @@ export default function EnrollmentSettingsPage() {
   const { can } = useCan();
   const writable = () => can("enrollment.write");
 
-  const enrollment = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollment(params.tenantId),
-    queryFn: () => enterprise.getTenantEnrollment(params.tenantId),
-  }));
+  const enrollment = useQuery(() => enterpriseQueries.enrollment(params.tenantId));
 
-  const apns = useQuery(() => ({
-    queryKey: enterpriseKeys.apns(params.tenantId),
-    queryFn: () => enterprise.getApns(params.tenantId),
-  }));
+  const apns = useQuery(() => enterpriseQueries.apns(params.tenantId));
 
-  const scepCa = useQuery(() => ({
-    queryKey: enterpriseKeys.scepCa(params.tenantId),
-    queryFn: () => enterprise.getTenantScepCa(params.tenantId),
-  }));
+  const scepCa = useQuery(() => enterpriseQueries.scepCa(params.tenantId));
 
-  const androidEnterprise = useQuery(() => ({
-    queryKey: enterpriseKeys.android(params.tenantId),
-    queryFn: () => enterprise.getTenantAndroid(params.tenantId),
-  }));
+  const androidEnterprise = useQuery(() => enterpriseQueries.android(params.tenantId));
 
-  const attempts = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollmentAttempts(params.tenantId, 20),
-    queryFn: () => enterprise.listEnrollmentAttempts(params.tenantId, 20),
-  }));
+  const attempts = useQuery(() => enterpriseQueries.enrollmentAttempts(params.tenantId, 20));
 
-  const preRegistrations = useQuery(() => ({
-    queryKey: enterpriseKeys.devicePreRegistrations(params.tenantId),
-    queryFn: () => enterprise.listDevicePreRegistrations(params.tenantId),
-  }));
+  const preRegistrations = useQuery(() =>
+    enterpriseQueries.devicePreRegistrations(params.tenantId),
+  );
 
-  const attributeDefinitions = useQuery(() => ({
-    queryKey: enterpriseKeys.attributes(params.tenantId),
-    queryFn: () => enterprise.listAttributes(params.tenantId),
-  }));
+  const attributeDefinitions = useQuery(() => enterpriseQueries.attributes(params.tenantId));
 
-  const enrollmentQuestions = useQuery(() => ({
-    queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
-    queryFn: () => enterprise.listEnrollmentQuestions(params.tenantId),
-  }));
+  const enrollmentQuestions = useQuery(() =>
+    enterpriseQueries.enrollmentQuestions(params.tenantId),
+  );
 
   const [questionRows, setQuestionRows] = createSignal<
     Array<{ key: string; prompt: string; required: boolean | null }>
@@ -90,12 +90,39 @@ export default function EnrollmentSettingsPage() {
           sortOrder: index,
         })),
       }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({
+    onMutate: async () => {
+      const prompts = new Map(questionRows().map((row) => [row.key, row] as const));
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.enrollmentQuestions(params.tenantId),
+        "rows",
+        (rows: EnrollmentQuestionRow[]) =>
+          rows.map((row): EnrollmentQuestionRow => {
+            const question = prompts.get(row.key);
+
+            if (!question) return row;
+
+            // An empty prompt falls back to the attribute's own label, which is
+            // what the API stores as `null`.
+            return {
+              ...row,
+              label: question.prompt || row.label,
+              // `null` means "inherit the attribute's requirement"; the resolved
+              // boolean is unknown until the settled refetch.
+              required: question.required ?? row.required,
+            };
+          }),
+      );
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSuccess: () => toast.success("Enrollment questions saved"),
+    onSettled: () => {
+      // The public enrollment page reads the same questions from `enrollment`.
+      void qc.invalidateQueries({
         queryKey: enterpriseKeys.enrollmentQuestions(params.tenantId),
       });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
-      toast.success("Enrollment questions saved");
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
     },
   }));
 
@@ -157,10 +184,25 @@ export default function EnrollmentSettingsPage() {
         enabledAndroid: android(),
       });
     },
-    onSuccess: async () => {
-      setEdit(false);
-      await invalidate();
+    onMutate: async () => {
+      if (maxDevices() < 0) return;
+
+      return optimisticUpdate<TenantEnrollmentInfo>(
+        qc,
+        enterpriseKeys.enrollment(params.tenantId),
+        (current) => ({
+          ...current,
+          code: code() || null,
+          maxDevices: maxDevices(),
+          enabledApple: apple(),
+          enabledWindows: windows(),
+          enabledAndroid: android(),
+        }),
+      );
     },
+    onSuccess: () => setEdit(false),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void invalidate(),
   }));
 
   const reset = useMutation(() => ({

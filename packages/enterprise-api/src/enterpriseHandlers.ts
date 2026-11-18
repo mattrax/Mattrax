@@ -28,6 +28,7 @@ import {
   enterpriseApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
+  enterpriseDashboardApi,
   scriptAgentApi,
   scriptApi,
   TENANT_EXPORT_MAX_ROWS,
@@ -58,6 +59,7 @@ import {
   evaluateDeviceQuery,
   normalizeDeviceCommandStatus,
   type DashboardQueryRequest,
+  type DashboardQueryBatchRequest,
   type DeviceQuery,
   DeviceActionName,
   DashboardWidgetType,
@@ -221,9 +223,10 @@ import {
   hasOwnerRole,
   isBuiltInOwnerMember,
   normalizePermissions,
+  loadTenantAccess,
   permissionForMethod,
   RequiredPermission,
-  resolveTenantRole,
+  resolveTenantRoleFrom,
 } from "@mattrax/enterprise-identity";
 import {
   createScript,
@@ -1381,6 +1384,30 @@ export const createEnterpriseService = ({
 
   const auth = wrapServiceErrors(authService);
 
+  /**
+   * Run independent Drizzle reads in one wave.
+   *
+   * `Effect.all` needs Effects. Drizzle's Effect driver returns Effects in
+   * production, while the in-memory database used by the unit tests exposes
+   * the same builders as iterators; wrapping each entry in a generator
+   * supports both and keeps the concurrency explicit at every call site.
+   */
+  /**
+   * Accept a Drizzle query builder as an Effect.
+   *
+   * Drizzle's Effect driver returns Effects in production, while the in-memory
+   * database used by the unit tests exposes the same builders as iterators.
+   * `yield*` supports both, and wrapping each builder here lets `Effect.all`
+   * keep per-position result types while running independent reads in one wave.
+   */
+  const queryEffect = <A, E, R>(builder: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.gen(function* () {
+      return yield* builder;
+    });
+
+  /** An empty result with an explicit row type, without a type assertion. */
+  const emptyRows = <A>(): Effect.Effect<Array<A>> => Effect.succeed([]);
+
   const identifyUser = (
     user: { readonly id: string; readonly email: string; readonly name?: string | null },
     tenant?: {
@@ -1592,14 +1619,15 @@ export const createEnterpriseService = ({
           );
       }
 
-      const member = yield* db.query.member.findFirst({
-        where: { accountId: user.id, organizationId: tenantId },
-      });
+      // Membership, organisation and effective role come from one join. They
+      // are all required before authorisation can decide anything, so reading
+      // them in sequence cost three round trips on every tenant request.
+      const tenantAccess = yield* loadTenantAccess(db, user.id, tenantId);
 
-      if (!member)
+      if (!tenantAccess)
         return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
-      const role = yield* resolveTenantRole(db, member);
+      const { member, organization, role } = tenantAccess;
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
 
@@ -1643,13 +1671,6 @@ export const createEnterpriseService = ({
             return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
         }
       }
-
-      const organization = yield* db.query.organization.findFirst({
-        where: { id: member.organizationId },
-      });
-
-      if (!organization)
-        return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
       // A tenant-wide MFA requirement applies to every role, including viewers
       // and auditors: read access to tenant data is exactly what an attacker
@@ -1784,7 +1805,10 @@ export const createEnterpriseService = ({
     });
 
   const snapshotPolicy = (
-    ctx: { readonly account: { readonly id: string }; readonly organization: { readonly id: string } },
+    ctx: {
+      readonly account: { readonly id: string };
+      readonly organization: { readonly id: string };
+    },
     policyId: string,
   ) =>
     Effect.gen(function* () {
@@ -2441,6 +2465,9 @@ export const createEnterpriseService = ({
 
   const listTenantInfo = (userId: string) =>
     Effect.gen(function* () {
+      // The tenant switcher loads this on every shell boot. A custom role used
+      // to cost one extra query per tenant; the left join resolves all of them
+      // in the same read.
       const rows = yield* db
         .select({
           id: schema.organization.id,
@@ -2451,36 +2478,56 @@ export const createEnterpriseService = ({
           supportEmail: schema.organization.supportEmail,
           brandColor: schema.organization.brandColor,
           role: schema.member.role,
+          organizationId: schema.member.organizationId,
           customRoleId: schema.member.customRoleId,
+          customRoleName: schema.tenantRole.name,
+          customRolePermissions: schema.tenantRole.permissions,
+          requireMfa: schema.organization.requireMfa,
         })
         .from(schema.member)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+        .leftJoin(
+          schema.tenantRole,
+          and(
+            eq(schema.tenantRole.id, schema.member.customRoleId),
+            eq(schema.tenantRole.organizationId, schema.member.organizationId),
+          ),
+        )
         .where(eq(schema.member.accountId, userId));
 
-      return yield* Effect.forEach(rows, (row) =>
-        Effect.gen(function* () {
-          const role = yield* resolveTenantRole(db, {
-            role: row.role,
-            organizationId: row.id,
-            customRoleId: row.customRoleId ?? null,
-          });
+      const tenants = rows.map((row) => {
+        const role = resolveTenantRoleFrom(
+          { role: row.role, organizationId: row.organizationId, customRoleId: row.customRoleId },
+          row.customRoleId && row.customRoleName
+            ? {
+                id: row.customRoleId,
+                name: row.customRoleName,
+                permissions: row.customRolePermissions,
+              }
+            : undefined,
+        );
 
-          return {
-            id: row.id,
-            name: row.name,
-            slug: row.slug,
-            logo: row.logo ?? null,
-            displayName: row.displayName ?? null,
-            supportEmail: row.supportEmail ?? null,
-            brandColor: row.brandColor ?? null,
-            role: row.role,
-            roleId: role.roleId,
-            roleName: role.roleName,
-            roleKind: role.roleKind,
-            permissions: [...role.permissions],
-          };
-        }),
-      );
+        return {
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          logo: row.logo ?? null,
+          displayName: row.displayName ?? null,
+          supportEmail: row.supportEmail ?? null,
+          brandColor: row.brandColor ?? null,
+          role: row.role,
+          roleId: role.roleId,
+          roleName: role.roleName,
+          roleKind: role.roleKind,
+          permissions: [...role.permissions],
+        };
+      });
+
+      // The requirement is a tenant property and binds every role, so it is
+      // reported for any membership rather than only owner/admin ones. Reading
+      // it here avoids the separate membership + organisation reads the shell
+      // used to perform on every boot.
+      return { tenants, mfaRequired: rows.some((row) => row.requireMfa) };
     });
 
   const memberCount = (tenantId: string) =>
@@ -2540,9 +2587,7 @@ export const createEnterpriseService = ({
       const rows = yield* db
         .select({ id: schema.user.id })
         .from(schema.user)
-        .where(
-          and(eq(schema.user.organizationId, tenantId), inArray(schema.user.id, [...ids])),
-        );
+        .where(and(eq(schema.user.organizationId, tenantId), inArray(schema.user.id, [...ids])));
 
       if (rows.length !== new Set(ids).size)
         return yield* Effect.fail(
@@ -2879,7 +2924,11 @@ export const createEnterpriseService = ({
   /** Reject tenant creation when the account's plan does not allow another. */
   const assertTenantCreationAllowed = (userId: string) =>
     Effect.gen(function* () {
-      const status = yield* tenantLimitForAccount({ db, accountId: userId, config: planLimits }).pipe(
+      const status = yield* tenantLimitForAccount({
+        db,
+        accountId: userId,
+        config: planLimits,
+      }).pipe(
         Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
       );
 
@@ -3494,65 +3543,36 @@ export const createEnterpriseService = ({
     });
 
   /**
-   * Health for a set of devices, with a single declaration read.
+   * Health for a set of devices, derived from rows the caller already loaded.
    *
-   * Health is derived, never stored, so a list that shows or orders by it pays
-   * one extra bounded query for the page (or the filtered set) and nothing per
-   * row. Callers holding `loadDeviceSnapshots` entries should reuse those.
+   * Health is never stored, so every list that shows or orders by it needs the
+   * declarations (and ADE setup state) for the same ids. Device pages fetch
+   * setup state anyway, so passing it here avoids a second `device_apple` read.
    */
-  const deviceHealthFor = (devices: ReadonlyArray<EnterpriseDevice>) =>
-    Effect.gen(function* () {
-      const health = new Map<string, ReturnType<typeof rowDeviceHealth>>();
+  const deviceHealthFrom = (
+    devices: ReadonlyArray<EnterpriseDevice>,
+    declarations: ReadonlyArray<typeof schema.deviceDeclaration.$inferSelect>,
+    awaitingByDevice: ReadonlyMap<string, boolean | null>,
+  ) => {
+    const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
-      if (devices.length === 0) return health;
+    for (const declaration of declarations) {
+      const list = byDevice.get(declaration.deviceId) ?? [];
+      list.push(declaration);
+      byDevice.set(declaration.deviceId, list);
+    }
 
-      const declarations = yield* db
-        .select()
-        .from(schema.deviceDeclaration)
-        .where(
-          inArray(
-            schema.deviceDeclaration.deviceId,
-            devices.map((device) => device.id),
-          ),
-        );
-
-      const awaiting = yield* db
-        .select({
-          deviceId: schema.deviceApple.deviceId,
-          awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
-        })
-        .from(schema.deviceApple)
-        .where(
-          inArray(
-            schema.deviceApple.deviceId,
-            devices.map((device) => device.id),
-          ),
-        );
-
-      const awaitingByDevice = new Map(
-        awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
-      );
-
-      const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
-
-      for (const declaration of declarations) {
-        const list = byDevice.get(declaration.deviceId) ?? [];
-        list.push(declaration);
-        byDevice.set(declaration.deviceId, list);
-      }
-
-      for (const device of devices)
-        health.set(
-          device.id,
-          rowDeviceHealth(
-            device,
-            byDevice.get(device.id) ?? [],
-            awaitingByDevice.get(device.id) ?? null,
-          ),
-        );
-
-      return health;
-    });
+    return new Map(
+      devices.map((device) => [
+        device.id,
+        rowDeviceHealth(
+          device,
+          byDevice.get(device.id) ?? [],
+          awaitingByDevice.get(device.id) ?? null,
+        ),
+      ]),
+    );
+  };
 
   const rowCertificate = (row: typeof schema.scepIssuedCertificate.$inferSelect) => ({
     serial: row.serial,
@@ -4860,41 +4880,49 @@ export const createEnterpriseService = ({
 
       const ids = rows.map((row) => row.id);
 
-      const declarations = ids.length
-        ? yield* db
-            .select()
-            .from(schema.deviceDeclaration)
-            .where(inArray(schema.deviceDeclaration.deviceId, ids))
-        : [];
+      if (ids.length === 0) return [];
 
-      // Count-only device stats do not render rows, so the application
-      // inventory scan is skipped unless the query actually references apps.
-      const applications =
-        options.includeApplications !== false && ids.length
-          ? yield* db
+      // Declarations, installed applications and ADE state are independent
+      // reads over the same id set; one wave instead of three sequential ones.
+      const [declarations, applications, awaiting] = yield* Effect.all(
+        [
+          queryEffect(
+            db
+              .select()
+              .from(schema.deviceDeclaration)
+              .where(inArray(schema.deviceDeclaration.deviceId, ids)),
+          ),
+          queryEffect(
+            // Count-only device stats do not render rows, so the application
+            // inventory scan is skipped unless the query actually references apps.
+            options.includeApplications === false
+              ? emptyRows<{ deviceId: string; bundleId: string; name: string | null }>()
+              : db
+                  .select({
+                    deviceId: schema.deviceApplication.deviceId,
+                    bundleId: schema.deviceApplication.bundleId,
+                    name: schema.deviceApplication.name,
+                  })
+                  .from(schema.deviceApplication)
+                  .where(
+                    and(
+                      eq(schema.deviceApplication.organizationId, organizationId),
+                      inArray(schema.deviceApplication.deviceId, ids),
+                    ),
+                  ),
+          ),
+          queryEffect(
+            db
               .select({
-                deviceId: schema.deviceApplication.deviceId,
-                bundleId: schema.deviceApplication.bundleId,
-                name: schema.deviceApplication.name,
+                deviceId: schema.deviceApple.deviceId,
+                awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
               })
-              .from(schema.deviceApplication)
-              .where(
-                and(
-                  eq(schema.deviceApplication.organizationId, organizationId),
-                  inArray(schema.deviceApplication.deviceId, ids),
-                ),
-              )
-          : [];
-
-      const awaiting = ids.length
-        ? yield* db
-            .select({
-              deviceId: schema.deviceApple.deviceId,
-              awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
-            })
-            .from(schema.deviceApple)
-            .where(inArray(schema.deviceApple.deviceId, ids))
-        : [];
+              .from(schema.deviceApple)
+              .where(inArray(schema.deviceApple.deviceId, ids)),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
 
       const awaitingByDevice = new Map(
         awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
@@ -4958,74 +4986,156 @@ export const createEnterpriseService = ({
       .concat(query.any ?? [], query.none ?? [])
       .some((condition) => condition.field === "application");
 
-  const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
+  const isUnfilteredDeviceQuery = (query: DeviceQuery): boolean =>
+    (query.all?.length ?? 0) === 0 &&
+    (query.any?.length ?? 0) === 0 &&
+    (query.none?.length ?? 0) === 0;
+
+  type DeviceDashboardSnapshot = {
+    row: typeof schema.device.$inferSelect;
+    health: ReturnType<typeof rowDeviceHealth>;
+    applications: ReadonlyArray<{ bundleId: string; name: string | null }>;
+  };
+
+  /** A stat card renders only `total`. */
+  const dashboardCountOnly = (payload: DashboardQueryRequest): boolean =>
+    payload.countOnly === true && payload.dataset === "devices" && !payload.groupBy;
+
+  /**
+   * Device health is derived rather than stored, so everything that needs it
+   * loads one snapshot of the matching devices. The whole-fleet read is skipped
+   * for an unfiltered count, which MySQL can answer directly.
+   */
+  const dashboardNeedsSnapshot = (payload: DashboardQueryRequest): boolean =>
+    !(
+      payload.dataset === "devices" &&
+      dashboardCountOnly(payload) &&
+      isUnfilteredDeviceQuery(payload.query)
+    );
+
+  const dashboardSnapshot = (
+    organizationId: string,
+    payloads: ReadonlyArray<DashboardQueryRequest>,
+  ) =>
+    loadDeviceSnapshots(organizationId, undefined, {
+      includeApplications: payloads.some(
+        (payload) => payload.dataset === "devices" && deviceQueryNeedsApplications(payload.query),
+      ),
+    });
+
+  const matchingSnapshots = (
+    snapshots: ReadonlyArray<DeviceDashboardSnapshot>,
+    payload: DashboardQueryRequest,
+    timestamp: Date,
+  ) =>
+    snapshots.filter((snapshot) =>
+      evaluateDeviceQuery(
+        payload.query,
+        {
+          ...snapshot.row,
+          health: snapshot.health,
+          applications: snapshot.applications,
+        },
+        { now: timestamp },
+      ),
+    );
+
+  const projectDeviceDashboardQuery = (
+    payload: DashboardQueryRequest,
+    matches: ReadonlyArray<DeviceDashboardSnapshot>,
+    timestamp: Date,
+  ) => {
+    const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
+
+    if (dashboardCountOnly(payload)) return { total: matches.length, buckets: [], rows: [] };
+
+    const buckets = payload.groupBy
+      ? toBuckets(
+          matches.map((snapshot) =>
+            deviceBucket(snapshot.row, payload.groupBy!, snapshot.health, timestamp),
+          ),
+          groupBucketOrder(payload.groupBy),
+        )
+      : [];
+
+    return {
+      total: matches.length,
+      buckets,
+      rows: matches.slice(0, limit).map((snapshot) => ({
+        id: snapshot.row.id,
+        name: snapshot.row.name,
+        platform: snapshot.row.proto,
+        osVersion: snapshot.row.osVersion,
+        model: snapshot.row.model,
+        serial: snapshot.row.serial,
+        status: snapshot.row.status,
+        health: snapshot.health.level,
+        lastSeenAt: iso(snapshot.row.lastSeenAt),
+        enrolledAt: iso(snapshot.row.enrolledAt),
+      })),
+    };
+  };
+
+  type DeviceApplicationRow = typeof schema.deviceApplication.$inferSelect;
+
+  /**
+   * One installed-application read for every software widget in a batch.
+   *
+   * Software widgets bucket the same rows by bundle id, so loading them once
+   * avoids one whole-fleet inventory scan per widget.
+   */
+  const loadApplicationsByDevice = (
+    organizationId: string,
+    deviceIds: ReadonlyArray<string>,
+  ) =>
     Effect.gen(function* () {
-      const timestamp = now();
-      const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
+      const byDevice = new Map<string, DeviceApplicationRow[]>();
 
-      // A stat card renders only `total`. Keeping the device count path out of
-      // the row/bucket projection (and skipping application inventory when the
-      // query does not use it) keeps the overview bounded as widgets grow.
-      const countOnly =
-        payload.countOnly === true && payload.dataset === "devices" && !payload.groupBy;
+      if (deviceIds.length === 0) return byDevice;
 
-      const snapshots = (yield* loadDeviceSnapshots(organizationId, undefined, {
-        includeApplications: !countOnly || deviceQueryNeedsApplications(payload.query),
-      })).filter((snapshot) =>
-        evaluateDeviceQuery(
-          payload.query,
-          {
-            ...snapshot.row,
-            health: snapshot.health,
-            applications: snapshot.applications,
-          },
-          { now: timestamp },
-        ),
-      );
+      const rows = yield* db
+        .select()
+        .from(schema.deviceApplication)
+        .where(
+          and(
+            eq(schema.deviceApplication.organizationId, organizationId),
+            inArray(schema.deviceApplication.deviceId, [...deviceIds]),
+          ),
+        );
 
-      if (countOnly) return { total: snapshots.length, buckets: [], rows: [] };
+      for (const row of rows) {
+        const list = byDevice.get(row.deviceId);
 
-      if (payload.dataset === "devices") {
-        const buckets = payload.groupBy
-          ? toBuckets(
-              snapshots.map((snapshot) =>
-                deviceBucket(snapshot.row, payload.groupBy!, snapshot.health, timestamp),
-              ),
-              groupBucketOrder(payload.groupBy),
-            )
-          : [];
-
-        return {
-          total: snapshots.length,
-          buckets,
-          rows: snapshots.slice(0, limit).map((snapshot) => ({
-            id: snapshot.row.id,
-            name: snapshot.row.name,
-            platform: snapshot.row.proto,
-            osVersion: snapshot.row.osVersion,
-            model: snapshot.row.model,
-            serial: snapshot.row.serial,
-            status: snapshot.row.status,
-            health: snapshot.health.level,
-            lastSeenAt: iso(snapshot.row.lastSeenAt),
-            enrolledAt: iso(snapshot.row.enrolledAt),
-          })),
-        };
+        if (list) list.push(row);
+        else byDevice.set(row.deviceId, [row]);
       }
 
-      const matchingIds = snapshots.map((snapshot) => snapshot.row.id);
+      return byDevice;
+    });
 
-      const applications = matchingIds.length
-        ? yield* db
-            .select()
-            .from(schema.deviceApplication)
-            .where(
-              and(
-                eq(schema.deviceApplication.organizationId, organizationId),
-                inArray(schema.deviceApplication.deviceId, matchingIds),
-              ),
-            )
-        : [];
+  const projectSoftwareDashboardQuery = (
+    organizationId: string,
+    payload: DashboardQueryRequest,
+    matches: ReadonlyArray<DeviceDashboardSnapshot>,
+    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
+  ) =>
+    Effect.gen(function* () {
+      const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
+      const matchingIds = matches.map((snapshot) => snapshot.row.id);
+
+      const applications = sharedApplications
+        ? matchingIds.flatMap((id) => sharedApplications.get(id) ?? [])
+        : matchingIds.length
+          ? yield* db
+              .select()
+              .from(schema.deviceApplication)
+              .where(
+                and(
+                  eq(schema.deviceApplication.organizationId, organizationId),
+                  inArray(schema.deviceApplication.deviceId, matchingIds),
+                ),
+              )
+          : [];
 
       type SoftwareGroup = {
         bundleId: string;
@@ -5089,6 +5199,97 @@ export const createEnterpriseService = ({
       };
     });
 
+  const evaluateDashboardQuery = (
+    organizationId: string,
+    payload: DashboardQueryRequest,
+    snapshots: ReadonlyArray<DeviceDashboardSnapshot> | null,
+    timestamp: Date,
+    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
+  ) =>
+    Effect.gen(function* () {
+      if (
+        payload.dataset === "devices" &&
+        snapshots === null &&
+        dashboardCountOnly(payload) &&
+        isUnfilteredDeviceQuery(payload.query)
+      ) {
+        const [row] = yield* db
+          .select({ value: count() })
+          .from(schema.device)
+          .where(eq(schema.device.organizationId, organizationId));
+
+        return { total: Number(row?.value ?? 0), buckets: [], rows: [] };
+      }
+
+      const matches = matchingSnapshots(snapshots ?? [], payload, timestamp);
+
+      return payload.dataset === "devices"
+        ? projectDeviceDashboardQuery(payload, matches, timestamp)
+        : yield* projectSoftwareDashboardQuery(
+            organizationId,
+            payload,
+            matches,
+            sharedApplications,
+          );
+    });
+
+  const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
+    Effect.gen(function* () {
+      const timestamp = now();
+
+      const snapshots = dashboardNeedsSnapshot(payload)
+        ? yield* dashboardSnapshot(organizationId, [payload])
+        : null;
+
+      return yield* evaluateDashboardQuery(organizationId, payload, snapshots, timestamp);
+    });
+
+  /**
+   * Evaluate every widget of a dashboard against one tenant snapshot.
+   *
+   * Each widget used to be its own request and its own whole-fleet read, so a
+   * default overview paid for the device table (and health/declaration reads)
+   * five times. Queries share the snapshot here and are evaluated in memory;
+   * only unfiltered stat cards still need their own `COUNT(*)`.
+   */
+  const runDashboardQueryBatch = (
+    organizationId: string,
+    payloads: ReadonlyArray<DashboardQueryRequest>,
+  ) =>
+    Effect.gen(function* () {
+      if (payloads.length === 0) return { results: [] };
+
+      const timestamp = now();
+
+      const snapshots = payloads.some(dashboardNeedsSnapshot)
+        ? yield* dashboardSnapshot(organizationId, payloads)
+        : null;
+
+      // Several software widgets bucket the same inventory, so read it once.
+      const sharedApplications =
+        snapshots && payloads.filter((payload) => payload.dataset === "software").length > 1
+          ? yield* loadApplicationsByDevice(
+              organizationId,
+              snapshots.map((snapshot) => snapshot.row.id),
+            )
+          : undefined;
+
+      const results = yield* Effect.all(
+        payloads.map((payload) =>
+          evaluateDashboardQuery(
+            organizationId,
+            payload,
+            snapshots,
+            timestamp,
+            sharedApplications,
+          ),
+        ),
+        { concurrency: "unbounded" },
+      );
+
+      return { results };
+    });
+
   const mePayload = (user: {
     readonly id: string;
     readonly name: string;
@@ -5102,7 +5303,11 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       // Do not disclose tenant membership to an unverified account. The
       // verification screen only needs the user record.
-      const tenants = user.emailVerified ? yield* listTenantInfo(user.id) : [];
+      const info = user.emailVerified
+        ? yield* listTenantInfo(user.id)
+        : { tenants: [], mfaRequired: false };
+
+      const { tenants } = info;
 
       // A stale choice (the account left the tenant) is reported as null so
       // every client applies the same precedence without extra membership
@@ -5112,30 +5317,7 @@ export const createEnterpriseService = ({
           ? user.defaultTenantId
           : null;
 
-      const memberships = yield* db.query.member.findMany({
-        where: { accountId: user.id },
-      });
-
-      // The requirement is a tenant property and binds every role, so it is
-      // reported for any membership rather than only owner/admin ones.
-      const mfaRequired = yield* Effect.gen(function* () {
-        const organizationIds = memberships.map((membership) => membership.organizationId);
-
-        if (organizationIds.length === 0) return false;
-
-        const requiring = yield* db
-          .select({ id: schema.organization.id })
-          .from(schema.organization)
-          .where(
-            and(
-              inArray(schema.organization.id, organizationIds),
-              eq(schema.organization.requireMfa, true),
-            ),
-          )
-          .limit(1);
-
-        return requiring.length > 0;
-      });
+      const mfaRequired = info.mfaRequired;
 
       return {
         account: {
@@ -5792,7 +5974,7 @@ export const createEnterpriseService = ({
               message: "Verify your email address before accessing tenants.",
             }),
           );
-        const tenants = yield* listTenantInfo(user.id);
+        const { tenants } = yield* listTenantInfo(user.id);
 
         return { tenants };
       }),
@@ -8183,24 +8365,32 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId);
 
-        const accounts = yield* db
-          .select({
-            memberId: schema.member.id,
-            accountId: schema.account.id,
-            name: schema.account.name,
-            email: schema.account.email,
-            role: schema.member.role,
-            customRoleId: schema.member.customRoleId,
-            createdAt: schema.member.createdAt,
-          })
-          .from(schema.member)
-          .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
-          .where(eq(schema.member.organizationId, tenantId));
-
-        const customRoles = yield* db
-          .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
-          .from(schema.tenantRole)
-          .where(eq(schema.tenantRole.organizationId, tenantId));
+        const [accounts, customRoles] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  memberId: schema.member.id,
+                  accountId: schema.account.id,
+                  name: schema.account.name,
+                  email: schema.account.email,
+                  role: schema.member.role,
+                  customRoleId: schema.member.customRoleId,
+                  createdAt: schema.member.createdAt,
+                })
+                .from(schema.member)
+                .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
+                .where(eq(schema.member.organizationId, tenantId)),
+            ),
+            queryEffect(
+              db
+                .select({ id: schema.tenantRole.id, name: schema.tenantRole.name })
+                .from(schema.tenantRole)
+                .where(eq(schema.tenantRole.organizationId, tenantId)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const custom = new Map(customRoles.map((role) => [role.id, role.name]));
 
@@ -8651,7 +8841,11 @@ export const createEnterpriseService = ({
 
         const inviters = inviterIds.length
           ? yield* db
-              .select({ id: schema.account.id, name: schema.account.name, email: schema.account.email })
+              .select({
+                id: schema.account.id,
+                name: schema.account.name,
+                email: schema.account.email,
+              })
               .from(schema.account)
               .where(inArray(schema.account.id, inviterIds))
           : [];
@@ -8847,7 +9041,9 @@ export const createEnterpriseService = ({
           where: { id: pending.requestedByAccountId },
         });
 
-        const target = yield* db.query.account.findFirst({ where: { id: pending.targetAccountId } });
+        const target = yield* db.query.account.findFirst({
+          where: { id: pending.targetAccountId },
+        });
 
         if (!requester || !target) return { transfer: null };
 
@@ -8892,7 +9088,9 @@ export const createEnterpriseService = ({
         });
 
         if (!targetMember)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Tenant account not found" }),
+          );
 
         if (isBuiltInOwnerMember(targetMember))
           return yield* Effect.fail(
@@ -8902,7 +9100,9 @@ export const createEnterpriseService = ({
         const targetUser = yield* db.query.account.findFirst({ where: { id: targetAccountId } });
 
         if (!targetUser)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Tenant account not found" }),
+          );
 
         const rawToken = newOneTimeToken();
         const tokenHash = yield* oneTimeTokenHash(rawToken);
@@ -9476,7 +9676,9 @@ export const createEnterpriseService = ({
           where: { id: transfer.requestedByAccountId },
         });
 
-        const target = yield* db.query.account.findFirst({ where: { id: transfer.targetAccountId } });
+        const target = yield* db.query.account.findFirst({
+          where: { id: transfer.targetAccountId },
+        });
 
         return {
           state,
@@ -9576,7 +9778,9 @@ export const createEnterpriseService = ({
         });
 
         if (!member)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Tenant account not found" }),
+          );
         const body: { role?: string; roleId?: string | null } = payload;
         const selectingCustomRole = body.roleId !== undefined && body.roleId !== null;
 
@@ -9682,7 +9886,9 @@ export const createEnterpriseService = ({
         });
 
         if (!member)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Tenant account not found" }),
+          );
 
         if (isBuiltInOwnerMember(member)) {
           // Removing an owner is an owner-level action even when other owners
@@ -13478,13 +13684,19 @@ export const createEnterpriseService = ({
 
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-        const declarations = yield* deviceDeclarationsFor(device.id);
-        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
 
-        const apple =
-          device.proto === "apple"
-            ? yield* db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
-            : undefined;
+        const [declarations, certificates, apple] = yield* Effect.all(
+          [
+            queryEffect(deviceDeclarationsFor(device.id)),
+            queryEffect(deviceCertificatesFor(ctx.organization.id, device)),
+            queryEffect(
+              device.proto === "apple"
+                ? db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
+                : Effect.succeed(undefined),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         return {
           health: normalizeDeviceHealth(
@@ -13531,7 +13743,7 @@ export const createEnterpriseService = ({
             )
           : undefined;
 
-        const auditRows = yield* db
+        const auditQuery = db
           .select()
           .from(schema.auditLog)
           .where(
@@ -13545,11 +13757,6 @@ export const createEnterpriseService = ({
           .orderBy(desc(schema.auditLog.createdAt), desc(schema.auditLog.id))
           .limit(window);
 
-        const audits = auditRows.map((row) => ({
-          ...row,
-          metadata: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.metadata)),
-        }));
-
         const commandFilter = cursor
           ? deviceActivityKeysetCondition(
               deviceActivitySourceKeyset(cursor, DEVICE_ACTIVITY_COMMAND_PREFIX),
@@ -13558,7 +13765,7 @@ export const createEnterpriseService = ({
             )
           : undefined;
 
-        const commandRows = yield* db
+        const commandQuery = db
           .select()
           .from(schema.deviceCommand)
           .where(
@@ -13569,6 +13776,23 @@ export const createEnterpriseService = ({
           .orderBy(desc(schema.deviceCommand.updatedAt), desc(schema.deviceCommand.id))
           .limit(window);
 
+        // Audit, commands, declarations and certificates are four independent
+        // sources of one activity page.
+        const [auditRows, commandRows, declarations, certificates] = yield* Effect.all(
+          [
+            queryEffect(auditQuery),
+            queryEffect(commandQuery),
+            queryEffect(deviceDeclarationsFor(device.id)),
+            queryEffect(deviceCertificatesFor(ctx.organization.id, device)),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const audits = auditRows.map((row) => ({
+          ...row,
+          metadata: Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.metadata)),
+        }));
+
         const at = now();
 
         // A command past its deadline can no longer run, even before a check-in
@@ -13577,9 +13801,6 @@ export const createEnterpriseService = ({
           ...row,
           status: commandIsExpired(row, at) ? "expired" : row.status,
         }));
-
-        const declarations = yield* deviceDeclarationsFor(device.id);
-        const certificates = yield* deviceCertificatesFor(ctx.organization.id, device);
 
         return deviceActivityPage(
           {
@@ -13607,12 +13828,30 @@ export const createEnterpriseService = ({
 
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
 
-        const declarations = deviceIds.length
-          ? yield* db
-              .select()
-              .from(schema.deviceDeclaration)
-              .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
-          : [];
+        const [declarations, setupRows] = yield* Effect.all(
+          [
+            queryEffect(
+              deviceIds.length
+                ? db
+                    .select()
+                    .from(schema.deviceDeclaration)
+                    .where(inArray(schema.deviceDeclaration.deviceId, deviceIds))
+                : emptyRows<typeof schema.deviceDeclaration.$inferSelect>(),
+            ),
+            queryEffect(
+              deviceIds.length
+                ? db
+                    .select({
+                      deviceId: schema.deviceApple.deviceId,
+                      awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+                    })
+                    .from(schema.deviceApple)
+                    .where(inArray(schema.deviceApple.deviceId, deviceIds))
+                : emptyRows<{ deviceId: string; awaitingConfiguration: boolean }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -13621,16 +13860,6 @@ export const createEnterpriseService = ({
           list.push(declaration);
           byDevice.set(declaration.deviceId, list);
         }
-
-        const setupRows = deviceIds.length
-          ? yield* db
-              .select({
-                deviceId: schema.deviceApple.deviceId,
-                awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
-              })
-              .from(schema.deviceApple)
-              .where(inArray(schema.deviceApple.deviceId, deviceIds))
-          : [];
 
         const setup = new Map(setupRows.map((row) => [row.deviceId, row.awaitingConfiguration]));
 
@@ -14465,115 +14694,140 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId);
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
 
-        const policy = yield* db.query.policy.findFirst({
-          where: { id: policyId, organizationId: ctx.organization.id },
-        });
+        const [policy, groupLinks, deviceLinks, userLinks, userGroupLinks] = yield* Effect.all(
+          [
+            queryEffect(
+              db.query.policy.findFirst({
+                where: { id: policyId, organizationId: ctx.organization.id },
+              }),
+            ),
+            queryEffect(
+              db
+                .select({ groupId: schema.groupPolicy.groupId, mode: schema.groupPolicy.mode })
+                .from(schema.groupPolicy)
+                .where(eq(schema.groupPolicy.policyId, policyId)),
+            ),
+            queryEffect(
+              db
+                .select({ deviceId: schema.devicePolicy.deviceId, mode: schema.devicePolicy.mode })
+                .from(schema.devicePolicy)
+                .where(eq(schema.devicePolicy.policyId, policyId)),
+            ),
+            queryEffect(
+              db
+                .select({ userId: schema.userPolicy.userId, mode: schema.userPolicy.mode })
+                .from(schema.userPolicy)
+                .where(
+                  and(
+                    eq(schema.userPolicy.organizationId, ctx.organization.id),
+                    eq(schema.userPolicy.policyId, policyId),
+                  ),
+                ),
+            ),
+            queryEffect(
+              db
+                .select({
+                  groupId: schema.userGroupPolicy.groupId,
+                  mode: schema.userGroupPolicy.mode,
+                })
+                .from(schema.userGroupPolicy)
+                .where(
+                  and(
+                    eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                    eq(schema.userGroupPolicy.policyId, policyId),
+                  ),
+                ),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
         const priority = policy.priority ?? 0;
 
-        const groupLinks = yield* db
-          .select({ groupId: schema.groupPolicy.groupId, mode: schema.groupPolicy.mode })
-          .from(schema.groupPolicy)
-          .where(eq(schema.groupPolicy.policyId, policyId));
-
-        const groups = groupLinks.length
-          ? yield* db
-              .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
-              .from(schema.enterpriseGroup)
-              .where(
-                inArray(
-                  schema.enterpriseGroup.id,
-                  groupLinks.map((link) => link.groupId),
-                ),
-              )
-          : [];
+        const [groups, devices, users, userGroups] = yield* Effect.all(
+          [
+            queryEffect(
+              groupLinks.length
+                ? db
+                    .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+                    .from(schema.enterpriseGroup)
+                    .where(
+                      inArray(
+                        schema.enterpriseGroup.id,
+                        groupLinks.map((link) => link.groupId),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(
+              deviceLinks.length
+                ? db
+                    .select({ id: schema.device.id, name: schema.device.name })
+                    .from(schema.device)
+                    .where(
+                      and(
+                        eq(schema.device.organizationId, ctx.organization.id),
+                        inArray(
+                          schema.device.id,
+                          deviceLinks.map((link) => link.deviceId),
+                        ),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(
+              userLinks.length
+                ? db
+                    .select({
+                      id: schema.user.id,
+                      name: schema.user.name,
+                      email: schema.user.email,
+                    })
+                    .from(schema.user)
+                    .where(
+                      and(
+                        eq(schema.user.organizationId, ctx.organization.id),
+                        inArray(
+                          schema.user.id,
+                          userLinks.map((link) => link.userId),
+                        ),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string; email: string }>(),
+            ),
+            queryEffect(
+              userGroupLinks.length
+                ? db
+                    .select({ id: schema.userGroup.id, name: schema.userGroup.name })
+                    .from(schema.userGroup)
+                    .where(
+                      and(
+                        eq(schema.userGroup.organizationId, ctx.organization.id),
+                        inArray(
+                          schema.userGroup.id,
+                          userGroupLinks.map((link) => link.groupId),
+                        ),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const groupModes = new Map(
           groupLinks.map((link) => [link.groupId, link.mode ?? ("include" as const)]),
         );
 
-        const deviceLinks = yield* db
-          .select({ deviceId: schema.devicePolicy.deviceId, mode: schema.devicePolicy.mode })
-          .from(schema.devicePolicy)
-          .where(eq(schema.devicePolicy.policyId, policyId));
-
-        const devices = deviceLinks.length
-          ? yield* db
-              .select({ id: schema.device.id, name: schema.device.name })
-              .from(schema.device)
-              .where(
-                and(
-                  eq(schema.device.organizationId, ctx.organization.id),
-                  inArray(
-                    schema.device.id,
-                    deviceLinks.map((link) => link.deviceId),
-                  ),
-                ),
-              )
-          : [];
-
         const deviceModes = new Map(
           deviceLinks.map((link) => [link.deviceId, link.mode ?? ("include" as const)]),
         );
 
-        const userLinks = yield* db
-          .select({ userId: schema.userPolicy.userId, mode: schema.userPolicy.mode })
-          .from(schema.userPolicy)
-          .where(
-            and(
-              eq(schema.userPolicy.organizationId, ctx.organization.id),
-              eq(schema.userPolicy.policyId, policyId),
-            ),
-          );
-
-        const users = userLinks.length
-          ? yield* db
-              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-              .from(schema.user)
-              .where(
-                and(
-                  eq(schema.user.organizationId, ctx.organization.id),
-                  inArray(
-                    schema.user.id,
-                    userLinks.map((link) => link.userId),
-                  ),
-                ),
-              )
-          : [];
-
         const userModes = new Map(
           userLinks.map((link) => [link.userId, link.mode ?? ("include" as const)]),
         );
-
-        const userGroupLinks = yield* db
-          .select({
-            groupId: schema.userGroupPolicy.groupId,
-            mode: schema.userGroupPolicy.mode,
-          })
-          .from(schema.userGroupPolicy)
-          .where(
-            and(
-              eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
-              eq(schema.userGroupPolicy.policyId, policyId),
-            ),
-          );
-
-        const userGroups = userGroupLinks.length
-          ? yield* db
-              .select({ id: schema.userGroup.id, name: schema.userGroup.name })
-              .from(schema.userGroup)
-              .where(
-                and(
-                  eq(schema.userGroup.organizationId, ctx.organization.id),
-                  inArray(
-                    schema.userGroup.id,
-                    userGroupLinks.map((link) => link.groupId),
-                  ),
-                ),
-              )
-          : [];
 
         const memberCounts = userGroups.length
           ? yield* db
@@ -14844,26 +15098,34 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const userRows = yield* db
-          .select({
-            id: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
-            externalId: schema.user.externalId,
-            disabled: schema.user.disabled,
-            source: schema.user.source,
-          })
-          .from(schema.user)
-          .where(eq(schema.user.organizationId, ctx.organization.id));
-
-        const groups = yield* db
-          .select({
-            id: schema.userGroup.id,
-            name: schema.userGroup.name,
-            source: schema.userGroup.source,
-          })
-          .from(schema.userGroup)
-          .where(eq(schema.userGroup.organizationId, ctx.organization.id));
+        const [userRows, groups] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  id: schema.user.id,
+                  name: schema.user.name,
+                  email: schema.user.email,
+                  externalId: schema.user.externalId,
+                  disabled: schema.user.disabled,
+                  source: schema.user.source,
+                })
+                .from(schema.user)
+                .where(eq(schema.user.organizationId, ctx.organization.id)),
+            ),
+            queryEffect(
+              db
+                .select({
+                  id: schema.userGroup.id,
+                  name: schema.userGroup.name,
+                  source: schema.userGroup.source,
+                })
+                .from(schema.userGroup)
+                .where(eq(schema.userGroup.organizationId, ctx.organization.id)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const counts = groups.length
           ? yield* db
@@ -14977,21 +15239,31 @@ export const createEnterpriseService = ({
         if (apps.length === 0) return { applications: [] };
         const ids = apps.map((app) => app.id);
 
-        const groupLinks = yield* db
-          .select()
-          .from(schema.applicationGroup)
-          .where(inArray(schema.applicationGroup.applicationId, ids));
+        const [groupLinks, deviceLinks, installerRows] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select()
+                .from(schema.applicationGroup)
+                .where(inArray(schema.applicationGroup.applicationId, ids)),
+            ),
+            queryEffect(
+              db
+                .select()
+                .from(schema.applicationDevice)
+                .where(inArray(schema.applicationDevice.applicationId, ids)),
+            ),
+            queryEffect(
+              db
+                .select()
+                .from(schema.applicationInstaller)
+                .where(inArray(schema.applicationInstaller.applicationId, ids)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
-        const deviceLinks = yield* db
-          .select()
-          .from(schema.applicationDevice)
-          .where(inArray(schema.applicationDevice.applicationId, ids));
-
-        const installerRows = yield* db
-          .select()
-          .from(schema.applicationInstaller)
-          .where(inArray(schema.applicationInstaller.applicationId, ids))
-          .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
+        const sortedInstallers = [...installerRows].sort(compareInstallerPreference);
 
         return {
           applications: apps.map((app) =>
@@ -15001,7 +15273,7 @@ export const createEnterpriseService = ({
                 .length,
               deviceLinks.filter((link: { applicationId: string }) => link.applicationId === app.id)
                 .length,
-              installerRows
+              sortedInstallers
                 .filter((installer) => installer.applicationId === app.id)
                 .map(rowInstaller),
             ),
@@ -15019,34 +15291,49 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        const groupLinks = yield* db
-          .select()
-          .from(schema.applicationGroup)
-          .where(eq(schema.applicationGroup.applicationId, applicationId));
-
-        const deviceLinks = yield* db
-          .select()
-          .from(schema.applicationDevice)
-          .where(eq(schema.applicationDevice.applicationId, applicationId));
+        const [groupLinks, deviceLinks, installers] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select()
+                .from(schema.applicationGroup)
+                .where(eq(schema.applicationGroup.applicationId, applicationId)),
+            ),
+            queryEffect(
+              db
+                .select()
+                .from(schema.applicationDevice)
+                .where(eq(schema.applicationDevice.applicationId, applicationId)),
+            ),
+            queryEffect(applicationInstallers(ctx.organization.id, applicationId)),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const groupIds = groupLinks.map((link: { groupId: string }) => link.groupId);
         const deviceIds = deviceLinks.map((link: { deviceId: string }) => link.deviceId);
 
-        const groups = groupIds.length
-          ? yield* db
-              .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
-              .from(schema.enterpriseGroup)
-              .where(inArray(schema.enterpriseGroup.id, groupIds))
-          : [];
-
-        const devices = deviceIds.length
-          ? yield* db
-              .select({ id: schema.device.id, name: schema.device.name })
-              .from(schema.device)
-              .where(inArray(schema.device.id, deviceIds))
-          : [];
-
-        const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
+        const [groups, devices] = yield* Effect.all(
+          [
+            queryEffect(
+              groupIds.length
+                ? db
+                    .select({ id: schema.enterpriseGroup.id, name: schema.enterpriseGroup.name })
+                    .from(schema.enterpriseGroup)
+                    .where(inArray(schema.enterpriseGroup.id, groupIds))
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(
+              deviceIds.length
+                ? db
+                    .select({ id: schema.device.id, name: schema.device.name })
+                    .from(schema.device)
+                    .where(inArray(schema.device.id, deviceIds))
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         return {
           ...rowApplication(app, groups.length, devices.length, installers.map(rowInstaller)),
@@ -16295,20 +16582,21 @@ export const createEnterpriseService = ({
           .from(schema.device)
           .where(eq(schema.device.organizationId, ctx.organization.id));
 
-        yield* claimEnrollmentAnswers(db, ctx.organization.id, rows);
+        const ids = rows.map((row) => row.id);
 
-        const attributes = yield* loadDeviceAttributes(
-          db,
-          ctx.organization.id,
-          rows.map((row) => row.id),
+        // Claiming enrollment answers writes `device_attribute` rows, so it must
+        // finish before the attribute read. Setup and Android state are
+        // independent of both and of each other, so they share its wave.
+        const [, appleByDevice, androidByDevice] = yield* Effect.all(
+          [
+            queryEffect(claimEnrollmentAnswers(db, ctx.organization.id, rows)),
+            queryEffect(deviceSetupStateFor(ids)),
+            queryEffect(androidDeviceAccessFor(ctx.organization.id, ids)),
+          ],
+          { concurrency: "unbounded" },
         );
 
-        const appleByDevice = yield* deviceSetupStateFor(rows.map((row) => row.id));
-
-        const androidByDevice = yield* androidDeviceAccessFor(
-          ctx.organization.id,
-          rows.map((row) => row.id),
-        );
+        const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, ids);
 
         return {
           rows: rows.map((row) => {
@@ -16377,30 +16665,25 @@ export const createEnterpriseService = ({
             return comparison * direction || left.row.id.localeCompare(right.row.id);
           });
           const page = matches.slice(filters.offset, filters.offset + filters.limit);
+          const pageIds = page.map((snapshot) => snapshot.row.id);
 
-          const groups = yield* deviceGroupsFor(
-            ctx.organization.id,
-            page.map((snapshot) => snapshot.row.id),
+          const [groups, , setup, androidByDevice] = yield* Effect.all(
+            [
+              queryEffect(deviceGroupsFor(ctx.organization.id, pageIds)),
+              queryEffect(
+                claimEnrollmentAnswers(
+                  db,
+                  ctx.organization.id,
+                  page.map((snapshot) => snapshot.row),
+                ),
+              ),
+              queryEffect(deviceSetupStateFor(pageIds)),
+              queryEffect(androidDeviceAccessFor(ctx.organization.id, pageIds)),
+            ],
+            { concurrency: "unbounded" },
           );
 
-          yield* claimEnrollmentAnswers(
-            db,
-            ctx.organization.id,
-            page.map((snapshot) => snapshot.row),
-          );
-
-          const attributes = yield* loadDeviceAttributes(
-            db,
-            ctx.organization.id,
-            page.map((snapshot) => snapshot.row.id),
-          );
-
-          const setup = yield* deviceSetupStateFor(page.map((snapshot) => snapshot.row.id));
-
-          const androidByDevice = yield* androidDeviceAccessFor(
-            ctx.organization.id,
-            page.map((snapshot) => snapshot.row.id),
-          );
+          const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, pageIds);
 
           return {
             devices: page.map((snapshot) => ({
@@ -16417,15 +16700,39 @@ export const createEnterpriseService = ({
           };
         }
 
-        const [total] = yield* db.select({ value: count() }).from(schema.device).where(where);
+        const totalQuery = () => db.select({ value: count() }).from(schema.device).where(where);
 
         // Health is derived, so ordering by it needs the same bounded
         // in-memory pass as the health filter: load the matching set once,
         // sort by severity and slice the page. Ascending means worst first, so
         // the table agrees with the "needs attention" filter and the summary.
         if (filters.sort === "health") {
-          const matches = yield* db.select().from(schema.device).where(where);
-          const health = yield* deviceHealthFor(matches);
+          const [[total], matches] = yield* Effect.all(
+            [queryEffect(totalQuery()), queryEffect(db.select().from(schema.device).where(where))],
+            { concurrency: "unbounded" },
+          );
+
+          const matchIds = matches.map((row) => row.id);
+
+          const [declarations, setup] = yield* Effect.all(
+            [
+              queryEffect(
+                db
+                  .select()
+                  .from(schema.deviceDeclaration)
+                  .where(inArray(schema.deviceDeclaration.deviceId, matchIds)),
+              ),
+              queryEffect(deviceSetupStateFor(matchIds)),
+            ],
+            { concurrency: "unbounded" },
+          );
+
+          const health = deviceHealthFrom(
+            matches,
+            declarations,
+            new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
+          );
+
           const rank = { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 } as const;
           const direction = filters.direction === "desc" ? -1 : 1;
 
@@ -16441,26 +16748,18 @@ export const createEnterpriseService = ({
           });
 
           const page = matches.slice(filters.offset, filters.offset + filters.limit);
+          const pageIds = page.map((row) => row.id);
 
-          const groups = yield* deviceGroupsFor(
-            ctx.organization.id,
-            page.map((row) => row.id),
+          const [groups, , androidByDevice] = yield* Effect.all(
+            [
+              queryEffect(deviceGroupsFor(ctx.organization.id, pageIds)),
+              queryEffect(claimEnrollmentAnswers(db, ctx.organization.id, page)),
+              queryEffect(androidDeviceAccessFor(ctx.organization.id, pageIds)),
+            ],
+            { concurrency: "unbounded" },
           );
 
-          yield* claimEnrollmentAnswers(db, ctx.organization.id, page);
-
-          const attributes = yield* loadDeviceAttributes(
-            db,
-            ctx.organization.id,
-            page.map((row) => row.id),
-          );
-
-          const setup = yield* deviceSetupStateFor(page.map((row) => row.id));
-
-          const androidByDevice = yield* androidDeviceAccessFor(
-            ctx.organization.id,
-            page.map((row) => row.id),
-          );
+          const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, pageIds);
 
           return {
             devices: page.map((row) => {
@@ -16480,35 +16779,49 @@ export const createEnterpriseService = ({
           };
         }
 
-        const rows = yield* db
-          .select()
-          .from(schema.device)
-          .where(where)
-          .orderBy(...deviceOrder(filters))
-          .limit(filters.limit)
-          .offset(filters.offset);
-
-        const groups = yield* deviceGroupsFor(
-          ctx.organization.id,
-          rows.map((row) => row.id),
+        const [[total], rows] = yield* Effect.all(
+          [
+            queryEffect(totalQuery()),
+            queryEffect(
+              db
+                .select()
+                .from(schema.device)
+                .where(where)
+                .orderBy(...deviceOrder(filters))
+                .limit(filters.limit)
+                .offset(filters.offset),
+            ),
+          ],
+          { concurrency: "unbounded" },
         );
 
-        const health = yield* deviceHealthFor(rows);
+        const ids = rows.map((row) => row.id);
 
-        yield* claimEnrollmentAnswers(db, ctx.organization.id, rows);
-
-        const attributes = yield* loadDeviceAttributes(
-          db,
-          ctx.organization.id,
-          rows.map((row) => row.id),
+        // Groups, health and setup state are independent reads; claiming
+        // enrollment answers is a write that the attribute read depends on.
+        const [groups, declarations, , setup, androidByDevice] = yield* Effect.all(
+          [
+            queryEffect(deviceGroupsFor(ctx.organization.id, ids)),
+            queryEffect(
+              db
+                .select()
+                .from(schema.deviceDeclaration)
+                .where(inArray(schema.deviceDeclaration.deviceId, ids)),
+            ),
+            queryEffect(claimEnrollmentAnswers(db, ctx.organization.id, rows)),
+            queryEffect(deviceSetupStateFor(ids)),
+            queryEffect(androidDeviceAccessFor(ctx.organization.id, ids)),
+          ],
+          { concurrency: "unbounded" },
         );
 
-        const setup = yield* deviceSetupStateFor(rows.map((row) => row.id));
-
-        const androidByDevice = yield* androidDeviceAccessFor(
-          ctx.organization.id,
-          rows.map((row) => row.id),
+        const health = deviceHealthFrom(
+          rows,
+          declarations,
+          new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
         );
+
+        const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, ids);
 
         return {
           devices: rows.map((row) => {
@@ -16895,6 +17208,12 @@ export const createEnterpriseService = ({
 
         return yield* runDashboardQuery(ctx.organization.id, payload);
       }),
+    queryDashboardBatch: (request, tenantId, payload: DashboardQueryBatchRequest) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* runDashboardQueryBatch(ctx.organization.id, payload.queries);
+      }),
     exportDevices: (request, tenantId, query) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -17037,83 +17356,86 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const row = yield* db.query.device.findFirst({
-          where: { id: deviceId, organizationId: ctx.organization.id },
-        });
-
-        if (!row)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-
-        const secrets = yield* db
+        // Device, Apple and Android rows are one-to-one on the device id, so a
+        // single join replaces three round trips. Autopilot stays separate: it
+        // matches on serial *or* device id and may have a second candidate row.
+        const [joined] = yield* db
           .select({
-            kind: schema.deviceSecret.kind,
-            format: schema.deviceSecret.format,
-            updatedAt: schema.deviceSecret.updatedAt,
-            rotatedAt: schema.deviceSecret.rotatedAt,
+            device: schema.device,
+            apple: schema.deviceApple,
+            android: schema.androidDevice,
           })
-          .from(schema.deviceSecret)
+          .from(schema.device)
+          .leftJoin(schema.deviceApple, eq(schema.deviceApple.deviceId, schema.device.id))
+          .leftJoin(
+            schema.androidDevice,
+            and(
+              eq(schema.androidDevice.deviceId, schema.device.id),
+              eq(schema.androidDevice.organizationId, ctx.organization.id),
+            ),
+          )
           .where(
             and(
-              eq(schema.deviceSecret.deviceId, row.id),
-              eq(schema.deviceSecret.organizationId, ctx.organization.id),
+              eq(schema.device.id, deviceId),
+              eq(schema.device.organizationId, ctx.organization.id),
             ),
-          );
+          )
+          .limit(1);
+
+        if (!joined)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        const row = joined.device;
+        const apple = joined.apple ?? undefined;
+        const android = joined.android ?? undefined;
+
+        const [secrets, autopilotRows, groups] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  kind: schema.deviceSecret.kind,
+                  format: schema.deviceSecret.format,
+                  updatedAt: schema.deviceSecret.updatedAt,
+                  rotatedAt: schema.deviceSecret.rotatedAt,
+                })
+                .from(schema.deviceSecret)
+                .where(
+                  and(
+                    eq(schema.deviceSecret.deviceId, row.id),
+                    eq(schema.deviceSecret.organizationId, ctx.organization.id),
+                  ),
+                ),
+            ),
+            queryEffect(
+              db
+                .select()
+                .from(schema.autopilotDevice)
+                .where(
+                  and(
+                    eq(schema.autopilotDevice.organizationId, ctx.organization.id),
+                    row.serial
+                      ? or(
+                          eq(schema.autopilotDevice.deviceId, row.id),
+                          eq(schema.autopilotDevice.serial, normalizeAutopilotSerial(row.serial)),
+                        )!
+                      : eq(schema.autopilotDevice.deviceId, row.id),
+                  ),
+                )
+                .limit(1),
+            ),
+            queryEffect(deviceGroupsFor(ctx.organization.id, [row.id])),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const autopilot = autopilotRows[0];
 
         const recoveryKey = secrets.find((secret) => secret.kind === "filevault_recovery_key");
         const bootstrapToken = secrets.find((secret) => secret.kind === "bootstrap_token");
         const localAdmin = secrets.find((secret) => secret.kind === "local_admin_password");
 
         const bypassCode = secrets.find((secret) => secret.kind === "activation_lock_bypass_code");
-
-        const [apple] = yield* db
-          .select({
-            awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
-            configured: schema.deviceApple.configured,
-            setupReleasedAt: schema.deviceApple.setupReleasedAt,
-            returnToServiceRequestedAt: schema.deviceApple.returnToServiceRequestedAt,
-            returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
-            bootstrapTokenEscrowed: schema.deviceApple.bootstrapTokenEscrowed,
-            declarationMode: schema.deviceApple.declarationMode,
-            declarationModeReason: schema.deviceApple.declarationModeReason,
-            declarationModeUpdatedAt: schema.deviceApple.declarationModeUpdatedAt,
-            isActivationLockManageable: schema.deviceApple.isActivationLockManageable,
-            securityInfoUpdatedAt: schema.deviceApple.securityInfoUpdatedAt,
-          })
-          .from(schema.deviceApple)
-          .where(eq(schema.deviceApple.deviceId, row.id))
-          .limit(1);
-
-        const [autopilot] = yield* db
-          .select()
-          .from(schema.autopilotDevice)
-          .where(
-            and(
-              eq(schema.autopilotDevice.organizationId, ctx.organization.id),
-              row.serial
-                ? or(
-                    eq(schema.autopilotDevice.deviceId, row.id),
-                    eq(schema.autopilotDevice.serial, normalizeAutopilotSerial(row.serial)),
-                  )!
-                : eq(schema.autopilotDevice.deviceId, row.id),
-            ),
-          )
-          .limit(1);
-
-        const [android] =
-          row.proto === "android"
-            ? yield* db
-                .select()
-                .from(schema.androidDevice)
-                .where(
-                  and(
-                    eq(schema.androidDevice.deviceId, row.id),
-                    eq(schema.androidDevice.organizationId, ctx.organization.id),
-                  ),
-                )
-                .limit(1)
-            : [];
-
-        const groups = yield* deviceGroupsFor(ctx.organization.id, [row.id]);
 
         yield* claimEnrollmentAnswers(db, ctx.organization.id, [row]);
         const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, [row.id]);
@@ -17656,49 +17978,65 @@ export const createEnterpriseService = ({
 
         if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
 
-        const deviceLinks = yield* db
-          .select({ deviceId: schema.groupDevice.deviceId })
-          .from(schema.groupDevice)
-          .where(eq(schema.groupDevice.groupId, groupId));
+        const [deviceLinks, policyLinks] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({ deviceId: schema.groupDevice.deviceId })
+                .from(schema.groupDevice)
+                .where(eq(schema.groupDevice.groupId, groupId)),
+            ),
+            queryEffect(
+              db
+                .select({ policyId: schema.groupPolicy.policyId, mode: schema.groupPolicy.mode })
+                .from(schema.groupPolicy)
+                .where(eq(schema.groupPolicy.groupId, groupId)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
-        const devices = deviceLinks.length
-          ? yield* db
-              .select({ id: schema.device.id, name: schema.device.name })
-              .from(schema.device)
-              .where(
-                and(
-                  eq(schema.device.organizationId, ctx.organization.id),
-                  inArray(
-                    schema.device.id,
-                    deviceLinks.map((link) => link.deviceId),
-                  ),
-                ),
-              )
-          : [];
-
-        const policyLinks = yield* db
-          .select({ policyId: schema.groupPolicy.policyId, mode: schema.groupPolicy.mode })
-          .from(schema.groupPolicy)
-          .where(eq(schema.groupPolicy.groupId, groupId));
-
-        const policies = policyLinks.length
-          ? yield* db
-              .select({
-                id: schema.policy.id,
-                name: schema.policy.name,
-                priority: schema.policy.priority,
-              })
-              .from(schema.policy)
-              .where(
-                and(
-                  eq(schema.policy.organizationId, ctx.organization.id),
-                  inArray(
-                    schema.policy.id,
-                    policyLinks.map((link) => link.policyId),
-                  ),
-                ),
-              )
-          : [];
+        const [devices, policies] = yield* Effect.all(
+          [
+            queryEffect(
+              deviceLinks.length
+                ? db
+                    .select({ id: schema.device.id, name: schema.device.name })
+                    .from(schema.device)
+                    .where(
+                      and(
+                        eq(schema.device.organizationId, ctx.organization.id),
+                        inArray(
+                          schema.device.id,
+                          deviceLinks.map((link) => link.deviceId),
+                        ),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(
+              policyLinks.length
+                ? db
+                    .select({
+                      id: schema.policy.id,
+                      name: schema.policy.name,
+                      priority: schema.policy.priority,
+                    })
+                    .from(schema.policy)
+                    .where(
+                      and(
+                        eq(schema.policy.organizationId, ctx.organization.id),
+                        inArray(
+                          schema.policy.id,
+                          policyLinks.map((link) => link.policyId),
+                        ),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string; priority: number }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const modes = new Map(
           policyLinks.map((link) => [link.policyId, link.mode ?? ("include" as const)]),
@@ -17752,101 +18090,132 @@ export const createEnterpriseService = ({
         // edges once instead of running the per-device resolver per policy (or
         // per row). Scope arithmetic and delivery derivation are pure and live
         // in `policyList.ts`; the query count stays fixed as the fleet grows.
-        // One grouped count for the whole page, not one read per row.
-        const configurationCounts = yield* db
-          .select({ policyId: schema.configuration.policyId, value: count() })
-          .from(schema.configuration)
-          .where(inArray(schema.configuration.policyId, policyIds))
-          .groupBy(schema.configuration.policyId);
-
-        const deployments = yield* db
-          .select({
-            policyId: schema.policyDeployment.policyId,
-            value: max(schema.policyDeployment.version),
-          })
-          .from(schema.policyDeployment)
-          .where(inArray(schema.policyDeployment.policyId, policyIds))
-          .groupBy(schema.policyDeployment.policyId);
-
-        const groupAssignments = yield* db
-          .select({
-            policyId: schema.groupPolicy.policyId,
-            groupId: schema.groupPolicy.groupId,
-            mode: schema.groupPolicy.mode,
-          })
-          .from(schema.groupPolicy)
-          .innerJoin(
-            schema.enterpriseGroup,
-            eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
-          )
-          .where(
-            and(
-              eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-              inArray(schema.groupPolicy.policyId, policyIds),
+        // All six reads depend only on `policyIds`, so they share one wave
+        // rather than six sequential round trips.
+        const [
+          configurationCounts,
+          deployments,
+          groupAssignments,
+          deviceAssignments,
+          userAssignments,
+          userGroupAssignments,
+        ] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({ policyId: schema.configuration.policyId, value: count() })
+                .from(schema.configuration)
+                .where(inArray(schema.configuration.policyId, policyIds))
+                .groupBy(schema.configuration.policyId),
             ),
-          );
-
-        const deviceAssignments = yield* db
-          .select({
-            policyId: schema.devicePolicy.policyId,
-            deviceId: schema.devicePolicy.deviceId,
-            mode: schema.devicePolicy.mode,
-          })
-          .from(schema.devicePolicy)
-          .where(inArray(schema.devicePolicy.policyId, policyIds));
-
-        const userAssignments = yield* db
-          .select({
-            policyId: schema.userPolicy.policyId,
-            userId: schema.userPolicy.userId,
-            mode: schema.userPolicy.mode,
-          })
-          .from(schema.userPolicy)
-          .where(
-            and(
-              eq(schema.userPolicy.organizationId, ctx.organization.id),
-              inArray(schema.userPolicy.policyId, policyIds),
+            queryEffect(
+              db
+                .select({
+                  policyId: schema.policyDeployment.policyId,
+                  value: max(schema.policyDeployment.version),
+                })
+                .from(schema.policyDeployment)
+                .where(inArray(schema.policyDeployment.policyId, policyIds))
+                .groupBy(schema.policyDeployment.policyId),
             ),
-          );
-
-        const userGroupAssignments = yield* db
-          .select({
-            policyId: schema.userGroupPolicy.policyId,
-            groupId: schema.userGroupPolicy.groupId,
-            mode: schema.userGroupPolicy.mode,
-          })
-          .from(schema.userGroupPolicy)
-          .innerJoin(schema.userGroup, eq(schema.userGroup.id, schema.userGroupPolicy.groupId))
-          .where(
-            and(
-              eq(schema.userGroup.organizationId, ctx.organization.id),
-              eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
-              inArray(schema.userGroupPolicy.policyId, policyIds),
+            queryEffect(
+              db
+                .select({
+                  policyId: schema.groupPolicy.policyId,
+                  groupId: schema.groupPolicy.groupId,
+                  mode: schema.groupPolicy.mode,
+                })
+                .from(schema.groupPolicy)
+                .innerJoin(
+                  schema.enterpriseGroup,
+                  eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
+                )
+                .where(
+                  and(
+                    eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                    inArray(schema.groupPolicy.policyId, policyIds),
+                  ),
+                ),
             ),
-          );
+            queryEffect(
+              db
+                .select({
+                  policyId: schema.devicePolicy.policyId,
+                  deviceId: schema.devicePolicy.deviceId,
+                  mode: schema.devicePolicy.mode,
+                })
+                .from(schema.devicePolicy)
+                .where(inArray(schema.devicePolicy.policyId, policyIds)),
+            ),
+            queryEffect(
+              db
+                .select({
+                  policyId: schema.userPolicy.policyId,
+                  userId: schema.userPolicy.userId,
+                  mode: schema.userPolicy.mode,
+                })
+                .from(schema.userPolicy)
+                .where(
+                  and(
+                    eq(schema.userPolicy.organizationId, ctx.organization.id),
+                    inArray(schema.userPolicy.policyId, policyIds),
+                  ),
+                ),
+            ),
+            queryEffect(
+              db
+                .select({
+                  policyId: schema.userGroupPolicy.policyId,
+                  groupId: schema.userGroupPolicy.groupId,
+                  mode: schema.userGroupPolicy.mode,
+                })
+                .from(schema.userGroupPolicy)
+                .innerJoin(
+                  schema.userGroup,
+                  eq(schema.userGroup.id, schema.userGroupPolicy.groupId),
+                )
+                .where(
+                  and(
+                    eq(schema.userGroup.organizationId, ctx.organization.id),
+                    eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                    inArray(schema.userGroupPolicy.policyId, policyIds),
+                  ),
+                ),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const groupIds = [...new Set(groupAssignments.map((row) => row.groupId))];
         const userGroupIds = [...new Set(userGroupAssignments.map((row) => row.groupId))];
 
-        const groupMembers = groupIds.length
-          ? yield* db
-              .select({
-                groupId: schema.groupDevice.groupId,
-                deviceId: schema.groupDevice.deviceId,
-              })
-              .from(schema.groupDevice)
-              .where(inArray(schema.groupDevice.groupId, groupIds))
-          : [];
-
-        const userGroupMembers = userGroupIds.length
-          ? yield* db
-              .select({
-                groupId: schema.userGroupMember.groupId,
-                userId: schema.userGroupMember.userId,
-              })
-              .from(schema.userGroupMember)
-              .where(inArray(schema.userGroupMember.groupId, userGroupIds))
-          : [];
+        const [groupMembers, userGroupMembers] = yield* Effect.all(
+          [
+            queryEffect(
+              groupIds.length
+                ? db
+                    .select({
+                      groupId: schema.groupDevice.groupId,
+                      deviceId: schema.groupDevice.deviceId,
+                    })
+                    .from(schema.groupDevice)
+                    .where(inArray(schema.groupDevice.groupId, groupIds))
+                : emptyRows<{ groupId: string; deviceId: string }>(),
+            ),
+            queryEffect(
+              userGroupIds.length
+                ? db
+                    .select({
+                      groupId: schema.userGroupMember.groupId,
+                      userId: schema.userGroupMember.userId,
+                    })
+                    .from(schema.userGroupMember)
+                    .where(inArray(schema.userGroupMember.groupId, userGroupIds))
+                : emptyRows<{ groupId: string; userId: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const assignedUserIds = [
           ...new Set([
@@ -17857,35 +18226,43 @@ export const createEnterpriseService = ({
 
         // Disabled directory users no longer grant policies, and a user must be
         // a member of this tenant to contribute. This mirrors the resolver.
-        const activeUsers = assignedUserIds.length
-          ? yield* db
-              .select({ id: schema.user.id })
-              .from(schema.user)
-              .where(
-                and(
-                  eq(schema.user.organizationId, ctx.organization.id),
-                  eq(schema.user.disabled, false),
-                  inArray(schema.user.id, assignedUserIds),
-                ),
-              )
-          : [];
+        const [activeUsers, deviceUsers] = yield* Effect.all(
+          [
+            queryEffect(
+              assignedUserIds.length
+                ? db
+                    .select({ id: schema.user.id })
+                    .from(schema.user)
+                    .where(
+                      and(
+                        eq(schema.user.organizationId, ctx.organization.id),
+                        eq(schema.user.disabled, false),
+                        inArray(schema.user.id, assignedUserIds),
+                      ),
+                    )
+                : emptyRows<{ id: string }>(),
+            ),
+            queryEffect(
+              assignedUserIds.length
+                ? db
+                    .select({
+                      deviceId: schema.deviceUser.deviceId,
+                      userId: schema.deviceUser.userId,
+                    })
+                    .from(schema.deviceUser)
+                    .where(
+                      and(
+                        eq(schema.deviceUser.organizationId, ctx.organization.id),
+                        inArray(schema.deviceUser.userId, assignedUserIds),
+                      ),
+                    )
+                : emptyRows<{ deviceId: string; userId: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const activeUserIds = new Set(activeUsers.map((row) => row.id));
-
-        const deviceUsers = assignedUserIds.length
-          ? yield* db
-              .select({
-                deviceId: schema.deviceUser.deviceId,
-                userId: schema.deviceUser.userId,
-              })
-              .from(schema.deviceUser)
-              .where(
-                and(
-                  eq(schema.deviceUser.organizationId, ctx.organization.id),
-                  inArray(schema.deviceUser.userId, assignedUserIds),
-                ),
-              )
-          : [];
 
         const candidateDeviceIds = [
           ...new Set([
@@ -17897,8 +18274,13 @@ export const createEnterpriseService = ({
 
         const devices = candidateDeviceIds.length
           ? yield* db
-              .select({ id: schema.device.id, proto: schema.device.proto })
+              .select({
+                id: schema.device.id,
+                proto: schema.device.proto,
+                declarationMode: schema.deviceApple.declarationMode,
+              })
               .from(schema.device)
+              .leftJoin(schema.deviceApple, eq(schema.deviceApple.deviceId, schema.device.id))
               .where(
                 and(
                   eq(schema.device.organizationId, ctx.organization.id),
@@ -17920,30 +18302,7 @@ export const createEnterpriseService = ({
           activeUserIds,
         });
 
-        const appleDeviceIds = devices
-          .filter((device) => device.proto === "apple")
-          .map((device) => device.id);
-
-        const appleDevices = appleDeviceIds.length
-          ? yield* db
-              .select({
-                deviceId: schema.deviceApple.deviceId,
-                declarationMode: schema.deviceApple.declarationMode,
-              })
-              .from(schema.deviceApple)
-              .where(inArray(schema.deviceApple.deviceId, appleDeviceIds))
-          : [];
-
-        const declarationModeByDevice = new Map(
-          appleDevices.map((device) => [device.deviceId, device.declarationMode]),
-        );
-
-        const deviceById = new Map(
-          devices.map((device) => [
-            device.id,
-            { ...device, declarationMode: declarationModeByDevice.get(device.id) ?? null },
-          ]),
-        );
+        const deviceById = new Map(devices.map((device) => [device.id, device]));
 
         const appleScopedDeviceIds = new Map<string, Array<string>>();
 
@@ -17965,32 +18324,46 @@ export const createEnterpriseService = ({
 
         const declaredDeviceIds = [...new Set([...appleScopedDeviceIds.values()].flat())];
 
-        const declarations = declaredDeviceIds.length
-          ? yield* db
-              .select({
-                deviceId: schema.deviceDeclaration.deviceId,
-                identifier: schema.deviceDeclaration.identifier,
-                valid: schema.deviceDeclaration.valid,
-                active: schema.deviceDeclaration.active,
-                serverToken: schema.deviceDeclaration.serverToken,
-              })
-              .from(schema.deviceDeclaration)
-              .where(inArray(schema.deviceDeclaration.deviceId, declaredDeviceIds))
-          : [];
-
         const trackedPolicyIds = [...appleScopedDeviceIds.keys()];
 
-        const configurations = trackedPolicyIds.length
-          ? yield* db
-              .select({
-                policyId: schema.configuration.policyId,
-                kind: schema.configuration.kind,
-                hash: schema.configuration.hash,
-                data: schema.configuration.data,
-              })
-              .from(schema.configuration)
-              .where(inArray(schema.configuration.policyId, trackedPolicyIds))
-          : [];
+        const [declarations, configurations] = yield* Effect.all(
+          [
+            queryEffect(
+              declaredDeviceIds.length
+                ? db
+                    .select({
+                      deviceId: schema.deviceDeclaration.deviceId,
+                      identifier: schema.deviceDeclaration.identifier,
+                      valid: schema.deviceDeclaration.valid,
+                      active: schema.deviceDeclaration.active,
+                      serverToken: schema.deviceDeclaration.serverToken,
+                    })
+                    .from(schema.deviceDeclaration)
+                    .where(inArray(schema.deviceDeclaration.deviceId, declaredDeviceIds))
+                : emptyRows<{
+                    deviceId: string;
+                    identifier: string;
+                    valid: string;
+                    active: boolean;
+                    serverToken: string | null;
+                  }>(),
+            ),
+            queryEffect(
+              trackedPolicyIds.length
+                ? db
+                    .select({
+                      policyId: schema.configuration.policyId,
+                      kind: schema.configuration.kind,
+                      hash: schema.configuration.hash,
+                      data: schema.configuration.data,
+                    })
+                    .from(schema.configuration)
+                    .where(inArray(schema.configuration.policyId, trackedPolicyIds))
+                : emptyRows<{ policyId: string; kind: string; hash: string; data: unknown }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
 
         const declarationsByDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -18432,6 +18805,15 @@ export const createEnterpriseService = ({
 
   return wrapServiceErrors(service, true, analytics);
 };
+
+export const enterpriseDashboardHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDashboardApi>,
+) =>
+  handlers.handle("queryDashboardBatch", ({ request, params, payload }) =>
+    Effect.flatMap(EnterpriseService, (service) =>
+      service.queryDashboardBatch(request, params.tenantId, payload),
+    ),
+  );
 
 export const enterpriseAttributeHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseAttributeApi>,

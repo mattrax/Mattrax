@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
@@ -28,7 +28,16 @@ import {
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { BackupRunInfo, MeResponse, TenantDetail } from "~/lib/enterprise";
+import {
+  combineRestores,
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+  optimisticUpdate,
+} from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
@@ -70,6 +79,18 @@ const responseFailure = async (response: Response, fallback: string) => {
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // Backups are permission-gated, so the page keeps that query disabled for
+    // roles that cannot read them; warm only the tenant general form here.
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
+    ]);
+  },
+};
+
 export default function GeneralSettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -82,10 +103,7 @@ export default function GeneralSettingsPage() {
   const canRunBackup = () => can("backups.write");
   const canDelete = () => can("tenant.delete");
 
-  const tenant = useQuery(() => ({
-    queryKey: enterpriseKeys.tenant(params.tenantId),
-    queryFn: () => enterprise.getTenant(params.tenantId),
-  }));
+  const tenant = useQuery(() => enterpriseQueries.tenant(params.tenantId));
 
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
@@ -196,7 +214,35 @@ export default function GeneralSettingsPage() {
         supportEmail: supportEmail() || null,
         brandColor: brandColor() || null,
       }),
-    onSuccess: async () => {
+    onMutate: async () => {
+      const patch = {
+        name: name(),
+        slug: slug(),
+        displayName: displayName() || null,
+        logo: logo() || null,
+        supportEmail: supportEmail() || null,
+        brandColor: brandColor() || null,
+      };
+
+      const tenantId = tenant.data?.id;
+
+      const restores = await Promise.all([
+        optimisticUpdate<TenantDetail>(qc, enterpriseKeys.tenant(params.tenantId), (current) => ({
+          ...current,
+          ...patch,
+        })),
+        // The shell and tenant switcher read branding from the membership list.
+        optimisticUpdate<MeResponse>(qc, enterpriseKeys.me(), (current) => ({
+          ...current,
+          tenants: current.tenants.map((membership) =>
+            membership.id === tenantId ? { ...membership, ...patch } : membership,
+          ),
+        })),
+      ]);
+
+      return combineRestores(restores);
+    },
+    onSuccess: () => {
       setBaseline(profile());
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -210,9 +256,11 @@ export default function GeneralSettingsPage() {
 
         return;
       }
-
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
 
@@ -242,8 +290,7 @@ export default function GeneralSettingsPage() {
   // Backups are an operational admin surface. Skip the request entirely for
   // roles that cannot read it instead of retrying a 403 on every visit.
   const backups = useQuery(() => ({
-    queryKey: enterpriseKeys.backups(params.tenantId),
-    queryFn: () => enterprise.listTenantBackups(params.tenantId),
+    ...enterpriseQueries.backups(params.tenantId),
     enabled: canBackups(),
     retry: false,
   }));
@@ -291,19 +338,47 @@ export default function GeneralSettingsPage() {
       run.retention === "pinned"
         ? enterprise.unpinTenantBackup(params.tenantId, run.id)
         : enterprise.pinTenantBackup(params.tenantId, run.id),
-    onMutate: () => setBackupActionError(null),
-    onSuccess: () => refetchBackups(),
-    onError: setBackupActionError,
+    onMutate: async (run) => {
+      const pinned = run.retention !== "pinned";
+      setBackupActionError(null);
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.backups(params.tenantId),
+        "backups",
+        (rows: BackupRunInfo[]) =>
+          rows.map((row): BackupRunInfo =>
+            row.id === run.id ? { ...row, retention: pinned ? "pinned" : "default" } : row,
+          ),
+      );
+    },
+    onSuccess: () => void refetchBackups(),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setBackupActionError(error);
+    },
   }));
 
   const removeBackup = useMutation(() => ({
     mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
-    onMutate: () => setBackupActionError(null),
-    onSuccess: async () => {
-      setDeleteBackupTarget(null);
-      await refetchBackups();
+    onMutate: async (id) => {
+      setBackupActionError(null);
+
+      return optimisticallyRemoveCollectionItems(
+        qc,
+        enterpriseKeys.backups(params.tenantId),
+        "backups",
+        [id],
+      );
     },
-    onError: setBackupActionError,
+    onSuccess: () => {
+      setDeleteBackupTarget(null);
+      void refetchBackups();
+    },
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setBackupActionError(error);
+    },
   }));
 
   const restoreBackup = useMutation(() => ({

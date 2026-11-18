@@ -101,9 +101,16 @@ import {
   DEVICE_ARTWORK_WIDTH,
 } from "~/lib/device-artwork";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import {
+  optimisticallyPatchItem,
+  optimisticallyRemoveDevices,
+  optimisticUpdate,
+} from "~/lib/optimistic";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 
@@ -406,6 +413,27 @@ function AbmPanel(props: {
   );
 }
 
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; deviceId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const deviceId = params.deviceId;
+
+    if (intent === "initial" || !tenantId || !deviceId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "device", deviceId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.deviceUsers(tenantId, deviceId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.deviceApplications(tenantId, deviceId)),
+    ]);
+  },
+};
+
 export default function DeviceDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -567,37 +595,40 @@ export default function DeviceDetailPage() {
     },
   );
 
+  // Reconcile every view of this device at once. Serial awaits here used to
+  // turn one command into a chain of round trips after the UI had already
+  // moved on, so the refetches run together and callers do not await them.
   const invalidate = async () => {
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceSearch(params.tenantId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceHealthSummary(params.tenantId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.deviceApplications(params.tenantId, params.deviceId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.applicationInventory(params.tenantId),
-    });
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.list(params.tenantId, "device"),
+      }),
+      queryClient.invalidateQueries({ queryKey: enterpriseKeys.deviceSearch(params.tenantId) }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceHealthSummary(params.tenantId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceApplications(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.applicationInventory(params.tenantId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
+      }),
+    ]);
   };
 
   const save = useMutation(() => ({
@@ -607,15 +638,30 @@ export default function DeviceDetailPage() {
         assetTag: assetTag() || null,
         notes: notes() || null,
       }),
-    onSuccess: async () => {
-      await invalidate();
+    onMutate: async () => {
+      const restore = await optimisticallyPatchItem(
+        queryClient,
+        params.tenantId!,
+        "device",
+        params.deviceId!,
+        { name: name(), assetTag: assetTag() || null, notes: notes() || null },
+      );
+
+      // The dialog closes on submit; the header already shows the new values.
       setEditOpen(false);
-      toast.success("Device details saved");
+
+      return { restore };
     },
-    onError: (error) =>
+    onSuccess: () => {
+      toast.success("Device details saved");
+      void invalidate();
+    },
+    onError: (error, _payload, context) => {
+      context?.restore();
       toast.error("Could not save device details", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const detailsDirty = () =>
@@ -630,6 +676,18 @@ export default function DeviceDetailPage() {
     title: "Discard device changes?",
     description: "Device details or linked users have edits that have not been saved.",
   });
+
+  /** The device's group memberships resolve through a search; snapshot it so a
+   * failed assignment can put the previous list back. */
+  const groupsKey = () =>
+    [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "groups"] as const;
+
+  const snapshotGroups = () =>
+    optimisticUpdate(
+      queryClient,
+      groupsKey(),
+      (current: { resolved: boolean; groups: readonly GroupMembership[] }) => current,
+    );
 
   const invalidateGroups = async () => {
     await queryClient.invalidateQueries({
@@ -646,15 +704,31 @@ export default function DeviceDetailPage() {
       enterprise.patchGroupMembers(params.tenantId, groupId, {
         assign: { devices: [params.deviceId!] },
       }),
-    onSuccess: async () => {
-      setSelectedGroupId("");
-      await invalidateGroups();
-      toast.success("Device added to group");
+    onMutate: async (groupId) => {
+      const name = knownGroup(groupId)?.name ?? groupId;
+      const restore = await snapshotGroups();
+
+      queryClient.setQueryData(
+        groupsKey(),
+        (current: { resolved: boolean; groups: readonly GroupMembership[] } | undefined) =>
+          current && !current.groups.some((group) => group.id === groupId)
+            ? { ...current, groups: [...current.groups, { id: groupId, name }] }
+            : current,
+      );
+
+      return { restore };
     },
-    onError: (error) =>
+    onSuccess: () => {
+      setSelectedGroupId("");
+      toast.success("Device added to group");
+      void invalidateGroups();
+    },
+    onError: (error, _groupId, context) => {
+      context?.restore();
       toast.error("Could not add the device to the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const removeFromGroup = useMutation(() => ({
@@ -662,23 +736,38 @@ export default function DeviceDetailPage() {
       enterprise.patchGroupMembers(params.tenantId, groupId, {
         unassign: { devices: [params.deviceId!] },
       }),
-    onSuccess: async () => {
-      await invalidateGroups();
-      toast.success("Device removed from group");
+    onMutate: async (groupId) => {
+      const restore = await snapshotGroups();
+
+      queryClient.setQueryData(
+        groupsKey(),
+        (current: { resolved: boolean; groups: readonly GroupMembership[] } | undefined) =>
+          current
+            ? { ...current, groups: current.groups.filter((group) => group.id !== groupId) }
+            : current,
+      );
+
+      return { restore };
     },
-    onError: (error) =>
+    onSuccess: () => {
+      toast.success("Device removed from group");
+      void invalidateGroups();
+    },
+    onError: (error, _groupId, context) => {
+      context?.restore();
       toast.error("Could not remove the device from the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId),
-    onSuccess: async () => {
-      await invalidate();
+    onSuccess: () => {
       toast.success("Sync requested", {
         description: "The device checks in for pending commands on its next contact.",
       });
+      void invalidate();
     },
     onError: (error) =>
       toast.error("Could not request a sync", {
@@ -872,9 +961,27 @@ export default function DeviceDetailPage() {
   // the dialog stays open so its `ErrorText` is visible.
   const unenroll = useMutation(() => ({
     mutationFn: () => enterprise.deviceUnenroll(params.tenantId, params.deviceId),
-    onSuccess: async () => {
-      await invalidate();
+    onMutate: async () => {
+      const restore = await optimisticallyPatchItem(
+        queryClient,
+        params.tenantId!,
+        "device",
+        params.deviceId!,
+        { status: "unenrolling" },
+      );
+
+      // The confirm dialog dismisses on submit; a failure reopens the state
+      // with the row restored and the error toast names the reason.
       closeConfirm();
+
+      return { restore };
+    },
+    onSuccess: () => void invalidate(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not unenroll the device", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
     },
   }));
 
@@ -889,10 +996,21 @@ export default function DeviceDetailPage() {
   const remove = useMutation(() => ({
     mutationFn: () =>
       enterprise.deleteDevices(params.tenantId, params.deviceId ? [params.deviceId] : []),
-    onSuccess: async () => {
-      await invalidate();
+    onMutate: async () => {
+      const ids = params.deviceId ? [params.deviceId] : [];
+      const restore = await optimisticallyRemoveDevices(queryClient, params.tenantId!, ids);
+
       closeConfirm();
       navigate(`/t/${params.tenantId}/devices`);
+
+      return { restore };
+    },
+    onSuccess: () => void invalidate(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not delete the device", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
     },
   }));
 

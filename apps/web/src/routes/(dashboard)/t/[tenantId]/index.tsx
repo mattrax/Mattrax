@@ -15,7 +15,11 @@ import {
 } from "@mattrax/ui";
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { MissingDevicesBanner } from "~/components/missing-devices-banner";
-import { DashboardWidgetView } from "~/components/dashboard/widget";
+import {
+  DashboardWidgetBatchProvider,
+  DashboardWidgetView,
+  useDashboardWidgetBatch,
+} from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Star } from "~/components/ui/icons";
@@ -29,6 +33,8 @@ import {
 } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 /** Preview widgets share the built-in layout, but stat, chart, table and note
  * rows are capped so an empty fleet never leaves a page-tall blank surface. */
@@ -83,46 +89,56 @@ const chartRamp = {
 
 function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
   return (
-    <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
-      <For each={props.widgets}>
-        {(widget) => (
-          <article
-            class={cn(
-              "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
-              `dashboard-widget-${widget.type}`,
-              // Stat widgets are rendered by the shared widget view; on the
-              // overview they follow the design system's compact metric scale.
-              widget.type === "stat" &&
-                "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
-            )}
-            style={{
-              "grid-column": `${widget.x + 1} / span ${widget.w}`,
-              "grid-row": `${widget.y + 1} / span ${widget.h}`,
-            }}
-          >
-            <header class="px-0.5 pb-2">
-              <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
-              <Show when={widget.type !== "stat"}>
-                <p class="truncate text-[10px] capitalize text-subtle-foreground">
-                  {widget.type === "markdown"
-                    ? "Markdown"
-                    : `${widget.type} · ${String(
-                        Option.getOrUndefined(
-                          Schema.decodeUnknownOption(
-                            Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
-                          )(widget.config),
-                        )?.dataset ?? "devices",
-                      )}`}
-                </p>
-              </Show>
-            </header>
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <DashboardWidgetView widget={widget} tenantId={props.tenantId} />
-            </div>
-          </article>
-        )}
-      </For>
-    </div>
+    <DashboardWidgetBatchProvider widgets={props.widgets} tenantId={props.tenantId}>
+      <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
+        <For each={props.widgets}>
+          {(widget) => {
+            const batchFor = useDashboardWidgetBatch();
+
+            return (
+              <article
+                class={cn(
+                  "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
+                  `dashboard-widget-${widget.type}`,
+                  // Stat widgets are rendered by the shared widget view; on the
+                  // overview they follow the design system's compact metric scale.
+                  widget.type === "stat" &&
+                    "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
+                )}
+                style={{
+                  "grid-column": `${widget.x + 1} / span ${widget.w}`,
+                  "grid-row": `${widget.y + 1} / span ${widget.h}`,
+                }}
+              >
+                <header class="px-0.5 pb-2">
+                  <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
+                  <Show when={widget.type !== "stat"}>
+                    <p class="truncate text-[10px] capitalize text-subtle-foreground">
+                      {widget.type === "markdown"
+                        ? "Markdown"
+                        : `${widget.type} · ${String(
+                            Option.getOrUndefined(
+                              Schema.decodeUnknownOption(
+                                Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
+                              )(widget.config),
+                            )?.dataset ?? "devices",
+                          )}`}
+                    </p>
+                  </Show>
+                </header>
+                <div class="min-h-0 flex-1 overflow-hidden">
+                  <DashboardWidgetView
+                    widget={widget}
+                    tenantId={props.tenantId}
+                    batch={batchFor?.(widget)}
+                  />
+                </div>
+              </article>
+            );
+          }}
+        </For>
+      </div>
+    </DashboardWidgetBatchProvider>
   );
 }
 
@@ -298,6 +314,18 @@ function PreviewOverview(props: {
     </Page>
   );
 }
+
+export const route = {
+  preload: ({ params, intent }: { params: { tenantId?: string }; intent: string }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.dashboards(tenantId)),
+    ]);
+  },
+};
 
 export default function TenantOverviewPage() {
   const tenant = useTenantParam();

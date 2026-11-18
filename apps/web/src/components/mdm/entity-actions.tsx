@@ -24,6 +24,10 @@ import {
   type PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import {
+  optimisticallyRemoveRows,
+  optimisticallyUpdateDeviceSearch,
+} from "~/lib/optimistic";
 
 type Named = { id: string; name: string };
 
@@ -446,9 +450,34 @@ export function EntityActions(props: {
 
             if (selected.length === 0) return;
 
-            const outcome = await settleRows(selected, (id) =>
-              enterprise.deviceUnenroll(params.tenantId, id),
+            // Unenrolment moves an enrolled device to `unenrolling`; show that
+            // immediately and restore the row if the command is rejected.
+            const selectedIds = new Set(selected.map((row) => row.id));
+            const restore = await optimisticallyUpdateDeviceSearch(
+              qc,
+              params.tenantId!,
+              (current) => ({
+                ...current,
+                devices: current.devices.map((device) =>
+                  selectedIds.has(device.id) && device.status === "enrolled"
+                    ? { ...device, status: "unenrolling" as const }
+                    : device,
+                ),
+              }),
             );
+
+            let outcome: BulkOutcome;
+
+            try {
+              outcome = await settleRows(selected, (id) =>
+                enterprise.deviceUnenroll(params.tenantId, id),
+              );
+            } catch (error) {
+              restore();
+              throw error;
+            }
+
+            if (outcome.failed.length > 0) restore();
 
             if (outcome.succeeded === 0) throw new Error(outcome.failed[0]!.reason);
 
@@ -474,10 +503,29 @@ export function EntityActions(props: {
 
             const requestedIds = requested.map((row) => row.id);
 
-            const result =
-              props.entity === "group"
-                ? await enterprise.deleteGroups(params.tenantId, requestedIds)
-                : await enterprise.deletePolicies(params.tenantId, requestedIds);
+            // The row disappears from every cached list as soon as the operator
+            // confirms; a rejection (whole or partial) restores it before the
+            // invalidate below reports the authoritative state.
+            const restore = await optimisticallyRemoveRows(
+              qc,
+              params.tenantId!,
+              props.entity,
+              requestedIds,
+            );
+
+            let result: Awaited<ReturnType<typeof enterprise.deleteGroups>>;
+
+            try {
+              result =
+                props.entity === "group"
+                  ? await enterprise.deleteGroups(params.tenantId, requestedIds)
+                  : await enterprise.deletePolicies(params.tenantId, requestedIds);
+            } catch (error) {
+              restore();
+              throw error;
+            }
+
+            if (result.failed.length > 0) restore();
 
             const names = new Map(requested.map((row) => [row.id, row.name]));
 

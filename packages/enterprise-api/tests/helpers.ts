@@ -464,6 +464,17 @@ const aggregateValue = (field: any, rows: Row[]): RowValue | undefined => {
   return bestValue;
 };
 
+const columnValue = (field: any, row: Row): RowValue => {
+  const prefixed = `${columnTable(field)}.${columnName(field)}`;
+  const column = columnName(field);
+  const camelPrefixed = `${columnTable(field)}.${camel(column)}`;
+
+  const candidates = [prefixed, camelPrefixed, column, camel(column)];
+  const match = candidates.find((candidate) => candidate in row);
+
+  return match === undefined ? undefined : row[match];
+};
+
 const project = (fields: any, row: Row) => {
   if (!fields) return unprefix(row);
 
@@ -478,25 +489,32 @@ const project = (fields: any, row: Row) => {
       if (nested) {
         const prefix = `${nested}.`;
 
-        return [
-          key,
-          Object.fromEntries(
-            Object.entries(row)
-              .filter(([name]) => name.startsWith(prefix))
-              .map(([name, value]) => [name.slice(prefix.length), value]),
-          ),
-        ];
+        const entries = Object.entries(row)
+          .filter(([name]) => name.startsWith(prefix))
+          .map(([name, value]) => [name.slice(prefix.length), value]);
+
+        // A left join with no match contributes no columns, which Drizzle
+        // surfaces as `undefined` rather than an empty object.
+        return [key, entries.length === 0 ? undefined : Object.fromEntries(entries)];
       }
 
-      if (field?.table) {
-        const prefixed = `${columnTable(field)}.${columnName(field)}`;
-        const column = columnName(field);
-        const camelPrefixed = `${columnTable(field)}.${camel(column)}`;
+      if (field?.table) return [key, columnValue(field, row)];
 
-        const candidates = [prefixed, camelPrefixed, column, camel(column)];
-        const match = candidates.find((candidate) => candidate in row);
+      // A nested selection of columns (`{ customRole: { id, name } }`) is an
+      // object whose values are all column chunks, not a table.
+      if (Schema.is(Schema.Record(Schema.String, Schema.Any))(field)) {
+        const entries = Object.entries(field);
 
-        return [key, match === undefined ? undefined : row[match]];
+        if (entries.length > 0 && entries.every(([, value]) => value?.table))
+          return [
+            key,
+            Object.fromEntries(
+              entries.map(([nestedKey, value]: [string, any]) => [
+                nestedKey,
+                columnValue(value, row),
+              ]),
+            ),
+          ];
       }
 
       if (key === "value") return [key, row.value ?? 0];
@@ -521,8 +539,7 @@ class SelectBuilder {
   private readonly store: Store;
   private readonly fields?: any;
   private table = "";
-  private joined?: string;
-  private joinCondition?: any;
+  private joins: Array<{ table: string; on?: any; kind: "inner" | "left" }> = [];
   private condition: any;
   private limitCount?: number;
   private offsetCount?: number;
@@ -541,8 +558,13 @@ class SelectBuilder {
   }
 
   innerJoin(table: any, on?: any) {
-    this.joined = tableName(table);
-    this.joinCondition = on;
+    this.joins.push({ table: tableName(table), on, kind: "inner" });
+
+    return this;
+  }
+
+  leftJoin(table: any, on?: any) {
+    this.joins.push({ table: tableName(table), on, kind: "left" });
 
     return this;
   }
@@ -629,7 +651,7 @@ class SelectBuilder {
             .length,
         },
       ];
-    } else if (this.joined) {
+    } else if (this.joins.length > 0) {
       rows = this.joinRows().filter((row) => matches(this.condition, row));
     } else {
       rows = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row));
@@ -688,18 +710,30 @@ class SelectBuilder {
     return value;
   }
 
-  /** Nested-loop join over the single joined table, using the ON condition. */
+  /** Nested-loop join over the joined tables, honouring inner/left semantics. */
   private joinRows() {
-    const left = this.store[this.table] ?? [];
-    const right = this.store[this.joined!] ?? [];
-    const rows: Row[] = [];
+    let rows: Row[] = (this.store[this.table] ?? []).map((row) => prefix(this.table, row));
 
-    for (const a of left) {
-      for (const b of right) {
-        const combined = { ...prefix(this.table, a), ...prefix(this.joined!, b) };
+    for (const join of this.joins) {
+      const right = this.store[join.table] ?? [];
+      const next: Row[] = [];
 
-        if (!this.joinCondition || matches(this.joinCondition, combined)) rows.push(combined);
+      for (const left of rows) {
+        let matched = false;
+
+        for (const row of right) {
+          const combined = { ...left, ...prefix(join.table, row) };
+
+          if (!join.on || matches(join.on, combined)) {
+            next.push(combined);
+            matched = true;
+          }
+        }
+
+        if (!matched && join.kind === "left") next.push(left);
       }
+
+      rows = next;
     }
 
     return rows;

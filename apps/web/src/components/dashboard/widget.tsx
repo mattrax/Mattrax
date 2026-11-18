@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/solid-query";
+import { useQueries, useQuery } from "@tanstack/solid-query";
 import {
   DashboardQueryRequest,
+  DashboardQueryResponse,
   DashboardQueryRow,
   DeviceQuery,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createContext, createMemo, useContext } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
 import { Markdown } from "~/components/dashboard/markdown";
@@ -143,21 +145,117 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
   return String(value);
 };
 
-export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: string }) {
-  const config = () => configOf(props.widget);
-  const dataset = () => config().dataset ?? "devices";
-  const query = createMemo(() => config().query ?? { all: [] });
+/** The exact request a widget sends; shared with the page-level batch. */
+export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest => {
+  const config = configOf(widget);
 
-  const queryRequest = (groupBy?: string, limit?: number): DashboardQueryRequest => ({
-    dataset: dataset(),
-    query: query(),
-    groupBy,
-    limit,
+  return {
+    dataset: config.dataset ?? "devices",
+    query: config.query ?? { all: [] },
+    groupBy: config.dimension,
+    limit: config.limit,
     // Stats render only `total`, so the API can skip row projection and (for
     // device queries that do not reference installed apps) the application
     // inventory scan.
-    countOnly: props.widget.type === "stat",
+    countOnly: widget.type === "stat",
+  };
+};
+
+type DashboardWidgetBatch = {
+  readonly data: DashboardQueryResponse | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly retry: () => void;
+};
+
+type DashboardWidgetBatchLookup = (widget: DashboardWidget) => DashboardWidgetBatch | undefined;
+
+/** The API caps one batch at 24 queries; extra widgets go in another request. */
+const DASHBOARD_BATCH_LIMIT = 24;
+
+const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchLookup>();
+
+/**
+ * Fetch every widget on a dashboard with one request.
+ *
+ * The provider is rendered only once the dashboard itself has loaded, so its
+ * query options read a resolved widget list. Reading a pending async value
+ * from a query's options is not allowed (TanStack reads them untracked).
+ */
+export function DashboardWidgetBatchProvider(props: {
+  widgets: ReadonlyArray<DashboardWidget>;
+  tenantId: string;
+  children?: JSX.Element;
+}) {
+  const queried = createMemo(() =>
+    props.widgets.filter((widget) => widget.type !== "markdown").map(dashboardWidgetQueryRequest),
+  );
+
+  const chunks = createMemo(() => {
+    const requests = queried();
+    const groups: DashboardQueryRequest[][] = [];
+
+    for (let index = 0; index < requests.length; index += DASHBOARD_BATCH_LIMIT)
+      groups.push(requests.slice(index, index + DASHBOARD_BATCH_LIMIT));
+
+    return groups;
   });
+
+  const batches = useQueries(() => ({
+    queries: chunks().map((queries) => ({
+      queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queries),
+      queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queries),
+      enabled: queries.length > 0,
+    })),
+  }));
+
+  const batchIndex = createMemo(
+    () =>
+      new Map(
+        props.widgets
+          .filter((widget) => widget.type !== "markdown")
+          .map((widget, index) => [widget.id, index] as const),
+      ),
+  );
+
+  const batchFor: DashboardWidgetBatchLookup = (widget) => {
+    const index = batchIndex().get(widget.id);
+
+    if (index === undefined) return undefined;
+
+    const chunk = Math.floor(index / DASHBOARD_BATCH_LIMIT);
+    const offset = index % DASHBOARD_BATCH_LIMIT;
+    const batch = () => batches[chunk];
+
+    return {
+      get data() {
+        return batch()?.data?.results[offset];
+      },
+      get pending() {
+        return batch()?.isPending ?? true;
+      },
+      get error() {
+        return batch()?.error;
+      },
+      retry: () => void batch()?.refetch(),
+    };
+  };
+
+  return <DashboardWidgetBatchContext value={batchFor}>{props.children}</DashboardWidgetBatchContext>;
+}
+
+/** The shared batch lookup; present only inside the provider. */
+export const useDashboardWidgetBatch = () => useContext(DashboardWidgetBatchContext);
+
+export function DashboardWidgetView(props: {
+  widget: DashboardWidget;
+  tenantId: string;
+  /** Present when the page fetched every widget with one batched request. */
+  batch?: DashboardWidgetBatch;
+}) {
+  const config = () => configOf(props.widget);
+  const dataset = () => config().dataset ?? "devices";
+  const queryRequest = () => dashboardWidgetQueryRequest(props.widget);
 
   const columns = () => {
     const configured = config().columns;
@@ -166,14 +264,15 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
   };
 
   const result = useQuery(() => ({
-    queryKey: enterpriseKeys.dashboardQuery(
-      props.tenantId,
-      queryRequest(config().dimension, config().limit),
-    ),
-    queryFn: () =>
-      enterprise.queryDashboard(props.tenantId, queryRequest(config().dimension, config().limit)),
-    enabled: !isServer && props.widget.type !== "markdown",
+    queryKey: enterpriseKeys.dashboardQuery(props.tenantId, queryRequest()),
+    queryFn: () => enterprise.queryDashboard(props.tenantId, queryRequest()),
+    enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
+
+  const data = () => props.batch?.data ?? result.data;
+  const pending = () => props.batch?.pending ?? result.isPending;
+  const error = () => props.batch?.error ?? result.error;
+  const retry = () => (props.batch ? props.batch.retry() : void result.refetch());
 
   return (
     <Show
@@ -181,7 +280,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
       fallback={<Markdown content={markdownOf(props.widget)} />}
     >
       <Show
-        when={!result.isPending}
+        when={!pending()}
         fallback={
           <div
             role="status"
@@ -191,26 +290,26 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
         }
       >
         <Show
-          when={!result.error}
+          when={!error()}
           fallback={
             <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
               <p class="font-medium text-destructive">
-                {errorPresentation(raisedFailure(result.error)).title}
+                {errorPresentation(raisedFailure(error())).title}
               </p>
               <p class="mt-0.5 text-muted-foreground">
-                {errorPresentation(raisedFailure(result.error)).message}
+                {errorPresentation(raisedFailure(error())).message}
               </p>
               <button
                 type="button"
                 class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                onClick={() => void result.refetch()}
+                onClick={() => retry()}
               >
                 Try again
               </button>
             </div>
           }
         >
-          <Show when={result.data}>
+          <Show when={data()}>
             {(data) => (
               <Show
                 when={props.widget.type !== "stat"}
@@ -242,7 +341,7 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
                       </div>
                     }
                   >
-                    <div class="overflow-x-auto" aria-busy={result.isFetching ? "true" : undefined}>
+                    <div class="overflow-x-auto" aria-busy={pending() ? "true" : undefined}>
                       <table class="w-full text-[11.5px]">
                         <caption class="sr-only">
                           {dataset() === "software" ? "Applications" : "Devices"} matching this

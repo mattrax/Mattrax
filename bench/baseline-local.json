@@ -1,0 +1,232 @@
+{
+  "label": "bench",
+  "baseUrl": "http://localhost:9050",
+  "latency": "http://127.0.0.1:3309",
+  "runs": 5,
+  "generatedAt": "2026-11-18T10:07:32.137Z",
+  "results": [
+    {
+      "name": "GET /v1/tenants",
+      "queries": 11,
+      "ms": 18.8,
+      "minMs": 16.2,
+      "maxMs": 40.8
+    },
+    {
+      "name": "GET /v1/tenants/:id",
+      "queries": 12,
+      "ms": 22,
+      "minMs": 14.7,
+      "maxMs": 44.2
+    },
+    {
+      "name": "GET /v1/tenants/:id/security",
+      "queries": 12,
+      "ms": 16.8,
+      "minMs": 16,
+      "maxMs": 21.5
+    },
+    {
+      "name": "GET /v1/tenants/:id/devices",
+      "queries": 17,
+      "ms": 37.6,
+      "minMs": 34.2,
+      "maxMs": 38.9
+    },
+    {
+      "name": "GET devices/search (page)",
+      "queries": 21,
+      "ms": 21.1,
+      "minMs": 20.1,
+      "maxMs": 27.9
+    },
+    {
+      "name": "GET devices/search (text q)",
+      "queries": 21,
+      "ms": 20,
+      "minMs": 19.2,
+      "maxMs": 26.2
+    },
+    {
+      "name": "GET devices/search (health sort)",
+      "queries": 21,
+      "ms": 33.8,
+      "minMs": 27.6,
+      "maxMs": 38.8
+    },
+    {
+      "name": "GET devices/search (structured query)",
+      "queries": 21,
+      "ms": 21.9,
+      "minMs": 20,
+      "maxMs": 28.1
+    },
+    {
+      "name": "GET /devices/:id",
+      "queries": 19,
+      "ms": 16.8,
+      "minMs": 16.7,
+      "maxMs": 24.3
+    },
+    {
+      "name": "GET /devices/:id/health",
+      "queries": 16,
+      "ms": 15.7,
+      "minMs": 15.4,
+      "maxMs": 23.3
+    },
+    {
+      "name": "GET /devices/:id/activity",
+      "queries": 17,
+      "ms": 16.2,
+      "minMs": 15.8,
+      "maxMs": 25.6
+    },
+    {
+      "name": "GET /devices/:id/applications",
+      "queries": 14,
+      "ms": 15.5,
+      "minMs": 14.8,
+      "maxMs": 22.8
+    },
+    {
+      "name": "GET /devices/:id/users",
+      "queries": 14,
+      "ms": 14.7,
+      "minMs": 14.1,
+      "maxMs": 21.8
+    },
+    {
+      "name": "GET /device-health",
+      "queries": 15,
+      "ms": 26.7,
+      "minMs": 22.9,
+      "maxMs": 52.3
+    },
+    {
+      "name": "GET /v1/tenants/:id/policies",
+      "queries": 24,
+      "ms": 26.6,
+      "minMs": 25.3,
+      "maxMs": 31.5
+    },
+    {
+      "name": "GET /policies/:id",
+      "queries": 14,
+      "ms": 17.6,
+      "minMs": 15.1,
+      "maxMs": 25.6
+    },
+    {
+      "name": "GET /policies/:id/assignments",
+      "queries": 20,
+      "ms": 17.1,
+      "minMs": 16.3,
+      "maxMs": 23.3
+    },
+    {
+      "name": "GET /policies/:id/deployments",
+      "queries": 14,
+      "ms": 14.9,
+      "minMs": 14.1,
+      "maxMs": 22.4
+    },
+    {
+      "name": "GET /v1/tenants/:id/groups",
+      "queries": 15,
+      "ms": 16.2,
+      "minMs": 15.2,
+      "maxMs": 25.7
+    },
+    {
+      "name": "GET /groups/:id",
+      "queries": 17,
+      "ms": 16.4,
+      "minMs": 15.7,
+      "maxMs": 23.9
+    },
+    {
+      "name": "GET /v1/tenants/:id/applications",
+      "queries": 16,
+      "ms": 16,
+      "minMs": 15.4,
+      "maxMs": 23.1
+    },
+    {
+      "name": "GET /applications/inventory",
+      "queries": 13,
+      "ms": 21.4,
+      "minMs": 21,
+      "maxMs": 26.8
+    },
+    {
+      "name": "GET /applications/:id",
+      "queries": 18,
+      "ms": 17.2,
+      "minMs": 16.4,
+      "maxMs": 26.3
+    },
+    {
+      "name": "GET /v1/tenants/:id/accounts",
+      "queries": 14,
+      "ms": 16.2,
+      "minMs": 14.9,
+      "maxMs": 23.4
+    },
+    {
+      "name": "GET /v1/tenants/:id/directory",
+      "queries": 15,
+      "ms": 15,
+      "minMs": 14.8,
+      "maxMs": 23.8
+    },
+    {
+      "name": "GET /v1/tenants/:id/dashboards",
+      "queries": 14,
+      "ms": 14.7,
+      "minMs": 14.2,
+      "maxMs": 21.7
+    },
+    {
+      "name": "GET /v1/tenants/:id/audit-log",
+      "queries": 13,
+      "ms": 15.4,
+      "minMs": 14.4,
+      "maxMs": 25.7
+    },
+    {
+      "name": "POST dashboard-query (count all)",
+      "queries": 15,
+      "ms": 26.1,
+      "minMs": 23.5,
+      "maxMs": 55.1
+    },
+    {
+      "name": "POST dashboard-query (count attention)",
+      "queries": 15,
+      "ms": 21.3,
+      "minMs": 21.1,
+      "maxMs": 26.1
+    },
+    {
+      "name": "POST dashboard-query (pie platform)",
+      "queries": 16,
+      "ms": 35,
+      "minMs": 34,
+      "maxMs": 39.1
+    },
+    {
+      "name": "POST dashboard-query (table attention)",
+      "queries": 16,
+      "ms": 37.5,
+      "minMs": 33.2,
+      "maxMs": 40.1
+    }
+  ],
+  "overviewPage": {
+    "requests": 7,
+    "queriesSerial": 103,
+    "msSerial": 183.3,
+    "msParallelApprox": 37.5
+  }
+}

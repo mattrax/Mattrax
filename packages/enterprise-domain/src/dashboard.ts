@@ -171,6 +171,26 @@ export const DashboardQueryResponse = Schema.Struct({
 
 export type DashboardQueryResponse = typeof DashboardQueryResponse.Type;
 
+/**
+ * Several widget queries in one request.
+ *
+ * A dashboard renders several independent widgets, and each one previously
+ * fetched its own devices, health and (for tables) application inventory. The
+ * batch endpoint evaluates them against one snapshot of the tenant, so the
+ * device read happens once per page instead of once per widget.
+ */
+export const DashboardQueryBatchRequest = Schema.Struct({
+  queries: Schema.Array(DashboardQueryRequest).check(Schema.isMaxLength(24)),
+});
+
+export type DashboardQueryBatchRequest = typeof DashboardQueryBatchRequest.Type;
+
+export const DashboardQueryBatchResponse = Schema.Struct({
+  results: Schema.Array(DashboardQueryResponse),
+});
+
+export type DashboardQueryBatchResponse = typeof DashboardQueryBatchResponse.Type;
+
 /** Typed views of the open-ended widget config used by the UI. */
 export type DashboardQueryConfig = {
   dataset: DashboardDataset;

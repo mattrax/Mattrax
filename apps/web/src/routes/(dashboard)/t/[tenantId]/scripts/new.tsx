@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Show } from "solid-js";
@@ -6,7 +6,19 @@ import { Page, PageHeader, Panel } from "~/components/mdm/common";
 import { ScriptEditor, type ScriptDraftValues } from "~/components/mdm/script-editor";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { queryClient } from "~/lib/query-client";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.scripts(params.tenantId)),
+    ]);
+  },
+};
 
 export default function NewScriptPage() {
   const params = useParams();
@@ -22,12 +34,14 @@ export default function NewScriptPage() {
         description: values.description || null,
         environment: values.environment.filter((entry) => entry.name.trim()),
       }),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
+    onSuccess: ({ id }) => {
+      // The list is refreshed in the background; navigating first avoids a
+      // pending form while the new detail route loads.
+      navigate(`/t/${params.tenantId}/scripts/${id}`);
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
       toast.success("Script created", {
         description: "Assign it to devices or groups to deliver it.",
       });
-      navigate(`/t/${params.tenantId}/scripts/${id}`);
     },
   }));
 

@@ -515,3 +515,26 @@ details[open] > summary .disclosure-chevron {
     transform: none;
   }
 }
+
+/* Solid Router marks the target of an in-flight navigation. The page stays
+ * interactive while route code/data preload; the destination link simply
+ * acknowledges the click. */
+a[data-pending] {
+  opacity: 0.62;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a[data-pending] {
+    animation: mattrax-pending-link 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes mattrax-pending-link {
+  0%,
+  100% {
+    opacity: 0.62;
+  }
+  50% {
+    opacity: 1;
+  }
+}

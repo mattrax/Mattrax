@@ -1,14 +1,19 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
-import { DashboardWidgetView } from "~/components/dashboard/widget";
+import {
+  DashboardWidgetBatchProvider,
+  DashboardWidgetView,
+  useDashboardWidgetBatch,
+} from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { toast } from "~/components/toast";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -28,8 +33,24 @@ import {
   type DashboardWidgetType,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { optimisticUpdate } from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient as appQueryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 import { useCan } from "~/lib/permissions";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () =>
+        appQueryClient.ensureQueryData(
+          enterpriseQueries.dashboard(params.tenantId, params.dashboardId),
+        ),
+    ]);
+  },
+};
 
 type Layout = { x: number; y: number; w: number; h: number };
 
@@ -257,6 +278,7 @@ export default function DashboardPage() {
   let cleanDrag: (() => void) | undefined;
 
   const widgets = () => dashboard.data?.widgets ?? [];
+
   const currentLayout = (widget: DashboardWidget): Layout => layout()[widget.id] ?? widget;
 
   createEffect(
@@ -278,10 +300,12 @@ export default function DashboardPage() {
   onCleanup(() => cleanDrag?.());
 
   const invalidate = async () => {
-    await queryClient.invalidateQueries({
-      queryKey: enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
-    });
-    await queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
+      }),
+      queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) }),
+    ]);
   };
 
   const saveSettings = useMutation(() => ({
@@ -291,38 +315,93 @@ export default function DashboardPage() {
         name: name(),
         description: description() || null,
       }),
-    onSuccess: async () => {
+    onMutate: async () => {
       setSettingsError(null);
-      await invalidate();
+      const restore = await optimisticUpdate<{ name: string; description?: string | null }>(
+        queryClient,
+        enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
+        (current) => ({ ...current, name: name(), description: description() || null }),
+      );
+
+      return { restore };
     },
-    onError: (cause) =>
+    onSuccess: () => void invalidate(),
+    onError: (cause, _payload, context) => {
+      context?.restore();
       setSettingsError(
         errorMessage(raisedFailure(cause), "Could not save the dashboard. Try again."),
-      ),
+      );
+    },
   }));
 
   const makeDefault = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: () =>
       enterprise.patchDashboard(params.tenantId, params.dashboardId, { isDefault: true }),
-    onMutate: () => setMakeDefaultError(null),
-    onSuccess: async () => {
+    onMutate: async () => {
       setMakeDefaultError(null);
-      await invalidate();
+      const restores = await Promise.all([
+        optimisticUpdate<{ isDefault?: boolean }>(
+          queryClient,
+          enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
+          (current) => ({ ...current, isDefault: true }),
+        ),
+        optimisticUpdate<{ dashboards: { id: string; isDefault?: boolean }[] }>(
+          queryClient,
+          enterpriseKeys.dashboards(params.tenantId),
+          (current) => ({
+            ...current,
+            dashboards: current.dashboards.map((dashboard) => ({
+              ...dashboard,
+              isDefault: dashboard.id === params.dashboardId,
+            })),
+          }),
+        ),
+      ]);
+
+      return { restore: () => restores.forEach((restore) => restore()) };
     },
-    onError: (cause) => setMakeDefaultError(cause),
+    onSuccess: () => {
+      setMakeDefaultError(null);
+      void invalidate();
+    },
+    onError: (cause, _payload, context) => {
+      context?.restore();
+      setMakeDefaultError(cause);
+    },
   }));
 
   const removeDashboard = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: () => enterprise.deleteDashboard(params.tenantId, params.dashboardId),
-    onMutate: () => setRemoveDashboardError(null),
-    onSuccess: async () => {
+    onMutate: async () => {
       setRemoveDashboardError(null);
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
+      const restore = await optimisticUpdate<{ dashboards: { id: string }[] }>(
+        queryClient,
+        enterpriseKeys.dashboards(params.tenantId),
+        (current) => ({
+          ...current,
+          dashboards: current.dashboards.filter(
+            (dashboard) => dashboard.id !== params.dashboardId,
+          ),
+        }),
+      );
+
       navigate(`/t/${params.tenantId}/dashboards`, { replace: true });
+
+      return { restore };
     },
-    onError: (cause) => setRemoveDashboardError(cause),
+    onSuccess: () => {
+      setRemoveDashboardError(null);
+      void queryClient.invalidateQueries({ queryKey: enterpriseKeys.dashboards(params.tenantId) });
+    },
+    onError: (cause, _payload, context) => {
+      context?.restore();
+      setRemoveDashboardError(cause);
+      toast.error("Could not delete the dashboard", {
+        description: errorMessage(raisedFailure(cause), "Try again in a moment."),
+      });
+    },
   }));
 
   const saveWidget = useMutation(() => ({
@@ -366,25 +445,78 @@ export default function DashboardPage() {
         h: 4,
       });
     },
-    onSuccess: async () => {
+    onMutate: async () => {
+      const existing = editingWidget();
+
+      // A new widget's id is assigned by the server, so only an edit can be
+      // painted from the form. Both paths close the dialog on submit.
+      if (!existing) {
+        setEditorOpen(false);
+        return;
+      }
+
+      const value = draft();
+      const title = value.title.trim();
+
+      if (!title) return;
+
+      const config = { ...value.config };
+
+      if (value.type !== "markdown") config.query = value.config.query ?? { all: [] };
+
+      const restore = await optimisticUpdate<{ widgets: DashboardWidget[] }>(
+        queryClient,
+        enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
+        (current) => ({
+          ...current,
+          widgets: current.widgets.map((widget) =>
+            widget.id === existing.id ? { ...widget, type: value.type, title, config } : widget,
+          ),
+        }),
+      );
+
       setEditorOpen(false);
-      setFormError(null);
-      await invalidate();
+
+      return { restore };
     },
-    onError: (cause) => setFormError(errorMessage(cause, "Could not save the widget. Try again.")),
+    onSuccess: () => {
+      setFormError(null);
+      void invalidate();
+    },
+    onError: (cause, _payload, context) => {
+      context?.restore();
+      setEditorOpen(true);
+      setFormError(errorMessage(cause, "Could not save the widget. Try again."));
+    },
   }));
 
   const removeWidget = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (widget: DashboardWidget) =>
       enterprise.deleteDashboardWidget(params.tenantId, params.dashboardId, widget.id),
-    onMutate: () => setRemoveWidgetError(null),
-    onSuccess: async () => {
+    onMutate: async (widget) => {
       setRemoveWidgetError(null);
+      const restore = await optimisticUpdate<{ widgets: DashboardWidget[] }>(
+        queryClient,
+        enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
+        (current) => ({
+          ...current,
+          widgets: current.widgets.filter((candidate) => candidate.id !== widget.id),
+        }),
+      );
+
       setRemoveWidgetTarget(null);
-      await invalidate();
+
+      return { restore };
     },
-    onError: (cause) => setRemoveWidgetError(cause),
+    onSuccess: () => {
+      setRemoveWidgetError(null);
+      void invalidate();
+    },
+    onError: (cause, _widget, context) => {
+      context?.restore();
+      setRemoveWidgetError(cause);
+    },
   }));
 
   const saveLayout = useMutation(() => ({
@@ -669,15 +801,17 @@ export default function DashboardPage() {
           </div>
         }
       >
-        <div
-          ref={(element) => {
-            gridRef = element;
-          }}
-          class="dashboard-grid"
-        >
-          <For each={widgets()}>
-            {(widget) => {
-              const position = () => currentLayout(widget);
+        <DashboardWidgetBatchProvider widgets={widgets()} tenantId={params.tenantId!}>
+          <div
+            ref={(element) => {
+              gridRef = element;
+            }}
+            class="dashboard-grid"
+          >
+            <For each={widgets()}>
+              {(widget) => {
+                const position = () => currentLayout(widget);
+                const batchFor = useDashboardWidgetBatch();
 
               return (
                 <article
@@ -736,7 +870,11 @@ export default function DashboardPage() {
                     </Show>
                   </header>
                   <div class="min-h-0 flex-1 overflow-hidden">
-                    <DashboardWidgetView widget={widget} tenantId={params.tenantId!} />
+                    <DashboardWidgetView
+                      widget={widget}
+                      tenantId={params.tenantId!}
+                      batch={batchFor?.(widget)}
+                    />
                   </div>
                   <Show when={editing()}>
                     <button
@@ -749,8 +887,9 @@ export default function DashboardPage() {
                 </article>
               );
             }}
-          </For>
-        </div>
+            </For>
+          </div>
+        </DashboardWidgetBatchProvider>
       </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>

@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/solid-query";
+import { infiniteQueryOptions, queryOptions, type InfiniteData } from "@tanstack/solid-query";
 import type {
   AppleUserActionName,
   MeResponse,
@@ -37,6 +37,7 @@ import {
   type AppleBusinessManagerSyncResponse,
   type ApplicationInventoryQuery,
   type AuditSearchQuery,
+  type AuditSearchResponse,
   type AutopilotImportRequest,
   type CreateAttributeRequest,
   type PatchAttributeRequest,
@@ -251,6 +252,10 @@ type EnterpriseAttributeClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseAttribute"];
 
+type EnterpriseDashboardClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseDashboard"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -267,8 +272,14 @@ export const enterpriseKeys = {
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
   backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
+  /** Every cached list of one entity, ignoring any group filter. */
+  listPrefix: (tenantId: RouteParam, entity: Entity) =>
+    ["enterprise", "list", keyTenant(tenantId), entity] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
+  /** Every cached device search for a tenant, ignoring the active filters. */
+  deviceSearchPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "device-search", keyTenant(tenantId)] as const,
   deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     ["enterprise", "device-search", keyTenant(tenantId), query] as const,
   deviceHealth: (tenantId: RouteParam, id: RouteParam) =>
@@ -324,6 +335,8 @@ export const enterpriseKeys = {
     ["enterprise", "dashboard", keyTenant(tenantId), id ?? ""] as const,
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
     ["enterprise", "dashboard-query", keyTenant(tenantId), request] as const,
+  dashboardQueryBatch: (tenantId: RouteParam, requests: ReadonlyArray<DashboardQueryRequest>) =>
+    ["enterprise", "dashboard-query-batch", keyTenant(tenantId), requests] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", keyTenant(tenantId)] as const,
   accountActivity: (query: AuditSearchQuery = {}) =>
     ["enterprise", "account-activity", query] as const,
@@ -513,6 +526,15 @@ function attributeEndpoint<A, E>(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAttribute),
     call,
     options,
+  );
+}
+
+function dashboardEndpoint<A, E>(
+  call: (api: EnterpriseDashboardClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
+    call,
   );
 }
 
@@ -821,6 +843,16 @@ export const enterprise = {
   queryDashboard: (tenantId: RouteParam, payload: DashboardQueryRequest) =>
     endpoint((api) =>
       api.queryDashboard({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  queryDashboardBatch: (
+    tenantId: RouteParam,
+    queries: ReadonlyArray<DashboardQueryRequest>,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.queryDashboardBatch({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { queries: [...queries] },
+      }),
     ),
   /** Returns CSV text; callers turn it into a file download. */
   exportDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
@@ -2156,6 +2188,30 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.getTenant(tenantId),
       enabled: Boolean(tenantId),
     }),
+  backups: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.backups(tenantId),
+      queryFn: () => enterprise.listTenantBackups(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  attributes: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.attributes(tenantId),
+      queryFn: () => enterprise.listAttributes(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  enrollmentQuestions: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.enrollmentQuestions(tenantId),
+      queryFn: () => enterprise.listEnrollmentQuestions(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  policyVariables: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.policyVariables(tenantId),
+      queryFn: () => enterprise.getPolicyVariables(tenantId),
+      enabled: Boolean(tenantId),
+    }),
   list: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.list(tenantId, entity, group),
@@ -2316,6 +2372,22 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listAuditLog(tenantId),
       enabled: Boolean(tenantId),
     }),
+  /** Cursor-paged audit search shared by the settings page and its preload. */
+  auditSearch: (tenantId: RouteParam, filters: AuditSearchQuery = {}) =>
+    infiniteQueryOptions<
+      AuditSearchResponse,
+      Error,
+      InfiniteData<AuditSearchResponse>,
+      readonly unknown[],
+      string | undefined
+    >({
+      queryKey: enterpriseKeys.auditSearch(tenantId, filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchAuditLog(tenantId, { ...filters, cursor: pageParam }),
+      initialPageParam: undefined,
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
   roles: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.roles(tenantId),
@@ -2414,6 +2486,54 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.enrollment(tenantId),
       queryFn: () => enterprise.getTenantEnrollment(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  enrollmentAttempts: (tenantId: RouteParam, limit = 20) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.enrollmentAttempts(tenantId, limit),
+      queryFn: () => enterprise.listEnrollmentAttempts(tenantId, limit),
+      enabled: Boolean(tenantId),
+    }),
+  devicePreRegistrations: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.devicePreRegistrations(tenantId),
+      queryFn: () => enterprise.listDevicePreRegistrations(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  scepCa: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scepCa(tenantId),
+      queryFn: () => enterprise.getTenantScepCa(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  devicePushHealth: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.devicePushHealth(tenantId),
+      queryFn: () => enterprise.getDevicePushHealth(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  autopilot: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.autopilot(tenantId),
+      queryFn: () => enterprise.getAutopilotSettings(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  autopilotDevices: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.autopilotDevices(tenantId),
+      queryFn: () => enterprise.listAutopilotDevices(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  autopilotProfiles: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.autopilotProfiles(tenantId),
+      queryFn: () => enterprise.listAutopilotProfiles(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  tenantSecurity: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.tenantSecurity(tenantId),
+      queryFn: () => enterprise.getTenantSecurity(tenantId),
       enabled: Boolean(tenantId),
     }),
   publicEnrollment: (id: RouteParam, code?: string) =>

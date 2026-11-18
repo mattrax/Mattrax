@@ -1,5 +1,5 @@
 import { Head, Link, Meta, Title } from "@solidjs/meta";
-import { createRouter, useLocation } from "@solidjs/router";
+import { createRouter, intentPreload, pendingLinks, tapPreload, useLocation, viewportPreload } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
@@ -27,7 +27,18 @@ import "./app.css";
 // clean URL for its initial match. Listeners are inert on the server.
 if (!isServer) installSkewProtection();
 
-const Router = createRouter({ routes: fileRoutes(pageRoutes) });
+const Router = createRouter({
+  routes: fileRoutes(pageRoutes),
+  // Mark the target of an in-flight navigation so the shell can show it.
+  links: pendingLinks,
+  // Warm route code and data before the click: hover/focus/touch for intent,
+  // pointerdown for touch, and code for links that scroll into view.
+  preloadLinks: [
+    intentPreload({ delay: 25 }),
+    tapPreload(),
+    viewportPreload({ all: true, data: false }),
+  ],
+});
 
 /** Public origin for absolute social URLs; localhost and self-hosted deployments keep their own host. */
 function siteOrigin() {

@@ -1423,6 +1423,14 @@ export const auditLog = mysqlTable(
   (table) => [
     index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
     index("audit_log_organization_action_idx").on(table.organizationId, table.action),
+    // Device activity reads one target's newest entries; without this the
+    // query scans the tenant's whole stream before filtering the target.
+    index("audit_log_organization_target_created_idx").on(
+      table.organizationId,
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
     // Cross-tenant onboarding cooldown: action + actor within a date window.
     index("audit_log_actor_action_idx").on(table.actorAccountId, table.action, table.createdAt),
   ],
@@ -2139,6 +2147,8 @@ export const deviceCommand = mysqlTable(
   },
   (table) => [
     index("device_command_device_status_idx").on(table.deviceId, table.status, table.expiresAt),
+    // The device activity page reads one device's commands newest-first.
+    index("device_command_device_updated_idx").on(table.deviceId, table.updatedAt),
     uniqueIndex("device_command_device_dedupe_unique").on(table.deviceId, table.dedupeKey),
     index("device_command_organization_idx").on(table.organizationId, table.createdAt),
     // Deployment-wide maintenance: expiry scans by deadline and retention

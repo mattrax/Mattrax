@@ -244,3 +244,130 @@ they set their own `Cache-Control`:
 
 Keeping assets `private` preserves tenant and device binding even if a bucket is ever
 exposed directly; the signed URL remains the capability that authorises a fetch.
+
+## Dashboard API latency
+
+Dashboard pages issue several independent API calls, and each one resolves the
+session, tenant, membership and role before its handler runs. At a local socket
+that cost is invisible; against a production MySQL instance (20–60 ms per round
+trip) every sequential query is tens of milliseconds of page load.
+
+`apps/cloud/scripts/api-bench.ts` measures the real preview/HTTP path against a
+seeded tenant and reports **SQL commands per endpoint** alongside wall time. Pair
+it with `apps/cloud/scripts/db-latency-proxy.ts` to model production latency:
+
+```sh
+# terminal 1 — 40 ms round trip, one query = one round trip
+pnpm exec tsx apps/cloud/scripts/db-latency-proxy.ts --latency 40 --port 3307
+
+# terminal 2 — point local dev at the proxy
+MATTRAX_DEV_DATABASE_URL=mysql://mattrax:mattrax@127.0.0.1:3307/mattraxe pnpm cloud dev
+
+# terminal 3 — seed once, then measure (median of 5 runs after 2 warm-ups)
+pnpm exec tsx apps/cloud/scripts/api-bench.ts --reseed --runs 5 --out bench/final-40ms.json
+```
+
+The proxy counts `COM_QUERY`/`COM_STMT_PREPARE` packets, so the numbers include
+authentication, tenant resolution, handler queries and background writes. It
+delays the first packet of each response by half the RTT in each direction; a
+large result set streams at bandwidth, as it does in production. Without the
+proxy the script falls back to `SHOW GLOBAL STATUS LIKE 'Questions'`.
+
+### Results (2026-11-18, 500 devices)
+
+`before` is `oscar/o/api-performance` at the commit this work started from;
+`after` includes the changes below. Local ms is a 0 ms proxy (medians are noisy
+under workerd); the 40 ms column is the production model.
+
+| Endpoint                                       | Queries before → after | Local ms before → after | +40 ms before → after |
+| ---------------------------------------------- | ---------------------: | ----------------------: | --------------------: |
+| `GET /v1/tenants`                              |                11 → 10 |             18.8 → 18.5 |         518.1 → 465.3 |
+| `GET /v1/tenants/:id`                          |                12 → 10 |               22 → 16.1 |         538.9 → 464.5 |
+| `GET /v1/tenants/:id/security`                 |                12 → 10 |             16.8 → 18.8 |         550.9 → 471.8 |
+| `GET /v1/tenants/:id/devices`                  |                17 → 15 |             37.6 → 35.4 |         819.3 → 694.1 |
+| `GET devices/search (page)`                    |                21 → 18 |             21.1 → 21.2 |         945.1 → 666.4 |
+| `GET devices/search (text q)`                  |                21 → 18 |                 20 → 20 |         972.5 → 676.6 |
+| `GET devices/search (health sort)`             |                21 → 18 |             33.8 → 35.8 |         985.7 → 750.1 |
+| `GET devices/search (structured query)`        |                21 → 18 |             21.9 → 29.3 |         974.8 → 650.2 |
+| `GET /devices/:id`                             |                19 → 16 |             16.8 → 30.3 |         872.6 → 694.5 |
+| `GET /devices/:id/health`                      |                16 → 14 |             15.7 → 22.4 |           738 → 621.2 |
+| `GET /devices/:id/activity`                    |                17 → 15 |             16.2 → 19.7 |         781.2 → 618.2 |
+| `GET /devices/:id/applications`                |                14 → 12 |             15.5 → 15.8 |         648.7 → 541.2 |
+| `GET /devices/:id/users`                       |                14 → 12 |             14.7 → 16.3 |         631.7 → 556.8 |
+| `GET /device-health`                           |                15 → 13 |             26.7 → 23.9 |         699.6 → 553.9 |
+| `GET /v1/tenants/:id/policies`                 |                24 → 21 |               26.6 → 25 |            1104 → 743 |
+| `GET /policies/:id`                            |                14 → 12 |             17.6 → 13.5 |         623.3 → 537.8 |
+| `GET /policies/:id/assignments`                |                20 → 18 |             17.1 → 18.2 |         915.3 → 660.2 |
+| `GET /policies/:id/deployments`                |                14 → 12 |               14.9 → 17 |         645.6 → 542.5 |
+| `GET /v1/tenants/:id/groups`                   |                15 → 13 |             16.2 → 20.8 |           689 → 587.6 |
+| `GET /groups/:id`                              |                17 → 15 |             16.4 → 20.5 |           769.4 → 593 |
+| `GET /v1/tenants/:id/applications`             |                16 → 14 |               16 → 16.8 |           729.8 → 619 |
+| `GET /applications/inventory`                  |                13 → 11 |             21.4 → 26.7 |         607.3 → 509.8 |
+| `GET /applications/:id`                        |                18 → 16 |             17.2 → 17.7 |         829.9 → 660.2 |
+| `GET /v1/tenants/:id/accounts`                 |                14 → 12 |             16.2 → 19.3 |         638.3 → 504.6 |
+| `GET /v1/tenants/:id/directory`                |                15 → 13 |               15 → 20.2 |         686.7 → 542.9 |
+| `GET /v1/tenants/:id/dashboards`               |                14 → 12 |             14.7 → 16.6 |           641 → 550.8 |
+| `GET /v1/tenants/:id/audit-log`                |                13 → 11 |             15.4 → 17.9 |         600.4 → 489.4 |
+| `POST dashboard-query (count all)`             |                15 → 11 |             26.1 → 18.1 |         695.2 → 497.7 |
+| `POST dashboard-query (count attention)`       |                15 → 13 |             21.3 → 21.8 |         701.2 → 564.5 |
+| `POST dashboard-query (pie platform)`          |                16 → 13 |                 35 → 20 |           758.2 → 569 |
+| `POST dashboard-query (table attention)`       |                16 → 13 |             37.5 → 20.6 |         756.2 → 564.5 |
+| `POST dashboard-query/batch (default widgets)` |                 — → 13 |                — → 23.4 |             — → 565.3 |
+
+The default overview renders four stat widgets, one pie and one table. Before,
+that was five `dashboard-query` calls, each loading the tenant's devices,
+declarations and ADE state: **85 queries across the 7 requests the page makes**
+and ~3.8 s serial at 40 ms. The batch endpoint answers all six widgets in **one
+request and 13 queries**, so the page (shell + health summary + dashboards +
+widgets) is 4 requests and ~2.1 s serial, and the slowest request on the
+critical path is ~565 ms.
+
+### What changed
+
+- Tenant resolution reads membership, organisation and (for custom roles) the
+  role row in **one join** instead of three sequential queries, and the tenant
+  switcher no longer runs one role query per tenant.
+- `GET /v1/me` derives `mfaRequired` from the memberships it already loads.
+- Independent reads on the device list/search, device detail, policy list,
+  policy assignments, groups, applications, accounts and directory paths run in
+  **one wave** (`Effect.all` with unbounded concurrency). `GET /policies`
+  dropped from ~15 sequential waves to five; device search from seven to two.
+- Device health is derived from the ADE setup-state rows the page already
+  fetches, removing a duplicate `device_apple` read.
+- Device detail loads the device, Apple and Android rows with one join.
+- `POST /v1/tenants/:tenantId/dashboard-query/batch` evaluates up to 24 widget
+  queries against one device snapshot. Unfiltered stat cards use `COUNT(*)`
+  instead of loading rows.
+- An API token's `last_used_at` is refreshed at most every five minutes instead
+  of on every bearer-authenticated request.
+- New indexes: `audit_log (organization_id, target_type, target_id, created_at)`
+  for the device activity feed and `device_command (device_id, updated_at)` for
+  its command page. `EXPLAIN` moves the audit read from the tenant-wide stream
+  to the target's rows, and the command read from a filesort to a backward index
+  scan.
+
+### Remaining bottlenecks
+
+- **Per-request service graph.** A Workers request cannot reuse I/O objects, so
+  `createApiRuntime` rebuilds the graph: ~7 statements before the handler runs
+  (six `information_schema` checks from `@yielded/auth-persistence`'s storage
+  validation plus a connection probe). That is the majority of each ~500 ms
+  request at 40 ms RTT. The fix belongs upstream: cache the validated schema
+  metadata per isolate, keyed by dialect and database, instead of per
+  acquisition.
+- **Derived device health.** Health (stale/MIA/declaration/FileVault rules) is
+  computed in TypeScript, so filtered dashboard queries and the attention queue
+  still load the fleet's device + declaration rows. Moving the rules into SQL
+  (or a materialised health column maintained on check-in) is the next step.
+- **Free-text device search** uses `LIKE '%term%'`, which cannot use an index;
+  it is the slowest search variant even after the round-trip reduction.
+- **Dashboard overview shell.** `me`, `tenants`, `tenant`, `device-health` and
+  the dashboard document are still separate requests. The batch endpoint covers
+  the widgets; combining the shell would cut three more request bootstraps.
+
+### Frontend follow-up
+
+`apps/web` still calls `queryDashboard` once per widget. Switching the widget
+grid to `enterprise.queryDashboardBatch(tenantId, { queries })` (one call for
+the whole grid, results in request order) is the change that realises the batch
+numbers. Stat widgets should keep sending `countOnly: true`.

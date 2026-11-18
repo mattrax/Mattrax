@@ -44,6 +44,7 @@ import {
 import {
   enterprise,
   enterpriseKeys,
+  enterpriseQueries,
   formatDeviceQueryText,
   parseDeviceQueryText,
   type DeviceHealthFilter,
@@ -63,8 +64,79 @@ import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 const PAGE_SIZE = 50;
+
+/** The unfiltered first page, matching the page's default key exactly. */
+const defaultDeviceSearch = {
+  limit: PAGE_SIZE,
+  offset: 0,
+  sort: "name" as const,
+  direction: "asc" as const,
+};
+
+/** Search parameters that make the destination key differ from the default page. */
+const deviceListOverrides = [
+  "q",
+  "status",
+  "proto",
+  "staleDays",
+  "health",
+  "push",
+  "activation",
+  "groupId",
+  "attributeKey",
+  "attributeValue",
+  "query",
+  "import",
+  "sort",
+  "direction",
+] as const;
+
+export const route = {
+  preload: ({
+    params,
+    location,
+    intent,
+  }: {
+    params: { tenantId?: string };
+    location: { query: Record<string, unknown> };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+
+    if (intent === "initial" || !tenantId) return;
+
+    // A link can carry a filter (`?health=missing`). Warming the unfiltered
+    // page would fetch 50 devices the destination never reads, so only the
+    // shared lookup data is preloaded in that case.
+    const filtered = deviceListOverrides.some((key) => {
+      const value = location.query[key];
+
+      return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
+    });
+
+    return preloadPage([
+      ...(filtered
+        ? []
+        : [
+            () =>
+              queryClient.ensureQueryData({
+                queryKey: enterpriseKeys.deviceSearch(tenantId, defaultDeviceSearch),
+                queryFn: () => enterprise.searchDevices(tenantId, defaultDeviceSearch),
+              }),
+          ]),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "group")),
+      () =>
+        queryClient.ensureQueryData({
+          queryKey: enterpriseKeys.attributes(tenantId),
+          queryFn: () => enterprise.listAttributes(tenantId),
+        }),
+    ]);
+  },
+};
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are

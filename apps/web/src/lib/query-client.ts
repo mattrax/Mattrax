@@ -68,6 +68,11 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       enabled: !isServer,
+      // A route preload warms the exact key the page reads. Without a stale
+      // window every page would immediately refetch what preloading just
+      // fetched, which doubles the request count on every navigation.
+      staleTime: 30_000,
+      gcTime: 10 * 60_000,
       retry: (count, error) => {
         // Client errors (4xx) will not get better by retrying.
         const tag = errorTag(error);

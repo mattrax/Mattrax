@@ -203,7 +203,12 @@ export const apiWorker = {
       id: process.env.MATTRAX_HYPERDRIVE_ID ?? "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/
       // database fields; Hyperdrive's production binding supplies them.
-      dev: { connectionString: "mysql://mattrax:mattrax@127.0.0.1:3306/mattraxe" },
+      // `MATTRAX_DEV_DATABASE_URL` lets the API benchmark point local dev at the
+      // latency proxy (see `scripts/db-latency-proxy.ts`) without editing code.
+      dev: {
+        connectionString:
+          process.env.MATTRAX_DEV_DATABASE_URL ?? "mysql://mattrax:mattrax@127.0.0.1:3306/mattraxe",
+      },
     }),
     STORAGE: bindings.r2({ name: process.env.MATTRAX_STORAGE_BUCKET ?? "mattrax" }),
     EMAIL: bindings.sendEmail({

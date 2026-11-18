@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Match, Option, Schema } from "effect";
 import { ApplicationNode } from "@mattrax/enterprise-domain/client";
@@ -23,11 +23,35 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
+  type ApplicationRow,
   type DeviceRow,
   type GroupRow,
 } from "~/lib/enterprise";
+import {
+  combineRestores,
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+  optimisticUpdate,
+} from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () =>
+        queryClient.ensureQueryData(
+          enterpriseQueries.application(params.tenantId, params.applicationId),
+        ),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "group")),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
+    ]);
+  },
+};
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -67,6 +91,27 @@ const sourceLabel = (source: ApplicationNode["source"]) =>
     Match.when("store", () => "App Store"),
     Match.orElse(() => "Uploaded file"),
   );
+
+/** The installer row an unsaved draft should show once it is written to cache. */
+const installerFromDraft = (
+  draft: InstallerDraft,
+  index: number,
+  previous: ApplicationNode["installers"][number] | undefined,
+): ApplicationNode["installers"][number] => ({
+  ...previous,
+  // The server owns installer ids; a draft without one gets a placeholder that
+  // the settled invalidation replaces.
+  id: draft.id ?? previous?.id ?? `pending-installer:${index}`,
+  platform: draft.platform,
+  source: draft.source,
+  bundleId: draft.bundleId || null,
+  version: draft.version || null,
+  manifestUrl: draft.manifestUrl || null,
+  storeId: draft.storeId || null,
+  minOsVersion: draft.minOsVersion || null,
+  requiredCapability: draft.requiredCapability || null,
+  priority: Number(draft.priority) || 0,
+});
 
 const installButtonLabel = (input: {
   readonly pending: boolean;
@@ -131,15 +176,9 @@ export default function ApplicationDetailPage() {
   const writable = () => can("applications.write");
   const app = useQuery(() => enterpriseQueries.application(params.tenantId, params.applicationId));
 
-  const groups = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "group"),
-    queryFn: () => enterprise.list(params.tenantId, "group"),
-  }));
+  const groups = useQuery(() => enterpriseQueries.list(params.tenantId, "group"));
 
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
-  }));
+  const devices = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
@@ -180,6 +219,30 @@ export default function ApplicationDetailPage() {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
   };
 
+  /** Group relations for the checkboxes, named from the cached group list. */
+  const optimisticGroups = () => {
+    const names = new Map(
+      (groups.data?.rows ?? []).map((group: GroupRow) => [group.id, group.name] as const),
+    );
+
+    for (const group of row()?.groups ?? [])
+      if (!names.has(group.id)) names.set(group.id, group.name);
+
+    return [...groupIds()].map((id) => ({ id, name: names.get(id) ?? id }));
+  };
+
+  /** Device relations for the checkboxes, named from the cached device list. */
+  const optimisticDevices = () => {
+    const names = new Map(
+      (devices.data?.rows ?? []).map((device: DeviceRow) => [device.id, device.name] as const),
+    );
+
+    for (const device of row()?.devices ?? [])
+      if (!names.has(device.id)) names.set(device.id, device.name);
+
+    return [...deviceIds()].map((id) => ({ id, name: names.get(id) ?? id }));
+  };
+
   const save = useMutation(() => ({
     mutationFn: async () => {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
@@ -217,10 +280,51 @@ export default function ApplicationDetailPage() {
           unassign: { groups: unassignGroups, devices: unassignDevices },
         });
     },
-    onSuccess: async () => {
-      setMessage("Application and assignments saved.");
-      await invalidate();
+    onMutate: async () => {
+      const restores = await Promise.all([
+        optimisticUpdate<ApplicationNode>(
+          qc,
+          enterpriseKeys.application(params.tenantId, params.applicationId),
+          (current) => ({
+            ...current,
+            name: name(),
+            notes: notes() || null,
+            installers: installers().map((draft, index) =>
+              installerFromDraft(
+                draft,
+                index,
+                current.installers.find((installer) => installer.id === draft.id),
+              ),
+            ),
+            groups: optimisticGroups(),
+            devices: optimisticDevices(),
+            groupsCount: groupIds().size,
+            devicesCount: deviceIds().size,
+          }),
+        ),
+        optimisticallyUpdateCollection(
+          qc,
+          enterpriseKeys.applications(params.tenantId),
+          "applications",
+          (rows: ApplicationRow[]) =>
+            rows.map((row) =>
+              row.id === params.applicationId
+                ? {
+                    ...row,
+                    name: name(),
+                    groupsCount: groupIds().size,
+                    devicesCount: deviceIds().size,
+                  }
+                : row,
+            ),
+        ),
+      ]);
+
+      return combineRestores(restores);
     },
+    onSuccess: () => setMessage("Application and assignments saved."),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void invalidate(),
   }));
 
   const [installNotice, setInstallNotice] = createSignal<
@@ -291,8 +395,16 @@ export default function ApplicationDetailPage() {
 
   const remove = useMutation(() => ({
     mutationFn: () => enterprise.deleteApplications(params.tenantId, [params.applicationId!]),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
+    onMutate: () =>
+      optimisticallyRemoveCollectionItems(
+        qc,
+        enterpriseKeys.applications(params.tenantId),
+        "applications",
+        [params.applicationId!],
+      ),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
       navigate(`/t/${params.tenantId}/applications`);
     },
   }));

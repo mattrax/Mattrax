@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -30,6 +30,12 @@ import { Input } from "~/components/ui/input";
 import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import {
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+} from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -39,6 +45,18 @@ import { cn } from "~/lib/utils";
  * The signing secret is only in the browser for the moment it is created or
  * rotated; every later list only shows its last four characters.
  */
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.webhooks(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
+    ]);
+  },
+};
+
 export default function IntegrationsSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
@@ -284,22 +302,57 @@ export default function IntegrationsSettingsPage() {
 
       return enterprise.createWebhook(params.tenantId, payload);
     },
-    onSuccess: async (result) => {
-      await invalidate();
+    onMutate: async () => {
+      const current = editing();
+
+      // A create has no id until the server answers, so only an edit is shown
+      // ahead of the response.
+      if (!current) return;
+
+      const payload = {
+        url: url().trim(),
+        description: description().trim() || null,
+        events: allEvents() ? [] : events(),
+        enabled: enabled(),
+      };
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.webhooks(params.tenantId),
+        "endpoints",
+        (endpoints: WebhookEndpointInfo[]) =>
+          endpoints.map((endpoint): WebhookEndpointInfo =>
+            endpoint.id === current.id ? { ...endpoint, ...payload } : endpoint,
+          ),
+      );
+    },
+    onSuccess: (result) => {
+      void invalidate();
       setEditorOpen(false);
 
       if ("secret" in result) setSecret(result.secret);
     },
-    onError: (error) => setFormError(error),
+    onError: (error, _variables, restore) => {
+      restore?.();
+      setFormError(error);
+    },
   }));
 
   const remove = useMutation(() => ({
     mutationFn: (endpoint: WebhookEndpointInfo) =>
       enterprise.deleteWebhook(params.tenantId, endpoint.id),
-    onSuccess: async () => {
+    onMutate: async (endpoint) =>
+      optimisticallyRemoveCollectionItems(
+        qc,
+        enterpriseKeys.webhooks(params.tenantId),
+        "endpoints",
+        [endpoint.id],
+      ),
+    onSuccess: () => {
       setDeleteTarget(null);
-      await invalidate();
+      void invalidate();
     },
+    onError: (_error, _endpoint, restore) => restore?.(),
   }));
 
   const rotate = useMutation(() => ({

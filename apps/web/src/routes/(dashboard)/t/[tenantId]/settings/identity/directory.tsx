@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match, Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
@@ -7,7 +7,10 @@ import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { optimisticUpdate } from "~/lib/optimistic";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -27,6 +30,17 @@ const triggerLabel = (trigger: string | null | undefined) =>
     Match.when("manual", () => "manual run"),
     Match.orElse(() => "run"),
   );
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.directorySync(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
+    ]);
+  },
+};
 
 export default function DirectorySyncPage() {
   const params = useParams();
@@ -51,6 +65,8 @@ export default function DirectorySyncPage() {
 
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 
+  type DirectorySyncStatus = Awaited<ReturnType<typeof enterprise.getEntraDirectorySync>>;
+
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.directorySync(params.tenantId) });
     // A sync imports users and groups used by policy assignment pickers.
@@ -60,13 +76,33 @@ export default function DirectorySyncPage() {
   const toggle = useMutation(() => ({
     mutationFn: (enabled: boolean) =>
       enterprise.patchEntraDirectorySync(params.tenantId, { enabled }),
-    onSuccess: invalidate,
+    onMutate: async (enabled) =>
+      optimisticUpdate<DirectorySyncStatus>(
+        qc,
+        enterpriseKeys.directorySync(params.tenantId),
+        (current) => ({
+          ...current,
+          enabled,
+        }),
+      ),
+    onError: (_error, _enabled, restore) => restore?.(),
+    onSettled: () => void invalidate(),
   }));
 
   const interval = useMutation(() => ({
     mutationFn: (syncIntervalMinutes: number) =>
       enterprise.patchEntraDirectorySync(params.tenantId, { syncIntervalMinutes }),
-    onSuccess: invalidate,
+    onMutate: async (syncIntervalMinutes) =>
+      optimisticUpdate<DirectorySyncStatus>(
+        qc,
+        enterpriseKeys.directorySync(params.tenantId),
+        (current) => ({
+          ...current,
+          syncIntervalMinutes,
+        }),
+      ),
+    onError: (_error, _minutes, restore) => restore?.(),
+    onSettled: () => void invalidate(),
   }));
 
   const sync = useMutation(() => ({

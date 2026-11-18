@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, For, Show } from "solid-js";
@@ -6,7 +6,9 @@ import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, CheckCircle2 } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { enterprise, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import {
   PLAN_LIMIT_REACHED_BODY,
@@ -66,15 +68,23 @@ const statusTone = (status: string | null | undefined, configured: boolean) => {
   }
 };
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.billing(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.billingInvoices(params.tenantId)),
+    ]);
+  },
+};
+
 export default function BillingSettingsPage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { can } = useCan();
 
-  const billing = useQuery(() => ({
-    queryKey: enterpriseKeys.billing(params.tenantId),
-    queryFn: () => enterprise.billing(params.tenantId),
-  }));
+  const billing = useQuery(() => enterpriseQueries.billing(params.tenantId));
 
   const portal = useMutation(() => ({
     mutationFn: () => enterprise.billingPortal(params.tenantId, globalThis.location.href),

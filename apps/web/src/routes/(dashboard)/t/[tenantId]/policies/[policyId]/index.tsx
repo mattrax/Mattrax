@@ -39,6 +39,11 @@ import {
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import {
+  optimisticallyPatchItem,
+  optimisticallyRemoveRows,
+  optimisticallyUpdateList,
+} from "~/lib/optimistic";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
@@ -52,6 +57,9 @@ import {
   windowsWifiConfiguration,
   type WifiSecurity,
 } from "~/lib/policy-designer/presets";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
+import { enterpriseQueries } from "~/lib/enterprise";
 
 const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
@@ -234,6 +242,30 @@ function ViewTabs(props: { base: string; active: "overview" | "assignments" | "d
   );
 }
 
+export const route = {
+  preload: ({
+    params,
+    intent,
+  }: {
+    params: { tenantId?: string; policyId?: string };
+    intent: string;
+  }) => {
+    const tenantId = params.tenantId;
+    const policyId = params.policyId;
+
+    if (intent === "initial" || !tenantId || !policyId) return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "policy", policyId)),
+      () =>
+        queryClient.ensureQueryData({
+          queryKey: [...enterpriseKeys.item(tenantId, "policy", policyId), "deployments"],
+          queryFn: () => enterprise.listPolicyDeployments(tenantId, policyId),
+        }),
+    ]);
+  },
+};
+
 export default function PolicyDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -282,10 +314,30 @@ export default function PolicyDetailPage() {
   });
 
   const invalidate = async () => {
-    await qc.invalidateQueries({
-      queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
-    });
-    await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+    await Promise.all([
+      qc.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+      }),
+      qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") }),
+    ]);
+  };
+
+  /** Patch the policy's header and its row in the list in one snapshot. */
+  const patchPolicy = async (patch: Partial<PolicyRow>) => {
+    const restores = await Promise.all([
+      optimisticallyPatchItem(
+        qc,
+        params.tenantId!,
+        "policy",
+        params.policyId!,
+        patch,
+      ),
+      optimisticallyUpdateList(qc, params.tenantId!, "policy", (rows) =>
+        rows.map((row) => (row.id === params.policyId ? { ...row, ...patch } : row)),
+      ),
+    ]);
+
+    return () => restores.forEach((restore) => restore());
   };
 
   const save = useMutation(() => ({
@@ -295,39 +347,74 @@ export default function PolicyDetailPage() {
         notes: notes() || null,
         priority: Number(priority()) || 0,
       }),
-    onSuccess: async () => {
-      await invalidate();
-      toast.success("Policy saved");
+    onMutate: async () => {
+      const restore = await patchPolicy({
+        name: name(),
+        notes: notes() || null,
+        priority: Number(priority()) || 0,
+      });
+
+      return { restore };
     },
-    onError: (error) =>
+    onSuccess: () => {
+      toast.success("Policy saved");
+      void invalidate();
+    },
+    onError: (error, _payload, context) => {
+      context?.restore();
       toast.error("Could not save the policy", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const addConfigurations = useMutation(() => ({
     mutationFn: (configurations: PolicyConfigurations) =>
       enterprise.patchPolicy(params.tenantId, params.policyId, { configurations }),
-    onSuccess: async () => {
+    onMutate: async (configurations) => {
+      const restore = await patchPolicy({ configurations });
+
+      // The library dialog closes on submit; the configuration badges update
+      // from the optimistic value.
       setAddOpen(false);
-      await invalidate();
+
+      return { restore };
     },
+    onSuccess: () => void invalidate(),
+    onError: (_error, _payload, context) => context?.restore(),
   }));
 
   const dup = useMutation(() => ({
     mutationFn: () => enterprise.duplicatePolicy(params.tenantId, params.policyId),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+    onSuccess: ({ id }) => {
       navigate(`/t/${params.tenantId}/policies/${id}`);
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
     },
   }));
 
   const del = useMutation(() => ({
     mutationFn: () =>
       enterprise.deletePolicies(params.tenantId, params.policyId ? [params.policyId] : []),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+    onMutate: async () => {
+      const restore = await optimisticallyRemoveRows(
+        qc,
+        params.tenantId!,
+        "policy",
+        params.policyId ? [params.policyId] : [],
+      );
+
       navigate(`/t/${params.tenantId}/policies`);
+
+      return { restore };
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+    },
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not delete the policy", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
     },
   }));
 
@@ -339,19 +426,26 @@ export default function PolicyDetailPage() {
   const rollback = useMutation(() => ({
     mutationFn: (deploymentId: string) =>
       enterprise.rollbackPolicy(params.tenantId, params.policyId, deploymentId),
-    onSuccess: async () => {
-      await invalidate();
-      await qc.invalidateQueries({
-        queryKey: [
-          ...enterpriseKeys.item(params.tenantId, "policy", params.policyId),
-          "deployments",
-        ],
-      });
+    onSuccess: () => {
+      void Promise.all([
+        invalidate(),
+        qc.invalidateQueries({
+          queryKey: [
+            ...enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+            "deployments",
+          ],
+        }),
+      ]);
     },
   }));
 
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncPolicies(params.tenantId, [params.policyId!]),
+    onSuccess: () => toast.success("Policy sync requested"),
+    onError: (error) =>
+      toast.error("Could not request a policy sync", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const configurations = () =>

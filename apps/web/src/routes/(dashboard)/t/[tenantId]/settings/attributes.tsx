@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type {
@@ -11,7 +11,13 @@ import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import {
+  optimisticallyRemoveCollectionItems,
+  optimisticallyUpdateCollection,
+} from "~/lib/optimistic";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 const selectClass =
@@ -66,16 +72,23 @@ const optionsOf = (draft: Draft) =>
         .filter(Boolean)
     : undefined;
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.attributes(params.tenantId)),
+    ]);
+  },
+};
+
 export default function AttributeSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const { can } = useCan();
   const writable = () => can("devices.write");
 
-  const definitions = useQuery(() => ({
-    queryKey: enterpriseKeys.attributes(params.tenantId),
-    queryFn: () => enterprise.listAttributes(params.tenantId),
-  }));
+  const definitions = useQuery(() => enterpriseQueries.attributes(params.tenantId));
 
   const [draft, setDraft] = createSignal<Draft>(emptyDraft(0));
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -139,22 +152,60 @@ export default function AttributeSettingsPage() {
         sortOrder: current.sortOrder,
       });
     },
-    onSuccess: async () => {
+    onMutate: async () => {
+      const current = draft();
+      const id = editing();
+
+      // A create has no id until the server answers, so only an edit is written
+      // ahead of the response; the settled invalidation picks the new row up.
+      if (!id) return;
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.attributes(params.tenantId),
+        "rows",
+        (rows: AttributeDefinitionRow[]) =>
+          rows.map((row): AttributeDefinitionRow =>
+            row.id === id
+              ? {
+                  ...row,
+                  label: current.label,
+                  type: current.type,
+                  options: optionsOf(current) ?? null,
+                  required: current.required,
+                  visibility: current.visibility,
+                  sortOrder: current.sortOrder,
+                }
+              : row,
+          ),
+      );
+    },
+    onSuccess: () => {
       reset();
-      await invalidate();
+      void invalidate();
 
       setDraft(emptyDraft((definitions.data?.rows.length ?? 0) + 1));
     },
-    onError: (cause) => setError(cause),
+    onError: (cause, _variables, restore) => {
+      restore?.();
+      setError(cause);
+    },
   }));
 
   const remove = useMutation(() => ({
     mutationFn: (id: string) => enterprise.deleteAttribute(params.tenantId, id),
-    onSuccess: async () => {
+    onMutate: async (id) =>
+      optimisticallyRemoveCollectionItems(qc, enterpriseKeys.attributes(params.tenantId), "rows", [
+        id,
+      ]),
+    onSuccess: () => {
       setDeleteTarget(null);
-      await invalidate();
+      void invalidate();
     },
-    onError: (cause) => setError(cause),
+    onError: (cause, _variables, restore) => {
+      restore?.();
+      setError(cause);
+    },
   }));
 
   const importValues = useMutation(() => ({
