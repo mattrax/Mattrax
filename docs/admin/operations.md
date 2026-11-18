@@ -393,7 +393,7 @@ declared SPDX licence, and the licence text the package ships. The inventory is 
 on every web build by `apps/web/scripts/generate-licences.ts` from `pnpm-lock.yaml` and the
 installed packages, so it cannot go stale when a dependency changes. It is served as
 `/licenses.json` and the page reads that asset on demand instead of bundling the notices
-into the Worker. Run `pnpm licences` to regenerate it without building.
+into the Worker. Run `pnpm license:inventory` to regenerate it without building.
 
 ## Backups
 

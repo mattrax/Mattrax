@@ -21,7 +21,7 @@
     "web": "pnpm --filter @mattrax/web --",
     "doc": "pnpm docs:api && rspress dev -c docs/.config/rspress.config.ts --port 9060",
     "doc:build": "pnpm docs:api && rspress build -c docs/.config/rspress.config.ts",
-    "licences": "tsx apps/web/scripts/generate-licences.ts",
+    "license:inventory": "tsx apps/web/scripts/generate-licences.ts",
     "docs:api": "tsx packages/config/scripts/generate-api-reference.ts",
     "deploy:prod:all": "pnpm cloud deploy:prod && pnpm web deploy:prod",
     "doc:preview": "rspress preview -c docs/.config/rspress.config.ts --port 9060",
