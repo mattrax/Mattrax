@@ -16,8 +16,9 @@ import {
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { MissingDevicesBanner } from "~/components/missing-devices-banner";
 import {
+  DashboardWidgetBatchProvider,
   DashboardWidgetView,
-  dashboardWidgetQueryRequest,
+  useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -87,95 +88,57 @@ const chartRamp = {
 };
 
 function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
-  // Every widget on the overview asks the same API for a slice of the same
-  // fleet, so they share one request: the batch endpoint reads the tenant once
-  // and evaluates each query against that snapshot.
-  const queried = createMemo(() =>
-    props.widgets
-      .filter((widget) => widget.type !== "markdown")
-      .map(dashboardWidgetQueryRequest),
-  );
-
-  const batch = useQuery(() => ({
-    queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queried()),
-    queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queried()),
-    enabled: queried().length > 0,
-  }));
-
-  const batchIndex = createMemo(
-    () =>
-      new Map(
-        props.widgets
-          .filter((widget) => widget.type !== "markdown")
-          .map((widget, index) => [widget.id, index] as const),
-      ),
-  );
-
-  /** The slice of the shared batch that belongs to one widget. */
-  const batchFor = (widget: DashboardWidget) => {
-    const index = batchIndex().get(widget.id);
-
-    if (index === undefined) return undefined;
-
-    return {
-      get data() {
-        return batch.data?.results[index];
-      },
-      get pending() {
-        return batch.isPending;
-      },
-      get error() {
-        return batch.error;
-      },
-      retry: () => void batch.refetch(),
-    };
-  };
-
   return (
-    <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
-      <For each={props.widgets}>
-        {(widget) => (
-          <article
-            class={cn(
-              "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
-              `dashboard-widget-${widget.type}`,
-              // Stat widgets are rendered by the shared widget view; on the
-              // overview they follow the design system's compact metric scale.
-              widget.type === "stat" &&
-                "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
-            )}
-            style={{
-              "grid-column": `${widget.x + 1} / span ${widget.w}`,
-              "grid-row": `${widget.y + 1} / span ${widget.h}`,
-            }}
-          >
-            <header class="px-0.5 pb-2">
-              <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
-              <Show when={widget.type !== "stat"}>
-                <p class="truncate text-[10px] capitalize text-subtle-foreground">
-                  {widget.type === "markdown"
-                    ? "Markdown"
-                    : `${widget.type} · ${String(
-                        Option.getOrUndefined(
-                          Schema.decodeUnknownOption(
-                            Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
-                          )(widget.config),
-                        )?.dataset ?? "devices",
-                      )}`}
-                </p>
-              </Show>
-            </header>
-            <div class="min-h-0 flex-1 overflow-hidden">
-              <DashboardWidgetView
-                widget={widget}
-                tenantId={props.tenantId}
-                batch={batchFor(widget)}
-              />
-            </div>
-          </article>
-        )}
-      </For>
-    </div>
+    <DashboardWidgetBatchProvider widgets={props.widgets} tenantId={props.tenantId}>
+      <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
+        <For each={props.widgets}>
+          {(widget) => {
+            const batchFor = useDashboardWidgetBatch();
+
+            return (
+              <article
+                class={cn(
+                  "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
+                  `dashboard-widget-${widget.type}`,
+                  // Stat widgets are rendered by the shared widget view; on the
+                  // overview they follow the design system's compact metric scale.
+                  widget.type === "stat" &&
+                    "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
+                )}
+                style={{
+                  "grid-column": `${widget.x + 1} / span ${widget.w}`,
+                  "grid-row": `${widget.y + 1} / span ${widget.h}`,
+                }}
+              >
+                <header class="px-0.5 pb-2">
+                  <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
+                  <Show when={widget.type !== "stat"}>
+                    <p class="truncate text-[10px] capitalize text-subtle-foreground">
+                      {widget.type === "markdown"
+                        ? "Markdown"
+                        : `${widget.type} · ${String(
+                            Option.getOrUndefined(
+                              Schema.decodeUnknownOption(
+                                Schema.Struct({ dataset: Schema.optional(Schema.Json) }),
+                              )(widget.config),
+                            )?.dataset ?? "devices",
+                          )}`}
+                    </p>
+                  </Show>
+                </header>
+                <div class="min-h-0 flex-1 overflow-hidden">
+                  <DashboardWidgetView
+                    widget={widget}
+                    tenantId={props.tenantId}
+                    batch={batchFor?.(widget)}
+                  />
+                </div>
+              </article>
+            );
+          }}
+        </For>
+      </div>
+    </DashboardWidgetBatchProvider>
   );
 }
 

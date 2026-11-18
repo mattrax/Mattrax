@@ -3,15 +3,17 @@ import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
 import {
+  DashboardWidgetBatchProvider,
   DashboardWidgetView,
-  dashboardWidgetQueryRequest,
+  useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { toast } from "~/components/toast";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -277,47 +279,6 @@ export default function DashboardPage() {
 
   const widgets = () => dashboard.data?.widgets ?? [];
 
-  // One request for every data widget on this dashboard: the batch endpoint
-  // reads the tenant once and evaluates each query against that snapshot.
-  const queried = createMemo(() =>
-    widgets()
-      .filter((widget) => widget.type !== "markdown")
-      .map(dashboardWidgetQueryRequest),
-  );
-
-  const widgetBatch = useQuery(() => ({
-    queryKey: enterpriseKeys.dashboardQueryBatch(params.tenantId!, queried()),
-    queryFn: () => enterprise.queryDashboardBatch(params.tenantId!, queried()),
-    enabled: queried().length > 0,
-  }));
-
-  const batchIndex = createMemo(
-    () =>
-      new Map(
-        widgets()
-          .filter((widget) => widget.type !== "markdown")
-          .map((widget, index) => [widget.id, index] as const),
-      ),
-  );
-
-  const batchFor = (widget: DashboardWidget) => {
-    const index = batchIndex().get(widget.id);
-
-    if (index === undefined) return undefined;
-
-    return {
-      get data() {
-        return widgetBatch.data?.results[index];
-      },
-      get pending() {
-        return widgetBatch.isPending;
-      },
-      get error() {
-        return widgetBatch.error;
-      },
-      retry: () => void widgetBatch.refetch(),
-    };
-  };
   const currentLayout = (widget: DashboardWidget): Layout => layout()[widget.id] ?? widget;
 
   createEffect(
@@ -437,6 +398,9 @@ export default function DashboardPage() {
     onError: (cause, _payload, context) => {
       context?.restore();
       setRemoveDashboardError(cause);
+      toast.error("Could not delete the dashboard", {
+        description: errorMessage(raisedFailure(cause), "Try again in a moment."),
+      });
     },
   }));
 
@@ -837,15 +801,17 @@ export default function DashboardPage() {
           </div>
         }
       >
-        <div
-          ref={(element) => {
-            gridRef = element;
-          }}
-          class="dashboard-grid"
-        >
-          <For each={widgets()}>
-            {(widget) => {
-              const position = () => currentLayout(widget);
+        <DashboardWidgetBatchProvider widgets={widgets()} tenantId={params.tenantId!}>
+          <div
+            ref={(element) => {
+              gridRef = element;
+            }}
+            class="dashboard-grid"
+          >
+            <For each={widgets()}>
+              {(widget) => {
+                const position = () => currentLayout(widget);
+                const batchFor = useDashboardWidgetBatch();
 
               return (
                 <article
@@ -907,7 +873,7 @@ export default function DashboardPage() {
                     <DashboardWidgetView
                       widget={widget}
                       tenantId={params.tenantId!}
-                      batch={batchFor(widget)}
+                      batch={batchFor?.(widget)}
                     />
                   </div>
                   <Show when={editing()}>
@@ -921,8 +887,9 @@ export default function DashboardPage() {
                 </article>
               );
             }}
-          </For>
-        </div>
+            </For>
+          </div>
+        </DashboardWidgetBatchProvider>
       </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>

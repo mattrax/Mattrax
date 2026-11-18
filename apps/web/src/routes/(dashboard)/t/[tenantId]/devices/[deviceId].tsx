@@ -977,7 +977,12 @@ export default function DeviceDetailPage() {
       return { restore };
     },
     onSuccess: () => void invalidate(),
-    onError: (_error, _payload, context) => context?.restore(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not unenroll the device", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
   }));
 
   const revokeIdentity = useMutation(() => ({
@@ -1001,7 +1006,12 @@ export default function DeviceDetailPage() {
       return { restore };
     },
     onSuccess: () => void invalidate(),
-    onError: (_error, _payload, context) => context?.restore(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not unenroll the device", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
   }));
 
   /**

@@ -6,7 +6,8 @@ import {
   DeviceQuery,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createContext, createMemo, useContext } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
 import { Markdown } from "~/components/dashboard/markdown";
@@ -166,6 +167,66 @@ type DashboardWidgetBatch = {
   readonly error: unknown;
   readonly retry: () => void;
 };
+
+type DashboardWidgetBatchLookup = (widget: DashboardWidget) => DashboardWidgetBatch | undefined;
+
+const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchLookup>();
+
+/**
+ * Fetch every widget on a dashboard with one request.
+ *
+ * The provider is rendered only once the dashboard itself has loaded, so its
+ * query options read a resolved widget list. Reading a pending async value
+ * from a query's options is not allowed (TanStack reads them untracked).
+ */
+export function DashboardWidgetBatchProvider(props: {
+  widgets: ReadonlyArray<DashboardWidget>;
+  tenantId: string;
+  children?: JSX.Element;
+}) {
+  const queried = createMemo(() =>
+    props.widgets.filter((widget) => widget.type !== "markdown").map(dashboardWidgetQueryRequest),
+  );
+
+  const batch = useQuery(() => ({
+    queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queried()),
+    queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queried()),
+    enabled: queried().length > 0,
+  }));
+
+  const batchIndex = createMemo(
+    () =>
+      new Map(
+        props.widgets
+          .filter((widget) => widget.type !== "markdown")
+          .map((widget, index) => [widget.id, index] as const),
+      ),
+  );
+
+  const batchFor: DashboardWidgetBatchLookup = (widget) => {
+    const index = batchIndex().get(widget.id);
+
+    if (index === undefined) return undefined;
+
+    return {
+      get data() {
+        return batch.data?.results[index];
+      },
+      get pending() {
+        return batch.isPending;
+      },
+      get error() {
+        return batch.error;
+      },
+      retry: () => void batch.refetch(),
+    };
+  };
+
+  return <DashboardWidgetBatchContext value={batchFor}>{props.children}</DashboardWidgetBatchContext>;
+}
+
+/** The shared batch lookup; present only inside the provider. */
+export const useDashboardWidgetBatch = () => useContext(DashboardWidgetBatchContext);
 
 export function DashboardWidgetView(props: {
   widget: DashboardWidget;

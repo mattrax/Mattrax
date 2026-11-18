@@ -384,7 +384,12 @@ export default function GroupDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
     },
-    onError: (_error, _payload, context) => context?.restore(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not delete the group", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
   }));
 
   const setPolicyMode = (id: string, mode: "include" | "exclude" | "") => {

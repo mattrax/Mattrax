@@ -410,7 +410,12 @@ export default function PolicyDetailPage() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
     },
-    onError: (_error, _payload, context) => context?.restore(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      toast.error("Could not delete the policy", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
   }));
 
   const deployments = useQuery(() => ({
