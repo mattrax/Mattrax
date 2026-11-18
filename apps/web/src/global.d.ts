@@ -8,5 +8,8 @@ interface Window {
   __MATTRAX_POSTHOG__?: {
     key: string;
     host: string;
+    environment?: string;
+    release?: string;
+    deploymentId?: string;
   };
 }

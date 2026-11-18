@@ -127,6 +127,67 @@ describe("PostHog analytics", () => {
     expect(JSON.stringify(product?.properties)).not.toContain("owner@example.com");
   });
 
+  it("does not emit an identify event when the browser is already the user", () => {
+    const fake = fakeClient();
+
+    const session = analytics(fake.client, {
+      headers: {
+        "x-posthog-distinct-id": "user-1",
+        "x-posthog-session-id": sessionId,
+      },
+    });
+
+    session.identify({
+      userId: "user-1",
+      email: "owner@example.com",
+      tenantId: "tenant-1",
+      tenantName: "Acme",
+    });
+    session.capture("api_request");
+
+    // The browser owns `$identify`; a per-request copy would create one event
+    // for every authenticated API call.
+    expect(fake.events.find((event) => event.event === "$identify")).toBeUndefined();
+    expect(fake.events.find((event) => event.event === "$groupidentify")).toBeUndefined();
+
+    const request = fake.events.find((event) => event.event === "api_request");
+    expect(request?.distinctId).toBe("user-1");
+    expect(request?.groups).toEqual({ tenant: "tenant-1" });
+
+    // Mutations still describe the tenant, once.
+    session.capture("policy_created");
+    session.capture("group_created");
+    const groups = fake.events.filter((event) => event.event === "$groupidentify");
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.properties).toMatchObject({
+      $group_key: "tenant-1",
+      $group_set: { name: "Acme" },
+    });
+  });
+
+  it("sets person properties once for a caller without a browser SDK", () => {
+    const fake = fakeClient();
+    const session = analytics(fake.client, { headers: {} });
+
+    session.identify({
+      userId: "user-1",
+      email: "owner@example.com",
+      name: "Owner",
+      tenantId: "tenant-1",
+    });
+    session.capture("api_request");
+    session.capture("api_operation");
+
+    expect(fake.events.find((event) => event.event === "$identify")).toBeUndefined();
+    const [first, second] = fake.events;
+    expect(first?.distinctId).toBe("user-1");
+    expect(first?.properties?.$set).toEqual({
+      email: "owner@example.com",
+      name: "Owner",
+    });
+    expect(second?.properties?.$set).toBeUndefined();
+  });
+
   it("redacts error messages and caps error events per isolate", () => {
     const fake = fakeClient();
     let clock = Date.parse("2026-11-11T03:17:00.000Z");

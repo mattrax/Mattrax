@@ -67,6 +67,7 @@ export type AnalyticsIdentity = {
   readonly userId: string;
   readonly email?: string;
   readonly name?: string;
+  readonly emailVerified?: boolean;
   readonly tenantId?: string;
   readonly tenantName?: string;
   readonly roleName?: string;
@@ -343,7 +344,11 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
   let tenantName: string | undefined;
   let roleName: string | undefined;
   let roleKind: "built-in" | "custom" | undefined;
-  let groupedTenant: string | undefined;
+  /** Tenant whose name still needs a `$groupidentify` on this request. */
+  let groupToDescribe: string | undefined;
+  /** Person fields for a caller with no browser SDK, sent once with an event. */
+  let personProperties: AnalyticsProperties | undefined;
+  let personPropertiesSent = false;
 
   const baseProperties = (): AnalyticsBaseProperties => {
     const properties: AnalyticsBaseProperties = {
@@ -387,6 +392,38 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
     }
   };
 
+  /** Describe the tenant once per request, immediately before a real event. */
+  const describeGroup = (target: string) => {
+    const groupSet: AnalyticsProperties = {};
+
+    if (tenantName) groupSet.name = tenantName;
+
+    safeCapture({
+      distinctId,
+      event: "$groupidentify",
+      properties: {
+        ...baseProperties(),
+        $group_type: "tenant",
+        $group_key: target,
+        $group_set: groupSet,
+      },
+      groups: { tenant: target },
+    });
+    groupToDescribe = undefined;
+  };
+
+  /**
+   * Person fields for a caller that has no browser SDK (API tokens, scripts,
+   * OAuth). They ride on the first event rather than an `$identify` per request.
+   */
+  const takePersonProperties = (): AnalyticsProperties | undefined => {
+    if (personPropertiesSent || !personProperties) return undefined;
+
+    personPropertiesSent = true;
+
+    return personProperties;
+  };
+
   const safeCaptureException = (
     cause: unknown,
     properties: AnalyticsProperties,
@@ -413,60 +450,71 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
       roleName = identity.roleName;
       roleKind = identity.roleKind;
 
-      if (identifiedUserId !== identity.userId) {
-        const previous = distinctId;
-        distinctId = identity.userId;
+      const previous = distinctId;
+      const userChanged = identifiedUserId !== identity.userId;
+      identifiedUserId = identity.userId;
+      distinctId = identity.userId;
 
-        const set: AnalyticsProperties = {};
+      if (tenantId) groupToDescribe = tenantId;
 
-        if (identity.email) set.email = identity.email;
+      const set: AnalyticsProperties = {};
 
-        if (identity.name) set.name = identity.name;
+      if (identity.email) set.email = identity.email;
 
-        const properties: IdentifyProperties = {
-          ...baseProperties(),
-          $set: set,
-          $set_once: { first_seen_at: new Date(now()).toISOString() },
-        };
+      if (identity.name) set.name = identity.name;
 
-        if (previous !== distinctId) properties.$anon_distinct_id = previous;
+      if (identity.emailVerified !== undefined) set.email_verified = identity.emailVerified;
 
-        const message: AnalyticsCaptureMessage = {
-          distinctId,
-          event: "$identify",
-          properties,
-        };
+      // A browser SDK is the identity authority. It sends `$identify` when it
+      // learns the user, which merges the anonymous id into the account. The
+      // server only has to merge when the request still carries an anonymous
+      // browser id; sending `$identify` on every authenticated request would
+      // create one event per API call.
+      if (!clientDistinctId) {
+        if (Object.keys(set).length > 0) personProperties = set;
 
-        if (tenantId) message.groups = { tenant: tenantId };
-
-        safeCapture(message);
-        identifiedUserId = identity.userId;
+        return;
       }
 
-      if (tenantId && groupedTenant !== tenantId) {
-        const groupSet: AnalyticsProperties = {};
+      if (!userChanged || previous === distinctId || previous === identity.userId) return;
 
-        if (tenantName) groupSet.name = tenantName;
+      const properties: IdentifyProperties = {
+        ...baseProperties(),
+        $set: set,
+        $set_once: { first_seen_at: new Date(now()).toISOString() },
+        $anon_distinct_id: previous,
+      };
 
-        safeCapture({
-          distinctId,
-          event: "$groupidentify",
-          properties: {
-            ...baseProperties(),
-            $group_type: "tenant",
-            $group_key: tenantId,
-            $group_set: groupSet,
-          },
-          groups: { tenant: tenantId },
-        });
-        groupedTenant = tenantId;
-      }
+      const message: AnalyticsCaptureMessage = {
+        distinctId,
+        event: "$identify",
+        properties,
+      };
+
+      if (tenantId) message.groups = { tenant: tenantId };
+
+      safeCapture(message);
+
+      // The browser sends the same merge, so describe the tenant now rather
+      // than leaving the group without a name until a later mutation.
+      if (groupToDescribe) describeGroup(groupToDescribe);
     },
     capture: (event, properties = {}) => {
+      // Reads are the bulk of API traffic; describe the tenant on the rarer
+      // named/product events instead of attaching one group event per request.
+      if (groupToDescribe && event !== "api_request" && event !== "api_operation")
+        describeGroup(groupToDescribe);
+
+      const person = takePersonProperties();
+
       const message: AnalyticsCaptureMessage = {
         distinctId,
         event,
-        properties: { ...baseProperties(), ...properties },
+        properties: {
+          ...baseProperties(),
+          ...properties,
+          ...(person ? { $set: person } : {}),
+        },
       };
 
       if (tenantId) message.groups = { tenant: tenantId };
@@ -477,9 +525,11 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
       if (random() >= errorSampleRate) return;
 
       if (!withinErrorBudget(now(), maxErrors)) return;
+      const person = takePersonProperties();
+
       safeCaptureException(
         sanitizeError(cause),
-        { ...baseProperties(), ...properties },
+        { ...baseProperties(), ...properties, ...(person ? { $set: person } : {}) },
         distinctId,
       );
     },

@@ -7,7 +7,8 @@ import routes from "virtual:file-routes";
 import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
 import { isCacheablePublicPage } from "~/lib/public-routes";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
-import { setPostHogConfig } from "~/lib/posthog-config-store";
+import { postHogEnvironment, setPostHogConfig } from "~/lib/posthog-config-store";
+import { DEPLOYMENT_ID } from "~/lib/deployment";
 import {
   expireSsrToken,
   preloadSession,
@@ -26,7 +27,18 @@ const api = createAPIHandler(routes);
 // group the misconfiguration instead of hiding it among warnings.
 let reportedMissingAuthSecret = false;
 
+let reportedMissingPostHogKey = false;
+
 let reportedSsrTokenRejected = false;
+
+const reportMissingPostHogKey = (): void => {
+  if (reportedMissingPostHogKey) return;
+
+  reportedMissingPostHogKey = true;
+  console.warn(
+    "[posthog] POSTHOG_KEY is not configured on the mattrax Worker; browser analytics is disabled. Set it with `cf workers secrets put POSTHOG_KEY --worker mattrax`.",
+  );
+};
 
 const reportMissingAuthSecret = (): void => {
   if (reportedMissingAuthSecret) return;
@@ -146,7 +158,11 @@ const middleware: StartMiddleware = async (event, next) => {
     setPostHogConfig(event.request, {
       key: posthogKey,
       host: bindings.POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
+      environment: postHogEnvironment(new URL(event.request.url).hostname),
+      release: DEPLOYMENT_ID,
+      deploymentId: DEPLOYMENT_ID,
     });
+  else reportMissingPostHogKey();
 
   if (!bindings.AUTH_SECRET) reportMissingAuthSecret();
 

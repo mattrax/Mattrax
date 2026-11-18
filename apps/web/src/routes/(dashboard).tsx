@@ -129,8 +129,21 @@ function DashboardLayout(props: ParentProps) {
   );
 
   createEffect(
-    () => /^\/t\/([^/]+)/.exec(location.pathname)?.[1],
-    (tenantId) => syncPostHogTenant(tenantId),
+    () => {
+      const key = /^\/t\/([^/]+)/.exec(location.pathname)?.[1];
+
+      const tenant = key
+        ? me.data?.tenants.find((entry) => entry.id === key || entry.slug === key)
+        : undefined;
+
+      return {
+        id: key,
+        // The group is created by the API too; the browser supplies the name
+        // so pageviews are filterable by tenant without waiting for a write.
+        name: tenant?.displayName?.trim() || tenant?.name,
+      };
+    },
+    ({ id, name }) => syncPostHogTenant(id, name),
   );
 
   const handleSignOut = async () => {

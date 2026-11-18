@@ -44,7 +44,13 @@ Successful health and readiness probes are not logged.
 
 The dashboard loads PostHog web analytics when `POSTHOG_KEY` is configured. It captures
 pageviews, autocaptured interactions and client exceptions, then identifies the user with
-their dashboard account id and email.
+their dashboard account id, name, email and verification state. It also describes the
+active tenant as a `tenant` PostHog group (with the tenant name) so pageviews can be
+filtered by workspace. Every browser event carries `environment` (`production`, `preview`
+or `development`), `release` and `deployment_id` super properties, matching the API's
+filtering. Query strings, fragments and autocaptured element text are sanitised before
+an event leaves the browser, so device names, serials, emails and tokens are not sent by
+autocapture.
 
 The API captures product events server-side so usage is not lost to ad blockers or client
 failures:
@@ -61,8 +67,24 @@ failures:
 
 Browser requests carry `x-posthog-session-id` and `x-posthog-distinct-id`. Once the API
 authenticates the request, the server uses the authenticated user id and tenant role for
-all captured events, so a session cannot spoof attribution. Tenant routes also set the
-`tenant` PostHog group for browser pageviews and interactions.
+all captured events, so a session cannot spoof attribution. The server emits `$identify`
+only when it has to merge an anonymous browser id into the account; the browser SDK is the
+identity authority after that, which avoids one identify event per API call. Calls without
+a browser SDK (API tokens, scripts, OAuth) get their person fields on their first event
+instead. Tenant routes also set the `tenant` PostHog group for browser pageviews and
+interactions.
+
+Confirm browser analytics is configured without reading a secret:
+
+```sh
+curl -s https://e.mattrax.app/ | grep -o 'name="mattrax-analytics" content="[^"]*"'
+```
+
+`content="enabled"` means the dashboard Worker has a non-empty `POSTHOG_KEY`. When it is
+disabled, an isolate logs one warning naming the missing binding; fix it with
+`cf workers secrets put POSTHOG_KEY --worker mattrax` (and the same command for
+`mattrax-api`). The project key is public, but it is stored as a Worker secret on both
+Workers so browser analytics and server events use the same PostHog project.
 
 ## Error tracking
 

@@ -6,6 +6,7 @@ import type { RaisedFailure } from "~/lib/errors";
 type PostHog = typeof posthogSdk;
 
 import { registerPostHogReader, analyticsHeaders } from "./posthog-context";
+import { sanitizePostHogCapture } from "./posthog-sanitize";
 
 export type PostHogUser = {
   readonly id: string;
@@ -22,9 +23,9 @@ let posthog: PostHog | undefined;
 
 let loading: Promise<PostHog | undefined> | undefined;
 
-let lastUserId: string | null | undefined;
+let lastUserSignature: string | undefined;
 
-let lastTenantId: string | null | undefined;
+let lastTenantSignature: string | undefined;
 
 let fetchInstalled = false;
 
@@ -97,54 +98,6 @@ const installFetchHeaders = (): void => {
   }) as typeof window.fetch;
 };
 
-const isString = Schema.is(Schema.String);
-
-const redact = (value: string): string =>
-  value
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
-
-const withoutQuery = (value: Schema.Json): Schema.Json => {
-  if (!isString(value)) return value;
-
-  try {
-    const url = new URL(value, window.location.href);
-    url.search = "";
-    url.hash = "";
-
-    return url.toString();
-  } catch {
-    return value;
-  }
-};
-
-const sanitizeCapture = <T extends { properties?: Record<string, Schema.Json> }>(capture: T): T => {
-  const properties = capture.properties;
-
-  if (!properties) return capture;
-
-  for (const key of ["$current_url", "$referrer"]) {
-    if (key in properties) properties[key] = withoutQuery(properties[key]);
-  }
-
-  const exceptionValues = properties.$exception_values;
-
-  if (Array.isArray(exceptionValues))
-    properties.$exception_values = exceptionValues.map((item) =>
-      isString(item) ? redact(item) : item,
-    );
-  const exceptions = properties.$exception_list;
-
-  if (Array.isArray(exceptions))
-    properties.$exception_list = exceptions.map((item) => {
-      if (item === null || !isString(item.value)) return item;
-
-      return { ...item, value: redact(item.value) };
-    });
-
-  return capture;
-};
-
 /** Initialise the browser SDK once, from the config injected by the SSR shell. */
 const startPostHog = async (): Promise<boolean> => {
   if (isServer || initialized) return initialized;
@@ -166,7 +119,14 @@ const startPostHog = async (): Promise<boolean> => {
       person_profiles: "identified_only",
       persistence: "localStorage+cookie",
       disable_session_recording: true,
-      before_send: sanitizeCapture,
+      // Super properties every browser event carries, so product analytics
+      // can be filtered by the same release/environment as the API Worker.
+      before_send: (event) =>
+        sanitizePostHogCapture(event, {
+          ...(config.environment ? { environment: config.environment } : {}),
+          ...(config.release ? { release: config.release } : {}),
+          ...(config.deploymentId ? { deployment_id: config.deploymentId } : {}),
+        }),
     });
     initialized = true;
     registerPostHogReader(() => ({
@@ -195,7 +155,18 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
     if (!ready || !posthog) return;
 
     if (user) {
-      if (lastUserId === user.id) return;
+      // Re-identify when the profile changes too: an account can rename itself
+      // or verify its email without signing out, and PostHog should not keep
+      // the previous person properties.
+      const signature = JSON.stringify([
+        user.id,
+        user.email ?? null,
+        user.name ?? null,
+        user.emailVerified ?? null,
+      ]);
+
+      if (lastUserSignature === signature) return;
+
       const properties: Record<string, Schema.Json> = {};
 
       if (user.email) properties.email = user.email;
@@ -205,28 +176,37 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
       if (user.emailVerified !== undefined) properties.email_verified = user.emailVerified;
 
       posthog.identify(user.id, properties);
-      lastUserId = user.id;
+      lastUserSignature = signature;
 
       return;
     }
 
     // A first-time signed-out visitor keeps their anonymous id. Only a real
     // sign-out (identified -> signed out) starts a fresh anonymous session.
-    if (isString(lastUserId)) posthog.reset();
-    lastUserId = null;
+    if (lastUserSignature !== undefined) posthog.reset();
+    lastUserSignature = undefined;
   });
 };
 
 /** Group browser pageviews and interactions by the current tenant. */
-export const syncPostHogTenant = (tenantId?: string | null): void => {
+export const syncPostHogTenant = (
+  tenantId?: string | null,
+  tenantName?: string | null,
+): void => {
   void initPostHog().then((ready) => {
     if (!ready || !posthog) return;
 
-    if (lastTenantId === tenantId) return;
+    const signature = tenantId ? `${tenantId}\u0000${tenantName ?? ""}` : undefined;
 
-    if (tenantId) posthog.group("tenant", tenantId);
-    else posthog.resetGroups();
-    lastTenantId = tenantId ?? null;
+    if (lastTenantSignature === signature) return;
+
+    if (tenantId) {
+      posthog.group("tenant", tenantId, tenantName ? { name: tenantName } : undefined);
+    } else {
+      posthog.resetGroups();
+    }
+
+    lastTenantSignature = signature;
   });
 };
 

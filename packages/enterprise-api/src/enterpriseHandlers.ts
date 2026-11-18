@@ -457,6 +457,7 @@ export type EnterpriseAnalyticsIdentity = {
   readonly userId: string;
   readonly email?: string;
   readonly name?: string;
+  readonly emailVerified?: boolean;
   readonly tenantId?: string;
   readonly tenantName?: string;
   readonly roleName?: string;
@@ -1409,7 +1410,12 @@ export const createEnterpriseService = ({
   const emptyRows = <A>(): Effect.Effect<Array<A>> => Effect.succeed([]);
 
   const identifyUser = (
-    user: { readonly id: string; readonly email: string; readonly name?: string | null },
+    user: {
+      readonly id: string;
+      readonly email: string;
+      readonly name?: string | null;
+      readonly emailVerified?: boolean;
+    },
     tenant?: {
       readonly id: string;
       readonly name?: string;
@@ -1431,6 +1437,8 @@ export const createEnterpriseService = ({
         };
 
         if (user.name) identity.name = user.name;
+
+        if (user.emailVerified !== undefined) identity.emailVerified = user.emailVerified;
 
         if (tenant) {
           identity.tenantId = tenant.id;

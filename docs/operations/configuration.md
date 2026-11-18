@@ -255,9 +255,12 @@ Without a binding, that bucket falls back to per-isolate counters.
 
 `POSTHOG_KEY` is a write-only project key. Set it on both the dashboard and API
 Workers: the dashboard injects it into the HTML for browser analytics, and the API
-uses it for server-side product events and error tracking. Payloads contain a
-redacted message, request id, path, method, status, release and deployment id.
-Bodies, cookies, query strings, emails and tokens are excluded.
+uses it for server-side product events and error tracking. The dashboard classifies
+its environment from the public hostname (`production`, `preview` or `development`)
+and attaches its deployment id to every event. API payloads contain a redacted
+message, request id, path, method, status, release and deployment id. Bodies,
+cookies, query strings, emails and tokens are excluded; browser autocapture text is
+redacted the same way.
 
 ## Development only
 

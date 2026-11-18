@@ -39,6 +39,8 @@ export default function Document(props: { children?: JSX.Element }) {
         {/* Read by the client's skew protection to tell which build rendered
             this tab; `GET /version` reports the build serving new requests. */}
         <meta name={DEPLOYMENT_META_NAME} content={DEPLOYMENT_ID} />
+        {/* Lets operators verify browser analytics without reading Worker secrets. */}
+        <meta name="mattrax-analytics" content={posthog === undefined ? "disabled" : "enabled"} />
         <link rel="icon" href="/favicon.ico" />
         <link rel="ard" href="/.well-known/ard.json" />
         {/* Replaced by the theme bootstrap below before the first paint. */}

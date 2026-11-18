@@ -931,6 +931,17 @@ const checkDatabaseReady = (env: Env) =>
 
 const deploymentId = (env: Env): string | null => env.CF_VERSION_METADATA?.id ?? null;
 
+let reportedMissingPostHogKey = false;
+
+const reportMissingPostHogKey = (): void => {
+  if (reportedMissingPostHogKey) return;
+
+  reportedMissingPostHogKey = true;
+  console.warn(
+    "[posthog] POSTHOG_KEY is not configured on the mattrax-api Worker; product analytics and error tracking are disabled.",
+  );
+};
+
 /**
  * Prove object storage is writable, readable and deletable with one real probe
  * object. A read-only volume or an unbound bucket fails here instead of on the
@@ -1100,6 +1111,8 @@ export const createApiRuntime = (
       const requestId = resolveRequestId(request);
       const startedAt = Date.now();
       const pathname = new URL(request.url).pathname;
+
+      if (!apiEnv.POSTHOG_KEY) reportMissingPostHogKey();
 
       const analytics = createRequestAnalytics({
         key: apiEnv.POSTHOG_KEY,
