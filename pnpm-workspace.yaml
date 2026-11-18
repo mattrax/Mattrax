@@ -4,7 +4,7 @@ packages:
 
 catalog:
   "@axe-core/playwright": ^4.14.0
-  "@cloudflare/vite-plugin": 2.0.0-beta.v.12
+  "@cloudflare/vite-plugin": 2.0.0-rc.1
   "@effect/platform-node": ^4.1.4
   "@effect/sql-mysql2": ^4.1.4
   "@fontsource-variable/geist": ^5.3.0
@@ -128,3 +128,4 @@ minimumReleaseAgeExclude:
   - posthog-js@1.450.1
   - solid-js@2.0.0
   - vite-plus@1.7.0
+  - "@cloudflare/vite-plugin@2.0.0-rc.1"
