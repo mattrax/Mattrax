@@ -183,6 +183,17 @@ export const TenantExportUserAssignment = Schema.Struct({
 
 export type TenantExportUserAssignment = typeof TenantExportUserAssignment.Type;
 
+/** A tenant directory person; restored so user assignments keep their target. */
+export const TenantExportDirectoryUser = Schema.Struct({
+  email: Schema.String,
+  name: Schema.String,
+  externalId: Schema.optional(NullableString),
+  source: Schema.Literals(["manual", "entra", "scim"]),
+  disabled: Schema.Boolean,
+});
+
+export type TenantExportDirectoryUser = typeof TenantExportDirectoryUser.Type;
+
 export const TenantExportUserGroupAssignment = Schema.Struct({
   groupId: Schema.String,
   policyKeys: Schema.Array(Schema.String),
@@ -201,6 +212,8 @@ export const TenantExportEnvelope = Schema.Struct({
   applications: Schema.Array(TenantExportApplication),
   /** Direct device-to-policy/application assignments (restore only). */
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  /** Directory people referenced by user assignments. */
+  directoryUsers: Schema.optional(Schema.Array(TenantExportDirectoryUser)),
   /** Policy assignments to directory users and user groups. */
   userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
   userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
@@ -316,6 +329,7 @@ export const TenantImportRequest = Schema.Struct({
   policies: Schema.optional(Schema.Array(TenantExportPolicy)),
   applications: Schema.optional(Schema.Array(TenantExportApplication)),
   deviceAssignments: Schema.optional(Schema.Array(TenantExportDeviceAssignment)),
+  directoryUsers: Schema.optional(Schema.Array(TenantExportDirectoryUser)),
   userAssignments: Schema.optional(Schema.Array(TenantExportUserAssignment)),
   userGroupAssignments: Schema.optional(Schema.Array(TenantExportUserGroupAssignment)),
   enrollment: Schema.optional(TenantExportEnrollment),

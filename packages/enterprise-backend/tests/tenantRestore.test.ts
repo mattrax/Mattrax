@@ -164,7 +164,7 @@ describe("in-place tenant restore", () => {
     const result = await runEffect(
       restoreTenantFromBackup(db, storage, organization, {
         backupId: "run-1",
-        actor: { userId: "user-1", email: "owner@example.com" },
+        actor: { accountId: "user-1", email: "owner@example.com" },
         confirm: "acme",
         now: new Date("2026-11-01T00:00:00Z"),
       }),
@@ -266,7 +266,7 @@ describe("in-place tenant restore", () => {
     const result = await runEffect(
       restoreTenantFromBackup(db, storage, organization, {
         backupId: "run-2",
-        actor: { userId: "user-1", email: "owner@example.com" },
+        actor: { accountId: "user-1", email: "owner@example.com" },
         confirm: "acme",
         now: new Date("2026-11-02T00:00:00Z"),
       }),
@@ -317,7 +317,7 @@ describe("in-place tenant restore", () => {
     const result = await runEffect(
       restoreTenantFromBackup(db, storage, organization, {
         backupId: "run-1",
-        actor: { userId: "user-1", email: "owner@example.com" },
+        actor: { accountId: "user-1", email: "owner@example.com" },
         confirm: "acme",
         now: new Date("2026-11-01T00:00:00Z"),
       }),
@@ -330,6 +330,67 @@ describe("in-place tenant restore", () => {
     expect(db.store.policy.map((row: { name: string }) => row.name)).toEqual(["Baseline"]);
   });
 
+  it("restores directory users and their policy assignments", async () => {
+    const { db, storage, objects, organization } = makeContext();
+    const withDirectoryUsers = {
+      ...bundle,
+      directoryUsers: [
+        {
+          email: "person@example.com",
+          name: "Directory Person",
+          externalId: "scim-person",
+          source: "scim",
+          disabled: false,
+        },
+      ],
+      userAssignments: [
+        {
+          email: "person@example.com",
+          policyKeys: ["policy-1"],
+          excludedPolicyKeys: [],
+        },
+      ],
+    };
+
+    db.store.backup_run.push({
+      id: "run-2",
+      organizationId: "org-1",
+      status: "succeeded",
+      r2Key: "backups/org-1/run-2.json",
+      sizeBytes: 100,
+      startedAt,
+      completedAt: startedAt,
+      error: null,
+      trigger: "manual",
+      retention: "default",
+    });
+    objects.set("backups/org-1/run-2.json", JSON.stringify(withDirectoryUsers));
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-2",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    const restoredUser = db.store.user.find(
+      (user: { email: string }) => user.email === "person@example.com",
+    );
+
+    expect(restoredUser).toMatchObject({
+      organizationId: "org-1",
+      name: "Directory Person",
+      externalId: "scim-person",
+      source: "scim",
+      disabled: false,
+    });
+    expect(db.store.user_policy).toMatchObject([
+      { userId: restoredUser!.id, policyId: db.store.policy[0]!.id, mode: "include" },
+    ]);
+  });
+
   it("refuses a restore the operator did not confirm", async () => {
     const { db, storage, organization } = makeContext();
 
@@ -337,7 +398,7 @@ describe("in-place tenant restore", () => {
       Effect.match(
         restoreTenantFromBackup(db, storage, organization, {
           backupId: "run-1",
-          actor: { userId: "user-1", email: "owner@example.com" },
+          actor: { accountId: "user-1", email: "owner@example.com" },
           confirm: "wrong",
         }),
         { onFailure: (error) => error, onSuccess: () => null },
@@ -377,7 +438,7 @@ describe("in-place tenant restore", () => {
       Effect.match(
         restoreTenantFromBackup(db, invalidStorage, organization, {
           backupId: "run-1",
-          actor: { userId: "user-1", email: "owner@example.com" },
+          actor: { accountId: "user-1", email: "owner@example.com" },
           confirm: "acme",
         }),
         { onFailure: (error) => error, onSuccess: () => null },

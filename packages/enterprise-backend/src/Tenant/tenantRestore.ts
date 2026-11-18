@@ -119,6 +119,13 @@ type ParsedBundle = {
     excludedPolicyKeys: ReadonlyArray<string>;
     applicationKeys: ReadonlyArray<string>;
   }>;
+  directoryUsers: ReadonlyArray<{
+    email: string;
+    name: string;
+    externalId: string | null;
+    source: "manual" | "entra" | "scim";
+    disabled: boolean;
+  }>;
   userAssignments: ReadonlyArray<{
     email: string;
     policyKeys: ReadonlyArray<string>;
@@ -422,8 +429,24 @@ export const parseTenantRestoreBundle = (
       });
     }
 
+    const parsedDirectoryUsers: Array<ParsedBundle["directoryUsers"][number]> = [];
     const parsedUserAssignments: Array<ParsedBundle["userAssignments"][number]> = [];
     const parsedUserGroupAssignments: Array<ParsedBundle["userGroupAssignments"][number]> = [];
+
+    for (const row of bundle.directoryUsers ?? []) {
+      const email = text(row.email, 320)?.toLowerCase();
+
+      if (!email || !email.includes("@"))
+        return yield* Effect.fail(invalid("Every directory user needs a valid email"));
+
+      parsedDirectoryUsers.push({
+        email,
+        name: text(row.name, 255) ?? email,
+        externalId: text(row.externalId, 255),
+        source: row.source,
+        disabled: row.disabled,
+      });
+    }
 
     const validPolicyLists = (
       label: string,
@@ -577,6 +600,7 @@ export const parseTenantRestoreBundle = (
         consumedDeviceKey: row.consumedDeviceKey ?? null,
       })),
       deviceAssignments: parsedDeviceAssignments,
+      directoryUsers: parsedDirectoryUsers,
       userAssignments: parsedUserAssignments,
       userGroupAssignments: parsedUserGroupAssignments,
       members: bundle.members?.length ?? 0,
@@ -763,7 +787,7 @@ const applyBundle = (
             policyId,
             version: 1,
             snapshot: Object.fromEntries(policy.configurations),
-            createdByAccountId: actor.userId,
+            createdByAccountId: actor.accountId,
             createdAt: timestamp,
           });
         }
@@ -801,17 +825,55 @@ const applyBundle = (
           yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
 
         // Deleting and recreating policies cascades their user and user-group
-        // assignments away. Restore them from the bundle by the stable user
-        // email and the directory group id, which the restore does not replace.
-        const tenantUsers = yield* db
-          .select({ id: schema.account.id, email: schema.account.email })
-          .from(schema.account)
-          .innerJoin(schema.member, eq(schema.member.accountId, schema.account.id))
-          .where(eq(schema.member.organizationId, organization.id));
+        // assignments away. Restore directory users first, then re-link the
+        // assignments by their stable email and the directory group id, which
+        // the restore does not replace. Older bundles have no directoryUsers
+        // array, so assignments still create the missing manual user.
+        const existingDirectoryUsers = yield* tx
+          .select({ id: schema.user.id, email: schema.user.email })
+          .from(schema.user)
+          .where(eq(schema.user.organizationId, organization.id));
 
         const userIdByEmail = new Map(
-          tenantUsers.map((user) => [user.email.toLowerCase(), user.id]),
+          existingDirectoryUsers.map((user) => [user.email.toLowerCase(), user.id]),
         );
+
+        const directoryUsersToCreate = new Map<
+          string,
+          ParsedBundle["directoryUsers"][number]
+        >();
+
+        for (const user of bundle.directoryUsers) {
+          if (!userIdByEmail.has(user.email))
+            directoryUsersToCreate.set(user.email, user);
+        }
+
+        for (const assignment of bundle.userAssignments) {
+          if (!userIdByEmail.has(assignment.email) && !directoryUsersToCreate.has(assignment.email))
+            directoryUsersToCreate.set(assignment.email, {
+              email: assignment.email,
+              name: assignment.email,
+              externalId: null,
+              source: "manual",
+              disabled: false,
+            });
+        }
+
+        for (const user of directoryUsersToCreate.values()) {
+          const id = newId();
+          yield* tx.insert(schema.user).values({
+            id,
+            organizationId: organization.id,
+            name: user.name,
+            email: user.email,
+            externalId: user.externalId,
+            source: user.source,
+            disabled: user.disabled,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+          userIdByEmail.set(user.email, id);
+        }
 
         const userPolicyValues: Array<{
           organizationId: string;
@@ -1255,7 +1317,7 @@ export const restoreTenantFromBackup = (
       yield* db.insert(schema.auditLog).values({
         id: newId(),
         organizationId: organization.id,
-        actorAccountId: options.actor.userId,
+        actorAccountId: options.actor.accountId,
         actorEmail: options.actor.email,
         action: "tenant.restored",
         targetType: "tenant",

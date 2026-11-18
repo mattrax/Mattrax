@@ -5584,7 +5584,6 @@ export const createEnterpriseService = ({
           }
         }
 
-        yield* db.delete(schema.deviceUser).where(eq(schema.deviceUser.userId, user.id));
         yield* db
           .delete(schema.accountApiToken)
           .where(eq(schema.accountApiToken.accountId, user.id));
@@ -5908,7 +5907,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const result = yield* runTenantBackupForTenant(db, storage, ctx.organization.id, "manual", {
-          actor: { userId: ctx.account.id, email: ctx.account.email },
+          actor: { accountId: ctx.account.id, email: ctx.account.email },
         }).pipe(
           Effect.mapError(
             () => new EnterpriseDbError({ message: "Could not record the backup run" }),
@@ -5967,7 +5966,7 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "pinned", {
-          userId: ctx.account.id,
+          accountId: ctx.account.id,
           email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
@@ -5979,7 +5978,7 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "default", {
-          userId: ctx.account.id,
+          accountId: ctx.account.id,
           email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
@@ -5991,7 +5990,7 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-delete");
 
         yield* deleteBackupRun(db, storage, ctx.organization.id, backupId, {
-          userId: ctx.account.id,
+          accountId: ctx.account.id,
           email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
@@ -6006,7 +6005,7 @@ export const createEnterpriseService = ({
 
         return yield* restoreTenantFromBackup(db, storage, ctx.organization, {
           backupId,
-          actor: { userId: ctx.account.id, email: ctx.account.email },
+          actor: { accountId: ctx.account.id, email: ctx.account.email },
           confirm: body.confirm ?? "",
         }).pipe(
           Effect.mapError((error) =>

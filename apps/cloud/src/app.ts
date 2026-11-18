@@ -851,9 +851,19 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
   const scimNotifierLayer = Layer.succeed(
     ScimMembershipNotifier,
-    (db: EnterpriseDb, organizationId: string, userIds: ReadonlyArray<string>) =>
+    (
+      db: EnterpriseDb,
+      organizationId: string,
+      userIds: ReadonlyArray<string>,
+      linkedDeviceIds: ReadonlyArray<string> = [],
+    ) =>
       Effect.gen(function* () {
-        const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
+        const deviceIds = [
+          ...new Set([
+            ...(yield* linkedDeviceIdsForUsers(db, organizationId, userIds)),
+            ...linkedDeviceIds,
+          ]),
+        ];
 
         if (deviceIds.length === 0) return;
 

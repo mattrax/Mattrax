@@ -81,7 +81,7 @@ const toBackupActionError = (cause: unknown): BackupActionError =>
       });
 
 export type BackupActor = {
-  readonly userId: string;
+  readonly accountId: string;
   readonly email: string;
 };
 
@@ -142,7 +142,7 @@ const recordAudit = (
     yield* db.insert(schema.auditLog).values({
       id: id(),
       organizationId,
-      actorAccountId: actor?.userId ?? null,
+      actorAccountId: actor?.accountId ?? null,
       actorEmail: actor?.email ?? null,
       action,
       targetType: "organization",

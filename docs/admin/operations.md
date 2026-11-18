@@ -454,7 +454,10 @@ Included:
 
 - Tenant profile and branding.
 - Groups, policy links and device membership metadata.
-- Policies and configurations.
+- Policies and configurations, including assignments to directory users.
+- Directory users referenced by those assignments (email, name, source, external id
+  and disabled state). Restore recreates missing directory users; account members are
+  not exported.
 - Application metadata (not bytes).
 - Enrollment settings and pre-registrations.
 - SCEP certificate metadata.
@@ -466,7 +469,7 @@ Excluded:
 - Token hashes and passkey credentials.
 - Sessions and auth proofs.
 - R2 object bytes.
-- Members, devices and audit history in the import path.
+- Account members, devices and audit history in the import path.
 
 ### Export and import
 

@@ -14,6 +14,8 @@ export type ScimMembershipNotifierHandler = (
   db: import("@mattrax/enterprise-core").EnterpriseDb,
   organizationId: string,
   userIds: ReadonlyArray<string>,
+  /** Devices linked to a user that was deleted before the notifier ran. */
+  deviceIds?: ReadonlyArray<string>,
 ) => Effect.Effect<void, unknown, never>;
 
 export class ScimMembershipNotifier extends Context.Service<
@@ -107,6 +109,8 @@ type ScimContext = {
   readonly organizationId: string;
   /** Directory users whose state or group membership changed in this request. */
   readonly changedUserIds: Set<string>;
+  /** Devices captured before a directory-user delete removed their links. */
+  readonly changedDeviceIds: Set<string>;
 };
 
 const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: string) =>
@@ -147,6 +151,7 @@ const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: st
       tenantId,
       organizationId: token.organizationId,
       changedUserIds: new Set<string>(),
+      changedDeviceIds: new Set<string>(),
     } satisfies ScimContext;
   });
 
@@ -352,6 +357,13 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
         .where(
           and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
         );
+
+      // Match Entra removal semantics: a disabled directory person must not
+      // stay in directory groups, where a later re-enable would silently
+      // restore old group-derived policies.
+      if (disabled)
+        yield* db.delete(schema.userGroupMember).where(eq(schema.userGroupMember.userId, userId));
+
       ctx.changedUserIds.add(userId);
     }
 
@@ -367,9 +379,23 @@ const deleteUser = (ctx: ScimContext, userId: string) =>
 
     if (!current) return scimError(404, "User not found");
 
-    // Removing the directory person cascades their group memberships, device
-    // links and direct policy assignments. Dashboard accounts, memberships and
-    // invitations belong to a different identity and are untouched.
+    // Capture linked devices before the cascade removes `device_user`, so the
+    // post-request notifier can still wake them. Removing the directory person
+    // cascades group memberships, device links and direct policy assignments.
+    // Dashboard accounts, memberships and invitations are a different identity
+    // and are untouched.
+    const linkedDevices = yield* db
+      .select({ deviceId: schema.deviceUser.deviceId })
+      .from(schema.deviceUser)
+      .where(
+        and(
+          eq(schema.deviceUser.organizationId, ctx.organizationId),
+          eq(schema.deviceUser.userId, userId),
+        ),
+      );
+
+    for (const device of linkedDevices) ctx.changedDeviceIds.add(device.deviceId);
+
     yield* db
       .delete(schema.user)
       .where(and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)));
@@ -819,7 +845,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
       if (Option.isSome(notifier)) {
         const db = yield* Db;
         yield* notifier
-          .value(db, ctx.organizationId, [...ctx.changedUserIds])
+          .value(db, ctx.organizationId, [...ctx.changedUserIds], [...ctx.changedDeviceIds])
           .pipe(
             Effect.catch((cause) => Effect.logWarning("SCIM membership refresh failed", cause)),
           );

@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
 import {
   JsonRecord,
@@ -9,6 +9,7 @@ import {
   type TenantExportAuditEntry,
   type TenantExportCertificate,
   type TenantExportDeviceAssignment,
+  type TenantExportDirectoryUser,
   type TenantExportEnvelope,
   type TenantExportEnrollment,
   type TenantExportGroup,
@@ -94,6 +95,33 @@ export const buildTenantExport = (
       : [];
 
     const usersById = new Map(users.map((user) => [user.id, user]));
+
+    const directoryUserRows = yield* db
+      .select({
+        id: schema.user.id,
+        email: schema.user.email,
+        name: schema.user.name,
+        externalId: schema.user.externalId,
+        source: schema.user.source,
+        disabled: schema.user.disabled,
+      })
+      .from(schema.user)
+      .where(eq(schema.user.organizationId, organizationId))
+      .orderBy(asc(schema.user.email), asc(schema.user.id));
+
+    const directoryUsers: TenantExportDirectoryUser[] = directoryUserRows.map(
+      ({ email, name, externalId, source, disabled }) => ({
+        email,
+        name,
+        externalId,
+        source,
+        disabled,
+      }),
+    );
+
+    const directoryUsersById = new Map(
+      directoryUserRows.map((user) => [user.id, { id: user.id, email: user.email }]),
+    );
 
     const groups = yield* db
       .select()
@@ -361,7 +389,7 @@ export const buildTenantExport = (
     const exportedUserAssignments: TenantExportUserAssignment[] = [];
 
     for (const [userId, entry] of userAssignments) {
-      const user = usersById.get(userId);
+      const user = directoryUsersById.get(userId);
 
       if (!user) continue;
 
@@ -523,6 +551,7 @@ export const buildTenantExport = (
       policies: exportedPolicies,
       applications: exportedApplications,
       deviceAssignments: exportedDeviceAssignments,
+      directoryUsers,
       userAssignments: exportedUserAssignments,
       userGroupAssignments: exportedUserGroupAssignments,
       enrollment: exportedEnrollment,
