@@ -53,7 +53,8 @@
   "include": [
     "src",
     "package.json",
-    ".cloudflare/types"
+    ".cloudflare/types",
+    "*.stub.ts"
   ],
   "exclude": [
     "node_modules"

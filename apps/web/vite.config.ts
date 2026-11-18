@@ -44,6 +44,44 @@ const docsSourceDirectory = fileURLToPath(new URL("../../docs/", import.meta.url
 
 const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta.url));
 
+/**
+ * Pages whose `route.preload` returns early for `intent === "initial"`.
+ *
+ * They only warm the client cache for a later navigation, but the SSR router
+ * still imports each route config, which puts a second copy of the page module
+ * into the Worker. Resolving them to an empty config in the server environment
+ * keeps preloading on the client and the Worker small. Add a page here only
+ * when its preload is a no-op for the initial (server-rendered) load.
+ */
+const clientOnlyPreloadRoutes = [
+  "routes/(dashboard)/t/[tenantId]/applications/[applicationId].tsx",
+  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId].tsx",
+  "routes/(dashboard)/t/[tenantId]/devices/[deviceId].tsx",
+  "routes/(dashboard)/t/[tenantId]/groups/[groupId].tsx",
+  "routes/(dashboard)/t/[tenantId]/groups/new.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/assignments.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/design.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/editor.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/scripts/[scriptId].tsx",
+  "routes/(dashboard)/t/[tenantId]/scripts/new.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/administrators.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/attributes.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/audit.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/billing.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/delivery.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/enrollment.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/identity/directory.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/identity/domains.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/identity/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/integrations.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/legal.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/management.tsx",
+];
+
+const emptyRouteConfig = "\0mattrax:client-only-preload";
+
 /** Every file below a directory, as forward-slash paths relative to it. */
 async function listFiles(directory: string): Promise<string[]> {
   if (!fs.existsSync(directory)) return [];
@@ -162,6 +200,14 @@ export default defineConfig(({ command }) => ({
     : {}),
   resolve: {
     tsconfigPaths: true,
+    alias: {
+      // The auxiliary API Worker uses the same MySQL/passkey stack as apps/cloud.
+      "aws-ssl-profiles": fileURLToPath(
+        new URL("../cloud/aws-ssl-profiles.stub.ts", import.meta.url),
+      ),
+      tldts: fileURLToPath(new URL("../cloud/tldts.stub.ts", import.meta.url)),
+      "iconv-lite": fileURLToPath(new URL("../cloud/iconv-lite.stub.ts", import.meta.url)),
+    },
   },
   // Compile the deployment id into the server bundle. `deployment.ts` is the
   // only reader; the browser learns the running build from the document meta.
@@ -191,6 +237,25 @@ export default defineConfig(({ command }) => ({
     ],
   },
   plugins: [
+    {
+      // Resolve the client-only preload configs to an empty route in the server
+      // environment. The client keeps the real module and its navigations still
+      // preload data before rendering.
+      name: "mattrax:client-only-preload",
+      enforce: "pre",
+      resolveId(source) {
+        if (this.environment.name !== "ssr") return;
+
+        const [file, query] = source.split("?");
+
+        if (!file || !query?.startsWith("pick=route&")) return;
+
+        if (clientOnlyPreloadRoutes.some((route) => file.endsWith(route))) return emptyRouteConfig;
+      },
+      load(id) {
+        if (id === emptyRouteConfig) return "export const route = undefined;";
+      },
+    },
     // Start mode with SSR: the plugin owns the client entry, the document shell
     // and the server render. `externalServer` hands the Worker entry to us so
     // the same bundle can answer the API and MDM service-binding proxies.
