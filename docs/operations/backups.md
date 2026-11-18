@@ -9,12 +9,51 @@ production MySQL database into R2.
 - **How long.** 90 days. Objects move to Infrequent Access after 30 days and are
   deleted by an R2 lifecycle rule, not by the workflow.
 - **Credentials.** The workflow reuses `DATABASE_URL`, `CLOUDFLARE_ACCOUNT_ID`
-  and `CLOUDFLARE_API_TOKEN`; there is nothing extra to configure.
+  and `CLOUDFLARE_API_TOKEN`; the token only needs object write on this bucket.
+  There is nothing extra to configure.
 
 This is a logical backup of one database at one instant. It is not
 point-in-time recovery: the worst case is losing up to a day of writes. For
 anything shorter, enable the database provider's own binary log retention,
 which this workflow does not configure.
+
+## Provisioning
+
+The bucket is created once by hand. The workflow only writes objects: a CI
+token that can create buckets can also delete them, and a backup job that can
+lose the backups is worse than one that fails.
+
+```bash
+# Location hint is honoured only at creation. GitHub's hosted runners are in
+# Azure East US, so `enam` puts the bucket beside them.
+cf r2 buckets create --name mattrax-backups --location-hint enam
+
+# 90-day expiry under daily/, Infrequent Access after 30 days, and cleanup of
+# abandoned multipart uploads. `maxAge` is in seconds.
+cf r2 buckets lifecycle update mattrax-backups --rules '[
+  {
+    "id": "expire-backups",
+    "enabled": true,
+    "conditions": { "prefix": "daily/" },
+    "deleteObjectsTransition": { "condition": { "type": "Age", "maxAge": 7776000 } },
+    "storageClassTransitions": [
+      { "condition": { "type": "Age", "maxAge": 2592000 }, "storageClass": "InfrequentAccess" }
+    ]
+  },
+  {
+    "id": "abort-incomplete-uploads",
+    "enabled": true,
+    "conditions": {},
+    "abortMultipartUploadsTransition": { "condition": { "type": "Age", "maxAge": 604800 } }
+  }
+]'
+```
+
+`cf r2 buckets lifecycle update` replaces every rule, so keep both in the same
+call. Verify with `cf r2 buckets lifecycle get mattrax-backups`.
+
+If the nightly run fails with `403` on upload, the repository token is missing
+`Workers R2 Storage:Edit` on this bucket; nothing else needs to change.
 
 ## Object layout
 

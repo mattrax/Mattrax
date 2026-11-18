@@ -12,8 +12,10 @@ name: Database backup
 # - Retention is an R2 lifecycle rule, not a delete step here. A workflow that
 #   both uploads and prunes will, on the day it breaks halfway, take the old
 #   backups with it.
-# - The bucket is ensured rather than assumed, so a rebuild of the account does
-#   not need a manual step that nobody remembers.
+# - The bucket is provisioned once by an operator, not by this workflow: the
+#   CI token only needs object write, and a job that can create and delete
+#   buckets is a job that can lose the backups. Creation commands live in
+#   docs/operations/backups.md.
 #
 # Required repository secrets (already present for deploy.yml):
 #   DATABASE_URL, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
@@ -39,7 +41,6 @@ env:
   CF_SEND_TELEMETRY: "false"
   BACKUP_BUCKET: mattrax-backups
   BACKUP_PREFIX: daily/
-  RETENTION_DAYS: "90"
   ZSTD_LEVEL: "19"
   WRANGLER_VERSION: "4.164.0"
 
@@ -88,33 +89,18 @@ jobs:
             exit 1
           fi
 
-      - name: Ensure the bucket and its retention rule exist
+      - name: Ensure the bucket exists
         run: |
           set -euo pipefail
 
-          if wrangler r2 bucket list | grep -qw "$BACKUP_BUCKET"; then
-            echo "bucket $BACKUP_BUCKET already exists"
-          else
-            # `enam` is a location hint, honoured only at creation: GitHub's
-            # hosted runners are in Azure East US, so the bucket lives beside
-            # them and the nightly upload stays on Cloudflare's backbone.
-            echo "creating bucket $BACKUP_BUCKET"
-            wrangler r2 bucket create "$BACKUP_BUCKET" --location=enam
+          # Read-only precondition. A missing bucket is a provisioning mistake,
+          # not something this job should fix: giving CI the ability to create
+          # buckets also gives it the ability to delete them.
+          if ! wrangler r2 bucket list | grep -qw "$BACKUP_BUCKET"; then
+            echo "::error::Bucket $BACKUP_BUCKET does not exist. Create it once with the commands in docs/operations/backups.md."
+            exit 1
           fi
-
-          existing="$(wrangler r2 bucket lifecycle list "$BACKUP_BUCKET" 2>&1 || true)"
-          if grep -q "expire-backups" <<<"$existing"; then
-            echo "retention rule already present"
-          else
-            # Move to Infrequent Access after a month, drop after
-            # RETENTION_DAYS. Dumps are written once and read almost never, so
-            # the cheaper storage class and the retrieval fee are the right
-            # trade.
-            wrangler r2 bucket lifecycle add "$BACKUP_BUCKET" expire-backups "$BACKUP_PREFIX" \
-              --expire-days "$RETENTION_DAYS" \
-              --ia-transition-days 30
-          fi
-          wrangler r2 bucket lifecycle list "$BACKUP_BUCKET"
+          echo "bucket $BACKUP_BUCKET is present"
 
       - name: Dump and compress
         id: dump
