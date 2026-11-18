@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
@@ -28,8 +28,23 @@ import {
   type DashboardWidgetType,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient as appQueryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 import { useCan } from "~/lib/permissions";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () =>
+        appQueryClient.ensureQueryData(
+          enterpriseQueries.dashboard(params.tenantId, params.dashboardId),
+        ),
+    ]);
+  },
+};
 
 type Layout = { x: number; y: number; w: number; h: number };
 

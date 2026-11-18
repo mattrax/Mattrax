@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type {
@@ -11,7 +11,9 @@ import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 const selectClass =
@@ -66,16 +68,23 @@ const optionsOf = (draft: Draft) =>
         .filter(Boolean)
     : undefined;
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.attributes(params.tenantId)),
+    ]);
+  },
+};
+
 export default function AttributeSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const { can } = useCan();
   const writable = () => can("devices.write");
 
-  const definitions = useQuery(() => ({
-    queryKey: enterpriseKeys.attributes(params.tenantId),
-    queryFn: () => enterprise.listAttributes(params.tenantId),
-  }));
+  const definitions = useQuery(() => enterpriseQueries.attributes(params.tenantId));
 
   const [draft, setDraft] = createSignal<Draft>(emptyDraft(0));
   const [editing, setEditing] = createSignal<string | null>(null);

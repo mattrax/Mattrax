@@ -1,19 +1,15 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/solid-query";
+import { useInfiniteQuery } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge, FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
-import {
-  enterprise,
-  enterpriseKeys,
-  type AuditLogEntry,
-  type AuditSearchResponse,
-  type AuditSearchQuery,
-} from "~/lib/enterprise";
+import { enterpriseQueries, type AuditLogEntry, type AuditSearchQuery } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
 
@@ -164,6 +160,21 @@ const dateStart = (value: string) =>
 const dateEnd = (value: string) =>
   value ? new Date(`${value}T23:59:59.999`).toISOString() : undefined;
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // First unfiltered page only: the filter bar starts empty and later pages
+    // follow the cursor the page itself requests.
+    return preloadPage([
+      () =>
+        queryClient.ensureInfiniteQueryData(
+          enterpriseQueries.auditSearch(params.tenantId, { limit: PAGE_SIZE }),
+        ),
+    ]);
+  },
+};
+
 export default function AuditSettingsPage() {
   const params = useParams();
 
@@ -229,21 +240,8 @@ export default function AuditSettingsPage() {
     limit: PAGE_SIZE,
   }));
 
-  const log = useInfiniteQuery<
-    AuditSearchResponse,
-    Error,
-    InfiniteData<AuditSearchResponse>,
-    readonly unknown[],
-    string | undefined
-  >(() => ({
-    queryKey: enterpriseKeys.auditSearch(params.tenantId, filters()),
-    queryFn: async ({ pageParam }) =>
-      enterprise.searchAuditLog(params.tenantId, {
-        ...filters(),
-        cursor: pageParam,
-      }),
-    initialPageParam: undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  const log = useInfiniteQuery(() => ({
+    ...enterpriseQueries.auditSearch(params.tenantId, filters()),
     // Infinite queries are client-driven; running the first page during SSR
     // loses the request cookie and surfaces as an unauthenticated error.
     enabled: Boolean(params.tenantId) && !isServer && !rangeError(),

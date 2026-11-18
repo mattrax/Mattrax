@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
@@ -17,7 +17,14 @@ import {
   ShieldCheck,
   Smartphone,
 } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, type AutopilotProfileInfo } from "~/lib/enterprise";
+import {
+  enterprise,
+  enterpriseKeys,
+  enterpriseQueries,
+  type AutopilotProfileInfo,
+} from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
@@ -30,46 +37,39 @@ const selectClass =
 const textareaClass =
   "min-h-28 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none sm:text-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    // Above the fold: Apple push, Android and Apple Business Manager. VPP and
+    // Autopilot stay with the page because they sit further down.
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.android(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.abm(params.tenantId)),
+    ]);
+  },
+};
+
 export default function ManagementSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();
   const { can } = useCan();
   const writable = () => can("management.write");
 
-  const apns = useQuery(() => ({
-    queryKey: enterpriseKeys.apns(params.tenantId),
-    queryFn: () => enterprise.getApns(params.tenantId),
-  }));
+  const apns = useQuery(() => enterpriseQueries.apns(params.tenantId));
 
-  const android = useQuery(() => ({
-    queryKey: enterpriseKeys.android(params.tenantId),
-    queryFn: () => enterprise.getTenantAndroid(params.tenantId),
-  }));
+  const android = useQuery(() => enterpriseQueries.android(params.tenantId));
 
-  const abm = useQuery(() => ({
-    queryKey: enterpriseKeys.abm(params.tenantId),
-    queryFn: () => enterprise.getAppleBusinessManager(params.tenantId),
-  }));
+  const abm = useQuery(() => enterpriseQueries.abm(params.tenantId));
 
-  const vpp = useQuery(() => ({
-    queryKey: enterpriseKeys.vpp(params.tenantId),
-    queryFn: () => enterprise.getVpp(params.tenantId),
-  }));
+  const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
 
-  const autopilot = useQuery(() => ({
-    queryKey: enterpriseKeys.autopilot(params.tenantId),
-    queryFn: () => enterprise.getAutopilotSettings(params.tenantId),
-  }));
+  const autopilot = useQuery(() => enterpriseQueries.autopilot(params.tenantId));
 
-  const autopilotDevices = useQuery(() => ({
-    queryKey: enterpriseKeys.autopilotDevices(params.tenantId),
-    queryFn: () => enterprise.listAutopilotDevices(params.tenantId),
-  }));
+  const autopilotDevices = useQuery(() => enterpriseQueries.autopilotDevices(params.tenantId));
 
-  const autopilotProfiles = useQuery(() => ({
-    queryKey: enterpriseKeys.autopilotProfiles(params.tenantId),
-    queryFn: () => enterprise.listAutopilotProfiles(params.tenantId),
-  }));
+  const autopilotProfiles = useQuery(() => enterpriseQueries.autopilotProfiles(params.tenantId));
 
   const connectAndroid = useMutation(() => ({
     mutationFn: () => enterprise.createAndroidSignup(params.tenantId),

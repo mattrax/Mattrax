@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -11,10 +11,24 @@ import { Input } from "~/components/ui/input";
 import {
   enterprise,
   enterpriseKeys,
+  enterpriseQueries,
   type DynamicGroupKind,
   type DynamicGroupRules,
 } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { queryClient } from "~/lib/query-client";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "policy")),
+    ]);
+  },
+};
 
 export default function NewGroupPage() {
   const params = useParams();
@@ -28,15 +42,9 @@ export default function NewGroupPage() {
   const [devices, setDevices] = createSignal<Set<string>>(new Set());
   const [policies, setPolicies] = createSignal<Set<string>>(new Set());
 
-  const deviceList = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
-  }));
+  const deviceList = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
-  const policyList = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "policy"),
-    queryFn: () => enterprise.list(params.tenantId, "policy"),
-  }));
+  const policyList = useQuery(() => enterpriseQueries.list(params.tenantId, "policy"));
 
   const create = useMutation(() => ({
     mutationFn: () =>

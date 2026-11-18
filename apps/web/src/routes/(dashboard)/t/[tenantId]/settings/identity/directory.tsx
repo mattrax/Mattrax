@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match, Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
@@ -8,6 +8,8 @@ import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -27,6 +29,17 @@ const triggerLabel = (trigger: string | null | undefined) =>
     Match.when("manual", () => "manual run"),
     Match.orElse(() => "run"),
   );
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.directorySync(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
+    ]);
+  },
+};
 
 export default function DirectorySyncPage() {
   const params = useParams();

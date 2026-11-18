@@ -1,10 +1,13 @@
-import { useQuery } from "@tanstack/solid-query";
+import { type RoutePreloadFuncArgs } from "@solidjs/router";
+import { queryOptions, useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
 import { ErrorText, Field, PageHeader, Panel } from "~/components/mdm/common";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 
 /**
  * Settings → Legal: the open-source licence inventory.
@@ -65,15 +68,26 @@ const licenceSummary = (packages: ReadonlyArray<LicencePackage>, limit = 6): str
   return remaining > 0 ? `${shown}, +${remaining} more` : shown;
 };
 
-export default function LegalSettingsPage() {
-  const licences = useQuery(() => ({
-    queryKey: ["licences"],
+const licencesQueryOptions = () =>
+  queryOptions({
+    queryKey: ["licences"] as const,
     queryFn: loadLicences,
     // The inventory is a build artifact: it cannot change while this tab lives.
     staleTime: Number.POSITIVE_INFINITY,
     // A relative URL has no origin during SSR; the client fetches after hydration.
     enabled: !isServer,
-  }));
+  });
+
+export const route = {
+  preload: ({ intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([() => queryClient.ensureQueryData(licencesQueryOptions())]);
+  },
+};
+
+export default function LegalSettingsPage() {
+  const licences = useQuery(licencesQueryOptions);
 
   const [query, setQuery] = createSignal("");
 

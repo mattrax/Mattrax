@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
@@ -7,9 +7,23 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.scim(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.tenantSecurity(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.sso(params.tenantId)),
+    ]);
+  },
+};
 
 export default function IdentitySettingsPage() {
   const params = useParams();
@@ -19,17 +33,11 @@ export default function IdentitySettingsPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const tokens = useQuery(() => ({
-    queryKey: enterpriseKeys.scim(params.tenantId),
-    queryFn: () => enterprise.listScimTokens(params.tenantId),
-  }));
+  const tokens = useQuery(() => enterpriseQueries.scim(params.tenantId));
 
   /* ---- Tenant MFA requirement (independent of SSO) --------------------- */
 
-  const security = useQuery(() => ({
-    queryKey: enterpriseKeys.tenantSecurity(params.tenantId),
-    queryFn: () => enterprise.getTenantSecurity(params.tenantId),
-  }));
+  const security = useQuery(() => enterpriseQueries.tenantSecurity(params.tenantId));
 
   const [requireTenantMfa, setRequireTenantMfa] = createSignal(false);
   const [securitySeeded, setSecuritySeeded] = createSignal(false);
@@ -121,10 +129,7 @@ export default function IdentitySettingsPage() {
     return `Expires ${date.toLocaleDateString()} · ${days} day${days === 1 ? "" : "s"} left`;
   };
 
-  const sso = useQuery(() => ({
-    queryKey: enterpriseKeys.sso(params.tenantId),
-    queryFn: () => enterprise.getSsoConfig(params.tenantId),
-  }));
+  const sso = useQuery(() => enterpriseQueries.sso(params.tenantId));
 
   const [azureTenantId, setAzureTenantId] = createSignal("");
   const [ssoEnabled, setSsoEnabled] = createSignal(false);

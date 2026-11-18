@@ -1,11 +1,13 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { CheckCircle2, CircleAlert } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 
 /**
@@ -14,19 +16,25 @@ import { cn } from "~/lib/utils";
  * Push is a wake-up hint, not the only way a policy reaches a device, so this
  * lives with the debugging surfaces rather than on the tenant overview.
  */
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.devicePushHealth(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
+    ]);
+  },
+};
+
 export default function DeliverySettingsPage() {
   const params = useParams();
   const tenantId = () => params.tenantId!;
 
-  const pushHealth = useQuery(() => ({
-    queryKey: enterpriseKeys.devicePushHealth(tenantId()),
-    queryFn: () => enterprise.getDevicePushHealth(tenantId()),
-  }));
+  const pushHealth = useQuery(() => enterpriseQueries.devicePushHealth(tenantId()));
 
-  const apns = useQuery(() => ({
-    queryKey: enterpriseKeys.apns(tenantId()),
-    queryFn: () => enterprise.getApns(tenantId()),
-  }));
+  const apns = useQuery(() => enterpriseQueries.apns(tenantId()));
 
   const cards = () => {
     const counts = pushHealth.data?.counts;

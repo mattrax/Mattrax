@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Match, Option, Schema } from "effect";
 import { ApplicationNode } from "@mattrax/enterprise-domain/client";
@@ -26,8 +26,25 @@ import {
   type DeviceRow,
   type GroupRow,
 } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () =>
+        queryClient.ensureQueryData(
+          enterpriseQueries.application(params.tenantId, params.applicationId),
+        ),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "group")),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
+    ]);
+  },
+};
 
 const textareaClass =
   "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -131,15 +148,9 @@ export default function ApplicationDetailPage() {
   const writable = () => can("applications.write");
   const app = useQuery(() => enterpriseQueries.application(params.tenantId, params.applicationId));
 
-  const groups = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "group"),
-    queryFn: () => enterprise.list(params.tenantId, "group"),
-  }));
+  const groups = useQuery(() => enterpriseQueries.list(params.tenantId, "group"));
 
-  const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "device"),
-    queryFn: () => enterprise.list(params.tenantId, "device"),
-  }));
+  const devices = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));

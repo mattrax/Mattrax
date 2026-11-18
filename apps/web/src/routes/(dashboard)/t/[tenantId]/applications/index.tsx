@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { Match } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, Show } from "solid-js";
@@ -23,8 +23,20 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Package } from "~/components/ui/icons";
 import { enterpriseQueries, type ApplicationRow } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";
+import { queryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.applications(params.tenantId)),
+    ]);
+  },
+};
 
 const sourceLabel = (source: ApplicationRow["source"]) =>
   Match.value(source).pipe(

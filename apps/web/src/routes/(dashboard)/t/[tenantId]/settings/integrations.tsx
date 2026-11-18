@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -30,6 +30,8 @@ import { Input } from "~/components/ui/input";
 import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
+import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -39,6 +41,18 @@ import { cn } from "~/lib/utils";
  * The signing secret is only in the browser for the moment it is created or
  * rotated; every later list only shows its last four characters.
  */
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.webhooks(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
+    ]);
+  },
+};
+
 export default function IntegrationsSettingsPage() {
   const params = useParams();
   const qc = useQueryClient();

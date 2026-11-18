@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { scriptTriggerLabel } from "@mattrax/enterprise-domain/client";
@@ -17,7 +17,19 @@ import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries, type ScriptInfo } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { queryClient } from "~/lib/query-client";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.scripts(params.tenantId)),
+    ]);
+  },
+};
 
 const statusTone = (status: string | null | undefined) => {
   switch (status) {

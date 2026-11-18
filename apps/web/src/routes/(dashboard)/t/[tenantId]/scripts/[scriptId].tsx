@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -25,8 +25,24 @@ import {
   enterpriseQueries,
   type ScriptExecutionInfo,
 } from "~/lib/enterprise";
+import { preloadPage } from "~/lib/page-data";
 import { ReadOnlyNotice, AccessDenied, useCan } from "~/lib/permissions";
+import { queryClient } from "~/lib/query-client";
 import { downloadBlob } from "~/lib/download";
+
+export const route = {
+  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
+    if (intent === "initial") return;
+
+    return preloadPage([
+      () => queryClient.ensureQueryData(enterpriseQueries.script(params.tenantId, params.scriptId)),
+      () =>
+        queryClient.ensureQueryData(
+          enterpriseQueries.scriptAssignments(params.tenantId, params.scriptId),
+        ),
+    ]);
+  },
+};
 
 const statusTone = (status: string) => {
   switch (status) {
