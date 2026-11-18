@@ -380,6 +380,31 @@ describe("enterprise service tenant flow", () => {
         updatedAt: now,
       });
 
+    db.store.device_application.push(
+      {
+        deviceId: "device-1",
+        organizationId: tenant.id,
+        bundleId: "com.example.editor",
+        name: "Editor",
+        version: "1.0",
+        shortVersion: "1.0",
+        hasUpdateAvailable: false,
+        isManaged: true,
+        lastReportedAt: now,
+      },
+      {
+        deviceId: "device-2",
+        organizationId: tenant.id,
+        bundleId: "com.example.editor",
+        name: "Editor",
+        version: "2.0",
+        shortVersion: "2.0",
+        hasUpdateAvailable: true,
+        isManaged: false,
+        lastReportedAt: now,
+      },
+    );
+
     const queries = [
       { dataset: "devices" as const, query: { all: [] }, countOnly: true },
       {
@@ -411,6 +436,75 @@ describe("enterprise service tenant flow", () => {
     );
 
     expect(single).toEqual(batch.results[2]);
+  });
+
+  it("shares one application inventory read across software widgets", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+
+    for (const id of ["device-1", "device-2"])
+      db.store.device.push({
+        id,
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: id,
+        serial: id,
+        enrolledAt: now,
+        lastSeenAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+    for (const [deviceId, version, managed] of [
+      ["device-1", "1.0", true],
+      ["device-2", "2.0", false],
+    ] as const)
+      db.store.device_application.push({
+        deviceId,
+        organizationId: tenant.id,
+        bundleId: "com.example.editor",
+        name: "Editor",
+        version,
+        shortVersion: version,
+        hasUpdateAvailable: version === "2.0",
+        isManaged: managed,
+        lastReportedAt: now,
+      });
+
+    const queries = [
+      { dataset: "software" as const, query: { all: [] }, groupBy: "name" },
+      { dataset: "software" as const, query: { all: [] }, groupBy: "managed" },
+      { dataset: "software" as const, query: { all: [] } },
+    ];
+
+    const batch = await runEffect(
+      service.queryDashboardBatch(request(headers), tenant.id, { queries }),
+    );
+
+    expect(batch.results[0].total).toBe(1);
+    expect(batch.results[0].buckets).toEqual([{ label: "Editor", value: 1 }]);
+    expect(batch.results[0].rows[0]).toMatchObject({
+      bundleId: "com.example.editor",
+      deviceCount: 2,
+    });
+
+    // Both devices report the same bundle, so the bundle counts once and is
+    // managed if any device reports a managed install.
+    expect(batch.results[1].buckets).toEqual([{ label: "Managed", value: 1 }]);
+
+    for (const [index, query] of queries.entries()) {
+      const single = await runEffect(
+        service.queryDashboard(request(headers), tenant.id, query),
+      );
+
+      expect(batch.results[index]).toEqual(single);
+    }
   });
 
   it("lists only tenants for the authenticated user", async () => {

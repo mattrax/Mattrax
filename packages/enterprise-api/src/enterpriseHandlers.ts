@@ -5076,26 +5076,66 @@ export const createEnterpriseService = ({
     };
   };
 
+  type DeviceApplicationRow = typeof schema.deviceApplication.$inferSelect;
+
+  /**
+   * One installed-application read for every software widget in a batch.
+   *
+   * Software widgets bucket the same rows by bundle id, so loading them once
+   * avoids one whole-fleet inventory scan per widget.
+   */
+  const loadApplicationsByDevice = (
+    organizationId: string,
+    deviceIds: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const byDevice = new Map<string, DeviceApplicationRow[]>();
+
+      if (deviceIds.length === 0) return byDevice;
+
+      const rows = yield* db
+        .select()
+        .from(schema.deviceApplication)
+        .where(
+          and(
+            eq(schema.deviceApplication.organizationId, organizationId),
+            inArray(schema.deviceApplication.deviceId, [...deviceIds]),
+          ),
+        );
+
+      for (const row of rows) {
+        const list = byDevice.get(row.deviceId);
+
+        if (list) list.push(row);
+        else byDevice.set(row.deviceId, [row]);
+      }
+
+      return byDevice;
+    });
+
   const projectSoftwareDashboardQuery = (
     organizationId: string,
     payload: DashboardQueryRequest,
     matches: ReadonlyArray<DeviceDashboardSnapshot>,
+    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
   ) =>
     Effect.gen(function* () {
       const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
       const matchingIds = matches.map((snapshot) => snapshot.row.id);
 
-      const applications = matchingIds.length
-        ? yield* db
-            .select()
-            .from(schema.deviceApplication)
-            .where(
-              and(
-                eq(schema.deviceApplication.organizationId, organizationId),
-                inArray(schema.deviceApplication.deviceId, matchingIds),
-              ),
-            )
-        : [];
+      const applications = sharedApplications
+        ? matchingIds.flatMap((id) => sharedApplications.get(id) ?? [])
+        : matchingIds.length
+          ? yield* db
+              .select()
+              .from(schema.deviceApplication)
+              .where(
+                and(
+                  eq(schema.deviceApplication.organizationId, organizationId),
+                  inArray(schema.deviceApplication.deviceId, matchingIds),
+                ),
+              )
+          : [];
 
       type SoftwareGroup = {
         bundleId: string;
@@ -5164,6 +5204,7 @@ export const createEnterpriseService = ({
     payload: DashboardQueryRequest,
     snapshots: ReadonlyArray<DeviceDashboardSnapshot> | null,
     timestamp: Date,
+    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
   ) =>
     Effect.gen(function* () {
       if (
@@ -5184,7 +5225,12 @@ export const createEnterpriseService = ({
 
       return payload.dataset === "devices"
         ? projectDeviceDashboardQuery(payload, matches, timestamp)
-        : yield* projectSoftwareDashboardQuery(organizationId, payload, matches);
+        : yield* projectSoftwareDashboardQuery(
+            organizationId,
+            payload,
+            matches,
+            sharedApplications,
+          );
     });
 
   const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
@@ -5219,9 +5265,24 @@ export const createEnterpriseService = ({
         ? yield* dashboardSnapshot(organizationId, payloads)
         : null;
 
+      // Several software widgets bucket the same inventory, so read it once.
+      const sharedApplications =
+        snapshots && payloads.filter((payload) => payload.dataset === "software").length > 1
+          ? yield* loadApplicationsByDevice(
+              organizationId,
+              snapshots.map((snapshot) => snapshot.row.id),
+            )
+          : undefined;
+
       const results = yield* Effect.all(
         payloads.map((payload) =>
-          evaluateDashboardQuery(organizationId, payload, snapshots, timestamp),
+          evaluateDashboardQuery(
+            organizationId,
+            payload,
+            snapshots,
+            timestamp,
+            sharedApplications,
+          ),
         ),
         { concurrency: "unbounded" },
       );
