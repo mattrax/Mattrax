@@ -75,3 +75,7 @@ dist-attrib/
 
 # Generated open-source licence inventory (pnpm licenses / web build)
 /apps/web/public/licenses.json
+
+# Swift build output
+**/.build/
+apps/mattraxd/build/

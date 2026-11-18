@@ -44,7 +44,7 @@ not.
 | Android  | [Android Management API discovery](https://androidmanagement.googleapis.com/$discovery/rest?version=v1)          | JSON   |
 | Windows  | [`royklo/IntuneSettingsCatalogData`](https://github.com/royklo/IntuneSettingsCatalogData) (Microsoft Graph data) | JSON   |
 
-The adapters live in `scripts/catalog-sync/`. See
+The adapters live in `apps/web/scripts/catalog-sync/`. See
 [Catalogue sources](/reference/catalogue-sources) for why these sources were chosen and
 the licensing caveats around the generated data.
 

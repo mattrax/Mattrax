@@ -74,7 +74,7 @@ export const DEVICE_STALE_DAYS = ["7", "30", "90"] as const;
 
 export const DEVICE_PUSH_FILTERS = ["failing", "invalid"] as const;
 
-/** Windows activation states reported by the Mattrax agent. */
+/** Windows activation states reported by mattraxd. */
 export const DEVICE_ACTIVATION_FILTERS = ["activated", "not-activated", "unknown"] as const;
 
 export const DEVICE_SORT_FIELDS = [

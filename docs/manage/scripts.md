@@ -3,7 +3,7 @@
 Scripts run shell code on managed devices. They are the fleet-automation layer on top of
 settings management: an operator writes a script, assigns it to devices or groups, and the
 device runs it on a schedule or on demand. Every run records its exit code and capped
-stdout/stderr; terminal results reported by the agent also add a device timeline entry.
+stdout/stderr; terminal results reported by `mattraxd` also add a device timeline entry.
 
 Scripts execute arbitrary code with administrator privileges when configured to run as
 root. Treat the **Scripts write** permission as equivalent to remote root access.
@@ -12,15 +12,15 @@ root. Treat the **Scripts write** permission as equivalent to remote root access
 
 1. Open **Scripts → New script**.
 2. Enter a name and the script body (maximum 32 KiB).
-3. Choose a shell: `bash`, `zsh`, `sh` or PowerShell (`pwsh`). The macOS agent runs
+3. Choose a shell: `bash`, `zsh`, `sh` or PowerShell (`pwsh`). `mattraxd` on macOS runs
    `bash`, `zsh` and `sh`; it reports a skipped run for `pwsh` rather than executing the
    body with a different shell.
 4. Choose **Run as**:
-   - **root** runs elevated. The device must have the agent installed as a system daemon.
+   - **root** runs elevated. The device must have `mattraxd` installed as a system daemon.
    - **Logged-in user** runs in the console session. A trigger that fires without a
      logged-in user (install, interval, cron, network change) is skipped with a reason in
      the run history.
-5. Set a timeout (1 second to 24 hours). The agent stops the script at the deadline.
+5. Set a timeout (1 second to 24 hours). `mattraxd` stops the script at the deadline.
 6. Pick a trigger:
    - **Manual only** — runs when an operator presses Run.
    - **When the profile is installed** — runs once per device for each script revision.
@@ -51,15 +51,15 @@ rejected.
   with the body, shell, run-as, timeout, environment and trigger. Editing the script or
   queueing a manual run reinstalls the profile; removing the assignment removes it.
 - Windows: no Windows MDM CSP can run arbitrary code. Microsoft's own answer is an agent
-  (the Intune Management Extension). The same result contract is available to a Windows
-  agent through `GET /api/v1/script-agent/scripts`.
+  (the Intune Management Extension). The same result contract is available to the Windows
+  build of `mattraxd` through `GET /api/v1/script-agent/scripts`.
 - Android: the Android Management API has no script command. Android devices are reported
   as skipped and no execution row is created for them.
 
-Apple devices need the macOS agent (build and signing instructions in
-[`apps/agent/README.md`](https://github.com/mattrax/Mattrax/tree/main/apps/agent)). A
-Windows agent consumes the same endpoint contract, but that artifact is not built in this
-repository yet; Windows devices report no script runs until one is installed.
+Apple devices need the macOS build of `mattraxd` (build and signing instructions in
+[`apps/mattraxd/README.md`](https://github.com/mattrax/Mattrax/tree/main/apps/mattraxd)).
+The Windows build consumes the same endpoint contract, but that artifact is not built in
+this repository yet; Windows devices report no script runs until one is installed.
 
 ## Run on demand
 
@@ -77,12 +77,12 @@ filtered to one device. Each row reports:
 
 - trigger, status, exit code and duration;
 - capped stdout/stderr (64 KiB per stream) with a copy and download button;
-- the non-output failure detail (timeout, skipped trigger, agent error).
+- the non-output failure detail (timeout, skipped trigger, `mattraxd` error).
 
 Captured output is redacted on the device and again on the server. The server never trusts
-the agent's cap, because a compromised device can post any size it likes.
+`mattraxd`'s cap, because a compromised device can post any size it likes.
 
-A terminal run reported by the agent also writes a `script.run_completed` or
+A terminal run reported by `mattraxd` also writes a `script.run_completed` or
 `script.run_failed` entry to the device timeline. A queued run that expires without a
 result has no device event. Metadata contains the script id and name, trigger, status, exit code,
 duration and timeout flag — never output or environment values.
@@ -92,7 +92,7 @@ duration and timeout flag — never output or environment values.
 - A manual run is `queued` until the device reports a result, then `succeeded` or `failed`.
   Queued runs past their deadline become `expired`; the maintenance sweep does this even if
   no device checks in.
-- Trigger runs are created by the agent and deduplicated on
+- Trigger runs are created by `mattraxd` and deduplicated on
   `(device, script, run id)`. A retried result post returns the existing row.
 - Terminal history is retained for 30 days. Output can be large, so retention is
   deliberate; export anything you need to keep before then.
@@ -132,6 +132,6 @@ The device-facing channel is separate and authenticates with a device token, not
 | `GET`  | `/api/v1/script-agent/scripts` | Assigned scripts plus a pending run id |
 | `POST` | `/api/v1/script-agent/results` | Post one terminal result               |
 
-The agent token is an HMAC over the device id using `AUTH_SECRET`. It is bound to one
+The `mattraxd` token is an HMAC over the device id using `AUTH_SECRET`. It is bound to one
 device, cannot be used against another tenant, and is invalidated by rotating the secret
 (re-enrol or re-deliver profiles afterwards).

@@ -49,6 +49,12 @@ const RECENTS_KEY = "mattrax:recents";
 
 const SEARCH_LIMIT = 30;
 
+/** Query-language health words that differ from the URL parameter value. */
+const HEALTH_TOKEN_ALIASES = new Map([
+  ["warning", "attention"],
+  ["mia", "missing"],
+]);
+
 type Recent = { id: string; title: string; hint?: string; group: string; href: string };
 
 const StoredRecent = Schema.Struct({
@@ -540,10 +546,7 @@ export function CommandPalette() {
           "missing",
         ].includes(token)
       ) {
-        params.set(
-          "health",
-          token === "warning" ? "attention" : token === "mia" ? "missing" : token,
-        );
+        params.set("health", HEALTH_TOKEN_ALIASES.get(token) ?? token);
         continue;
       }
 

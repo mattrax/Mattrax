@@ -5,7 +5,7 @@ import path from "node:path";
 // Generates a self-signed certificate for local HTTPS development. The Vite
 // dev server picks it up from `apps/web/.certs` and the API's `ORIGIN` must
 // match the resulting `https://localhost:9050` origin.
-const dir = path.resolve("apps/web/.certs");
+const dir = path.resolve(import.meta.dirname, "..", ".certs");
 
 const key = path.join(dir, "localhost-key.pem");
 

@@ -2,7 +2,7 @@
  * Lighthouse budgets for the public pages.
  *
  * `pnpm lighthouse` builds the self-host dashboard and serves the built SSR
- * bundle on a production-shaped Node server (see `scripts/lighthouse-server.mjs`).
+ * bundle on a production-shaped Node server (see `packages/config/scripts/lighthouse-server.mjs`).
  * Authenticated dashboard routes are intentionally out of scope; the app/auth
  * pages are measured for rendering, accessibility and agentic readiness but not
  * SEO, because robots.txt intentionally excludes them from indexing.
@@ -32,7 +32,7 @@ module.exports = {
         "http://localhost:9050/register",
         "http://localhost:9050/designer",
       ],
-      startServerCommand: "node scripts/lighthouse-server.mjs",
+      startServerCommand: "node packages/config/scripts/lighthouse-server.mjs",
       startServerReadyPattern: "Lighthouse server ready",
       startServerReadyTimeout: 120000,
       // A single sample keeps the local loop fast; CI medians three runs to

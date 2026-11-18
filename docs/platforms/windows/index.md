@@ -246,9 +246,9 @@ unscoped discovery URL. New deployments should use the tenant-scoped link.
 No OMA-DM CSP reports whether Windows is activated. The `WindowsLicensing` CSP is the only
 licensing-related CSP, and it reports the edition, edition-upgrade state and subscription
 licensing — not the base activation state. Microsoft exposes that state as
-`SoftwareLicensingProduct.LicenseStatus` over WMI, so it needs the on-device agent.
+`SoftwareLicensingProduct.LicenseStatus` over WMI, so it needs `mattraxd`.
 
-The agent samples the active Windows SKU and posts the raw values to
+`mattraxd` samples the active Windows SKU and posts the raw values to
 `POST /api/v1/windows-agent/activation` with the same device bearer token as the script
 channel:
 
@@ -266,17 +266,17 @@ one already stored is ignored (`applied: false`), and a future clock or a timest
 MySQL's `datetime` range is clamped to the ingest time so a bad clock cannot break reporting.
 
 **Scope in this repository:** Mattrax ships only the ingestion side of this channel. There
-is no Windows agent installer or MSI in this repository, and no API issues a device token.
+is no Windows `mattraxd` installer or MSI in this repository, and no API issues a device token.
 The bearer token is the same HMAC-derived token the Windows script channel expects
-(`scriptAgentToken(deviceId, AUTH_SECRET)`), so whatever installs the agent has to provision
-it. Until an agent posts a sample, a Windows device shows "Not reported" and never matches
+(`scriptAgentToken(deviceId, AUTH_SECRET)`), so whatever installs `mattraxd` has to provision
+it. Until `mattraxd` posts a sample, a Windows device shows "Not reported" and never matches
 the unactivated filter; nothing in OMA-DM fills this in.
 
 The server keeps the raw `LicenseStatus` (0-6), licence name, product-key channel and the WMI
 edition, and normalises the state: `1` (Licensed) is `activated`; `0` (Unlicensed), the grace
 states (`2`-`4`), `5` (Notification) and `6` (Extended grace) are `not-activated`; a missing,
 fractional or out-of-range value is stored as `null` and shown as `unknown`. Devices without
-the agent, and every non-Windows platform, have no activation state at all rather than an
+`mattraxd`, and every non-Windows platform, have no activation state at all rather than an
 invented "not activated".
 
 The device page shows the state, installed edition and channel, and the device list can
@@ -286,7 +286,7 @@ the API for support rather than being shown as an unexplained integer.
 ## Limitations
 
 - No BitLocker key escrow, Defender or OS-build compliance checks. Windows activation and
-  licensing are collected by the Windows agent (see above), not by OMA-DM: the
+  licensing are collected by `mattraxd` on Windows (see above), not by OMA-DM: the
   `WindowsLicensing` CSP reports edition-upgrade and subscription state, not base activation.
 - Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
   documented as mobile-only), so storage health may be unavailable for some laptops.

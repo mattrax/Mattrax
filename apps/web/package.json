@@ -3,14 +3,14 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "tsx ../../scripts/generate-licences.ts && vp dev",
-    "build": "tsx ../../scripts/generate-licences.ts && vp build",
-    "build:selfhost": "tsx ../../scripts/generate-licences.ts && MATTRAX_TARGET=node vp build",
+    "dev": "tsx scripts/generate-licences.ts && vp dev",
+    "build": "tsx scripts/generate-licences.ts && vp build",
+    "build:selfhost": "tsx scripts/generate-licences.ts && MATTRAX_TARGET=node vp build",
     "start:selfhost": "node dist/server/node.js",
     "preview": "vp preview",
     "typecheck": "cf workers types && tsc",
     "deploy": "cf deploy --prebuilt",
-    "deploy:prod": "pnpm --dir ../.. doc:build && pnpm build && tsx ../../scripts/copy-docs.ts && tsx ../../scripts/bundle-budget.ts web && cf deploy --prebuilt",
+    "deploy:prod": "pnpm --dir ../.. doc:build && pnpm build && tsx scripts/copy-docs.ts && tsx ../../packages/config/scripts/bundle-budget.ts web && cf deploy --prebuilt",
     "cf:types": "cf workers types"
   },
   "dependencies": {

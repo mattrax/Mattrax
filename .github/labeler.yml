@@ -62,7 +62,8 @@ tech-debt:
   - changed-files:
       - any-glob-to-any-file:
           - .github/**
-          - scripts/**
+          - apps/*/scripts/**
+          - packages/*/scripts/**
           - tools/**
           - pnpm-lock.yaml
           - pnpm-workspace.yaml

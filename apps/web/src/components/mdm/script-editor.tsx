@@ -32,15 +32,15 @@ export const emptyScriptDraft = (): ScriptDraftValues => ({
   trigger: { type: "manual", intervalSeconds: null, cronExpression: null },
 });
 
-/** Operator-facing description of how the agent runs a script. */
+/** Operator-facing description of how mattraxd runs a script. */
 const runAsHint = (runAs: "root" | "user") =>
   runAs === "root"
-    ? "Runs as root. The device must have the Mattrax agent installed as a LaunchDaemon."
+    ? "Runs as root. The device must have mattraxd installed as a LaunchDaemon."
     : "Runs as the logged-in console user. Timer and install triggers run without a console user and are skipped.";
 
 const languageHint = (language: ScriptDraftValues["language"]) =>
   language === "pwsh"
-    ? "PowerShell requires the Mattrax agent on Windows."
+    ? "PowerShell requires mattraxd on Windows."
     : `Uses /bin/${language}.`;
 
 /**
@@ -208,7 +208,7 @@ export function ScriptEditor(props: {
             <option value="root">root</option>
           </select>
         </Field>
-        <Field label="Timeout (seconds)" hint="The agent stops the script at this deadline.">
+        <Field label="Timeout (seconds)" hint="mattraxd stops the script at this deadline.">
           <Input
             type="number"
             min={1}

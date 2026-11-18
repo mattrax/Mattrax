@@ -195,7 +195,7 @@ Scripts are a product feature with a device-facing edge:
    installs it with the existing `InstallProfile` command. The diff comes from the
    device's command history, like legacy policy delivery, so no extra state table is
    needed. A queued run changes the payload's `RunID`.
-3. The on-device agent (`apps/agent`) runs the body on its trigger and posts the result to
+3. `mattraxd` (`apps/mattraxd`) runs the body on its trigger and posts the result to
    `POST /api/v1/script-agent/results` with an HMAC device token derived from
    `AUTH_SECRET`. The token embeds the device id; the handler resolves the device and
    filters by its organization, so a token can never cross tenants.
@@ -209,7 +209,7 @@ contract: it authenticates with a device token and no session.
 
 Windows has no arbitrary-script CSP; Microsoft's supported route is an agent (the Intune
 Management Extension is the same design). The agent sync endpoint returns assigned scripts
-and pending run ids for a Windows agent. Android Management API exposes no script command,
+and pending run ids for the Windows build of `mattraxd`. Android Management API exposes no script command,
 so Android devices are skipped with a reason.
 
 ## Protocol boundaries

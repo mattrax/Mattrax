@@ -134,7 +134,7 @@ export const windowsActivationStatusFromLicenseStatus = (
 };
 
 /**
- * One activation reading posted by the Mattrax agent.
+ * One activation reading posted by mattraxd.
  *
  * Every value is raw as reported by the device. `edition` comes from
  * `Win32_OperatingSystem.Caption` (or the licence product name) because an

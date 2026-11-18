@@ -10,7 +10,7 @@
  * The source catalogue stays outside `public/` so the browser never downloads
  * it; regenerate the split files with:
  *
- *   node scripts/split-policy-catalog.ts
+ *   node apps/web/scripts/split-policy-catalog.ts
  *
  * The output is deterministic: collections are sorted by id, properties keep
  * the source order and no timestamps are written. `--check` verifies that the
@@ -21,7 +21,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 export const DEFAULT_SOURCE = path.join(ROOT, "data/catalog/windows.json");
 

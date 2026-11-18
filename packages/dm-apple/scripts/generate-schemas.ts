@@ -9,7 +9,7 @@ const APPLE_REPO = "/tmp/apple-device-management";
  * Apple protocol package: it is the only package that describes Apple's wire
  * format, and policy delivery already imports `supportedOS` from the same tree.
  */
-const OUT_DIR = path.resolve(process.cwd(), "packages/dm-apple/src/generated");
+const OUT_DIR = path.resolve(import.meta.dirname, "..", "src/generated");
 
 /**
  * `supportedOS` metadata is emitted alongside the policy schemas because

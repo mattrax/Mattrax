@@ -1,7 +1,7 @@
 # Catalogue sources
 
 The designer's settings catalogue is compiled from vendor-published schemas by
-`scripts/catalog-sync/`. This page records which source each platform uses, why, and the
+`apps/web/scripts/catalog-sync/`. This page records which source each platform uses, why, and the
 licensing caveats that come with the generated data.
 
 The original research was done for the standalone `configure` project on 2026-10-14. URLs
@@ -112,7 +112,7 @@ pnpm catalog:check
 ```
 
 `catalog:sync` writes the raw Windows catalogue to `data/catalog/windows.json`, then reuses
-`scripts/split-policy-catalog.ts` to produce the per-collection browser assets. The split
+`apps/web/scripts/split-policy-catalog.ts` to produce the per-collection browser assets. The split
 is deterministic; only changed upstream settings and the manifest timestamp should differ.
 
 If a source changes shape, the adapter will fail loudly rather than write a partial

@@ -33,7 +33,7 @@ interface LicenceOutput {
   texts: Record<string, string>;
 }
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+const root = fileURLToPath(new URL("../../..", import.meta.url));
 
 const isString = Schema.is(Schema.String);
 

@@ -504,11 +504,11 @@ export default function ScriptDetailPage() {
                     <dl class="space-y-2 text-[12px] leading-relaxed">
                       <div class="flex justify-between gap-3">
                         <dt class="text-muted-foreground">Apple</dt>
-                        <dd class="text-right">Profile + Mattrax agent</dd>
+                        <dd class="text-right">Profile + mattraxd</dd>
                       </div>
                       <div class="flex justify-between gap-3">
                         <dt class="text-muted-foreground">Windows</dt>
-                        <dd class="text-right">Mattrax agent</dd>
+                        <dd class="text-right">mattraxd</dd>
                       </div>
                       <div class="flex justify-between gap-3">
                         <dt class="text-muted-foreground">Android</dt>

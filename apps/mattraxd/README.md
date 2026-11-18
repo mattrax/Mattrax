@@ -1,10 +1,11 @@
-# Mattrax on-device agent
+# mattraxd
 
-The agent is what actually runs a script on a device. MDM alone cannot execute
-arbitrary code: Apple has no command that runs a shell script, Windows MDM has no
-arbitrary-script CSP (Microsoft's own answer is the Intune Management Extension)
-and the Android Management API has no script command. The agent closes that gap
-for Apple and Windows and posts one signed result per run back to Mattrax.
+`mattraxd` is the Mattrax on-device daemon. It is what actually runs a script
+on a device. MDM alone cannot execute arbitrary code: Apple has no command that
+runs a shell script, Windows MDM has no arbitrary-script CSP (Microsoft's own
+answer is the Intune Management Extension) and the Android Management API has no
+script command. `mattraxd` closes that gap for Apple and Windows and posts one
+signed result per run back to Mattrax.
 
 ## How delivery works
 
@@ -14,43 +15,43 @@ for Apple and Windows and posts one signed result per run back to Mattrax.
    the previous copy; removing the assignment removes the profile.
 3. The payload carries the script body, shell, run-as, timeout, environment
    (and the names to redact), its trigger and a device bearer token.
-4. The agent evaluates triggers (`install`, `login`, `logout`,
+4. `mattraxd` evaluates triggers (`install`, `login`, `logout`,
    `network-change`, `interval`, `cron`, `manual`) and runs the body.
 5. It posts the exit code, capped and redacted stdout/stderr and duration to
    `POST /api/v1/script-agent/results` with
    `Authorization: Bearer <DeviceToken>`. The token is an HMAC over the device
    id, so it cannot be reused for another device and rotates with `AUTH_SECRET`.
-6. A manual run installs the same profile with a new `RunID`. The agent runs it
-   exactly once and remembers the id in `/var/lib/mattrax/agent-state.json`.
+6. A manual run installs the same profile with a new `RunID`. `mattraxd` runs it
+   exactly once and remembers the id in `/var/lib/mattrax/mattraxd-state.json`.
 
 Windows uses the same result contract through
 `GET /api/v1/script-agent/scripts` (assigned scripts plus a pending `runId`).
-There is no arbitrary-script CSP to deliver a profile, so a Windows agent must
-be installed separately; that artifact is not built in this repository (see
-"Blocked by signing credentials" below).
+There is no arbitrary-script CSP to deliver a profile, so the Windows build of
+`mattraxd` must be installed separately; that artifact is not built in this
+repository (see "Blocked by signing credentials" below).
 
 ## Build
 
 macOS (verified with Swift 6.4):
 
 ```sh
-apps/agent/scripts/build-macos.sh
+apps/mattraxd/scripts/build-macos.sh
 ```
 
-Artifact: `apps/agent/build/MattraxAgent-<version>.pkg`.
+Artifact: `apps/mattraxd/build/mattraxd-<version>.pkg`.
 
 The script installs:
 
-- `/usr/local/libexec/mattrax-agent`
-- `/Library/LaunchDaemons/com.mattrax.agent.plist` (keeps the daemon running)
-- `/var/lib/mattrax/agent-state.json` (created on first run)
-- `/var/log/mattrax-agent.log`
+- `/usr/local/libexec/mattraxd`
+- `/Library/LaunchDaemons/com.mattrax.mattraxd.plist` (keeps the daemon running)
+- `/var/lib/mattrax/mattraxd-state.json` (created on first run)
+- `/var/log/mattraxd.log`
 
 Run it once in the foreground for debugging:
 
 ```sh
-sudo /usr/local/libexec/mattrax-agent once
-sudo /usr/local/libexec/mattrax-agent version
+sudo /usr/local/libexec/mattraxd once
+sudo /usr/local/libexec/mattraxd version
 ```
 
 ## Signing and notarization
@@ -68,14 +69,14 @@ shipping requires:
 DEVELOPER_ID_APPLICATION="Developer ID Application: Acme (TEAMID)" \
 DEVELOPER_ID_INSTALLER="Developer ID Installer: Acme (TEAMID)" \
 NOTARY_PROFILE="mattrax-notary" \
-apps/agent/scripts/build-macos.sh
+apps/mattraxd/scripts/build-macos.sh
 ```
 
 Without these credentials the build still produces a package, but it is
 unsigned: Gatekeeper blocks it on any other Mac and the daemon cannot be
-notarized. Windows additionally needs an Authenticode certificate for the agent
-executable and an MSI/MSIX package; neither certificate is present in this
-repository.
+notarized. Windows additionally needs an Authenticode certificate for the
+`mattraxd` executable and an MSI/MSIX package; neither certificate is present in
+this repository.
 
 ## Result contract
 
@@ -101,11 +102,11 @@ marked secret, stores the result and writes one `script.run_completed` or
 
 ## State and privacy
 
-- `/var/lib/mattrax/agent-state.json` holds executed manual run ids, trigger
+- `/var/lib/mattrax/mattraxd-state.json` holds executed manual run ids, trigger
   timestamps, the last boot time, console user and a network fingerprint. It
   never stores script bodies or output; both live in the installed profile and
   the server.
-- `/var/log/mattrax-agent.log` records trigger decisions and exit codes, not
+- `/var/log/mattraxd.log` records trigger decisions and exit codes, not
   stdout/stderr.
 - A user-context script runs through `launchctl asuser <uid>` and is skipped when
   no console user is logged in (with a reason in the result).

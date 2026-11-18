@@ -44,7 +44,7 @@ export const AndroidDeviceInfo = Schema.Struct({
 export type AndroidDeviceInfo = typeof AndroidDeviceInfo.Type;
 
 /**
- * Windows activation and licence state reported by the Mattrax agent.
+ * Windows activation and licence state reported by mattraxd.
  *
  * Windows does not expose activation through OMA-DM, so an agent samples
  * `SoftwareLicensingProduct` over WMI and posts the raw values. Windows
@@ -174,7 +174,7 @@ export const DeviceRow = Schema.Struct({
   /** Normalised FileVault state shared by DDM inventory and SecurityInfo. */
   fileVaultStatus: Schema.optional(Schema.NullOr(DeviceFileVaultStatus)),
   /**
-   * Normalised Windows activation state reported by the Mattrax agent.
+   * Normalised Windows activation state reported by mattraxd.
    * `null` for non-Windows devices and Windows devices that have not run it.
    */
   windowsActivationStatus: Schema.optional(Schema.NullOr(WindowsActivationStatus)),

@@ -1,12 +1,12 @@
-// Mattrax on-device agent (macOS).
+// mattraxd (macOS): the Mattrax on-device daemon.
 //
 // Reads `com.mattrax.script` payloads from the installed configuration
 // profiles, evaluates their triggers and posts one result per run to the
 // Mattrax script-result endpoint.
 //
-// Build: see apps/agent/README.md. Install: a signed, notarized .pkg or the
+// Build: see apps/mattraxd/README.md. Install: a signed, notarized .pkg or the
 // LaunchDaemon plist in macos/Resources with the binary at
-// /usr/local/libexec/mattrax-agent.
+// /usr/local/libexec/mattraxd.
 
 import Foundation
 import Security
@@ -16,8 +16,8 @@ import Security
 #endif
 
 let agentVersion = "1.0.0"
-let statePath = "/var/lib/mattrax/agent-state.json"
-let logPath = "/var/log/mattrax-agent.log"
+let statePath = "/var/lib/mattrax/mattraxd-state.json"
+let logPath = "/var/log/mattraxd.log"
 let scriptPayloadType = "com.mattrax.script"
 let outputLimit = 64 * 1024
 
@@ -601,12 +601,12 @@ let command = arguments.first ?? "run"
 
 switch command {
 case "version":
-  print("mattrax-agent \(agentVersion)")
+  print("mattraxd \(agentVersion)")
 case "once":
   var state = loadState()
   tick(scripts: installedScripts(), state: &state, now: Date())
 case "run":
-  log("mattrax-agent \(agentVersion) starting")
+  log("mattraxd \(agentVersion) starting")
 
   while true {
     var state = loadState()
@@ -614,6 +614,6 @@ case "run":
     Thread.sleep(forTimeInterval: 30)
   }
 default:
-  FileHandle.standardError.write(Data("usage: mattrax-agent [run|once|version]\n".utf8))
+  FileHandle.standardError.write(Data("usage: mattraxd [run|once|version]\n".utf8))
   exit(64)
 }

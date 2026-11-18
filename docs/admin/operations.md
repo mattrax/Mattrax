@@ -390,10 +390,10 @@ never deleted. See [Configuration](/operations/configuration).
 
 Settings → Legal lists every third-party package in the production dependency graph, its
 declared SPDX licence, and the licence text the package ships. The inventory is generated
-on every web build by `scripts/generate-licences.ts` from `pnpm-lock.yaml` and the
+on every web build by `apps/web/scripts/generate-licences.ts` from `pnpm-lock.yaml` and the
 installed packages, so it cannot go stale when a dependency changes. It is served as
 `/licenses.json` and the page reads that asset on demand instead of bundling the notices
-into the Worker. Run `pnpm licenses` to regenerate it without building.
+into the Worker. Run `pnpm licences` to regenerate it without building.
 
 ## Backups
 

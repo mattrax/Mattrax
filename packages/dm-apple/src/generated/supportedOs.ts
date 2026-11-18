@@ -1,5 +1,5 @@
 // Auto-generated from https://github.com/apple/device-management
-// Do not edit manually. Regenerate with `pnpm exec tsx scripts/generate-apple-schemas.ts`.
+// Do not edit manually. Regenerate with `pnpm exec tsx packages/dm-apple/scripts/generate-schemas.ts`.
 
 /**
  * Per-OS version support for an Apple payload or declaration type, taken from

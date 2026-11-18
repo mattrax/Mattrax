@@ -227,7 +227,7 @@ export default function ScriptsPage() {
 
         <p class="text-[11.5px] leading-relaxed text-muted-foreground">
           Apple devices receive scripts as <code class="font-mono">com.mattrax.script</code>{" "}
-          profiles executed by the Mattrax agent. Windows uses the same agent because Windows MDM
+          profiles executed by mattraxd. Windows uses the same binary because Windows MDM
           has no arbitrary-script channel. Android Management API exposes no script command, so
           Android devices are never targeted.
         </p>

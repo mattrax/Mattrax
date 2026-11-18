@@ -128,7 +128,7 @@ describe("split Windows policy catalogue", () => {
   });
 
   it("regenerates byte-for-byte identical output", () => {
-    const script = path.join(repoRoot, "scripts/split-policy-catalog.ts");
+    const script = path.join(repoRoot, "apps/web/scripts/split-policy-catalog.ts");
     expect(() =>
       execFileSync(path.join(repoRoot, "node_modules/.bin/tsx"), [script, "--check"], {
         cwd: repoRoot,

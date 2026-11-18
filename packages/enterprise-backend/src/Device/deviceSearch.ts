@@ -50,7 +50,7 @@ export type DeviceSearchFilters = {
   readonly push?: DevicePushFilter;
   /** ADE setup state, from `device_apple.awaiting_configuration`. */
   readonly setup?: "awaiting" | "complete";
-  /** Windows activation state reported by the Mattrax agent. */
+  /** Windows activation state reported by mattraxd. */
   readonly activation?: WindowsActivationStatus;
   /** Exact attribute filters keyed by registered attribute key. */
   readonly attributes?: Readonly<Record<string, string>>;

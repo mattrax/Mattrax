@@ -37,7 +37,7 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "tsx scripts/e2e-server.ts",
+        command: "tsx apps/web/scripts/e2e-server.ts",
         cwd: repository,
         url: "http://localhost:9050",
         reuseExistingServer: true,

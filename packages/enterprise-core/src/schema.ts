@@ -1787,7 +1787,7 @@ export const device = mysqlTable(
     /** Windows `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
     entraDeviceId: shortText("entra_device_id"),
     /**
-     * Windows activation state reported by the Mattrax agent's WMI sample.
+     * Windows activation state reported by mattraxd's WMI sample.
      * Null for non-Windows devices and Windows devices without the agent.
      */
     windowsActivationStatus: varchar("windows_activation_status", {

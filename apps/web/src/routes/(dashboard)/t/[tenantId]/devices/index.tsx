@@ -195,7 +195,7 @@ function DeviceHealthTag(props: { level: string; reasons?: ReadonlyArray<HealthR
   );
 }
 
-/** Windows activation, when the agent has reported it. */
+/** Windows activation, when mattraxd has reported it. */
 function DeviceActivationTag(props: { status?: string | null }) {
   const meta = () =>
     props.status && isActivationStatus(props.status) ? activationMeta[props.status] : null;

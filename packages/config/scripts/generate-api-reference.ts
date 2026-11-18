@@ -8,8 +8,8 @@ import {
   enterpriseAttributeApi,
   scriptAgentApi,
   scriptApi,
-} from "../packages/enterprise-domain/src/enterprise.ts";
-import { managementApi } from "../packages/management-backend-http/src/http.ts";
+} from "../../enterprise-domain/src/enterprise.ts";
+import { managementApi } from "../../management-backend-http/src/http.ts";
 import type { JsonSchema } from "effect/JsonSchema";
 
 /**
@@ -248,7 +248,7 @@ const index = [
   "",
 ];
 
-const output = new URL("../docs/api/reference/", import.meta.url);
+const output = new URL("../../../docs/api/reference/", import.meta.url);
 
 await rm(output, { recursive: true, force: true });
 

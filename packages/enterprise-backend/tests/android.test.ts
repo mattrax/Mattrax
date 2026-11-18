@@ -704,6 +704,7 @@ describe("Android Enterprise delivery", () => {
       name: "Retired Pixel",
       dmIdentifier: "enterprises/enterprise-1/devices/device-2",
     };
+
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],

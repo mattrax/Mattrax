@@ -42,11 +42,13 @@ describe("enterprise API error contract", () => {
       action: "device-command",
       methods: ["passkey"],
     });
+
     const notConfigured = new EnterpriseNotConfigured({ message: "Android is not connected" });
+
     const upstream = new EnterpriseUpstreamError({ message: "Google rejected the request" });
 
-    for (const identifier of ["deviceAction", "deviceUnenroll"]) {
-      const endpoint = endpoints[identifier as keyof typeof endpoints];
+    for (const identifier of ["deviceAction", "deviceUnenroll"] as const) {
+      const endpoint = endpoints[identifier];
       expect(endpoint, `${identifier} is missing`).toBeDefined();
       const union = Schema.Union([...endpoint.error]);
 

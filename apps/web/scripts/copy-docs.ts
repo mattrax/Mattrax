@@ -1,7 +1,7 @@
 import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-const appRoot = process.cwd();
+const appRoot = path.resolve(import.meta.dirname, "..");
 
 const outputRoot = path.join(appRoot, ".cloudflare/output");
 

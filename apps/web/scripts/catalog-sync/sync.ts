@@ -20,7 +20,7 @@ import { fetchJson, writeJson } from "./util.ts";
 import { loadWindows } from "./windows.ts";
 import { writeSplit } from "../split-policy-catalog.ts";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 const CATALOG_DIR = path.join(ROOT, "apps/web/public/catalog");
 

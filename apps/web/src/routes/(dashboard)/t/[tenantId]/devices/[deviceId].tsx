@@ -958,7 +958,7 @@ export default function DeviceDetailPage() {
                 {(detail) => (
                   <span
                     class="text-[11px] text-muted-foreground"
-                    title="Installed edition, licence channel and sample time reported by the Windows agent"
+                    title="Installed edition, licence channel and sample time reported by mattraxd"
                   >
                     {detail()}
                   </span>
@@ -1017,7 +1017,7 @@ export default function DeviceDetailPage() {
   };
 
   /**
-   * Activation is reported by the Windows agent's WMI sample, never by the
+   * Activation is reported by mattraxd's WMI sample, never by the
    * OMA-DM inventory. Other platforms have no activation state at all.
    */
   const windowsActivation = () => row()?.windows?.security.activation;

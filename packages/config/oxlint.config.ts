@@ -26,6 +26,11 @@ export const antiSlopLint = {
     "packages/config/oxlint/**",
     // Generated from Apple's schema definitions; regenerate, do not lint.
     "packages/dm-apple/src/generated/**",
+    // Build-time tooling parses lockfiles and vendor catalogues at its I/O
+    // boundary. It is not shipped, and the app rules (Effect, JSX, runtime
+    // parsing) do not describe it.
+    "apps/*/scripts/**",
+    "packages/*/scripts/**",
   ],
   jsPlugins: [
     {

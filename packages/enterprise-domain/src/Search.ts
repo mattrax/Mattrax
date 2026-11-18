@@ -156,7 +156,7 @@ export const DeviceSearchQuery = Schema.Struct({
    */
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
   /**
-   * Windows activation state reported by the Mattrax agent. Only Windows
+   * Windows activation state reported by mattraxd. Only Windows
    * devices can match; `unknown` includes Windows devices that have not
    * reported yet. Other platforms never match.
    */

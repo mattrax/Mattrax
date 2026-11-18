@@ -576,7 +576,7 @@ code, duration and timeout flag. Output is never copied into the timeline; open 
 run history to read, copy or download it.
 
 Create and assign scripts in **Scripts**. Apple devices receive them as
-`com.mattrax.script` profiles executed by the Mattrax agent; Windows uses the same agent
+`com.mattrax.script` profiles executed by `mattraxd`; Windows uses the same binary
 because Windows MDM has no arbitrary-script CSP; Android is unsupported. See
 [Scripts](/manage/scripts).
 

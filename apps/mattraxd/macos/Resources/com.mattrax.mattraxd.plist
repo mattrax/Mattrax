@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.mattrax.agent</string>
+  <string>com.mattrax.mattraxd</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/libexec/mattrax-agent</string>
+    <string>/usr/local/libexec/mattraxd</string>
     <string>run</string>
   </array>
   <key>RunAtLoad</key>
@@ -16,8 +16,8 @@
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
-  <string>/var/log/mattrax-agent.log</string>
+  <string>/var/log/mattraxd.log</string>
   <key>StandardErrorPath</key>
-  <string>/var/log/mattrax-agent.log</string>
+  <string>/var/log/mattraxd.log</string>
 </dict>
 </plist>
