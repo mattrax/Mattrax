@@ -28,10 +28,6 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: "@kobalte/*"
         update-types: [version-update:semver-major]
-      # 1.65.1 starts failing WebAuthn registration in the CDP virtual
-      # authenticator; stay on 1.65.0 until a fixed patch is published.
-      - dependency-name: "@playwright/test"
-        versions: ["1.65.1"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -46,7 +42,9 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    directory: /
+    # The only Dockerfile lives beside the self-host app; the root build passes
+    # it with `-f apps/docker/Dockerfile`.
+    directory: /apps/docker
     schedule:
       interval: weekly
     groups:
