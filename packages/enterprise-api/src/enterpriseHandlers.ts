@@ -1620,9 +1620,11 @@ export const createEnterpriseService = ({
         : oauth
           ? oauth.scopes
           : null;
+
       const credentialGrant = credentialScopes
         ? credentialPermissions(credentialScopes)
         : undefined;
+
       const credentialRestricted =
         credentialScopes !== null && !hasUnrestrictedCredential(credentialScopes);
 
@@ -1637,6 +1639,7 @@ export const createEnterpriseService = ({
       const { member, organization, role } = tenantAccess;
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
+
       // Activity attribution is written by the MCP gateway for the caller's own
       // tool call. It records that the read happened; it must not require the
       // read grant itself, or a narrowed connection would lose its audit trail.
@@ -5668,12 +5671,15 @@ export const createEnterpriseService = ({
         // is then narrowed to its own grant. The MCP gateway uses the result to
         // hide tools the caller could never invoke.
         const roleUnion = new Set(tenants.flatMap((tenant) => tenant.permissions));
+
         const scopes = apiToken
           ? parseStoredCredentialScopes(apiToken.scopes)
           : oauth
             ? oauth.scopes
             : null;
+
         const granted = scopes ? credentialPermissions(scopes) : undefined;
+
         const effective = granted
           ? new Set([...granted].filter((permission) => roleUnion.has(permission)))
           : roleUnion;
