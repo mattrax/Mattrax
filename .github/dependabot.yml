@@ -1,23 +1,24 @@
 version: 2
 
-# One weekly PR across every ecosystem keeps the workspace lockfile and the
-# deployment images reviewable as a unit. This mirrors the shape used by
-# specta-rs/specta: a single multi-ecosystem group with catch-all patterns.
-multi-ecosystem-groups:
-  mattrax-deps:
-    schedule:
-      interval: weekly
-
+# One weekly run per ecosystem. Runtime and tooling versions live in the pnpm
+# catalog (`pnpm-workspace.yaml`), which Dependabot updates through the root
+# npm entry; workspace `package.json` files only ever say `catalog:`.
+#
+# Minor and patch updates arrive as one PR per ecosystem so the lockfile and
+# deployment images stay reviewable together. Majors get their own PR because
+# they need the migration notes read, not a rubber stamp.
 updates:
-  - package-ecosystem: github-actions
-    directory: /
-    multi-ecosystem-group: mattrax-deps
-    patterns: ["*"]
-
   - package-ecosystem: npm
     directory: /
-    multi-ecosystem-group: mattrax-deps
-    patterns: ["*"]
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      npm-major:
+        patterns: ["*"]
+        update-types: [major]
     ignore:
       # The Solid 2 RC and the Kobalte alpha it targets move in lockstep with
       # the UI; a bot bumping either alone breaks the component layer.
@@ -32,12 +33,30 @@ updates:
       - dependency-name: "@playwright/test"
         versions: ["1.65.1"]
 
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      actions-major:
+        patterns: ["*"]
+        update-types: [major]
+
   - package-ecosystem: docker
     directory: /
-    multi-ecosystem-group: mattrax-deps
-    patterns: ["*"]
+    schedule:
+      interval: weekly
+    groups:
+      docker-images:
+        patterns: ["*"]
 
   - package-ecosystem: docker-compose
     directory: /
-    multi-ecosystem-group: mattrax-deps
-    patterns: ["*"]
+    schedule:
+      interval: weekly
+    groups:
+      compose-images:
+        patterns: ["*"]
