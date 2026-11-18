@@ -31,6 +31,20 @@ Sensitive owner-only capabilities can be delegated deliberately: a custom role
 can include `tenant.export`, `backups.read`, `backups.write` or
 `tenant.delete`. Only an owner can change an owner's role.
 
+## Credentials use the same catalogue
+
+API tokens and MCP OAuth connections carry their own permission ceiling,
+selected from this catalogue. They never add authority: a request is allowed
+only when both the credential grant **and** the account's role in that tenant
+include the endpoint's permission. Read companions are added automatically (a
+token granted `devices.write` can also list devices), and legacy `read`/`write`
+scopes remain broad ceilings.
+
+Narrowed credentials cannot manage account security settings (API tokens,
+passkeys, profile), even when their tenant permissions are broad. The dashboard
+token dialog, the MCP consent screen and the MCP tool list all derive from the
+same grouped catalogue, so what a user selects is what the API enforces.
+
 ## Permission failures
 
 A denied action returns a typed `EnterprisePermissionDenied` error containing the
