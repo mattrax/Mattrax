@@ -1610,6 +1610,385 @@ describe("enterprise service policy flow", () => {
   });
 });
 
+describe("enterprise service policy list", () => {
+  const seedDevice = (
+    db: any,
+    organizationId: string,
+    id: string,
+    proto: "apple" | "win" | "android" = "apple",
+  ) => {
+    const now = new Date();
+
+    db.store.device.push({
+      id,
+      organizationId,
+      proto,
+      status: "enrolled",
+      name: id,
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+  };
+
+  const seedUser = (
+    db: any,
+    organizationId: string,
+    id: string,
+    options: { disabled?: boolean; member?: boolean } = {},
+  ) => {
+    const now = new Date();
+
+    db.store.user.push({
+      id,
+      name: id,
+      email: `${id}@example.com`,
+      emailVerified: true,
+      disabled: options.disabled ?? false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    if (options.member !== false)
+      db.store.member.push({
+        organizationId,
+        userId: id,
+        role: "member",
+        createdAt: now,
+        updatedAt: now,
+      });
+  };
+
+  const seedDirectoryGroup = (db: any, organizationId: string, id: string) => {
+    const now = new Date();
+
+    db.store.user_group.push({
+      id,
+      organizationId,
+      name: id,
+      externalId: null,
+      description: null,
+      source: "manual",
+      createdAt: now,
+      updatedAt: now,
+    });
+  };
+
+  it("returns configuration counts and a resolved device scope", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const included = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Included" }),
+    );
+
+    const empty = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Empty" }),
+    );
+
+    const now = new Date();
+
+    db.store.configuration.push(
+      { policyId: included.id, kind: "mttx.apple.device", data: {}, hash: "hash-1" },
+      {
+        policyId: included.id,
+        kind: "mttx.apple.declaration.files",
+        data: {},
+        hash: "hash-2",
+      },
+      // Another tenant's configuration must not leak into this tenant's count.
+      { policyId: "other-policy", kind: "mttx.apple.device", data: {}, hash: "other" },
+    );
+
+    const includeGroup = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Include" }),
+    );
+
+    const excludeGroup = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Exclude" }),
+    );
+
+    db.store.group_policy.push(
+      { groupId: includeGroup.id, policyId: included.id, mode: "include" },
+      { groupId: excludeGroup.id, policyId: included.id, mode: "exclude" },
+    );
+
+    seedDevice(db, tenant.id, "device-1");
+    seedDevice(db, tenant.id, "device-2");
+    seedDevice(db, tenant.id, "device-3");
+    seedDevice(db, tenant.id, "device-4");
+    seedDevice(db, tenant.id, "device-5");
+
+    db.store.group_device.push(
+      { groupId: includeGroup.id, deviceId: "device-1", source: "manual" },
+      { groupId: includeGroup.id, deviceId: "device-2", source: "manual" },
+      { groupId: includeGroup.id, deviceId: "device-4", source: "manual" },
+      { groupId: excludeGroup.id, deviceId: "device-2", source: "manual" },
+    );
+
+    db.store.device_policy.push(
+      { deviceId: "device-3", policyId: included.id, mode: "include" },
+      { deviceId: "device-4", policyId: included.id, mode: "exclude" },
+    );
+
+    // Unrelated rows prove the count is scoped to the tenant's policy ids.
+    db.store.group_policy.push({
+      groupId: includeGroup.id,
+      policyId: "other-policy",
+      mode: "include",
+    });
+    db.store.device.push({
+      id: "other-device",
+      organizationId: "other-tenant",
+      proto: "apple",
+      status: "enrolled",
+      name: "other-device",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.group_device.push({
+      groupId: includeGroup.id,
+      deviceId: "other-device",
+      source: "manual",
+    });
+
+    const { rows } = await runEffect(service.listPolicies(request(headers), tenant.id));
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    expect(byId.get(included.id)).toMatchObject({
+      id: included.id,
+      configurationCount: 2,
+      // device-1 through the group, device-3 directly. device-2 is vetoed by a
+      // group exclusion and device-4 by a direct device exclusion.
+      scopedDeviceCount: 2,
+      scopedUserCount: 0,
+    });
+    expect(byId.get(empty.id)).toMatchObject({
+      configurationCount: 0,
+      scopedDeviceCount: 0,
+      scopedUserCount: 0,
+    });
+    expect(rows).toHaveLength(2);
+  });
+
+  it("counts directory users through includes and exclusions", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "People" }),
+    );
+
+    const now = new Date();
+
+    seedDirectoryGroup(db, tenant.id, "group-include");
+    seedDirectoryGroup(db, tenant.id, "group-exclude");
+
+    db.store.user_group_policy.push(
+      {
+        organizationId: tenant.id,
+        groupId: "group-include",
+        policyId: policy.id,
+        mode: "include",
+        createdAt: now,
+      },
+      {
+        organizationId: tenant.id,
+        groupId: "group-exclude",
+        policyId: policy.id,
+        mode: "exclude",
+        createdAt: now,
+      },
+    );
+
+    for (const id of ["user-1", "user-2", "user-3", "user-4", "user-5", "user-6", "user-7"])
+      seedUser(db, tenant.id, id, { disabled: id === "user-3", member: id !== "user-7" });
+
+    for (const id of ["user-1", "user-2", "user-3", "user-4", "user-6"])
+      db.store.user_group_member.push({ groupId: "group-include", userId: id });
+
+    for (const id of ["user-4", "user-5"])
+      db.store.user_group_member.push({ groupId: "group-exclude", userId: id });
+
+    db.store.user_policy.push(
+      {
+        organizationId: tenant.id,
+        userId: "user-1",
+        policyId: policy.id,
+        mode: "include",
+        createdAt: now,
+      },
+      // A direct include survives the user's excluded directory group.
+      {
+        organizationId: tenant.id,
+        userId: "user-5",
+        policyId: policy.id,
+        mode: "include",
+        createdAt: now,
+      },
+      {
+        organizationId: tenant.id,
+        userId: "user-6",
+        policyId: policy.id,
+        mode: "exclude",
+        createdAt: now,
+      },
+    );
+
+    for (const [deviceId, userId] of [
+      ["device-1", "user-1"],
+      ["device-2", "user-2"],
+      ["device-3", "user-3"],
+      ["device-4", "user-4"],
+      ["device-5", "user-5"],
+      ["device-6", "user-6"],
+      ["device-7", "user-7"],
+    ] as const) {
+      seedDevice(db, tenant.id, deviceId);
+      db.store.device_user.push({
+        organizationId: tenant.id,
+        deviceId,
+        userId,
+        source: "manual",
+        createdAt: now,
+      });
+    }
+
+    const { rows } = await runEffect(service.listPolicies(request(headers), tenant.id));
+
+    expect(rows.find((row) => row.id === policy.id)).toMatchObject({
+      // user-1 is direct, user-2 is in the included group and user-5 is direct
+      // despite also being in the excluded group. user-3 is disabled, user-4 is
+      // only in the excluded group, user-6 is directly excluded and user-7 is
+      // not a tenant member.
+      scopedUserCount: 3,
+      scopedDeviceCount: 3,
+    });
+  });
+
+  it("derives delivery from the current configuration and declaration reports", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+
+    const untracked = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Windows only" }),
+    );
+
+    const idle = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "No devices" }),
+    );
+
+    db.store.configuration.push({
+      policyId: policy.id,
+      kind: "mttx.apple.declaration.files",
+      data: { kind: "com.apple.configuration.services.configuration-files" },
+      hash: "current-hash",
+    });
+
+    seedDevice(db, tenant.id, "apple-1");
+    seedDevice(db, tenant.id, "apple-2");
+    seedDevice(db, tenant.id, "win-1", "win");
+
+    const now = new Date();
+
+    for (const [deviceId, policyId] of [
+      ["apple-1", policy.id],
+      ["apple-2", policy.id],
+      // The mixed-platform scope proves Windows devices are counted but not
+      // treated as tracked delivery evidence.
+      ["win-1", policy.id],
+      ["win-1", untracked.id],
+    ] as const)
+      db.store.device_policy.push({ deviceId, policyId, mode: "include" });
+
+    db.store.device_declaration.push(
+      {
+        deviceId: "apple-1",
+        identifier: `${policy.id}:mttx.apple.declaration.files`,
+        declarationType: "configurations",
+        active: true,
+        valid: "valid",
+        serverToken: "current-hash",
+        reasons: null,
+        updatedAt: now,
+      },
+      {
+        deviceId: "apple-2",
+        identifier: `${policy.id}:mttx.apple.declaration.files`,
+        declarationType: "configurations",
+        active: true,
+        valid: "invalid",
+        serverToken: "current-hash",
+        reasons: { Error: "failed" },
+        updatedAt: now,
+      },
+    );
+
+    const read = async () =>
+      (await runEffect(service.listPolicies(request(headers), tenant.id))).rows.find(
+        (row) => row.id === policy.id,
+      )!;
+
+    expect((await read()).delivery).toMatchObject({
+      state: "partial",
+      version: 1,
+      scopedDevices: 3,
+      trackedDevices: 2,
+      deliveredDevices: 1,
+      failedDevices: 1,
+      pendingDevices: 0,
+    });
+
+    const declaration = db.store.device_declaration.find((row: any) => row.deviceId === "apple-2");
+
+    declaration.valid = "valid";
+    declaration.reasons = null;
+
+    expect((await read()).delivery).toMatchObject({
+      state: "delivered",
+      deliveredDevices: 2,
+      failedDevices: 0,
+      pendingDevices: 0,
+    });
+
+    // A declaration from the previous save is valid and active, but its server
+    // token is the old content hash, so it must not look delivered.
+    declaration.serverToken = "stale-hash";
+
+    expect((await read()).delivery).toMatchObject({
+      state: "partial",
+      deliveredDevices: 1,
+      failedDevices: 0,
+      pendingDevices: 1,
+    });
+
+    const rows = (await runEffect(service.listPolicies(request(headers), tenant.id))).rows;
+
+    expect(rows.find((row) => row.id === untracked.id)?.delivery).toMatchObject({
+      state: "not-tracked",
+      scopedDevices: 1,
+      trackedDevices: 0,
+    });
+    expect(rows.find((row) => row.id === idle.id)?.delivery).toMatchObject({
+      state: "no-devices",
+      scopedDevices: 0,
+      trackedDevices: 0,
+    });
+  });
+});
+
 describe("enterprise service effective policy", () => {
   const seedDevice = (db: any, organizationId: string, id: string) => {
     const now = new Date();

@@ -1,0 +1,122 @@
+import { describe, expect, it } from "vitest";
+import {
+  policyDeliveryPresentation,
+  policyDeliverySortRank,
+  policyScopePresentation,
+} from "./policy-delivery";
+
+const delivery = (
+  state:
+    | "never-deployed"
+    | "no-devices"
+    | "not-tracked"
+    | "no-configurations"
+    | "pending"
+    | "partial"
+    | "failed"
+    | "delivered",
+  overrides: Partial<{
+    version: number | null;
+    scopedDevices: number;
+    trackedDevices: number;
+    deliveredDevices: number;
+    failedDevices: number;
+    pendingDevices: number;
+  }> = {},
+) => ({
+  state,
+  version: 3,
+  scopedDevices: 4,
+  trackedDevices: 4,
+  deliveredDevices: 0,
+  failedDevices: 0,
+  pendingDevices: 4,
+  ...overrides,
+});
+
+describe("policyDeliveryPresentation", () => {
+  it("uses one label per derived state", () => {
+    expect(policyDeliveryPresentation(delivery("delivered")).label).toBe("Delivered");
+    expect(policyDeliveryPresentation(delivery("partial")).label).toBe("Partial");
+    expect(policyDeliveryPresentation(delivery("failed")).label).toBe("Failed");
+    expect(policyDeliveryPresentation(delivery("pending")).label).toBe("Pending");
+    expect(policyDeliveryPresentation(delivery("never-deployed")).label).toBe("Never deployed");
+    expect(policyDeliveryPresentation(delivery("no-devices")).label).toBe("No devices");
+    expect(policyDeliveryPresentation(delivery("not-tracked")).label).toBe("Not tracked");
+    expect(policyDeliveryPresentation(delivery("no-configurations")).label).toBe(
+      "No configurations",
+    );
+  });
+
+  it("explains counts and names the deployment version it judges", () => {
+    const partial = policyDeliveryPresentation(
+      delivery("partial", {
+        trackedDevices: 5,
+        deliveredDevices: 3,
+        failedDevices: 1,
+        pendingDevices: 1,
+      }),
+    );
+
+    expect(partial.description).toContain("version 3");
+    expect(partial.description).toContain("3 of 5 Apple devices");
+    expect(partial.description).toContain("1 failed and 1 pending");
+  });
+
+  it("does not claim Apple delivery for a Windows-only scope", () => {
+    const untracked = policyDeliveryPresentation(
+      delivery("not-tracked", { scopedDevices: 3, trackedDevices: 0 }),
+    );
+
+    expect(untracked.description).toContain("Windows or Android");
+    expect(untracked.description).not.toContain("Apple device in scope");
+  });
+
+  it("mentions the untracked remainder when the scope is mixed", () => {
+    const mixed = policyDeliveryPresentation(
+      delivery("delivered", {
+        scopedDevices: 5,
+        trackedDevices: 3,
+        deliveredDevices: 3,
+        pendingDevices: 0,
+      }),
+    );
+
+    expect(mixed.description).toContain("Every Apple device in scope (3)");
+    expect(mixed.description).toContain("Windows and Android devices do not report");
+  });
+
+  it("is honest when a policy has no scoped devices", () => {
+    const empty = policyDeliveryPresentation(
+      delivery("no-devices", { scopedDevices: 0, trackedDevices: 0, pendingDevices: 0 }),
+    );
+
+    expect(empty.description).toBe("This policy's assignments match no devices.");
+    expect(empty.tone).toBe("outline");
+  });
+});
+
+describe("policyDeliverySortRank", () => {
+  it("surfaces action-needed states first and unknown rows last", () => {
+    expect(policyDeliverySortRank("failed")).toBeLessThan(policyDeliverySortRank("partial"));
+    expect(policyDeliverySortRank("partial")).toBeLessThan(policyDeliverySortRank("delivered"));
+    expect(policyDeliverySortRank(undefined)).toBeGreaterThan(policyDeliverySortRank("delivered"));
+  });
+});
+
+describe("policyScopePresentation", () => {
+  it("labels both counts with correct plurals", () => {
+    const scope = policyScopePresentation({ deviceCount: 1, userCount: 2 });
+
+    expect(scope.label).toBe("1 device in scope, 2 users assigned");
+    expect(scope.devices.label).toBe("1 device in scope");
+    expect(scope.users.label).toBe("2 users assigned");
+  });
+
+  it("treats missing counts as zero", () => {
+    const scope = policyScopePresentation({});
+
+    expect(scope.devices.label).toBe("0 devices in scope");
+    expect(scope.users.label).toBe("0 users assigned");
+  });
+});

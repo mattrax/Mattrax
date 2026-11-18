@@ -419,6 +419,51 @@ const matches = (condition: any, row: Row) => {
   return collectPredicates(condition).every((predicate) => predicate(row));
 };
 
+/**
+ * Evaluate the small aggregate surface the fake DB supports. `queryFor` renders
+ * a drizzle `count()`/`max()`/`countDistinct()` expression to the same SQL the
+ * production builder sends, and the column reference tells the fake what to
+ * aggregate.
+ */
+const aggregateValue = (field: any, rows: Row[]): RowValue | undefined => {
+  const query = queryFor(field);
+  const sql = query?.sql?.trim();
+
+  if (!sql) return undefined;
+
+  if (/^count\(\*\)$/i.test(sql)) return rows.length;
+
+  const distinct = /^count\(distinct\s+"([^"]+)"\."([^"]+)"\)$/i.exec(sql);
+
+  if (distinct)
+    return new Set(rows.map((row) => comparable(rowValue(row, distinct[1], distinct[2]!)))).size;
+
+  const minMax = /^(max|min)\("([^"]+)"\."([^"]+)"\)$/i.exec(sql);
+
+  if (!minMax) return undefined;
+
+  const descending = minMax[1]!.toLowerCase() === "max";
+  let best: Comparable | undefined;
+  let bestValue: RowValue = undefined;
+
+  for (const row of rows) {
+    const value = rowValue(row, minMax[2], minMax[3]!);
+    const normalized = comparable(value);
+
+    if (
+      best === undefined ||
+      (descending
+        ? compareComparable(normalized, best) > 0
+        : compareComparable(normalized, best) < 0)
+    ) {
+      best = normalized;
+      bestValue = value;
+    }
+  }
+
+  return bestValue;
+};
+
 const project = (fields: any, row: Row) => {
   if (!fields) return unprefix(row);
 
@@ -482,6 +527,7 @@ class SelectBuilder {
   private limitCount?: number;
   private offsetCount?: number;
   private order: Array<{ table: string; name: string; descending: boolean }> = [];
+  private group: Array<{ table: string; name: string }> = [];
 
   constructor(store: Store, fields?: any) {
     this.store = store;
@@ -526,6 +572,16 @@ class SelectBuilder {
     return this;
   }
 
+  groupBy(...columns: any[]) {
+    this.group = columns.flatMap((column) => {
+      const found = flattenChunks(column).find(isColumnChunk);
+
+      return found ? [{ table: columnTable(found), name: found.name }] : [];
+    });
+
+    return this;
+  }
+
   limit(count: number) {
     this.limitCount = count;
 
@@ -543,10 +599,30 @@ class SelectBuilder {
     return this;
   }
 
+  /** Aggregate a bucket of rows for `groupBy`, keeping plain selected columns. */
+  private projectGrouped(rows: Row[]) {
+    const projected = project(this.fields, rows[0]!);
+
+    if (!this.fields) return projected;
+
+    for (const key of Object.keys(this.fields)) {
+      const aggregate = aggregateValue(this.fields[key], rows);
+
+      if (aggregate !== undefined) projected[key] = aggregate;
+    }
+
+    return projected;
+  }
+
   private execute() {
     let rows: Row[];
 
-    if (this.fields && "value" in this.fields && Object.keys(this.fields).length === 1) {
+    if (
+      this.group.length === 0 &&
+      this.fields &&
+      "value" in this.fields &&
+      Object.keys(this.fields).length === 1
+    ) {
       rows = [
         {
           value: (this.store[this.table] ?? []).filter((row) => matches(this.condition, row))
@@ -554,13 +630,28 @@ class SelectBuilder {
         },
       ];
     } else if (this.joined) {
-      rows = this.joinRows()
-        .filter((row) => matches(this.condition, row))
-        .map((row) => project(this.fields, row));
+      rows = this.joinRows().filter((row) => matches(this.condition, row));
     } else {
-      rows = (this.store[this.table] ?? [])
-        .filter((row) => matches(this.condition, row))
-        .map((row) => project(this.fields, row));
+      rows = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row));
+    }
+
+    if (this.group.length > 0) {
+      const buckets = new Map<string, Row[]>();
+
+      for (const row of rows) {
+        const key = JSON.stringify(
+          this.group.map((column) => comparable(rowValue(row, column.table, column.name))),
+        );
+
+        const bucket = buckets.get(key) ?? [];
+
+        bucket.push(row);
+        buckets.set(key, bucket);
+      }
+
+      rows = [...buckets.values()].map((bucket) => this.projectGrouped(bucket));
+    } else if (!(this.fields && "value" in this.fields && Object.keys(this.fields).length === 1)) {
+      rows = rows.map((row) => project(this.fields, row));
     }
 
     if (this.order.length > 0)

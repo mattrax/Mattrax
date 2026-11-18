@@ -21,11 +21,72 @@ import {
 import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+import {
+  policyDeliveryPresentation,
+  policyDeliverySortRank,
+  policyScopePresentation,
+} from "~/lib/policy-delivery";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 
-const configurationCount = (row: PolicyRow) => Object.keys(row.configurations ?? {}).length;
+const configurationCount = (row: PolicyRow) =>
+  row.configurationCount ?? Object.keys(row.configurations ?? {}).length;
+
+function PolicyCountCell(props: { count: number; label: string; description: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        as="span"
+        tabindex={0}
+        aria-label={`${props.label}. ${props.description}`}
+        class="inline-flex cursor-default rounded-[5px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        <span class={props.count > 0 ? undefined : "text-muted-foreground"}>{props.count}</span>
+      </TooltipTrigger>
+      <TooltipContent class="max-w-[260px]">{props.description}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function PolicyDeliveryCell(props: { row: PolicyRow }) {
+  const delivery = () => props.row.delivery;
+
+  return (
+    <Show
+      when={delivery()}
+      fallback={
+        <span class="text-muted-foreground" aria-label="Delivery not reported">
+          —
+        </span>
+      }
+    >
+      {(info) => {
+        const presentation = () => policyDeliveryPresentation(info());
+
+        return (
+          <Tooltip>
+            <TooltipTrigger
+              as="span"
+              tabindex={0}
+              aria-label={`${presentation().label}. ${presentation().description}`}
+              class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <Badge variant={presentation().tone} dot={presentation().dot}>
+                {presentation().label}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent class="max-w-[280px]">
+              <p class="text-[11px] font-medium">{presentation().label}</p>
+              <p class="mt-1 text-[11.5px] leading-relaxed">{presentation().description}</p>
+            </TooltipContent>
+          </Tooltip>
+        );
+      }}
+    </Show>
+  );
+}
 
 const fields: ReadonlyArray<EntityField<PolicyRow>> = [
   { id: "name", label: "Name", kind: "text", get: (row) => row.name },
@@ -169,6 +230,52 @@ export default function PoliciesPage() {
                 </Badge>
               );
             },
+          },
+          {
+            id: "devices",
+            header: "Devices",
+            sort: (row) => row.scopedDeviceCount ?? 0,
+            cell: (row) => {
+              const scope = () =>
+                policyScopePresentation({
+                  deviceCount: row.scopedDeviceCount,
+                  userCount: row.scopedUserCount,
+                });
+
+              return (
+                <PolicyCountCell
+                  count={row.scopedDeviceCount ?? 0}
+                  label={scope().devices.label}
+                  description={scope().devices.description}
+                />
+              );
+            },
+          },
+          {
+            id: "users",
+            header: "Users",
+            sort: (row) => row.scopedUserCount ?? 0,
+            cell: (row) => {
+              const scope = () =>
+                policyScopePresentation({
+                  deviceCount: row.scopedDeviceCount,
+                  userCount: row.scopedUserCount,
+                });
+
+              return (
+                <PolicyCountCell
+                  count={row.scopedUserCount ?? 0}
+                  label={scope().users.label}
+                  description={scope().users.description}
+                />
+              );
+            },
+          },
+          {
+            id: "delivery",
+            header: "Delivery",
+            sort: (row) => policyDeliverySortRank(row.delivery?.state),
+            cell: (row) => <PolicyDeliveryCell row={row} />,
           },
           {
             id: "priority",

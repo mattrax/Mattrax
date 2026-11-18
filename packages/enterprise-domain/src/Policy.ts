@@ -9,6 +9,55 @@ import { EnterprisePolicyApplicationUploadErrors } from "./Errors.js";
 import { PolicyAssignmentMode } from "./Group.js";
 import { PolicyAssignmentRef } from "./Group.js";
 
+/**
+ * Whether the current deployment has reached the devices in the policy's
+ * scope.
+ *
+ * Delivery is derived from Apple DDM declaration reports (`device_declaration`
+ * rows), which are the only per-device delivery evidence Mattrax stores today.
+ * Windows and Android devices are in the policy's scope but do not report
+ * declaration status, so they are counted separately and never turn a policy
+ * into "delivered" or "failed" on their own.
+ *
+ * - `never-deployed`: no deployment snapshot exists for the policy.
+ * - `no-devices`: the policy's assignments resolve to no devices.
+ * - `not-tracked`: only Windows or Android devices are in scope.
+ * - `no-configurations`: the policy has no Apple configuration kinds to deliver.
+ * - `pending`: no Apple device in scope reports the current version yet.
+ * - `partial`: some Apple devices report the current version, others do not.
+ * - `failed`: no device is fully delivered and at least one report is invalid.
+ * - `delivered`: every Apple device in scope reports every current kind valid
+ *   and active.
+ */
+export const PolicyDeliveryState = Schema.Literals([
+  "never-deployed",
+  "no-devices",
+  "not-tracked",
+  "no-configurations",
+  "pending",
+  "partial",
+  "failed",
+  "delivered",
+]);
+
+export type PolicyDeliveryState = typeof PolicyDeliveryState.Type;
+
+export const PolicyDeliveryInfo = Schema.Struct({
+  state: PolicyDeliveryState,
+  /** Latest deployment version, or null when the policy has no snapshot. */
+  version: Schema.NullOr(Schema.Number),
+  /** Devices in the policy's assignment scope, on every platform. */
+  scopedDevices: Schema.Number,
+  /** Apple devices whose declaration reports can prove delivery. */
+  trackedDevices: Schema.Number,
+  deliveredDevices: Schema.Number,
+  failedDevices: Schema.Number,
+  /** Tracked devices that are neither delivered nor failed. */
+  pendingDevices: Schema.Number,
+});
+
+export type PolicyDeliveryInfo = typeof PolicyDeliveryInfo.Type;
+
 export const PolicyRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -16,6 +65,16 @@ export const PolicyRow = Schema.Struct({
   /** Higher wins when policies provide the same configuration kind. */
   priority: Schema.Number,
   configurations: Schema.optional(JsonRecord),
+  /**
+   * Number of configuration kinds saved on the policy. List rows set this
+   * without loading every configuration payload.
+   */
+  configurationCount: Schema.optional(Schema.Number),
+  /** Devices in the policy's resolved assignment scope. */
+  scopedDeviceCount: Schema.optional(Schema.Number),
+  /** Directory users assigned directly or through a directory group. */
+  scopedUserCount: Schema.optional(Schema.Number),
+  delivery: Schema.optional(PolicyDeliveryInfo),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
@@ -73,7 +132,6 @@ export const DownloadPolicyApplicationResponse = Schema.Struct({
 
 export type DownloadPolicyApplicationResponse = typeof DownloadPolicyApplicationResponse.Type;
 
-
 export const PolicyAssignmentUser = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -121,7 +179,6 @@ export const PatchPolicyAssignmentsRequest = Schema.Struct({
   assignUserGroups: Schema.optional(Schema.Array(PolicyAssignmentRef)),
   unassignUserGroups: Schema.optional(Schema.Array(PolicyAssignmentRef)),
 });
-
 
 export const EffectivePolicyScope = Schema.Literals(["direct", "group", "user", "user-group"]);
 
