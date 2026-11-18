@@ -36,6 +36,7 @@ import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { McpActivityRequest } from "../Account.js";
 import { McpConnectionParam } from "./Params.js";
 import { McpConnectionsResponse } from "../Account.js";
+import { McpContextResponse } from "../Account.js";
 import { RequestAccountRecovery } from "../Account.js";
 import { StepUpActionSchema } from "../Errors.js";
 import { TenantParam } from "./Params.js";
@@ -92,6 +93,12 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", {
       error: EnterpriseAccountErrors,
       success: ApiTokensResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getMcpContext", "/v1/mcp/context", {
+      error: EnterpriseAccountErrors,
+      success: McpContextResponse,
     }),
   )
   .add(

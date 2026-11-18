@@ -615,10 +615,10 @@ export {
 export { canEnrollDevice } from "./Device/enrollmentLimit.ts";
 
 export {
-  tokenScopes,
   EMAIL_CODE_TTL_MS,
   emailCodeHash,
   generateEmailCode,
+  parseStoredCredentialScopes,
 } from "./Identity/enterpriseAuth.ts";
 
 export {

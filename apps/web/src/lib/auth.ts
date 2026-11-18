@@ -2,7 +2,11 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import { MeResponse, type UpdateMeRequest } from "@mattrax/enterprise-domain/client";
+import {
+  MeResponse,
+  type Permission,
+  type UpdateMeRequest,
+} from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
@@ -809,7 +813,8 @@ export const authClient = {
         id: string;
         name: string;
         tokenPrefix: string;
-        scopes: Array<"read" | "write">;
+        scopes: string[];
+        permissions: Permission[];
         tenantId?: string | null;
         createdAt: string;
         updatedAt: string;
@@ -821,7 +826,8 @@ export const authClient = {
   createApiToken: (payload: {
     name: string;
     expiresAt?: string | null;
-    scopes?: Array<"read" | "write">;
+    scopes?: string[];
+    permissions?: Permission[];
     tenantId?: string | null;
   }) =>
     withStepUp("api-token-create", (grant) =>
@@ -831,7 +837,8 @@ export const authClient = {
           id: string;
           name: string;
           tokenPrefix: string;
-          scopes: Array<"read" | "write">;
+          scopes: string[];
+          permissions: Permission[];
           tenantId?: string | null;
           createdAt: string;
           updatedAt: string;

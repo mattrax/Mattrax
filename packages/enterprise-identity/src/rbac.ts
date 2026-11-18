@@ -282,6 +282,10 @@ const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
  */
 const ACCOUNT_METHODS = new Set([
   "bootstrap",
+  // The MCP gateway's identity + allowed-method lookup. It is authenticated by
+  // the same bearer credential as the MCP call; tenant authorisation still
+  // happens on every method that resolves a tenant.
+  "mcpContext",
   // Policy-editor helpers. They parse a caller-supplied profile for display
   // and never resolve a tenant, so they are authenticated account endpoints
   // rather than tenant-permission-gated ones.

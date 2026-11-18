@@ -10,17 +10,23 @@ Two credentials work:
 
 - **OAuth** — an MCP client can discover the authorization server from
   `/.well-known/oauth-protected-resource`, register itself, and ask for access.
-  The consent screen shows the client, your account and the tenants you belong
-  to. Each authorised client appears under **Account → Agent access (MCP)**,
-  with its request count, last action and last-used time.
+  The consent screen shows the client, your account, the tenants you belong to
+  and a permission picker grouped like the dashboard's RBAC editor. Choose
+  **No access**, **Read** or **Write** per group, or expand a group to select
+  individual permissions. The default matches full role access; narrowing it is
+  remembered if you re-authorise the same client. Each authorised client appears
+  under **Account → Agent access (MCP)**, with its granted permissions, request
+  count, last action and last-used time.
 - **Account API token** — the same tokens under **Account → API tokens** can be
-  sent as `Authorization: Bearer …`. Use read-only scopes for inspection and
-  read/write scopes for changes.
+  sent as `Authorization: Bearer …`. Narrow the token to the permissions the
+  agent needs; the MCP tool list is filtered to that grant.
 
 MCP tokens are per user. Every tool checks that the user is still a member of the
-requested tenant; a token for one user cannot read another user's tenants.
-Account settings are deliberately unavailable to MCP tokens, even if a tool is
-not listed in the agent's tool catalogue.
+requested tenant and that both the credential grant and the current role allow
+the permission. The tool catalogue is filtered from that effective set, so a
+read-only connection does not advertise write tools. Account settings are
+deliberately unavailable to MCP tokens, even if a tool is not listed in the
+agent's tool catalogue.
 
 ## Tools
 

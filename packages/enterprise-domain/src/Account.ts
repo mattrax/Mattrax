@@ -2,7 +2,8 @@ import { Schema } from "effect";
 import { AuditLogEntry } from "./Audit.js";
 import { AuditSearchResponse } from "./Audit.js";
 import { NullableString } from "./Errors.js";
-import { AccountInfo } from "./Tenant.js";
+import { AccountInfo, MeResponse } from "./Tenant.js";
+import { CredentialScope, Permission } from "./rbac.js";
 
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 
@@ -64,7 +65,6 @@ export const UpdateMeRequest = Schema.Struct({
 
 export type UpdateMeRequest = typeof UpdateMeRequest.Type;
 
-
 export const AuthUser = AccountInfo;
 
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
@@ -72,19 +72,22 @@ export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
 
 /**
- * Token scopes. `read` allows read-only tenant access; `write` allows reads and
- * mutations (subject to the user's tenant role). Tokens created before scoping
- * was introduced report both scopes.
+ * Token scopes. Fine-grained permission ids restrict the token to those tenant
+ * operations; the legacy `read`/`write` values mean the read catalogue or every
+ * permission the account's role allows. Tokens created before scoping was
+ * introduced have no stored scopes and stay unrestricted.
  */
-export const ApiTokenScope = Schema.Union([Schema.Literal("read"), Schema.Literal("write")]);
+export const ApiTokenScope = CredentialScope;
 
-export type ApiTokenScope = typeof ApiTokenScope.Type;
+export type ApiTokenScope = CredentialScope;
 
 export const ApiTokenInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   tokenPrefix: Schema.String,
   scopes: Schema.Array(ApiTokenScope),
+  /** The canonical permission ceiling; `scopes` keeps the stored spelling. */
+  permissions: Schema.Array(Permission),
   tenantId: Schema.optional(NullableString),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -100,6 +103,11 @@ export const CreateApiTokenRequest = Schema.Struct({
   expiresAt: Schema.optional(NullableString),
   /** Defaults to `["read", "write"]` for backwards compatibility. */
   scopes: Schema.optional(Schema.Array(ApiTokenScope)),
+  /**
+   * Fine-grained tenant permissions. Takes precedence over `scopes`; a
+   * permission that mutates a resource also implies its read companion.
+   */
+  permissions: Schema.optional(Schema.Array(Permission)),
   /** Restricts the token to a single tenant; omit for all current memberships. */
   tenantId: Schema.optional(NullableString),
 });
@@ -111,7 +119,10 @@ export const McpConnectionInfo = Schema.Struct({
   id: Schema.String,
   clientId: Schema.String,
   clientName: Schema.String,
+  /** Stored grant; legacy connections use `["mcp"]` for full role access. */
   scopes: Schema.Array(Schema.String),
+  /** Canonical permission ceiling of the connection. */
+  permissions: Schema.Array(Permission),
   requestCount: Schema.Number,
   lastAction: Schema.optional(NullableString),
   lastUsedAt: Schema.optional(NullableString),
@@ -126,6 +137,21 @@ export const McpConnectionsResponse = Schema.Struct({
 });
 
 export type McpConnectionsResponse = typeof McpConnectionsResponse.Type;
+
+/**
+ * The account and tenant shell plus the methods an MCP credential may call.
+ *
+ * One request gives the MCP gateway both the identity it needs for
+ * `list_tenants` and the permission-filtered toolset, without duplicating the
+ * membership query behind `/me`.
+ */
+export const McpContextResponse = Schema.Struct({
+  me: MeResponse,
+  permissions: Schema.Array(Permission),
+  methods: Schema.Array(Schema.String),
+});
+
+export type McpContextResponse = typeof McpContextResponse.Type;
 
 /** Activity heartbeat written by the MCP gateway for audit attribution. */
 export const McpActivityRequest = Schema.Struct({

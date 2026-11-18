@@ -202,6 +202,81 @@ test.describe("MCP", () => {
     expect(JSON.stringify(toolAudit!.metadata)).toContain('"type":"oauth"');
   });
 
+  test("narrows an OAuth connection to the permissions chosen on consent", async ({ page }) => {
+    await bootstrapTenant(page, "MCP Scoped Tenant");
+
+    const registration = await page.request.post("/api/oauth/register", {
+      data: {
+        client_name: "Read-only Agent",
+        redirect_uris: ["http://localhost:7777/callback"],
+      },
+    });
+
+    const client: { client_id: string } = await registration.json();
+
+    const verifier = base64Url(randomBytes(32));
+    const challenge = base64Url(createHash("sha256").update(verifier).digest());
+
+    const authorize = await page.request.post("/api/oauth/authorize", {
+      form: {
+        response_type: "code",
+        client_id: client.client_id,
+        redirect_uri: "http://localhost:7777/callback",
+        scope: "mcp",
+        state: "scoped",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        decision: "approve",
+        permissions_field: "1",
+        permission: "devices.read",
+      },
+      maxRedirects: 0,
+    });
+
+    expect(authorize.status()).toBe(302);
+    const code = new URL(authorize.headers()["location"]!).searchParams.get("code")!;
+
+    const tokenResponse = await page.request.post("/api/oauth/token", {
+      form: {
+        grant_type: "authorization_code",
+        client_id: client.client_id,
+        code,
+        redirect_uri: "http://localhost:7777/callback",
+        code_verifier: verifier,
+      },
+    });
+
+    const tokens: { access_token: string } = await tokenResponse.json();
+
+    const headers = {
+      authorization: `Bearer ${tokens.access_token}`,
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-protocol-version": "2026-07-28",
+      "mcp-method": "tools/list",
+    };
+
+    const list = await page.request.post("/mcp", {
+      headers,
+      data: { jsonrpc: "2.0", id: 1, method: "tools/list", params: mcpMeta },
+    });
+
+    expect(list.status()).toBe(200);
+    const listed: { result: { tools: Array<{ name: string }> } } = await list.json();
+    const names = listed.result.tools.map((tool) => tool.name);
+
+    expect(names).toContain("list_tenants");
+    expect(names).toContain("list_devices");
+    // A read-only grant does not advertise writes or unrelated read surfaces.
+    expect(names).not.toContain("patch_device");
+    expect(names).not.toContain("create_group");
+    expect(names).not.toContain("query_data");
+
+    await gotoHydrated(page, "/account");
+    await expect(page.getByText("Read-only Agent")).toBeVisible();
+    await expect(page.getByText(/1 permission · Connected/)).toBeVisible();
+  });
+
   test("authenticates with an account API key and attributes actions to it", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "MCP Key Tenant");
     const grant = await stepUpGrant(page, "api-token-create");

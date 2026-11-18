@@ -12,7 +12,23 @@ const sessionCookie = "__Host-mattrax_session=opaque-session";
 
 const me = {
   account: { id: "account-1", name: "Owner", email: "owner@example.com" },
-  tenants: [{ id: "tenant-1", name: "Acme", role: "owner" }],
+  tenants: [
+    {
+      id: "tenant-1",
+      name: "Acme",
+      role: "owner",
+      permissions: [
+        "tenant.read",
+        "tenant.write",
+        "devices.read",
+        "devices.write",
+        "devices.command",
+        "devices.recovery_key",
+        "policies.read",
+        "policies.write",
+      ],
+    },
+  ],
 };
 
 const makeHandler = (db: ReturnType<typeof makeDb>, user: typeof me | null = me) =>
@@ -87,11 +103,13 @@ const postForm = (
   handler: ReturnType<typeof makeHandler>,
   path: string,
   values: Record<string, string>,
-  options: { session?: string | null } = {},
+  options: { session?: string | null; origin?: string } = {},
 ) => {
   const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
 
   if (options.session !== null) headers.set("cookie", options.session ?? sessionCookie);
+
+  if (options.origin) headers.set("origin", options.origin);
 
   return handler(
     new Request(`${origin}${path}`, {
@@ -357,8 +375,106 @@ describe("MCP OAuth authorization request", () => {
     const html = await response.text();
 
     expect(response.status).toBe(200);
-    expect(html).not.toContain("<script>");
+    // The consent page owns one inline script for the permission controls; the
+    // client-controlled name must never become executable markup.
+    expect(html).not.toContain('<script>"x"</script>');
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("lets the user narrow an MCP connection to selected permissions", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const { verifier, challenge } = await pkce();
+    const clientId = "mcp_client_permissions";
+    const redirectUri = "https://client.example/callback";
+
+    addClient(db, clientId, [redirectUri]);
+
+    const consent = await getConsent(handler, {
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+
+    const page = await consent.text();
+    expect(page).toContain('data-group-control="devices"');
+    expect(page).toContain('value="devices.write"');
+    expect(page).toContain('value="policies.read"');
+
+    const approval = await postForm(handler, "/api/oauth/authorize", {
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      decision: "approve",
+      permissions_field: "1",
+      permission: "devices.write",
+    });
+
+    expect(approval.status).toBe(302);
+    expect(db.store.mcp_oauth_connection).toHaveLength(1);
+    expect(db.store.mcp_oauth_connection[0]).toMatchObject({
+      clientId,
+      // The write grant implies the read companion.
+      scopes: ["devices.read", "devices.write"],
+    });
+
+    // The code exchange still works and the connection keeps the narrowed set.
+    const location = new URL(approval.headers.get("location")!);
+
+    const tokenResponse = await exchange(handler, {
+      grant_type: "authorization_code",
+      client_id: clientId,
+      code: location.searchParams.get("code")!,
+      redirect_uri: redirectUri,
+      code_verifier: verifier,
+    });
+
+    expect(tokenResponse.status).toBe(200);
+    expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual([
+      "devices.read",
+      "devices.write",
+    ]);
+  });
+
+  it("rejects a cross-origin consent decision", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const { challenge } = await pkce();
+    const clientId = "mcp_client_csrf";
+    const redirectUri = "https://client.example/callback";
+
+    addClient(db, clientId, [redirectUri]);
+
+    const response = await postForm(
+      handler,
+      "/api/oauth/authorize",
+      {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        decision: "approve",
+        permissions_field: "1",
+        permission: "devices.read",
+      },
+      { origin: "https://evil.test" },
+    );
+
+    expect(response.status).toBe(403);
+    expect(db.store.mcp_oauth_connection).toHaveLength(0);
+  });
+
+  it("keeps the legacy full grant when an older client omits the permission fields", async () => {
+    const db = makeDb();
+    const { handler } = await issueCode(db);
+
+    expect(handler).toBeDefined();
+    expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual(["mcp"]);
   });
 
   it("rejects a tampered form and an unsupported challenge method", async () => {

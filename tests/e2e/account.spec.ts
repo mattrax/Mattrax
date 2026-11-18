@@ -30,7 +30,7 @@ test.describe("account", () => {
       .click();
     const dialog = page.getByRole("dialog");
     await dialog.locator("#token-name").fill("E2E token");
-    await dialog.locator("#token-scope").selectOption("write");
+    await dialog.getByRole("button", { name: "All access", exact: true }).click();
     await dialog.locator("#token-expiry").selectOption("90");
     await dialog.getByRole("button", { name: /create token/i }).click();
     await confirmStepUp(page);
@@ -38,7 +38,7 @@ test.describe("account", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.waitForTimeout(350);
     await expect(page.getByText("E2E token").first()).toBeVisible();
-    await expect(page.getByText(/Read & write · All tenants/)).toBeVisible();
+    await expect(page.getByText(/All permissions · All tenants/)).toBeVisible();
 
     const tokens = page.getByRole("region", { name: "API tokens" });
     await tokens
@@ -63,7 +63,10 @@ test.describe("account", () => {
       .click();
     const dialog = page.getByRole("dialog");
     await dialog.locator("#token-name").fill("Read only tenant token");
-    await dialog.locator("#token-scope").selectOption("read");
+    await dialog
+      .getByRole("button", { name: "Read", exact: true })
+      .first()
+      .click();
     await dialog.locator("#token-tenant").selectOption(tenant.id);
     await dialog.locator("#token-expiry").selectOption("never");
     await dialog.getByRole("button", { name: /create token/i }).click();

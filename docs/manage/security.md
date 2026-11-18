@@ -102,9 +102,15 @@ credential. Protect them accordingly.
 Create tokens under **Account → API tokens**:
 
 - Name.
-- Scope: `read` or `write` (`write` implies `read`).
+- Permissions: pick groups (No access / Read / Write) and expand to individual
+  permissions. The picker only offers permissions your role holds in at least
+  one tenant.
 - Optional tenant binding.
 - Optional expiry.
+
+The token's grant is a ceiling, never a grant: every request also checks your
+current role in the tenant. Tokens with a narrow grant cannot manage account
+settings such as API tokens, passkeys or the profile.
 
 Tokens are shown once. Mattrax stores a SHA-256 hash and a prefix for display.
 

@@ -2,7 +2,14 @@ import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
-import { EnterpriseService } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseService,
+  PERMISSION_GROUPS,
+  PERMISSIONS,
+  normalizeCredentialPermissions,
+  isPermission,
+  type Permission,
+} from "@mattrax/enterprise-domain";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
@@ -129,6 +136,7 @@ type McpSessionView = {
     readonly id: string;
     readonly name: string;
     readonly role: string;
+    readonly permissions?: ReadonlyArray<string>;
   }>;
 };
 
@@ -190,11 +198,41 @@ const issueTokens = (
     return { accessToken, refreshToken };
   });
 
+type ConsentGroup = {
+  readonly id: string;
+  readonly label: string;
+  readonly description: string;
+  readonly permissions: ReadonlyArray<{
+    readonly id: Permission;
+    readonly label: string;
+    readonly description: string;
+    readonly level: "read" | "write";
+  }>;
+};
+
+const buildConsentGroups = (available: ReadonlyArray<Permission>): ConsentGroup[] => {
+  const allowed = new Set(available);
+
+  return PERMISSION_GROUPS.map((group) => ({
+    id: group.id,
+    label: group.label,
+    description: group.description,
+    permissions: group.permissions
+      .filter((permission) => allowed.has(permission.id))
+      .map((permission) => ({
+        ...permission,
+        level: permission.id.endsWith(".read") ? ("read" as const) : ("write" as const),
+      })),
+  })).filter((group) => group.permissions.length > 0);
+};
+
 const consentPage = (options: {
   requestUrl: URL;
   client: ClientRow;
   user: { name: string; email: string };
   tenants: ReadonlyArray<{ name: string; role: string }>;
+  available: ReadonlyArray<Permission>;
+  selected: ReadonlyArray<Permission>;
   redirectUri: string;
   state: string | null;
   codeChallenge: string;
@@ -211,6 +249,43 @@ const consentPage = (options: {
         .join("")}</ul>`
     : "<p>No tenant memberships.</p>";
 
+  const groups = buildConsentGroups(options.available);
+  const selected = new Set(options.selected);
+
+  const groupMarkup = groups
+    .map((group) => {
+      const permissions = group.permissions
+        .map(
+          (permission) => `<label class="perm">
+            <input type="checkbox" name="permission" value="${escapeHtml(permission.id)}"
+              data-group="${escapeHtml(group.id)}" data-level="${permission.level}"
+              ${selected.has(permission.id) ? "checked" : ""} />
+            <span><strong>${escapeHtml(permission.label)}</strong><small>${escapeHtml(
+              permission.description,
+            )}</small></span>
+          </label>`,
+        )
+        .join("");
+
+      const hasWrite = group.permissions.some((permission) => permission.level === "write");
+
+      return `<details class="group">
+        <summary>
+          <span><span class="name">${escapeHtml(group.label)}</span>
+            <span class="meta">${group.permissions.length} permission${
+              group.permissions.length === 1 ? "" : "s"
+            }</span></span>
+          <span class="segmented" data-group-control="${escapeHtml(group.id)}">
+            <button type="button" data-level="none">No access</button>
+            <button type="button" data-level="read">Read</button>
+            ${hasWrite ? '<button type="button" data-level="write">Write</button>' : ""}
+          </span>
+        </summary>
+        <div class="permissions">${permissions}</div>
+      </details>`;
+    })
+    .join("");
+
   return html(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Authorise ${escapeHtml(options.client.name)} · Mattrax</title>
@@ -218,7 +293,7 @@ const consentPage = (options: {
   :root { color-scheme: dark; --bg:#09090b; --card:#18181b; --border:#27272a; --fg:#fafafa; --muted:#a1a1aa; --brand:#fafafa; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--fg); font:14px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; padding:24px; }
-  main { width:100%; max-width:460px; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; }
+  main { width:100%; max-width:600px; background:var(--card); border:1px solid var(--border); border-radius:14px; padding:24px; }
   h1 { margin:0 0 4px; font-size:19px; letter-spacing:-0.02em; }
   p { color:var(--muted); }
   ul { margin:12px 0; padding:14px 14px 14px 30px; border:1px solid var(--border); border-radius:10px; color:var(--muted); }
@@ -227,6 +302,23 @@ const consentPage = (options: {
   .who { font-size:12px; color:var(--muted); margin-bottom:18px; }
   .scope { border:1px solid var(--border); border-radius:10px; padding:12px; margin:16px 0; }
   .scope strong { display:block; color:var(--fg); margin-bottom:4px; }
+  .warning { border:1px solid #a16207; background:#42200655; color:#fcd34d; border-radius:10px; padding:10px 12px; margin:14px 0; font-size:12px; }
+  .toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:18px 0 4px; }
+  .toolbar h2 { margin:0; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); }
+  .groups { border-top:1px solid var(--border); }
+  .group { border-bottom:1px solid var(--border); }
+  .group summary { display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; padding:10px 0; list-style:none; }
+  .group summary::-webkit-details-marker { display:none; }
+  .group .name { font-weight:600; }
+  .group .meta { display:block; color:#71717a; font-size:11px; font-weight:400; }
+  .segmented { display:inline-flex; flex:0 0 auto; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .segmented button { border:0; background:transparent; color:var(--muted); padding:4px 8px; font:inherit; font-size:11px; cursor:pointer; }
+  .segmented button.active { background:var(--brand); color:#09090b; font-weight:600; }
+  .permissions { display:grid; gap:7px; padding:0 0 12px; }
+  .perm { display:flex; gap:8px; align-items:flex-start; color:var(--muted); font-size:12px; }
+  .perm input { margin-top:2px; accent-color:var(--brand); }
+  .perm strong { display:block; color:var(--fg); font-weight:500; font-size:12px; }
+  .perm small { display:block; color:#71717a; font-size:11px; }
   .actions { display:flex; gap:8px; margin-top:20px; }
   button { flex:1; border-radius:9px; border:1px solid var(--border); padding:9px 12px; font:inherit; cursor:pointer; }
   .approve { background:var(--brand); color:#09090b; border-color:var(--brand); font-weight:600; }
@@ -236,9 +328,18 @@ const consentPage = (options: {
 <body><main>
   <h1>Authorise ${escapeHtml(options.client.name)}</h1>
   <p class="who">Signed in as ${escapeHtml(options.user.name)} &lt;${escapeHtml(options.user.email)}&gt;</p>
-  <p>This agent wants to connect to Mattrax through the Model Context Protocol.</p>
+  <p>${escapeHtml(options.client.name)} wants to connect to Mattrax through the Model Context Protocol.</p>
+  <div class="warning"><strong>Unverified application.</strong> This application has not been verified by Mattrax. Only continue if you recognise and trust it.</div>
   <div class="scope"><strong>Tenant access</strong>${tenantList}</div>
-  <div class="scope"><strong>What it can do</strong>Read and change devices, groups, policies, applications, dashboards and tenant settings. Account settings and credentials stay off-limits.</div>
+  <div class="toolbar">
+    <h2>Permissions</h2>
+    <span class="segmented" data-global-control>
+      <button type="button" data-level="none">No access</button>
+      <button type="button" data-level="read">Read</button>
+      <button type="button" data-level="write">All access</button>
+    </span>
+  </div>
+  <div class="groups">${groupMarkup}</div>
   <form method="post" action="/api/oauth/authorize">
     ${hidden("client_id", options.client.id)}
     ${hidden("redirect_uri", options.redirectUri)}
@@ -246,14 +347,97 @@ const consentPage = (options: {
     ${hidden("scope", options.scope)}
     ${hidden("code_challenge", options.codeChallenge)}
     ${hidden("code_challenge_method", "S256")}
+    ${hidden("permissions_field", "1")}
     ${options.state ? hidden("state", options.state) : ""}
     <div class="actions">
       <button class="deny" type="submit" name="decision" value="deny">Deny</button>
-      <button class="approve" type="submit" name="decision" value="approve">Authorise</button>
+      <button class="approve" type="submit" name="decision" value="approve">Authorise ${escapeHtml(
+        options.client.name,
+      )}</button>
     </div>
   </form>
   <p><code>${escapeHtml(options.redirectUri)}</code></p>
-</main></body></html>`);
+</main>
+<script>
+(function () {
+  var boxes = function () { return Array.prototype.slice.call(document.querySelectorAll('input[name="permission"]')); };
+  var groupBoxes = function (group) { return boxes().filter(function (box) { return box.dataset.group === group; }); };
+  var mark = function (control, state) {
+    Array.prototype.forEach.call(control.querySelectorAll('button'), function (button) {
+      var active = button.dataset.level === state;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  };
+  var syncGroup = function (group) {
+    var control = document.querySelector('[data-group-control="' + group + '"]');
+    if (!control) return;
+    var items = groupBoxes(group);
+    var reads = items.filter(function (box) { return box.dataset.level === 'read'; });
+    var writes = items.filter(function (box) { return box.dataset.level !== 'read'; });
+    var state = items.every(function (box) { return box.checked; })
+      ? 'write'
+      : reads.every(function (box) { return box.checked; }) && writes.every(function (box) { return !box.checked; })
+        ? 'read'
+        : items.every(function (box) { return !box.checked; })
+          ? 'none'
+          : '';
+    mark(control, state);
+  };
+  var syncGlobal = function () {
+    var control = document.querySelector('[data-global-control]');
+    if (!control) return;
+    var items = boxes();
+    var reads = items.filter(function (box) { return box.dataset.level === 'read'; });
+    var writes = items.filter(function (box) { return box.dataset.level !== 'read'; });
+    var state = items.every(function (box) { return box.checked; })
+      ? 'write'
+      : reads.every(function (box) { return box.checked; }) && writes.every(function (box) { return !box.checked; })
+        ? 'read'
+        : items.every(function (box) { return !box.checked; })
+          ? 'none'
+          : '';
+    mark(control, state);
+  };
+  var setLevel = function (group, level) {
+    groupBoxes(group).forEach(function (box) {
+      box.checked = level === 'write' || (level === 'read' && box.dataset.level === 'read');
+    });
+    syncGroup(group);
+    syncGlobal();
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('[data-group-control]'), function (control) {
+    var group = control.dataset.groupControl;
+    control.addEventListener('click', function (event) {
+      var button = event.target.closest('button');
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLevel(group, button.dataset.level);
+    });
+    groupBoxes(group).forEach(function (box) {
+      box.addEventListener('change', function () { syncGroup(group); syncGlobal(); });
+    });
+    syncGroup(group);
+  });
+  var global = document.querySelector('[data-global-control]');
+  if (global) {
+    global.addEventListener('click', function (event) {
+      var button = event.target.closest('button');
+      if (!button) return;
+      event.preventDefault();
+      boxes().forEach(function (box) {
+        box.checked = button.dataset.level === 'write' || (button.dataset.level === 'read' && box.dataset.level === 'read');
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-group-control]'), function (control) {
+        syncGroup(control.dataset.groupControl);
+      });
+      syncGlobal();
+    });
+    syncGlobal();
+  }
+})();
+</script></body></html>`);
 };
 
 export const mcpOAuthRoutes = (options: { origin: string }) => {
@@ -363,11 +547,33 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         return redirect(`${options.origin}/login?returnTo=${encodeURIComponent(returnTo)}`);
       }
 
+      const availableSet = new Set(
+        me.tenants.flatMap((tenant) => (tenant.permissions ?? []).filter(isPermission)),
+      );
+
+      const available = PERMISSIONS.filter((permission) => availableSet.has(permission));
+      const db = yield* Db;
+
+      const existing = yield* db.query.mcpOAuthConnection.findFirst({
+        where: {
+          accountId: me.account.id,
+          clientId: client.id,
+          revokedAt: { isNull: true },
+        },
+      });
+
+      const selected =
+        existing && Array.isArray(existing.scopes) && !existing.scopes.includes("mcp")
+          ? available.filter((permission) => existing.scopes.includes(permission))
+          : available;
+
       return consentPage({
         requestUrl: url,
         client,
         user: me.account,
         tenants: me.tenants,
+        available,
+        selected,
         redirectUri: redirectUri!,
         state: url.searchParams.get("state"),
         codeChallenge,
@@ -377,6 +583,15 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
   const authorizePost = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
+      // A consent decision is state-changing. Browsers send Origin with the
+      // form POST; reject a cross-origin one so another site cannot approve a
+      // client with the user's cookie. Same-origin requests and non-browser
+      // clients (no Origin) are unaffected.
+      const origin = request.headers.origin;
+
+      if (origin && origin !== options.origin)
+        return errorResponse("invalid_request", "Cross-origin consent is not allowed", 403);
+
       const db = yield* Db;
       const form = parseForm(yield* request.text);
       const clientId = form.get("client_id");
@@ -414,6 +629,19 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         return redirect(denied.toString());
       }
 
+      // A new consent form sends one `permission` field per selected grant and
+      // marks the field as present so "no access anywhere" is distinguishable
+      // from an older client that never sent permissions at all.
+      let scopes: string[] = ["mcp"];
+
+      if (form.get("permissions_field") === "1") {
+        const normalized = normalizeCredentialPermissions(form.getAll("permission"));
+
+        if (!normalized)
+          return errorResponse("invalid_request", "Unknown permission in the consent request");
+        scopes = [...normalized];
+      }
+
       const existing = yield* db.query.mcpOAuthConnection.findFirst({
         where: {
           accountId: me.account.id,
@@ -427,14 +655,14 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       if (existing)
         yield* db
           .update(schema.mcpOAuthConnection)
-          .set({ scopes: ["mcp"] })
+          .set({ scopes })
           .where(eq(schema.mcpOAuthConnection.id, connectionId));
       else
         yield* db.insert(schema.mcpOAuthConnection).values({
           id: connectionId,
           accountId: me.account.id,
           clientId: client.id,
-          scopes: ["mcp"],
+          scopes,
           requestCount: 0,
           createdAt: new Date(),
         });

@@ -12,7 +12,12 @@ import {
   StepUpRequired,
   StepUpService,
   StepUpUnavailable,
+  credentialPermissions,
+  hasAnyWritePermission,
+  hasUnrestrictedCredential,
+  normalizeCredentialPermissions,
   diagnoseError,
+  type Permission,
   type StepUpAction,
   type StepUpMethod,
 } from "@mattrax/enterprise-domain";
@@ -101,29 +106,24 @@ const requestFrom = (request: Request | { headers: HeadersRecord }) =>
 
 type AccountApiTokenRow = typeof schema.accountApiToken.$inferSelect;
 
-const tokenInfo = (item: AccountApiTokenRow) => ({
-  id: item.id,
-  name: item.name,
-  tokenPrefix: item.tokenPrefix,
-  scopes: Array.isArray(item.scopes) ? item.scopes : ["read", "write"],
-  tenantId: item.tenantId ?? null,
-  createdAt: item.createdAt.toISOString(),
-  updatedAt: item.updatedAt.toISOString(),
-  lastUsedAt: item.lastUsedAt ? item.lastUsedAt.toISOString() : null,
-  expiresAt: item.expiresAt ? item.expiresAt.toISOString() : null,
-  revokedAt: item.revokedAt ? item.revokedAt.toISOString() : null,
-});
+const tokenInfo = (item: AccountApiTokenRow) => {
+  const scopes = parseStoredCredentialScopes(item.scopes);
 
-export const API_TOKEN_SCOPES = ["read", "write"] as const;
+  return {
+    id: item.id,
+    name: item.name,
+    tokenPrefix: item.tokenPrefix,
+    scopes: scopes ?? ["read", "write"],
+    permissions: [...credentialPermissions(scopes)],
+    tenantId: item.tenantId ?? null,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    lastUsedAt: item.lastUsedAt ? item.lastUsedAt.toISOString() : null,
+    expiresAt: item.expiresAt ? item.expiresAt.toISOString() : null,
+    revokedAt: item.revokedAt ? item.revokedAt.toISOString() : null,
+  };
+};
 
-export type ApiTokenScope = (typeof API_TOKEN_SCOPES)[number];
-
-const ApiTokenScopeSchema = Schema.Literals(API_TOKEN_SCOPES);
-
-/**
- * Resolve the scopes stored on a token. Tokens created before scoping existed
- * have no scopes and keep full access. Malformed values fail closed.
- */
 const parseScopeList = (value: string): ReadonlyArray<Schema.Json> => {
   try {
     return (
@@ -136,8 +136,12 @@ const parseScopeList = (value: string): ReadonlyArray<Schema.Json> => {
   }
 };
 
-export const tokenScopes = (value: Schema.Json | undefined): Set<ApiTokenScope> => {
-  if (value == null) return new Set(API_TOKEN_SCOPES);
+/**
+ * Stored scopes as a list; `null` is a credential created before scopes were
+ * introduced and therefore unrestricted. Malformed values fail closed.
+ */
+export const parseStoredCredentialScopes = (value: Schema.Json | undefined): string[] | null => {
+  if (value == null) return null;
 
   const raw = Schema.is(Schema.String)(value)
     ? parseScopeList(value)
@@ -145,29 +149,53 @@ export const tokenScopes = (value: Schema.Json | undefined): Set<ApiTokenScope> 
       ? value
       : [];
 
-  return new Set(
-    raw.flatMap((scope) => {
-      const decoded = Schema.decodeUnknownOption(ApiTokenScopeSchema)(scope);
-
-      return Option.isSome(decoded) ? [decoded.value] : [];
-    }),
-  );
+  return raw.flatMap((scope) => (Schema.is(Schema.String)(scope) ? [scope] : []));
 };
 
-/** Normalise requested scopes into the canonical order, or reject unknowns. */
-const normalizeTokenScopes = (scopes: readonly string[] | undefined) => {
-  if (scopes === undefined) return [...API_TOKEN_SCOPES];
-  const requested = new Set(scopes);
+/** The broad legacy scopes remain valid input for older clients. */
+const LEGACY_SCOPES = new Set(["read", "write"]);
 
-  if (requested.size === 0) return undefined;
+/**
+ * Normalise a requested grant. Fine-grained permissions are canonicalised and
+ * get their read companion; `write` still means every role-allowed permission.
+ */
+export const normalizeCredentialScopes = (
+  permissions: ReadonlyArray<string> | undefined,
+  scopes: ReadonlyArray<string> | undefined,
+): string[] | undefined => {
+  if (permissions !== undefined) {
+    const normalized = normalizeCredentialPermissions(permissions);
 
-  if ([...requested].some((scope) => !API_TOKEN_SCOPES.some((known) => known === scope)))
-    return undefined;
+    return normalized && normalized.length > 0 ? [...normalized] : undefined;
+  }
 
-  // `write` means read + mutate, so a write token always carries `read`.
-  if (requested.has("write")) requested.add("read");
+  if (scopes !== undefined) {
+    if (scopes.length === 0) return undefined;
 
-  return API_TOKEN_SCOPES.filter((scope) => requested.has(scope));
+    if (scopes.every((scope) => LEGACY_SCOPES.has(scope))) {
+      if (scopes.includes("write")) return ["read", "write"];
+
+      return ["read"];
+    }
+
+    const normalized = normalizeCredentialPermissions(
+      scopes.filter((scope) => scope !== "read" && scope !== "write"),
+    );
+
+    if (!normalized) return undefined;
+
+    const base = scopes.includes("write")
+      ? ["read" as const, "write" as const]
+      : scopes.includes("read")
+        ? ["read" as const]
+        : [];
+
+    const combined = [...new Set([...base, ...normalized])];
+
+    return combined.length > 0 ? combined : undefined;
+  }
+
+  return ["read", "write"];
 };
 
 const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
@@ -531,44 +559,55 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
-          if (oauth) {
-            const path = new URL(request.url).pathname;
-            const method = request.method.toUpperCase();
+          const path = new URL(request.url).pathname;
+          const method = request.method.toUpperCase();
 
-            const accountPath =
-              path.startsWith("/api/v1/account") ||
-              (path === "/api/v1/me" && method !== "GET") ||
-              path.includes("email-change") ||
-              path.includes("email-verification") ||
-              path === "/api/v1/verify-email";
+          const accountPath =
+            path.startsWith("/api/v1/account") ||
+            (path === "/api/v1/me" && method !== "GET") ||
+            path.includes("email-change") ||
+            path.includes("email-verification") ||
+            path === "/api/v1/verify-email";
 
-            if (accountPath)
-              return yield* Effect.fail(
-                diagnoseError(
-                  new EnterpriseForbidden({
-                    message: "MCP tokens cannot manage account settings.",
-                  }),
-                  { code: "mcp_account_scope" },
-                ),
-              );
-          }
-
-          // A read-scoped token is a monitoring credential, not a second
-          // factor: reject every mutation before the handler can act. OAuth
-          // connections are separately blocked from account settings above.
-          if (
-            apiToken &&
-            request.method.toUpperCase() !== "GET" &&
-            !tokenScopes(apiToken.scopes).has("write")
-          )
+          if (oauth && accountPath)
             return yield* Effect.fail(
               diagnoseError(
                 new EnterpriseForbidden({
-                  message: "This API token only has read access.",
+                  message: "MCP tokens cannot manage account settings.",
                 }),
-                { code: "token_scope", reason: "write_required" },
+                { code: "mcp_account_scope" },
               ),
             );
+
+          // A narrowed token is a delegated credential: reject mutations
+          // before the handler runs. Tenant methods also get the precise
+          // per-permission check in `requireTenant`; this guard covers account
+          // endpoints, which have no tenant permission of their own.
+          if (apiToken && method !== "GET" && method !== "HEAD") {
+            const scopes = parseStoredCredentialScopes(apiToken.scopes);
+
+            if (!hasUnrestrictedCredential(scopes)) {
+              if (accountPath)
+                return yield* Effect.fail(
+                  diagnoseError(
+                    new EnterpriseForbidden({
+                      message: "This API token cannot manage account settings.",
+                    }),
+                    { code: "token_scope", reason: "account_scope" },
+                  ),
+                );
+
+              if (!hasAnyWritePermission(credentialPermissions(scopes)))
+                return yield* Effect.fail(
+                  diagnoseError(
+                    new EnterpriseForbidden({
+                      message: "This API token only has read access.",
+                    }),
+                    { code: "token_scope", reason: "write_required" },
+                  ),
+                );
+            }
+          }
 
           const accountId = session?.subjectId ?? apiToken?.accountId ?? oauth?.accountId;
 
@@ -607,17 +646,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .orderBy(desc(schema.mcpOAuthConnection.createdAt));
 
           return {
-            connections: rows.map((row) => ({
-              id: row.id,
-              clientId: row.clientId,
-              clientName: row.clientName,
-              scopes: Array.isArray(row.scopes) ? row.scopes : ["mcp"],
-              requestCount: row.requestCount,
-              lastAction: row.lastAction,
-              lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
-              revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
-              createdAt: row.createdAt.toISOString(),
-            })),
+            connections: rows.map((row) => {
+              const scopes = Array.isArray(row.scopes) ? row.scopes : ["mcp"];
+
+              return {
+                id: row.id,
+                clientId: row.clientId,
+                clientName: row.clientName,
+                scopes,
+                permissions: [...credentialPermissions(scopes)],
+                requestCount: row.requestCount,
+                lastAction: row.lastAction,
+                lastUsedAt: row.lastUsedAt ? row.lastUsedAt.toISOString() : null,
+                revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
+                createdAt: row.createdAt.toISOString(),
+              };
+            }),
           };
         });
 
@@ -859,7 +903,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         body: {
           name: string;
           expiresAt?: string | null;
-          scopes?: ApiTokenScope[];
+          scopes?: string[];
+          permissions?: Permission[];
           tenantId?: string | null;
         },
       ) =>
@@ -879,23 +924,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               new EnterpriseBadRequest({ message: "Enter a name for the token" }),
             );
 
-          const scopes = normalizeTokenScopes(body.scopes);
+          const scopes = normalizeCredentialScopes(body.permissions, body.scopes);
 
           if (!scopes)
             return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: "Choose valid token scopes" }),
+              new EnterpriseBadRequest({ message: "Choose valid token permissions" }),
             );
 
           // A token must not be able to mint a token with more access than it
           // already has, otherwise read-only tenants could be bypassed.
           if (apiToken) {
-            const ownScopes = tokenScopes(apiToken.scopes);
+            const ownScopes = credentialPermissions(parseStoredCredentialScopes(apiToken.scopes));
 
-            if (!scopes.every((scope) => ownScopes.has(scope)))
+            if ([...credentialPermissions(scopes)].some((permission) => !ownScopes.has(permission)))
               return yield* Effect.fail(
                 diagnoseError(
                   new EnterpriseForbidden({
-                    message: "An API token cannot create a token with broader scopes",
+                    message: "An API token cannot create a token with broader permissions",
                   }),
                   { code: "token_scope", reason: "scope_escalation" },
                 ),
@@ -973,6 +1018,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             metadata: {
               name,
               scopes,
+              permissions: [...credentialPermissions(scopes)],
               tenantId,
               expiresAt: expiresAt ? expiresAt.toISOString() : null,
               // The display prefix only: enough to correlate the row, never the

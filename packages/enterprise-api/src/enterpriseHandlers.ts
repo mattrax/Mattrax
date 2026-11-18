@@ -22,6 +22,10 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
+  credentialPermissions,
+  hasAnyWritePermission,
+  hasUnrestrictedCredential,
+  PERMISSIONS,
   EnterpriseUnauthorized,
   EnterpriseService,
   enterpriseAccountApi,
@@ -186,7 +190,7 @@ import {
 import { serializePlist } from "@mattrax/plist";
 import { certificateDer } from "@mattrax/scep";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/enterprise-backend";
-import { tokenScopes } from "@mattrax/enterprise-backend";
+import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 import { cookieValue, signSsrRevision, signSsrToken } from "@mattrax/enterprise-backend";
 import {
@@ -1606,26 +1610,21 @@ export const createEnterpriseService = ({
         // as missing so token holders cannot probe tenant existence.
         if (apiToken.tenantId && apiToken.tenantId !== tenantId)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
-        const scopes = tokenScopes(apiToken.scopes);
-
-        if (access === "read" && !scopes.has("read"))
-          return yield* Effect.fail(
-            diagnoseError(
-              new EnterpriseForbidden({ message: "This token is not allowed to read this tenant" }),
-              { code: "token_scope", reason: "read_scope_missing" },
-            ),
-          );
-
-        if ((access === "write" || access === "delete") && !scopes.has("write"))
-          return yield* Effect.fail(
-            diagnoseError(
-              new EnterpriseForbidden({
-                message: "This token is read-only and cannot modify this tenant",
-              }),
-              { code: "token_scope", reason: "write_scope_missing" },
-            ),
-          );
       }
+
+      // The credential's own ceiling. A browser session has none; an API token
+      // or MCP connection may be narrowed to specific permissions, and the
+      // account's role is applied below as a second, independent limit.
+      const credentialScopes = apiToken
+        ? parseStoredCredentialScopes(apiToken.scopes)
+        : oauth
+          ? oauth.scopes
+          : null;
+      const credentialGrant = credentialScopes
+        ? credentialPermissions(credentialScopes)
+        : undefined;
+      const credentialRestricted =
+        credentialScopes !== null && !hasUnrestrictedCredential(credentialScopes);
 
       // Membership, organisation and effective role come from one join. They
       // are all required before authorisation can decide anything, so reading
@@ -1638,6 +1637,56 @@ export const createEnterpriseService = ({
       const { member, organization, role } = tenantAccess;
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
+      // Activity attribution is written by the MCP gateway for the caller's own
+      // tool call. It records that the read happened; it must not require the
+      // read grant itself, or a narrowed connection would lose its audit trail.
+      const isMcpActivity =
+        Option.isSome(required) && required.value.method === "recordMcpActivity";
+
+      if (credentialRestricted && credentialGrant && !isMcpActivity) {
+        if (requiredPermission && !credentialGrant.has(requiredPermission))
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterprisePermissionDenied({
+                message: `This credential does not include the ${requiredPermission} permission.`,
+                permission: requiredPermission,
+                roleName: role.roleName,
+                roleKind: role.roleKind,
+              }),
+              {
+                code: "token_scope",
+                reason: "missing_permission",
+                details: { permission: requiredPermission },
+              },
+            ),
+          );
+
+        // Methods without a mapped permission (future or fallback routes) keep
+        // the coarse read/write contract.
+        if (!requiredPermission) {
+          const hasRead = [...credentialGrant].some((permission) => permission.endsWith(".read"));
+
+          if (access === "read" && !hasRead)
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "This credential is not allowed to read this tenant.",
+                }),
+                { code: "token_scope", reason: "read_scope_missing" },
+              ),
+            );
+
+          if (access !== "read" && !hasAnyWritePermission(credentialGrant))
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "This credential cannot modify this tenant.",
+                }),
+                { code: "token_scope", reason: "write_scope_missing" },
+              ),
+            );
+        }
+      }
 
       const deny = (permission: string) =>
         diagnoseError(
@@ -1658,7 +1707,11 @@ export const createEnterpriseService = ({
           },
         );
 
-      if (requiredPermission && !hasPermission(role.permissions, requiredPermission))
+      if (
+        !isMcpActivity &&
+        requiredPermission &&
+        !hasPermission(role.permissions, requiredPermission)
+      )
         return yield* Effect.fail(deny(requiredPermission));
 
       // Direct/internal calls without the method-level permission still need a
@@ -5092,10 +5145,7 @@ export const createEnterpriseService = ({
    * Software widgets bucket the same rows by bundle id, so loading them once
    * avoids one whole-fleet inventory scan per widget.
    */
-  const loadApplicationsByDevice = (
-    organizationId: string,
-    deviceIds: ReadonlyArray<string>,
-  ) =>
+  const loadApplicationsByDevice = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       const byDevice = new Map<string, DeviceApplicationRow[]>();
 
@@ -5284,13 +5334,7 @@ export const createEnterpriseService = ({
 
       const results = yield* Effect.all(
         payloads.map((payload) =>
-          evaluateDashboardQuery(
-            organizationId,
-            payload,
-            snapshots,
-            timestamp,
-            sharedApplications,
-          ),
+          evaluateDashboardQuery(organizationId, payload, snapshots, timestamp, sharedApplications),
         ),
         { concurrency: "unbounded" },
       );
@@ -5607,6 +5651,47 @@ export const createEnterpriseService = ({
         yield* identifyUser(user);
 
         return yield* mePayload(user);
+      }),
+    mcpContext: (request) =>
+      Effect.gen(function* () {
+        const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+        const me = yield* mePayload(user);
+
+        // A tenant-bound token only advertises that tenant; other ids would
+        // fail `requireTenant` and confuse the agent.
+        const tenants = apiToken?.tenantId
+          ? me.tenants.filter((tenant) => tenant.id === apiToken.tenantId)
+          : me.tenants;
+
+        // The role union is what a browser session can do; a bearer credential
+        // is then narrowed to its own grant. The MCP gateway uses the result to
+        // hide tools the caller could never invoke.
+        const roleUnion = new Set(tenants.flatMap((tenant) => tenant.permissions));
+        const scopes = apiToken
+          ? parseStoredCredentialScopes(apiToken.scopes)
+          : oauth
+            ? oauth.scopes
+            : null;
+        const granted = scopes ? credentialPermissions(scopes) : undefined;
+        const effective = granted
+          ? new Set([...granted].filter((permission) => roleUnion.has(permission)))
+          : roleUnion;
+
+        const methods = [
+          ...Object.keys(enterpriseApi.endpoints),
+          ...Object.keys(enterpriseAttributeApi.endpoints),
+        ].filter((method) => {
+          const permission = permissionForMethod(method);
+
+          return permission !== undefined && effective.has(permission);
+        });
+
+        return {
+          me: { ...me, tenants },
+          permissions: PERMISSIONS.filter((permission) => effective.has(permission)),
+          methods,
+        };
       }),
     bootstrap: (request) =>
       Effect.gen(function* () {
@@ -18914,6 +18999,9 @@ export const enterpriseAccountHandlers = (
     )
     .handle("listApiTokens", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listApiTokens(request)),
+    )
+    .handle("getMcpContext", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.mcpContext(request)),
     )
     .handle("listMcpConnections", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listMcpConnections(request)),

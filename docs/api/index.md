@@ -21,7 +21,10 @@ Two credentials are accepted:
 
 Create tokens under **Account → API tokens**. A token has:
 
-- A `read` or `write` scope (`write` implies `read`).
+- A permission grant chosen from the same catalogue as custom roles (for
+  example `devices.read`, or `devices.write` for a deployment pipeline). `read`
+  and `write` remain as broad legacy scopes; `write` means every permission the
+  role allows.
 - An optional tenant binding.
 - An optional expiry.
 
@@ -35,9 +38,12 @@ curl "$MATTRAX_URL/api/v1/me" \
 For tenant routes, Mattrax checks:
 
 1. The token's tenant binding (a mismatch returns `EnterpriseNotFound`).
-2. The token scope (`read` for reads, `write` for writes and deletes).
-3. The user's membership and role.
+2. The token's permission grant (the exact permission the endpoint requires).
+3. The user's membership and role (both limits apply).
 4. The tenant's MFA requirement for owners/admins.
+
+A narrowed token cannot manage account security settings (API tokens, passkeys,
+profile); those require a full-access token.
 
 Effective permission is the intersection of token scope and member role.
 

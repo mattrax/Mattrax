@@ -620,6 +620,7 @@ export const shouldTrackApiRequest = (path: string, method: string): boolean => 
     pathname === "/api/webhooks/openapi.json" ||
     pathname === "/api/v1/getSession" ||
     pathname === "/api/v1/bootstrap" ||
+    pathname === "/api/v1/mcp/context" ||
     pathname.startsWith("/api/docs") ||
     pathname.startsWith("/api/debug/")
   )

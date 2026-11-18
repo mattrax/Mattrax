@@ -159,6 +159,43 @@ describe("enterprise API tokens", () => {
     ]);
   });
 
+  it("creates a permission-scoped token and reports its effective grant", async () => {
+    const { db, run } = makeContext(seedAccountAndTenant());
+    const grant = await grantFor("api-token-create");
+
+    const created = await run((auth) =>
+      auth.createApiToken(session(grant), {
+        name: "Fleet reader",
+        permissions: ["devices.read", "policies.write"],
+      }),
+    );
+
+    // A write permission carries its read companion.
+    expect(created.item.scopes).toEqual([
+      "devices.read",
+      "policies.read",
+      "policies.write",
+    ]);
+    expect(created.item.permissions).toEqual([
+      "devices.read",
+      "policies.read",
+      "policies.write",
+    ]);
+    expect(db.store.account_api_token[0]).toMatchObject({
+      scopes: ["devices.read", "policies.read", "policies.write"],
+    });
+
+    await expect(
+      run((auth) =>
+        auth.createApiToken(session(grant), { name: "Unknown", permissions: ["devices.explode"] }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    await expect(
+      run((auth) => auth.createApiToken(session(grant), { name: "Empty", permissions: [] })),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
   it("defaults omitted scopes to read/write and omits the tenant", async () => {
     const { db, run } = makeContext(seedAccountAndTenant());
     const grant = await grantFor("api-token-create");

@@ -30,8 +30,10 @@ lifecycle, API and invariants.
 | `member`  | Yes  | No    | No     | Read-only dashboard access               |
 | `auditor` | Yes  | No    | No     | Read-only access for compliance review   |
 
-API tokens carry a separate `read` or `write` scope. A token can also be bound to one
-tenant. Effective permission is the intersection of the token scope and the member role.
+API tokens can be narrowed to specific tenant permissions (for example
+`devices.read` and `policies.write`), and can be bound to one tenant. Effective
+permission is the intersection of the token grant and the member role. Custom
+roles and tokens read from the same permission catalogue.
 
 ## Devices
 

@@ -9,7 +9,8 @@ import {
   enterpriseAccountApi,
   enterpriseApi,
   enterpriseAttributeApi,
-  MeResponse as MeResponseSchema,
+  McpContextResponse as McpContextResponseSchema,
+  type McpContextResponse,
   type MeResponse,
 } from "@mattrax/enterprise-domain/client";
 
@@ -31,7 +32,7 @@ const decodeDataset = Schema.decodeUnknownOption(DashboardDataset);
 
 const decodeDeviceQuery = Schema.decodeUnknownOption(DeviceQuery);
 
-const decodeMeResponse = Schema.decodeUnknownOption(MeResponseSchema);
+const decodeMcpContext = Schema.decodeUnknownOption(McpContextResponseSchema);
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
@@ -273,7 +274,7 @@ const pathParameters = (path: string) =>
 const shouldExpose = (path: string) => {
   if (path.includes("/account")) return false;
 
-  if (path.includes("/mcp/activity")) return false;
+  if (path.includes("/mcp/")) return false;
 
   if (path === "/v1/me" || path === "/v1/deleteMe") return false;
 
@@ -301,8 +302,16 @@ const shouldExpose = (path: string) => {
   return true;
 };
 
-/** Build the dynamic REST toolset plus two ergonomic discovery/query tools. */
-const buildTools = (authorization: string, me: MeResponse) => {
+/**
+ * Build the tools this credential may call.
+ *
+ * `methods` is the API's effective grant (credential ceiling intersected with
+ * the account's role permissions), so a read-only or narrowed connection does
+ * not advertise write tools at all. The API still authorises every call.
+ */
+const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArray<string>) => {
+  const allowed = new Set(methods);
+
   const listTenants = Tool.make("list_tenants", {
     description:
       "List the signed-in account, its tenants, and the role the account holds in each. Call this first, then pass a tenantId to other tools.",
@@ -347,7 +356,12 @@ const buildTools = (authorization: string, me: MeResponse) => {
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false);
 
-  const tools: Array<Tool.Any> = [listTenants, queryData, search, getOpenApi];
+  const tools: Array<Tool.Any> = [listTenants, getOpenApi];
+
+  if (allowed.has("queryDashboard")) tools.push(queryData);
+
+  if (allowed.has("search")) tools.push(search);
+
   const rest = new Map<string, { path: string; method: string }>();
 
   for (const [identifier, endpoint] of Object.entries({
@@ -357,7 +371,7 @@ const buildTools = (authorization: string, me: MeResponse) => {
   })) {
     const path = endpoint.path;
 
-    if (!shouldExpose(path)) continue;
+    if (!shouldExpose(path) || !allowed.has(identifier)) continue;
     const name = toolName(identifier);
 
     if (name === "list_tenants" || name === "query_data" || rest.has(name)) continue;
@@ -508,11 +522,16 @@ const buildTools = (authorization: string, me: MeResponse) => {
     );
   }
 
-  return { tools, handlers: Object.fromEntries(handlers) };
+  const exposed = new Set(tools.map((tool) => tool.name));
+
+  return {
+    tools,
+    handlers: Object.fromEntries([...handlers].filter(([name]) => exposed.has(name))),
+  };
 };
 
-const mcpLayer = (authorization: string, me: MeResponse) => {
-  const built = buildTools(authorization, me);
+const mcpLayer = (authorization: string, me: MeResponse, methods: ReadonlyArray<string>) => {
+  const built = buildTools(authorization, me, methods);
   const toolkit = Toolkit.make(...built.tools);
 
   const registrations = McpServer.toolkit(toolkit).pipe(
@@ -543,11 +562,11 @@ const handleMcp = async (request: Request): Promise<Response> => {
 
   if (!/^Bearer\s+\S+/i.test(authorization)) return unauthorized(url.origin, request);
 
-  let meResponse: Response;
+  let contextResponse: Response;
 
   try {
-    meResponse = await fetchApi(
-      new Request("https://api.mattrax.internal/api/v1/me", {
+    contextResponse = await fetchApi(
+      new Request("https://api.mattrax.internal/api/v1/mcp/context", {
         headers: {
           authorization,
           "x-mattrax-mcp-authorization": authorization,
@@ -556,37 +575,40 @@ const handleMcp = async (request: Request): Promise<Response> => {
       }),
     );
   } catch (cause) {
-    console.error("MCP identity lookup failed", cause);
+    console.error("MCP context lookup failed", cause);
 
     return unavailable(request);
   }
 
   // Only a rejected credential is an MCP authentication failure. Anything else
   // (including a 5xx or a malformed response) is an availability problem.
-  if (meResponse.status === 401 || meResponse.status === 403)
+  if (contextResponse.status === 401 || contextResponse.status === 403)
     return unauthorized(url.origin, request);
 
-  if (!meResponse.ok) {
-    console.error(`MCP identity lookup failed with status ${meResponse.status}`);
+  if (!contextResponse.ok) {
+    console.error(`MCP context lookup failed with status ${contextResponse.status}`);
 
     return unavailable(request);
   }
 
-  let me: MeResponse;
+  let context: McpContextResponse;
 
   try {
-    const body = Option.getOrUndefined(decodeMeResponse(await meResponse.json()));
+    const body = Option.getOrUndefined(decodeMcpContext(await contextResponse.json()));
 
-    if (body === undefined) throw new Error("Unexpected identity response");
+    if (body === undefined) throw new Error("Unexpected context response");
 
-    me = body;
+    context = body;
   } catch (cause) {
-    console.error("MCP identity response could not be read", cause);
+    console.error("MCP context response could not be read", cause);
 
     return unavailable(request);
   }
 
-  const layer = mcpLayer(authorization, me).pipe(Layer.provide(HttpServer.layerServices));
+  const layer = mcpLayer(authorization, context.me, context.methods).pipe(
+    Layer.provide(HttpServer.layerServices),
+  );
+
   // SAFETY: `mcpLayer` provides the HTTP server services this layer needs; the
   // concrete layer type is opaque to the router constructor.
   // oxlint-disable-next-line typescript/no-explicit-any

@@ -4,10 +4,12 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { Option, Schema } from "effect";
+import { PERMISSIONS, type Permission } from "@mattrax/enterprise-domain/client";
 import { AccountActivity } from "~/components/account-activity";
 import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { ThemeSwitcher } from "~/components/theme-switcher";
+import { PermissionPicker } from "~/components/permission-picker";
 import {
   Dialog,
   DialogContent,
@@ -402,7 +404,7 @@ export default function AccountPage() {
   const [newToken, setNewToken] = createSignal<string | null>(null);
   const [tokenError, setTokenError] = createSignal<string | null>(null);
   const [tokenOpen, setTokenOpen] = createSignal(false);
-  const [tokenScope, setTokenScope] = createSignal<"read" | "write">("write");
+  const [tokenPermissions, setTokenPermissions] = createSignal<ReadonlyArray<Permission>>([]);
   const [tokenExpiry, setTokenExpiry] = createSignal("never");
   const [tokenTenantId, setTokenTenantId] = createSignal("");
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
@@ -413,6 +415,13 @@ export default function AccountPage() {
   const email = () => me.data?.account.email ?? user()?.email;
   const emailVerified = () => me.data?.account.emailVerified ?? user()?.emailVerified ?? false;
   const tenants = () => me.data?.tenants ?? [];
+
+  /** The permissions the account already holds in at least one tenant. */
+  const availablePermissions = (): ReadonlyArray<Permission> => {
+    const granted = new Set(me.data?.tenants.flatMap((tenant) => tenant.permissions) ?? []);
+
+    return PERMISSIONS.filter((permission) => granted.has(permission));
+  };
 
   const tenantLabel = (tenantId?: string | null) =>
     tenantId
@@ -479,8 +488,20 @@ export default function AccountPage() {
     void saveDefaultTenant(defaultTenantId() || null);
   };
 
-  const scopeLabel = (scopes?: string[]) =>
-    !scopes || scopes.includes("write") ? "Read & write" : "Read only";
+  const scopeLabel = (permissions?: ReadonlyArray<Permission>, scopes?: ReadonlyArray<string>) => {
+    if (!permissions || permissions.length === 0)
+      return scopes?.includes("read") ? "Read only" : "No permissions";
+
+    if (permissions.length === PERMISSIONS.length) return "All permissions";
+
+    if (
+      permissions.every((permission) => permission.endsWith(".read")) &&
+      permissions.length === PERMISSIONS.filter((permission) => permission.endsWith(".read")).length
+    )
+      return "Read only";
+
+    return `${permissions.length} permission${permissions.length === 1 ? "" : "s"}`;
+  };
 
   const tokenExpiresAt = () => {
     const days = Number(tokenExpiry());
@@ -496,10 +517,16 @@ export default function AccountPage() {
     setNewToken(null);
 
     try {
+      if (tokenPermissions().length === 0) {
+        setTokenError("Choose at least one permission.");
+
+        return;
+      }
+
       const result = await authClient.createApiToken({
         name: tokenName(),
         expiresAt: tokenExpiresAt(),
-        scopes: tokenScope() === "read" ? ["read"] : ["read", "write"],
+        permissions: [...tokenPermissions()],
         tenantId: tokenTenantId() || null,
       });
 
@@ -829,11 +856,12 @@ export default function AccountPage() {
 
       <Panel
         title="API tokens"
-        description="Create tokens for CLI and API access. Scope a token to read-only or to a single tenant to limit what it can reach."
+        description="Create tokens for CLI and API access. Grant only the permissions a job needs and bind the token to one tenant to limit what it can reach."
         actions={
           <Button
             onClick={() => {
               setTokenError(null);
+              setTokenPermissions(availablePermissions());
               setTokenOpen(true);
             }}
           >
@@ -842,12 +870,12 @@ export default function AccountPage() {
         }
       >
         <Dialog open={tokenOpen()} onOpenChange={setTokenOpen}>
-          <DialogContent class="max-w-md text-foreground">
+          <DialogContent class="max-w-lg text-foreground">
             <DialogHeader>
               <DialogTitle>Create API token</DialogTitle>
               <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
-                The token inherits your permissions. Read-only tokens can view data but cannot
-                change it; a tenant-bound token is rejected for every other tenant.
+                Choose what the token may do. Its access is the intersection of this grant and your
+                role in each tenant; a tenant-bound token is rejected for every other tenant.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleTokenCreate} class="mt-4 space-y-3">
@@ -860,25 +888,18 @@ export default function AccountPage() {
                   placeholder="Work laptop CLI"
                 />
               </Field>
-              <Field label="Access">
-                <select
-                  id="token-scope"
-                  class={selectClass}
-                  value={tokenScope()}
-                  onChange={(e) => {
-                    const value = Option.getOrUndefined(
-                      Schema.decodeUnknownOption(Schema.Literals(["read", "write"]))(
-                        e.currentTarget.value,
-                      ),
-                    );
-
-                    if (value !== undefined) setTokenScope(value);
-                  }}
-                >
-                  <option value="read">Read only</option>
-                  <option value="write">Read &amp; write</option>
-                </select>
-              </Field>
+              <Show
+                when={availablePermissions().length > 0}
+                fallback={
+                  <p class="text-[12px] text-muted-foreground">Loading your permissions…</p>
+                }
+              >
+                <PermissionPicker
+                  available={availablePermissions()}
+                  selected={tokenPermissions()}
+                  onChange={setTokenPermissions}
+                />
+              </Show>
               <Field label="Tenant">
                 <select
                   id="token-tenant"
@@ -951,7 +972,8 @@ export default function AccountPage() {
                 <div class="min-w-0">
                   <p class="text-[12.5px] font-medium text-foreground">{token.name}</p>
                   <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    {scopeLabel(token.scopes)} · {tenantLabel(token.tenantId)} · {token.tokenPrefix}
+                    {scopeLabel(token.permissions, token.scopes)} · {tenantLabel(token.tenantId)} ·{" "}
+                    {token.tokenPrefix}
                     ... · Created {new Date(token.createdAt).toLocaleDateString()} · Last used{" "}
                     {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleDateString() : "never"}
                     <Show when={token.expiresAt}>
@@ -1035,7 +1057,7 @@ export default function AccountPage() {
                     </Show>
                   </div>
                   <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    {connection.scopes.join(", ")} · Connected{" "}
+                    {scopeLabel(connection.permissions, connection.scopes)} · Connected{" "}
                     {new Date(connection.createdAt).toLocaleDateString()} · Last used{" "}
                     {connection.lastUsedAt
                       ? new Date(connection.lastUsedAt).toLocaleString()

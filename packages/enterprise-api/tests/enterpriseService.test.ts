@@ -872,10 +872,10 @@ describe("enterprise service tenant flow", () => {
       runEffect(
         first.service.patchTenant(request(first.headers), firstTenant.id, { name: "Denied" }),
       ),
-    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
     await expect(
       runEffect(first.service.deleteTenant(request(first.headers), firstTenant.id)),
-    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
 
     // A tenant-bound token cannot reach another tenant, even when the user is
     // a member.
@@ -913,6 +913,70 @@ describe("enterprise service tenant flow", () => {
     expect(legacy.db.store.organization.find((row: any) => row.id === firstTenant.id)?.name).toBe(
       "Legacy",
     );
+  });
+
+  it("publishes an MCP context filtered by the credential grant", async () => {
+    const base = await makeContext();
+
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.read"] },
+    });
+
+    const context = await runEffect(reader.service.mcpContext(request(reader.headers)));
+
+    expect(context.me.tenants[0]?.id).toBe(tenant.id);
+    expect(context.permissions).toContain("devices.read");
+    expect(context.permissions).not.toContain("devices.write");
+    expect(context.methods).toContain("listDevices");
+    expect(context.methods).not.toContain("patchDevice");
+    expect(context.methods).not.toContain("createGroup");
+
+    // A write grant exposes the mutation but still never account endpoints.
+    const writer = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.write"] },
+    });
+
+    const writeContext = await runEffect(writer.service.mcpContext(request(writer.headers)));
+
+    expect(writeContext.permissions).toEqual(["devices.read", "devices.write"]);
+    expect(writeContext.methods).toContain("patchDevice");
+    expect(writeContext.methods).not.toContain("createGroup");
+    expect(writeContext.methods).not.toContain("createApiToken");
+  });
+
+  it("enforces fine-grained API token permissions per method", async () => {
+    const base = await makeContext();
+
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const limited = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(limited.service.listDevices(request(limited.headers), tenant.id)),
+    ).resolves.toMatchObject({ rows: [] });
+
+    await expect(
+      runEffect(
+        limited.service.patchDevice(request(limited.headers), tenant.id, "device-1", {
+          name: "Renamed",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+
+    await expect(
+      runEffect(limited.service.listPolicies(request(limited.headers), tenant.id)),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
   });
 
   it("prevents deleting tenants with more than one member", async () => {

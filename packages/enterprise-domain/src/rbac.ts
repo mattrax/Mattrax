@@ -337,6 +337,101 @@ export const hasPermission = (
   return set.has(required);
 };
 
+/**
+ * Broad scopes still stored on credentials created before fine-grained grants.
+ * `write` and `mcp` mean "every permission the account's role allows"; `read`
+ * means the read half of the catalogue.
+ */
+export const CREDENTIAL_BROAD_SCOPES = ["read", "write", "mcp"] as const;
+
+export type CredentialBroadScope = (typeof CREDENTIAL_BROAD_SCOPES)[number];
+
+export const CredentialScope = Schema.Union([Permission, Schema.Literals(CREDENTIAL_BROAD_SCOPES)]);
+
+export type CredentialScope = typeof CredentialScope.Type;
+
+/**
+ * Canonical permission list for a credential grant.
+ *
+ * A permission that mutates a resource also implies its `.read` companion, so
+ * a token granted `devices.write` can list the devices it changes. Unknown
+ * entries fail the whole request rather than being ignored; a stale client
+ * must not silently create a broader or narrower token than it asked for.
+ */
+export const normalizeCredentialPermissions = (
+  values: ReadonlyArray<string>,
+): ReadonlyArray<Permission> | undefined => {
+  const selected = new Set<Permission>();
+
+  for (const value of values) {
+    if (!isPermission(value)) return undefined;
+    selected.add(value);
+
+    const dot = value.lastIndexOf(".");
+
+    if (dot <= 0) continue;
+    const companion = `${value.slice(0, dot)}.read`;
+
+    if (companion !== value && isPermission(companion)) selected.add(companion);
+  }
+
+  return PERMISSIONS.filter((permission) => selected.has(permission));
+};
+
+/**
+ * Effective permission ceiling of an API token or OAuth connection. The
+ * account's role is applied separately in `requireTenant`, so the result here
+ * is the credential's own limit, never a grant.
+ */
+export const credentialPermissions = (
+  scopes: ReadonlyArray<string> | null | undefined,
+): ReadonlySet<Permission> => {
+  if (scopes == null) return new Set(PERMISSIONS);
+
+  const selected = new Set<Permission>();
+
+  for (const scope of scopes) {
+    if (scope === "write" || scope === "mcp") return new Set(PERMISSIONS);
+
+    if (scope === "read") {
+      for (const permission of READ_PERMISSIONS) selected.add(permission);
+
+      continue;
+    }
+
+    if (!isPermission(scope)) continue;
+    selected.add(scope);
+
+    const dot = scope.lastIndexOf(".");
+
+    if (dot <= 0) continue;
+    const companion = `${scope.slice(0, dot)}.read`;
+
+    if (companion !== scope && isPermission(companion)) selected.add(companion);
+  }
+
+  return selected;
+};
+
+/** True when the credential was not narrowed to a permission list. */
+export const hasUnrestrictedCredential = (
+  scopes: ReadonlyArray<string> | null | undefined,
+): boolean =>
+  scopes == null ||
+  scopes.includes("write") ||
+  scopes.includes("mcp") ||
+  credentialPermissions(scopes).size === PERMISSIONS.length;
+
+/** The canonical read permission for a group, used by permission pickers. */
+export const readPermissionFor = (permission: string): Permission | undefined => {
+  const dot = permission.lastIndexOf(".");
+
+  if (dot <= 0) return undefined;
+  const companion = `${permission.slice(0, dot)}.read`;
+
+  return companion !== permission && isPermission(companion) ? companion : undefined;
+};
+
 export const hasAnyWritePermission = (permissions: ReadonlySet<string>): boolean =>
   [...permissions].some(
     (permission) =>

@@ -114,7 +114,12 @@ POST   /api/v1/account/api-tokens
 DELETE /api/v1/account/api-tokens/:tokenId
 ```
 
-Scopes are `read` and `write`. Tokens are shown once and stored as a SHA-256 hash.
+Tokens can be narrowed to any subset of the tenant permission catalogue (the
+same groups used by custom roles), so a monitoring key can hold only
+`devices.read` or a deployment key only `devices.write` and `policies.read`.
+`read`/`write` remain supported as broad scopes for older clients. Tokens are
+shown once and stored as a SHA-256 hash; the effective grant is the
+intersection of the token's permissions and the account's role in each tenant.
 
 ## Appearance
 

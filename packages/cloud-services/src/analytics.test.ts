@@ -282,6 +282,8 @@ describe("PostHog analytics", () => {
     expect(shouldTrackApiRequest("/api/webhooks/openapi.json", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/getSession", "POST")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/bootstrap", "GET")).toBe(false);
+    // The MCP gateway's internal identity lookup; tool calls are tracked.
+    expect(shouldTrackApiRequest("/api/v1/mcp/context", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/docs", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/me", "OPTIONS")).toBe(false);
   });
