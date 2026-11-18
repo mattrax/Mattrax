@@ -66,7 +66,11 @@ describe("resolvePolicyScopes", () => {
   });
 });
 
-const appleDevice = (id: string) => ({ id, proto: "apple" });
+const appleDevice = (id: string, declarationMode?: "ddm" | "legacy") => ({
+  id,
+  proto: "apple",
+  declarationMode,
+});
 
 const declaration = (
   deviceId: string,
@@ -116,6 +120,16 @@ describe("derivePolicyDelivery", () => {
     ).toMatchObject({ state: "no-configurations", trackedDevices: 1 });
   });
 
+  it("does not wait for declarations for imperative application installs", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        configurations: [{ kind: "mttx.apple.application.example", hash: "current" }],
+        declarations: [],
+      }),
+    ).toMatchObject({ state: "no-configurations", trackedDevices: 1, pendingDevices: 0 });
+  });
+
   it("surfaces an invalid declaration as failed when nothing is delivered", () => {
     expect(
       derivePolicyDelivery({
@@ -155,6 +169,87 @@ describe("derivePolicyDelivery", () => {
         ],
       }),
     ).toMatchObject({ state: "pending", deliveredDevices: 0, pendingDevices: 1 });
+  });
+
+  it("accepts a resolved token for a variable-bearing configuration", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        configurations: [
+          {
+            kind: "mttx.apple.declaration.files",
+            hash: "template-hash",
+            hasVariables: true,
+          },
+        ],
+        declarations: [
+          declaration("device-1", "policy-1:mttx.apple.declaration.files", {
+            serverToken: "resolved-hash",
+          }),
+        ],
+      }),
+    ).toMatchObject({ state: "delivered", deliveredDevices: 1 });
+  });
+
+  it("treats unknown and inactive declarations as pending, not failed", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        declarations: [
+          declaration("device-1", "policy-1:mttx.apple.declaration.files", {
+            valid: "unknown",
+            active: false,
+          }),
+        ],
+      }),
+    ).toMatchObject({ state: "pending", failedDevices: 0, pendingDevices: 1 });
+  });
+
+  it("does not report a stale failure as the current failure", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        declarations: [
+          declaration("device-1", "policy-1:mttx.apple.declaration.files", {
+            valid: "invalid",
+            serverToken: "previous",
+          }),
+        ],
+      }),
+    ).toMatchObject({ state: "pending", failedDevices: 0, pendingDevices: 1 });
+  });
+
+  it("reports a policy whose every kind is provided by another policy as not applicable", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        declarations: [
+          declaration("device-1", "policy-2:mttx.apple.declaration.files", {
+            serverToken: "current",
+          }),
+        ],
+      }),
+    ).toMatchObject({
+      state: "not-applicable",
+      overriddenDevices: 1,
+      deliveredDevices: 0,
+      pendingDevices: 0,
+    });
+  });
+
+  it("does not wait for declarations from legacy-mode Apple devices", () => {
+    expect(
+      derivePolicyDelivery({
+        ...base,
+        devices: [appleDevice("device-1", "legacy")],
+        declarations: [],
+      }),
+    ).toMatchObject({
+      state: "not-tracked",
+      trackedDevices: 0,
+      legacyDevices: 1,
+      pendingDevices: 0,
+    });
   });
 
   it("falls back to status for legacy profiles whose token embeds the device", () => {

@@ -11,6 +11,7 @@ const delivery = (
     | "no-devices"
     | "not-tracked"
     | "no-configurations"
+    | "not-applicable"
     | "pending"
     | "partial"
     | "failed"
@@ -19,6 +20,8 @@ const delivery = (
     version: number | null;
     scopedDevices: number;
     trackedDevices: number;
+    legacyDevices: number;
+    overriddenDevices: number;
     deliveredDevices: number;
     failedDevices: number;
     pendingDevices: number;
@@ -28,6 +31,8 @@ const delivery = (
   version: 3,
   scopedDevices: 4,
   trackedDevices: 4,
+  legacyDevices: 0,
+  overriddenDevices: 0,
   deliveredDevices: 0,
   failedDevices: 0,
   pendingDevices: 4,
@@ -46,6 +51,7 @@ describe("policyDeliveryPresentation", () => {
     expect(policyDeliveryPresentation(delivery("no-configurations")).label).toBe(
       "No configurations",
     );
+    expect(policyDeliveryPresentation(delivery("not-applicable")).label).toBe("Not applicable");
   });
 
   it("explains counts and names the deployment version it judges", () => {
@@ -68,7 +74,7 @@ describe("policyDeliveryPresentation", () => {
       delivery("not-tracked", { scopedDevices: 3, trackedDevices: 0 }),
     );
 
-    expect(untracked.description).toContain("Windows or Android");
+    expect(untracked.description).toContain("Windows, Android or legacy Apple profiles");
     expect(untracked.description).not.toContain("Apple device in scope");
   });
 
@@ -77,13 +83,24 @@ describe("policyDeliveryPresentation", () => {
       delivery("delivered", {
         scopedDevices: 5,
         trackedDevices: 3,
+        legacyDevices: 1,
         deliveredDevices: 3,
         pendingDevices: 0,
       }),
     );
 
-    expect(mixed.description).toContain("Every Apple device in scope (3)");
+    expect(mixed.description).toContain("Every applicable Apple device in scope (3)");
     expect(mixed.description).toContain("Windows and Android devices do not report");
+    expect(mixed.description).toContain("1 Apple device uses legacy profiles");
+  });
+
+  it("explains when another policy provides every kind", () => {
+    const overridden = policyDeliveryPresentation(
+      delivery("not-applicable", { overriddenDevices: 4, pendingDevices: 0 }),
+    );
+
+    expect(overridden.description).toContain("declaration-tracked Apple device");
+    expect(overridden.description).toContain("4 devices do not receive this policy");
   });
 
   it("is honest when a policy has no scoped devices", () => {
@@ -113,10 +130,11 @@ describe("policyScopePresentation", () => {
     expect(scope.users.label).toBe("2 users assigned");
   });
 
-  it("treats missing counts as zero", () => {
+  it("does not invent zero when an older API omits a count", () => {
     const scope = policyScopePresentation({});
 
-    expect(scope.devices.label).toBe("0 devices in scope");
-    expect(scope.users.label).toBe("0 users assigned");
+    expect(scope.devices.label).toBe("Device count not reported");
+    expect(scope.users.label).toBe("User count not reported");
+    expect(scope.devices.description).toContain("does not include");
   });
 });

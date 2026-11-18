@@ -34,7 +34,7 @@ import { routes } from "~/lib/routes";
 const configurationCount = (row: PolicyRow) =>
   row.configurationCount ?? Object.keys(row.configurations ?? {}).length;
 
-function PolicyCountCell(props: { count: number; label: string; description: string }) {
+function PolicyCountCell(props: { count: number | undefined; label: string; description: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -43,7 +43,9 @@ function PolicyCountCell(props: { count: number; label: string; description: str
         aria-label={`${props.label}. ${props.description}`}
         class="inline-flex cursor-default rounded-[5px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
-        <span class={props.count > 0 ? undefined : "text-muted-foreground"}>{props.count}</span>
+        <span class={props.count && props.count > 0 ? undefined : "text-muted-foreground"}>
+          {props.count ?? "—"}
+        </span>
       </TooltipTrigger>
       <TooltipContent class="max-w-[260px]">{props.description}</TooltipContent>
     </Tooltip>
@@ -244,7 +246,7 @@ export default function PoliciesPage() {
 
               return (
                 <PolicyCountCell
-                  count={row.scopedDeviceCount ?? 0}
+                  count={row.scopedDeviceCount}
                   label={scope().devices.label}
                   description={scope().devices.description}
                 />
@@ -264,7 +266,7 @@ export default function PoliciesPage() {
 
               return (
                 <PolicyCountCell
-                  count={row.scopedUserCount ?? 0}
+                  count={row.scopedUserCount}
                   label={scope().users.label}
                   description={scope().users.description}
                 />

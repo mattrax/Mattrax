@@ -2723,7 +2723,12 @@ export const configuration = mysqlTable(
     data: json("data").notNull(),
     hash: shortText("hash").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.kind, table.policyId] })],
+  (table) => [
+    primaryKey({ columns: [table.kind, table.policyId] }),
+    // The policy list counts kinds per policy, which does not use the
+    // kind-leading primary key.
+    index("configuration_policy_idx").on(table.policyId),
+  ],
 );
 
 /** Immutable policy configuration snapshots for history and rollback. */
@@ -2823,7 +2828,11 @@ export const groupPolicy = mysqlTable(
       .notNull()
       .default("include"),
   },
-  (table) => [primaryKey({ columns: [table.groupId, table.policyId] })],
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.policyId] }),
+    // The policy list reads assignments by policy, not by group.
+    index("group_policy_policy_idx").on(table.policyId),
+  ],
 );
 
 /**
@@ -2950,7 +2959,11 @@ export const devicePolicy = mysqlTable(
       .notNull()
       .default("include"),
   },
-  (table) => [primaryKey({ columns: [table.deviceId, table.policyId] })],
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.policyId] }),
+    // The policy list reads direct assignments by policy.
+    index("device_policy_policy_idx").on(table.policyId),
+  ],
 );
 
 /**

@@ -1999,6 +1999,93 @@ describe("enterprise service policy list", () => {
       trackedDevices: 0,
     });
   });
+
+  it("accepts the resolved token of a variable-bearing configuration", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Variables" }),
+    );
+
+    // The saved hash covers the template; the device reports the token of the
+    // substituted payload. They must not be compared byte for byte.
+    db.store.configuration.push({
+      policyId: policy.id,
+      kind: "mttx.apple.declaration.files",
+      data: { note: "${device.name}" },
+      hash: "template-hash",
+    });
+
+    seedDevice(db, tenant.id, "apple-1");
+    db.store.device_policy.push({
+      deviceId: "apple-1",
+      policyId: policy.id,
+      mode: "include",
+    });
+    db.store.device_declaration.push({
+      deviceId: "apple-1",
+      identifier: `${policy.id}:mttx.apple.declaration.files`,
+      declarationType: "configurations",
+      active: true,
+      valid: "valid",
+      serverToken: "resolved-hash",
+      reasons: null,
+      updatedAt: new Date(),
+    });
+
+    const { rows } = await runEffect(service.listPolicies(request(headers), tenant.id));
+
+    expect(rows.find((row) => row.id === policy.id)?.delivery).toMatchObject({
+      state: "delivered",
+      trackedDevices: 1,
+      deliveredDevices: 1,
+      pendingDevices: 0,
+    });
+  });
+
+  it("does not treat legacy-mode Apple devices as declaration-tracked", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Legacy" }),
+    );
+
+    db.store.configuration.push({
+      policyId: policy.id,
+      kind: "mttx.apple.declaration.files",
+      data: { kind: "com.apple.configuration.services.configuration-files" },
+      hash: "current-hash",
+    });
+
+    seedDevice(db, tenant.id, "apple-1");
+    db.store.device_apple.push({
+      deviceId: "apple-1",
+      declarationMode: "legacy",
+    });
+    db.store.device_policy.push({
+      deviceId: "apple-1",
+      policyId: policy.id,
+      mode: "include",
+    });
+
+    const { rows } = await runEffect(service.listPolicies(request(headers), tenant.id));
+
+    expect(rows.find((row) => row.id === policy.id)?.delivery).toMatchObject({
+      state: "not-tracked",
+      scopedDevices: 1,
+      trackedDevices: 0,
+      legacyDevices: 1,
+      pendingDevices: 0,
+    });
+  });
 });
 
 describe("enterprise service effective policy", () => {

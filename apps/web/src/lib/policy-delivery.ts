@@ -21,9 +21,31 @@ export type PolicyDeliveryPresentation = {
 const plural = (count: number, singular: string, pluralForm: string) =>
   `${count} ${count === 1 ? singular : pluralForm}`;
 
-const untrackedNote = (delivery: PolicyDeliveryInfo) =>
-  delivery.scopedDevices > delivery.trackedDevices
-    ? " Windows and Android devices do not report declaration status."
+const untrackedNote = (delivery: PolicyDeliveryInfo) => {
+  const nonApple = delivery.scopedDevices - delivery.trackedDevices - delivery.legacyDevices;
+  const notes: string[] = [];
+
+  if (nonApple > 0) notes.push("Windows and Android devices do not report declaration status.");
+
+  if (delivery.legacyDevices > 0)
+    notes.push(
+      `${plural(
+        delivery.legacyDevices,
+        "Apple device",
+        "Apple devices",
+      )} ${delivery.legacyDevices === 1 ? "uses" : "use"} legacy profiles, which do not report DDM declarations.`,
+    );
+
+  return notes.length > 0 ? ` ${notes.join(" ")}` : "";
+};
+
+const overriddenNote = (delivery: PolicyDeliveryInfo) =>
+  delivery.overriddenDevices > 0
+    ? ` ${plural(
+        delivery.overriddenDevices,
+        "device does",
+        "devices do",
+      )} not receive this policy because another policy provides every kind.`
     : "";
 
 const label: Record<PolicyDeliveryState, string> = {
@@ -31,6 +53,7 @@ const label: Record<PolicyDeliveryState, string> = {
   "no-devices": "No devices",
   "not-tracked": "Not tracked",
   "no-configurations": "No configurations",
+  "not-applicable": "Not applicable",
   pending: "Pending",
   partial: "Partial",
   failed: "Failed",
@@ -42,6 +65,7 @@ const tone: Record<PolicyDeliveryState, PolicyDeliveryTone> = {
   "no-devices": "outline",
   "not-tracked": "subtle",
   "no-configurations": "outline",
+  "not-applicable": "subtle",
   pending: "warning",
   partial: "warning",
   failed: "destructive",
@@ -53,6 +77,7 @@ const dot: Record<PolicyDeliveryState, PolicyDeliveryPresentation["dot"]> = {
   "no-devices": "neutral",
   "not-tracked": "neutral",
   "no-configurations": "neutral",
+  "not-applicable": "neutral",
   pending: "warning",
   partial: "warning",
   failed: "destructive",
@@ -62,6 +87,7 @@ const dot: Record<PolicyDeliveryState, PolicyDeliveryPresentation["dot"]> = {
 const describe = (delivery: PolicyDeliveryInfo): string => {
   const version = delivery.version === null ? "the current version" : `version ${delivery.version}`;
   const untracked = untrackedNote(delivery);
+  const applicableDevices = delivery.trackedDevices - delivery.overriddenDevices;
 
   switch (delivery.state) {
     case "never-deployed":
@@ -69,21 +95,33 @@ const describe = (delivery: PolicyDeliveryInfo): string => {
     case "no-devices":
       return "This policy's assignments match no devices.";
     case "not-tracked":
-      return "This policy only reaches Windows or Android devices. Mattrax does not track per-device declaration status for those platforms.";
+      return `This policy only reaches devices that do not report DDM declaration status (Windows, Android or legacy Apple profiles).${untracked}`;
     case "no-configurations":
-      return `The policy has no Apple configurations to deliver.${untracked}`;
+      return `The policy has no declarable Apple configurations to deliver. Application installs are imperative and do not publish declarations.${untracked}`;
+    case "not-applicable":
+      return `Every declaration-tracked Apple device in scope is provided by a higher-priority policy, so this policy never wins a configuration kind.${overriddenNote(
+        delivery,
+      )}${untracked}`;
     case "pending":
-      return `No Apple device in scope has reported ${version} yet. Devices converge on their next check-in.${untracked}`;
+      return `No applicable Apple device has reported ${version} yet. Devices converge on their next check-in; a configuration the device's OS does not support may never report.${untracked}${overriddenNote(
+        delivery,
+      )}`;
     case "partial":
       return `${delivery.deliveredDevices} of ${plural(
-        delivery.trackedDevices,
+        applicableDevices,
         "Apple device",
         "Apple devices",
-      )} report ${version}; ${delivery.failedDevices} failed and ${delivery.pendingDevices} pending.${untracked}`;
+      )} report ${version}; ${delivery.failedDevices} failed and ${delivery.pendingDevices} pending.${untracked}${overriddenNote(
+        delivery,
+      )}`;
     case "failed":
-      return `No Apple device reports ${version} as delivered; ${delivery.failedDevices} of ${delivery.trackedDevices} report an invalid declaration.${untracked}`;
+      return `No Apple device reports ${version} as delivered; ${delivery.failedDevices} of ${applicableDevices} report an invalid declaration.${untracked}${overriddenNote(
+        delivery,
+      )}`;
     case "delivered":
-      return `Every Apple device in scope (${delivery.trackedDevices}) reports ${version} as valid and active.${untracked}`;
+      return `Every applicable Apple device in scope (${applicableDevices}) reports ${version} as valid and active.${untracked}${overriddenNote(
+        delivery,
+      )}`;
   }
 };
 
@@ -103,9 +141,10 @@ const sortRank: Record<PolicyDeliveryState, number> = {
   pending: 2,
   delivered: 3,
   "no-configurations": 4,
-  "not-tracked": 5,
-  "no-devices": 6,
-  "never-deployed": 7,
+  "not-applicable": 5,
+  "not-tracked": 6,
+  "no-devices": 7,
+  "never-deployed": 8,
 };
 
 export const policyDeliverySortRank = (state: PolicyDeliveryState | undefined) =>
@@ -119,33 +158,37 @@ export const policyDeliverySortRank = (state: PolicyDeliveryState | undefined) =
 export const policyScopePresentation = (counts: { deviceCount?: number; userCount?: number }) => {
   const devices = counts.deviceCount ?? 0;
   const users = counts.userCount ?? 0;
+  const devicesKnown = counts.deviceCount !== undefined;
+  const usersKnown = counts.userCount !== undefined;
 
-  return {
-    label: `${plural(devices, "device", "devices")} in scope, ${plural(
-      users,
-      "user",
-      "users",
-    )} assigned`,
-    description: `${plural(devices, "device", "devices")} are in this policy's assignment scope and ${plural(
-      users,
-      "directory user",
-      "directory users",
-    )} are assigned directly or through a directory group. Direct and group exclusions are applied.`,
-    devices: {
-      label: `${plural(devices, "device", "devices")} in scope`,
-      description: `${plural(
+  const deviceLabel = devicesKnown
+    ? `${plural(devices, "device", "devices")} in scope`
+    : "Device count not reported";
+
+  const userLabel = usersKnown
+    ? `${plural(users, "user", "users")} assigned`
+    : "User count not reported";
+
+  const deviceDescription = devicesKnown
+    ? `${plural(
         devices,
         "device",
         "devices",
-      )} are in this policy's assignment scope. Direct device exclusions and group exclusions are applied.`,
-    },
-    users: {
-      label: `${plural(users, "user", "users")} assigned`,
-      description: `${plural(
+      )} are in this policy's assignment scope. Direct device exclusions and group exclusions are applied.`
+    : "This API response does not include a scoped device count. Refresh after the server is updated.";
+
+  const userDescription = usersKnown
+    ? `${plural(
         users,
         "user",
         "users",
-      )} are assigned directly or through a directory group. User and directory-group exclusions are applied.`,
-    },
+      )} are assigned directly or through a directory group. User and directory-group exclusions are applied.`
+    : "This API response does not include a scoped user count. Refresh after the server is updated.";
+
+  return {
+    label: `${deviceLabel}, ${userLabel.toLowerCase()}`,
+    description: `${deviceDescription} ${userDescription}`,
+    devices: { label: deviceLabel, description: deviceDescription },
+    users: { label: userLabel, description: userDescription },
   };
 };

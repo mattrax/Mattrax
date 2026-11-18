@@ -21,12 +21,17 @@ import { PolicyAssignmentRef } from "./Group.js";
  *
  * - `never-deployed`: no deployment snapshot exists for the policy.
  * - `no-devices`: the policy's assignments resolve to no devices.
- * - `not-tracked`: only Windows or Android devices are in scope.
- * - `no-configurations`: the policy has no Apple configuration kinds to deliver.
- * - `pending`: no Apple device in scope reports the current version yet.
- * - `partial`: some Apple devices report the current version, others do not.
- * - `failed`: no device is fully delivered and at least one report is invalid.
- * - `delivered`: every Apple device in scope reports every current kind valid
+ * - `not-tracked`: only devices without DDM declaration evidence are in scope
+ *   (Windows, Android, or Apple devices on the legacy profile path).
+ * - `no-configurations`: the policy has no Apple declaration kinds to deliver.
+ *   Application installs are imperative and do not publish declarations.
+ * - `not-applicable`: every declarative Apple device in scope has every kind
+ *   provided by a higher-priority policy, so this policy never wins a kind.
+ * - `pending`: a declarative Apple device in scope has no evidence yet.
+ * - `partial`: some applicable Apple devices report the current version.
+ * - `failed`: no device is fully delivered and at least one current report is
+ *   invalid or failed.
+ * - `delivered`: every applicable Apple device reports every current kind valid
  *   and active.
  */
 export const PolicyDeliveryState = Schema.Literals([
@@ -34,6 +39,7 @@ export const PolicyDeliveryState = Schema.Literals([
   "no-devices",
   "not-tracked",
   "no-configurations",
+  "not-applicable",
   "pending",
   "partial",
   "failed",
@@ -50,9 +56,13 @@ export const PolicyDeliveryInfo = Schema.Struct({
   scopedDevices: Schema.Number,
   /** Apple devices whose declaration reports can prove delivery. */
   trackedDevices: Schema.Number,
+  /** Apple devices on the legacy profile path; they do not report DDM. */
+  legacyDevices: Schema.Number,
+  /** Tracked devices where every kind is provided by another policy. */
+  overriddenDevices: Schema.Number,
   deliveredDevices: Schema.Number,
   failedDevices: Schema.Number,
-  /** Tracked devices that are neither delivered nor failed. */
+  /** Applicable tracked devices that are neither delivered nor failed. */
   pendingDevices: Schema.Number,
 });
 

@@ -1,5 +1,11 @@
 import type { PolicyDeliveryInfo, PolicyDeliveryState } from "@mattrax/enterprise-domain";
-import { isLegacyKind, parseConfigurationKind } from "@mattrax/mdm-apple";
+import {
+  configurationDeclarationIdentifier,
+  isDeclarationFailure,
+  isLegacyKind,
+  parseConfigurationKind,
+  splitConfigurationDeclarationIdentifier,
+} from "@mattrax/mdm-apple";
 
 /**
  * Bulk policy scope and delivery derivation for the policy list.
@@ -231,30 +237,45 @@ export type PolicyDeclarationReport = {
   readonly serverToken?: string | null;
 };
 
+export type PolicyDeliveryConfiguration = {
+  readonly kind: string;
+  readonly hash: string;
+  /**
+   * True when the payload contains policy variables. The stored hash is the
+   * template hash while the published declaration token is the resolved hash,
+   * so the two cannot be compared for these configurations.
+   */
+  readonly hasVariables?: boolean;
+};
+
 export type PolicyDeliveryInput = {
   readonly policyId: string;
   /** Latest `policy_deployment.version`, or null when none exists. */
   readonly version: number | null;
   /** Current configuration kinds and their content hashes. */
-  readonly configurations: ReadonlyArray<{ readonly kind: string; readonly hash: string }>;
+  readonly configurations: ReadonlyArray<PolicyDeliveryConfiguration>;
   /** Devices in the policy's scope. */
-  readonly devices: ReadonlyArray<{ readonly id: string; readonly proto: string }>;
+  readonly devices: ReadonlyArray<{
+    readonly id: string;
+    readonly proto: string;
+    readonly declarationMode?: string | null;
+  }>;
   /** Declaration reports for the scoped devices. */
   readonly declarations: ReadonlyArray<PolicyDeclarationReport>;
 };
 
 /**
- * Only Apple kinds are rendered as DDM declarations. A mixed policy can also
- * carry Windows and Android configurations, and an Apple device never reports
- * those.
+ * Only declarable Apple kinds are published as DDM declarations. A mixed policy
+ * can also carry Windows and Android configurations, and applications are
+ * installed imperatively (they never publish a declaration), so none of those
+ * kinds can ever produce delivery evidence.
  */
-const isAppleKind = (kind: string) => {
+const isDeclarableAppleKind = (kind: string) => {
   switch (parseConfigurationKind(kind).type) {
     case "device":
     case "custom":
     case "certificate":
     case "declaration":
-    case "application":
       return true;
     default:
       return false;
@@ -262,25 +283,69 @@ const isAppleKind = (kind: string) => {
 };
 
 /**
+ * Whether a declaration report describes the current configuration content.
+ *
+ * Legacy profile tokens, variable-substituted tokens and reports without a
+ * token cannot be compared to the stored template hash. They fall back to the
+ * reported status. A token that is present and different means the device is
+ * still reporting a previous save.
+ */
+const declarationIsCurrent = (
+  configuration: PolicyDeliveryConfiguration,
+  declaration: PolicyDeclarationReport,
+) => {
+  if (isLegacyKind(configuration.kind) || configuration.hasVariables) return true;
+
+  if (declaration.serverToken == null || declaration.serverToken === "") return true;
+
+  return declaration.serverToken === configuration.hash;
+};
+
+/**
+ * Per-device declaration evidence, indexed by the shared declaration
+ * identifier and by configuration kind. The kind index lets delivery tell
+ * "this policy has not reported yet" apart from "another policy won this kind
+ * on the device", which is the cheap contribution signal used below.
+ */
+type DeviceEvidence = {
+  readonly byIdentifier: Map<string, PolicyDeclarationReport>;
+  readonly byKind: Map<string, Set<string>>;
+};
+
+/**
  * Derive one delivery state for the policy's current configuration.
  *
- * A device counts as delivered only when every current Apple kind has a
- * declaration that is valid and active. For kinds whose declaration token is
- * the content hash (everything except legacy device/custom profiles) the token
- * must also match the current hash, so a device that reported the previous
- * save does not look delivered. Legacy tokens include the device identity and
- * cannot be recomputed without hashing per device, so those kinds fall back to
- * the DDM status alone.
+ * A device counts as delivered only when every current declarable Apple kind
+ * has a declaration that is valid and active. For kinds whose declaration token
+ * is the content hash (everything except legacy device/custom profiles and
+ * variable-bearing payloads) the token must also match the current hash, so a
+ * device that reported the previous save does not look delivered.
+ *
+ * Contribution is inferred from declarations rather than re-running the full
+ * per-device resolver: only one policy wins a configuration kind for a device,
+ * so a declaration for the same kind from another policy means this policy did
+ * not contribute it. A device whose kinds are all provided by other policies is
+ * counted as `overridden` rather than pending forever. A kind with no
+ * declaration from any policy can still be pending because the device has not
+ * checked in, or because the platform/OS does not support that kind; those
+ * cases remain in `pending` and the UI copy says so.
+ *
+ * Apple devices recorded on the legacy profile path never sync DDM
+ * declarations. They are excluded from `trackedDevices` (and counted in
+ * `legacyDevices`) instead of looking pending forever.
  */
 export const derivePolicyDelivery = (input: PolicyDeliveryInput): PolicyDeliveryInfo => {
   const scopedDevices = input.devices.length;
   const appleDevices = input.devices.filter((device) => device.proto === "apple");
-  const trackedDevices = appleDevices.length;
+  const legacyDevices = appleDevices.filter((device) => device.declarationMode === "legacy").length;
+  const trackedDevices = appleDevices.length - legacyDevices;
 
   const results = {
     version: input.version,
     scopedDevices,
     trackedDevices,
+    legacyDevices,
+    overriddenDevices: 0,
     deliveredDevices: 0,
     failedDevices: 0,
     pendingDevices: 0,
@@ -294,64 +359,88 @@ export const derivePolicyDelivery = (input: PolicyDeliveryInput): PolicyDelivery
 
   if (trackedDevices === 0) return state("not-tracked");
 
-  const configurations = input.configurations.filter((row) => isAppleKind(row.kind));
+  const configurations = input.configurations.filter((row) => isDeclarableAppleKind(row.kind));
 
   if (configurations.length === 0) return state("no-configurations");
 
-  const declarationsByDevice = new Map<string, Map<string, PolicyDeclarationReport>>();
+  const evidenceByDevice = new Map<string, DeviceEvidence>();
 
   for (const declaration of input.declarations) {
-    const byIdentifier =
-      declarationsByDevice.get(declaration.deviceId) ?? new Map<string, PolicyDeclarationReport>();
+    const parsed = splitConfigurationDeclarationIdentifier(declaration.identifier);
 
-    byIdentifier.set(declaration.identifier, declaration);
-    declarationsByDevice.set(declaration.deviceId, byIdentifier);
+    if (!parsed.policyId || !parsed.kind) continue;
+
+    const evidence = evidenceByDevice.get(declaration.deviceId) ?? {
+      byIdentifier: new Map<string, PolicyDeclarationReport>(),
+      byKind: new Map<string, Set<string>>(),
+    };
+
+    evidence.byIdentifier.set(declaration.identifier, declaration);
+    const policiesForKind = evidence.byKind.get(parsed.kind) ?? new Set<string>();
+
+    policiesForKind.add(parsed.policyId);
+    evidence.byKind.set(parsed.kind, policiesForKind);
+    evidenceByDevice.set(declaration.deviceId, evidence);
   }
 
   let deliveredDevices = 0;
   let failedDevices = 0;
   let pendingDevices = 0;
+  let overriddenDevices = 0;
 
   for (const device of appleDevices) {
-    const declarations = declarationsByDevice.get(device.id);
+    if (device.declarationMode === "legacy") continue;
+
+    const evidence = evidenceByDevice.get(device.id);
     let failed = false;
     let deliveredKinds = 0;
+    let overriddenKinds = 0;
 
     for (const configuration of configurations) {
-      const declaration = declarations?.get(`${input.policyId}:${configuration.kind}`);
+      const identifier = configurationDeclarationIdentifier(input.policyId, configuration.kind);
+      const declaration = evidence?.byIdentifier.get(identifier);
 
-      if (!declaration) continue;
+      if (!declaration) {
+        // Another policy published this kind for the device, so this policy
+        // cannot have contributed it. No evidence at all stays pending.
+        if (evidence?.byKind.get(configuration.kind)?.size) overriddenKinds++;
 
-      if (declaration.valid.trim().toLowerCase() !== "valid") {
-        failed = true;
         continue;
       }
 
-      if (!declaration.active) continue;
+      const current = declarationIsCurrent(configuration, declaration);
 
-      // A missing token cannot be compared (older status reports), so status
-      // alone decides. A present token that differs is a stale version.
-      if (
-        !isLegacyKind(configuration.kind) &&
-        declaration.serverToken != null &&
-        declaration.serverToken !== "" &&
-        declaration.serverToken !== configuration.hash
-      )
+      if (isDeclarationFailure(declaration.valid)) {
+        // A stale failure from a previous save is not the current state.
+        if (current) failed = true;
+
         continue;
+      }
+
+      // `unknown` and inactive declarations are not evidence of delivery.
+      if (declaration.valid.trim().toLowerCase() !== "valid") continue;
+
+      if (!declaration.active || !current) continue;
 
       deliveredKinds++;
     }
 
     if (failed) failedDevices++;
     else if (deliveredKinds === configurations.length) deliveredDevices++;
+    else if (overriddenKinds === configurations.length) overriddenDevices++;
     else pendingDevices++;
   }
 
   results.deliveredDevices = deliveredDevices;
   results.failedDevices = failedDevices;
   results.pendingDevices = pendingDevices;
+  results.overriddenDevices = overriddenDevices;
 
-  if (deliveredDevices === trackedDevices) return state("delivered");
+  const applicableDevices = trackedDevices - overriddenDevices;
+
+  if (applicableDevices === 0) return state("not-applicable");
+
+  if (deliveredDevices === applicableDevices) return state("delivered");
 
   if (deliveredDevices > 0) return state("partial");
 

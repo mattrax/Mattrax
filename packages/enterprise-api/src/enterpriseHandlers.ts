@@ -48,6 +48,7 @@ import {
   defaultOverviewWidgets,
   defaultErrorCode,
   applicationsInventoryStale,
+  containsPolicyVariables,
   deviceCommandStatusLabel,
   deviceActionUnavailableReason,
   deviceAvailableActions,
@@ -17929,7 +17930,30 @@ export const createEnterpriseService = ({
           activeUserIds,
         });
 
-        const deviceById = new Map(devices.map((device) => [device.id, device]));
+        const appleDeviceIds = devices
+          .filter((device) => device.proto === "apple")
+          .map((device) => device.id);
+
+        const appleDevices = appleDeviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceApple.deviceId,
+                declarationMode: schema.deviceApple.declarationMode,
+              })
+              .from(schema.deviceApple)
+              .where(inArray(schema.deviceApple.deviceId, appleDeviceIds))
+          : [];
+
+        const declarationModeByDevice = new Map(
+          appleDevices.map((device) => [device.deviceId, device.declarationMode]),
+        );
+
+        const deviceById = new Map(
+          devices.map((device) => [
+            device.id,
+            { ...device, declarationMode: declarationModeByDevice.get(device.id) ?? null },
+          ]),
+        );
 
         const appleScopedDeviceIds = new Map<string, Array<string>>();
 
@@ -17938,9 +17962,13 @@ export const createEnterpriseService = ({
 
           if (!scopedDeviceIds) continue;
 
-          const ids = [...scopedDeviceIds].filter(
-            (deviceId) => deviceById.get(deviceId)?.proto === "apple",
-          );
+          const ids = [...scopedDeviceIds].filter((deviceId) => {
+            const device = deviceById.get(deviceId);
+
+            // Legacy Apple devices never report DDM declarations, so there is
+            // no evidence to load or reason about for them.
+            return device?.proto === "apple" && device.declarationMode !== "legacy";
+          });
 
           if (ids.length > 0) appleScopedDeviceIds.set(policyId, ids);
         }
@@ -17968,6 +17996,7 @@ export const createEnterpriseService = ({
                 policyId: schema.configuration.policyId,
                 kind: schema.configuration.kind,
                 hash: schema.configuration.hash,
+                data: schema.configuration.data,
               })
               .from(schema.configuration)
               .where(inArray(schema.configuration.policyId, trackedPolicyIds))
@@ -17982,12 +18011,23 @@ export const createEnterpriseService = ({
           declarationsByDevice.set(declaration.deviceId, list);
         }
 
-        const configurationsByPolicy = new Map<string, Array<{ kind: string; hash: string }>>();
+        const configurationsByPolicy = new Map<
+          string,
+          Array<{ kind: string; hash: string; hasVariables: boolean }>
+        >();
 
         for (const configuration of configurations) {
           const list = configurationsByPolicy.get(configuration.policyId) ?? [];
 
-          list.push({ kind: configuration.kind, hash: configuration.hash });
+          const data = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Json)(configuration.data),
+          );
+
+          list.push({
+            kind: configuration.kind,
+            hash: configuration.hash,
+            hasVariables: data !== undefined && containsPolicyVariables(data),
+          });
           configurationsByPolicy.set(configuration.policyId, list);
         }
 
