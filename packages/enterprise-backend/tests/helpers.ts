@@ -411,6 +411,11 @@ class SelectBuilder {
     return this;
   }
 
+  /** Row locks are a no-op in the fake; the store is single-threaded. */
+  for(_strength: string) {
+    return this;
+  }
+
   offset(count: number) {
     this.offsetCount = count;
 

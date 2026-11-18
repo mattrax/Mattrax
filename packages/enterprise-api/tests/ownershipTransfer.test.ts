@@ -8,6 +8,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
+import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -635,5 +636,206 @@ describe("tenant ownership transfer", () => {
     await expect(
       runEffect(owner.service.previewTenantOwnershipTransfer(request(), { token: "not-a-token" })),
     ).resolves.toEqual({ state: "unknown" });
+  });
+
+  it("rolls back when the target membership disappears after the pre-check", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+    const created = await requestTransfer(owner, tenant.id, target.id);
+
+    const targetContext = makeContext({ db: owner.db, user: target });
+    const originalTransaction = owner.db.transaction;
+
+    // Simulate a concurrent removal between the pre-check and the locked
+    // transaction. The transaction's own read must fail, not demote anyone.
+    owner.db.transaction = (work: any) => {
+      owner.db.store.member = owner.db.store.member.filter(
+        (row: any) => !(row.organizationId === tenant.id && row.userId === target.id),
+      );
+
+      return originalTransaction(work);
+    };
+
+    try {
+      await expect(
+        runEffect(
+          targetContext.service.acceptTenantOwnershipTransfer(request(targetContext.headers), {
+            token: tokenFrom(created.acceptUrl),
+          }),
+        ),
+      ).rejects.toBeInstanceOf(EnterpriseConflict);
+    } finally {
+      owner.db.transaction = originalTransaction;
+    }
+
+    expect(owner.db.store.member.find((row: any) => row.userId === owner.user.id)?.role).toBe(
+      "owner",
+    );
+    expect(owner.db.store.member.find((row: any) => row.userId === target.id)).toBeUndefined();
+    expect(transferRow(owner.db)?.status).toBe("pending");
+    expect(auditActions(owner.db)).not.toContain("member.ownership_transfer_accepted");
+  });
+
+  it("rolls back when the requester stops being an owner after the pre-check", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+    const created = await requestTransfer(owner, tenant.id, target.id);
+
+    const targetContext = makeContext({ db: owner.db, user: target });
+    const originalTransaction = owner.db.transaction;
+
+    // A concurrent role change finishes after the pre-check.
+    owner.db.transaction = (work: any) => {
+      owner.db.store.member.find(
+        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      )!.role = "admin";
+
+      return originalTransaction(work);
+    };
+
+    try {
+      await expect(
+        runEffect(
+          targetContext.service.acceptTenantOwnershipTransfer(request(targetContext.headers), {
+            token: tokenFrom(created.acceptUrl),
+          }),
+        ),
+      ).rejects.toBeInstanceOf(EnterpriseConflict);
+    } finally {
+      owner.db.transaction = originalTransaction;
+    }
+
+    expect(owner.db.store.member.find((row: any) => row.userId === owner.user.id)?.role).toBe(
+      "admin",
+    );
+    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+    expect(transferRow(owner.db)?.status).toBe("pending");
+    expect(auditActions(owner.db)).not.toContain("member.ownership_transfer_accepted");
+  });
+
+  it("expires every stale pending row before inserting a new request", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+    const past = new Date(Date.now() - 60_000);
+
+    for (const id of ["transfer-a", "transfer-b"]) {
+      owner.db.store.tenant_ownership_transfer.push({
+        id,
+        organizationId: tenant.id,
+        requestedByUserId: owner.user.id,
+        targetUserId: target.id,
+        status: "pending",
+        tokenHash: `hash-${id}`,
+        expiresAt: past,
+        acceptedAt: null,
+        cancelledAt: null,
+        createdAt: past,
+        updatedAt: past,
+      });
+    }
+
+    await expect(requestTransfer(owner, tenant.id, target.id)).resolves.toMatchObject({
+      targetUserId: target.id,
+    });
+
+    const rows = owner.db.store.tenant_ownership_transfer;
+    expect(rows.filter((row: any) => row.id === "transfer-a")[0]).toMatchObject({
+      status: "expired",
+    });
+    expect(rows.filter((row: any) => row.id === "transfer-b")[0]).toMatchObject({
+      status: "expired",
+    });
+    expect(rows.filter((row: any) => row.status === "pending")).toHaveLength(1);
+  });
+
+  it("lets a target with a custom role cancel without members.write access", async () => {
+    expect(permissionForMethod("cancelTenantOwnershipTransfer")).toBeUndefined();
+
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+
+    const reader = await runEffect(
+      owner.service.createTenantRole(request(owner.headers), tenant.id, {
+        name: "Tenant reader",
+        permissions: ["tenant.read"],
+      }),
+    );
+
+    owner.db.store.member.find(
+      (row: any) => row.organizationId === tenant.id && row.userId === target.id,
+    )!.customRoleId = reader.id;
+
+    await requestTransfer(owner, tenant.id, target.id);
+
+    const targetContext = makeContext({ db: owner.db, user: target });
+
+    await expect(
+      runEffect(
+        targetContext.service.cancelTenantOwnershipTransfer(
+          request(targetContext.headers),
+          tenant.id,
+        ),
+      ),
+    ).resolves.toEqual({ status: "ok" });
+  });
+
+  it("applies the tenant MFA requirement when accepting", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+    const created = await requestTransfer(owner, tenant.id, target.id);
+
+    owner.db.store.organization.find((row: any) => row.id === tenant.id)!.requireMfa = true;
+
+    const withoutFactor = makeContext({ db: owner.db, user: target });
+
+    await expect(
+      runEffect(
+        withoutFactor.service.acceptTenantOwnershipTransfer(request(withoutFactor.headers), {
+          token: tokenFrom(created.acceptUrl),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    expect(transferRow(owner.db)?.status).toBe("pending");
+    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+
+    const withFactor = makeContext({
+      db: owner.db,
+      user: { ...target, passkeyEnabled: true },
+    });
+
+    await expect(
+      runEffect(
+        withFactor.service.acceptTenantOwnershipTransfer(request(withFactor.headers), {
+          token: tokenFrom(created.acceptUrl),
+        }),
+      ),
+    ).resolves.toEqual({ tenantId: tenant.id });
+
+    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("owner");
+  });
+
+  it("does not report a transfer as valid once the target left", async () => {
+    const owner = makeContext();
+    const tenant = await createTenant(owner, "acme");
+    const { target } = addTarget(owner.db, tenant.id);
+    const created = await requestTransfer(owner, tenant.id, target.id);
+
+    owner.db.store.member = owner.db.store.member.filter(
+      (row: any) => !(row.organizationId === tenant.id && row.userId === target.id),
+    );
+
+    await expect(
+      runEffect(
+        owner.service.previewTenantOwnershipTransfer(request(), {
+          token: tokenFrom(created.acceptUrl),
+        }),
+      ),
+    ).resolves.toMatchObject({ state: "stale" });
   });
 });

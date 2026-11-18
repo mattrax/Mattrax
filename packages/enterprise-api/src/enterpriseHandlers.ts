@@ -1532,6 +1532,15 @@ export const createEnterpriseService = ({
 
   const r2Layer = R2StorageLive(storage);
 
+  /**
+   * A tenant-wide MFA requirement applies to every role, including token-bound
+   * ceremonies such as accepting ownership, which grant owner authority.
+   */
+  const tenantMfaBlocked = (
+    user: { readonly totpEnabled?: boolean | null; readonly passkeyEnabled?: boolean | null },
+    organization: { readonly requireMfa: boolean },
+  ) => !hasMfaFactor(user) && organization.requireMfa;
+
   const requireTenant = (
     request: HttpServerRequest,
     tenantId: string,
@@ -1640,7 +1649,7 @@ export const createEnterpriseService = ({
       // with a borrowed session is after. Account endpoints are not
       // tenant-scoped, so a blocked member can always reach Account settings to
       // enrol a factor.
-      if (!hasMfaFactor(user) && organization.requireMfa)
+      if (tenantMfaBlocked(user, organization))
         return yield* Effect.fail(
           new EnterpriseForbidden({
             message:
@@ -8737,33 +8746,52 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
 
-        const pending = yield* db.query.tenantOwnershipTransfer.findFirst({
-          where: { organizationId: tenantId, status: "pending" },
-        });
+        // Newest first so any duplicate pending rows (a legacy race) are all
+        // closed, and the newest remaining request is the one on display.
+        const pendingRows = yield* db
+          .select({
+            id: schema.tenantOwnershipTransfer.id,
+            requestedByUserId: schema.tenantOwnershipTransfer.requestedByUserId,
+            targetUserId: schema.tenantOwnershipTransfer.targetUserId,
+            createdAt: schema.tenantOwnershipTransfer.createdAt,
+            expiresAt: schema.tenantOwnershipTransfer.expiresAt,
+            acceptedAt: schema.tenantOwnershipTransfer.acceptedAt,
+            cancelledAt: schema.tenantOwnershipTransfer.cancelledAt,
+          })
+          .from(schema.tenantOwnershipTransfer)
+          .where(
+            and(
+              eq(schema.tenantOwnershipTransfer.organizationId, tenantId),
+              eq(schema.tenantOwnershipTransfer.status, "pending"),
+            ),
+          )
+          .orderBy(desc(schema.tenantOwnershipTransfer.createdAt));
 
-        if (!pending) return { transfer: null };
+        if (pendingRows.length === 0) return { transfer: null };
 
         const timestamp = now();
 
         // An expired request is no longer pending and must not block a new
         // one. Its digest stays so the emailed link still previews as expired.
-        if (pending.expiresAt <= timestamp) {
+        for (const expired of pendingRows.filter((row) => row.expiresAt <= timestamp)) {
           yield* db
             .update(schema.tenantOwnershipTransfer)
             .set({ status: "expired", updatedAt: timestamp })
             .where(
               and(
-                eq(schema.tenantOwnershipTransfer.id, pending.id),
+                eq(schema.tenantOwnershipTransfer.id, expired.id),
                 eq(schema.tenantOwnershipTransfer.status, "pending"),
               ),
             );
 
-          yield* audit(ctx, "member.ownership_transfer_expired", "ownership_transfer", pending.id, {
-            targetUserId: pending.targetUserId,
+          yield* audit(ctx, "member.ownership_transfer_expired", "ownership_transfer", expired.id, {
+            targetUserId: expired.targetUserId,
           });
-
-          return { transfer: null };
         }
+
+        const pending = pendingRows.find((row) => row.expiresAt > timestamp);
+
+        if (!pending) return { transfer: null };
 
         const requester = yield* db.query.user.findFirst({
           where: { id: pending.requestedByUserId },
@@ -8832,28 +8860,62 @@ export const createEnterpriseService = ({
         const timestamp = now();
         const expiresAt = new Date(timestamp.getTime() + OWNERSHIP_TRANSFER_TTL_MS);
         const transferId = id();
-        let expiredTransferId: string | undefined;
+        let expiredTransferIds: string[] = [];
 
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            const pending = yield* tx.query.tenantOwnershipTransfer.findFirst({
-              where: { organizationId: tenantId, status: "pending" },
-            });
+            // Serialise requests for this tenant. Without the row lock two
+            // concurrent owners can both observe no pending row and insert.
+            const [organization] = yield* tx
+              .select({ id: schema.organization.id })
+              .from(schema.organization)
+              .where(eq(schema.organization.id, tenantId))
+              .for("update");
 
-            if (pending) {
-              if (pending.expiresAt > timestamp)
+            if (!organization)
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+
+            const pendingRows = yield* tx
+              .select({
+                id: schema.tenantOwnershipTransfer.id,
+                expiresAt: schema.tenantOwnershipTransfer.expiresAt,
+              })
+              .from(schema.tenantOwnershipTransfer)
+              .where(
+                and(
+                  eq(schema.tenantOwnershipTransfer.organizationId, tenantId),
+                  eq(schema.tenantOwnershipTransfer.status, "pending"),
+                ),
+              )
+              .for("update");
+
+            if (pendingRows.some((pending) => pending.expiresAt > timestamp))
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message:
+                    "An ownership transfer is already pending. Cancel it or wait for it to expire.",
+                }),
+              );
+
+            if (pendingRows.length > 0) {
+              const expired = yield* tx
+                .update(schema.tenantOwnershipTransfer)
+                .set({ status: "expired", updatedAt: timestamp })
+                .where(
+                  and(
+                    eq(schema.tenantOwnershipTransfer.organizationId, tenantId),
+                    eq(schema.tenantOwnershipTransfer.status, "pending"),
+                  ),
+                );
+
+              if (expired.affectedRows !== pendingRows.length)
                 return yield* Effect.fail(
                   new EnterpriseConflict({
-                    message:
-                      "An ownership transfer is already pending. Cancel it or wait for it to expire.",
+                    message: "The pending ownership transfer changed. Try again.",
                   }),
                 );
 
-              yield* tx
-                .update(schema.tenantOwnershipTransfer)
-                .set({ status: "expired", updatedAt: timestamp })
-                .where(eq(schema.tenantOwnershipTransfer.id, pending.id));
-              expiredTransferId = pending.id;
+              expiredTransferIds = pendingRows.map((pending) => pending.id);
             }
 
             yield* tx.insert(schema.tenantOwnershipTransfer).values({
@@ -8879,7 +8941,7 @@ export const createEnterpriseService = ({
           idempotencyKey: transferId,
         });
 
-        if (expiredTransferId)
+        for (const expiredTransferId of expiredTransferIds)
           yield* audit(
             ctx,
             "member.ownership_transfer_expired",
@@ -8907,50 +8969,96 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
 
-        const pending = yield* db.query.tenantOwnershipTransfer.findFirst({
-          where: { organizationId: tenantId, status: "pending" },
-        });
-
-        if (!pending)
-          return yield* Effect.fail(
-            new EnterpriseNotFound({ message: "No ownership transfer is pending" }),
-          );
-
-        // Either party can stop the handover, and any owner can intervene.
-        const actor = ownershipTransferCancelActor(pending, {
-          id: ctx.user.id,
-          member: ctx.member,
-        });
-
-        if (!actor)
-          return yield* Effect.fail(
-            new EnterpriseForbidden({
-              message: "Only the requester, the target or a tenant owner can cancel this transfer",
-            }),
-          );
-
         const timestamp = now();
 
-        const cancelled = yield* db
-          .update(schema.tenantOwnershipTransfer)
-          .set({ status: "cancelled", cancelledAt: timestamp, updatedAt: timestamp })
-          .where(
-            and(
-              eq(schema.tenantOwnershipTransfer.id, pending.id),
-              eq(schema.tenantOwnershipTransfer.status, "pending"),
-            ),
-          );
+        const cancelledRows = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            // Lock the tenant so a request and a cancellation for the same
+            // tenant cannot interleave, then lock every pending row.
+            const [organization] = yield* tx
+              .select({ id: schema.organization.id })
+              .from(schema.organization)
+              .where(eq(schema.organization.id, tenantId))
+              .for("update");
 
-        if (cancelled.affectedRows !== 1)
-          return yield* Effect.fail(
-            new EnterpriseConflict({ message: "This ownership transfer is no longer pending" }),
-          );
+            if (!organization)
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
-        yield* audit(ctx, "member.ownership_transfer_cancelled", "ownership_transfer", pending.id, {
-          targetUserId: pending.targetUserId,
-          requestedByUserId: pending.requestedByUserId,
-          actor,
-        });
+            const pendingRows = yield* tx
+              .select({
+                id: schema.tenantOwnershipTransfer.id,
+                requestedByUserId: schema.tenantOwnershipTransfer.requestedByUserId,
+                targetUserId: schema.tenantOwnershipTransfer.targetUserId,
+              })
+              .from(schema.tenantOwnershipTransfer)
+              .where(
+                and(
+                  eq(schema.tenantOwnershipTransfer.organizationId, tenantId),
+                  eq(schema.tenantOwnershipTransfer.status, "pending"),
+                ),
+              )
+              .for("update");
+
+            if (pendingRows.length === 0)
+              return yield* Effect.fail(
+                new EnterpriseNotFound({ message: "No ownership transfer is pending" }),
+              );
+
+            // Either party can stop their own handover, and any owner can
+            // intervene. A legacy duplicate row only blocks rows the actor may
+            // actually end.
+            const cancellable = pendingRows.flatMap((pending) => {
+              const actor = ownershipTransferCancelActor(pending, {
+                id: ctx.user.id,
+                member: ctx.member,
+              });
+
+              return actor ? [{ pending, actor }] : [];
+            });
+
+            if (cancellable.length === 0)
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message:
+                    "Only the requester, the target or a tenant owner can cancel this transfer",
+                }),
+              );
+
+            for (const { pending } of cancellable) {
+              const cancelled = yield* tx
+                .update(schema.tenantOwnershipTransfer)
+                .set({ status: "cancelled", cancelledAt: timestamp, updatedAt: timestamp })
+                .where(
+                  and(
+                    eq(schema.tenantOwnershipTransfer.id, pending.id),
+                    eq(schema.tenantOwnershipTransfer.status, "pending"),
+                  ),
+                );
+
+              if (cancelled.affectedRows !== 1)
+                return yield* Effect.fail(
+                  new EnterpriseConflict({
+                    message: "This ownership transfer is no longer pending",
+                  }),
+                );
+            }
+
+            return cancellable;
+          }),
+        );
+
+        for (const { pending, actor } of cancelledRows)
+          yield* audit(
+            ctx,
+            "member.ownership_transfer_cancelled",
+            "ownership_transfer",
+            pending.id,
+            {
+              targetUserId: pending.targetUserId,
+              requestedByUserId: pending.requestedByUserId,
+              actor,
+            },
+          );
 
         return ok;
       }),
@@ -9042,6 +9150,23 @@ export const createEnterpriseService = ({
             new EnterpriseConflict({ message: "You cannot accept your own ownership transfer" }),
           );
 
+        const organization = yield* db.query.organization.findFirst({
+          where: { id: transfer.organizationId },
+        });
+
+        if (!organization)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+
+        // Accepting grants owner authority, so the same tenant-wide MFA policy
+        // that gates tenant access applies to this token-bound ceremony.
+        if (tenantMfaBlocked(user, organization))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message:
+                "This tenant requires multi-factor authentication. Add a passkey or authenticator app to your account first.",
+            }),
+          );
+
         const targetMember = yield* db.query.member.findFirst({
           where: { organizationId: transfer.organizationId, userId: user.id },
         });
@@ -9086,12 +9211,84 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseConflict({ message: staleReason }));
         }
 
-        // The target is promoted before the requester is demoted, so the
-        // tenant never has zero owners mid-transaction. Clearing the target's
-        // custom role is required: owner authority is built-in only, and a
-        // still-assigned custom role would quietly neutralise the promotion.
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
+            // One lock per tenant serialises request, accept and cancel, and
+            // keeps the owner-count post-condition stable.
+            const [lockedOrganization] = yield* tx
+              .select({ id: schema.organization.id })
+              .from(schema.organization)
+              .where(eq(schema.organization.id, transfer.organizationId))
+              .for("update");
+
+            if (!lockedOrganization)
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+
+            const [current] = yield* tx
+              .select({
+                status: schema.tenantOwnershipTransfer.status,
+                expiresAt: schema.tenantOwnershipTransfer.expiresAt,
+              })
+              .from(schema.tenantOwnershipTransfer)
+              .where(eq(schema.tenantOwnershipTransfer.id, transfer.id))
+              .for("update");
+
+            if (!current || current.status !== "pending")
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "This ownership transfer has already been used",
+                }),
+              );
+
+            if (current.expiresAt <= timestamp)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({ message: "This ownership transfer has expired" }),
+              );
+
+            // Lock both memberships and re-validate them inside the
+            // transaction: rows read before it may already be gone or demoted.
+            const [targetMember] = yield* tx
+              .select({
+                id: schema.member.id,
+                role: schema.member.role,
+                customRoleId: schema.member.customRoleId,
+              })
+              .from(schema.member)
+              .where(
+                and(
+                  eq(schema.member.organizationId, transfer.organizationId),
+                  eq(schema.member.userId, transfer.targetUserId),
+                ),
+              )
+              .for("update");
+
+            if (!targetMember)
+              return yield* Effect.fail(
+                new EnterpriseConflict({ message: "You are no longer a member of this tenant" }),
+              );
+
+            const [requesterMember] = yield* tx
+              .select({
+                id: schema.member.id,
+                role: schema.member.role,
+                customRoleId: schema.member.customRoleId,
+              })
+              .from(schema.member)
+              .where(
+                and(
+                  eq(schema.member.organizationId, transfer.organizationId),
+                  eq(schema.member.userId, transfer.requestedByUserId),
+                ),
+              )
+              .for("update");
+
+            if (!requesterMember || !isBuiltInOwnerMember(requesterMember))
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "The owner who requested this transfer is no longer an owner",
+                }),
+              );
+
             const claimed = yield* tx
               .update(schema.tenantOwnershipTransfer)
               .set({ status: "accepted", acceptedAt: timestamp, updatedAt: timestamp })
@@ -9109,19 +9306,57 @@ export const createEnterpriseService = ({
                 }),
               );
 
-            yield* tx
+            // The target is promoted before the requester is demoted, and both
+            // writes must still affect their membership row. A concurrent
+            // removal aborts the whole transaction.
+            const promoted = yield* tx
               .update(schema.member)
               .set({ role: "owner", customRoleId: null, updatedAt: timestamp })
-              .where(eq(schema.member.id, targetMember!.id));
+              .where(
+                and(
+                  eq(schema.member.id, targetMember.id),
+                  eq(schema.member.organizationId, transfer.organizationId),
+                ),
+              );
 
-            yield* tx
+            if (promoted.affectedRows !== 1)
+              return yield* Effect.fail(
+                new EnterpriseConflict({ message: "You are no longer a member of this tenant" }),
+              );
+
+            const demoted = yield* tx
               .update(schema.member)
               .set({
                 role: OWNERSHIP_TRANSFER_DEMOTED_ROLE,
                 customRoleId: null,
                 updatedAt: timestamp,
               })
-              .where(eq(schema.member.id, requesterMember!.id));
+              .where(
+                and(
+                  eq(schema.member.id, requesterMember.id),
+                  eq(schema.member.organizationId, transfer.organizationId),
+                ),
+              );
+
+            if (demoted.affectedRows !== 1)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "The owner who requested this transfer is no longer a member",
+                }),
+              );
+
+            // Post-condition: never commit a tenant with zero built-in owners.
+            const remainingMembers = yield* tx
+              .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
+              .from(schema.member)
+              .where(eq(schema.member.organizationId, transfer.organizationId));
+
+            if (!remainingMembers.some((member) => isBuiltInOwnerMember(member)))
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "The transfer would leave the tenant without an owner",
+                }),
+              );
           }),
         );
 
@@ -9150,7 +9385,8 @@ export const createEnterpriseService = ({
 
         if (!transfer) return { state: "unknown" as const };
 
-        const state = ownershipTransferPreviewState(transfer);
+        let state: ReturnType<typeof ownershipTransferPreviewState> | "stale" =
+          ownershipTransferPreviewState(transfer);
 
         // A cancelled token reveals nothing beyond its state.
         if (state === "cancelled" || state === "unknown") return { state };
@@ -9160,6 +9396,25 @@ export const createEnterpriseService = ({
         });
 
         if (!organization) return { state: "unknown" as const };
+
+        // A pending token is only actionable while both parties still hold
+        // their expected membership. Otherwise the accept page must not claim
+        // the link is valid.
+        if (state === "valid") {
+          const targetMember = yield* db.query.member.findFirst({
+            where: { organizationId: transfer.organizationId, userId: transfer.targetUserId },
+          });
+
+          const requesterMember = yield* db.query.member.findFirst({
+            where: {
+              organizationId: transfer.organizationId,
+              userId: transfer.requestedByUserId,
+            },
+          });
+
+          if (!targetMember || !requesterMember || !isBuiltInOwnerMember(requesterMember))
+            state = "stale";
+        }
 
         const requester = yield* db.query.user.findFirst({
           where: { id: transfer.requestedByUserId },

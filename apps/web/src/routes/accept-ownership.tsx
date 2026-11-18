@@ -24,6 +24,7 @@ type Stage =
   | "expired"
   | "accepted"
   | "cancelled"
+  | "stale"
   | "signed-out"
   | "unverified"
   | "wrong-account"
@@ -158,6 +159,8 @@ export default function AcceptOwnershipPage() {
 
     if (state === "cancelled") return "cancelled";
 
+    if (state === "stale") return "stale";
+
     if (state === "expired") return "expired";
 
     if (state === "accepted") return "accepted";
@@ -190,6 +193,8 @@ export default function AcceptOwnershipPage() {
         return "Transfer expired";
       case "cancelled":
         return "Transfer cancelled";
+      case "stale":
+        return "Transfer no longer valid";
       case "accepted":
         return "Transfer already accepted";
       case "wrong-account":
@@ -392,6 +397,14 @@ export default function AcceptOwnershipPage() {
               </p>
             </Show>
 
+            <Show when={stage() === "stale"}>
+              <p role="alert" class={feedbackEnter}>
+                This transfer is no longer valid because the target is not a member or the
+                requesting owner no longer holds that role. Ask a tenant owner to start a new
+                transfer.
+              </p>
+            </Show>
+
             <Show when={stage() === "accepted"}>
               <p role="status">
                 This ownership transfer has already been accepted. The tenant's ownership has
@@ -442,6 +455,7 @@ export default function AcceptOwnershipPage() {
                 stage() === "unknown" ||
                 stage() === "expired" ||
                 stage() === "cancelled" ||
+                stage() === "stale" ||
                 stage() === "accepted"
               }
             >

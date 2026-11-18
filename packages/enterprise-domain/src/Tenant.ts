@@ -400,6 +400,7 @@ export const OwnershipTransferPreviewState = Schema.Literals([
   "expired",
   "accepted",
   "cancelled",
+  "stale",
   "unknown",
 ]);
 
