@@ -98,7 +98,7 @@ export const DeviceSearchSort = Schema.Literals([
   "status",
   /** Worst health first when ascending (critical, attention, unknown, healthy). */
   "health",
-  /** Windows activation: activated, not-activated, then unknown. */
+  /** Windows activation: unreported first, then activated, not-activated, unknown. */
   "activation",
 ]);
 

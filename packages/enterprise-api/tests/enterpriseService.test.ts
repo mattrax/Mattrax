@@ -5043,11 +5043,11 @@ describe("Windows activation reporting", () => {
         licenseName: "Windows(R), Professional edition",
         productKeyChannel: "Retail",
         edition: "Microsoft Windows 11 Pro",
-        sampledAt: "2026-11-18T10:00:00.000Z",
+        sampledAt: "2020-01-01T10:00:00.000Z",
       }),
     );
 
-    expect(result).toEqual({ status: "ok", activation: "not-activated" });
+    expect(result).toEqual({ status: "ok", applied: true, activation: "not-activated" });
 
     const row = db.store.device.find((device: any) => device.id === "win-1");
 
@@ -5058,7 +5058,7 @@ describe("Windows activation reporting", () => {
       windowsActivationChannel: "Retail",
       windowsActivationLicenseName: "Windows(R), Professional edition",
     });
-    expect(row.windowsActivationUpdatedAt).toEqual(new Date("2026-11-18T10:00:00.000Z"));
+    expect(row.windowsActivationUpdatedAt).toEqual(new Date("2020-01-01T10:00:00.000Z"));
 
     const detail = await runEffect(service.getDevice(request(headers), tenantId, "win-1"));
 
@@ -5068,7 +5068,7 @@ describe("Windows activation reporting", () => {
       licenseName: "Windows(R), Professional edition",
       productKeyChannel: "Retail",
       edition: "Microsoft Windows 11 Pro",
-      updatedAt: "2026-11-18T10:00:00.000Z",
+      updatedAt: "2020-01-01T10:00:00.000Z",
     });
   });
 
@@ -5093,6 +5093,98 @@ describe("Windows activation reporting", () => {
     );
 
     expect(result.activation).toBe("unknown");
+  });
+
+  it("ignores a sample older than the stored one", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1", windowsActivationStatus: "activated" });
+
+    const row = db.store.device.find((device: any) => device.id === "win-1")!;
+    row.windowsActivationLicenseStatus = 1;
+    row.windowsActivationEdition = "Microsoft Windows 11 Pro";
+    row.windowsActivationUpdatedAt = new Date("2026-01-02T00:00:00.000Z");
+
+    const result = await runEffect(
+      service.reportWindowsActivation(request(await authorization("win-1")), {
+        licenseStatus: 5,
+        edition: "Microsoft Windows 10 Pro",
+        sampledAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    expect(result).toEqual({ status: "ok", applied: false, activation: "activated" });
+    expect(row).toMatchObject({
+      windowsActivationStatus: "activated",
+      windowsActivationLicenseStatus: 1,
+      windowsActivationEdition: "Microsoft Windows 11 Pro",
+    });
+    expect(row.windowsActivationUpdatedAt).toEqual(new Date("2026-01-02T00:00:00.000Z"));
+  });
+
+  it("clamps a future or unstorable sample timestamp to the ingest time", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    const before = Date.now();
+
+    const future = await runEffect(
+      service.reportWindowsActivation(request(await authorization("win-1")), {
+        licenseStatus: 1,
+        sampledAt: "9999-12-31T23:59:59.000Z",
+      }),
+    );
+
+    expect(future.applied).toBe(true);
+
+    const row = db.store.device.find((device: any) => device.id === "win-1")!;
+    // SAFETY: the handler always writes a Date to windowsActivationUpdatedAt.
+    const stored = row.windowsActivationUpdatedAt as Date;
+
+    expect(stored.getTime()).toBeGreaterThanOrEqual(before);
+    expect(stored.getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
+
+    // A clock before MySQL's `datetime` floor (year 1000) is corrupt, not a
+    // reason to fail the report.
+    const ancient = await runEffect(
+      service.reportWindowsActivation(request(await authorization("win-1")), {
+        licenseStatus: 0,
+        sampledAt: "0001-01-01T00:00:00.000Z",
+      }),
+    );
+
+    expect(ancient).toMatchObject({ applied: true, activation: "not-activated" });
+    // SAFETY: the handler always writes a Date to windowsActivationUpdatedAt.
+    const ancientStored = row.windowsActivationUpdatedAt as Date;
+
+    expect(ancientStored.getUTCFullYear()).toBeGreaterThanOrEqual(2020);
+  });
+
+  it("drops fractional, out-of-range and huge licence status values", async () => {
+    const { db, service, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-1" });
+
+    const samples: ReadonlyArray<{ licenseStatus: number; sampledAt: string }> = [
+      { licenseStatus: 1.5, sampledAt: "2020-01-01T00:00:00.000Z" },
+      { licenseStatus: 7, sampledAt: "2020-01-02T00:00:00.000Z" },
+      { licenseStatus: -1, sampledAt: "2020-01-03T00:00:00.000Z" },
+      { licenseStatus: 1e20, sampledAt: "2020-01-04T00:00:00.000Z" },
+    ];
+
+    for (const sample of samples) {
+      const result = await runEffect(
+        service.reportWindowsActivation(request(await authorization("win-1")), sample),
+      );
+
+      expect(result.activation).toBe("unknown");
+
+      const row = db.store.device.find((device: any) => device.id === "win-1")!;
+
+      expect(row.windowsActivationStatus).toBe("unknown");
+      expect(row.windowsActivationLicenseStatus).toBeNull();
+    }
   });
 
   it("rejects a non-Windows device", async () => {
@@ -5150,6 +5242,64 @@ describe("Windows activation reporting", () => {
     const mac = unknown.devices.find((device) => device.id === "mac-1");
 
     expect(mac).toBeUndefined();
+  });
+
+  it("sorts Windows devices by activation", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-unreported" });
+    seedDevice(db, tenantId, { id: "win-not-activated", windowsActivationStatus: "not-activated" });
+    seedDevice(db, tenantId, { id: "win-activated", windowsActivationStatus: "activated" });
+    seedDevice(db, tenantId, { id: "mac-1", proto: "apple" });
+
+    const ascending = await runEffect(
+      service.searchDevices(request(headers), tenantId, {
+        proto: "win",
+        sort: "activation",
+        direction: "asc",
+      }),
+    );
+
+    expect(ascending.devices.map((device) => device.id)).toEqual([
+      "win-unreported",
+      "win-activated",
+      "win-not-activated",
+    ]);
+
+    const descending = await runEffect(
+      service.searchDevices(request(headers), tenantId, {
+        proto: "win",
+        sort: "activation",
+        direction: "desc",
+      }),
+    );
+
+    expect(descending.devices.map((device) => device.id)).toEqual([
+      "win-not-activated",
+      "win-activated",
+      "win-unreported",
+    ]);
+  });
+
+  it("exports Windows activation in the device CSV", async () => {
+    const { db, service, headers, tenantId } = await tenantFor();
+
+    seedDevice(db, tenantId, { id: "win-activated", windowsActivationStatus: "activated" });
+    seedDevice(db, tenantId, { id: "win-unreported" });
+    seedDevice(db, tenantId, { id: "mac-1", proto: "apple" });
+
+    const exported = await runEffect(service.exportDevices(request(headers), tenantId, {}));
+    const lines = exported.csv.trim().split("\r\n");
+    const header = lines[0]!.split(",");
+    const activation = header.indexOf("Activation");
+
+    expect(activation).toBeGreaterThanOrEqual(0);
+
+    const rowFor = (id: string) => lines.find((line) => line.startsWith(`${id},`))!.split(",");
+
+    expect(rowFor("win-activated")[activation]).toBe("Activated");
+    expect(rowFor("win-unreported")[activation]).toBe("Not reported");
+    expect(rowFor("mac-1")[activation]).toBe("");
   });
 
   it("serialises activation on the device row and detail payload", async () => {

@@ -312,6 +312,45 @@ describe("dynamic group materialisation", () => {
     ]);
   });
 
+  it("evaluates Windows activation from the device row", async () => {
+    const db = makeDb();
+
+    seedGroup(db, {
+      rules: rules({ all: [{ field: "activation", op: "eq", value: "not-activated" }] }),
+    });
+    seedDevice(db, "win-unactivated", "org-1", {
+      proto: "win",
+      windowsActivationStatus: "not-activated",
+    });
+    seedDevice(db, "win-activated", "org-1", {
+      proto: "win",
+      windowsActivationStatus: "activated",
+    });
+    seedDevice(db, "win-unreported", "org-1", { proto: "win" });
+    seedDevice(db, "apple-1");
+
+    const notActivated = await runEffect(syncDynamicGroup(db, "org-1", "group-1", { now }));
+
+    expect(notActivated.matched).toBe(1);
+    expect(db.store.group_device).toEqual([
+      { groupId: "group-1", deviceId: "win-unactivated", source: "dynamic" },
+    ]);
+
+    // "unknown" matches a Windows device that has not reported yet. It must
+    // not match an activated device (the regression this guards against: an
+    // omitted snapshot field made every Windows device unknown).
+    db.store.enterprise_group[0].rules = rules({
+      all: [{ field: "activation", op: "eq", value: "unknown" }],
+    });
+
+    const unknown = await runEffect(syncDynamicGroup(db, "org-1", "group-1", { now }));
+
+    expect(unknown.matched).toBe(1);
+    expect(db.store.group_device).toEqual([
+      { groupId: "group-1", deviceId: "win-unreported", source: "dynamic" },
+    ]);
+  });
+
   it("never crosses tenant boundaries", async () => {
     const db = makeDb();
     seedGroup(db);

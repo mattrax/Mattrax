@@ -951,10 +951,17 @@ export default function DeviceDetailPage() {
         label: "Windows activation",
         value:
           row()?.proto === "win" ? (
-            <span class="inline-flex flex-wrap items-center gap-2">
+            <span class="flex flex-col items-start gap-1">
               <Chip tone={activationTone()}>{activationStatusLabel() ?? "Not reported"}</Chip>
-              <Show when={windowsActivation()?.edition}>
-                {(edition) => <span class="text-muted-foreground">{edition()}</span>}
+              <Show when={activationDetail()}>
+                {(detail) => (
+                  <span
+                    class="text-[11px] text-muted-foreground"
+                    title="Installed edition, licence channel and sample time reported by the Windows agent"
+                  >
+                    {detail()}
+                  </span>
+                )}
               </Show>
             </span>
           ) : undefined,
@@ -1034,6 +1041,26 @@ export default function DeviceDetailPage() {
     if (status === "not-activated") return "warning";
 
     return "muted";
+  };
+
+  /**
+   * Supporting detail for the single activation row: the installed edition
+   * (`Win32_OperatingSystem.Caption`), licence channel and sample age. The raw
+   * `LicenseStatus` stays in the API for support rather than being shown as an
+   * unexplained integer.
+   */
+  const activationDetail = () => {
+    const activation = windowsActivation();
+
+    if (!activation) return null;
+
+    const parts = [
+      activation.edition,
+      activation.productKeyChannel,
+      activation.updatedAt ? `updated ${relativeTime(activation.updatedAt)}` : null,
+    ].filter((part): part is string => Boolean(part));
+
+    return parts.length > 0 ? parts.join(" · ") : null;
   };
 
   /**
@@ -1551,27 +1578,6 @@ export default function DeviceDetailPage() {
                         <MetaRow label="Battery health">
                           {row()!.batteryHealth ?? "Not reported"}
                         </MetaRow>
-                        <Show when={row()!.proto === "win"}>
-                          <MetaRow label="Windows activation">
-                            <Chip tone={activationTone()}>
-                              {activationStatusLabel() ?? "Not reported"}
-                            </Chip>
-                          </MetaRow>
-                          <Show when={windowsActivation()?.edition}>
-                            {(edition) => <MetaRow label="Licensed edition">{edition()}</MetaRow>}
-                          </Show>
-                          <Show when={windowsActivation()?.productKeyChannel}>
-                            {(channel) => <MetaRow label="Licence channel">{channel()}</MetaRow>}
-                          </Show>
-                          <Show when={windowsActivation()?.licenseStatus != null}>
-                            <MetaRow label="Licence status (raw)">
-                              {String(windowsActivation()!.licenseStatus)}
-                            </MetaRow>
-                          </Show>
-                          <MetaRow label="Activation updated">
-                            {formatDate(windowsActivation()?.updatedAt)}
-                          </MetaRow>
-                        </Show>
                         <MetaRow label="Model identifier">
                           {row()!.modelIdentifier ?? "Not reported"}
                         </MetaRow>

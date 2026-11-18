@@ -261,17 +261,27 @@ Get-CimInstance SoftwareLicensingProduct |
 ```
 
 The body maps those columns to `licenseStatus`, `licenseName`, `productKeyChannel` and
-`edition`; `sampledAt` is optional and defaults to the ingest time.
+`edition`; `sampledAt` is optional and defaults to the ingest time. A sample older than the
+one already stored is ignored (`applied: false`), and a future clock or a timestamp outside
+MySQL's `datetime` range is clamped to the ingest time so a bad clock cannot break reporting.
+
+**Scope in this repository:** Mattrax ships only the ingestion side of this channel. There
+is no Windows agent installer or MSI in this repository, and no API issues a device token.
+The bearer token is the same HMAC-derived token the Windows script channel expects
+(`scriptAgentToken(deviceId, AUTH_SECRET)`), so whatever installs the agent has to provision
+it. Until an agent posts a sample, a Windows device shows "Not reported" and never matches
+the unactivated filter; nothing in OMA-DM fills this in.
 
 The server keeps the raw `LicenseStatus` (0-6), licence name, product-key channel and the WMI
 edition, and normalises the state: `1` (Licensed) is `activated`; `0` (Unlicensed), the grace
-states (`2`-`4`), `5` (Notification) and `6` (Extended grace) are `not-activated`; a missing or
-unreadable value is `unknown`. Devices without the agent, and every non-Windows platform, have
-no activation state at all rather than an invented "not activated".
+states (`2`-`4`), `5` (Notification) and `6` (Extended grace) are `not-activated`; a missing,
+fractional or out-of-range value is stored as `null` and shown as `unknown`. Devices without
+the agent, and every non-Windows platform, have no activation state at all rather than an
+invented "not activated".
 
-The device page shows the state, licensed edition and channel, and the device list can filter
-and sort by activation (including "not activated"). Without the Windows agent the Windows
-device shows "Not reported" in the inventory and never matches the unactivated filter.
+The device page shows the state, installed edition and channel, and the device list can
+filter and sort by activation (including "not activated"). The raw `LicenseStatus` stays in
+the API for support rather than being shown as an unexplained integer.
 
 ## Limitations
 

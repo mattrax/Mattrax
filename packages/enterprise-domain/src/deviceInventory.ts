@@ -99,6 +99,20 @@ export const WindowsActivationStatus = Schema.Literals(["activated", "not-activa
 export type WindowsActivationStatus = typeof WindowsActivationStatus.Type;
 
 /**
+ * Clamp a reported `LicenseStatus` to the documented 0-6 range.
+ *
+ * The value is persisted raw for support, so a fractional, negative, huge or
+ * non-numeric value becomes `null` instead of reaching an `int` column (MySQL
+ * rounds fractions and errors on out-of-range integers). `null` still maps to
+ * `unknown`, never to "not activated".
+ */
+export const windowsLicenseStatusValue = (value: number | null | undefined): number | null => {
+  if (value === null || value === undefined || !Number.isInteger(value)) return null;
+
+  return value >= 0 && value <= 6 ? value : null;
+};
+
+/**
  * Map a raw `SoftwareLicensingProduct.LicenseStatus` to the stable enum.
  *
  * `1` (Licensed) is the only value Windows reports as activated. `0`
@@ -112,13 +126,11 @@ export type WindowsActivationStatus = typeof WindowsActivationStatus.Type;
 export const windowsActivationStatusFromLicenseStatus = (
   raw: number | null | undefined,
 ): WindowsActivationStatus => {
-  if (raw === 1) return "activated";
+  const value = windowsLicenseStatusValue(raw);
 
-  if (raw === null || raw === undefined || !Number.isInteger(raw)) return "unknown";
+  if (value === null) return "unknown";
 
-  if (raw === 0 || (raw >= 2 && raw <= 6)) return "not-activated";
-
-  return "unknown";
+  return value === 1 ? "activated" : "not-activated";
 };
 
 /**
@@ -145,6 +157,9 @@ export type WindowsActivationReportRequest = typeof WindowsActivationReportReque
 
 export const WindowsActivationReportResponse = Schema.Struct({
   status: Schema.Literal("ok"),
+  /** False when a newer sample (or a concurrent write) was already stored. */
+  applied: Schema.Boolean,
+  /** State stored after the report: the new one, or the existing one if stale. */
   activation: WindowsActivationStatus,
 });
 

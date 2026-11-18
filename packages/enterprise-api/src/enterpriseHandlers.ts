@@ -78,6 +78,7 @@ import {
   policyVariableInfo,
   validateAttributeValue,
   windowsActivationStatusFromLicenseStatus,
+  windowsLicenseStatusValue,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { StripeClientLike } from "@mattrax/effect-stripe";
@@ -105,6 +106,7 @@ import {
   isNull,
   like,
   lt,
+  lte,
   ne,
   notInArray,
   or,
@@ -4379,6 +4381,20 @@ export const createEnterpriseService = ({
     }
   };
 
+  /** Human label for exports; the raw enum stays on the API payload. */
+  const windowsActivationLabel = (status: string | null | undefined): string => {
+    switch (status) {
+      case "activated":
+        return "Activated";
+      case "not-activated":
+        return "Not activated";
+      case "unknown":
+        return "Unknown";
+      default:
+        return "Not reported";
+    }
+  };
+
   const deviceOrderColumn = (sort: DeviceSearchFilters["sort"]): AnyColumn | SQL => {
     switch (sort) {
       case "lastSeenAt":
@@ -4388,8 +4404,10 @@ export const createEnterpriseService = ({
       case "status":
         return schema.device.status;
       case "activation":
-        // Keep the states in administrative order rather than alphabetical.
-        return sql`case ${schema.device.windowsActivationStatus} when 'activated' then 0 when 'not-activated' then 1 else 2 end`;
+        // The stored enum sorts alphabetically into administrative order
+        // (activated, not-activated, unknown). Unreported Windows devices are
+        // null and sort first ascending.
+        return schema.device.windowsActivationStatus;
       default:
         return schema.device.name;
     }
@@ -12478,24 +12496,64 @@ export const createEnterpriseService = ({
           return trimmed ? trimmed.slice(0, 255) : null;
         };
 
+        const receivedAt = now();
         const sampledAt = payload.sampledAt ? new Date(payload.sampledAt) : null;
 
-        const activationStatus = windowsActivationStatusFromLicenseStatus(payload.licenseStatus);
+        // Clamp a future clock to the ingest time, and ignore timestamps MySQL
+        // cannot store (`datetime` starts at year 1000). A bad sample must not
+        // 500 or pin the row in the future.
+        let appliedAt = receivedAt;
 
-        yield* db
+        if (
+          sampledAt &&
+          Number.isFinite(sampledAt.getTime()) &&
+          sampledAt.getUTCFullYear() >= 1000 &&
+          sampledAt < receivedAt
+        )
+          appliedAt = sampledAt;
+
+        const rawLicenseStatus = windowsLicenseStatusValue(payload.licenseStatus);
+
+        const activationStatus = windowsActivationStatusFromLicenseStatus(rawLicenseStatus);
+
+        // Only a sample at or after the stored instant may replace it, so an
+        // out-of-order replay cannot move the row backwards. The comparison
+        // lives in the UPDATE so two concurrent reports cannot race.
+        const updated = yield* db
           .update(schema.device)
           .set({
             windowsActivationStatus: activationStatus,
-            windowsActivationLicenseStatus: payload.licenseStatus ?? null,
+            windowsActivationLicenseStatus: rawLicenseStatus,
             windowsActivationEdition: text(payload.edition),
             windowsActivationChannel: text(payload.productKeyChannel),
             windowsActivationLicenseName: text(payload.licenseName),
-            windowsActivationUpdatedAt:
-              sampledAt && Number.isFinite(sampledAt.getTime()) ? sampledAt : now(),
+            windowsActivationUpdatedAt: appliedAt,
           })
-          .where(eq(schema.device.id, device.id));
+          .where(
+            and(
+              eq(schema.device.id, device.id),
+              or(
+                isNull(schema.device.windowsActivationUpdatedAt),
+                lte(schema.device.windowsActivationUpdatedAt, appliedAt),
+              ),
+            ),
+          );
 
-        return { status: "ok" as const, activation: activationStatus };
+        if (updated.affectedRows === 0) {
+          const [current] = yield* db
+            .select({ status: schema.device.windowsActivationStatus })
+            .from(schema.device)
+            .where(eq(schema.device.id, device.id))
+            .limit(1);
+
+          return {
+            status: "ok" as const,
+            applied: false,
+            activation: current?.status ?? ("unknown" as const),
+          };
+        }
+
+        return { status: "ok" as const, applied: true, activation: activationStatus };
       }),
     deviceAction: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
@@ -16929,7 +16987,7 @@ export const createEnterpriseService = ({
               : row.fileVaultEnabled
                 ? "Enabled"
                 : "Disabled",
-            row.proto === "win" ? (row.windowsActivationStatus ?? "Not reported") : "",
+            row.proto === "win" ? windowsActivationLabel(row.windowsActivationStatus) : "",
             row.batteryHealth,
             capabilityText(
               Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(row.capabilities)),

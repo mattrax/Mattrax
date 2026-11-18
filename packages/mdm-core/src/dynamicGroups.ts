@@ -81,6 +81,7 @@ const deviceSnapshot = (
   lastSeenAt: device.lastSeenAt,
   enrolledAt: device.enrolledAt,
   fileVaultEnabled: device.fileVaultEnabled,
+  windowsActivationStatus: device.windowsActivationStatus,
   applications,
   health: { level: health.level, stale: health.stale },
 });

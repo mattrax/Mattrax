@@ -5,6 +5,7 @@ import {
   normalizeReportedName,
   shouldApplyReportedName,
   windowsActivationStatusFromLicenseStatus,
+  windowsLicenseStatusValue,
 } from "./deviceInventory.ts";
 
 describe("shouldApplyReportedName", () => {
@@ -74,6 +75,17 @@ describe("windowsActivationStatusFromLicenseStatus", () => {
   it("never guesses when the value is missing or out of range", () => {
     for (const raw of [undefined, null, 7, -1, 1.5, Number.NaN])
       expect(windowsActivationStatusFromLicenseStatus(raw)).toBe("unknown");
+  });
+});
+
+describe("windowsLicenseStatusValue", () => {
+  it("keeps only the documented integer 0-6 range", () => {
+    for (const raw of [0, 1, 2, 3, 4, 5, 6]) expect(windowsLicenseStatusValue(raw)).toBe(raw);
+  });
+
+  it("drops fractional, negative, huge and missing values", () => {
+    for (const raw of [undefined, null, 1.5, -1, 7, 1e20, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(windowsLicenseStatusValue(raw)).toBeNull();
   });
 });
 
