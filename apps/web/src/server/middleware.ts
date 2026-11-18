@@ -81,8 +81,11 @@ const isHtml = (response: Response): boolean =>
 /**
  * Server middleware for the file-based HTTP routes.
  *
- * `/api/*` and `/mdm/*` proxy to the API Worker over its `API` service
- * binding; every other request falls through to the page render.
+ * `/api/*`, `/mdm/*` and `/scim/*` proxy to the API Worker over its `API`
+ * service binding. In production those paths are Workers routes on this host
+ * and reach the API directly; the routes here keep local development,
+ * previews and self-hosted deployments working. Every other request falls
+ * through to the page render.
  */
 const oauthMetadata = (url: URL): Response | undefined => {
   const origin = url.origin;

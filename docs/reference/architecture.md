@@ -41,19 +41,23 @@ The domain and service packages follow Cap's Effect layout:
 ## Cloud topology
 
 ```text
-Browser ──► Mattrax web Worker (public)
-              │  /api/*, /mdm/*, /scim/*
-              ▼
-           API Worker (service binding)
-              ├── MySQL via Hyperdrive
-              ├── R2 (application files, backups)
-              ├── Email: Cloudflare Email Sending, or SMTP directly
-              ├── email_outbox (queued transactional mail, drained by cron)
-              └── APNs relay / vendor cert
+Browser/device ──► API Worker (Workers routes: /api/*, /mdm/*, /scim/*)
+Browser ─────────► Mattrax web Worker (Custom Domain: HTML, assets, MCP)
+                      │  /api/*, /mdm/*, /scim/* (dev, preview, self-host)
+                      ▼
+                   API Worker (service binding)
+                      ├── MySQL via Hyperdrive
+                      ├── R2 (application files, backups)
+                      ├── Email: Cloudflare Email Sending, or SMTP directly
+                      ├── email_outbox (queued transactional mail, drained by cron)
+                      └── APNs relay / vendor cert
 ```
 
-The API Worker has no public route. Only the web Worker is exposed, which gives one origin
-for cookies, CSP and WebAuthn.
+Both Workers answer on the same public hostname, so cookies, CSP and WebAuthn keep one
+origin. Workers picks the most specific route, so `/api/*`, `/mdm/*` and `/scim/*` invoke
+the API directly while HTML, assets and MCP stay on the web Worker; SSR reaches the API
+over the `API` service binding. Development, previews and self-hosting keep the web
+Worker's proxy routes.
 
 - The web Worker runs globally (`placement.mode = off`) so assets and HTML render at the
   visitor's nearest edge. The API Worker is pinned to `aws:us-east-1`, close to the hosted

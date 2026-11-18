@@ -39,13 +39,46 @@ const configuredRateLimitBindings = () => {
 };
 
 /**
+ * Where the public website lives. The website Worker owns this hostname as a
+ * Custom Domain; the API Worker takes the paths it owns as Workers routes.
+ */
+const publicOrigin = (() => {
+  try {
+    return new URL(process.env.ORIGIN ?? "https://e.mattrax.app");
+  } catch {
+    return new URL("https://e.mattrax.app");
+  }
+})();
+
+/**
+ * Browser, device and IdP traffic that should skip the website Worker.
+ *
+ * A Custom Domain and a Route can share a hostname: Workers picks the most
+ * specific matching pattern, so these paths invoke the API Worker directly
+ * while every other path still renders on the website Worker. The website
+ * Worker keeps its `/api`, `/mdm` and `/scim` file routes for local
+ * development, previews and self-hosting, and SSR keeps using the `API`
+ * service binding.
+ */
+const publicApiRoutes =
+  publicOrigin.protocol === "https:"
+    ? ["/api/*", "/mdm/*", "/scim/*"].map((path) =>
+        triggers.fetch({
+          pattern: `${publicOrigin.host}${path}`,
+          // Optional for an account with more than one zone that contains this
+          // host.
+          ...(process.env.MATTRAX_ZONE ? { zone: process.env.MATTRAX_ZONE } : {}),
+        }),
+      )
+    : [];
+
+/**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
  *
- * The API Worker stays internal: no `domains` and no zone routes. The web
- * Worker owns the public hostname and proxies /api, /mdm and /scim to this
- * Worker over the `API` service binding. A route or custom domain here would
- * bypass that proxy and expose the API (and its OpenAPI document) directly.
+ * The API Worker owns only the request paths listed in `publicApiRoutes`; it
+ * has no Custom Domain of its own and previews stay private (`previewUrls`).
+ * Everything else reaches it over the website Worker's `API` service binding.
  */
 export const apiWorker = {
   name: "mattrax-api",
@@ -257,7 +290,9 @@ export default defineConfig(({ isPreview }) => {
     // proxy to them over HTTP (service bindings always resolve to the bound
     // Worker's production deployment). Cron triggers are production-only.
     previewUrls: isPreview,
-    triggers: isPreview ? [] : apiWorker.triggers,
+    // Previews are reached over the website Preview's proxy, so public routes
+    // would point at a production hostname that is not part of the preview.
+    triggers: isPreview ? [] : [...apiWorker.triggers, ...publicApiRoutes],
   };
 
   if (!useAppleProfileSigning) return { worker: { ...worker, env: emailProviderEnv } };

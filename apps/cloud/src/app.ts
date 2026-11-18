@@ -103,6 +103,7 @@ import {
   selectMailer,
   createProbeCache,
   clearsSsrShell,
+  withApiSecurityHeaders,
   withClearedSsrShell,
   withSessionPresence,
   credentialExpiryEmail,
@@ -1231,6 +1232,12 @@ export const createApiRuntime = (
       if (clearsSsrShell(request)) response = withClearedSsrShell(response);
 
       if (pathname.startsWith("/api/")) response = withDefaultNoStore(response);
+
+      // /api, /mdm and /scim are published as Workers routes so browser and
+      // device traffic reaches this Worker without the website hop. Those
+      // responses no longer inherit the website's hardening set; apply the
+      // entries that matter for a payload here.
+      response = withApiSecurityHeaders(request, response);
 
       return withRequestId(response, requestId);
     },

@@ -12,6 +12,8 @@ export * from "./mailer.js";
 
 export * from "./observability.js";
 
+export * from "./apiSecurity.js";
+
 export * from "./probeCache.js";
 
 export * from "./rateLimit.js";

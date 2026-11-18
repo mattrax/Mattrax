@@ -5607,6 +5607,14 @@ export const createEnterpriseService = ({
 
         const me = yield* mePayload(user);
 
+        // /api/* is a public Workers route, so a browser can call bootstrap
+        // directly. Only the website Worker consumes the SSR snapshot, and it
+        // reaches the API over the service binding, which does not cross the
+        // Cloudflare edge (no `cf-ray`). Redact the token pair for anything
+        // that arrived through the edge: `session` and `me` are the caller's
+        // own data, but the edge token is internal.
+        const internalRequest = !request.headers["cf-ray"];
+
         // A bearer-token caller has no browser session to snapshot. The web
         // Worker only calls bootstrap with the session cookie, so this is a
         // defensive answer rather than a supported sign-in path.
@@ -5623,7 +5631,7 @@ export const createEnterpriseService = ({
         const boundCookie = cookieValue(request.headers.cookie, sessionCookie);
 
         const signed =
-          authSecret && boundCookie
+          authSecret && boundCookie && internalRequest
             ? yield* signSsrToken(authSecret, {
                 subjectId: user.id,
                 sessionId: session.sessionId,

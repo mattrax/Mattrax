@@ -29,6 +29,9 @@ const SHELL_ROTATING_DELETE_PATTERNS = [
   /^\/api\/v1\/me$/,
 ] as const;
 
+/** PATCH endpoints whose success changes values baked into the shell. */
+const SHELL_ROTATING_PATCH_PATHS = new Set(["/api/v1/me"]);
+
 /** Cookie names owned by `apps/web/src/server/preload.ts`. */
 export const SSR_SHELL_COOKIES = ["__Host-mattrax_ssr", "__Host-mattrax_ssr_rev"] as const;
 
@@ -50,6 +53,11 @@ export const clearsSsrShell = (request: Request): boolean => {
 
   if (request.method === "DELETE")
     return SHELL_ROTATING_DELETE_PATTERNS.some((pattern) => pattern.test(pathname));
+
+  // A profile edit changes `name`, email and `defaultTenantId`, all baked into
+  // the warm shell. The website Worker used to clear it while proxying; direct
+  // /api/* routes mean the API must clear it itself.
+  if (request.method === "PATCH") return SHELL_ROTATING_PATCH_PATHS.has(pathname);
 
   return false;
 };

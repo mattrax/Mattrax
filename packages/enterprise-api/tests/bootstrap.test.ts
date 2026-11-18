@@ -155,6 +155,26 @@ describe("GET /api/v1/bootstrap", () => {
     expect(revision).toMatchObject({ sid: payload.sid, ver: payload.ver });
   });
 
+  it("redacts the SSR snapshot for a request that arrived through the edge", async () => {
+    const context = makeContext();
+
+    const result = await runEffect(
+      context.service.bootstrap(
+        request({ ...context.headers, "cf-ray": "8f2f3c1d0e4a5b6c-PER" }),
+      ),
+    );
+
+    // The browser still receives its own session and shell...
+    expect(result.session?.sessionId).toBe("session-1");
+    expect(result.me.account.id).toBe("user-1");
+
+    // ...but never the token the website Worker keeps for warm renders.
+    expect(result.ssrToken).toBeNull();
+    expect(result.ssrTokenExpiresAt).toBeNull();
+    expect(result.ssrRevision).toBeNull();
+    expect(result.ssrRevisionExpiresAt).toBeNull();
+  });
+
   it("keeps each tenant's permissions scoped to that membership", async () => {
     const context = makeContext();
     const result = await runEffect(context.service.bootstrap(request(context.headers)));

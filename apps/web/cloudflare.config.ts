@@ -10,12 +10,13 @@ export const webWorker = {
   previewUrls: false,
   // Workers Logs + real-time Issues for dashboard and proxy failures.
   observability: { enabled: true, issues: { enabled: true } },
-  // The web Worker is global: it renders the public shell and owns the /api,
-  // /mdm and /scim proxies, while docs and static assets come from the edge
-  // closest to the visitor. Only requests that need it cross to us-east-1,
-  // where the API Worker is pinned in the region nearest the database. Pinning
-  // the web Worker there too would add a transatlantic round trip to every page
-  // load without making the proxy faster than the API hop it already makes.
+  // The web Worker is global: it renders the public shell and keeps the /api,
+  // /mdm and /scim proxy routes for development, previews and self-hosting.
+  // Production publishes those paths as Workers routes on `mattrax-api`, so a
+  // browser or device request skips this Worker entirely; SSR still uses the
+  // `API` service binding. Docs and static assets come from the edge closest
+  // to the visitor, and only requests that need it cross to us-east-1, where
+  // the API Worker is pinned near the database.
   placement: { mode: "off" as const },
   // `robots.txt` and `sitemap.xml` are generated per request so they advertise
   // the origin the visitor actually used; self-hosted, preview and custom

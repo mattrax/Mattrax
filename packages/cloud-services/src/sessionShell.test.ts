@@ -13,6 +13,8 @@ describe("SSR shell invalidation paths", () => {
     expect(clearsSsrShell(request("/api/v1/disableTotp"))).toBe(true);
     expect(clearsSsrShell(request("/api/v1/confirmTotpEnrollment"))).toBe(true);
     expect(clearsSsrShell(request("/api/v1/me", "DELETE"))).toBe(true);
+    expect(clearsSsrShell(request("/api/v1/me", "PATCH"))).toBe(true);
+    expect(clearsSsrShell(request("/api/v1/ME/", "PATCH"))).toBe(true);
   });
 
   it("normalises case and a trailing slash the way the router does", () => {
@@ -26,6 +28,7 @@ describe("SSR shell invalidation paths", () => {
       ["/api/v1/signOut", "GET"],
       ["/api/v1/me", "GET"],
       ["/api/v1/me", "POST"],
+      ["/api/v1/me/extra", "PATCH"],
       ["/api/v1/bootstrap", "GET"],
       ["/api/v1/account/sessions", "GET"],
       ["/api/v1/account/sessions", "DELETE"],
