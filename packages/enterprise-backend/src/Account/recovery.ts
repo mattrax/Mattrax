@@ -98,7 +98,7 @@ const sendEmail = (
  */
 export const recoveryApprovalTenant = (
   db: EnterpriseDb,
-  userId: string,
+  accountId: string,
 ): Effect.Effect<string | null, unknown> =>
   Effect.gen(function* () {
     const memberships = yield* db
@@ -108,7 +108,7 @@ export const recoveryApprovalTenant = (
         customRoleId: schema.member.customRoleId,
       })
       .from(schema.member)
-      .where(eq(schema.member.userId, userId));
+      .where(eq(schema.member.accountId, accountId));
 
     const ownerTenants = memberships
       .filter(isBuiltInOwnerMember)
@@ -119,7 +119,7 @@ export const recoveryApprovalTenant = (
     const colleagues = yield* db
       .select({
         organizationId: schema.member.organizationId,
-        userId: schema.member.userId,
+        accountId: schema.member.accountId,
         role: schema.member.role,
         customRoleId: schema.member.customRoleId,
       })
@@ -127,7 +127,7 @@ export const recoveryApprovalTenant = (
       .where(inArray(schema.member.organizationId, ownerTenants));
 
     const shared = colleagues.find(
-      (member) => member.userId !== userId && isBuiltInOwnerMember(member),
+      (member) => member.accountId !== accountId && isBuiltInOwnerMember(member),
     );
 
     return shared?.organizationId ?? null;
@@ -138,21 +138,21 @@ const ownerRecipients = (db: EnterpriseDb, organizationId: string, excludeUserId
   Effect.gen(function* () {
     const rows = yield* db
       .select({
-        userId: schema.member.userId,
-        email: schema.user.email,
+        accountId: schema.member.accountId,
+        email: schema.account.email,
         role: schema.member.role,
         customRoleId: schema.member.customRoleId,
-        disabled: schema.user.disabled,
-        emailVerified: schema.user.emailVerified,
+        disabled: schema.account.disabled,
+        emailVerified: schema.account.emailVerified,
       })
       .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+      .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
       .where(eq(schema.member.organizationId, organizationId));
 
     return rows
       .filter(
         (row) =>
-          row.userId !== excludeUserId &&
+          row.accountId !== excludeUserId &&
           isBuiltInOwnerMember(row) &&
           !row.disabled &&
           row.emailVerified,
@@ -161,13 +161,13 @@ const ownerRecipients = (db: EnterpriseDb, organizationId: string, excludeUserId
   });
 
 /** Cancel every live ceremony for the account; one live request at a time. */
-const cancelLiveCeremonies = (db: EnterpriseDb, userId: string, at: Date) =>
+const cancelLiveCeremonies = (db: EnterpriseDb, accountId: string, at: Date) =>
   db
     .update(schema.accountRecovery)
     .set({ status: "cancelled", cancelledAt: at, updatedAt: at })
     .where(
       and(
-        eq(schema.accountRecovery.userId, userId),
+        eq(schema.accountRecovery.accountId, accountId),
         inArray(schema.accountRecovery.status, ["pending_proof", "pending_approval", "ready"]),
       ),
     );
@@ -187,7 +187,7 @@ export const requestAccountRecovery = (
 
     if (!email || !email.includes("@")) return { status: "ok" as const };
 
-    const user = yield* deps.db.query.user.findFirst({ where: { email } });
+    const user = yield* deps.db.query.account.findFirst({ where: { email } });
 
     if (!user || user.disabled || !user.emailVerified) return { status: "ok" as const };
 
@@ -201,7 +201,7 @@ export const requestAccountRecovery = (
 
     yield* deps.db.insert(schema.accountRecovery).values({
       id: randomId(),
-      userId: user.id,
+      accountId: user.id,
       email: user.email,
       status: "pending_proof",
       approvalRequired: approvalOrganizationId !== null,
@@ -209,7 +209,7 @@ export const requestAccountRecovery = (
       proofTokenHash: yield* tokenHash(proofToken),
       approvalTokenHash: approvalToken ? yield* tokenHash(approvalToken) : null,
       completionTokenHash: null,
-      approvedByUserId: null,
+      approvedByAccountId: null,
       approvedAt: null,
       completedAt: null,
       cancelledAt: null,
@@ -252,7 +252,7 @@ export const requestAccountRecovery = (
     }
 
     yield* recordAccountAudit(deps.db, {
-      subjectUserId: user.id,
+      subjectAccountId: user.id,
       subjectEmail: user.email,
       action: ACCOUNT_AUDIT.recoveryRequested,
       targetType: "account_recovery",
@@ -334,7 +334,7 @@ const mintCompletion = (
   deps: RecoveryDeps,
   record: {
     readonly id: string;
-    readonly userId: string;
+    readonly accountId: string;
     readonly email: string;
   },
   now: Date,
@@ -375,7 +375,7 @@ export const approveAccountRecovery = (
   input: {
     readonly token: string;
     readonly organizationId: string;
-    readonly approverUserId: string;
+    readonly approverAccountId: string;
   },
 ): Effect.Effect<{ readonly status: "ok" }, InstanceType<typeof RecoveryRejected>> =>
   Effect.gen(function* () {
@@ -402,10 +402,10 @@ export const approveAccountRecovery = (
     )
       return yield* Effect.fail(invalid);
 
-    if (record.userId === input.approverUserId) return yield* Effect.fail(invalid);
+    if (record.accountId === input.approverAccountId) return yield* Effect.fail(invalid);
 
     const approver = yield* deps.db.query.member.findFirst({
-      where: { userId: input.approverUserId, organizationId: input.organizationId },
+      where: { accountId: input.approverAccountId, organizationId: input.organizationId },
     });
 
     if (!approver || !isBuiltInOwnerMember(approver)) return yield* Effect.fail(invalid);
@@ -413,7 +413,7 @@ export const approveAccountRecovery = (
     const approved = yield* deps.db
       .update(schema.accountRecovery)
       .set({
-        approvedByUserId: input.approverUserId,
+        approvedByAccountId: input.approverAccountId,
         approvedAt: now,
         updatedAt: now,
       })
@@ -424,9 +424,9 @@ export const approveAccountRecovery = (
     if (!approved || approved.affectedRows === 0) return yield* Effect.fail(invalid);
 
     yield* recordAccountAudit(deps.db, {
-      subjectUserId: record.userId,
+      subjectAccountId: record.accountId,
       subjectEmail: record.email,
-      actorUserId: input.approverUserId,
+      actorAccountId: input.approverAccountId,
       action: ACCOUNT_AUDIT.recoveryApproved,
       targetType: "account_recovery",
       targetId: record.id,
@@ -485,7 +485,7 @@ export const cancelAccountRecovery = (deps: RecoveryDeps, input: { readonly toke
       .where(eq(schema.accountRecovery.id, record.id));
 
     yield* recordAccountAudit(deps.db, {
-      subjectUserId: record.userId,
+      subjectAccountId: record.accountId,
       subjectEmail: record.email,
       action: ACCOUNT_AUDIT.recoveryCancelled,
       targetType: "account_recovery",
@@ -505,7 +505,7 @@ export const redeemRecoveryToken = (
   db: EnterpriseDb,
   token: string,
   now: Date = new Date(),
-): Effect.Effect<{ readonly userId: string } | undefined, unknown> =>
+): Effect.Effect<{ readonly accountId: string } | undefined, unknown> =>
   Effect.gen(function* () {
     if (!token) return undefined;
 
@@ -524,7 +524,7 @@ export const redeemRecoveryToken = (
     )
       return undefined;
 
-    const user = yield* db.query.user.findFirst({ where: { id: record.userId } });
+    const user = yield* db.query.account.findFirst({ where: { id: record.accountId } });
 
     if (!user || user.disabled) return undefined;
 
@@ -545,9 +545,9 @@ export const redeemRecoveryToken = (
         if (!consumed || consumed.affectedRows === 0) return false;
 
         yield* tx
-          .update(schema.user)
+          .update(schema.account)
           .set({ authRevision: revision, updatedAt: now })
-          .where(eq(schema.user.id, user.id));
+          .where(eq(schema.account.id, user.id));
 
         return true;
       }),
@@ -556,16 +556,16 @@ export const redeemRecoveryToken = (
     if (!redeemed) return undefined;
 
     yield* recordAccountAudit(db, {
-      subjectUserId: user.id,
+      subjectAccountId: user.id,
       subjectEmail: user.email,
       action: ACCOUNT_AUDIT.recoveryCompleted,
       targetType: "account_recovery",
       targetId: record.id,
-      metadata: { approvedByUserId: record.approvedByUserId ?? null },
+      metadata: { approvedByAccountId: record.approvedByAccountId ?? null },
       at: now,
     });
 
-    return { userId: user.id };
+    return { accountId: user.id };
   });
 
 /* -------------------------------------------------------------------------- */
@@ -634,8 +634,8 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
                 }),
               );
 
-            const user = yield* services.db.query.user.findFirst({
-              where: { id: redeemed.userId },
+            const user = yield* services.db.query.account.findFirst({
+              where: { id: redeemed.accountId },
             });
 
             if (!user || user.disabled)

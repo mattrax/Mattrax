@@ -214,18 +214,18 @@ const WEBHOOK_WRITE = new Set([
 ]);
 
 const MEMBER_READ = new Set([
-  "listTenantUsers",
+  "listTenantAccounts",
   "listTenantInvitations",
   "getTenantInvitationOptions",
   "getTenantOwnershipTransfer",
 ]);
 
 const MEMBER_WRITE = new Set([
-  "inviteTenantUser",
+  "inviteTenantAccount",
   "cancelTenantInvitation",
   "resendTenantInvitation",
-  "patchTenantUser",
-  "removeTenantUser",
+  "patchTenantAccount",
+  "removeTenantAccount",
   "requestTenantOwnershipTransfer",
 ]);
 

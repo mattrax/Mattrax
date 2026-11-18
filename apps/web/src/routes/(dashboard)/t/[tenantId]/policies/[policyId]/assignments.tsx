@@ -428,7 +428,7 @@ export default function PolicyAssignmentsPage() {
                     when={assignableUsers().length > 0}
                     fallback={
                       <p class="text-[12.5px] text-muted-foreground">
-                        No directory users yet. Sync a directory provider or invite a member.
+                        No directory users yet. Sync a directory provider to add people.
                       </p>
                     }
                   >

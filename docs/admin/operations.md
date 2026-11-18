@@ -45,15 +45,15 @@ curl "$MATTRAX_URL/api/v1/account/audit/export?format=json" \
 
 The same `action`, `targetType`, `targetId`, `from`, `to`, `limit`, `cursor` and `offset`
 filters apply, and the export is capped at 10,000 rows with `X-Export-Truncated`. A
-tenant owner cannot read another person's account stream: it is keyed by the subject user
-and always filtered by the authenticated account.
+tenant owner cannot read another person's account stream: it is keyed by the subject
+account and always filtered by the authenticated account.
 
 ### Retention
 
 Daily maintenance applies `MAINTENANCE_AUDIT_RETENTION_DAYS` (default 365) to **both**
 audit streams. Set it to `0` to keep audit entries indefinitely.
 
-Account deletion keeps a tombstone: `account_audit_log.subject_user_id` is nulled by the
+Account deletion keeps a tombstone: `account_audit_log.subject_account_id` is nulled by the
 foreign key and the email snapshot stays until retention prunes the row.
 
 ### Data retention

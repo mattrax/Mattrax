@@ -14,7 +14,7 @@ type Role =
 const makeContext = (role: Role = { kind: "built-in", role: "owner" }) => {
   const db = makeDb();
 
-  db.store.user.push({
+  db.store.account.push({
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -40,7 +40,7 @@ const makeContext = (role: Role = { kind: "built-in", role: "owner" }) => {
       name: "Limited",
       description: null,
       permissions: [...role.permissions],
-      createdByUserId: "user-1",
+      createdByAccountId: "user-1",
       createdAt: now,
       updatedAt: now,
     });
@@ -48,7 +48,7 @@ const makeContext = (role: Role = { kind: "built-in", role: "owner" }) => {
   db.store.member.push({
     id: "member-1",
     organizationId: "org-1",
-    userId: "user-1",
+    accountId: "user-1",
     role: role.kind === "built-in" ? role.role : "member",
     customRoleId,
     createdAt: now,
@@ -58,7 +58,7 @@ const makeContext = (role: Role = { kind: "built-in", role: "owner" }) => {
   const auth = {
     requireUser: () =>
       Effect.succeed({
-        user: db.store.user[0],
+        user: db.store.account[0],
       }),
   };
 

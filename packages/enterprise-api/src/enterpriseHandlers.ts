@@ -14,7 +14,7 @@ import {
   BUILT_IN_TENANT_ROLES,
   hasPermission,
   isBuiltInTenantRole,
-  EnterpriseLastTenantUser,
+  EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
   EnterpriseR2FileNotFound,
@@ -217,7 +217,7 @@ import {
   type DeviceActivitySourceKeyset,
 } from "@mattrax/enterprise-backend";
 import {
-  clearTenantUserDirectoryState,
+  clearTenantAccountDirectoryState,
   hasOwnerRole,
   isBuiltInOwnerMember,
   normalizePermissions,
@@ -577,7 +577,7 @@ const expectedClientTags = new Set([
   "EnterpriseBadRequest",
   "EnterpriseConflict",
   "EnterpriseTenantHasMembers",
-  "EnterpriseLastTenantUser",
+  "EnterpriseLastTenantAccount",
   "StepUpRequired",
   "StepUpUnavailable",
 ]);
@@ -662,7 +662,7 @@ const PRODUCT_EVENTS = {
   createDashboard: "dashboard_created",
   createDashboardWidget: "dashboard_widget_created",
   createTenantRole: "role_created",
-  inviteTenantUser: "member_invited",
+  inviteTenantAccount: "member_invited",
   createApiToken: "api_token_created",
   createScimToken: "scim_token_created",
   createWebhookEndpoint: "webhook_created",
@@ -1047,7 +1047,7 @@ const auditEntry = (entry: {
   action: string;
   targetType: string;
   targetId: string | null;
-  actorUserId?: string | null;
+  actorAccountId?: string | null;
   actorEmail?: string | null;
   metadata?: unknown;
   createdAt: Date;
@@ -1056,7 +1056,7 @@ const auditEntry = (entry: {
   action: entry.action,
   targetType: entry.targetType,
   targetId: entry.targetId,
-  actorUserId: entry.actorUserId ?? null,
+  actorAccountId: entry.actorAccountId ?? null,
   actorEmail: entry.actorEmail ?? null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
@@ -1260,15 +1260,15 @@ const ownershipTransferPreviewState = (transfer: { status: string; expiresAt: Da
  * transfer, and any owner can intervene; everyone else is refused.
  */
 const ownershipTransferCancelActor = (
-  pending: { readonly requestedByUserId: string; readonly targetUserId: string },
+  pending: { readonly requestedByAccountId: string; readonly targetAccountId: string },
   caller: {
     readonly id: string;
     readonly member: { readonly role: string; readonly customRoleId?: string | null };
   },
 ) => {
-  if (pending.requestedByUserId === caller.id) return "requester" as const;
+  if (pending.requestedByAccountId === caller.id) return "requester" as const;
 
-  if (pending.targetUserId === caller.id) return "target" as const;
+  if (pending.targetAccountId === caller.id) return "target" as const;
 
   if (isBuiltInOwnerMember(caller.member)) return "owner" as const;
 
@@ -1593,7 +1593,7 @@ export const createEnterpriseService = ({
       }
 
       const member = yield* db.query.member.findFirst({
-        where: { userId: user.id, organizationId: tenantId },
+        where: { accountId: user.id, organizationId: tenantId },
       });
 
       if (!member)
@@ -1684,7 +1684,7 @@ export const createEnterpriseService = ({
       });
 
       return {
-        user,
+        account: user,
         organization,
         member,
         role,
@@ -1784,7 +1784,7 @@ export const createEnterpriseService = ({
     });
 
   const snapshotPolicy = (
-    ctx: { readonly user: { readonly id: string }; readonly organization: { readonly id: string } },
+    ctx: { readonly account: { readonly id: string }; readonly organization: { readonly id: string } },
     policyId: string,
   ) =>
     Effect.gen(function* () {
@@ -1824,7 +1824,7 @@ export const createEnterpriseService = ({
             policyId,
             version,
             snapshot,
-            createdByUserId: ctx.user.id,
+            createdByAccountId: ctx.account.id,
             createdAt: now(),
           });
         });
@@ -1842,7 +1842,7 @@ export const createEnterpriseService = ({
    */
   const setTenantMfaPolicy = (
     ctx: {
-      readonly user: {
+      readonly account: {
         readonly id: string;
         readonly email: string;
         readonly totpEnabled?: boolean | null;
@@ -1868,7 +1868,7 @@ export const createEnterpriseService = ({
   ) =>
     Effect.gen(function* () {
       if (requireMfa && !ctx.organization.requireMfa) {
-        if (!hasMfaFactor(ctx.user))
+        if (!hasMfaFactor(ctx.account))
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message:
@@ -1879,11 +1879,11 @@ export const createEnterpriseService = ({
         const members = yield* db
           .select({
             role: schema.member.role,
-            totpEnabled: schema.user.totpEnabled,
-            passkeyEnabled: schema.user.passkeyEnabled,
+            totpEnabled: schema.account.totpEnabled,
+            passkeyEnabled: schema.account.passkeyEnabled,
           })
           .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
           .where(eq(schema.member.organizationId, ctx.organization.id));
 
         const missing = members.filter((member) => !hasMfaFactor(member)).length;
@@ -1912,7 +1912,7 @@ export const createEnterpriseService = ({
 
   const audit = (
     ctx: {
-      readonly user: { readonly id: string; readonly email: string };
+      readonly account: { readonly id: string; readonly email: string };
       readonly organization: { readonly id: string };
       readonly credential?:
         | { readonly type: "api_token"; readonly id: string; readonly name: string }
@@ -1950,8 +1950,8 @@ export const createEnterpriseService = ({
       yield* db.insert(schema.auditLog).values({
         id: id(),
         organizationId: ctx.organization.id,
-        actorUserId: ctx.user.id,
-        actorEmail: ctx.user.email,
+        actorAccountId: ctx.account.id,
+        actorEmail: ctx.account.email,
         action,
         targetType,
         targetId,
@@ -2004,7 +2004,7 @@ export const createEnterpriseService = ({
     readonly deviceId: string;
     readonly definitions: ReadonlyArray<{ readonly id: string; readonly key: string }>;
     readonly values: Readonly<Record<string, string | null>>;
-    readonly updatedByUserId: string | null;
+    readonly updatedByAccountId: string | null;
   }) =>
     Effect.gen(function* () {
       const byKey = new Map(input.definitions.map((definition) => [definition.key, definition.id]));
@@ -2031,11 +2031,11 @@ export const createEnterpriseService = ({
             attributeId,
             organizationId: input.organizationId,
             value,
-            updatedByUserId: input.updatedByUserId,
+            updatedByAccountId: input.updatedByAccountId,
             updatedAt: timestamp,
           })
           .onDuplicateKeyUpdate({
-            set: { value, updatedByUserId: input.updatedByUserId, updatedAt: timestamp },
+            set: { value, updatedByAccountId: input.updatedByAccountId, updatedAt: timestamp },
           });
       }
 
@@ -2455,7 +2455,7 @@ export const createEnterpriseService = ({
         })
         .from(schema.member)
         .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
-        .where(eq(schema.member.userId, userId));
+        .where(eq(schema.member.accountId, userId));
 
       return yield* Effect.forEach(rows, (row) =>
         Effect.gen(function* () {
@@ -2538,16 +2538,16 @@ export const createEnterpriseService = ({
       if (ids.length === 0) return;
 
       const rows = yield* db
-        .select({ id: schema.member.userId })
-        .from(schema.member)
+        .select({ id: schema.user.id })
+        .from(schema.user)
         .where(
-          and(eq(schema.member.organizationId, tenantId), inArray(schema.member.userId, [...ids])),
+          and(eq(schema.user.organizationId, tenantId), inArray(schema.user.id, [...ids])),
         );
 
       if (rows.length !== new Set(ids).size)
         return yield* Effect.fail(
           new EnterpriseBadRequest({
-            message: "One or more users are not members of this tenant.",
+            message: "One or more users are not in this tenant's directory.",
           }),
         );
     });
@@ -2879,7 +2879,7 @@ export const createEnterpriseService = ({
   /** Reject tenant creation when the account's plan does not allow another. */
   const assertTenantCreationAllowed = (userId: string) =>
     Effect.gen(function* () {
-      const status = yield* tenantLimitForAccount({ db, userId, config: planLimits }).pipe(
+      const status = yield* tenantLimitForAccount({ db, accountId: userId, config: planLimits }).pipe(
         Effect.mapError(() => new EnterpriseDbError({ message: "Could not check plan limits" })),
       );
 
@@ -4486,7 +4486,7 @@ export const createEnterpriseService = ({
 
   /** Account-scoped equivalent: the subject column is the tenant boundary. */
   const loadAccountAuditEntries = (
-    subjectUserId: string,
+    subjectAccountId: string,
     filters: AuditSearchFilters,
     take: number,
   ) =>
@@ -4494,7 +4494,7 @@ export const createEnterpriseService = ({
       const rows = yield* db
         .select()
         .from(schema.accountAuditLog)
-        .where(accountAuditWhere(schema, subjectUserId, filters))
+        .where(accountAuditWhere(schema, subjectAccountId, filters))
         .orderBy(...accountAuditOrder(schema))
         .limit(take)
         .offset(filters.offset);
@@ -5113,7 +5113,7 @@ export const createEnterpriseService = ({
           : null;
 
       const memberships = yield* db.query.member.findMany({
-        where: { userId: user.id },
+        where: { accountId: user.id },
       });
 
       // The requirement is a tenant property and binds every role, so it is
@@ -5138,7 +5138,7 @@ export const createEnterpriseService = ({
       });
 
       return {
-        user: {
+        account: {
           id: user.id,
           name: user.name,
           email: user.email,
@@ -5450,7 +5450,7 @@ export const createEnterpriseService = ({
                 email: user.email,
                 emailVerified: user.emailVerified,
                 authRevision: user.authRevision,
-                user: me.user,
+                account: me.account,
                 tenants: me.tenants,
               }).pipe(Effect.catch(() => Effect.succeed(undefined)))
             : undefined;
@@ -5499,7 +5499,7 @@ export const createEnterpriseService = ({
         // ignored later. Clearing it is always allowed.
         if (defaultTenantId) {
           const membership = yield* db.query.member.findFirst({
-            where: { userId: user.id, organizationId: defaultTenantId },
+            where: { accountId: user.id, organizationId: defaultTenantId },
           });
 
           if (!membership)
@@ -5509,7 +5509,7 @@ export const createEnterpriseService = ({
         }
 
         yield* db
-          .update(schema.user)
+          .update(schema.account)
           .set({
             name: body.name ?? user.name,
             image: body.image === undefined ? user.image : body.image,
@@ -5517,7 +5517,7 @@ export const createEnterpriseService = ({
               body.defaultTenantId === undefined ? user.defaultTenantId : defaultTenantId,
             updatedAt: now(),
           })
-          .where(eq(schema.user.id, user.id));
+          .where(eq(schema.account.id, user.id));
 
         return ok;
       }),
@@ -5529,7 +5529,7 @@ export const createEnterpriseService = ({
         // Remove solo tenants with the account; keep shared tenants for the
         // remaining administrators.
         const memberships = yield* db.query.member.findMany({
-          where: { userId: user.id },
+          where: { accountId: user.id },
         });
 
         for (const membership of memberships) {
@@ -5585,9 +5585,11 @@ export const createEnterpriseService = ({
         }
 
         yield* db.delete(schema.deviceUser).where(eq(schema.deviceUser.userId, user.id));
-        yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
+        yield* db
+          .delete(schema.accountApiToken)
+          .where(eq(schema.accountApiToken.accountId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
-        yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
+        yield* db.delete(schema.member).where(eq(schema.member.accountId, user.id));
 
         // Yielded Auth owns these tables; remove the subject's auth state.
         // In-flight passkey ceremonies carry no subject column and expire on
@@ -5611,13 +5613,13 @@ export const createEnterpriseService = ({
         // the foreign key and the email snapshot remains until retention
         // prunes it, so the deletion itself is still answerable later.
         yield* recordAccountAudit(db, {
-          subjectUserId: user.id,
+          subjectAccountId: user.id,
           subjectEmail: user.email,
           action: ACCOUNT_AUDIT.deleted,
           targetType: "account",
         }).pipe(Effect.catchCause(() => Effect.void));
 
-        yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
+        yield* db.delete(schema.account).where(eq(schema.account.id, user.id));
 
         return ok;
       }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
@@ -5640,7 +5642,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
 
         yield* recordAccountAudit(db, {
-          subjectUserId: user.id,
+          subjectAccountId: user.id,
           subjectEmail: user.email,
           action: ACCOUNT_AUDIT.sessionRevoked,
           targetType: "session",
@@ -5661,12 +5663,12 @@ export const createEnterpriseService = ({
         const { revoked } = yield* revokeAllUserSessions(db, user.id);
 
         yield* db
-          .update(schema.user)
+          .update(schema.account)
           .set({ authRevision: id(), updatedAt: now() })
-          .where(eq(schema.user.id, user.id));
+          .where(eq(schema.account.id, user.id));
 
         yield* recordAccountAudit(db, {
-          subjectUserId: user.id,
+          subjectAccountId: user.id,
           subjectEmail: user.email,
           action: ACCOUNT_AUDIT.sessionsRevoked,
           targetType: "session",
@@ -5849,7 +5851,7 @@ export const createEnterpriseService = ({
         yield* db.insert(schema.member).values({
           id: id(),
           organizationId: tenantId,
-          userId: user.id,
+          accountId: user.id,
           role: "owner",
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -5861,7 +5863,7 @@ export const createEnterpriseService = ({
           updatedAt: timestamp,
         });
         yield* audit(
-          { user, organization: { id: tenantId } },
+          { account: user, organization: { id: tenantId } },
           "tenant.created",
           "tenant",
           tenantId,
@@ -5906,7 +5908,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const result = yield* runTenantBackupForTenant(db, storage, ctx.organization.id, "manual", {
-          actor: { userId: ctx.user.id, email: ctx.user.email },
+          actor: { userId: ctx.account.id, email: ctx.account.email },
         }).pipe(
           Effect.mapError(
             () => new EnterpriseDbError({ message: "Could not record the backup run" }),
@@ -5965,8 +5967,8 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "pinned", {
-          userId: ctx.user.id,
-          email: ctx.user.email,
+          userId: ctx.account.id,
+          email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
         return backupRunInfo(run);
@@ -5977,8 +5979,8 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "default", {
-          userId: ctx.user.id,
-          email: ctx.user.email,
+          userId: ctx.account.id,
+          email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
         return backupRunInfo(run);
@@ -5989,8 +5991,8 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "backup-delete");
 
         yield* deleteBackupRun(db, storage, ctx.organization.id, backupId, {
-          userId: ctx.user.id,
-          email: ctx.user.email,
+          userId: ctx.account.id,
+          email: ctx.account.email,
         }).pipe(Effect.mapError(backupActionFailure));
 
         return ok;
@@ -6004,7 +6006,7 @@ export const createEnterpriseService = ({
 
         return yield* restoreTenantFromBackup(db, storage, ctx.organization, {
           backupId,
-          actor: { userId: ctx.user.id, email: ctx.user.email },
+          actor: { userId: ctx.account.id, email: ctx.account.email },
           confirm: body.confirm ?? "",
         }).pipe(
           Effect.mapError((error) =>
@@ -6423,7 +6425,7 @@ export const createEnterpriseService = ({
             yield* tx.insert(schema.member).values({
               id: id(),
               organizationId: tenantId,
-              userId: user.id,
+              accountId: user.id,
               role: "owner",
               createdAt: timestamp,
               updatedAt: timestamp,
@@ -6472,7 +6474,7 @@ export const createEnterpriseService = ({
                 policyId,
                 version: 1,
                 snapshot: Object.fromEntries(configurations),
-                createdByUserId: user.id,
+                createdByAccountId: user.id,
                 createdAt: timestamp,
               });
             }
@@ -6572,7 +6574,7 @@ export const createEnterpriseService = ({
             yield* tx.insert(schema.auditLog).values({
               id: id(),
               organizationId: tenantId,
-              actorUserId: user.id,
+              actorAccountId: user.id,
               actorEmail: user.email,
               action: "tenant.imported",
               targetType: "tenant",
@@ -6703,7 +6705,7 @@ export const createEnterpriseService = ({
         // journal records each reclaimed resource for support.
         const result = yield* teardownTenant(db, storage, {
           organizationId: ctx.organization.id,
-          actor: { id: ctx.user.id, email: ctx.user.email },
+          actor: { id: ctx.account.id, email: ctx.account.email },
           deps: {
             preflight: () => preflightTeardown(ctx.organization),
             unenrollDevices: teardownDevices,
@@ -7356,7 +7358,7 @@ export const createEnterpriseService = ({
           {
             token: payload.token,
             organizationId: ctx.organization.id,
-            approverUserId: ctx.user.id,
+            approverAccountId: ctx.account.id,
           },
         ).pipe(
           Effect.catchTag("RecoveryRejected", (error) =>
@@ -8044,7 +8046,7 @@ export const createEnterpriseService = ({
           name: name.slice(0, 80),
           description: body.description?.trim().slice(0, 500) || null,
           permissions,
-          createdByUserId: ctx.user.id,
+          createdByAccountId: ctx.account.id,
           createdAt: timestamp,
           updatedAt: timestamp,
         });
@@ -8178,22 +8180,22 @@ export const createEnterpriseService = ({
 
         return ok;
       }),
-    listTenantUsers: (request, tenantId) =>
+    listTenantAccounts: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId);
 
-        const users = yield* db
+        const accounts = yield* db
           .select({
             memberId: schema.member.id,
-            userId: schema.user.id,
-            name: schema.user.name,
-            email: schema.user.email,
+            accountId: schema.account.id,
+            name: schema.account.name,
+            email: schema.account.email,
             role: schema.member.role,
             customRoleId: schema.member.customRoleId,
             createdAt: schema.member.createdAt,
           })
           .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
           .where(eq(schema.member.organizationId, tenantId));
 
         const customRoles = yield* db
@@ -8204,8 +8206,8 @@ export const createEnterpriseService = ({
         const custom = new Map(customRoles.map((role) => [role.id, role.name]));
 
         return {
-          users: users.map((user) => {
-            const builtInName = user.role
+          accounts: accounts.map((account) => {
+            const builtInName = account.role
               .split(",")
               .map((raw) => {
                 const part = raw.trim();
@@ -8215,25 +8217,25 @@ export const createEnterpriseService = ({
               .join(", ");
 
             return {
-              memberId: user.memberId,
-              userId: user.userId,
-              name: user.name,
-              email: user.email,
-              role: user.role,
-              roleId: user.customRoleId ?? null,
-              roleName: user.customRoleId
-                ? (custom.get(user.customRoleId) ?? builtInName)
+              memberId: account.memberId,
+              accountId: account.accountId,
+              name: account.name,
+              email: account.email,
+              role: account.role,
+              roleId: account.customRoleId ?? null,
+              roleName: account.customRoleId
+                ? (custom.get(account.customRoleId) ?? builtInName)
                 : builtInName,
-              roleKind: user.customRoleId ? ("custom" as const) : ("built-in" as const),
-              createdAt: iso(user.createdAt),
+              roleKind: account.customRoleId ? ("custom" as const) : ("built-in" as const),
+              createdAt: iso(account.createdAt),
             };
           }),
         };
       }),
-    inviteTenantUser: (request, tenantId, payload) =>
+    inviteTenantAccount: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const { user } = ctx;
+        const { account: user } = ctx;
 
         const body: {
           email: string;
@@ -8300,9 +8302,9 @@ export const createEnterpriseService = ({
         // A tenant email address can only have one membership. Compare
         // case-insensitively because older rows were not normalised at write.
         const tenantMembers = yield* db
-          .select({ email: schema.user.email })
+          .select({ email: schema.account.email })
           .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+          .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
           .where(eq(schema.member.organizationId, tenantId));
 
         if (
@@ -8420,7 +8422,7 @@ export const createEnterpriseService = ({
 
         if (invitation.status === "accepted") {
           const member = yield* db.query.member.findFirst({
-            where: { userId: user.id, organizationId: invitation.organizationId },
+            where: { accountId: user.id, organizationId: invitation.organizationId },
           });
 
           if (member) return { tenantId: invitation.organizationId, alreadyMember: true };
@@ -8498,7 +8500,7 @@ export const createEnterpriseService = ({
         const assignedCustomRoleId = roleFallback ? null : (customRole?.id ?? null);
 
         const existing = yield* db.query.member.findFirst({
-          where: { userId: user.id, organizationId: invitation.organizationId },
+          where: { accountId: user.id, organizationId: invitation.organizationId },
         });
 
         const siblings = yield* db
@@ -8536,7 +8538,7 @@ export const createEnterpriseService = ({
               yield* tx.insert(schema.member).ignore().values({
                 id: id(),
                 organizationId: invitation.organizationId,
-                userId: user.id,
+                accountId: user.id,
                 role,
                 customRoleId: assignedCustomRoleId,
                 createdAt: acceptedAt,
@@ -8560,7 +8562,7 @@ export const createEnterpriseService = ({
         if (roleFallback) Object.assign(joinedAudit, { roleFallback: "member" });
 
         yield* audit(
-          { user, organization: { id: invitation.organizationId } },
+          { account: user, organization: { id: invitation.organizationId } },
           "member.joined",
           "user",
           user.id,
@@ -8650,9 +8652,9 @@ export const createEnterpriseService = ({
 
         const inviters = inviterIds.length
           ? yield* db
-              .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-              .from(schema.user)
-              .where(inArray(schema.user.id, inviterIds))
+              .select({ id: schema.account.id, name: schema.account.name, email: schema.account.email })
+              .from(schema.account)
+              .where(inArray(schema.account.id, inviterIds))
           : [];
 
         const inviterById = new Map(inviters.map((inviter) => [inviter.id, inviter]));
@@ -8800,8 +8802,8 @@ export const createEnterpriseService = ({
         const pendingRows = yield* db
           .select({
             id: schema.tenantOwnershipTransfer.id,
-            requestedByUserId: schema.tenantOwnershipTransfer.requestedByUserId,
-            targetUserId: schema.tenantOwnershipTransfer.targetUserId,
+            requestedByAccountId: schema.tenantOwnershipTransfer.requestedByAccountId,
+            targetAccountId: schema.tenantOwnershipTransfer.targetAccountId,
             createdAt: schema.tenantOwnershipTransfer.createdAt,
             expiresAt: schema.tenantOwnershipTransfer.expiresAt,
             acceptedAt: schema.tenantOwnershipTransfer.acceptedAt,
@@ -8834,7 +8836,7 @@ export const createEnterpriseService = ({
             );
 
           yield* audit(ctx, "member.ownership_transfer_expired", "ownership_transfer", expired.id, {
-            targetUserId: expired.targetUserId,
+            targetAccountId: expired.targetAccountId,
           });
         }
 
@@ -8842,11 +8844,11 @@ export const createEnterpriseService = ({
 
         if (!pending) return { transfer: null };
 
-        const requester = yield* db.query.user.findFirst({
-          where: { id: pending.requestedByUserId },
+        const requester = yield* db.query.account.findFirst({
+          where: { id: pending.requestedByAccountId },
         });
 
-        const target = yield* db.query.user.findFirst({ where: { id: pending.targetUserId } });
+        const target = yield* db.query.account.findFirst({ where: { id: pending.targetAccountId } });
 
         if (!requester || !target) return { transfer: null };
 
@@ -8874,34 +8876,34 @@ export const createEnterpriseService = ({
             new EnterpriseForbidden({ message: "Only a tenant owner can transfer ownership" }),
           );
 
-        const targetUserId = payload.targetUserId.trim();
+        const targetAccountId = payload.targetAccountId.trim();
 
-        if (!targetUserId)
+        if (!targetAccountId)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Choose a member to take over ownership" }),
           );
 
-        if (targetUserId === ctx.user.id)
+        if (targetAccountId === ctx.account.id)
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "You already own this tenant" }),
           );
 
         const targetMember = yield* db.query.member.findFirst({
-          where: { organizationId: tenantId, userId: targetUserId },
+          where: { organizationId: tenantId, accountId: targetAccountId },
         });
 
         if (!targetMember)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
 
         if (isBuiltInOwnerMember(targetMember))
           return yield* Effect.fail(
             new EnterpriseConflict({ message: "That member is already a tenant owner" }),
           );
 
-        const targetUser = yield* db.query.user.findFirst({ where: { id: targetUserId } });
+        const targetUser = yield* db.query.account.findFirst({ where: { id: targetAccountId } });
 
         if (!targetUser)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
 
         const rawToken = newOneTimeToken();
         const tokenHash = yield* oneTimeTokenHash(rawToken);
@@ -8970,8 +8972,8 @@ export const createEnterpriseService = ({
             yield* tx.insert(schema.tenantOwnershipTransfer).values({
               id: transferId,
               organizationId: tenantId,
-              requestedByUserId: ctx.user.id,
-              targetUserId,
+              requestedByAccountId: ctx.account.id,
+              targetAccountId,
               status: "pending",
               tokenHash,
               expiresAt,
@@ -8983,7 +8985,7 @@ export const createEnterpriseService = ({
           }),
         );
 
-        const emailSent = yield* sendOwnershipTransferEmail(ctx.organization, ctx.user.name, {
+        const emailSent = yield* sendOwnershipTransferEmail(ctx.organization, ctx.account.name, {
           email: targetUser.email,
           acceptUrl,
           expiresAt,
@@ -9000,7 +9002,7 @@ export const createEnterpriseService = ({
           );
 
         yield* audit(ctx, "member.ownership_transfer_requested", "ownership_transfer", transferId, {
-          targetUserId,
+          targetAccountId,
           targetEmail: targetUser.email,
           expiresAt: iso(expiresAt),
           emailSent,
@@ -9008,7 +9010,7 @@ export const createEnterpriseService = ({
 
         return {
           id: transferId,
-          targetUserId,
+          targetAccountId,
           acceptUrl,
           expiresAt: iso(expiresAt),
           emailSent,
@@ -9036,8 +9038,8 @@ export const createEnterpriseService = ({
             const pendingRows = yield* tx
               .select({
                 id: schema.tenantOwnershipTransfer.id,
-                requestedByUserId: schema.tenantOwnershipTransfer.requestedByUserId,
-                targetUserId: schema.tenantOwnershipTransfer.targetUserId,
+                requestedByAccountId: schema.tenantOwnershipTransfer.requestedByAccountId,
+                targetAccountId: schema.tenantOwnershipTransfer.targetAccountId,
               })
               .from(schema.tenantOwnershipTransfer)
               .where(
@@ -9058,7 +9060,7 @@ export const createEnterpriseService = ({
             // actually end.
             const cancellable = pendingRows.flatMap((pending) => {
               const actor = ownershipTransferCancelActor(pending, {
-                id: ctx.user.id,
+                id: ctx.account.id,
                 member: ctx.member,
               });
 
@@ -9103,8 +9105,8 @@ export const createEnterpriseService = ({
             "ownership_transfer",
             pending.id,
             {
-              targetUserId: pending.targetUserId,
-              requestedByUserId: pending.requestedByUserId,
+              targetAccountId: pending.targetAccountId,
+              requestedByAccountId: pending.requestedByAccountId,
               actor,
             },
           );
@@ -9173,11 +9175,11 @@ export const createEnterpriseService = ({
             );
 
           yield* audit(
-            { user, organization: { id: transfer.organizationId } },
+            { account: user, organization: { id: transfer.organizationId } },
             "member.ownership_transfer_expired",
             "ownership_transfer",
             transfer.id,
-            { targetUserId: transfer.targetUserId },
+            { targetAccountId: transfer.targetAccountId },
           );
 
           return yield* Effect.fail(
@@ -9185,7 +9187,7 @@ export const createEnterpriseService = ({
           );
         }
 
-        if (transfer.targetUserId !== user.id)
+        if (transfer.targetAccountId !== user.id)
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Sign in with the account this transfer was sent to",
@@ -9194,7 +9196,7 @@ export const createEnterpriseService = ({
 
         // Defensive: the request path refuses self-transfers, but a direct row
         // must never let one owner "accept" their own handover.
-        if (transfer.requestedByUserId === user.id)
+        if (transfer.requestedByAccountId === user.id)
           return yield* Effect.fail(
             new EnterpriseConflict({ message: "You cannot accept your own ownership transfer" }),
           );
@@ -9217,11 +9219,14 @@ export const createEnterpriseService = ({
           );
 
         const targetMember = yield* db.query.member.findFirst({
-          where: { organizationId: transfer.organizationId, userId: user.id },
+          where: { organizationId: transfer.organizationId, accountId: user.id },
         });
 
         const requesterMember = yield* db.query.member.findFirst({
-          where: { organizationId: transfer.organizationId, userId: transfer.requestedByUserId },
+          where: {
+            organizationId: transfer.organizationId,
+            accountId: transfer.requestedByAccountId,
+          },
         });
 
         // A stale request is closed rather than applied: the target must still
@@ -9245,13 +9250,13 @@ export const createEnterpriseService = ({
             );
 
           yield* audit(
-            { user, organization: { id: transfer.organizationId } },
+            { account: user, organization: { id: transfer.organizationId } },
             "member.ownership_transfer_cancelled",
             "ownership_transfer",
             transfer.id,
             {
-              targetUserId: transfer.targetUserId,
-              requestedByUserId: transfer.requestedByUserId,
+              targetAccountId: transfer.targetAccountId,
+              requestedByAccountId: transfer.requestedByAccountId,
               actor: "system",
               reason: staleReason,
             },
@@ -9306,7 +9311,7 @@ export const createEnterpriseService = ({
               .where(
                 and(
                   eq(schema.member.organizationId, transfer.organizationId),
-                  eq(schema.member.userId, transfer.targetUserId),
+                  eq(schema.member.accountId, transfer.targetAccountId),
                 ),
               )
               .for("update");
@@ -9326,7 +9331,7 @@ export const createEnterpriseService = ({
               .where(
                 and(
                   eq(schema.member.organizationId, transfer.organizationId),
-                  eq(schema.member.userId, transfer.requestedByUserId),
+                  eq(schema.member.accountId, transfer.requestedByAccountId),
                 ),
               )
               .for("update");
@@ -9410,14 +9415,14 @@ export const createEnterpriseService = ({
         );
 
         yield* audit(
-          { user, organization: { id: transfer.organizationId } },
+          { account: user, organization: { id: transfer.organizationId } },
           "member.ownership_transfer_accepted",
           "tenant",
           transfer.organizationId,
           {
             transferId: transfer.id,
-            fromUserId: transfer.requestedByUserId,
-            toUserId: transfer.targetUserId,
+            fromUserId: transfer.requestedByAccountId,
+            toUserId: transfer.targetAccountId,
             previousTargetRole: targetMember!.role,
             previousTargetRoleId: targetMember!.customRoleId ?? null,
             requesterRole: OWNERSHIP_TRANSFER_DEMOTED_ROLE,
@@ -9451,13 +9456,16 @@ export const createEnterpriseService = ({
         // the link is valid.
         if (state === "valid") {
           const targetMember = yield* db.query.member.findFirst({
-            where: { organizationId: transfer.organizationId, userId: transfer.targetUserId },
+            where: {
+              organizationId: transfer.organizationId,
+              accountId: transfer.targetAccountId,
+            },
           });
 
           const requesterMember = yield* db.query.member.findFirst({
             where: {
               organizationId: transfer.organizationId,
-              userId: transfer.requestedByUserId,
+              accountId: transfer.requestedByAccountId,
             },
           });
 
@@ -9465,11 +9473,11 @@ export const createEnterpriseService = ({
             state = "stale";
         }
 
-        const requester = yield* db.query.user.findFirst({
-          where: { id: transfer.requestedByUserId },
+        const requester = yield* db.query.account.findFirst({
+          where: { id: transfer.requestedByAccountId },
         });
 
-        const target = yield* db.query.user.findFirst({ where: { id: transfer.targetUserId } });
+        const target = yield* db.query.account.findFirst({ where: { id: transfer.targetAccountId } });
 
         return {
           state,
@@ -9537,7 +9545,7 @@ export const createEnterpriseService = ({
           })
           .where(eq(schema.invitation.id, invitation.id));
 
-        const emailSent = yield* sendInvitationEmail(ctx.organization, ctx.user.name, {
+        const emailSent = yield* sendInvitationEmail(ctx.organization, ctx.account.name, {
           email: invitation.email,
           roleName: roleLabel,
           inviteUrl,
@@ -9560,16 +9568,16 @@ export const createEnterpriseService = ({
           emailSent,
         };
       }),
-    patchTenantUser: (request, tenantId, memberId, payload) =>
+    patchTenantAccount: (request, tenantId, accountId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const member = yield* db.query.member.findFirst({
-          where: { id: memberId, organizationId: tenantId },
+          where: { organizationId: tenantId, accountId },
         });
 
         if (!member)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
         const body: { role?: string; roleId?: string | null } = payload;
         const selectingCustomRole = body.roleId !== undefined && body.roleId !== null;
 
@@ -9641,8 +9649,8 @@ export const createEnterpriseService = ({
             customRoleId: customRole?.id ?? null,
             updatedAt: now(),
           })
-          .where(eq(schema.member.id, memberId));
-        const roleAudit = { memberId, role };
+          .where(eq(schema.member.id, member.id));
+        const roleAudit = { memberId: member.id, role };
 
         if (customRole)
           Object.assign(roleAudit, {
@@ -9651,11 +9659,11 @@ export const createEnterpriseService = ({
             permissionCeiling: "actor",
           });
 
-        yield* audit(ctx, "member.role_changed", "user", member.userId, roleAudit);
+        yield* audit(ctx, "member.role_changed", "user", member.accountId, roleAudit);
 
         return ok;
       }),
-    removeTenantUser: (request, tenantId, memberId) =>
+    removeTenantAccount: (request, tenantId, accountId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const count = yield* memberCount(tenantId);
@@ -9663,19 +9671,19 @@ export const createEnterpriseService = ({
         if (count <= 1)
           return yield* Effect.fail(
             diagnoseError(
-              new EnterpriseLastTenantUser({
+              new EnterpriseLastTenantAccount({
                 message: "Cannot remove the last tenant user; delete the tenant instead",
               }),
-              { code: "last_tenant_user" },
+              { code: "last_tenant_account" },
             ),
           );
 
         const member = yield* db.query.member.findFirst({
-          where: { id: memberId, organizationId: tenantId },
+          where: { organizationId: tenantId, accountId },
         });
 
         if (!member)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant account not found" }));
 
         if (isBuiltInOwnerMember(member)) {
           // Removing an owner is an owner-level action even when other owners
@@ -9691,18 +9699,11 @@ export const createEnterpriseService = ({
             );
         }
 
-        const linkedDevices = yield* db
-          .select({ deviceId: schema.deviceUser.deviceId })
-          .from(schema.deviceUser)
-          .where(
-            and(
-              eq(schema.deviceUser.organizationId, tenantId),
-              eq(schema.deviceUser.userId, member.userId),
-            ),
-          );
+        const targetAccount = yield* db.query.account.findFirst({
+          where: { id: member.accountId },
+        });
 
-        const targetUser = yield* db.query.user.findFirst({ where: { id: member.userId } });
-        const targetEmail = targetUser?.email.trim().toLowerCase();
+        const targetEmail = targetAccount?.email.trim().toLowerCase();
 
         const pendingInvitations = targetEmail
           ? yield* db
@@ -9723,28 +9724,20 @@ export const createEnterpriseService = ({
               .set({ status: "canceled", tokenHash: null, updatedAt: now() })
               .where(eq(schema.invitation.id, invitation.id));
 
-        // The membership and its tenant-scoped grants go together: directory
-        // groups still apply policies, and the SSO identity row would keep
-        // pointing at a user who is no longer a member.
+        // The membership and its SSO link go together. Directory users are a
+        // separate identity: their device links and user policies belong to the
+        // person, not to dashboard access, so removing an administrator leaves
+        // them untouched.
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.delete(schema.member).where(eq(schema.member.id, memberId));
-            // A removed member must not keep granting user-assigned policies.
-            yield* tx
-              .delete(schema.deviceUser)
-              .where(
-                and(
-                  eq(schema.deviceUser.organizationId, tenantId),
-                  eq(schema.deviceUser.userId, member.userId),
-                ),
-              );
-            yield* clearTenantUserDirectoryState(tx, tenantId, member.userId);
+            yield* tx.delete(schema.member).where(eq(schema.member.id, member.id));
+            yield* clearTenantAccountDirectoryState(tx, tenantId, member.accountId);
           }),
         );
-        yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
-        yield* refreshDevicePolicies(tenantId, [
-          ...new Set(linkedDevices.map((device) => device.deviceId)),
-        ]);
+
+        yield* audit(ctx, "member.removed", "account", member.accountId, {
+          memberId: member.id,
+        });
 
         return ok;
       }),
@@ -10859,7 +10852,7 @@ export const createEnterpriseService = ({
           deviceId: device.id,
           definitions,
           values: finalValues,
-          updatedByUserId: ctx.user.id,
+          updatedByAccountId: ctx.account.id,
         });
 
         yield* audit(ctx, "device.attributes_updated", "device", device.id, {
@@ -10937,7 +10930,7 @@ export const createEnterpriseService = ({
             deviceId,
             definitions,
             values: row.values,
-            updatedByUserId: ctx.user.id,
+            updatedByAccountId: ctx.account.id,
           });
 
           const writtenKeys = Object.entries(row.values)
@@ -12265,7 +12258,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const result = yield* createScript(db, ctx.organization.id, ctx.user.id, payload, now());
+        const result = yield* createScript(db, ctx.organization.id, ctx.account.id, payload, now());
 
         if (!("id" in result))
           return yield* Effect.fail(
@@ -12385,7 +12378,7 @@ export const createEnterpriseService = ({
           ctx.organization.id,
           script,
           payload ?? {},
-          ctx.user.id,
+          ctx.account.id,
           now(),
         );
 
@@ -14370,7 +14363,7 @@ export const createEnterpriseService = ({
             id: deployment.id,
             version: deployment.version,
             createdAt: iso(deployment.createdAt),
-            createdByUserId: deployment.createdByUserId,
+            createdByAccountId: deployment.createdByAccountId,
           })),
         };
       }),
@@ -14391,7 +14384,6 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Policy deployment not found" }),
           );
-        yield* db.delete(schema.configuration).where(eq(schema.configuration.policyId, policyId));
 
         const snapshot = Option.getOrElse(
           Schema.decodeUnknownOption(Schema.JsonObject)(deployment.snapshot),
@@ -14542,9 +14534,12 @@ export const createEnterpriseService = ({
               .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
               .from(schema.user)
               .where(
-                inArray(
-                  schema.user.id,
-                  userLinks.map((link) => link.userId),
+                and(
+                  eq(schema.user.organizationId, ctx.organization.id),
+                  inArray(
+                    schema.user.id,
+                    userLinks.map((link) => link.userId),
+                  ),
                 ),
               )
           : [];
@@ -14855,14 +14850,12 @@ export const createEnterpriseService = ({
             id: schema.user.id,
             name: schema.user.name,
             email: schema.user.email,
-            emailVerified: schema.user.emailVerified,
+            externalId: schema.user.externalId,
             disabled: schema.user.disabled,
             source: schema.user.source,
-            role: schema.member.role,
           })
-          .from(schema.member)
-          .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-          .where(eq(schema.member.organizationId, ctx.organization.id));
+          .from(schema.user)
+          .where(eq(schema.user.organizationId, ctx.organization.id));
 
         const groups = yield* db
           .select({
@@ -14889,17 +14882,7 @@ export const createEnterpriseService = ({
         const countsByGroup = new Map(counts.map((row) => [row.groupId, Number(row.value)]));
 
         return {
-          users: userRows
-            .map((row) => ({
-              id: row.id,
-              name: row.name,
-              email: row.email,
-              emailVerified: row.emailVerified,
-              disabled: row.disabled,
-              role: row.role,
-              source: row.source === "graph" ? ("entra" as const) : row.source,
-            }))
-            .sort((left, right) => left.name.localeCompare(right.name)),
+          users: userRows.sort((left, right) => left.name.localeCompare(right.name)),
           groups: groups
             .map((group) => ({
               ...group,
@@ -14917,17 +14900,11 @@ export const createEnterpriseService = ({
           .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
           .from(schema.deviceUser)
           .innerJoin(schema.user, eq(schema.user.id, schema.deviceUser.userId))
-          .innerJoin(
-            schema.member,
-            and(
-              eq(schema.member.userId, schema.deviceUser.userId),
-              eq(schema.member.organizationId, ctx.organization.id),
-            ),
-          )
           .where(
             and(
               eq(schema.deviceUser.organizationId, ctx.organization.id),
               eq(schema.deviceUser.deviceId, deviceId),
+              eq(schema.user.organizationId, ctx.organization.id),
               eq(schema.user.disabled, false),
             ),
           )
@@ -14977,17 +14954,11 @@ export const createEnterpriseService = ({
           .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
           .from(schema.deviceUser)
           .innerJoin(schema.user, eq(schema.user.id, schema.deviceUser.userId))
-          .innerJoin(
-            schema.member,
-            and(
-              eq(schema.member.userId, schema.deviceUser.userId),
-              eq(schema.member.organizationId, ctx.organization.id),
-            ),
-          )
           .where(
             and(
               eq(schema.deviceUser.organizationId, ctx.organization.id),
               eq(schema.deviceUser.deviceId, deviceId),
+              eq(schema.user.organizationId, ctx.organization.id),
               eq(schema.user.disabled, false),
             ),
           )
@@ -16185,21 +16156,41 @@ export const createEnterpriseService = ({
               .limit(limit)
           : [];
 
-        // Member names and addresses are the same data `listDirectory` gates
-        // behind `members.read`; tenant-level read must not bypass it.
-        const users = hasPermission(ctx.role.permissions, "members.read")
+        // Both administrator accounts and directory people are gated by
+        // `members.read`; tenant-level read must not bypass it.
+        const canReadPeople = hasPermission(ctx.role.permissions, "members.read");
+
+        const accounts = canReadPeople
+          ? yield* db
+              .select({
+                id: schema.account.id,
+                name: schema.account.name,
+                email: schema.account.email,
+                role: schema.member.role,
+              })
+              .from(schema.member)
+              .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
+              .where(
+                and(
+                  eq(schema.member.organizationId, ctx.organization.id),
+                  or(like(schema.account.name, pattern), like(schema.account.email, pattern)),
+                ),
+              )
+              .orderBy(asc(schema.account.name), asc(schema.account.id))
+              .limit(limit)
+          : [];
+
+        const directoryUsers = canReadPeople
           ? yield* db
               .select({
                 id: schema.user.id,
                 name: schema.user.name,
                 email: schema.user.email,
-                role: schema.member.role,
               })
-              .from(schema.member)
-              .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
+              .from(schema.user)
               .where(
                 and(
-                  eq(schema.member.organizationId, ctx.organization.id),
+                  eq(schema.user.organizationId, ctx.organization.id),
                   or(like(schema.user.name, pattern), like(schema.user.email, pattern)),
                 ),
               )
@@ -16283,7 +16274,8 @@ export const createEnterpriseService = ({
             ...devices.map((row) => rowDevice(row, undefined, androidByDevice.get(row.id))),
             ...groups.map((row: EnterpriseGroup) => rowGroup(row)),
             ...(yield* Effect.all(policies.map((row) => rowPolicy(row)))),
-            ...users,
+            ...accounts,
+            ...directoryUsers,
             ...applications.map((row) => ({
               id: row.id,
               name: row.name,
@@ -16590,7 +16582,7 @@ export const createEnterpriseService = ({
           name: name.slice(0, 120),
           description: body.description?.trim().slice(0, 2000) || null,
           isDefault: existing.length === 0,
-          createdByUserId: ctx.user.id,
+          createdByAccountId: ctx.account.id,
           createdAt: timestamp,
           updatedAt: timestamp,
         });
@@ -17870,14 +17862,13 @@ export const createEnterpriseService = ({
           ? yield* db
               .select({ id: schema.user.id })
               .from(schema.user)
-              .innerJoin(
-                schema.member,
+              .where(
                 and(
-                  eq(schema.member.userId, schema.user.id),
-                  eq(schema.member.organizationId, ctx.organization.id),
+                  eq(schema.user.organizationId, ctx.organization.id),
+                  eq(schema.user.disabled, false),
+                  inArray(schema.user.id, assignedUserIds),
                 ),
               )
-              .where(and(eq(schema.user.disabled, false), inArray(schema.user.id, assignedUserIds)))
           : [];
 
         const activeUserIds = new Set(activeUsers.map((row) => row.id));
@@ -18097,7 +18088,7 @@ export const createEnterpriseService = ({
 
         return yield* billing.summary({
           organizationId: ctx.organization.id,
-          userId: ctx.user.id,
+          accountId: ctx.account.id,
         });
       }),
     billingPortal: (request, tenantId, payload) =>
@@ -18162,7 +18153,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const existing = yield* db.query.user.findFirst({ where: { email: address } });
+        const existing = yield* db.query.account.findFirst({ where: { email: address } });
 
         if (existing)
           return yield* Effect.fail(
@@ -18411,18 +18402,18 @@ export const createEnterpriseService = ({
               );
             // A revision change makes every outstanding session stale.
             yield* tx
-              .update(schema.user)
+              .update(schema.account)
               .set({
                 authRevision: revision,
                 passkeyEnabled: otherPasskey.length > 0,
                 updatedAt: now(),
               })
-              .where(eq(schema.user.id, user.id));
+              .where(eq(schema.account.id, user.id));
           }),
         );
 
         yield* recordAccountAudit(db, {
-          subjectUserId: user.id,
+          subjectAccountId: user.id,
           subjectEmail: user.email,
           action: ACCOUNT_AUDIT.passkeyRemoved,
           targetType: "passkey",
@@ -18956,14 +18947,14 @@ export const enterpriseHandlers = (
         service.deleteTenantRole(request, params.tenantId, params.roleId),
       ),
     )
-    .handle("listTenantUsers", ({ request, params }) =>
+    .handle("listTenantAccounts", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.listTenantUsers(request, params.tenantId),
+        service.listTenantAccounts(request, params.tenantId),
       ),
     )
-    .handle("inviteTenantUser", ({ request, params, payload }) =>
+    .handle("inviteTenantAccount", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.inviteTenantUser(request, params.tenantId, payload),
+        service.inviteTenantAccount(request, params.tenantId, payload),
       ),
     )
     .handle("acceptInvitation", ({ request, payload }) =>
@@ -19017,14 +19008,14 @@ export const enterpriseHandlers = (
         service.previewTenantOwnershipTransfer(request, query),
       ),
     )
-    .handle("patchTenantUser", ({ request, params, payload }) =>
+    .handle("patchTenantAccount", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.patchTenantUser(request, params.tenantId, params.memberId, payload),
+        service.patchTenantAccount(request, params.tenantId, params.accountId, payload),
       ),
     )
-    .handle("removeTenantUser", ({ request, params }) =>
+    .handle("removeTenantAccount", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.removeTenantUser(request, params.tenantId, params.memberId),
+        service.removeTenantAccount(request, params.tenantId, params.accountId),
       ),
     )
     .handle("getEnrollment", ({ request, params, query }) =>

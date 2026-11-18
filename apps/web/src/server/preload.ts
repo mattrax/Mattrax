@@ -219,7 +219,7 @@ export async function preloadSession(
 
     if (
       payload?.tenants &&
-      payload.user.emailVerified &&
+      payload.account.emailVerified &&
       revision !== undefined &&
       revision.sid === payload.sid &&
       revision.ver === payload.ver &&
@@ -237,7 +237,7 @@ export async function preloadSession(
             email: payload.email,
             emailVerified: payload.emailVerified,
           },
-          me: { user: payload.user, tenants: payload.tenants.map(restoreTenant) },
+          me: { account: payload.account, tenants: payload.tenants.map(restoreTenant) },
         } satisfies PreloadedSessionData,
       };
     }

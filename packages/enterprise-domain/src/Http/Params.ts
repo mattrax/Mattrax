@@ -11,7 +11,7 @@ export const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 
 export const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 
-export const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
+export const TenantAccountParam = { tenantId: Schema.String, accountId: Schema.String };
 
 export const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 

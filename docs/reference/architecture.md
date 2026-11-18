@@ -109,7 +109,7 @@ The container uses the same application code with Node entry points instead of W
 ## Tenancy and auth
 
 - Tenants are rows with isolated data and branding.
-- Membership is `(user, tenant, role)`.
+- Membership is `(account, tenant, role)`.
 - Session cookie `__Host-mattrax_session`.
 - Bearer tokens `mtx_...`, hashed at rest, scoped and optionally tenant-bound.
 - Step-up grants are bound to account, session and action.
@@ -136,7 +136,9 @@ requires re-sealing; there is no online re-wrap.
 
 Core tables:
 
-- `organization` (tenant), `user`, `member`, `invitation`.
+- `organization` (tenant), `account`, `user`, `member`, `invitation`. Accounts are
+  dashboard administrators; users are tenant-scoped directory people used for policy
+  scoping and the MDM user channel. See [Accounts and users](/reference/identity-model).
 - `device` (identity, management name, physical name, the cross-platform inventory
   columns, Windows security/join state and the applied OMA-URI delivery set),
   `device_apple` (policy delivery mode, ADE awaiting-setup/configured state, Return to
@@ -174,7 +176,7 @@ Core tables:
 - `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
   and `email_outbox` (one row per transactional message, claimed and retried by the
   cron with exponential backoff and a permanent-failure audit entry).
-- `account_audit_log` (account-scoped audit, nullable `subject_user_id` so the deletion
+- `account_audit_log` (account-scoped audit, nullable `subject_account_id` so the deletion
   record survives), `account_session_context` (client descriptor per session id),
   `account_email_change` (single-use confirm/cancel token digests) and `account_recovery`
   (proof/approval/completion token digests for break-glass recovery).

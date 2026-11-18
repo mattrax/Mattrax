@@ -281,14 +281,15 @@ const shouldExpose = (path: string) => {
 
   if (path.includes("/answers")) return false;
 
-  // Credentials, secret material and member administration are not part of
-  // the consent grant an MCP client receives, even when the signed-in user
+  // Credentials, secret material and administrator management are not part of
+  // the consent grant an MCP client receives, even when the signed-in account
   // happens to hold the underlying permission.
   for (const blocked of [
     "/scim-tokens",
     "/webhooks",
     "/roles",
     "/invitations",
+    "/accounts",
     "/members",
     "/abm",
     "/vpp",
@@ -304,7 +305,7 @@ const shouldExpose = (path: string) => {
 const buildTools = (authorization: string, me: MeResponse) => {
   const listTenants = Tool.make("list_tenants", {
     description:
-      "List the signed-in account, its tenants, and the role the user holds in each. Call this first, then pass a tenantId to other tools.",
+      "List the signed-in account, its tenants, and the role the account holds in each. Call this first, then pass a tenantId to other tools.",
     success: Schema.Unknown,
   })
     .annotate(Tool.Readonly, true)
@@ -526,7 +527,7 @@ const mcpLayer = (authorization: string, me: MeResponse) => {
     path: "/mcp",
     protocols: [McpProtocol.v2026_07_28],
     instructions:
-      "Mattrax manages Apple, Windows and Android fleets. Start with list_tenants to discover tenant ids. Use query_data for structured fleet/software filters, search for cross-entity lookups, and the generated tools for the rest of the dashboard API (devices, groups, policies, applications, dashboards, settings). Call get_openapi when you need request details for a generated tool. Every tool is scoped to the signed-in user's tenant membership. Account settings are intentionally not exposed.",
+      "Mattrax manages Apple, Windows and Android fleets. Start with list_tenants to discover tenant ids. Use query_data for structured fleet/software filters, search for cross-entity lookups, and the generated tools for the rest of the dashboard API (devices, groups, policies, applications, dashboards, settings). Call get_openapi when you need request details for a generated tool. Every tool is scoped to the signed-in account's tenant membership. Account settings are intentionally not exposed.",
     registrations,
   });
 };

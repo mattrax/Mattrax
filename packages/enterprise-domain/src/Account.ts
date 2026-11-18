@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { AuditLogEntry } from "./Audit.js";
 import { AuditSearchResponse } from "./Audit.js";
 import { NullableString } from "./Errors.js";
-import { UserInfo } from "./Tenant.js";
+import { AccountInfo } from "./Tenant.js";
 
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 
@@ -65,7 +65,7 @@ export const UpdateMeRequest = Schema.Struct({
 export type UpdateMeRequest = typeof UpdateMeRequest.Type;
 
 
-export const AuthUser = UserInfo;
+export const AuthUser = AccountInfo;
 
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
 

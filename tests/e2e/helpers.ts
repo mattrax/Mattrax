@@ -462,6 +462,55 @@ export async function stepUpGrant(page: Page, action: string): Promise<string> {
   }, action);
 }
 
+type ScimRequest = {
+  readonly method?: string;
+  readonly data?: unknown;
+  readonly headers?: Record<string, string>;
+};
+
+/**
+ * Mint a tenant SCIM credential through the dashboard API and return a client
+ * that speaks SCIM with it. SCIM provisions directory people only: they never
+ * receive a dashboard account, membership or role.
+ */
+export async function createScimClient(page: Page, tenantId: string) {
+  const grant = await stepUpGrant(page, "scim-token-create");
+
+  const credentials = await page.evaluate(
+    async ({ tenantId, grant }) => {
+      const response = await fetch(`/api/v1/tenants/${tenantId}/scim-tokens`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-effect-auth-csrf": "1",
+          "x-mattrax-step-up": grant,
+        },
+        body: JSON.stringify({ name: "Browser test" }),
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const body: { token: string; baseUrl: string } = await response.json();
+
+      return body;
+    },
+    { tenantId, grant },
+  );
+
+  const scim = (path: string, init?: ScimRequest) =>
+    page.request.fetch(`${credentials.baseUrl}${path}`, {
+      method: init?.method,
+      data: init?.data,
+      headers: {
+        authorization: `Bearer ${credentials.token}`,
+        "content-type": "application/scim+json",
+        ...init?.headers,
+      },
+    });
+
+  return { ...credentials, scim };
+}
+
 type VirtualAuthenticator = { client: any; authenticatorId: string };
 
 const authenticators = new WeakMap<Page, VirtualAuthenticator>();

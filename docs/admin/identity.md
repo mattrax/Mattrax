@@ -18,7 +18,7 @@ groups.
 1. Open **Settings → Identity → Single sign-on**.
 2. Enter the Entra tenant id.
 3. Enable SSO.
-4. Choose whether to create members on first sign-in.
+4. Choose whether to create an account and membership on first sign-in.
 
 The MFA requirement is not part of this form any more: it is a tenant property under
 **Settings → Identity → Multi-factor authentication**, so a tenant that signs in with
@@ -26,8 +26,9 @@ passkeys can require it without configuring an IdP.
 
 New accounts verify their address with a six-digit email code before the dashboard or any
 tenant API is available, and an address cannot be changed until the current one is verified.
-Users sign in from the login page with their work email or the SSO button. The OIDC flow
-validates state, issuer and audience; the Entra object id maps to a local user.
+Accounts sign in from the login page with their work email or the SSO button. The OIDC flow
+validates state, issuer and audience; the Entra object id maps to a local account. SSO
+first-sign-in provisioning creates an **account**, never a directory user.
 
 ### Verified domains
 
@@ -59,7 +60,9 @@ person being recovered cannot approve it themselves. See
 
 ## Directory sync
 
-Mattrax can sync users, groups and domains from Entra on a schedule.
+Mattrax can sync directory users, groups and domains from Entra on a schedule. Sync
+provisions tenant-scoped **users** only: it never creates dashboard accounts, memberships,
+invitations or SSO identity links.
 
 1. Grant the Graph application permissions:
    - `Directory.Read.All`
@@ -124,8 +127,9 @@ Response:
 Authentication is `Authorization: Bearer <scim token>`. Tokens are hashed and scoped to
 one tenant. Revoked or unknown tokens are rejected.
 
-Roles accepted on user create are `owner`, `admin` and `member`; anything else becomes
-`member`.
+SCIM provisions tenant-scoped **users** for policy scoping and device links. It cannot
+grant dashboard roles: administrator accounts are created by registration, invitation or
+the tenant's SSO auto-provision setting.
 
 ### Limitations
 

@@ -17,9 +17,15 @@ type MigrationDdlEntry = {
   readonly entityType?: string;
   readonly name?: string;
   readonly table?: string;
+  readonly tableTo?: string;
+  readonly onDelete?: string;
   readonly type?: string;
   readonly notNull?: boolean;
   readonly default?: string;
+  readonly isUnique?: boolean;
+  readonly columns?: ReadonlyArray<
+    string | { readonly value: string; readonly isExpression: boolean }
+  >;
 };
 
 type MigrationSnapshot = {
@@ -266,7 +272,7 @@ describe("MFA migration", () => {
         .map((entry) => [`${entry.table}.${entry.name}`, entry]),
     );
 
-    expect(columns.get("user.totp_enabled")).toMatchObject({
+    expect(columns.get("account.totp_enabled")).toMatchObject({
       type: "boolean",
       notNull: true,
       default: "false",
@@ -403,7 +409,7 @@ describe("onboarding email marker migration", () => {
         .map((entry) => [`${entry.table}.${entry.name}`, entry]),
     );
 
-    expect(columns.get("user.welcome_email_sent_at")).toMatchObject({
+    expect(columns.get("account.welcome_email_sent_at")).toMatchObject({
       type: "datetime(3)",
       notNull: false,
     });
@@ -459,17 +465,150 @@ describe("ownership transfer migration", () => {
       type: "varchar(255)",
       notNull: true,
     });
-    expect(columns.get("requested_by_user_id")).toMatchObject({
+    expect(columns.get("requested_by_account_id")).toMatchObject({
       type: "varchar(255)",
       notNull: true,
     });
-    expect(columns.get("target_user_id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(columns.get("target_account_id")).toMatchObject({ type: "varchar(255)", notNull: true });
     expect(columns.get("status")).toMatchObject({ type: "varchar(32)", notNull: true });
     expect(columns.get("token_hash")).toMatchObject({ type: "varchar(255)", notNull: false });
     expect(columns.get("expires_at")).toMatchObject({ type: "datetime(3)", notNull: true });
     expect(columns.get("accepted_at")).toMatchObject({ type: "datetime(3)", notNull: false });
     expect(columns.get("cancelled_at")).toMatchObject({ type: "datetime(3)", notNull: false });
     expect(columns.get("created_at")).toMatchObject({ type: "datetime(3)", notNull: true });
+  });
+});
+
+describe("account/user split migration", () => {
+  const names = migrationNames();
+
+  const splitMigrations = names.filter((name) =>
+    readMigration(name).includes("RENAME TABLE `user` TO `account`"),
+  );
+
+  const tables = (snapshot: MigrationSnapshot) =>
+    new Set(
+      snapshot.ddl.filter((entry) => entry.entityType === "tables").map((entry) => entry.name),
+    );
+
+  const columnsFor = (snapshot: MigrationSnapshot, table: string) =>
+    new Map(
+      snapshot.ddl
+        .filter((entry) => entry.entityType === "columns" && entry.table === table)
+        .map((entry) => [entry.name, entry]),
+    );
+
+  const latest = () => readSnapshot(names.at(-1)!);
+
+  it("renames the dashboard identity exactly once", () => {
+    expect(splitMigrations).toHaveLength(1);
+    const sql = readMigration(splitMigrations[0]!);
+    expect(sql).toContain("RENAME TABLE `user` TO `account`");
+    expect(sql).toContain("CREATE TABLE `user`");
+  });
+
+  it("ships both identities in the latest snapshot", () => {
+    const snapshot = latest();
+    const shipped = tables(snapshot);
+
+    expect(shipped.has("account")).toBe(true);
+    expect(shipped.has("user")).toBe(true);
+
+    const account = columnsFor(snapshot, "account");
+    expect(account.get("email")).toMatchObject({ type: "varchar(320)", notNull: true });
+    expect(account.get("totp_enabled")).toMatchObject({ type: "boolean", notNull: true });
+    expect(account.get("default_tenant_id")).toMatchObject({ notNull: false });
+    expect(account.get("organization_id")).toBeUndefined();
+
+    // A directory person belongs to exactly one tenant and carries no
+    // credentials or dashboard preferences.
+    const user = columnsFor(snapshot, "user");
+    expect(user.get("organization_id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(user.get("external_id")).toMatchObject({ type: "varchar(255)", notNull: false });
+    expect(user.get("source")).toMatchObject({ type: "varchar(16)", notNull: true });
+    expect(user.get("disabled")).toMatchObject({ type: "boolean", notNull: true });
+    expect(user.get("email_verified")).toBeUndefined();
+    expect(user.get("totp_enabled")).toBeUndefined();
+    expect(user.get("auth_revision")).toBeUndefined();
+  });
+
+  it("scopes directory users by tenant with unique email and external id", () => {
+    const snapshot = latest();
+
+    const indexes = snapshot.ddl.filter(
+      (entry) => entry.entityType === "indexes" && entry.table === "user",
+    );
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "user_organization_email_unique",
+          isUnique: true,
+          columns: [
+            { value: "organization_id", isExpression: false },
+            { value: "email", isExpression: false },
+          ],
+        }),
+        expect.objectContaining({
+          name: "user_organization_external_unique",
+          isUnique: true,
+          columns: [
+            { value: "organization_id", isExpression: false },
+            { value: "external_id", isExpression: false },
+          ],
+        }),
+      ]),
+    );
+
+    const organizationKey = snapshot.ddl.find(
+      (entry) =>
+        entry.entityType === "fks" && entry.table === "user" && entry.tableTo === "organization",
+    );
+
+    expect(organizationKey).toMatchObject({
+      name: "user_organization_id_organization_id_fkey",
+      onDelete: "CASCADE",
+    });
+  });
+
+  it("points memberships at accounts, not directory users", () => {
+    const member = columnsFor(latest(), "member");
+
+    expect(member.get("account_id")).toMatchObject({ type: "varchar(255)", notNull: true });
+    expect(member.get("user_id")).toBeUndefined();
+  });
+
+  it("keeps directory scoping links on the tenant-scoped user", () => {
+    const snapshot = latest();
+
+    for (const table of ["device_user", "user_policy", "user_group_member"]) {
+      expect(columnsFor(snapshot, table).get("user_id")).toMatchObject({ notNull: true });
+
+      const target = snapshot.ddl.find(
+        (entry) =>
+          entry.entityType === "fks" &&
+          entry.table === table &&
+          (entry.columns ?? []).some((column) =>
+            // oxlint-disable-next-line anti-slop/no-runtime-typeof -- snapshot columns are a string-or-object union.
+            typeof column === "string" ? column === "user_id" : column.value === "user_id",
+          ),
+      );
+
+      expect(target, `${table}.user_id must reference a table`).toBeDefined();
+      expect(target!.tableTo, `${table}.user_id must reference the directory user`).toBe("user");
+      expect(target!.onDelete).toBe("CASCADE");
+    }
+  });
+
+  it("maps existing directory-provisioned accounts into the new user table", () => {
+    const sql = readMigration(splitMigrations[0]!);
+
+    // Only Graph/SCIM accounts become directory users; normal accounts keep
+    // signing in and must not be duplicated into the directory.
+    expect(sql).toContain("WHERE `account`.`source` IN ('graph', 'scim')");
+    expect(sql).toContain("INSERT INTO `user`");
+    expect(sql).toContain("_account_user_map");
+    expect(sql).toContain("DROP TABLE `_account_user_map`");
   });
 });
 

@@ -425,8 +425,8 @@ function navFor(tenantId: string | undefined): NavItem[] {
       match: (value) => value === tenant.settings() || value.startsWith(`${tenant.settings()}/`),
     },
     item(
-      "members",
-      "Members",
+      "administrators",
+      "Administrators",
       tenant.settingsAdministrators(),
       UsersRound,
       "settings",
@@ -447,7 +447,7 @@ function NavGroups(props: {
   const grouped = (group: NavGroup) => props.items.filter((item) => item.group === group);
 
   // A section link is a prefix match, so `/settings/administrators` matches
-  // both Settings and Members. The most specific href owns the highlight.
+  // both Settings and Administrators. The most specific href owns the highlight.
   const activeId = createMemo(
     () =>
       props.items
@@ -635,7 +635,7 @@ export function AppShell(props: {
     const known = me.data?.tenants ?? [];
 
     return resolveLandingTenant(known, {
-      defaultTenantId: me.data?.user.defaultTenantId,
+      defaultTenantId: me.data?.account.defaultTenantId,
       lastTenantId: lastTenant(),
     })?.id;
   });
@@ -692,7 +692,7 @@ export function AppShell(props: {
 
   const settingsLabels = new Map([
     ["", "General"],
-    ["administrators", "Members"],
+    ["administrators", "Administrators"],
     ["identity", "Identity"],
     ["enrollment", "Enrollment"],
     ["management", "Management"],

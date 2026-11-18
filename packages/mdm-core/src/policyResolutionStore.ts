@@ -58,21 +58,21 @@ export const resolveEffectivePolicyForDevice = (
       .from(s.devicePolicy)
       .where(eq(s.devicePolicy.deviceId, device.id));
 
-    // A disabled account no longer grants policies. Directory sync disables a
-    // leaver instead of deleting the row, so filtering here is what actually
-    // stops delivery.
+    // Linked directory users drive user-scoped policy. A disabled directory
+    // user stops granting policies; directory sync disables a leaver instead of
+    // deleting the row, so filtering here is what actually stops delivery. The
+    // user must belong to this device's tenant.
     const users: Array<PolicyResolutionUser> = yield* db
       .select({ id: s.user.id, name: s.user.name, email: s.user.email })
       .from(s.deviceUser)
       .innerJoin(s.user, eq(s.user.id, s.deviceUser.userId))
-      .innerJoin(
-        s.member,
+      .where(
         and(
-          eq(s.member.userId, s.deviceUser.userId),
-          eq(s.member.organizationId, device.organizationId),
+          eq(s.deviceUser.deviceId, device.id),
+          eq(s.user.organizationId, device.organizationId),
+          eq(s.user.disabled, false),
         ),
-      )
-      .where(and(eq(s.deviceUser.deviceId, device.id), eq(s.user.disabled, false)));
+      );
 
     const userIds = unique(users.map((user) => user.id));
 

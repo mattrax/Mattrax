@@ -140,7 +140,7 @@ import { EnterpriseTenantDeleteErrors } from "../Errors.js";
 import { EnterpriseTenantExportErrors } from "../Errors.js";
 import { EnterpriseTenantImportErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
-import { EnterpriseTenantUserRemoveErrors } from "../Errors.js";
+import { EnterpriseTenantAccountRemoveErrors } from "../Errors.js";
 import { EnterpriseTenantValidatedReadErrors } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { EntraDirectorySyncResult } from "../Tenant.js";
@@ -154,7 +154,7 @@ import { ImportTenantScepCaRequest } from "../Enrollment.js";
 import { InvitationOptionsResponse } from "../Tenant.js";
 import { InvitationPreviewQuery } from "../Tenant.js";
 import { InvitationPreviewResponse } from "../Tenant.js";
-import { InviteTenantUserRequest } from "../Tenant.js";
+import { InviteTenantAccountRequest } from "../Tenant.js";
 import { ListTenantInvitationsQuery } from "../Tenant.js";
 import { AcceptTenantOwnershipTransferRequest } from "../Tenant.js";
 import { AcceptTenantOwnershipTransferResponse } from "../Tenant.js";
@@ -194,7 +194,7 @@ import { TenantImportRequest } from "../Backup.js";
 import { TenantImportResponse } from "../Backup.js";
 import { TenantInvitationParam } from "./Params.js";
 import { TenantInvitationsResponse } from "../Tenant.js";
-import { TenantMemberParam } from "./Params.js";
+import { TenantAccountParam } from "./Params.js";
 import { TenantParam } from "./Params.js";
 import { TenantPreRegistrationParam } from "./Params.js";
 import { TenantRoleParam } from "./Params.js";
@@ -227,10 +227,10 @@ import { PatchPolicyAssignmentsRequest } from "../Policy.js";
 import { PatchTenantAndroidRequest } from "../Android.js";
 import { PatchTenantEnrollmentRequest } from "../Enrollment.js";
 import { PatchTenantRequest } from "../Tenant.js";
-import { PatchTenantUserRequest } from "../Tenant.js";
+import { PatchTenantAccountRequest } from "../Tenant.js";
 import { PolicyAssignmentsResponse } from "../Policy.js";
 import { TenantListResponse } from "../Tenant.js";
-import { TenantUsersResponse } from "../Tenant.js";
+import { TenantAccountsResponse } from "../Tenant.js";
 import { VppAssignmentsResponse } from "../Apple.js";
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
@@ -634,10 +634,10 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     ),
   )
   .add(
-    HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", {
+    HttpApiEndpoint.get("listTenantAccounts", "/v1/tenants/:tenantId/accounts", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
-      success: TenantUsersResponse,
+      success: TenantAccountsResponse,
     }),
   )
   .add(
@@ -671,10 +671,10 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("inviteTenantUser", "/v1/tenants/:tenantId/invitations", {
+    HttpApiEndpoint.post("inviteTenantAccount", "/v1/tenants/:tenantId/invitations", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
-      payload: InviteTenantUserRequest,
+      payload: InviteTenantAccountRequest,
       success: CreateInvitationResponse,
     }),
   )
@@ -788,17 +788,17 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", {
+    HttpApiEndpoint.patch("patchTenantAccount", "/v1/tenants/:tenantId/accounts/:accountId", {
       error: EnterpriseTenantWriteErrors,
-      params: TenantMemberParam,
-      payload: PatchTenantUserRequest,
+      params: TenantAccountParam,
+      payload: PatchTenantAccountRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
-    HttpApiEndpoint.delete("removeTenantUser", "/v1/tenants/:tenantId/users/:memberId", {
-      error: EnterpriseTenantUserRemoveErrors,
-      params: TenantMemberParam,
+    HttpApiEndpoint.delete("removeTenantAccount", "/v1/tenants/:tenantId/accounts/:accountId", {
+      error: EnterpriseTenantAccountRemoveErrors,
+      params: TenantAccountParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )

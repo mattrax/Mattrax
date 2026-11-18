@@ -328,7 +328,7 @@ export const rotateDueScepCas = (
         yield* db.insert(s.auditLog).values({
           id: `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`,
           organizationId,
-          actorUserId: null,
+          actorAccountId: null,
           actorEmail: "system",
           action: "scep_ca.rotation_failed",
           targetType: "scep_ca",
@@ -382,7 +382,7 @@ export const rotateDueScepCas = (
         yield* db.insert(s.auditLog).values({
           id: `sys_${crypto.randomUUID().replaceAll("-", "").slice(0, 21)}`,
           organizationId: row.organizationId,
-          actorUserId: null,
+          actorAccountId: null,
           actorEmail: "system",
           action: "scep_ca.auto_rotated",
           targetType: "scep_ca",

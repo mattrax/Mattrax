@@ -102,7 +102,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
                 new SsoRejected({ message: "SSO assertion was already used" }),
               );
 
-            const user = yield* services.db.query.user.findFirst({ where: { id: payload.sub } });
+            const user = yield* services.db.query.account.findFirst({ where: { id: payload.sub } });
 
             if (!user || user.disabled)
               return yield* Effect.fail(new SsoRejected({ message: "Unknown SSO user" }));
@@ -113,7 +113,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
               );
 
             const member = yield* services.db.query.member.findFirst({
-              where: { userId: user.id, organizationId: tenantId },
+              where: { accountId: user.id, organizationId: tenantId },
             });
 
             if (!member)
@@ -135,9 +135,9 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
 
             if (!user.emailVerified)
               yield* services.db
-                .update(schema.user)
+                .update(schema.account)
                 .set({ emailVerified: true, updatedAt: new Date() })
-                .where(eq(schema.user.id, user.id));
+                .where(eq(schema.account.id, user.id));
 
             const flowId = Sessions.AuthenticationFlowId.make(`sso:${crypto.randomUUID()}`);
 

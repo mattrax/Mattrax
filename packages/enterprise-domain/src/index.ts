@@ -2,7 +2,7 @@ export {
   EnterpriseBadRequest,
   EnterpriseDbError,
   EnterpriseForbidden,
-  EnterpriseLastTenantUser,
+  EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,

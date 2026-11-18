@@ -23,7 +23,7 @@ import {
 const secret = "preload-test-secret";
 
 const me: MeResponse = {
-  user: {
+  account: {
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -54,16 +54,16 @@ const me: MeResponse = {
 
 const tokenPayload = (overrides: Partial<SsrTokenPayload> = {}): SsrTokenPayload => ({
   purpose: "ssr",
-  sub: me.user.id,
-  email: me.user.email,
-  emailVerified: me.user.emailVerified,
-  name: me.user.name,
+  sub: me.account.id,
+  email: me.account.email,
+  emailVerified: me.account.emailVerified,
+  name: me.account.name,
   sid: "session-1",
   ch: "session-cookie-fingerprint",
   iat: Date.now() - 1_000,
   exp: Date.now() + 240_000,
   ver: "revision-1",
-  user: me.user,
+  account: me.account,
   tenants: me.tenants,
   ...overrides,
 });
@@ -165,13 +165,13 @@ describe("SSR preload", () => {
     });
 
     expect(bootstrapCalls).toBe(0);
-    expect(stale.session?.me?.user.defaultTenantId).toBe("tenant-1");
+    expect(stale.session?.me?.account.defaultTenantId).toBe("tenant-1");
 
     // PATCH /api/v1/me expires both SSR cookies, so the next document arrives
     // with only the session cookie and must bootstrap the new shell once.
     const updated: MeResponse = {
       ...me,
-      user: { ...me.user, defaultTenantId: null },
+      account: { ...me.account, defaultTenantId: null },
     };
 
     const fresh = await preloadSession(htmlRequest([sessionCookie]), {
@@ -186,7 +186,7 @@ describe("SSR preload", () => {
     });
 
     expect(bootstrapCalls).toBe(1);
-    expect(fresh.session?.me?.user.defaultTenantId).toBeNull();
+    expect(fresh.session?.me?.account.defaultTenantId).toBeNull();
     expect(fresh.setSsrCookie).toBeDefined();
     expect(fresh.setSsrRevisionCookie).toContain("revision-token");
   });
@@ -393,7 +393,7 @@ describe("SSR preload", () => {
           ? tokenPayload()
           : tokenPayload({
               emailVerified: false,
-              user: { ...me.user, emailVerified: false },
+              account: { ...me.account, emailVerified: false },
             }),
       verifyRevision,
       fetchBootstrap: async () => {
@@ -406,7 +406,7 @@ describe("SSR preload", () => {
     // The stale unverified token must not pin the just-verified user to
     // /verify-email for the rest of its five-minute life.
     expect(bootstrapCalls).toBe(1);
-    expect(outcome.session?.me?.user.emailVerified).toBe(true);
+    expect(outcome.session?.me?.account.emailVerified).toBe(true);
     expect(outcome.setSsrCookie).toBeDefined();
     expect(outcome.ssrTokenRejected).toBeUndefined();
   });

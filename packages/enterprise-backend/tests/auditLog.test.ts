@@ -131,7 +131,7 @@ describe("audit export", () => {
     action: "device.enrolled",
     targetType: "device",
     targetId: "device-1",
-    actorUserId: null,
+    actorAccountId: null,
     actorEmail: "owner@example.com",
     metadata: { serial: "C02A" },
     createdAt: "2026-11-11T10:00:00.000Z",

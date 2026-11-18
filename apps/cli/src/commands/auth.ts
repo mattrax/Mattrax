@@ -46,7 +46,7 @@ const login = Command.make(
       yield* line(
         formatJson({
           url: settings.url,
-          user: { id: me.user.id, name: me.user.name, email: me.user.email },
+          account: { id: me.account.id, name: me.account.name, email: me.account.email },
           token: redactToken(token),
           tenantId: tenantId ?? null,
           configPath: settings.configPath,
@@ -56,7 +56,7 @@ const login = Command.make(
       return;
     }
 
-    yield* line(`Logged in to ${settings.url} as ${me.user.email}.`);
+    yield* line(`Logged in to ${settings.url} as ${me.account.email}.`);
     yield* line(`Token ${redactToken(token)} saved to ${settings.configPath} (mode 0600).`);
 
     if (tenantId) yield* line(`Tenant ${tenantId}`);
@@ -107,7 +107,7 @@ const status = Command.make(
           tokenSource: settings.sources.token ?? null,
           tenantId: tenantId ?? null,
           configPath: settings.configPath,
-          user: { id: me.user.id, name: me.user.name, email: me.user.email },
+          account: { id: me.account.id, name: me.account.name, email: me.account.email },
           tenants: me.tenants.map((tenant) => ({
             id: tenant.id,
             slug: tenant.slug,
@@ -122,7 +122,7 @@ const status = Command.make(
 
     yield* line(`Deployment  ${settings.url} (${settings.sources.url})`);
     yield* line(`Token       ${redactToken(token)} (${settings.sources.token ?? "unknown"})`);
-    yield* line(`Account     ${me.user.name} <${me.user.email}>`);
+    yield* line(`Account     ${me.account.name} <${me.account.email}>`);
 
     if (tenantId) yield* line(`Tenant      ${tenantId}`);
     yield* line(`Config      ${settings.configPath}`);

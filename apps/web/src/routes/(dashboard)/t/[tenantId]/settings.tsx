@@ -6,7 +6,7 @@ import { cn } from "~/lib/utils";
 
 const tabs = [
   { id: "", label: "General" },
-  { id: "administrators", label: "Members" },
+  { id: "administrators", label: "Administrators" },
   { id: "identity", label: "Identity" },
   { id: "enrollment", label: "Enrollment" },
   { id: "attributes", label: "Attributes" },
@@ -20,7 +20,7 @@ const tabs = [
 
 const sectionDescriptions = new Map([
   ["", "Rename the tenant, set the branding people see, and export or delete it."],
-  ["administrators", "Invite people, assign roles, and review pending invitations."],
+  ["administrators", "Invite administrators, assign roles, and review pending invitations."],
   ["identity", "Single sign-on, SCIM provisioning, and the domains that route sign-in."],
   ["enrollment", "Choose which platforms can enroll, and control the enrollment link."],
   ["attributes", "Define the custom fields your organisation tracks on every device."],

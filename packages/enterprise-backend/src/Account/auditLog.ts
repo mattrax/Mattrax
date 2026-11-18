@@ -184,7 +184,7 @@ export const auditWhere = (
 
     const condition = or(
       like(schema.auditLog.actorEmail, pattern),
-      like(schema.auditLog.actorUserId, pattern),
+      like(schema.auditLog.actorAccountId, pattern),
     );
 
     if (condition) conditions.push(condition);
@@ -228,7 +228,7 @@ export type AuditExportEntry = {
   readonly action: string;
   readonly targetType: string;
   readonly targetId: string | null;
-  readonly actorUserId: string | null;
+  readonly actorAccountId: string | null;
   readonly actorEmail: string | null;
   readonly metadata: Schema.Json;
   readonly createdAt: string;

@@ -28,7 +28,7 @@ const makeContext = () => {
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   const auth = {
     requireUser: (input: any) => {
@@ -171,7 +171,7 @@ describe("tenant export", () => {
     });
     context.db.store.account_api_token.push({
       id: "token-1",
-      userId: context.user.id,
+      accountId: context.user.id,
       name: "CLI",
       tokenPrefix: "mtt_",
       tokenHash: "SECRET-API-HASH",
@@ -341,7 +341,7 @@ describe("tenant export", () => {
     const { tenant } = await seedTenant(context);
 
     const membership = context.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === context.user.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === context.user.id,
     );
 
     expect(membership).toBeDefined();
@@ -392,7 +392,7 @@ describe("tenant import", () => {
       (row: any) => row.organizationId === result.tenantId,
     );
 
-    expect(importedMembers).toMatchObject([{ userId: context.user.id, role: "owner" }]);
+    expect(importedMembers).toMatchObject([{ accountId: context.user.id, role: "owner" }]);
 
     const importedPolicy = context.db.store.policy.find(
       (row: any) => row.organizationId === result.tenantId,

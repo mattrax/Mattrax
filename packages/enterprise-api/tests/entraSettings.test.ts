@@ -9,7 +9,7 @@ const origin = "https://enterprise.test";
 const makeContext = () => {
   const db = makeDb();
   const now = new Date();
-  db.store.user.push({
+  db.store.account.push({
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -29,7 +29,7 @@ const makeContext = () => {
   db.store.member.push({
     id: "member-1",
     organizationId: "org-1",
-    userId: "user-1",
+    accountId: "user-1",
     role: "owner",
     createdAt: now,
     updatedAt: now,
@@ -38,7 +38,7 @@ const makeContext = () => {
   const auth = {
     requireUser: () =>
       Effect.succeed({
-        user: db.store.user[0],
+        user: db.store.account[0],
       }),
   };
 

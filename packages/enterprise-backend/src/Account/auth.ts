@@ -167,9 +167,9 @@ export const makeAuthLive = ({
             .pipe(Effect.catch(() => Effect.succeed([])));
 
           yield* db
-            .update(schema.user)
+            .update(schema.account)
             .set({ passkeyEnabled: remaining.length > 0 })
-            .where(eq(schema.user.id, subjectId))
+            .where(eq(schema.account.id, subjectId))
             .pipe(Effect.catch(() => Effect.void));
         });
 
@@ -186,12 +186,12 @@ export const makeAuthLive = ({
         metadata?: Schema.Json,
       ) =>
         Effect.gen(function* () {
-          const user = yield* db.query.user.findFirst({ where: { id: subjectId } });
+          const user = yield* db.query.account.findFirst({ where: { id: subjectId } });
 
           if (!user) return;
 
           yield* recordAccountAudit(db, {
-            subjectUserId: subjectId,
+            subjectAccountId: subjectId,
             subjectEmail: user.email,
             action,
             targetType,
@@ -250,7 +250,7 @@ export const makeAuthLive = ({
     Effect.gen(function* () {
       const db = yield* Db;
 
-      const user = yield* db.query.user
+      const user = yield* db.query.account
         .findFirst({ where: { id: subjectId } })
         .pipe(Effect.catch(() => Effect.succeed(undefined)));
 
@@ -321,7 +321,7 @@ export const makeAuthLive = ({
             if (invocation.subjectId !== challenge.revision.subjectId)
               return yield* Passkey.PasskeyActionRequired.make({});
 
-            const user = yield* db.query.user
+            const user = yield* db.query.account
               .findFirst({ where: { id: invocation.subjectId } })
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
 

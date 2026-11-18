@@ -6,7 +6,7 @@ import {
   SsrTokenPayload,
   ssrSessionFingerprint,
   type SsrTokenTenant,
-  type SsrTokenUser,
+  type SsrTokenAccount,
 } from "@mattrax/enterprise-domain";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
@@ -25,7 +25,7 @@ export type SignSsrTokenInput = {
   readonly email: string;
   readonly emailVerified: boolean;
   readonly authRevision: string;
-  readonly user: SsrTokenUser;
+  readonly account: SsrTokenAccount;
   readonly tenants: ReadonlyArray<SsrTokenTenant>;
   readonly now?: number;
 };
@@ -108,7 +108,7 @@ export const signSsrToken = (secret: string, input: SignSsrTokenInput) =>
       // Signed for debugging but not enforced by the edge verifier; the API is
       // still the only authority on whether the session is current.
       ver: input.authRevision,
-      user: input.user,
+      account: input.account,
     } as const;
 
     const tenants = input.tenants.map(compactTenant);

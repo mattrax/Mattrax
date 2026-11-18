@@ -168,7 +168,9 @@ test.describe("invitations", () => {
     const email = uniqueEmail("ui-invitee");
 
     await openAdministrators(page, tenant.id);
-    await expect(page.getByRole("heading", { name: "Invite a member", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Invite an administrator", exact: true }),
+    ).toBeVisible();
 
     await inviteThroughUi(page, email, "builtin:member");
     await expect(page.getByText("Email sent", { exact: true })).toBeVisible();
@@ -380,23 +382,23 @@ test.describe("invitations", () => {
     }
   });
 
-  test("the invite form surfaces an existing-member conflict", async ({ page }) => {
+  test("the invite form surfaces an existing-administrator conflict", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Invite Duplicate");
-    const me = await api<{ user: { email: string } }>(page, "/api/v1/me");
+    const me = await api<{ account: { email: string } }>(page, "/api/v1/me");
 
     await openAdministrators(page, tenant.id);
-    await inviteThroughUi(page, me.user.email, "builtin:member");
+    await inviteThroughUi(page, me.account.email, "builtin:member");
 
     await expect(
       page
-        .getByRole("region", { name: "Invite a member" })
+        .getByRole("region", { name: "Invite an administrator" })
         .getByRole("alert")
         .filter({ hasText: /conflicts with something that already exists/i }),
     ).toBeVisible();
     await expect(page.getByText("Email sent", { exact: true })).toHaveCount(0);
   });
 
-  test("a read-only member does not see the invite form", async ({ page, browser }) => {
+  test("a read-only administrator does not see the invite form", async ({ page, browser }) => {
     const tenant = await bootstrapTenant(page, "Invite Gated");
     const email = uniqueEmail("gated-member");
 
@@ -406,25 +408,27 @@ test.describe("invitations", () => {
       { method: "POST", body: JSON.stringify({ email, role: "member" }) },
     );
 
-    const memberContext = await browser.newContext();
-    const member = await memberContext.newPage();
+    const administratorContext = await browser.newContext();
+    const administrator = await administratorContext.newPage();
 
     try {
-      await register(member, { email, name: "Read Only Member" });
-      await gotoHydrated(member, invitation.inviteUrl);
-      await member.getByRole("button", { name: /^Join / }).click();
-      await expect(member).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
+      await register(administrator, { email, name: "Read Only Administrator" });
+      await gotoHydrated(administrator, invitation.inviteUrl);
+      await administrator.getByRole("button", { name: /^Join / }).click();
+      await expect(administrator).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
-      await openAdministrators(member, tenant.id);
-      await expect(member.getByRole("heading", { name: "Members", exact: true })).toBeVisible();
+      await openAdministrators(administrator, tenant.id);
       await expect(
-        member.getByRole("heading", { name: "Invite a member", exact: true }),
+        administrator.getByRole("heading", { name: "Current administrators", exact: true }),
+      ).toBeVisible();
+      await expect(
+        administrator.getByRole("heading", { name: "Invite an administrator", exact: true }),
       ).toHaveCount(0);
       await expect(
-        member.getByRole("button", { name: "Send invitation", exact: true }),
+        administrator.getByRole("button", { name: "Send invitation", exact: true }),
       ).toHaveCount(0);
     } finally {
-      await memberContext.close();
+      await administratorContext.close();
     }
   });
 });

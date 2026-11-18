@@ -287,6 +287,7 @@ export const routes = {
           | "legal",
       ) => (tab === "" ? `${base}/settings` : `${base}/settings/${tab}`),
       settingsAdministrators: () => `${base}/settings/administrators`,
+      settingsDirectory: () => `${base}/settings/identity/directory`,
     };
   },
 } as const;

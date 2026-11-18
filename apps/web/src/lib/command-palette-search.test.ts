@@ -4,7 +4,9 @@ import type {
   DeviceRow,
   GroupRow,
   PolicyRow,
+  SearchResult,
   SoftwareSearchRow,
+  UserSearchRow,
 } from "@mattrax/enterprise-domain/client";
 import { groupRank, matchesSearchTerm, searchRowCommand } from "./command-palette-search";
 
@@ -45,6 +47,23 @@ const applicationRow = (overrides: Partial<ApplicationSearchRow>): ApplicationSe
   ...overrides,
 });
 
+const userRow = (overrides: Partial<UserSearchRow>): UserSearchRow => ({
+  id: "directory-user-1",
+  name: "Ada Lovelace",
+  email: "ada@example.com",
+  ...overrides,
+});
+
+type AdministratorRow = Extract<SearchResult["rows"][number], { role: string }>;
+
+const administratorRow = (overrides: Partial<AdministratorRow>): AdministratorRow => ({
+  id: "account-1",
+  name: "Grace Hopper",
+  email: "grace@example.com",
+  role: "owner",
+  ...overrides,
+});
+
 const softwareRow = (overrides: Partial<SoftwareSearchRow>): SoftwareSearchRow => ({
   name: "Figma",
   bundleId: "com.figma.Desktop",
@@ -58,6 +77,8 @@ const softwareRow = (overrides: Partial<SoftwareSearchRow>): SoftwareSearchRow =
 describe("command palette search rows", () => {
   it("orders result groups after the built-in commands", () => {
     expect(groupRank("Devices")).toBeLessThan(groupRank("Policies"));
+    expect(groupRank("People")).toBeLessThan(groupRank("Administrators"));
+    expect(groupRank("Administrators")).toBeLessThan(groupRank("Groups"));
     expect(groupRank("Policies")).toBeLessThan(groupRank("Applications"));
     expect(groupRank("Applications")).toBeLessThan(groupRank("Software"));
     expect(groupRank("Unknown")).toBeGreaterThan(groupRank("Software"));
@@ -115,6 +136,28 @@ describe("command palette search rows", () => {
     expect(matchesSearchTerm(application, "slack-store")).toBe(true);
     expect(matchesSearchTerm(application, "figma")).toBe(true);
     expect(matchesSearchTerm(software, "not-a-match")).toBe(false);
+  });
+
+  it("keeps directory people separate from administrators", () => {
+    expect(searchRowCommand(userRow({}), "tenant-1")).toEqual({
+      id: "person-directory-user-1",
+      title: "Ada Lovelace",
+      subtitle: "ada@example.com",
+      group: "People",
+      href: "/t/tenant-1/settings/identity/directory",
+      permission: "members.read",
+      keywords: ["directory", "person"],
+    });
+
+    expect(searchRowCommand(administratorRow({ role: "owner" }), "tenant-1")).toEqual({
+      id: "administrator-account-1",
+      title: "Grace Hopper",
+      subtitle: "grace@example.com · owner",
+      group: "Administrators",
+      href: "/t/tenant-1/settings/administrators",
+      permission: "members.read",
+      keywords: ["administrator", "admin", "account", "owner"],
+    });
   });
 
   it("keeps the existing device, group and policy destinations", () => {

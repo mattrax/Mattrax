@@ -86,10 +86,10 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       }
 
       if (!tenantId && email) {
-        const user = yield* db.query.user.findFirst({ where: { email } });
+        const user = yield* db.query.account.findFirst({ where: { email } });
 
         if (user) {
-          const memberships = yield* db.query.member.findMany({ where: { userId: user.id } });
+          const memberships = yield* db.query.member.findMany({ where: { accountId: user.id } });
 
           for (const membership of memberships) {
             const candidate = yield* db.query.ssoConfig.findFirst({
@@ -287,14 +287,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       });
 
       let user = identity
-        ? yield* db.query.user.findFirst({ where: { id: identity.userId } })
-        : yield* db.query.user.findFirst({ where: { email } });
+        ? yield* db.query.account.findFirst({ where: { id: identity.accountId } })
+        : yield* db.query.account.findFirst({ where: { email } });
 
       if (identity) {
         if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
 
         const member = yield* db.query.member.findFirst({
-          where: { userId: user.id, organizationId: tenantId },
+          where: { accountId: user.id, organizationId: tenantId },
         });
 
         if (!member) return json({ error: "You are not a member of this tenant" }, 403);
@@ -302,7 +302,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         // Do not auto-link an existing account by email when it belongs to
         // another tenant; that would let a tenant administrator impersonate a
         // multi-tenant user. Such users must link SSO explicitly.
-        const memberships = yield* db.query.member.findMany({ where: { userId: user.id } });
+        const memberships = yield* db.query.member.findMany({ where: { accountId: user.id } });
         const member = memberships.find((item) => item.organizationId === tenantId);
 
         if (!member) return json({ error: "You are not a member of this tenant" }, 403);
@@ -339,16 +339,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         yield* db.insert(schema.ssoIdentity).ignore().values({
           organizationId: tenantId,
           objectId,
-          userId: user.id,
+          accountId: user.id,
           createdAt: now(),
         });
       } else {
         if (!config.autoProvision)
           return json({ error: "No Mattrax account exists for this email" }, 403);
-        const userId = id();
+        const accountId = id();
         const timestamp = now();
-        yield* db.insert(schema.user).values({
-          id: userId,
+        yield* db.insert(schema.account).values({
+          id: accountId,
           name: claims.name ?? email,
           email,
           emailVerified: true,
@@ -362,7 +362,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         yield* db.insert(schema.member).values({
           id: id(),
           organizationId: tenantId,
-          userId,
+          accountId,
           role: "member",
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -373,10 +373,10 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         yield* db.insert(schema.ssoIdentity).values({
           organizationId: tenantId,
           objectId,
-          userId,
+          accountId,
           createdAt: timestamp,
         });
-        user = yield* db.query.user.findFirst({ where: { id: userId } });
+        user = yield* db.query.account.findFirst({ where: { id: accountId } });
       }
 
       if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);

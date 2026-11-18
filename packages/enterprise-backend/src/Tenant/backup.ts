@@ -142,7 +142,7 @@ const recordAudit = (
     yield* db.insert(schema.auditLog).values({
       id: id(),
       organizationId,
-      actorUserId: actor?.userId ?? null,
+      actorAccountId: actor?.userId ?? null,
       actorEmail: actor?.email ?? null,
       action,
       targetType: "organization",

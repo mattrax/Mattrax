@@ -21,7 +21,7 @@ const input = (overrides: Partial<SignSsrTokenInput> = {}): SignSsrTokenInput =>
   email: "owner@example.com",
   emailVerified: true,
   authRevision: "revision-1",
-  user: {
+  account: {
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -82,25 +82,22 @@ describe("SSR bootstrap token", () => {
 
   it("round-trips the account default tenant", async () => {
     const signed = await run(
-      signSsrToken(
-        secret,
-        input({ user: { ...input().user, defaultTenantId: "tenant-1" } }),
-      ),
+      signSsrToken(secret, input({ account: { ...input().account, defaultTenantId: "tenant-1" } })),
     );
 
     const payload = await run(verifySsrToken(secret, signed!.token));
 
-    expect(payload.user.defaultTenantId).toBe("tenant-1");
+    expect(payload.account.defaultTenantId).toBe("tenant-1");
   });
 
   it("accepts tokens minted before the default tenant existed", async () => {
-    const legacyUser = { ...input().user };
-    delete legacyUser.defaultTenantId;
+    const legacyAccount = { ...input().account };
+    delete legacyAccount.defaultTenantId;
 
-    const signed = await run(signSsrToken(secret, input({ user: legacyUser })));
+    const signed = await run(signSsrToken(secret, input({ account: legacyAccount })));
     const payload = await run(verifySsrToken(secret, signed!.token));
 
-    expect(payload.user).not.toHaveProperty("defaultTenantId");
+    expect(payload.account).not.toHaveProperty("defaultTenantId");
   });
 
   it("signs no token for an unverified account", async () => {
@@ -210,7 +207,7 @@ describe("SSR bootstrap token", () => {
         secret,
         input({
           name: oversized,
-          user: { ...input().user, name: oversized },
+          account: { ...input().account, name: oversized },
         }),
       ),
     );

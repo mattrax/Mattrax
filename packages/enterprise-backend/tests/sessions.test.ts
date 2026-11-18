@@ -48,7 +48,7 @@ describe("session client descriptors", () => {
     const first = await runEffect(
       captureSessionContext(db, {
         sessionId: "session-1",
-        userId: "user-1",
+        accountId: "user-1",
         descriptor,
         now: at,
       }),
@@ -56,14 +56,14 @@ describe("session client descriptors", () => {
 
     expect(first).toEqual({ created: true });
     expect(db.store.account_session_context).toMatchObject([
-      { sessionId: "session-1", userId: "user-1", ipHash: descriptor.ipHash },
+      { sessionId: "session-1", accountId: "user-1", ipHash: descriptor.ipHash },
     ]);
 
     // Within the five-minute floor nothing is written.
     await runEffect(
       captureSessionContext(db, {
         sessionId: "session-1",
-        userId: "user-1",
+        accountId: "user-1",
         descriptor,
         now: new Date(now + 60_000),
       }),
@@ -74,7 +74,7 @@ describe("session client descriptors", () => {
     await runEffect(
       captureSessionContext(db, {
         sessionId: "session-1",
-        userId: "user-1",
+        accountId: "user-1",
         descriptor,
         now: new Date(now + 6 * 60_000),
       }),
@@ -88,7 +88,7 @@ describe("session client descriptors", () => {
       account_session_context: [
         {
           sessionId: "session-1",
-          userId: "user-1",
+          accountId: "user-1",
           ...descriptor,
           createdAt: new Date(now),
           lastUsedAt: new Date(now),
@@ -99,14 +99,14 @@ describe("session client descriptors", () => {
     const result = await runEffect(
       captureSessionContext(db, {
         sessionId: "session-1",
-        userId: "user-2",
+        accountId: "user-2",
         descriptor,
         now: new Date(now),
       }),
     );
 
     expect(result).toEqual({ created: false });
-    expect(db.store.account_session_context[0]!.userId).toBe("user-1");
+    expect(db.store.account_session_context[0]!.accountId).toBe("user-1");
   });
 });
 
@@ -126,7 +126,7 @@ describe("session listing", () => {
       account_session_context: [
         {
           sessionId: "session-1",
-          userId: "user-1",
+          accountId: "user-1",
           ...descriptor,
           createdAt: new Date(now),
           lastUsedAt: new Date(now + 30_000),
@@ -162,7 +162,7 @@ describe("session listing", () => {
       account_session_context: [
         {
           sessionId: "session-1",
-          userId: "user-1",
+          accountId: "user-1",
           ...descriptor,
           createdAt: new Date(now),
           lastUsedAt: new Date(now),
@@ -187,7 +187,7 @@ describe("session listing", () => {
       account_session_context: [
         {
           sessionId: "session-1",
-          userId: "user-1",
+          accountId: "user-1",
           ...descriptor,
           createdAt: new Date(now),
           lastUsedAt: new Date(now),

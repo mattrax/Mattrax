@@ -269,9 +269,9 @@ const hasOwnerRole = (role: string | null | undefined) =>
     .includes("owner");
 
 /** Organisations where the account is an owner. */
-export const ownedTenantIds = (db: EnterpriseDb, userId: string) =>
+export const ownedTenantIds = (db: EnterpriseDb, accountId: string) =>
   Effect.gen(function* () {
-    const memberships = yield* db.query.member.findMany({ where: { userId } });
+    const memberships = yield* db.query.member.findMany({ where: { accountId } });
 
     return [
       ...new Set(
@@ -301,11 +301,11 @@ export type TenantLimitStatus = {
  */
 export const tenantLimitForAccount = (input: {
   readonly db: EnterpriseDb;
-  readonly userId: string;
+  readonly accountId: string;
   readonly config?: PlanLimitsConfig;
 }) =>
   Effect.gen(function* () {
-    const owned = yield* ownedTenantIds(input.db, input.userId);
+    const owned = yield* ownedTenantIds(input.db, input.accountId);
     const used = owned.length;
 
     if (!input.config?.configured) {

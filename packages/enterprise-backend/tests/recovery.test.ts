@@ -33,7 +33,7 @@ const emailTransport = (sent: Sent[]) =>
     });
   });
 
-type UserSeed = {
+type AccountSeed = {
   id: string;
   name: string;
   email: string;
@@ -48,7 +48,7 @@ type UserSeed = {
   updatedAt: Date;
 };
 
-const user = (overrides: Partial<UserSeed> = {}): UserSeed => ({
+const account = (overrides: Partial<AccountSeed> = {}): AccountSeed => ({
   id: "user-1",
   name: "Owner",
   email: "owner@example.com",
@@ -64,10 +64,10 @@ const user = (overrides: Partial<UserSeed> = {}): UserSeed => ({
   ...overrides,
 });
 
-const member = (organizationId: string, userId: string, role = "owner") => ({
-  id: `member-${organizationId}-${userId}`,
+const member = (organizationId: string, accountId: string, role = "owner") => ({
+  id: `member-${organizationId}-${accountId}`,
   organizationId,
-  userId,
+  accountId,
   role,
   customRoleId: null,
   createdAt: new Date(start),
@@ -84,7 +84,7 @@ const organization = (id: string) => ({
 });
 
 const makeDeps = (
-  initial: Record<string, any[]> = { user: [user()] },
+  initial: Record<string, any[]> = { account: [account()] },
   now: () => Date = () => new Date(start),
 ) => {
   const db = makeDb(initial);
@@ -118,7 +118,7 @@ describe("break-glass recovery on a solo account", () => {
     await runEffect(requestAccountRecovery(deps, { email: "Owner@Example.com" }));
 
     expect(db.store.account_recovery).toMatchObject([
-      { userId: "user-1", status: "pending_proof", approvalRequired: false },
+      { accountId: "user-1", status: "pending_proof", approvalRequired: false },
     ]);
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ to: "owner@example.com" });
@@ -141,10 +141,10 @@ describe("break-glass recovery on a solo account", () => {
     await expect(
       runEffect(redeemRecoveryToken(db, verified.signInToken, new Date(start))),
     ).resolves.toEqual({
-      userId: "user-1",
+      accountId: "user-1",
     });
     expect(db.store.account_recovery[0]!.status).toBe("completed");
-    expect(db.store.user[0]!.authRevision).not.toBe("revision-1");
+    expect(db.store.account[0]!.authRevision).not.toBe("revision-1");
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.recovery_completed",
     );
@@ -166,7 +166,7 @@ describe("break-glass recovery on a solo account", () => {
   });
 
   it("does not recover an unverified or disabled account", async () => {
-    const { sent, deps } = makeDeps({ user: [user({ emailVerified: false })] });
+    const { sent, deps } = makeDeps({ account: [account({ emailVerified: false })] });
 
     await expect(
       runEffect(requestAccountRecovery(deps, { email: "owner@example.com" })),
@@ -211,10 +211,10 @@ describe("break-glass recovery on a solo account", () => {
 /** A shared tenant requires a different owner to approve. */
 describe("break-glass recovery approval", () => {
   const shared = () => ({
-    user: [
-      user(),
-      user({ id: "user-2", name: "Colleague", email: "colleague@example.com" }),
-      user({ id: "user-3", name: "Member", email: "member@example.com" }),
+    account: [
+      account(),
+      account({ id: "user-2", name: "Colleague", email: "colleague@example.com" }),
+      account({ id: "user-3", name: "Member", email: "member@example.com" }),
     ],
     organization: [organization("tenant-1")],
     member: [
@@ -251,7 +251,7 @@ describe("break-glass recovery approval", () => {
         approveAccountRecovery(deps, {
           token: approval,
           organizationId: "tenant-1",
-          approverUserId: "user-1",
+          approverAccountId: "user-1",
         }),
       ),
     ).rejects.toBeInstanceOf(RecoveryRejected);
@@ -262,7 +262,7 @@ describe("break-glass recovery approval", () => {
         approveAccountRecovery(deps, {
           token: approval,
           organizationId: "tenant-1",
-          approverUserId: "user-3",
+          approverAccountId: "user-3",
         }),
       ),
     ).rejects.toBeInstanceOf(RecoveryRejected);
@@ -272,14 +272,14 @@ describe("break-glass recovery approval", () => {
         approveAccountRecovery(deps, {
           token: approval,
           organizationId: "tenant-1",
-          approverUserId: "user-2",
+          approverAccountId: "user-2",
         }),
       ),
     ).resolves.toEqual({ status: "ok" });
 
     expect(db.store.account_recovery[0]).toMatchObject({
       status: "ready",
-      approvedByUserId: "user-2",
+      approvedByAccountId: "user-2",
     });
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.recovery_approved",
@@ -298,7 +298,7 @@ describe("break-glass recovery approval", () => {
     await expect(
       runEffect(redeemRecoveryToken(db, completionToken, new Date(start))),
     ).resolves.toEqual({
-      userId: "user-1",
+      accountId: "user-1",
     });
   });
 
@@ -320,7 +320,7 @@ describe("break-glass recovery approval", () => {
         approveAccountRecovery(deps, {
           token: approval,
           organizationId: "tenant-2",
-          approverUserId: "user-2",
+          approverAccountId: "user-2",
         }),
       ),
     ).rejects.toBeInstanceOf(RecoveryRejected);

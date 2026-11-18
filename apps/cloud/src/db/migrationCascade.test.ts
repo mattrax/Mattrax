@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../../migrations");
 
 type ForeignKey = {
-  readonly name: string;
-  readonly table: string;
-  readonly tableTo: string;
-  readonly onDelete: string;
+  name: string;
+  table: string;
+  tableTo: string;
+  onDelete: string;
 };
 
 const deleteRule = (clause: string): string =>
@@ -38,12 +38,17 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
       continue;
     }
 
+    // Snapshot the pre-migration keys: a migration can rename `user` to
+    // `account` and then create a new `user`, and the new table's foreign keys
+    // must not be swept up by the earlier rename.
+    const existing = new Set(keys.keys());
+
     for (const match of sql.matchAll(/CREATE TABLE `(\w+)` \(([\s\S]*?)\n\);/g)) {
       const table = match[1]!;
 
       for (const line of match[2]!.split("\n")) {
         const constraint = line.match(
-          /CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\(([^)]*)\)([\s\S]*)/,
+          /CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\s*\(([^)]*)\)([\s\S]*)/,
         );
 
         if (!constraint) continue;
@@ -59,8 +64,22 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
     for (const match of sql.matchAll(/ALTER TABLE `\w+` DROP FOREIGN KEY `(\w+)`;/g))
       keys.delete(match[1]!);
 
+    // `RENAME TABLE` moves the table object; MySQL keeps existing constraint
+    // names, so the replay must not rename them either.
+    for (const match of sql.matchAll(/RENAME TABLE `(\w+)` TO `(\w+)`;/g)) {
+      const [, from, to] = match;
+
+      for (const key of keys.values()) {
+        if (!existing.has(key.name)) continue;
+
+        if (key.table === from) key.table = to!;
+
+        if (key.tableTo === from) key.tableTo = to!;
+      }
+    }
+
     for (const match of sql.matchAll(
-      /ALTER TABLE `(\w+)` ADD CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\(([^)]*)\)([^;]*);/g,
+      /ALTER TABLE `(\w+)` ADD CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\s*\(([^)]*)\)([^;]*);/g,
     )) {
       keys.set(match[2]!, {
         name: match[2]!,
@@ -125,7 +144,7 @@ describe("migration foreign-key delete rules", () => {
     // Account preferences outlive the tenant they name: deleting a tenant must
     // not delete the accounts that pointed at it. The API and shell ignore a
     // stale choice until it is replaced.
-    const setNullOnTenantDeletion = new Set(["user_default_tenant_id_organization_id_fkey"]);
+    const setNullOnTenantDeletion = new Set(["account_default_tenant_id_organization_id_fkey"]);
 
     for (const expected of organizationKeys) {
       expect(sql.get(expected.name)?.onDelete, expected.name).toBe(

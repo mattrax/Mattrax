@@ -351,10 +351,24 @@ export default function DirectorySyncPage() {
                       {(user) => (
                         <div class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
                           <span class="min-w-0 flex-1">
-                            <span class="block truncate text-foreground">{user.name}</span>
+                            <span class="flex items-center gap-1.5">
+                              <span class="block truncate text-foreground">{user.name}</span>
+                              <Show when={user.disabled}>
+                                <span class="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  Disabled
+                                </span>
+                              </Show>
+                            </span>
                             <span class="block truncate text-[11px] text-muted-foreground">
                               {user.email}
                             </span>
+                            <Show when={user.externalId}>
+                              {(externalId) => (
+                                <span class="block truncate font-mono text-[10px] text-muted-foreground">
+                                  {externalId()}
+                                </span>
+                              )}
+                            </Show>
                           </span>
                           <span class="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
                             {user.source}

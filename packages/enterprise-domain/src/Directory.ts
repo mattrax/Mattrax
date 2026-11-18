@@ -1,16 +1,17 @@
 import { Schema } from "effect";
+import { NullableString } from "./Errors.js";
 import { ApplicationSearchRow } from "./Application.js";
 import { DeviceRow, SoftwareSearchRow } from "./Device.js";
 import { GroupRow } from "./Group.js";
 import { PolicyRow } from "./Policy.js";
 
+/** A person from the tenant's directory; never a dashboard account. */
 export const DirectoryUser = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   email: Schema.String,
-  emailVerified: Schema.Boolean,
+  externalId: Schema.optional(NullableString),
   disabled: Schema.Boolean,
-  role: Schema.String,
   source: Schema.Literals(["entra", "scim", "manual"]),
 });
 
@@ -56,6 +57,13 @@ export const UserSearchRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   email: Schema.String,
+});
+
+/** An administrator account, searchable next to directory people. */
+export const AccountSearchRow = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
   role: Schema.String,
 });
 
@@ -79,6 +87,9 @@ export const SearchResult = Schema.Struct({
       DeviceRow,
       GroupRow,
       PolicyRow,
+      // Account rows carry a role, so they must be tested before the plain
+      // directory-user row (whose schema would otherwise strip the role).
+      AccountSearchRow,
       UserSearchRow,
       ApplicationSearchRow,
       SoftwareSearchRow,

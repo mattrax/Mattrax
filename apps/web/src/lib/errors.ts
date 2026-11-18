@@ -77,7 +77,7 @@ const TAGS = {
     message: "This tenant still has other members. Remove them before deleting it.",
     variant: "validation",
   },
-  EnterpriseLastTenantUser: {
+  EnterpriseLastTenantAccount: {
     message: "You can't remove the last owner of a tenant.",
     variant: "validation",
   },

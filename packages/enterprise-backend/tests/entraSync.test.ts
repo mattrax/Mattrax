@@ -57,6 +57,19 @@ const baseOptions = {
   syncUsersAndGroups: true,
 } as const;
 
+/** A Graph double whose user and group listings complete in one page. */
+const singlePageGraph = (options: {
+  users: ReadonlyArray<unknown>;
+  groups?: ReadonlyArray<unknown>;
+}) =>
+  // SAFETY: the double implements only the three Graph reads this sync makes;
+  // the remaining members are unused by this path.
+  ({
+    domains: () => Effect.succeed([{ id: "acme.com", isVerified: true, isInitial: false }]),
+    usersDelta: () => Effect.succeed(page(options.users, undefined, "users-delta")),
+    groupsDelta: () => Effect.succeed(page(options.groups ?? [], undefined, "groups-delta")),
+  }) as never;
+
 describe("syncEntraDirectory pagination", () => {
   it("commits each page and reports delta cursors as resource classes finish", async () => {
     const db = makeDb();
@@ -157,5 +170,240 @@ describe("syncEntraDirectory pagination", () => {
 
     expect(result).toMatchObject({ users: 0, groups: 0, domains: 1 });
     expect(called).toBe(false);
+  });
+});
+
+describe("syncEntraDirectory directory users", () => {
+  it("imports tenant directory users without creating accounts or members", async () => {
+    const db = makeDb();
+
+    const result = await Effect.runPromise(
+      syncEntraDirectory({
+        ...baseOptions,
+        db,
+        graph: singlePageGraph({
+          users: [
+            {
+              id: "graph-1",
+              mail: "Ada@Acme.com",
+              displayName: "Ada Lovelace",
+              accountEnabled: true,
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(result.users).toBe(1);
+    expect(db.store.user).toHaveLength(1);
+    expect(db.store.user[0]).toMatchObject({
+      organizationId: "org-1",
+      name: "Ada Lovelace",
+      email: "ada@acme.com",
+      externalId: "graph-1",
+      source: "entra",
+      disabled: false,
+    });
+
+    // Directory people are not dashboard identities: no account, membership,
+    // invitation or SSO link is provisioned by a sync.
+    expect(db.store.account).toEqual([]);
+    expect(db.store.member).toEqual([]);
+    expect(db.store.invitation).toEqual([]);
+    expect(db.store.sso_identity).toEqual([]);
+  });
+
+  it("imports directory users even when tenant auto-provisioning is disabled", async () => {
+    const db = makeDb();
+
+    await Effect.runPromise(
+      syncEntraDirectory({
+        ...baseOptions,
+        autoProvision: false,
+        db,
+        graph: singlePageGraph({
+          users: [{ id: "graph-1", mail: "ada@acme.com", accountEnabled: true }],
+        }),
+      }),
+    );
+
+    expect(db.store.user).toHaveLength(1);
+    expect(db.store.account).toEqual([]);
+  });
+
+  it("disables a removed directory user without touching accounts or members", async () => {
+    const timestamp = new Date();
+
+    const db = makeDb({
+      account: [
+        {
+          id: "acc-1",
+          name: "Ada",
+          email: "ada@acme.com",
+          emailVerified: true,
+          image: null,
+          disabled: false,
+          source: "manual",
+          authRevision: "revision",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      member: [
+        {
+          id: "member-1",
+          organizationId: "org-1",
+          accountId: "acc-1",
+          role: "owner",
+          customRoleId: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      user: [
+        {
+          id: "dir-1",
+          organizationId: "org-1",
+          name: "Ada",
+          email: "ada@acme.com",
+          externalId: "graph-1",
+          source: "entra",
+          disabled: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "dir-2",
+          organizationId: "org-1",
+          name: "Bob",
+          email: "bob@acme.com",
+          externalId: "graph-2",
+          source: "entra",
+          disabled: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      user_group: [
+        {
+          id: "group-1",
+          organizationId: "org-1",
+          name: "Staff",
+          externalId: "graph-group-1",
+          description: null,
+          source: "graph",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      user_group_member: [
+        { groupId: "group-1", userId: "dir-1" },
+        { groupId: "group-1", userId: "dir-2" },
+      ],
+      sso_identity: [
+        { organizationId: "org-1", objectId: "graph-1", accountId: "acc-1", createdAt: timestamp },
+      ],
+    });
+
+    await Effect.runPromise(
+      syncEntraDirectory({
+        ...baseOptions,
+        db,
+        graph: singlePageGraph({
+          users: [
+            { id: "graph-1", removed: true },
+            { id: "graph-2", mail: "bob@acme.com", displayName: "Bob", accountEnabled: true },
+          ],
+        }),
+      }),
+    );
+
+    expect(db.store.user.find((row: any) => row.id === "dir-1")?.disabled).toBe(true);
+    expect(db.store.user.find((row: any) => row.id === "dir-2")?.disabled).toBe(false);
+
+    // Only the removed person's directory grants disappear.
+    expect(db.store.user_group_member).toEqual([{ groupId: "group-1", userId: "dir-2" }]);
+
+    // Accounts, memberships and SSO links are a separate identity and survive,
+    // including the tenant's only owner.
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.member).toHaveLength(1);
+    expect(db.store.member[0]).toMatchObject({ accountId: "acc-1", role: "owner" });
+    expect(db.store.sso_identity).toHaveLength(1);
+  });
+
+  it("maps Graph group members to directory users by external id", async () => {
+    const timestamp = new Date();
+
+    const db = makeDb({
+      user: [
+        {
+          id: "dir-1",
+          organizationId: "org-1",
+          name: "Ada",
+          email: "ada@acme.com",
+          externalId: "graph-1",
+          source: "entra",
+          disabled: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "dir-other",
+          organizationId: "org-2",
+          name: "Ada elsewhere",
+          email: "ada@acme.com",
+          externalId: "graph-1",
+          source: "entra",
+          disabled: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      user_group: [
+        {
+          id: "group-1",
+          organizationId: "org-1",
+          name: "Staff",
+          externalId: "graph-group-1",
+          description: null,
+          source: "graph",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      user_group_member: [{ groupId: "group-1", userId: "dir-1" }],
+    });
+
+    await Effect.runPromise(
+      syncEntraDirectory({
+        ...baseOptions,
+        db,
+        graph: singlePageGraph({
+          users: [{ id: "graph-1", mail: "ada@acme.com", displayName: "Ada", accountEnabled: true }],
+          groups: [
+            {
+              id: "graph-group-1",
+              displayName: "Staff",
+              members: [{ id: "graph-1", type: "user", removed: true }],
+            },
+            {
+              id: "graph-group-2",
+              displayName: "Engineers",
+              members: [{ id: "graph-1", type: "user" }],
+            },
+          ],
+        }),
+      }),
+    );
+
+    const engineers = db.store.user_group.find(
+      (row: any) => row.externalId === "graph-group-2",
+    );
+
+    expect(engineers).toMatchObject({ organizationId: "org-1", source: "graph" });
+    // The member was added to the new group and removed from the old one, and
+    // the same external id in another tenant was never touched.
+    expect(db.store.user_group_member).toEqual([{ groupId: engineers.id, userId: "dir-1" }]);
   });
 });

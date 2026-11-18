@@ -321,18 +321,18 @@ describe("loadCredentialHealth", () => {
 describe("credential expiry notifications", () => {
   const withRecipients = async () => {
     const db = await build();
-    db.store.user.push(
+    db.store.account.push(
       { id: "u-owner", name: "Alice", email: "alice@example.com", disabled: false },
       { id: "u-admin", name: "Bob", email: "bob@example.com", disabled: false },
       { id: "u-member", name: "Carol", email: "carol@example.com", disabled: false },
       { id: "u-disabled", name: "Dave", email: "dave@example.com", disabled: true },
     );
     db.store.member.push(
-      { id: "m-owner", organizationId: "org-a", userId: "u-owner", role: "owner" },
-      { id: "m-admin", organizationId: "org-a", userId: "u-admin", role: "admin" },
-      { id: "m-member", organizationId: "org-a", userId: "u-member", role: "member" },
-      { id: "m-disabled", organizationId: "org-a", userId: "u-disabled", role: "owner" },
-      { id: "m-other", organizationId: "org-b", userId: "u-member", role: "admin" },
+      { id: "m-owner", organizationId: "org-a", accountId: "u-owner", role: "owner" },
+      { id: "m-admin", organizationId: "org-a", accountId: "u-admin", role: "admin" },
+      { id: "m-member", organizationId: "org-a", accountId: "u-member", role: "member" },
+      { id: "m-disabled", organizationId: "org-a", accountId: "u-disabled", role: "owner" },
+      { id: "m-other", organizationId: "org-b", accountId: "u-member", role: "admin" },
     );
 
     return db;

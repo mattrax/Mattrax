@@ -65,7 +65,7 @@ export const writeSystemAudit = (
     yield* db.insert(s.auditLog).values({
       id: id(),
       organizationId: event.organizationId,
-      actorUserId: null,
+      actorAccountId: null,
       actorEmail: SYSTEM_AUDIT_ACTOR,
       action: event.action,
       targetType: event.targetType,

@@ -37,7 +37,7 @@ export const SsrRevisionPayload = Schema.Struct({
   purpose: Schema.Literal("ssr-rev"),
   /** Session the revision belongs to; must match the SSR token's `sid`. */
   sid: Schema.String,
-  /** Current `user.authRevision` when the cookie was minted. */
+  /** Current `account.authRevision` when the cookie was minted. */
   ver: Schema.String,
   iat: Schema.Number,
   exp: Schema.Number,
@@ -88,7 +88,7 @@ export const ssrTenantPermissions = (tenant: SsrTokenTenant): ReadonlyArray<Perm
   (tenant.roleKind === "built-in" ? [...builtInRolePermissions(tenant.role)] : []);
 
 /** The account fields `me` exposes, duplicated here so the client can decode them. */
-export const SsrTokenUser = Schema.Struct({
+export const SsrTokenAccount = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   email: Schema.String,
@@ -102,7 +102,7 @@ export const SsrTokenUser = Schema.Struct({
   defaultTenantId: Schema.optional(NullableString),
 });
 
-export type SsrTokenUser = typeof SsrTokenUser.Type;
+export type SsrTokenAccount = typeof SsrTokenAccount.Type;
 
 export const SsrTokenPayload = Schema.Struct({
   purpose: Schema.Literal("ssr"),
@@ -116,13 +116,13 @@ export const SsrTokenPayload = Schema.Struct({
   iat: Schema.Number,
   exp: Schema.Number,
   /**
-   * `user.authRevision` at issue time. The edge compares it with the signed
+   * `account.authRevision` at issue time. The edge compares it with the signed
    * session-revision cookie; a mismatch is a miss, so a rotated revision stops
    * painting the shell before the TTL. Without that cookie the token cannot be
    * proven current, so the edge bootstraps instead of trusting it.
    */
   ver: Schema.String,
-  user: SsrTokenUser,
+  account: SsrTokenAccount,
   /**
    * The tenant shell. The issuer never signs a token without it: a tenant-less
    * token is always a miss at the edge, so returning one would only make the

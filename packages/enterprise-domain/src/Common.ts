@@ -19,7 +19,7 @@ export const PolicyDeploymentInfo = Schema.Struct({
   id: Schema.String,
   version: Schema.Number,
   createdAt: Schema.String,
-  createdByUserId: Schema.optional(NullableString),
+  createdByAccountId: Schema.optional(NullableString),
 });
 
 export const PolicyDeploymentsResponse = Schema.Struct({

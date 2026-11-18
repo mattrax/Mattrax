@@ -11,6 +11,7 @@ import {
   Activity,
   BookOpen,
   Boxes,
+  KeyRound,
   Laptop,
   LayoutDashboard,
   LogOut,
@@ -92,6 +93,8 @@ const iconForGroup = (group: string): Command["icon"] => {
   if (group === "Devices") return Laptop;
 
   if (group === "People") return User;
+
+  if (group === "Administrators") return KeyRound;
 
   if (group === "Groups") return UsersRound;
 
@@ -357,9 +360,9 @@ export function CommandPalette() {
           path: "general",
         },
         {
-          key: "members",
-          title: "Members",
-          keywords: ["people", "users", "invite", "roles", "administrators"],
+          key: "administrators",
+          title: "Administrators",
+          keywords: ["people", "users", "invite", "roles", "members", "accounts"],
           path: "administrators",
         },
         {

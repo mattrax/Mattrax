@@ -62,7 +62,7 @@ const makeContext = (
   const user = userRow(options.user);
   const sent: SentEmail[] = [];
 
-  if (!db.store.user.some((row: any) => row.id === user.id)) db.store.user.push(user);
+  if (!db.store.account.some((row: any) => row.id === user.id)) db.store.account.push(user);
 
   const email = makeEmailTransport(async (message: SentEmail) => {
     if (options.send) await options.send(message);
@@ -111,7 +111,7 @@ const addMember = (
   const member = {
     id: `member-${user.id}`,
     organizationId: tenantId,
-    userId: user.id,
+    accountId: user.id,
     role,
     customRoleId: customRoleId ?? null,
     createdAt: now,
@@ -140,7 +140,7 @@ const invite = (
   context: ReturnType<typeof makeContext>,
   tenantId: string,
   payload: { email: string; role?: string; roleId?: string | null },
-) => runEffect(context.service.inviteTenantUser(request(context.headers), tenantId, payload));
+) => runEffect(context.service.inviteTenantAccount(request(context.headers), tenantId, payload));
 
 const tokenFrom = (url: string) => {
   const token = new URL(url).searchParams.get("token");
@@ -151,7 +151,7 @@ const tokenFrom = (url: string) => {
 
 const addUser = (db: any, overrides: Partial<TestUser>) => {
   const user = userRow(overrides);
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   return user;
 };
@@ -287,7 +287,7 @@ describe("tenant invitations", () => {
 
     await expect(
       runEffect(
-        owner.service.patchTenantUser(request(owner.headers), tenant.id, targetMember.id, {
+        owner.service.patchTenantAccount(request(owner.headers), tenant.id, target.id, {
           roleId: custom.id,
           role: "admin",
         }),
@@ -305,8 +305,11 @@ describe("tenant invitations", () => {
       user: { id: "user-actor", name: "Actor", email: "actor@example.com" },
     });
 
+    // Managing tenant administrators is a tenant-level write, so the custom
+    // role must hold `tenant.write` to reach the delegation ceiling check.
     const memberManager = await createRole(owner, tenant.id, "Member manager", [
       "tenant.read",
+      "tenant.write",
       "members.read",
       "members.write",
     ]);
@@ -352,7 +355,7 @@ describe("tenant invitations", () => {
     expect(accepted).toEqual({ tenantId: tenant.id, alreadyMember: false });
     expect(
       owner.db.store.member.find(
-        (row: any) => row.organizationId === tenant.id && row.userId === invited.user.id,
+        (row: any) => row.organizationId === tenant.id && row.accountId === invited.user.id,
       ),
     ).toMatchObject({ role: "auditor" });
     expect(invitationRow(owner.db, created.id)).toMatchObject({ status: "accepted" });
@@ -511,7 +514,7 @@ describe("tenant invitations", () => {
 
     expect(
       owner.db.store.member.find(
-        (row: any) => row.organizationId === tenant.id && row.userId === invited.user.id,
+        (row: any) => row.organizationId === tenant.id && row.accountId === invited.user.id,
       ),
     ).toMatchObject({ role: "member", customRoleId: null });
     expect(

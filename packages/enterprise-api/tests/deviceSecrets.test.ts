@@ -48,7 +48,7 @@ const makeContext = async () => {
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   const auth = {
     requireUser: (input: any) => {
@@ -56,7 +56,7 @@ const makeContext = async () => {
 
       if (!headers.cookie)
         return Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
-      const member = headers.cookie.includes("member") ? db.store.user[1] : user;
+      const member = headers.cookie.includes("member") ? db.store.account[1] : user;
 
       return Effect.succeed({ user: member, apiToken: undefined });
     },
@@ -147,7 +147,7 @@ describe("device recovery key reveal", () => {
     db.store.device.push(deviceRow("device-1", tenant.id));
     await seedSecret(db, "device-1", tenant.id);
     const now = new Date();
-    db.store.user.push({
+    db.store.account.push({
       id: "user-2",
       name: "Member",
       email: "member@example.com",
@@ -159,7 +159,7 @@ describe("device recovery key reveal", () => {
     db.store.member.push({
       id: "member-2",
       organizationId: tenant.id,
-      userId: "user-2",
+      accountId: "user-2",
       role: "member",
       createdAt: now,
       updatedAt: now,

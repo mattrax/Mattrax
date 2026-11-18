@@ -26,7 +26,7 @@ const signed = () =>
       email: "owner@example.com",
       emailVerified: true,
       authRevision: "revision-1",
-      user: {
+      account: {
         id: "user-1",
         name: "Owner",
         email: "owner@example.com",

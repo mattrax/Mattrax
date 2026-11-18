@@ -79,7 +79,7 @@ export default function AcceptInvitationPage() {
   const user = () => session().data?.user;
 
   // Session claims are snapshotted at sign-in, so an address verified in this
-  // tab can still read as unverified there. The user row is authoritative.
+  // tab can still read as unverified there. The account row is authoritative.
   createEffect(
     () => user()?.id,
     (userId) => {
@@ -91,7 +91,7 @@ export default function AcceptInvitationPage() {
 
       void enterprise
         .me()
-        .then((data) => setAccountVerified(data.user.emailVerified))
+        .then((data) => setAccountVerified(data.account.emailVerified))
         .catch(() => setAccountVerified(null));
     },
   );

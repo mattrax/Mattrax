@@ -471,7 +471,7 @@ gone.
 
 Two different things are called "users" on a device page:
 
-- **Linked directory users** are Mattrax/Entra/SCIM accounts associated with the device
+- **Linked directory users** are tenant-scoped Entra/SCIM directory people associated with the device
   (`GET/PUT /devices/:id/users`). Their policies are delivered on the device channel, so a
   user policy affects every login on the device. The checkbox list on the device page edits
   these.

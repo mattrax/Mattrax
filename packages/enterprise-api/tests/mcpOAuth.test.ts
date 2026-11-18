@@ -11,7 +11,7 @@ const origin = "https://app.test";
 const sessionCookie = "__Host-mattrax_session=opaque-session";
 
 const me = {
-  user: { id: "user-1", name: "Owner", email: "owner@example.com" },
+  account: { id: "account-1", name: "Owner", email: "owner@example.com" },
   tenants: [{ id: "tenant-1", name: "Acme", role: "owner" }],
 };
 

@@ -25,7 +25,7 @@ const seed = () => {
   const now = new Date();
 
   return {
-    user: [
+    account: [
       {
         id: "user-1",
         name: "Owner",
@@ -158,7 +158,7 @@ describe("step-up enforcement", () => {
     const raw = "mtx_step_up_test_token";
     db.store.account_api_token.push({
       id: "token-1",
-      userId: "user-1",
+      accountId: "user-1",
       name: "CLI",
       tokenPrefix: raw.slice(0, 12),
       tokenHash: await sha256(raw),

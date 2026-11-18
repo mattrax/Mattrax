@@ -3,10 +3,14 @@
 Mattrax has a small number of nouns. Understanding how they relate is enough to predict
 what a policy change will do to a fleet.
 
-## Accounts and tenants
+## Accounts, users and tenants
 
-- **Account** — a person who signs in. An account has a name, email, one or more
-  passkeys, and optionally an authenticator app as a second factor.
+- **Account** — a dashboard administrator. An account has a name, email, one or more
+  passkeys, and optionally an authenticator app as a second factor. Accounts authenticate,
+  belong to tenants and carry roles.
+- **User** — a person from a tenant's directory. A user has a name, email, optional
+  provider object id and a source (Entra, SCIM or manual), but no credentials or dashboard
+  access. Users scope policies, directory groups and device links to a person.
 - **Tenant** — an isolated environment with its own devices, groups, policies, enrollment
   settings, branding, audit log, webhooks and billing subscription. Tenant ids are opaque
   and are never reused. Dashboard URLs use the tenant's editable **slug**
@@ -15,7 +19,9 @@ what a policy change will do to a fleet.
 - **Member** — the link between an account and a tenant, with a role.
 
 A single account can belong to many tenants. The dashboard switches between them without
-signing out.
+signing out. Directory sync provisions users, not accounts: importing staff does not grant
+dashboard access. See [Accounts and users](/reference/identity-model) for the full
+lifecycle, API and invariants.
 
 | Role      | Read | Write | Delete | Typical use                              |
 | --------- | ---- | ----- | ------ | ---------------------------------------- |

@@ -106,7 +106,7 @@ test.describe("top navigation", () => {
     // Proving the address is what unlocks the account: the created session is
     // already verified.
     const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
-    expect(me.user.emailVerified).toBe(true);
+    expect(me.account.emailVerified).toBe(true);
 
     const allowed = await page.evaluate(async () => (await fetch("/api/v1/tenants")).status);
     expect(allowed).toBe(200);

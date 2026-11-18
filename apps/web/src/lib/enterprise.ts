@@ -206,11 +206,11 @@ export type {
   CreateTenantRoleRequest,
   PatchTenantRoleRequest,
   TenantInvitation,
-  TenantUser,
+  TenantAccount,
   TenantOwnershipTransfer,
   OwnershipTransferPreviewResponse,
   RequestTenantOwnershipTransferResponse,
-  UserInfo,
+  AccountInfo,
   VppAssetInfo,
   VppAssetsResponse,
   VppAssignmentInfo,
@@ -283,7 +283,8 @@ export const enterpriseKeys = {
     ["enterprise", "credential-health", keyTenant(tenantId)] as const,
   item: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
     ["enterprise", "item", keyTenant(tenantId), entity, id ?? ""] as const,
-  users: (tenantId: RouteParam) => ["enterprise", "tenant-users", keyTenant(tenantId)] as const,
+  accounts: (tenantId: RouteParam) =>
+    ["enterprise", "tenant-accounts", keyTenant(tenantId)] as const,
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
   invitations: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitations", keyTenant(tenantId)] as const,
@@ -1946,16 +1947,16 @@ export const enterprise = {
     endpoint((api) =>
       api.searchAuditLog({ params: { tenantId: required(tenantId, "tenantId") }, query }),
     ),
-  listUsers: (tenantId: RouteParam) =>
+  listAccounts: (tenantId: RouteParam) =>
     endpoint((api) =>
-      api.listTenantUsers({ params: { tenantId: required(tenantId, "tenantId") } }),
+      api.listTenantAccounts({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  inviteUser: (
+  inviteAccount: (
     tenantId: RouteParam,
     payload: { email: string; role?: string; roleId?: string | null },
   ) =>
     endpoint((api) =>
-      api.inviteTenantUser({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+      api.inviteTenantAccount({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
   listInvitations: (tenantId: RouteParam, query: ListTenantInvitationsQuery = {}) =>
     endpoint((api) =>
@@ -1996,11 +1997,11 @@ export const enterprise = {
     endpoint((api) =>
       api.getTenantOwnershipTransfer({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  requestOwnershipTransfer: (tenantId: RouteParam, targetUserId: string) =>
+  requestOwnershipTransfer: (tenantId: RouteParam, targetAccountId: string) =>
     endpoint((api) =>
       api.requestTenantOwnershipTransfer({
         params: { tenantId: required(tenantId, "tenantId") },
-        payload: { targetUserId },
+        payload: { targetAccountId },
       }),
     ),
   cancelOwnershipTransfer: (tenantId: RouteParam) =>
@@ -2013,16 +2014,16 @@ export const enterprise = {
   /** Accept an ownership transfer for the signed-in target account. */
   acceptOwnershipTransfer: (token: string) =>
     endpoint((api) => api.acceptTenantOwnershipTransfer({ payload: { token } })),
-  patchUser: (
+  patchAccount: (
     tenantId: RouteParam,
-    memberId: RouteParam,
+    accountId: RouteParam,
     payload: { role?: string; roleId?: string | null },
   ) =>
     endpoint((api) =>
-      api.patchTenantUser({
+      api.patchTenantAccount({
         params: {
           tenantId: required(tenantId, "tenantId"),
-          memberId: required(memberId, "memberId"),
+          accountId: required(accountId, "accountId"),
         },
         payload,
       }),
@@ -2054,12 +2055,12 @@ export const enterprise = {
         },
       }),
     ),
-  removeUser: (tenantId: RouteParam, memberId: RouteParam) =>
+  removeAccount: (tenantId: RouteParam, accountId: RouteParam) =>
     endpoint((api) =>
-      api.removeTenantUser({
+      api.removeTenantAccount({
         params: {
           tenantId: required(tenantId, "tenantId"),
-          memberId: required(memberId, "memberId"),
+          accountId: required(accountId, "accountId"),
         },
       }),
     ),
@@ -2106,7 +2107,7 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
   const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
 
   const initialData: MeResponse | undefined =
-    preloaded && (!userId || preloaded.user.id === userId) ? preloaded : undefined;
+    preloaded && (!userId || preloaded.account.id === userId) ? preloaded : undefined;
 
   // The router addresses tenants by slug while every API call needs the id;
   // keep the membership list available to that translation after SSR.
@@ -2321,10 +2322,10 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listRoles(tenantId),
       enabled: Boolean(tenantId),
     }),
-  users: (tenantId: RouteParam) =>
+  accounts: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
-      queryKey: enterpriseKeys.users(tenantId),
-      queryFn: () => enterprise.listUsers(tenantId),
+      queryKey: enterpriseKeys.accounts(tenantId),
+      queryFn: () => enterprise.listAccounts(tenantId),
       enabled: Boolean(tenantId),
     }),
   invitations: (tenantId: RouteParam) =>

@@ -75,7 +75,7 @@ export const resolveTenantId = (
       return yield* Effect.fail(
         new CliFailure({
           message: "This account does not belong to a tenant.",
-          hint: "Create a tenant in the dashboard, or check that the API token belongs to the right user.",
+          hint: "Create a tenant in the dashboard, or check that the API token belongs to the right account.",
         }),
       );
 

@@ -20,6 +20,7 @@ export const SEARCH_GROUP_ORDER = [
   "Queries",
   "Devices",
   "People",
+  "Administrators",
   "Groups",
   "Policies",
   "Applications",
@@ -82,15 +83,28 @@ export const searchRowCommand = (
       permission: "devices.read",
     };
 
-  if ("email" in row)
+  if ("email" in row) {
+    if ("role" in row)
+      return {
+        id: `administrator-${row.id}`,
+        title: row.name,
+        subtitle: `${row.email} · ${row.role}`,
+        group: "Administrators",
+        href: tenant.settingsAdministrators(),
+        permission: "members.read",
+        keywords: ["administrator", "admin", "account", row.role],
+      };
+
     return {
       id: `person-${row.id}`,
       title: row.name,
-      subtitle: `${row.email} · ${row.role}`,
+      subtitle: row.email,
       group: "People",
-      href: tenant.settingsAdministrators(),
+      href: tenant.settingsDirectory(),
       permission: "members.read",
+      keywords: ["directory", "person"],
     };
+  }
 
   if ("devicesCount" in row)
     return {

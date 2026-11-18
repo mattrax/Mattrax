@@ -112,9 +112,9 @@ const auditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
  */
 const clearWelcomeClaim = (db: EnterpriseDb, userId: string, claimedAt: Date) =>
   db
-    .update(s.user)
+    .update(s.account)
     .set({ welcomeEmailSentAt: null })
-    .where(and(eq(s.user.id, userId), eq(s.user.welcomeEmailSentAt, claimedAt)))
+    .where(and(eq(s.account.id, userId), eq(s.account.welcomeEmailSentAt, claimedAt)))
     .pipe(Effect.catchCause(() => Effect.void));
 
 const clearFollowUpClaim = (db: EnterpriseDb, organizationId: string, claimedAt: Date) =>
@@ -199,15 +199,15 @@ export const sendWelcomeEmailOnce = (
     );
 
     const claimed = yield* db
-      .update(s.user)
+      .update(s.account)
       .set({ welcomeEmailSentAt: now })
       .where(
         and(
-          eq(s.user.id, user.id),
-          isNull(s.user.welcomeEmailSentAt),
-          eq(s.user.source, "manual"),
-          eq(s.user.emailVerified, true),
-          eq(s.user.disabled, false),
+          eq(s.account.id, user.id),
+          isNull(s.account.welcomeEmailSentAt),
+          eq(s.account.source, "manual"),
+          eq(s.account.emailVerified, true),
+          eq(s.account.disabled, false),
         ),
       );
 
@@ -322,24 +322,24 @@ export const runWelcomeEmailSweep = (
 
     const users = yield* options.db
       .select({
-        id: s.user.id,
-        name: s.user.name,
-        email: s.user.email,
-        emailVerified: s.user.emailVerified,
-        disabled: s.user.disabled,
-        source: s.user.source,
+        id: s.account.id,
+        name: s.account.name,
+        email: s.account.email,
+        emailVerified: s.account.emailVerified,
+        disabled: s.account.disabled,
+        source: s.account.source,
       })
-      .from(s.user)
+      .from(s.account)
       .where(
         and(
-          eq(s.user.source, "manual"),
-          eq(s.user.emailVerified, true),
-          eq(s.user.disabled, false),
-          isNull(s.user.welcomeEmailSentAt),
-          gte(s.user.createdAt, cutoff),
+          eq(s.account.source, "manual"),
+          eq(s.account.emailVerified, true),
+          eq(s.account.disabled, false),
+          isNull(s.account.welcomeEmailSentAt),
+          gte(s.account.createdAt, cutoff),
         ),
       )
-      .orderBy(asc(s.user.createdAt))
+      .orderBy(asc(s.account.createdAt))
       .limit(limit);
 
     const outcomes = yield* Effect.forEach(
@@ -519,7 +519,7 @@ export const runOnboardingEmails = (
 
     const preloadedCooldown = cooldownCutoff
       ? (yield* db
-          .select({ actorUserId: s.auditLog.actorUserId })
+          .select({ actorAccountId: s.auditLog.actorAccountId })
           .from(s.auditLog)
           .where(
             and(
@@ -527,7 +527,7 @@ export const runOnboardingEmails = (
               gte(s.auditLog.createdAt, cooldownCutoff),
             ),
           ))
-          .map((row) => row.actorUserId)
+          .map((row) => row.actorAccountId)
           .filter((value): value is string => typeof value === "string")
       : [];
 
@@ -757,7 +757,7 @@ export const runOnboardingEmails = (
               yield* db.insert(s.auditLog).values({
                 id: auditId(),
                 organizationId: organization.id,
-                actorUserId: outcome.recipient.userId,
+                actorAccountId: outcome.recipient.userId,
                 actorEmail: outcome.recipient.email,
                 action: ONBOARDING_FOLLOW_UP_AUDIT_ACTION,
                 targetType: "organization",

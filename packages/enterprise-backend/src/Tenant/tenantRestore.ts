@@ -763,7 +763,7 @@ const applyBundle = (
             policyId,
             version: 1,
             snapshot: Object.fromEntries(policy.configurations),
-            createdByUserId: actor.userId,
+            createdByAccountId: actor.userId,
             createdAt: timestamp,
           });
         }
@@ -804,9 +804,9 @@ const applyBundle = (
         // assignments away. Restore them from the bundle by the stable user
         // email and the directory group id, which the restore does not replace.
         const tenantUsers = yield* db
-          .select({ id: schema.user.id, email: schema.user.email })
-          .from(schema.user)
-          .innerJoin(schema.member, eq(schema.member.userId, schema.user.id))
+          .select({ id: schema.account.id, email: schema.account.email })
+          .from(schema.account)
+          .innerJoin(schema.member, eq(schema.member.accountId, schema.account.id))
           .where(eq(schema.member.organizationId, organization.id));
 
         const userIdByEmail = new Map(
@@ -1255,7 +1255,7 @@ export const restoreTenantFromBackup = (
       yield* db.insert(schema.auditLog).values({
         id: newId(),
         organizationId: organization.id,
-        actorUserId: options.actor.userId,
+        actorAccountId: options.actor.userId,
         actorEmail: options.actor.email,
         action: "tenant.restored",
         targetType: "tenant",

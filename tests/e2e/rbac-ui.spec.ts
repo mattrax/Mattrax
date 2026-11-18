@@ -42,7 +42,10 @@ test.describe("RBAC UI gating", () => {
     ).toBeVisible();
   });
 
-  test("a member gets read surfaces without mutation controls", async ({ page, context }) => {
+  test("a read-only administrator gets read surfaces without mutation controls", async ({
+    page,
+    context,
+  }) => {
     const tenant = await bootstrapTenant(page, "RBAC Member");
     const email = uniqueEmail("rbac-member");
     const invitation = await invite(page, tenant.id, { email, role: "member" });
@@ -94,8 +97,8 @@ test.describe("RBAC UI gating", () => {
     await expect(member.getByRole("button", { name: "Export tenant", exact: true })).toBeDisabled();
     await expect(member.getByText("Automatic tenant backups")).toHaveCount(0);
 
-    // The invitation form belongs to members.write, which a read-only member
-    // does not have.
+    // The invitation form belongs to members.write, which a read-only
+    // administrator does not have.
     await gotoHydrated(member, `/t/${tenant.id}/settings/administrators`);
     await expect(member.getByRole("button", { name: "Send invitation", exact: true })).toHaveCount(
       0,

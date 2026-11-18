@@ -287,14 +287,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           };
         },
         recipient: string,
-        userId: string,
+        accountId: string,
       ) =>
         sendTransactionalEmail({
           db,
           email,
           template: input.template,
           recipient,
-          subjectUserId: userId,
+          subjectAccountId: accountId,
           dedupeKey: input.dedupeKey,
           message: { from: emailFrom, ...input.message },
         });
@@ -354,16 +354,16 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           const captured = yield* captureSessionContext(db, {
             sessionId: reference.sessionId,
-            userId: reference.subjectId,
+            accountId: reference.subjectId,
             descriptor,
           });
 
           if (!captured.created) return;
 
-          const user = yield* db.query.user.findFirst({ where: { id: reference.subjectId } });
+          const user = yield* db.query.account.findFirst({ where: { id: reference.subjectId } });
 
           yield* recordAccountAudit(db, {
-            subjectUserId: reference.subjectId,
+            subjectAccountId: reference.subjectId,
             subjectEmail: user?.email ?? null,
             action: ACCOUNT_AUDIT.signIn,
             targetType: "session",
@@ -439,7 +439,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const [row] = yield* db
             .select({
               tokenId: schema.mcpOAuthToken.id,
-              userId: schema.mcpOAuthConnection.userId,
+              accountId: schema.mcpOAuthConnection.accountId,
               connectionId: schema.mcpOAuthConnection.id,
               clientId: schema.mcpOAuthClient.id,
               clientName: schema.mcpOAuthClient.name,
@@ -477,7 +477,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .where(eq(schema.mcpOAuthConnection.id, row.connectionId));
 
           return {
-            userId: row.userId,
+            accountId: row.accountId,
             connectionId: row.connectionId,
             clientId: row.clientId,
             clientName: row.clientName,
@@ -554,11 +554,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               ),
             );
 
-          const userId = session?.subjectId ?? apiToken?.userId ?? oauth?.userId;
+          const accountId = session?.subjectId ?? apiToken?.accountId ?? oauth?.accountId;
 
-          if (!userId)
+          if (!accountId)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
-          const user = yield* db.query.user.findFirst({ where: { id: userId } });
+          const user = yield* db.query.account.findFirst({ where: { id: accountId } });
 
           if (!user || user.disabled)
             return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
@@ -587,7 +587,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               schema.mcpOAuthClient,
               eq(schema.mcpOAuthConnection.clientId, schema.mcpOAuthClient.id),
             )
-            .where(eq(schema.mcpOAuthConnection.userId, user.id))
+            .where(eq(schema.mcpOAuthConnection.accountId, user.id))
             .orderBy(desc(schema.mcpOAuthConnection.createdAt));
 
           return {
@@ -610,7 +610,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const { user } = yield* requireUser(request);
 
           const connection = yield* db.query.mcpOAuthConnection.findFirst({
-            where: { id: connectionId, userId: user.id },
+            where: { id: connectionId, accountId: user.id },
           });
 
           if (!connection)
@@ -643,7 +643,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const rows = yield* db
             .select()
             .from(schema.accountApiToken)
-            .where(eq(schema.accountApiToken.userId, user.id));
+            .where(eq(schema.accountApiToken.accountId, user.id));
 
           return { tokens: rows.map(tokenInfo) };
         });
@@ -823,7 +823,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const methods = yield* stepUp.methods(user.id);
 
           yield* recordAccountAudit(db, {
-            subjectUserId: user.id,
+            subjectAccountId: user.id,
             subjectEmail: user.email,
             action: ACCOUNT_AUDIT.stepUpFailed,
             targetType: "step_up",
@@ -901,7 +901,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           if (tenantId) {
             const member = yield* db.query.member.findFirst({
-              where: { userId: user.id, organizationId: tenantId },
+              where: { accountId: user.id, organizationId: tenantId },
             });
 
             if (!member)
@@ -933,7 +933,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           const item = {
             id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
-            userId: user.id,
+            accountId: user.id,
             name,
             tokenPrefix: raw.slice(0, 12),
             tokenHash,
@@ -949,7 +949,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           yield* db.insert(schema.accountApiToken).values(item);
 
           yield* recordAccountAudit(db, {
-            subjectUserId: user.id,
+            subjectAccountId: user.id,
             subjectEmail: user.email,
             action: ACCOUNT_AUDIT.apiTokenCreated,
             targetType: "api_token",
@@ -978,14 +978,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .where(
               and(
                 eq(schema.accountApiToken.id, tokenId),
-                eq(schema.accountApiToken.userId, user.id),
+                eq(schema.accountApiToken.accountId, user.id),
                 isNull(schema.accountApiToken.revokedAt),
               ),
             );
 
           if (revoked && revoked.affectedRows > 0)
             yield* recordAccountAudit(db, {
-              subjectUserId: user.id,
+              subjectAccountId: user.id,
               subjectEmail: user.email,
               action: ACCOUNT_AUDIT.apiTokenRevoked,
               targetType: "api_token",
@@ -1026,7 +1026,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               new EnterpriseBadRequest({ message: "That is already your email address" }),
             );
 
-          const existing = yield* db.query.user.findFirst({ where: { email: newEmail } });
+          const existing = yield* db.query.account.findFirst({ where: { email: newEmail } });
 
           if (existing && existing.id !== user.id)
             return yield* Effect.fail(
@@ -1055,7 +1055,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             .set({ cancelledAt: now, updatedAt: now })
             .where(
               and(
-                eq(schema.accountEmailChange.userId, user.id),
+                eq(schema.accountEmailChange.accountId, user.id),
                 isNull(schema.accountEmailChange.consumedAt),
                 isNull(schema.accountEmailChange.cancelledAt),
               ),
@@ -1063,7 +1063,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           yield* db.insert(schema.accountEmailChange).values({
             id: changeId,
-            userId: user.id,
+            accountId: user.id,
             oldEmail: user.email,
             newEmail,
             confirmTokenHash: yield* sha256(confirmToken),
@@ -1085,7 +1085,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 .set({ cancelledAt: new Date(), updatedAt: new Date() })
                 .where(
                   and(
-                    eq(schema.accountEmailChange.userId, user.id),
+                    eq(schema.accountEmailChange.accountId, user.id),
                     isNull(schema.accountEmailChange.consumedAt),
                   ),
                 );
@@ -1135,7 +1135,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           if (notice === "failed") return yield* abort("Could not notify your current address");
 
           yield* recordAccountAudit(db, {
-            subjectUserId: user.id,
+            subjectAccountId: user.id,
             subjectEmail: user.email,
             action: ACCOUNT_AUDIT.emailChangeRequested,
             targetType: "email",
@@ -1262,9 +1262,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 }),
               );
             yield* db
-              .update(schema.user)
+              .update(schema.account)
               .set({ emailVerified: true, updatedAt: new Date() })
-              .where(eq(schema.user.id, user.id));
+              .where(eq(schema.account.id, user.id));
             yield* db
               .update(authIdentifiers)
               .set({ verifiedAt: Date.now() })
@@ -1286,16 +1286,16 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
-          const user = yield* db.query.user.findFirst({ where: { id: payload.sub } });
+          const user = yield* db.query.account.findFirst({ where: { id: payload.sub } });
 
           if (!user || user.email.toLowerCase() !== payload.email.toLowerCase())
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
           yield* db
-            .update(schema.user)
+            .update(schema.account)
             .set({ emailVerified: true, updatedAt: new Date() })
-            .where(eq(schema.user.id, user.id));
+            .where(eq(schema.account.id, user.id));
           yield* db
             .update(authIdentifiers)
             .set({ verifiedAt: Date.now() })
@@ -1338,7 +1338,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           )
             return yield* Effect.fail(invalid);
 
-          const user = yield* db.query.user.findFirst({ where: { id: pending.userId } });
+          const user = yield* db.query.account.findFirst({ where: { id: pending.accountId } });
 
           if (!user) return yield* Effect.fail(invalid);
 
@@ -1366,9 +1366,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 if (!consumed || consumed.affectedRows === 0) return yield* Effect.fail(invalid);
 
                 const clash = yield* tx
-                  .select({ id: schema.user.id, email: schema.user.email })
-                  .from(schema.user)
-                  .where(eq(schema.user.email, pending.newEmail))
+                  .select({ id: schema.account.id, email: schema.account.email })
+                  .from(schema.account)
+                  .where(eq(schema.account.email, pending.newEmail))
                   .limit(1);
 
                 if (clash.some((row) => row.id !== user.id))
@@ -1379,7 +1379,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                   );
 
                 yield* tx
-                  .update(schema.user)
+                  .update(schema.account)
                   .set({
                     email: pending.newEmail,
                     emailVerified: true,
@@ -1388,7 +1388,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                     authRevision: revision,
                     updatedAt: now,
                   })
-                  .where(eq(schema.user.id, user.id));
+                  .where(eq(schema.account.id, user.id));
 
                 yield* tx
                   .update(authIdentifiers)
@@ -1411,9 +1411,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               Effect.catchCause((cause) =>
                 Effect.gen(function* () {
                   const taken = yield* db
-                    .select({ id: schema.user.id })
-                    .from(schema.user)
-                    .where(eq(schema.user.email, pending.newEmail))
+                    .select({ id: schema.account.id })
+                    .from(schema.account)
+                    .where(eq(schema.account.email, pending.newEmail))
                     .limit(1);
 
                   if (taken.some((row) => row.id !== user.id))
@@ -1429,7 +1429,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             );
 
           yield* recordAccountAudit(db, {
-            subjectUserId: user.id,
+            subjectAccountId: user.id,
             subjectEmail: pending.newEmail,
             action: ACCOUNT_AUDIT.emailChangeCompleted,
             targetType: "email",
@@ -1476,7 +1476,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           if (!cancelled || cancelled.affectedRows === 0) return { status: "ok" as const };
 
           yield* recordAccountAudit(db, {
-            subjectUserId: pending.userId,
+            subjectAccountId: pending.accountId,
             subjectEmail: pending.oldEmail,
             action: ACCOUNT_AUDIT.emailChangeCancelled,
             targetType: "email",

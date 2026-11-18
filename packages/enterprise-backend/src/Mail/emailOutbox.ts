@@ -89,7 +89,7 @@ export type EnqueueEmailInput = {
   /** Enqueue is idempotent for an existing key and returns `duplicate`. */
   readonly dedupeKey?: string | null;
   readonly organizationId?: string | null;
-  readonly subjectUserId?: string | null;
+  readonly subjectAccountId?: string | null;
   readonly now?: Date;
 };
 
@@ -141,7 +141,7 @@ export const enqueueEmail = (
       yield* db.insert(s.emailOutbox).values({
         id: outboxId(),
         organizationId: input.organizationId ?? null,
-        subjectUserId: input.subjectUserId ?? null,
+        subjectAccountId: input.subjectAccountId ?? null,
         recipient: input.recipient,
         template: input.template,
         dedupeKey,
@@ -261,7 +261,7 @@ const emptyDrainResult = (): DrainEmailOutboxResult => ({
 type OutboxRow = {
   readonly id: string;
   readonly organizationId: string | null;
-  readonly subjectUserId: string | null;
+  readonly subjectAccountId: string | null;
   readonly recipient: string;
   readonly template: string;
   readonly attempts: number;
@@ -291,7 +291,7 @@ const recordPermanentFailure = (
       yield* db.insert(s.auditLog).values({
         id: outboxId(),
         organizationId: row.organizationId,
-        actorUserId: null,
+        actorAccountId: null,
         actorEmail: null,
         action: EMAIL_DELIVERY_FAILED_ACTION,
         targetType: "email_outbox",
@@ -303,13 +303,13 @@ const recordPermanentFailure = (
       return;
     }
 
-    if (!row.subjectUserId) return;
+    if (!row.subjectAccountId) return;
 
     yield* db.insert(s.accountAuditLog).values({
       id: outboxId(),
-      subjectUserId: row.subjectUserId,
+      subjectAccountId: row.subjectAccountId,
       subjectEmail: row.recipient,
-      actorUserId: null,
+      actorAccountId: null,
       actorEmail: null,
       action: ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,
       targetType: "email_outbox",
@@ -352,7 +352,7 @@ export const drainEmailOutbox = (
       .select({
         id: s.emailOutbox.id,
         organizationId: s.emailOutbox.organizationId,
-        subjectUserId: s.emailOutbox.subjectUserId,
+        subjectAccountId: s.emailOutbox.subjectAccountId,
         recipient: s.emailOutbox.recipient,
         template: s.emailOutbox.template,
         attempts: s.emailOutbox.attempts,

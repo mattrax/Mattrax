@@ -44,12 +44,13 @@ A missing permission surfaces as `ConsentRequired` with the Graph error.
 1. Open **Settings → Identity → Single sign-on**.
 2. Enter the Entra tenant id.
 3. Enable SSO.
-4. Optionally enable **Create members on first sign-in**.
+4. Optionally enable **Create accounts on first sign-in**.
 5. Optionally require MFA for owners and admins.
 
-Users sign in from the login page with their work email or the SSO button. Mattrax
-validates the OIDC flow and maps the Entra object id to a local user. Members without a
-local invitation are created only when auto-provisioning is on.
+Administrators sign in from the login page with their work email or the SSO button.
+Mattrax validates the OIDC flow and maps the Entra object id to a local account. Accounts
+without a local invitation are created only when auto-provisioning is on. Directory sync is
+separate and only maintains tenant users for device policy.
 
 Verified domains are shown under **Settings → Identity → Domains**. They come from Graph
 and determine which email domains route to the tenant's SSO.
@@ -57,7 +58,7 @@ and determine which email domains route to the tenant's SSO.
 ### Require MFA
 
 `requireMfa` blocks owners and admins without an authenticator app or passkey from the
-tenant's APIs with a 403. Members keep read access. The account page prompts the user to
+tenant's APIs with a 403. Accounts keep read access. The account page prompts the user to
 enroll a factor.
 
 ## Directory sync

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
   EnterpriseForbidden,
-  EnterpriseLastTenantUser,
+  EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
@@ -59,7 +59,7 @@ const makeContext = async (
   const db = options.db ?? makeDb();
   const user = userRow(options.user);
 
-  if (!db.store.user.some((row: any) => row.id === user.id)) db.store.user.push(user);
+  if (!db.store.account.some((row: any) => row.id === user.id)) db.store.account.push(user);
 
   const auth = {
     requireUser: (input: any) => {
@@ -100,7 +100,7 @@ const addMember = (
   customRoleId?: string | null,
 ) => {
   const existing = db.store.member.find(
-    (row: any) => row.organizationId === tenantId && row.userId === user.id,
+    (row: any) => row.organizationId === tenantId && row.accountId === user.id,
   );
 
   if (existing) {
@@ -115,7 +115,7 @@ const addMember = (
   const member = {
     id: `member-${user.id}`,
     organizationId: tenantId,
-    userId: user.id,
+    accountId: user.id,
     role,
     customRoleId: customRoleId ?? null,
     createdAt: now,
@@ -142,15 +142,31 @@ const createRole = (
   );
 
 /**
- * Seed the directory grants a tenant-scoped user accumulates: membership of one
- * directory group and the IdP identity linking the account to that tenant.
- * Group membership cascades to policy assignment in production, so leaving it
- * behind keeps policies applying after the member is removed.
+ * Seed the two independent identities a tenant accumulates: a directory person
+ * (with a directory group) and the IdP link for the dashboard account. Removing
+ * the administrator must only clear the latter.
  */
-const seedDirectoryAccess = (db: any, organizationId: string, userId: string, suffix: string) => {
+const seedDirectoryAccess = (
+  db: any,
+  organizationId: string,
+  directoryUserId: string,
+  accountId: string,
+  suffix: string,
+) => {
   const timestamp = new Date();
   const groupId = `group-${suffix}`;
 
+  db.store.user.push({
+    id: directoryUserId,
+    organizationId,
+    name: `Directory ${suffix}`,
+    email: `${suffix}@example.com`,
+    externalId: null,
+    source: "manual",
+    disabled: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
   db.store.user_group.push({
     id: groupId,
     organizationId,
@@ -161,11 +177,11 @@ const seedDirectoryAccess = (db: any, organizationId: string, userId: string, su
     createdAt: timestamp,
     updatedAt: timestamp,
   });
-  db.store.user_group_member.push({ groupId, userId });
+  db.store.user_group_member.push({ groupId, userId: directoryUserId });
   db.store.sso_identity.push({
     organizationId,
     objectId: `object-${suffix}`,
-    userId,
+    accountId,
     createdAt: timestamp,
   });
 
@@ -280,7 +296,7 @@ describe("tenant MFA requirement", () => {
 
       // The account surface stays reachable, so the member can enrol a factor.
       await expect(runEffect(reader.service.me(request(reader.headers)))).resolves.toMatchObject({
-        user: { id },
+        account: { id },
       });
     }
 
@@ -349,7 +365,7 @@ describe("tenant MFA requirement", () => {
 
     const me = await runEffect(owner.service.me(request(owner.headers)));
 
-    expect(me.user.mfaRequired).toBe(true);
+    expect(me.account.mfaRequired).toBe(true);
   });
 });
 
@@ -382,10 +398,25 @@ describe("cross-tenant references", () => {
       updatedAt: now,
     });
 
+    // Policy assignments target directory users, not dashboard accounts.
+    const directoryUser = {
+      id: "directory-second",
+      organizationId: secondTenant.id,
+      name: "Second Person",
+      email: "person@second.example.com",
+      externalId: null,
+      source: "manual" as const,
+      disabled: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    second.db.store.user.push(directoryUser);
+
     await expect(
       runEffect(
         first.service.patchPolicyAssignments(request(first.headers), firstTenant.id, policy.id, {
-          assignUsers: [second.user.id],
+          assignUsers: [directoryUser.id],
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
@@ -412,7 +443,7 @@ describe("cross-tenant references", () => {
       user: { id: "user-second", name: "Second Owner", email: "second@example.com" },
     });
 
-    await createTenant(second, "second");
+    const secondTenant = await createTenant(second, "second");
 
     const now = new Date();
 
@@ -426,10 +457,25 @@ describe("cross-tenant references", () => {
       lastSeenAt: now,
     });
 
+    // Device links target directory users, not dashboard accounts.
+    const directoryUser = {
+      id: "directory-second",
+      organizationId: secondTenant.id,
+      name: "Second Person",
+      email: "person@second.example.com",
+      externalId: null,
+      source: "manual" as const,
+      disabled: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    second.db.store.user.push(directoryUser);
+
     await expect(
       runEffect(
         first.service.setDeviceUsers(request(first.headers), firstTenant.id, "device-first", {
-          userIds: [second.user.id],
+          userIds: [directoryUser.id],
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
@@ -511,7 +557,7 @@ describe("custom role delegation ceiling", () => {
 
     // An owner may create and assign it...
     await runEffect(
-      owner.service.patchTenantUser(request(owner.headers), tenant.id, targetMember.id, {
+      owner.service.patchTenantAccount(request(owner.headers), tenant.id, target.user.id, {
         roleId: privileged.id,
       }),
     );
@@ -529,14 +575,14 @@ describe("custom role delegation ceiling", () => {
 
     await expect(
       runEffect(
-        admin.service.patchTenantUser(request(admin.headers), tenant.id, secondMember.id, {
+        admin.service.patchTenantAccount(request(admin.headers), tenant.id, secondTarget.user.id, {
           roleId: privileged.id,
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
     await expect(
       runEffect(
-        admin.service.inviteTenantUser(request(admin.headers), tenant.id, {
+        admin.service.inviteTenantAccount(request(admin.headers), tenant.id, {
           email: "invited@example.com",
           roleId: privileged.id,
         }),
@@ -604,6 +650,7 @@ describe("built-in role delegation ceiling", () => {
 
     const memberManager = await createRole(owner, tenant.id, "Member manager", [
       "tenant.read",
+      "tenant.write",
       "members.read",
       "members.write",
     ]);
@@ -619,10 +666,10 @@ describe("built-in role delegation ceiling", () => {
 
     // Neither self-promotion nor promoting someone else may exceed the actor's
     // own permission set, even though `members.write` reaches the endpoint.
-    for (const memberId of [actorMember.id, targetMember.id]) {
+    for (const accountId of [actor.user.id, target.user.id]) {
       await expect(
         runEffect(
-          actor.service.patchTenantUser(request(actor.headers), tenant.id, memberId, {
+          actor.service.patchTenantAccount(request(actor.headers), tenant.id, accountId, {
             role: "admin",
           }),
         ),
@@ -632,7 +679,7 @@ describe("built-in role delegation ceiling", () => {
     // Inviting an administrator is the same delegation and is refused.
     await expect(
       runEffect(
-        actor.service.inviteTenantUser(request(actor.headers), tenant.id, {
+        actor.service.inviteTenantAccount(request(actor.headers), tenant.id, {
           email: "admin-invite@example.com",
           role: "admin",
         }),
@@ -669,7 +716,7 @@ describe("built-in role delegation ceiling", () => {
     for (const actor of [owner, admin]) {
       for (const role of ["member", "auditor", "admin"]) {
         await runEffect(
-          actor.service.patchTenantUser(request(actor.headers), tenant.id, targetMember.id, {
+          actor.service.patchTenantAccount(request(actor.headers), tenant.id, target.user.id, {
             role,
           }),
         );
@@ -696,7 +743,7 @@ describe("built-in role delegation ceiling", () => {
 
     await expect(
       runEffect(
-        owner.service.inviteTenantUser(request(owner.headers), tenant.id, {
+        owner.service.inviteTenantAccount(request(owner.headers), tenant.id, {
           email: "invited@example.com",
           roleId: custom.id,
           role: "owner",
@@ -706,7 +753,7 @@ describe("built-in role delegation ceiling", () => {
 
     await expect(
       runEffect(
-        owner.service.patchTenantUser(request(owner.headers), tenant.id, targetMember.id, {
+        owner.service.patchTenantAccount(request(owner.headers), tenant.id, target.user.id, {
           roleId: custom.id,
           role: "owner",
         }),
@@ -733,6 +780,7 @@ describe("built-in role delegation ceiling", () => {
 
     const memberManager = await createRole(owner, tenant.id, "Member manager", [
       "tenant.read",
+      "tenant.write",
       "members.read",
       "members.write",
     ]);
@@ -742,37 +790,47 @@ describe("built-in role delegation ceiling", () => {
     addMember(owner.db, tenant.id, actor.user, "owner", memberManager.id);
 
     const ownerMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 
     // The forged owner neither gains owner powers...
     await expect(
       runEffect(
-        actor.service.patchTenantUser(request(actor.headers), tenant.id, ownerMember.id, {
+        actor.service.patchTenantAccount(request(actor.headers), tenant.id, owner.user.id, {
           role: "member",
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
     await expect(
-      runEffect(actor.service.removeTenantUser(request(actor.headers), tenant.id, ownerMember.id)),
+      runEffect(
+        actor.service.removeTenantAccount(request(actor.headers), tenant.id, owner.user.id),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     // ...nor inflates the owner count: the real owner is still the last one.
     await expect(
-      runEffect(owner.service.removeTenantUser(request(owner.headers), tenant.id, ownerMember.id)),
+      runEffect(
+        owner.service.removeTenantAccount(request(owner.headers), tenant.id, owner.user.id),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     expect(owner.db.store.member.some((row: any) => row.id === ownerMember.id)).toBe(true);
   });
 });
 
-describe("SCIM provisioning boundary", () => {
-  type ScimCreateUserBody = {
-    userName: string;
+describe("SCIM directory provisioning", () => {
+  const tenantId = "tenant-acme";
+  const otherTenantId = "tenant-beta";
+
+  /** The SCIM user fields these tests exercise. */
+  type ScimUserBody = {
+    userName?: string;
+    externalId?: string;
+    name?: { formatted?: string; givenName?: string; familyName?: string };
     roles?: ReadonlyArray<{ value: string }>;
   };
 
-  const tokenHash = async (value: string) => {
+  const sha256Hex = async (value: string) => {
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
 
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(
@@ -780,511 +838,290 @@ describe("SCIM provisioning boundary", () => {
     );
   };
 
-  const setupScim = async (
-    context: Awaited<ReturnType<typeof makeContext>>,
-    tenantId: string,
-    token: string,
-  ) => {
+  const makeScimDb = async (token = "directory-token") => {
+    const db = makeDb();
     const timestamp = new Date();
+    const tokenHash = await sha256Hex(token);
 
-    context.db.store.scim_token.push({
-      id: "scim-token-1",
-      organizationId: tenantId,
-      name: "Boundary test",
-      tokenHash: await tokenHash(token),
-      lastUsedAt: null,
-      revokedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+    for (const organizationId of [tenantId, otherTenantId])
+      db.store.scim_token.push({
+        id: `scim-token-${organizationId}`,
+        organizationId,
+        name: "IdP connector",
+        tokenHash,
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+    return db;
   };
 
-  const scimCreateUser = (token: string, tenantId: string, body: ScimCreateUserBody) =>
-    // SAFETY: the SCIM handler only reads headers, url, method and the JSON
-    // effect from its request value; this mirrors helpers.request.
-    scimHandler({
-      headers: { authorization: `Bearer ${token}` },
-      url: `https://enterprise.test/scim/v2/${tenantId}/Users`,
-      method: "POST",
-      json: Effect.succeed(body),
-    } as any);
-
-  it("cannot provision an owner or administrator", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const token = "scim-boundary-token";
-
-    await setupScim(owner, tenant.id, token);
-
-    for (const role of ["owner", "admin"]) {
-      const response = await runEffect(
-        Effect.provideService(
-          scimCreateUser(token, tenant.id, {
-            userName: `${role}@example.com`,
-            roles: [{ value: role }],
-          }),
-          Db,
-          owner.db,
-        ),
-      );
-
-      expect(response.status).toBe(400);
-    }
-
-    // The only owner is the original creator; SCIM created no membership.
-    expect(
-      owner.db.store.member.filter(
-        (row: any) => row.organizationId === tenant.id && row.role === "owner",
-      ),
-    ).toHaveLength(1);
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.role === "admin",
-      ),
-    ).toBe(false);
-
-    // Plain members are still provisioned.
-    const response = await runEffect(
-      Effect.provideService(
-        scimCreateUser(token, tenant.id, {
-          userName: "member@example.com",
-          roles: [{ value: "member" }],
-        }),
-        Db,
-        owner.db,
-      ),
-    );
-
-    expect(response.status).toBe(201);
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.role === "member",
-      ),
-    ).toBe(true);
-  });
-
-  it("coerces common non-privileged role labels and settles matching invitations", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const token = "scim-role-label-token";
-
-    await setupScim(owner, tenant.id, token);
-
-    for (const [role, email] of [
-      ["User", "user-label@example.com"],
-      ["Employee", "employee-label@example.com"],
-      ["Member", "member-label@example.com"],
-    ] as const) {
-      const response = await runEffect(
-        Effect.provideService(
-          scimCreateUser(token, tenant.id, {
-            userName: email,
-            roles: [{ value: role }],
-          }),
-          Db,
-          owner.db,
-        ),
-      );
-
-      expect(response.status, `${role} should provision`).toBe(201);
-      const provisioned = owner.db.store.user.find((row: any) => row.email === email);
-      expect(
-        owner.db.store.member.some(
-          (row: any) =>
-            row.organizationId === tenant.id &&
-            row.userId === provisioned?.id &&
-            row.role === "member",
-        ),
-      ).toBe(true);
-    }
-
-    const invitedEmail = "scim-settled@example.com";
-
-    const invitation = await runEffect(
-      owner.service.inviteTenantUser(request(owner.headers), tenant.id, {
-        email: invitedEmail,
-        role: "member",
-      }),
-    );
-
-    const response = await runEffect(
-      Effect.provideService(
-        scimCreateUser(token, tenant.id, {
-          userName: invitedEmail,
-          roles: [{ value: "Employee" }],
-        }),
-        Db,
-        owner.db,
-      ),
-    );
-
-    expect(response.status).toBe(201);
-    expect(owner.db.store.invitation.find((row: any) => row.id === invitation.id)).toMatchObject({
-      status: "accepted",
-    });
-  });
-
   const scimRequest = (options: {
-    token: string;
-    tenantId: string;
-    method: string;
-    path: string;
+    token?: string;
+    tenantId?: string;
+    method?: string;
+    path?: string;
     body?: unknown;
   }) =>
-    // SAFETY: the SCIM handler reads headers, url, method and the JSON effect.
+    // SAFETY: the SCIM handler reads headers, url, method and the JSON effect
+    // from its request value; this mirrors helpers.request.
     ({
-      headers: { authorization: `Bearer ${options.token}` },
-      url: `https://enterprise.test/scim/v2/${options.tenantId}${options.path}`,
-      method: options.method,
+      headers: { authorization: `Bearer ${options.token ?? "directory-token"}` },
+      url: `https://enterprise.test/scim/v2/${options.tenantId ?? tenantId}${
+        options.path ?? "/Users"
+      }`,
+      method: options.method ?? "GET",
       json: Effect.succeed(options.body ?? {}),
     }) as any;
 
-  const provisionScimUser = async (
-    context: any,
-    tenantId: string,
-    token: string,
-    email: string,
-  ) => {
-    const response = await runEffect(
-      Effect.provideService(
-        scimCreateUser(token, tenantId, { userName: email, roles: [{ value: "member" }] }),
-        Db,
-        context.db,
-      ),
-    );
+  const callScim = (db: any, options: Parameters<typeof scimRequest>[0]) =>
+    runEffect(Effect.provideService(scimHandler(scimRequest(options)), Db, db));
 
-    expect(response.status).toBe(201);
+  const createScimUser = async (db: any, body: ScimUserBody, tenant?: string) => {
+    const response = await callScim(db, { method: "POST", body, tenantId: tenant });
 
-    return context.db.store.user.find((row: any) => row.email === email);
+    return { response, body: await responseJson(response) };
   };
 
-  it("DELETE /Users clears only the removed user's tenant grants", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const other = await createTenant(owner, "beta");
-    const token = "scim-delete-token";
+  it("provisions tenant directory users without accounts or members", async () => {
+    const db = await makeScimDb();
 
-    await setupScim(owner, tenant.id, token);
-
-    const provisioned = await provisionScimUser(owner, tenant.id, token, "deleted@example.com");
-
-    const bystander = await makeContext({
-      db: owner.db,
-      user: { id: "user-bystander", name: "Bystander", email: "bystander@example.com" },
+    const created = await callScim(db, {
+      method: "POST",
+      body: {
+        userName: "Ada@Example.com",
+        externalId: "idp-1",
+        name: { givenName: "Ada", familyName: "Lovelace" },
+        // Directory people have no roles; an IdP-sent role is ignored.
+        roles: [{ value: "owner" }],
+      },
     });
 
-    const acme = seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
-    seedDirectoryAccess(owner.db, other.id, provisioned.id, "beta");
-    // The same group and tenant still contain another user: cleanup must strip
-    // only the removed user's rows.
-    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
-    owner.db.store.sso_identity.push({
-      organizationId: tenant.id,
-      objectId: "object-bystander",
-      userId: bystander.user.id,
-      createdAt: new Date(),
+    expect(created.status).toBe(201);
+
+    const rendered = await responseJson(created);
+
+    expect(rendered).toMatchObject({
+      userName: "ada@example.com",
+      externalId: "idp-1",
+      active: true,
+      name: { formatted: "Ada Lovelace" },
+    });
+    expect(rendered).not.toHaveProperty("roles");
+
+    expect(db.store.user).toHaveLength(1);
+    expect(db.store.user[0]).toMatchObject({
+      organizationId: tenantId,
+      email: "ada@example.com",
+      name: "Ada Lovelace",
+      externalId: "idp-1",
+      source: "scim",
+      disabled: false,
     });
 
-    const response = await runEffect(
-      Effect.provideService(
-        scimHandler(
-          scimRequest({
-            token,
-            tenantId: tenant.id,
-            method: "DELETE",
-            path: `/Users/${provisioned.id}`,
-          }),
-        ),
-        Db,
-        owner.db,
-      ),
+    // A directory person is not a dashboard identity: no account, membership
+    // or invitation is provisioned.
+    expect(db.store.account).toEqual([]);
+    expect(db.store.member).toEqual([]);
+    expect(db.store.invitation).toEqual([]);
+
+    const listed = await responseJson(await callScim(db, {}));
+
+    expect(listed).toMatchObject({
+      totalResults: 1,
+      Resources: [
+        expect.objectContaining({ id: db.store.user[0].id, userName: "ada@example.com" }),
+      ],
+    });
+
+    // A retried create reuses the tenant row instead of duplicating the person.
+    const retried = await callScim(db, { method: "POST", body: { userName: "ada@example.com" } });
+
+    expect(retried.status).toBe(200);
+    expect(db.store.user).toHaveLength(1);
+  });
+
+  it("rejects a malformed userName with a SCIM error body", async () => {
+    const db = await makeScimDb();
+
+    const response = await callScim(db, { method: "POST", body: { userName: "not-an-email" } });
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+      status: "400",
+    });
+  });
+
+  it("keeps directory users and mutations tenant-local", async () => {
+    const db = await makeScimDb();
+
+    const acme = await createScimUser(db, { userName: "shared@example.com" });
+    const beta = await createScimUser(db, { userName: "shared@example.com" }, otherTenantId);
+
+    expect(acme.response.status).toBe(201);
+    expect(beta.response.status).toBe(201);
+    // The same address is one person per tenant; neither create reused the other.
+    expect(acme.body.id).not.toBe(beta.body.id);
+    expect(db.store.user.map((row: any) => row.organizationId).sort()).toEqual(
+      [tenantId, otherTenantId].sort(),
     );
+
+    const crossGet = await callScim(db, { path: `/Users/${beta.body.id}` });
+
+    const crossPatch = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${beta.body.id}`,
+      body: { Operations: [{ op: "replace", path: "active", value: false }] },
+    });
+
+    const crossDelete = await callScim(db, { method: "DELETE", path: `/Users/${beta.body.id}` });
+
+    expect([crossGet.status, crossPatch.status, crossDelete.status]).toEqual([404, 404, 404]);
+    expect(db.store.user.find((row: any) => row.id === beta.body.id)?.disabled).toBe(false);
+  });
+
+  it("patches name, tenant-local userName and active without touching accounts", async () => {
+    const db = await makeScimDb();
+    const timestamp = new Date();
+
+    // A dashboard account with the target address is a different identity and
+    // must not block a tenant-local directory rename.
+    db.store.account.push({
+      id: "account-1",
+      name: "Grace",
+      email: "grace@example.com",
+      emailVerified: true,
+      image: null,
+      disabled: false,
+      source: "manual",
+      authRevision: "revision",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const { body: created } = await createScimUser(db, { userName: "old@example.com" });
+
+    const patched = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${created.id}`,
+      body: {
+        Operations: [
+          { op: "replace", path: "name.givenName", value: "Grace" },
+          { op: "replace", path: "userName", value: "Grace@Example.com" },
+        ],
+      },
+    });
+
+    expect(patched.status).toBe(200);
+    expect(await responseJson(patched)).toMatchObject({
+      userName: "grace@example.com",
+      name: { formatted: "Grace" },
+      active: true,
+    });
+    expect(db.store.user.find((row: any) => row.id === created.id)).toMatchObject({
+      email: "grace@example.com",
+      name: "Grace",
+    });
+
+    const deactivated = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${created.id}`,
+      body: { Operations: [{ op: "replace", path: "active", value: false }] },
+    });
+
+    expect(deactivated.status).toBe(200);
+    expect(await responseJson(deactivated)).toMatchObject({ active: false });
+    expect(db.store.user.find((row: any) => row.id === created.id)?.disabled).toBe(true);
+    expect(db.store.member).toEqual([]);
+
+    const reactivated = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${created.id}`,
+      body: { Operations: [{ op: "replace", path: "active", value: true }] },
+    });
+
+    expect(await responseJson(reactivated)).toMatchObject({ active: true });
+    expect(db.store.user.find((row: any) => row.id === created.id)?.disabled).toBe(false);
+  });
+
+  it("rejects a userName another directory user in the same tenant already uses", async () => {
+    const db = await makeScimDb();
+
+    await createScimUser(db, { userName: "taken@example.com" });
+    const { body: other } = await createScimUser(db, { userName: "other@example.com" });
+
+    const response = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${other.id}`,
+      body: { Operations: [{ op: "replace", path: "userName", value: "taken@example.com" }] },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await responseJson(response)).toMatchObject({ scimType: "uniqueness" });
+  });
+
+  it("deletes only the tenant directory user", async () => {
+    const db = await makeScimDb();
+
+    const { body: removed } = await createScimUser(db, { userName: "one@example.com" });
+    const { body: kept } = await createScimUser(db, { userName: "two@example.com" });
+
+    db.store.user_group_member.push({ groupId: "group-1", userId: removed.id });
+
+    const response = await callScim(db, { method: "DELETE", path: `/Users/${removed.id}` });
 
     expect(response.status).toBe(204);
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
-      ),
-    ).toBe(false);
-    // The removed tenant's grants are gone. This drops the explicit directory
-    // link; the tenant's email-based auto-provisioning can still match the
-    // account later, but the stale identity row does not survive.
-    expect(
-      owner.db.store.user_group_member
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.groupId),
-    ).toEqual(["group-beta"]);
-    expect(
-      owner.db.store.sso_identity
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.organizationId),
-    ).toEqual([other.id]);
-    expect(owner.db.store.user_group_member).toContainEqual({
-      groupId: acme.groupId,
-      userId: bystander.user.id,
-    });
-    expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
-    );
+    expect(db.store.user.map((row: any) => row.id)).toEqual([kept.id]);
+    expect(db.store.account).toEqual([]);
+    expect(db.store.member).toEqual([]);
+
+    const missing = await callScim(db, { method: "DELETE", path: `/Users/${removed.id}` });
+
+    expect(missing.status).toBe(404);
   });
 
-  it("PATCH /Users active=false reports inactive, cleans up and is idempotent", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const token = "scim-deactivate-token";
+  it("lists and patches group members from the tenant directory", async () => {
+    const db = await makeScimDb();
 
-    await setupScim(owner, tenant.id, token);
+    const { body: acme } = await createScimUser(db, { userName: "ada@example.com" });
 
-    const provisioned = await provisionScimUser(owner, tenant.id, token, "inactive@example.com");
+    const { body: beta } = await createScimUser(db, { userName: "bob@example.com" }, otherTenantId);
 
-    const bystander = await makeContext({
-      db: owner.db,
-      user: { id: "user-bystander", name: "Bystander", email: "bystander@example.com" },
+    const createdGroup = await callScim(db, {
+      method: "POST",
+      path: "/Groups",
+      body: { displayName: "Staff", members: [{ value: acme.id }, { value: beta.id }] },
     });
 
-    const acme = seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
+    expect(createdGroup.status).toBe(201);
 
-    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
-    owner.db.store.sso_identity.push({
-      organizationId: tenant.id,
-      objectId: "object-bystander",
-      userId: bystander.user.id,
-      createdAt: new Date(),
+    const group = await responseJson(createdGroup);
+
+    // Another tenant's directory person is not a member of this tenant's group.
+    expect(group.members).toEqual([{ value: acme.id, display: "ada@example.com", type: "User" }]);
+
+    const listed = await responseJson(await callScim(db, { path: "/Groups" }));
+
+    expect(listed.totalResults).toBe(1);
+    expect(listed.Resources[0]).toMatchObject({
+      displayName: "Staff",
+      members: [{ value: acme.id, display: "ada@example.com", type: "User" }],
     });
 
-    const deactivate = () =>
-      runEffect(
-        Effect.provideService(
-          scimHandler(
-            scimRequest({
-              token,
-              tenantId: tenant.id,
-              method: "PATCH",
-              path: `/Users/${provisioned.id}`,
-              body: { Operations: [{ op: "replace", path: "active", value: false }] },
-            }),
-          ),
-          Db,
-          owner.db,
-        ),
-      );
-
-    const response = await deactivate();
-
-    expect(response.status).toBe(200);
-    expect(await responseJson(response)).toMatchObject({ id: provisioned.id, active: false });
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
-      ),
-    ).toBe(false);
-    expect(owner.db.store.user.find((row: any) => row.id === provisioned.id)?.disabled).toBe(true);
-    expect(
-      owner.db.store.user_group_member
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.groupId),
-    ).toEqual([]);
-    expect(owner.db.store.sso_identity.filter((row: any) => row.userId === provisioned.id)).toEqual(
-      [],
-    );
-    expect(owner.db.store.user_group_member).toContainEqual({
-      groupId: acme.groupId,
-      userId: bystander.user.id,
-    });
-    expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
-    );
-
-    // A retried deactivation must not fail once the membership is gone. The
-    // response is empty because there is no tenant-scoped member row left to
-    // render, and reading the global account row could expose another tenant's
-    // user for an id this token does not own.
-    const retry = await deactivate();
-
-    expect(retry.status).toBe(204);
-    expect(await HttpServerResponse.toWeb(retry).text()).toBe("");
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === provisioned.id,
-      ),
-    ).toBe(false);
-  });
-
-  it("PATCH /Users active=false reports inactive for a multi-tenant user", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const other = await createTenant(owner, "beta");
-    const token = "scim-multi-tenant-token";
-
-    await setupScim(owner, tenant.id, token);
-
-    const provisioned = await provisionScimUser(owner, tenant.id, token, "multi@example.com");
-
-    // The account also belongs to another tenant, so deactivating it here must
-    // leave the global account enabled while reporting this tenant inactive.
-    addMember(owner.db, other.id, provisioned, "member");
-    seedDirectoryAccess(owner.db, tenant.id, provisioned.id, "acme");
-    seedDirectoryAccess(owner.db, other.id, provisioned.id, "beta");
-
-    const deactivate = () =>
-      runEffect(
-        Effect.provideService(
-          scimHandler(
-            scimRequest({
-              token,
-              tenantId: tenant.id,
-              method: "PATCH",
-              path: `/Users/${provisioned.id}`,
-              body: { Operations: [{ op: "replace", path: "active", value: false }] },
-            }),
-          ),
-          Db,
-          owner.db,
-        ),
-      );
-
-    const response = await deactivate();
-
-    expect(response.status).toBe(200);
-    expect(await responseJson(response)).toMatchObject({ id: provisioned.id, active: false });
-    expect(owner.db.store.user.find((row: any) => row.id === provisioned.id)?.disabled).toBe(false);
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === other.id && row.userId === provisioned.id,
-      ),
-    ).toBe(true);
-    expect(
-      owner.db.store.user_group_member
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.groupId),
-    ).toEqual(["group-beta"]);
-    expect(
-      owner.db.store.sso_identity
-        .filter((row: any) => row.userId === provisioned.id)
-        .map((row: any) => row.organizationId),
-    ).toEqual([other.id]);
-
-    const retry = await deactivate();
-
-    expect(retry.status).toBe(204);
-    expect(await HttpServerResponse.toWeb(retry).text()).toBe("");
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === other.id && row.userId === provisioned.id,
-      ),
-    ).toBe(true);
-  });
-
-  it("does not disclose a user that belongs only to another tenant", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const other = await createTenant(owner, "beta");
-    const token = "scim-cross-tenant-token";
-
-    await setupScim(owner, tenant.id, token);
-
-    const foreign = await makeContext({
-      db: owner.db,
-      user: { id: "user-foreign", name: "Foreign Person", email: "foreign@example.com" },
+    const patched = await callScim(db, {
+      method: "PATCH",
+      path: `/Groups/${group.id}`,
+      body: { Operations: [{ op: "add", path: "members", value: [{ value: beta.id }] }] },
     });
 
-    addMember(owner.db, other.id, foreign.user, "member");
-    const grants = seedDirectoryAccess(owner.db, other.id, foreign.user.id, "foreign");
-
-    const response = await runEffect(
-      Effect.provideService(
-        scimHandler(
-          scimRequest({
-            token,
-            tenantId: tenant.id,
-            method: "PATCH",
-            path: `/Users/${foreign.user.id}`,
-            body: { Operations: [{ op: "replace", path: "active", value: false }] },
-          }),
-        ),
-        Db,
-        owner.db,
-      ),
-    );
-
-    // The id is not a member of this token's tenant, so the handler must answer
-    // without reading the deployment-global account row it does not own.
-    expect(response.status).toBe(204);
-    expect(await HttpServerResponse.toWeb(response).text()).toBe("");
-    expect(owner.db.store.user.find((row: any) => row.id === foreign.user.id)).toMatchObject({
-      email: "foreign@example.com",
+    expect(patched.status).toBe(200);
+    expect(await responseJson(patched)).toMatchObject({
+      members: [{ value: acme.id, display: "ada@example.com", type: "User" }],
     });
-    expect(
-      owner.db.store.user.find((row: any) => row.id === foreign.user.id)?.disabled,
-    ).toBeFalsy();
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === other.id && row.userId === foreign.user.id,
-      ),
-    ).toBe(true);
-    expect(owner.db.store.user_group_member).toContainEqual({
-      groupId: grants.groupId,
-      userId: foreign.user.id,
-    });
-    expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: other.id, userId: foreign.user.id }),
-    );
-  });
-
-  it("refuses to remove the last owner without touching directory state", async () => {
-    const owner = await makeContext();
-    const tenant = await createTenant(owner, "acme");
-    const token = "scim-owner-token";
-
-    await setupScim(owner, tenant.id, token);
-
-    const grants = seedDirectoryAccess(owner.db, tenant.id, owner.user.id, "owner");
-
-    const deletion = await runEffect(
-      Effect.provideService(
-        scimHandler(
-          scimRequest({
-            token,
-            tenantId: tenant.id,
-            method: "DELETE",
-            path: `/Users/${owner.user.id}`,
-          }),
-        ),
-        Db,
-        owner.db,
-      ),
-    );
-
-    const deactivation = await runEffect(
-      Effect.provideService(
-        scimHandler(
-          scimRequest({
-            token,
-            tenantId: tenant.id,
-            method: "PATCH",
-            path: `/Users/${owner.user.id}`,
-            body: { Operations: [{ op: "replace", path: "active", value: false }] },
-          }),
-        ),
-        Db,
-        owner.db,
-      ),
-    );
-
-    expect(deletion.status).toBe(409);
-    expect(deactivation.status).toBe(409);
-    expect(
-      owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
-      ),
-    ).toBe(true);
-    expect(owner.db.store.user_group_member).toContainEqual({
-      groupId: grants.groupId,
-      userId: owner.user.id,
-    });
-    expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: tenant.id, userId: owner.user.id }),
-    );
   });
 });
 
@@ -1524,11 +1361,13 @@ describe("owner removal", () => {
     addMember(owner.db, tenant.id, admin.user, "admin");
 
     const ownerMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 
     await expect(
-      runEffect(admin.service.removeTenantUser(request(admin.headers), tenant.id, ownerMember.id)),
+      runEffect(
+        admin.service.removeTenantAccount(request(admin.headers), tenant.id, owner.user.id),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     expect(owner.db.store.member.some((row: any) => row.id === ownerMember.id)).toBe(true);
@@ -1554,22 +1393,24 @@ describe("owner removal", () => {
 
     // With two owners, an owner may remove the other owner...
     await runEffect(
-      owner.service.removeTenantUser(request(owner.headers), tenant.id, secondOwnerMember.id),
+      owner.service.removeTenantAccount(request(owner.headers), tenant.id, secondOwner.user.id),
     );
 
     // ...but the last owner cannot remove themselves while other members remain.
     const ownerMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 
     await expect(
-      runEffect(owner.service.removeTenantUser(request(owner.headers), tenant.id, ownerMember.id)),
+      runEffect(
+        owner.service.removeTenantAccount(request(owner.headers), tenant.id, owner.user.id),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
   });
 });
 
 describe("tenant member removal", () => {
-  it("clears the removed member's directory groups and SSO identity for that tenant", async () => {
+  it("clears the removed account's SSO identity but leaves directory people alone", async () => {
     const owner = await makeContext();
     const tenant = await createTenant(owner, "acme");
     const other = await createTenant(owner, "beta");
@@ -1586,40 +1427,85 @@ describe("tenant member removal", () => {
 
     const membership = addMember(owner.db, tenant.id, member.user, "member");
 
-    const acme = seedDirectoryAccess(owner.db, tenant.id, member.user.id, "acme");
-    seedDirectoryAccess(owner.db, other.id, member.user.id, "beta");
-    // Another user in the same tenant group must keep their membership.
-    owner.db.store.user_group_member.push({ groupId: acme.groupId, userId: bystander.user.id });
+    const acme = seedDirectoryAccess(
+      owner.db,
+      tenant.id,
+      "directory-member-acme",
+      member.user.id,
+      "acme",
+    );
+
+    const beta = seedDirectoryAccess(
+      owner.db,
+      other.id,
+      "directory-member-beta",
+      member.user.id,
+      "beta",
+    );
+
+    // Another directory person in the same tenant group must keep their
+    // membership, and their account's SSO link is independent.
+    owner.db.store.user.push({
+      id: "directory-bystander",
+      organizationId: tenant.id,
+      name: "Directory Bystander",
+      email: "bystander-directory@example.com",
+      externalId: null,
+      source: "manual",
+      disabled: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    owner.db.store.user_group_member.push({
+      groupId: acme.groupId,
+      userId: "directory-bystander",
+    });
     owner.db.store.sso_identity.push({
       organizationId: tenant.id,
       objectId: "object-bystander",
-      userId: bystander.user.id,
+      accountId: bystander.user.id,
       createdAt: new Date(),
     });
 
     await runEffect(
-      owner.service.removeTenantUser(request(owner.headers), tenant.id, membership.id),
+      owner.service.removeTenantAccount(request(owner.headers), tenant.id, member.user.id),
     );
 
     expect(owner.db.store.member.some((row: any) => row.id === membership.id)).toBe(false);
-    // Only this tenant's grants are removed; the same account's membership of
-    // another tenant's directory is untouched.
+
+    // Removing dashboard access is not removing a person: directory users,
+    // their group memberships and their device links stay untouched in both
+    // tenants.
+    expect(owner.db.store.user.map((row: any) => row.id)).toEqual(
+      expect.arrayContaining([
+        "directory-member-acme",
+        "directory-member-beta",
+        "directory-bystander",
+      ]),
+    );
     expect(
       owner.db.store.user_group_member
-        .filter((row: any) => row.userId === member.user.id)
+        .filter((row: any) => row.userId === "directory-member-acme")
         .map((row: any) => row.groupId),
-    ).toEqual(["group-beta"]);
+    ).toEqual([acme.groupId]);
+    expect(
+      owner.db.store.user_group_member
+        .filter((row: any) => row.userId === "directory-member-beta")
+        .map((row: any) => row.groupId),
+    ).toEqual([beta.groupId]);
+    expect(
+      owner.db.store.user_group_member.filter((row: any) => row.userId === "directory-bystander"),
+    ).toEqual([{ groupId: acme.groupId, userId: "directory-bystander" }]);
+
+    // Only this tenant's account SSO link is removed; the same account's link
+    // to another tenant and the bystander's link are untouched.
     expect(
       owner.db.store.sso_identity
-        .filter((row: any) => row.userId === member.user.id)
+        .filter((row: any) => row.accountId === member.user.id)
         .map((row: any) => row.organizationId),
     ).toEqual([other.id]);
-    expect(owner.db.store.user_group_member).toContainEqual({
-      groupId: acme.groupId,
-      userId: bystander.user.id,
-    });
     expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: tenant.id, userId: bystander.user.id }),
+      expect.objectContaining({ organizationId: tenant.id, accountId: bystander.user.id }),
     );
   });
 
@@ -1628,26 +1514,34 @@ describe("tenant member removal", () => {
     const tenant = await createTenant(owner, "acme");
 
     const membership = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 
-    const grants = seedDirectoryAccess(owner.db, tenant.id, owner.user.id, "owner");
+    const grants = seedDirectoryAccess(
+      owner.db,
+      tenant.id,
+      "directory-owner",
+      owner.user.id,
+      "owner",
+    );
 
     await expect(
-      runEffect(owner.service.removeTenantUser(request(owner.headers), tenant.id, membership.id)),
-    ).rejects.toBeInstanceOf(EnterpriseLastTenantUser);
+      runEffect(
+        owner.service.removeTenantAccount(request(owner.headers), tenant.id, owner.user.id),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseLastTenantAccount);
 
     expect(
       owner.db.store.member.some(
-        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+        (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
       ),
     ).toBe(true);
     expect(owner.db.store.user_group_member).toContainEqual({
       groupId: grants.groupId,
-      userId: owner.user.id,
+      userId: "directory-owner",
     });
     expect(owner.db.store.sso_identity).toContainEqual(
-      expect.objectContaining({ organizationId: tenant.id, userId: owner.user.id }),
+      expect.objectContaining({ organizationId: tenant.id, accountId: owner.user.id }),
     );
   });
 });

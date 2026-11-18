@@ -373,8 +373,8 @@ export default function AccountPage() {
   // Session claims are a sign-in snapshot. The `me` query reads the current
   // user row, so verification changes made in this tab cannot leave stale
   // "Not verified" badges behind.
-  const email = () => me.data?.user.email ?? user()?.email;
-  const emailVerified = () => me.data?.user.emailVerified ?? user()?.emailVerified ?? false;
+  const email = () => me.data?.account.email ?? user()?.email;
+  const emailVerified = () => me.data?.account.emailVerified ?? user()?.emailVerified ?? false;
   const tenants = () => me.data?.tenants ?? [];
 
   const tenantLabel = (tenantId?: string | null) =>
@@ -389,7 +389,7 @@ export default function AccountPage() {
   // Seed from the query's SSR/preloaded value so the first paint already shows
   // the saved choice instead of flashing the empty option.
   const [defaultTenantId, setDefaultTenantId] = createSignal(
-    me.data?.user.defaultTenantId ?? "",
+    me.data?.account.defaultTenantId ?? "",
   );
 
   const [defaultTenantPending, setDefaultTenantPending] = createSignal(false);
@@ -399,7 +399,7 @@ export default function AccountPage() {
   // Follow refetches (another tab may change the choice) without clobbering
   // the select while the save is in flight.
   createEffect(
-    () => me.data?.user.defaultTenantId,
+    () => me.data?.account.defaultTenantId,
     (value) => {
       if (!defaultTenantPending()) setDefaultTenantId(value ?? "");
     },
@@ -425,7 +425,7 @@ export default function AccountPage() {
       setTimeout(() => setDefaultTenantSaved(false), 3000);
     } catch (error) {
       // Put the rejected choice back to what the server still holds.
-      setDefaultTenantId(me.data?.user.defaultTenantId ?? "");
+      setDefaultTenantId(me.data?.account.defaultTenantId ?? "");
       setDefaultTenantError(
         errorMessage(raisedFailure(error), "Could not update your default tenant. Try again."),
       );
@@ -585,8 +585,8 @@ export default function AccountPage() {
                 <Field
                   label="Default tenant"
                   hint={
-                    me.data?.user.defaultTenantId
-                      ? `Currently ${tenantLabel(me.data.user.defaultTenantId)}.`
+                    me.data?.account.defaultTenantId
+                      ? `Currently ${tenantLabel(me.data.account.defaultTenantId)}.`
                       : "No default tenant is set."
                   }
                 >
@@ -607,7 +607,7 @@ export default function AccountPage() {
                 </Field>
               </div>
               <div class="flex gap-2">
-                <Show when={me.data?.user.defaultTenantId}>
+                <Show when={me.data?.account.defaultTenantId}>
                   <Button
                     type="button"
                     variant="outline"
@@ -698,9 +698,9 @@ export default function AccountPage() {
       </Panel>
 
       <AccountSecurity
-        totpEnabled={me.data?.user.totpEnabled ?? false}
-        passkeyEnabled={me.data?.user.passkeyEnabled ?? false}
-        mfaRequired={me.data?.user.mfaRequired ?? false}
+        totpEnabled={me.data?.account.totpEnabled ?? false}
+        passkeyEnabled={me.data?.account.passkeyEnabled ?? false}
+        mfaRequired={me.data?.account.mfaRequired ?? false}
         email={email() ?? ""}
       />
 

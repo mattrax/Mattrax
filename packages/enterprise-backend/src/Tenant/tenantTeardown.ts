@@ -247,7 +247,7 @@ export const teardownTenant = (
           updatedAt: startedAt,
           lastError: null,
           completedAt: null,
-          requestedByUserId: actor?.id ?? existing.requestedByUserId ?? null,
+          requestedByAccountId: actor?.id ?? existing.requestedByAccountId ?? null,
           requestedByEmail: actor?.email ?? existing.requestedByEmail ?? null,
         })
         .where(
@@ -286,7 +286,7 @@ export const teardownTenant = (
             steps: [],
             attempts: 1,
             lastError: null,
-            requestedByUserId: actor?.id ?? null,
+            requestedByAccountId: actor?.id ?? null,
             requestedByEmail: actor?.email ?? null,
             createdAt: startedAt,
             updatedAt: startedAt,

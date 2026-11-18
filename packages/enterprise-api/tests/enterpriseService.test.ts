@@ -15,7 +15,7 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
-  EnterpriseLastTenantUser,
+  EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
   EnterprisePermissionDenied,
@@ -159,7 +159,7 @@ const makeContext = async (
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   const auth = {
     requireUser: (input: any) => {
@@ -223,7 +223,7 @@ describe("enterprise service tenant flow", () => {
       { id: result.id, name: "Acme", slug: "acme", metadata: JSON.stringify({ tier: "trial" }) },
     ]);
     expect(db.store.member).toMatchObject([
-      { organizationId: result.id, userId: db.store.user[0].id, role: "owner" },
+      { organizationId: result.id, accountId: db.store.account[0].id, role: "owner" },
     ]);
     expect(db.store.enterprise_enrollment).toMatchObject([
       { id: result.id, organizationId: result.id },
@@ -655,7 +655,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     await runEffect(
-      service.inviteTenantUser(request(headers), tenant.id, {
+      service.inviteTenantAccount(request(headers), tenant.id, {
         email: "auditor@example.com",
         role: "auditor",
       }),
@@ -663,7 +663,7 @@ describe("enterprise service tenant flow", () => {
     expect(db.store.invitation[0]).toMatchObject({ role: "auditor" });
 
     const now = new Date();
-    db.store.user.push({
+    db.store.account.push({
       id: "user-2",
       name: "Auditor",
       email: "auditor@example.com",
@@ -674,13 +674,13 @@ describe("enterprise service tenant flow", () => {
     db.store.member.push({
       id: "member-2",
       organizationId: tenant.id,
-      userId: "user-2",
+      accountId: "user-2",
       role: "member",
       createdAt: now,
       updatedAt: now,
     });
     await runEffect(
-      service.patchTenantUser(request(headers), tenant.id, "member-2", { role: "auditor" }),
+      service.patchTenantAccount(request(headers), tenant.id, "user-2", { role: "auditor" }),
     );
     expect(db.store.member.find((member: any) => member.id === "member-2")?.role).toBe("auditor");
   });
@@ -758,7 +758,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     const now = new Date();
-    db.store.user.push({
+    db.store.account.push({
       id: "user-2",
       name: "Member",
       email: "member@example.com",
@@ -769,7 +769,7 @@ describe("enterprise service tenant flow", () => {
     db.store.member.push({
       id: "member-2",
       organizationId: tenant.id,
-      userId: "user-2",
+      accountId: "user-2",
       role: "member",
       createdAt: now,
       updatedAt: now,
@@ -788,7 +788,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     const invitation = await runEffect(
-      service.inviteTenantUser(request(headers), tenant.id, {
+      service.inviteTenantAccount(request(headers), tenant.id, {
         email: "new@example.com",
         role: "admin",
       }),
@@ -839,7 +839,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     await runEffect(
-      service.inviteTenantUser(request(headers), tenant.id, {
+      service.inviteTenantAccount(request(headers), tenant.id, {
         email: "new@example.com",
         role: "admin",
       }),
@@ -866,7 +866,7 @@ describe("enterprise service tenant flow", () => {
     );
 
     const now = new Date();
-    db.store.user.push({
+    db.store.account.push({
       id: "user-2",
       name: "Member",
       email: "member@example.com",
@@ -877,21 +877,23 @@ describe("enterprise service tenant flow", () => {
     db.store.member.push({
       id: "member-2",
       organizationId: tenant.id,
-      userId: "user-2",
+      accountId: "user-2",
       role: "member",
       createdAt: now,
       updatedAt: now,
     });
 
     await runEffect(
-      service.patchTenantUser(request(headers), tenant.id, "member-2", { role: "admin" }),
+      service.patchTenantAccount(request(headers), tenant.id, "user-2", { role: "admin" }),
     );
     expect(db.store.member.find((member: any) => member.id === "member-2")?.role).toBe("admin");
 
-    await runEffect(service.removeTenantUser(request(headers), tenant.id, "member-2"));
+    await runEffect(service.removeTenantAccount(request(headers), tenant.id, "user-2"));
     await expect(
-      runEffect(service.removeTenantUser(request(headers), tenant.id, db.store.member[0].id)),
-    ).rejects.toBeInstanceOf(EnterpriseLastTenantUser);
+      runEffect(
+        service.removeTenantAccount(request(headers), tenant.id, db.store.member[0].accountId),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseLastTenantAccount);
   });
 });
 
@@ -1646,28 +1648,22 @@ describe("enterprise service policy list", () => {
     db: any,
     organizationId: string,
     id: string,
-    options: { disabled?: boolean; member?: boolean } = {},
+    options: { disabled?: boolean } = {},
   ) => {
     const now = new Date();
 
+    // Directory people are tenant-scoped by `organizationId`; they are not
+    // accounts and need no membership row to receive policy.
     db.store.user.push({
       id,
+      organizationId,
       name: id,
       email: `${id}@example.com`,
-      emailVerified: true,
       disabled: options.disabled ?? false,
+      source: "manual",
       createdAt: now,
       updatedAt: now,
     });
-
-    if (options.member !== false)
-      db.store.member.push({
-        organizationId,
-        userId: id,
-        role: "member",
-        createdAt: now,
-        updatedAt: now,
-      });
   };
 
   const seedDirectoryGroup = (db: any, organizationId: string, id: string) => {
@@ -1819,7 +1815,7 @@ describe("enterprise service policy list", () => {
     );
 
     for (const id of ["user-1", "user-2", "user-3", "user-4", "user-5", "user-6", "user-7"])
-      seedUser(db, tenant.id, id, { disabled: id === "user-3", member: id !== "user-7" });
+      seedUser(db, tenant.id, id, { disabled: id === "user-3" });
 
     for (const id of ["user-1", "user-2", "user-3", "user-4", "user-6"])
       db.store.user_group_member.push({ groupId: "group-include", userId: id });
@@ -1877,7 +1873,7 @@ describe("enterprise service policy list", () => {
       // user-1 is direct, user-2 is in the included group and user-5 is direct
       // despite also being in the excluded group. user-3 is disabled, user-4 is
       // only in the excluded group, user-6 is directly excluded and user-7 is
-      // not a tenant member.
+      // linked to a device but not included by any user or group assignment.
       scopedUserCount: 3,
       scopedDeviceCount: 3,
     });
@@ -4886,7 +4882,7 @@ describe("audit search and export", () => {
   ) => ({
     id,
     organizationId,
-    actorUserId: "user-1",
+    actorAccountId: "user-1",
     actorEmail: "owner@example.com",
     action: "device.action",
     targetType: "device",
@@ -4969,7 +4965,7 @@ describe("audit search and export", () => {
         targetId: "device-ABC",
       }),
       auditRow(first.id, "audit-b", new Date("2026-01-02T10:00:00.000Z"), {
-        actorUserId: "user-bob",
+        actorAccountId: "user-bob",
         actorEmail: "bob@example.com",
         targetId: "dev%1",
       }),
@@ -5328,7 +5324,7 @@ describe("tenant SCEP CA", () => {
 
     expect(entry).toMatchObject({
       organizationId: tenant.id,
-      actorUserId: "user-1",
+      actorAccountId: "user-1",
       actorEmail: "owner@example.com",
       targetType: "scep_ca",
       metadata: {
@@ -5473,7 +5469,7 @@ describe("tenant SCEP CA", () => {
       context.db.store.audit_log.find((row: any) => row.action === "scep_ca.imported"),
     ).toMatchObject({
       organizationId: tenant.id,
-      actorUserId: "user-1",
+      actorAccountId: "user-1",
       metadata: { source: "imported", fingerprintSha256: fingerprint },
     });
 

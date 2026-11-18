@@ -73,8 +73,8 @@ export class EnterpriseTenantTeardownFailed extends Schema.TaggedError<Enterpris
   },
 ) {}
 
-export class EnterpriseLastTenantUser extends Schema.TaggedError<EnterpriseLastTenantUser>()(
-  "EnterpriseLastTenantUser",
+export class EnterpriseLastTenantAccount extends Schema.TaggedError<EnterpriseLastTenantAccount>()(
+  "EnterpriseLastTenantAccount",
   {
     message: Schema.String,
   },
@@ -178,9 +178,9 @@ export const EnterpriseBackupWriteErrors = [
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
 
-export const EnterpriseTenantUserRemoveErrors = [
+export const EnterpriseTenantAccountRemoveErrors = [
   ...EnterpriseTenantWriteErrors,
-  EnterpriseLastTenantUser.pipe(HttpApiSchema.status(409)),
+  EnterpriseLastTenantAccount.pipe(HttpApiSchema.status(409)),
 ] as const;
 
 export const EnterprisePolicyApplicationUploadErrors = [
@@ -342,7 +342,7 @@ export const ENTERPRISE_ERROR_CODES = [
   "internal_error",
   "tenant_has_members",
   "teardown_failed",
-  "last_tenant_user",
+  "last_tenant_account",
   "step_up_required",
   "step_up_unavailable",
   "invitation_expired",
@@ -420,8 +420,8 @@ export const defaultErrorCode = (tag: string): EnterpriseErrorCode | undefined =
       return "internal_error";
     case "EnterpriseTenantHasMembers":
       return "tenant_has_members";
-    case "EnterpriseLastTenantUser":
-      return "last_tenant_user";
+    case "EnterpriseLastTenantAccount":
+      return "last_tenant_account";
     case "StepUpRequired":
       return "step_up_required";
     case "StepUpUnavailable":

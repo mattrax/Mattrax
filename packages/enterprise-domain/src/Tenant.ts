@@ -3,7 +3,7 @@ import { Schema } from "effect";
 import { JsonRecord } from "./Errors.js";
 import { NullableString } from "./Errors.js";
 
-export const UserInfo = Schema.Struct({
+export const AccountInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   email: Schema.String,
@@ -28,7 +28,7 @@ export const UserInfo = Schema.Struct({
   defaultTenantId: Schema.optional(NullableString),
 });
 
-export type UserInfo = typeof UserInfo.Type;
+export type AccountInfo = typeof AccountInfo.Type;
 
 export const OrganizationInfo = Schema.Struct({
   id: Schema.String,
@@ -116,7 +116,7 @@ export const BillingSummary = Schema.Struct({
 export type BillingSummary = typeof BillingSummary.Type;
 
 export const MeResponse = Schema.Struct({
-  user: UserInfo,
+  account: AccountInfo,
   tenants: Schema.Array(TenantInfo),
 });
 
@@ -192,9 +192,9 @@ export const PatchTenantRequest = Schema.Struct({
 
 export const TenantListResponse = Schema.Struct({ tenants: Schema.Array(TenantInfo) });
 
-export const TenantUser = Schema.Struct({
+export const TenantAccount = Schema.Struct({
   memberId: Schema.String,
-  userId: Schema.String,
+  accountId: Schema.String,
   name: Schema.String,
   email: Schema.String,
   /** Built-in role key; retained even when a custom role is assigned. */
@@ -205,15 +205,15 @@ export const TenantUser = Schema.Struct({
   createdAt: Schema.String,
 });
 
-export type TenantUser = typeof TenantUser.Type;
+export type TenantAccount = typeof TenantAccount.Type;
 
-export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUser) });
+export const TenantAccountsResponse = Schema.Struct({ accounts: Schema.Array(TenantAccount) });
 
 export const InvitationEmail = Schema.Trim.pipe(
   Schema.check(Schema.isMaxLength(320), Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)),
 );
 
-export const InviteTenantUserRequest = Schema.Struct({
+export const InviteTenantAccountRequest = Schema.Struct({
   email: InvitationEmail,
   role: Schema.optional(Schema.String),
   roleId: Schema.optional(NullableString),
@@ -328,7 +328,7 @@ export const ResendTenantInvitationResponse = Schema.Struct({
 
 export type ResendTenantInvitationResponse = typeof ResendTenantInvitationResponse.Type;
 
-export const PatchTenantUserRequest = Schema.Struct({
+export const PatchTenantAccountRequest = Schema.Struct({
   role: Schema.optional(Schema.String),
   roleId: Schema.optional(NullableString),
 });
@@ -377,7 +377,7 @@ export const TenantOwnershipTransferResponse = Schema.Struct({
 export type TenantOwnershipTransferResponse = typeof TenantOwnershipTransferResponse.Type;
 
 export const RequestTenantOwnershipTransferRequest = Schema.Struct({
-  targetUserId: Schema.String,
+  targetAccountId: Schema.String,
 });
 
 export type RequestTenantOwnershipTransferRequest =
@@ -385,7 +385,7 @@ export type RequestTenantOwnershipTransferRequest =
 
 export const RequestTenantOwnershipTransferResponse = Schema.Struct({
   id: Schema.String,
-  targetUserId: Schema.String,
+  targetAccountId: Schema.String,
   /** The emailed link; returned so the owner can forward it if mail fails. */
   acceptUrl: Schema.String,
   expiresAt: Schema.String,

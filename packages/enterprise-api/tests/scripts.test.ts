@@ -94,7 +94,7 @@ const seed = async (
   } = {},
 ) => {
   const db = makeDb({
-    user: [user],
+    account: [user],
     organization: [{ ...organization, scriptsEnabled: options.scriptsEnabled ?? true }],
     device: [
       device("device-1"),
@@ -599,13 +599,13 @@ describe("effect import", () => {
 describe("handler enforcement", () => {
   const context = async (options: { stepUp: boolean; role?: string; scriptsEnabled?: boolean }) => {
     const db = makeDb({
-      user: [user],
+      account: [user],
       organization: [{ ...organization, scriptsEnabled: options.scriptsEnabled ?? true }],
       member: [
         {
           id: "member-1",
           organizationId: orgId,
-          userId: user.id,
+          accountId: user.id,
           role: options.role ?? "owner",
           customRoleId: null,
           createdAt: now,
@@ -690,7 +690,7 @@ describe("handler enforcement", () => {
 
     expect(deniedWrite).toHaveProperty("permission", "scripts.write");
 
-    const outsider = makeDb({ user: [user], organization: [organization] });
+    const outsider = makeDb({ account: [user], organization: [organization] });
 
     const service = createEnterpriseService({
       db: outsider,

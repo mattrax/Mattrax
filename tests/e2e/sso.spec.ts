@@ -42,14 +42,14 @@ test.describe("single sign-on", () => {
     const origin = new URL(page.url()).origin;
 
     const me: {
-      user: { id: string; email: string };
+      account: { id: string; email: string };
     } = await (await page.request.get(`${origin}/api/v1/me`)).json();
 
     await page.context().clearCookies();
 
     const token = sign(authSecret(), {
-      sub: me.user.id,
-      email: me.user.email,
+      sub: me.account.id,
+      email: me.account.email,
       exp: Date.now() + 60_000,
       purpose: "sso-assertion",
       tenantId: tenant.id,
@@ -64,10 +64,10 @@ test.describe("single sign-on", () => {
     expect(response.ok(), await response.text()).toBe(true);
 
     const after: {
-      user: { id: string };
+      account: { id: string };
     } = await (await page.request.get(`${origin}/api/v1/me`)).json();
 
-    expect(after.user.id).toBe(me.user.id);
+    expect(after.account.id).toBe(me.account.id);
   });
 
   test("rejects a forged assertion", async ({ page }) => {

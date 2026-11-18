@@ -26,12 +26,12 @@ curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID" \
   }'
 ```
 
-## Members and invitations
+## Accounts and invitations
 
-List members:
+List the tenant's administrator accounts:
 
 ```bash
-curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/users" \
+curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/accounts" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
@@ -50,14 +50,16 @@ Pending invitations can be listed and cancelled. Acceptance is authenticated:
 POST /api/v1/invitations/accept
 ```
 
-Change a role or remove a member:
+Change a role or remove an administrator:
 
 ```text
-PATCH  /api/v1/tenants/:tenantId/users/:memberId
-DELETE /api/v1/tenants/:tenantId/users/:memberId
+PATCH  /api/v1/tenants/:tenantId/accounts/:accountId
+DELETE /api/v1/tenants/:tenantId/accounts/:accountId
 ```
 
-The last tenant user cannot be removed. Removing a member does not delete their account.
+The last tenant account cannot be removed. Removing an account does not delete the
+account itself, and does not touch the tenant's directory users, their device links or
+their user policies.
 
 ## Onboarding email
 
@@ -128,8 +130,8 @@ wrong theme, and `color-scheme` plus the mobile `theme-color` follow it. Changin
 theme in one tab updates the others through the same `storage` event.
 
 Cross-device sync is not implemented yet: the preference lives in this browser's
-storage, keyed by user id, so signing in on a second device starts from `system`.
-Persisting it on the account needs a `user` column and a `PATCH /v1/me` field; that is
+storage, keyed by account id, so signing in on a second device starts from `system`.
+Persisting it on the account uses the account `defaultTenantId` and a `PATCH /v1/me` field; that is
 deliberately deferred so this change needs no migration.
 
 The palette is a semantic token layer over [Radix Colors](https://www.radix-ui.com/colors):

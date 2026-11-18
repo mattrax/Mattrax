@@ -3,7 +3,7 @@ import type { MeResponse } from "@mattrax/enterprise-domain/client";
 import { clearMeCache, readMeCache, writeMeCache } from "./me-cache";
 
 const data: MeResponse = {
-  user: {
+  account: {
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",

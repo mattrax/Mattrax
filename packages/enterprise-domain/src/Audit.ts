@@ -6,7 +6,7 @@ export const AuditLogEntry = Schema.Struct({
   action: Schema.String,
   targetType: Schema.String,
   targetId: Schema.optional(NullableString),
-  actorUserId: Schema.optional(NullableString),
+  actorAccountId: Schema.optional(NullableString),
   actorEmail: Schema.optional(NullableString),
   metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
   createdAt: Schema.String,

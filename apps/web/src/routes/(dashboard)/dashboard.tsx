@@ -45,7 +45,7 @@ export default function DashboardRedirectPage() {
   createEffect(
     () => ({
       tenants: me.data?.tenants,
-      defaultTenantId: me.data?.user.defaultTenantId,
+      defaultTenantId: me.data?.account.defaultTenantId,
     }),
     ({ tenants, defaultTenantId }) => {
       if (tenantId() || !tenants?.length) return;

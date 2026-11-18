@@ -12,7 +12,7 @@ const makeContext = async () => {
   const db = makeDb();
   const now = new Date();
 
-  db.store.user.push({
+  db.store.account.push({
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -27,7 +27,7 @@ const makeContext = async () => {
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return headers.cookie
-        ? Effect.succeed({ user: db.store.user[0], apiToken: undefined })
+        ? Effect.succeed({ user: db.store.account[0], apiToken: undefined })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),

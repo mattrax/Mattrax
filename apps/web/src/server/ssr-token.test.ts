@@ -45,7 +45,7 @@ const payload = (overrides: Partial<SsrTokenPayload> = {}): SsrTokenPayload => (
   iat: Date.now(),
   exp: Date.now() + 300_000,
   ver: "revision-1",
-  user: {
+  account: {
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",

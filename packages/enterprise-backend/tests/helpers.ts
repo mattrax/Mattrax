@@ -486,7 +486,10 @@ class SelectBuilder {
         if (this.table === "member" && this.joined === "organization" && a.organizationId === b.id)
           rows.push({ ...prefix(this.table, a), ...prefix(this.joined, b) });
 
-        if (this.table === "member" && this.joined === "user" && a.userId === b.id)
+        if (this.table === "member" && this.joined === "account" && a.accountId === b.id)
+          rows.push({ ...prefix(this.table, a), ...prefix(this.joined, b) });
+
+        if (this.table === "account" && this.joined === "member" && b.accountId === a.id)
           rows.push({ ...prefix(this.table, a), ...prefix(this.joined, b) });
       }
     }

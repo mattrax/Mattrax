@@ -62,11 +62,11 @@ const makeContext = (
   return { db, run };
 };
 
-const seedUserAndTenant = () => {
+const seedAccountAndTenant = () => {
   const now = new Date();
 
   return {
-    user: [
+    account: [
       {
         id: "user-1",
         name: "Owner",
@@ -87,7 +87,7 @@ const seedUserAndTenant = () => {
       {
         id: "member-1",
         organizationId: "tenant-1",
-        userId: "user-1",
+        accountId: "user-1",
         role: "owner",
         createdAt: now,
         updatedAt: now,
@@ -126,7 +126,7 @@ const grantFor = (action: "api-token-create" | "api-token-revoke" | "email-chang
 
 describe("enterprise API tokens", () => {
   it("creates read-only and tenant-bound tokens and lists their scope", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
     const grant = await grantFor("api-token-create");
 
     const created = await run((auth) =>
@@ -160,7 +160,7 @@ describe("enterprise API tokens", () => {
   });
 
   it("defaults omitted scopes to read/write and omits the tenant", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
     const grant = await grantFor("api-token-create");
 
     const created = await run((auth) =>
@@ -183,7 +183,7 @@ describe("enterprise API tokens", () => {
   });
 
   it("rejects tenant bindings the user does not belong to and invalid scopes", async () => {
-    const { run } = makeContext(seedUserAndTenant());
+    const { run } = makeContext(seedAccountAndTenant());
     const grant = await grantFor("api-token-create");
 
     await expect(
@@ -216,11 +216,11 @@ describe("enterprise API tokens", () => {
 
     const context = makeContext(
       {
-        ...seedUserAndTenant(),
+        ...seedAccountAndTenant(),
         account_api_token: [
           {
             id: "token-read",
-            userId: "user-1",
+            accountId: "user-1",
             name: "Monitor",
             tokenPrefix: raw.slice(0, 12),
             tokenHash: await sha256(raw),
@@ -247,7 +247,7 @@ describe("enterprise API tokens", () => {
     const writeRaw = "mtx_write_can_mutate";
     context.db.store.account_api_token.push({
       id: "token-write",
-      userId: "user-1",
+      accountId: "user-1",
       name: "Writer",
       tokenPrefix: writeRaw.slice(0, 12),
       tokenHash: await sha256(writeRaw),
@@ -272,11 +272,11 @@ describe("enterprise API tokens", () => {
     const raw = "mtx_existing_read_token";
 
     const context = makeContext({
-      ...seedUserAndTenant(),
+      ...seedAccountAndTenant(),
       account_api_token: [
         {
           id: "token-1",
-          userId: "user-1",
+          accountId: "user-1",
           name: "Existing",
           tokenPrefix: raw.slice(0, 12),
           tokenHash: await sha256(raw),
@@ -327,8 +327,8 @@ describe("enterprise API tokens", () => {
 
 describe("email verification", () => {
   const unverified = () => {
-    const seed = seedUserAndTenant();
-    seed.user = [{ ...seed.user[0], emailVerified: false }];
+    const seed = seedAccountAndTenant();
+    seed.account = [{ ...seed.account[0], emailVerified: false }];
 
     return seed;
   };
@@ -350,7 +350,7 @@ describe("email verification", () => {
     );
 
     expect(result).toEqual({ status: "ok" });
-    expect(db.store.user[0]!.emailVerified).toBe(true);
+    expect(db.store.account[0]!.emailVerified).toBe(true);
   });
 
   it("queues the code in the outbox for a provider transport", async () => {
@@ -372,7 +372,7 @@ describe("email verification", () => {
     expect(db.store.email_outbox[0]).toMatchObject({
       recipient: "owner@example.com",
       template: "email_verification",
-      subjectUserId: "user-1",
+      subjectAccountId: "user-1",
       status: "pending",
     });
   });
@@ -383,7 +383,7 @@ describe("email verification", () => {
     await expect(run((auth) => auth.requestEmailVerification(session()))).rejects.toBeInstanceOf(
       EnterpriseNotConfigured,
     );
-    expect(db.store.user[0]!.emailVerified).toBe(false);
+    expect(db.store.account[0]!.emailVerified).toBe(false);
   });
 
   it("sends one welcome email after code verification", async () => {
@@ -413,7 +413,7 @@ describe("email verification", () => {
       replyTo: "oscar@otbeaumont.me",
     });
     expect(welcome[0]!.text).toContain("Hey Owner,");
-    expect(db.store.user[0]!.welcomeEmailSentAt).toBeInstanceOf(Date);
+    expect(db.store.account[0]!.welcomeEmailSentAt).toBeInstanceOf(Date);
 
     // A retried verification (or a duplicate hook) must not send again.
     await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
@@ -451,7 +451,7 @@ describe("email verification", () => {
     await expect(
       run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
-    expect(db.store.user[0]!.emailVerified).toBe(false);
+    expect(db.store.account[0]!.emailVerified).toBe(false);
   });
 
   it("requires the current email to be verified before changing it", async () => {
@@ -475,7 +475,7 @@ describe("email verification", () => {
 describe("email change ceremony", () => {
   const sent: Array<{ to: string; subject: string; text: string }> = [];
 
-  const makeEmailContext = (initial = seedUserAndTenant()) => {
+  const makeEmailContext = (initial = seedAccountAndTenant()) => {
     sent.length = 0;
 
     return makeContext(initial, {
@@ -504,7 +504,7 @@ describe("email change ceremony", () => {
   });
 
   it("refuses an email change when the deployment cannot send email", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
     const grant = await grantFor("email-change");
 
     await expect(
@@ -542,18 +542,18 @@ describe("email change ceremony", () => {
     await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
 
     const { confirm } = linksFrom();
-    const revisionBefore = db.store.user[0]!.authRevision;
+    const revisionBefore = db.store.account[0]!.authRevision;
     expect(revisionBefore).toBeUndefined();
 
     await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).resolves.toEqual({
       status: "ok",
     });
 
-    expect(db.store.user[0]).toMatchObject({
+    expect(db.store.account[0]).toMatchObject({
       email: "new@example.com",
       emailVerified: true,
     });
-    expect(db.store.user[0]!.authRevision).toMatch(/^[a-f0-9]{24}$/);
+    expect(db.store.account[0]!.authRevision).toMatch(/^[a-f0-9]{24}$/);
     expect(db.store.account_email_change[0]!.consumedAt).toBeInstanceOf(Date);
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.email_change_completed",
@@ -562,7 +562,7 @@ describe("email change ceremony", () => {
     await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
       EnterpriseBadRequest,
     );
-    expect(db.store.user[0]!.email).toBe("new@example.com");
+    expect(db.store.account[0]!.email).toBe("new@example.com");
   });
 
   it("returns a conflict when the address is registered during the hour", async () => {
@@ -574,7 +574,7 @@ describe("email change ceremony", () => {
     // Someone else registers the target address after the request was made.
     const now = new Date();
 
-    db.store.user.push({
+    db.store.account.push({
       id: "user-2",
       name: "Other",
       email: "new@example.com",
@@ -594,7 +594,7 @@ describe("email change ceremony", () => {
     await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
       EnterpriseConflict,
     );
-    expect(db.store.user[0]!.email).toBe("owner@example.com");
+    expect(db.store.account[0]!.email).toBe("owner@example.com");
   });
 
   it("cancels from the old address's link and records it", async () => {
@@ -617,7 +617,7 @@ describe("email change ceremony", () => {
     await expect(run((auth) => auth.verifyEmailChange({ token: confirm }))).rejects.toBeInstanceOf(
       EnterpriseBadRequest,
     );
-    expect(db.store.user[0]!.email).toBe("owner@example.com");
+    expect(db.store.account[0]!.email).toBe("owner@example.com");
   });
 
   it("supersedes an unanswered request when a new one starts", async () => {
@@ -640,7 +640,7 @@ describe("email change ceremony", () => {
 
 describe("account audit stream", () => {
   it("records the first authenticated use of a session with its client descriptor", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
 
     const request = new Request(`${origin}/api/v1/me`, {
       headers: {
@@ -656,7 +656,7 @@ describe("account audit stream", () => {
     expect(db.store.account_session_context).toHaveLength(1);
     expect(db.store.account_session_context[0]).toMatchObject({
       sessionId: "session-1",
-      userId: "user-1",
+      accountId: "user-1",
       browser: "Chrome",
       platform: "macOS",
       deviceType: "desktop",
@@ -675,7 +675,7 @@ describe("account audit stream", () => {
   });
 
   it("records a failed step-up without revealing the factor to the client", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
 
     await expect(
       run((auth) => auth.stepUpTotp(session(), { code: "000000", action: "api-token-create" })),
@@ -693,7 +693,7 @@ describe("account audit stream", () => {
   });
 
   it("records API token creation and revocation", async () => {
-    const { db, run } = makeContext(seedUserAndTenant());
+    const { db, run } = makeContext(seedAccountAndTenant());
     const createGrant = await grantFor("api-token-create");
 
     const created = await run((auth) =>

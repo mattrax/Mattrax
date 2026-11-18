@@ -54,7 +54,7 @@ const makeContext = (options: { db?: any; user?: Partial<TestUser> } = {}) => {
   const user = userRow(options.user);
   const sent: SentEmail[] = [];
 
-  if (!db.store.user.some((row: any) => row.id === user.id)) db.store.user.push(user);
+  if (!db.store.account.some((row: any) => row.id === user.id)) db.store.account.push(user);
 
   const email = makeEmailTransport(async (message: SentEmail) => {
     sent.push(message);
@@ -92,7 +92,7 @@ const makeContext = (options: { db?: any; user?: Partial<TestUser> } = {}) => {
 
 const addUser = (db: any, overrides: Partial<TestUser>) => {
   const user = userRow(overrides);
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   return user;
 };
@@ -109,7 +109,7 @@ const addMember = (
   const member = {
     id: `member-${user.id}`,
     organizationId: tenantId,
-    userId: user.id,
+    accountId: user.id,
     role,
     customRoleId: customRoleId ?? null,
     createdAt: now,
@@ -133,11 +133,11 @@ const addTarget = (db: any, tenantId: string, id = "user-target", email = "targe
 const requestTransfer = (
   context: ReturnType<typeof makeContext>,
   tenantId: string,
-  targetUserId: string,
+  targetAccountId: string,
 ) =>
   runEffect(
     context.service.requestTenantOwnershipTransfer(request(context.headers), tenantId, {
-      targetUserId,
+      targetAccountId,
     }),
   );
 
@@ -161,7 +161,7 @@ describe("tenant ownership transfer", () => {
     const created = await requestTransfer(owner, tenant.id, target.id);
 
     expect(created.emailSent).toBe(true);
-    expect(created.targetUserId).toBe(target.id);
+    expect(created.targetAccountId).toBe(target.id);
     expect(created.acceptUrl).toContain(`${origin}/accept-ownership?token=`);
     expect(Date.parse(created.expiresAt)).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
 
@@ -169,8 +169,8 @@ describe("tenant ownership transfer", () => {
     expect(row).toMatchObject({
       id: created.id,
       organizationId: tenant.id,
-      requestedByUserId: owner.user.id,
-      targetUserId: target.id,
+      requestedByAccountId: owner.user.id,
+      targetAccountId: target.id,
       status: "pending",
       acceptedAt: null,
       cancelledAt: null,
@@ -266,7 +266,7 @@ describe("tenant ownership transfer", () => {
     );
 
     await expect(requestTransfer(owner, tenant.id, target.id)).resolves.toMatchObject({
-      targetUserId: target.id,
+      targetAccountId: target.id,
     });
   });
 
@@ -311,7 +311,9 @@ describe("tenant ownership transfer", () => {
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     expect(transferRow(owner.db)?.status).toBe("pending");
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "member",
+    );
   });
 
   it("promotes the target and demotes the requester atomically", async () => {
@@ -329,7 +331,7 @@ describe("tenant ownership transfer", () => {
     // A custom role on the target must not survive the promotion: owner
     // authority is built-in only.
     const targetMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === target.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === target.id,
     );
 
     targetMember.role = "member";
@@ -349,8 +351,8 @@ describe("tenant ownership transfer", () => {
     expect(result).toEqual({ tenantId: tenant.id });
 
     const members = owner.db.store.member.filter((row: any) => row.organizationId === tenant.id);
-    const requester = members.find((row: any) => row.userId === owner.user.id);
-    const accepted = members.find((row: any) => row.userId === target.id);
+    const requester = members.find((row: any) => row.accountId === owner.user.id);
+    const accepted = members.find((row: any) => row.accountId === target.id);
 
     expect(accepted).toMatchObject({ role: "owner", customRoleId: null });
     expect(requester).toMatchObject({ role: "admin", customRoleId: null });
@@ -369,7 +371,7 @@ describe("tenant ownership transfer", () => {
 
     expect(acceptedAudit).toMatchObject({
       organizationId: tenant.id,
-      actorUserId: target.id,
+      actorAccountId: target.id,
       targetType: "tenant",
       targetId: tenant.id,
     });
@@ -418,7 +420,7 @@ describe("tenant ownership transfer", () => {
     );
 
     expect(owners).toHaveLength(1);
-    expect(owners[0]!.userId).toBe(target.id);
+    expect(owners[0]!.accountId).toBe(target.id);
   });
 
   it("keeps other owners in place when ownership moves", async () => {
@@ -446,7 +448,7 @@ describe("tenant ownership transfer", () => {
     const roles = new Map(
       owner.db.store.member
         .filter((row: any) => row.organizationId === tenant.id)
-        .map((row: any) => [row.userId, row.role]),
+        .map((row: any) => [row.accountId, row.role]),
     );
 
     expect(roles.get(thirdOwner.id)).toBe("owner");
@@ -480,8 +482,10 @@ describe("tenant ownership transfer", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     expect(transferRow(owner.db)?.status).toBe("expired");
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
-    expect(owner.db.store.member.find((row: any) => row.userId === owner.user.id)?.role).toBe(
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "member",
+    );
+    expect(owner.db.store.member.find((row: any) => row.accountId === owner.user.id)?.role).toBe(
       "owner",
     );
   });
@@ -509,7 +513,7 @@ describe("tenant ownership transfer", () => {
     addMember(owner.db, tenant.id, second, "member");
 
     await expect(requestTransfer(owner, tenant.id, second.id)).resolves.toMatchObject({
-      targetUserId: second.id,
+      targetAccountId: second.id,
     });
   });
 
@@ -597,7 +601,7 @@ describe("tenant ownership transfer", () => {
     const { target } = addTarget(owner.db, tenant.id);
     const created = await requestTransfer(owner, tenant.id, target.id);
 
-    owner.db.store.member.find((row: any) => row.userId === owner.user.id)!.role = "admin";
+    owner.db.store.member.find((row: any) => row.accountId === owner.user.id)!.role = "admin";
 
     const targetContext = makeContext({ db: owner.db, user: target });
 
@@ -610,7 +614,9 @@ describe("tenant ownership transfer", () => {
     ).rejects.toBeInstanceOf(EnterpriseConflict);
 
     expect(transferRow(owner.db)?.status).toBe("cancelled");
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "member",
+    );
   });
 
   it("previews a valid transfer without exposing the full target address", async () => {
@@ -651,7 +657,7 @@ describe("tenant ownership transfer", () => {
     // transaction. The transaction's own read must fail, not demote anyone.
     owner.db.transaction = (work: any) => {
       owner.db.store.member = owner.db.store.member.filter(
-        (row: any) => !(row.organizationId === tenant.id && row.userId === target.id),
+        (row: any) => !(row.organizationId === tenant.id && row.accountId === target.id),
       );
 
       return originalTransaction(work);
@@ -669,10 +675,10 @@ describe("tenant ownership transfer", () => {
       owner.db.transaction = originalTransaction;
     }
 
-    expect(owner.db.store.member.find((row: any) => row.userId === owner.user.id)?.role).toBe(
+    expect(owner.db.store.member.find((row: any) => row.accountId === owner.user.id)?.role).toBe(
       "owner",
     );
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)).toBeUndefined();
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)).toBeUndefined();
     expect(transferRow(owner.db)?.status).toBe("pending");
     expect(auditActions(owner.db)).not.toContain("member.ownership_transfer_accepted");
   });
@@ -689,7 +695,7 @@ describe("tenant ownership transfer", () => {
     // A concurrent role change finishes after the pre-check.
     owner.db.transaction = (work: any) => {
       owner.db.store.member.find(
-        (row: any) => row.organizationId === tenant.id && row.userId === owner.user.id,
+        (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
       )!.role = "admin";
 
       return originalTransaction(work);
@@ -707,10 +713,12 @@ describe("tenant ownership transfer", () => {
       owner.db.transaction = originalTransaction;
     }
 
-    expect(owner.db.store.member.find((row: any) => row.userId === owner.user.id)?.role).toBe(
+    expect(owner.db.store.member.find((row: any) => row.accountId === owner.user.id)?.role).toBe(
       "admin",
     );
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "member",
+    );
     expect(transferRow(owner.db)?.status).toBe("pending");
     expect(auditActions(owner.db)).not.toContain("member.ownership_transfer_accepted");
   });
@@ -725,8 +733,8 @@ describe("tenant ownership transfer", () => {
       owner.db.store.tenant_ownership_transfer.push({
         id,
         organizationId: tenant.id,
-        requestedByUserId: owner.user.id,
-        targetUserId: target.id,
+        requestedByAccountId: owner.user.id,
+        targetAccountId: target.id,
         status: "pending",
         tokenHash: `hash-${id}`,
         expiresAt: past,
@@ -738,7 +746,7 @@ describe("tenant ownership transfer", () => {
     }
 
     await expect(requestTransfer(owner, tenant.id, target.id)).resolves.toMatchObject({
-      targetUserId: target.id,
+      targetAccountId: target.id,
     });
 
     const rows = owner.db.store.tenant_ownership_transfer;
@@ -766,7 +774,7 @@ describe("tenant ownership transfer", () => {
     );
 
     owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.userId === target.id,
+      (row: any) => row.organizationId === tenant.id && row.accountId === target.id,
     )!.customRoleId = reader.id;
 
     await requestTransfer(owner, tenant.id, target.id);
@@ -802,7 +810,9 @@ describe("tenant ownership transfer", () => {
     ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     expect(transferRow(owner.db)?.status).toBe("pending");
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("member");
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "member",
+    );
 
     const withFactor = makeContext({
       db: owner.db,
@@ -817,7 +827,9 @@ describe("tenant ownership transfer", () => {
       ),
     ).resolves.toEqual({ tenantId: tenant.id });
 
-    expect(owner.db.store.member.find((row: any) => row.userId === target.id)?.role).toBe("owner");
+    expect(owner.db.store.member.find((row: any) => row.accountId === target.id)?.role).toBe(
+      "owner",
+    );
   });
 
   it("does not report a transfer as valid once the target left", async () => {
@@ -827,7 +839,7 @@ describe("tenant ownership transfer", () => {
     const created = await requestTransfer(owner, tenant.id, target.id);
 
     owner.db.store.member = owner.db.store.member.filter(
-      (row: any) => !(row.organizationId === tenant.id && row.userId === target.id),
+      (row: any) => !(row.organizationId === tenant.id && row.accountId === target.id),
     );
 
     await expect(

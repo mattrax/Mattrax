@@ -85,7 +85,7 @@ export const captureSessionContext = (
   db: EnterpriseDb,
   input: {
     readonly sessionId: string;
-    readonly userId: string;
+    readonly accountId: string;
     readonly descriptor: ClientDescriptor;
     readonly now?: Date;
   },
@@ -100,7 +100,7 @@ export const captureSessionContext = (
     if (!existing) {
       yield* db.insert(schema.accountSessionContext).values({
         sessionId: input.sessionId,
-        userId: input.userId,
+        accountId: input.accountId,
         ipHash: input.descriptor.ipHash,
         browser: input.descriptor.browser,
         platform: input.descriptor.platform,
@@ -114,7 +114,7 @@ export const captureSessionContext = (
 
     // A session id is unique to one subject; ignore a mismatch rather than
     // rewriting another account's descriptor.
-    if (existing.userId !== input.userId) return { created: false };
+    if (existing.accountId !== input.accountId) return { created: false };
 
     const lastUsedAt = asDate(existing.lastUsedAt);
 
@@ -136,14 +136,14 @@ export const captureSessionContext = (
  */
 export const listUserSessions = (
   db: EnterpriseDb,
-  userId: string,
+  accountId: string,
   currentSessionId?: string,
 ): Effect.Effect<Array<AccountSession>> =>
   Effect.gen(function* () {
     const rows = yield* db
       .select()
       .from(authSessions)
-      .where(and(eq(authSessions.subjectId, userId), gt(authSessions.expiresAt, Date.now())));
+      .where(and(eq(authSessions.subjectId, accountId), gt(authSessions.expiresAt, Date.now())));
 
     const sessions = rows.map((row) => Schema.decodeUnknownSync(SessionRow)(row));
 
@@ -155,7 +155,7 @@ export const listUserSessions = (
             .from(schema.accountSessionContext)
             .where(
               and(
-                eq(schema.accountSessionContext.userId, userId),
+                eq(schema.accountSessionContext.accountId, accountId),
                 inArray(
                   schema.accountSessionContext.sessionId,
                   sessions.map((session) => session.sessionId),
@@ -188,20 +188,20 @@ export const listUserSessions = (
 /** Revoke one session, scoped to the owner. Returns whether a row was removed. */
 export const revokeUserSession = (
   db: EnterpriseDb,
-  userId: string,
+  accountId: string,
   sessionId: string,
 ): Effect.Effect<boolean> =>
   Effect.gen(function* () {
     const [existing]: ReadonlyArray<{ readonly id: string }> = yield* db
       .select({ id: authSessions.sessionId })
       .from(authSessions)
-      .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, userId)))
+      .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, accountId)))
       .limit(1);
 
     if (!existing) return false;
     yield* db
       .delete(authSessions)
-      .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, userId)));
+      .where(and(eq(authSessions.sessionId, sessionId), eq(authSessions.subjectId, accountId)));
     yield* db
       .delete(schema.accountSessionContext)
       .where(eq(schema.accountSessionContext.sessionId, sessionId));
@@ -217,20 +217,20 @@ export const revokeUserSession = (
  */
 export const revokeAllUserSessions = (
   db: EnterpriseDb,
-  userId: string,
+  accountId: string,
 ): Effect.Effect<{ readonly revoked: number }> =>
   Effect.gen(function* () {
     const sessions = yield* db
       .select({ sessionId: authSessions.sessionId })
       .from(authSessions)
-      .where(eq(authSessions.subjectId, userId));
+      .where(eq(authSessions.subjectId, accountId));
 
     if (sessions.length === 0) return { revoked: 0 };
 
-    yield* db.delete(authSessions).where(eq(authSessions.subjectId, userId));
+    yield* db.delete(authSessions).where(eq(authSessions.subjectId, accountId));
     yield* db
       .delete(schema.accountSessionContext)
-      .where(eq(schema.accountSessionContext.userId, userId));
+      .where(eq(schema.accountSessionContext.accountId, accountId));
 
     return { revoked: sessions.length };
   }).pipe(Effect.orDie);

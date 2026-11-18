@@ -37,7 +37,7 @@ export type BillingTenant = Pick<EnterpriseOrganization, "id" | "name" | "stripe
 
 export type BillingSummaryInput = {
   readonly organizationId: string;
-  readonly userId: string;
+  readonly accountId: string;
 };
 
 export type BillingPortalInput = {
@@ -212,7 +212,7 @@ export const makeStripeBillingService = ({
     });
 
   return {
-    summary: ({ organizationId, userId }) =>
+    summary: ({ organizationId, accountId }) =>
       Effect.gen(function* () {
         const [subscription] = yield* db
           .select()
@@ -246,7 +246,7 @@ export const makeStripeBillingService = ({
 
         const tenantStatus = yield* tenantLimitForAccount({
           db,
-          userId,
+          accountId,
           config: planLimits,
         }).pipe(Effect.mapError(planLimitDbError));
 

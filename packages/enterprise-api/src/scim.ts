@@ -2,15 +2,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
-import { clearTenantUserDirectoryState, isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
-import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
 /**
- * Optional hook invoked after a SCIM mutation that changes which users belong
- * to the tenant or its directory groups. Delivery implementations push the
- * linked devices so policy converges without waiting for a poll.
+ * Optional hook invoked after a SCIM mutation that changes a directory user or
+ * its group membership. Delivery implementations push the linked devices so
+ * policy converges without waiting for a poll.
  */
 export type ScimMembershipNotifierHandler = (
   db: import("@mattrax/enterprise-core").EnterpriseDb,
@@ -67,8 +65,6 @@ const iso = (value: Date | null | undefined) =>
 
 type UserRow = typeof schema.user.$inferSelect;
 
-type MemberRow = typeof schema.member.$inferSelect;
-
 type GroupRow = typeof schema.userGroup.$inferSelect;
 
 const ScimGroupMemberRef = Schema.Struct({ value: Schema.String });
@@ -84,8 +80,6 @@ const ScimPatch = Schema.Struct({
   Operations: Schema.optional(Schema.Array(ScimPatchOperation)),
 });
 
-const ScimRole = Schema.Struct({ value: Schema.optional(Schema.String) });
-
 const ScimUserName = Schema.Struct({
   formatted: Schema.optional(Schema.String),
   givenName: Schema.optional(Schema.String),
@@ -93,14 +87,14 @@ const ScimUserName = Schema.Struct({
 });
 
 /**
- * The subset of the SCIM 2.0 User resource this server provisions. Fields the
- * service does not own (externalId, phone numbers) are accepted and ignored by
- * the decoder rather than rejected.
+ * The subset of the SCIM 2.0 User resource this server provisions. Directory
+ * users carry no roles, so a IdP-supplied `roles` array is ignored rather than
+ * rejected; `externalId` is stored so a later sync can match the IdP object.
  */
 const ScimUserPayload = Schema.Struct({
+  externalId: Schema.optional(Schema.String),
   userName: Schema.optional(Schema.String),
   name: Schema.optional(ScimUserName),
-  roles: Schema.optional(Schema.Array(ScimRole)),
 });
 
 const ScimGroupPayload = Schema.Struct({
@@ -111,7 +105,7 @@ const ScimGroupPayload = Schema.Struct({
 type ScimContext = {
   readonly tenantId: string;
   readonly organizationId: string;
-  /** Users whose tenant membership or group membership changed in this request. */
+  /** Directory users whose state or group membership changed in this request. */
   readonly changedUserIds: Set<string>;
 };
 
@@ -165,28 +159,23 @@ const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
     : null;
 };
 
-const userResource = (user: UserRow, member: MemberRow) => ({
+/**
+ * SCIM renders a tenant directory person. There is no role, membership or
+ * credential here: directory users never sign in.
+ */
+const userResource = (user: UserRow) => ({
   schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
   id: user.id,
   userName: user.email,
+  ...(user.externalId ? { externalId: user.externalId } : {}),
   name: { formatted: user.name, givenName: user.name },
   emails: [{ value: user.email, primary: true }],
   active: !user.disabled,
-  roles: [{ value: member.role }],
   meta: {
     resourceType: "User",
-    created: iso(member.createdAt),
+    created: iso(user.createdAt),
     lastModified: iso(user.updatedAt),
   },
-});
-
-/**
- * SCIM reports `active` per tenant, so a deactivated user is inactive even when
- * the global account stays enabled because it still belongs to other tenants.
- */
-const inactiveUserResource = (user: UserRow, member: MemberRow) => ({
-  ...userResource(user, member),
-  active: false,
 });
 
 const groupResource = (
@@ -213,18 +202,14 @@ const listUsers = (ctx: ScimContext) =>
     const db = yield* Db;
 
     const rows = yield* db
-      .select({
-        member: schema.member,
-        user: schema.user,
-      })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(eq(schema.member.organizationId, ctx.organizationId));
+      .select()
+      .from(schema.user)
+      .where(eq(schema.user.organizationId, ctx.organizationId));
 
     return json({
       schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
       totalResults: rows.length,
-      Resources: rows.map((row) => userResource(row.user, row.member)),
+      Resources: rows.map(userResource),
     });
   });
 
@@ -232,55 +217,12 @@ const findUser = (ctx: ScimContext, userId: string) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
-    const [row] = yield* db
-      .select({ member: schema.member, user: schema.user })
-      .from(schema.member)
-      .innerJoin(schema.user, eq(schema.user.id, schema.member.userId))
-      .where(
-        and(eq(schema.member.organizationId, ctx.organizationId), eq(schema.member.userId, userId)),
-      )
-      .limit(1);
+    const user = yield* db.query.user.findFirst({
+      where: { id: userId, organizationId: ctx.organizationId },
+    });
 
-    return row ?? null;
+    return user ?? null;
   });
-
-const ownerCount = (ctx: ScimContext) =>
-  Effect.gen(function* () {
-    const db = yield* Db;
-
-    const rows = yield* db
-      .select({
-        id: schema.member.id,
-        role: schema.member.role,
-        customRoleId: schema.member.customRoleId,
-      })
-      .from(schema.member)
-      .where(eq(schema.member.organizationId, ctx.organizationId));
-
-    return rows.filter((row) => isBuiltInOwnerMember(row)).length;
-  });
-
-/**
- * SCIM tokens carry no actor or creator context, so provisioning is pinned to
- * the least-privileged built-in role. Owners and administrators must use the
- * dashboard/API to grant anything above `member`.
- */
-const scimMemberRole = "member";
-
-/** Role labels IdPs commonly emit for an ordinary employee account. */
-const SCIM_NON_PRIVILEGED_ROLES = new Set([
-  "member",
-  "user",
-  "employee",
-  "staff",
-  "contractor",
-  "guest",
-  "everyone",
-  "basic",
-  "default",
-]);
-
-const SCIM_PRIVILEGED_ROLES = new Set(["owner", "admin", "administrator", "global admin"]);
 
 const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
   Effect.gen(function* () {
@@ -292,255 +234,178 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
 
     if (!email.includes("@")) return scimError(400, "userName must be an email address");
 
-    const name =
-      body.name?.formatted ??
-      [body.name?.givenName, body.name?.familyName].filter(Boolean).join(" ") ??
-      email;
+    const externalId = body.externalId?.trim() || undefined;
 
-    const requestedRole =
-      Option.getOrUndefined(Schema.decodeUnknownOption(ScimRole)(body.roles?.[0]))
-        ?.value?.trim()
-        .toLowerCase() ?? "";
+    const suppliedName =
+      body.name?.formatted?.trim() ||
+      [body.name?.givenName, body.name?.familyName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
 
-    if (SCIM_PRIVILEGED_ROLES.has(requestedRole))
-      return scimError(
-        400,
-        "SCIM can only provision members. Assign administrator or owner roles in Mattrax.",
-        "invalidValue",
-      );
-
-    if (requestedRole && !SCIM_NON_PRIVILEGED_ROLES.has(requestedRole))
-      return scimError(
-        400,
-        "SCIM can only provision members. Assign administrator or owner roles in Mattrax.",
-        "invalidValue",
-      );
-
-    const role = scimMemberRole;
+    const name = suppliedName || email;
 
     const timestamp = now();
-    let user = yield* db.query.user.findFirst({ where: { email } });
 
-    if (!user) {
-      const userId = id();
-      yield* db.insert(schema.user).values({
-        id: userId,
-        name: name || email,
-        email,
-        emailVerified: true,
-        image: null,
-        stripeCustomerId: null,
-        disabled: false,
-        source: "scim",
-        authRevision: id(),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-      user = yield* db.query.user.findFirst({ where: { id: userId } });
-    }
-
-    if (!user) return scimError(500, "Could not create the user");
-
-    const member = yield* db.query.member.findFirst({
-      where: { organizationId: ctx.organizationId, userId: user.id },
+    // Reuse the tenant's existing row for this address (or provider object) so
+    // a retried create cannot duplicate the directory person. Both lookups are
+    // scoped to this organization; accounts are never consulted.
+    let user = yield* db.query.user.findFirst({
+      where: { organizationId: ctx.organizationId, email },
     });
 
-    if (!member) {
-      yield* db.insert(schema.member).values({
-        id: id(),
-        organizationId: ctx.organizationId,
-        userId: user.id,
-        role,
-        createdAt: timestamp,
-        updatedAt: timestamp,
+    if (!user && externalId)
+      user = yield* db.query.user.findFirst({
+        where: { organizationId: ctx.organizationId, externalId },
       });
+
+    if (user) {
+      yield* db
+        .update(schema.user)
+        .set({
+          // Only overwrite what the IdP actually supplied; a retry that omits
+          // the name must not discard the value stored earlier.
+          ...(suppliedName ? { name: suppliedName } : {}),
+          ...(externalId ? { externalId } : {}),
+          updatedAt: timestamp,
+        })
+        .where(eq(schema.user.id, user.id));
+
+      const existing = yield* findUser(ctx, user.id);
+
+      return existing
+        ? json(userResource(existing))
+        : scimError(500, "Could not resolve the user");
     }
 
-    // Directory provisioning settles a matching invitation; the provisioned
-    // member keeps the least-privileged role assigned above.
-    yield* settlePendingInvitations(db, ctx.organizationId, email, timestamp);
+    const userId = id();
 
-    const created = yield* findUser(ctx, user.id);
+    yield* db.insert(schema.user).values({
+      id: userId,
+      organizationId: ctx.organizationId,
+      name,
+      email,
+      externalId: externalId ?? null,
+      source: "scim",
+      disabled: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
 
-    return created
-      ? json(userResource(created.user, created.member), 201)
-      : scimError(500, "Could not create the membership");
+    const created = yield* findUser(ctx, userId);
+
+    return created ? json(userResource(created), 201) : scimError(500, "Could not create the user");
   });
 
 const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const operations = Array.isArray(body.Operations) ? body.Operations : [];
-
-    const deactivationRequested = operations.some(
-      (operation) =>
-        String(operation.path ?? "").toLowerCase() === "active" &&
-        Boolean(operation.value) === false,
-    );
-
     const current = yield* findUser(ctx, userId);
 
-    if (!current) {
-      // Deactivation is idempotent: an IdP may retry after the membership was
-      // already removed, and the tenant is in the requested state. Answer with
-      // no content rather than a resource: the membership join is the only
-      // tenant-scoped way to load the user, so rendering one here would have to
-      // read the deployment-global account row and leak another tenant's PII
-      // for an id this token does not own. DELETE still reports 404 for a user
-      // that is not a member, because that is a different statement about the
-      // resource.
-      if (!deactivationRequested) return scimError(404, "User not found");
+    if (!current) return scimError(404, "User not found");
 
-      return HttpServerResponse.empty({ status: 204 });
-    }
+    const operations = Array.isArray(body.Operations) ? body.Operations : [];
 
-    let active = !current.user.disabled;
-    let name = current.user.name;
+    let name = current.name;
+    let email = current.email;
+    let disabled = current.disabled;
 
     for (const operation of operations) {
       const path = String(operation.path ?? "").toLowerCase();
       const value = operation.value;
 
-      if (path === "active") active = Boolean(value);
+      if (path === "active") disabled = !value;
 
-      if (path === "name.givenname" || path === "displayname") name = String(value ?? name);
+      if (path === "name.givenname" || path === "name.formatted" || path === "displayname") {
+        const next = String(value ?? "").trim();
+
+        if (next) name = next;
+      }
 
       if (path === "username") {
-        const email = String(value ?? "")
+        const nextEmail = String(value ?? "")
           .trim()
           .toLowerCase();
 
-        if (!email.includes("@") || email === current.user.email) continue;
+        if (!nextEmail.includes("@") || nextEmail === current.email) continue;
 
-        // `user` is a deployment-global account row. A tenant token must not
-        // rewrite the address another tenant signs in with, so only a user
-        // provisioned solely by this organisation may be renamed.
-        const memberships = yield* db
-          .select({ organizationId: schema.member.organizationId })
-          .from(schema.member)
-          .where(eq(schema.member.userId, userId));
-
-        if (memberships.length !== 1 || memberships[0]!.organizationId !== ctx.organizationId)
-          return scimError(
-            400,
-            "userName can only be changed for a user provisioned only by this tenant",
-            "invalidValue",
-          );
-
-        const conflict = yield* db.query.user.findFirst({ where: { email } });
+        // Directory addresses are unique per tenant, not deployment-wide. An
+        // account elsewhere may share the address without owning this person.
+        const conflict = yield* db.query.user.findFirst({
+          where: { organizationId: ctx.organizationId, email: nextEmail },
+        });
 
         if (conflict && conflict.id !== userId)
           return scimError(409, "userName is already in use", "uniqueness");
 
-        yield* db
-          .update(schema.user)
-          .set({ email, emailVerified: false, updatedAt: now() })
-          .where(eq(schema.user.id, userId));
+        email = nextEmail;
       }
     }
 
-    const deactivated = !active;
+    const changed =
+      name !== current.name || email !== current.email || disabled !== current.disabled;
 
-    if (deactivated) {
-      if (isBuiltInOwnerMember(current.member) && (yield* ownerCount(ctx)) <= 1)
-        return scimError(409, "Cannot deactivate the last owner");
-
-      // The membership and the directory grants it unlocked must disappear
-      // together; a partial delete would leave group policies applying (or an
-      // identity row pointing at a user who is no longer a member).
-      yield* db.transaction((tx) =>
-        Effect.gen(function* () {
-          yield* tx
-            .delete(schema.member)
-            .where(
-              and(
-                eq(schema.member.organizationId, ctx.organizationId),
-                eq(schema.member.userId, userId),
-              ),
-            );
-          yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
-          // Device-user links stay: ScimMembershipNotifier resolves the devices
-          // to refresh from them after this response. The admin removal path
-          // collects those ids first and refreshes them itself.
-
-          const remaining = yield* tx
-            .select({ id: schema.member.id })
-            .from(schema.member)
-            .where(eq(schema.member.userId, userId))
-            .limit(1);
-
-          yield* tx
-            .update(schema.user)
-            .set({ name, disabled: remaining.length === 0, updatedAt: now() })
-            .where(eq(schema.user.id, userId));
-        }),
-      );
-      ctx.changedUserIds.add(userId);
-    } else {
+    if (changed) {
       yield* db
         .update(schema.user)
-        .set({ name, disabled: false, updatedAt: now() })
-        .where(eq(schema.user.id, userId));
+        .set({ name, email, disabled, updatedAt: now() })
+        .where(
+          and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
+        );
       ctx.changedUserIds.add(userId);
     }
 
     const updated = yield* findUser(ctx, userId);
 
-    if (updated) return json(userResource(updated.user, updated.member));
-
-    // Deactivation removed this tenant's membership, so `findUser` can no
-    // longer answer from the member join. Only a deactivation owns that state;
-    // any other patch that loses the row to a concurrent removal is a 404.
-    if (!deactivated) return scimError(404, "User not found");
-
-    const user = yield* db.query.user.findFirst({ where: { id: userId } });
-
-    return user
-      ? json(inactiveUserResource(user, current.member))
-      : scimError(404, "User not found");
+    return updated ? json(userResource(updated)) : scimError(404, "User not found");
   });
 
 const deleteUser = (ctx: ScimContext, userId: string) =>
   Effect.gen(function* () {
+    const db = yield* Db;
     const current = yield* findUser(ctx, userId);
 
     if (!current) return scimError(404, "User not found");
 
-    if (isBuiltInOwnerMember(current.member) && (yield* ownerCount(ctx)) <= 1)
-      return scimError(409, "Cannot remove the last owner");
-    const db = yield* Db;
-    // Delete the membership and everything it unlocked together, so a failure
-    // cannot leave directory group rows or an SSO identity behind.
-    yield* db.transaction((tx) =>
-      Effect.gen(function* () {
-        yield* tx
-          .delete(schema.member)
-          .where(
-            and(
-              eq(schema.member.organizationId, ctx.organizationId),
-              eq(schema.member.userId, userId),
-            ),
-          );
-        yield* clearTenantUserDirectoryState(tx, ctx.organizationId, userId);
-        // Device-user links stay so ScimMembershipNotifier can resolve the
-        // devices to refresh, as on the deactivation path above.
-
-        const remaining = yield* tx
-          .select({ id: schema.member.id })
-          .from(schema.member)
-          .where(eq(schema.member.userId, userId))
-          .limit(1);
-
-        if (remaining.length === 0)
-          yield* tx
-            .update(schema.user)
-            .set({ disabled: true, updatedAt: now() })
-            .where(eq(schema.user.id, userId));
-      }),
-    );
+    // Removing the directory person cascades their group memberships, device
+    // links and direct policy assignments. Dashboard accounts, memberships and
+    // invitations belong to a different identity and are untouched.
+    yield* db
+      .delete(schema.user)
+      .where(and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)));
     ctx.changedUserIds.add(userId);
 
     return HttpServerResponse.empty({ status: 204 });
+  });
+
+/**
+ * Directory members of one or more tenant groups, resolved from `user` rows.
+ * Group membership rows carry no organisation, so the user join pins the
+ * tenant: a stale link to another tenant's person can never be rendered.
+ */
+const groupMemberRows = (organizationId: string, groupIds?: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    // An empty set means no groups, so do not ask the database for `in ()`.
+    if (groupIds && groupIds.length === 0) return [];
+
+    const db = yield* Db;
+
+    const scope = groupIds
+      ? and(
+          eq(schema.user.organizationId, organizationId),
+          inArray(schema.userGroupMember.groupId, [...groupIds]),
+        )
+      : eq(schema.user.organizationId, organizationId);
+
+    return yield* db
+      .select({
+        groupId: schema.userGroupMember.groupId,
+        userId: schema.user.id,
+        email: schema.user.email,
+      })
+      .from(schema.userGroupMember)
+      .innerJoin(schema.user, eq(schema.user.id, schema.userGroupMember.userId))
+      .where(scope);
   });
 
 const listGroups = (ctx: ScimContext) =>
@@ -552,10 +417,20 @@ const listGroups = (ctx: ScimContext) =>
       .from(schema.userGroup)
       .where(eq(schema.userGroup.organizationId, ctx.organizationId));
 
+    const members = yield* groupMemberRows(
+      ctx.organizationId,
+      groups.map((group) => group.id),
+    );
+
     return json({
       schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
       totalResults: groups.length,
-      Resources: groups.map((group) => groupResource(group, [])),
+      Resources: groups.map((group) =>
+        groupResource(
+          group,
+          members.filter((member) => member.groupId === group.id),
+        ),
+      ),
     });
   });
 
@@ -569,13 +444,9 @@ const findGroup = (ctx: ScimContext, groupId: string) =>
 
     if (!group) return null;
 
-    const rows = yield* db
-      .select({ userId: schema.user.id, email: schema.user.email })
-      .from(schema.userGroupMember)
-      .innerJoin(schema.user, eq(schema.user.id, schema.userGroupMember.userId))
-      .where(eq(schema.userGroupMember.groupId, groupId));
+    const members = yield* groupMemberRows(ctx.organizationId, [groupId]);
 
-    return { group, members: rows };
+    return { group, members };
   });
 
 const createGroup = (ctx: ScimContext, body: typeof ScimGroupPayload.Type) =>
@@ -630,9 +501,14 @@ const replaceGroupMembers = (
 
     if (ids.length > 0) {
       const valid = yield* db
-        .select({ userId: schema.member.userId })
-        .from(schema.member)
-        .where(eq(schema.member.organizationId, ctx.organizationId));
+        .select({ userId: schema.user.id })
+        .from(schema.user)
+        .where(
+          and(
+            eq(schema.user.organizationId, ctx.organizationId),
+            inArray(schema.user.id, ids),
+          ),
+        );
 
       const allowed = new Set(valid.map((row) => row.userId));
       const rows = ids.filter((userId) => allowed.has(userId));
@@ -704,13 +580,10 @@ const applyGroupMembershipOperation = (
 
     if (op === "add") {
       const valid = yield* db
-        .select({ userId: schema.member.userId })
-        .from(schema.member)
+        .select({ userId: schema.user.id })
+        .from(schema.user)
         .where(
-          and(
-            eq(schema.member.organizationId, ctx.organizationId),
-            inArray(schema.member.userId, ids),
-          ),
+          and(eq(schema.user.organizationId, ctx.organizationId), inArray(schema.user.id, ids)),
         );
 
       const allowed = new Set(valid.map((row) => row.userId));
@@ -844,9 +717,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
         if (method === "GET") {
           const found = yield* findUser(ctx, parsed.id);
 
-          return found
-            ? json(userResource(found.user, found.member))
-            : scimError(404, "User not found");
+          return found ? json(userResource(found)) : scimError(404, "User not found");
         }
 
         if (method === "PATCH") {

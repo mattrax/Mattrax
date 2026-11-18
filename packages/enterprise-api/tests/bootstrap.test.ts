@@ -42,7 +42,7 @@ const organization = (id: string, name: string) => ({
 const member = (id: string, organizationId: string, role: string) => ({
   id,
   organizationId,
-  userId: user.id,
+  accountId: user.id,
   role,
   customRoleId: null,
   createdAt: now,
@@ -52,7 +52,7 @@ const member = (id: string, organizationId: string, role: string) => ({
 const makeContext = () => {
   const db = makeDb();
 
-  db.store.user.push(user);
+  db.store.account.push(user);
   db.store.organization.push(organization("tenant-a", "Acme"), organization("tenant-b", "Beta"));
   db.store.member.push(
     member("member-a", "tenant-a", "owner"),
@@ -127,7 +127,7 @@ describe("GET /api/v1/bootstrap", () => {
         emailVerified: true,
       },
     });
-    expect(result.me.user).toMatchObject({
+    expect(result.me.account).toMatchObject({
       id: "user-1",
       email: "owner@example.com",
       emailVerified: true,
@@ -227,6 +227,6 @@ describe("GET /api/v1/bootstrap", () => {
     expect(result.ssrTokenExpiresAt).toBeNull();
     expect(result.ssrRevision).toBeNull();
     expect(result.ssrRevisionExpiresAt).toBeNull();
-    expect(result.me.user.id).toBe("user-1");
+    expect(result.me.account.id).toBe("user-1");
   });
 });

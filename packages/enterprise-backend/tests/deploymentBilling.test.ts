@@ -54,7 +54,7 @@ describe("remote deployment billing", () => {
     const { billing, calls } = service([summary, { status: "ok" }, summary]);
 
     const first = await Effect.runPromise(
-      billing.summary({ organizationId: "org-1", userId: "user-1" }),
+      billing.summary({ organizationId: "org-1", accountId: "user-1" }),
     );
 
     expect(first).toMatchObject({ plan: "device", billableDevices: 12, configured: true });
@@ -101,7 +101,7 @@ describe("remote deployment billing", () => {
     });
 
     await expect(
-      Effect.runPromise(billing.summary({ organizationId: "org-1", userId: "user-1" })),
+      Effect.runPromise(billing.summary({ organizationId: "org-1", accountId: "user-1" })),
     ).rejects.toMatchObject({
       _tag: "EnterpriseStripeError",
       message: "Licence origin does not match.",

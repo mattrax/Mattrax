@@ -22,7 +22,7 @@ const now = new Date("2026-11-16T12:00:00.000Z");
 
 const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch } = {}) => {
   const db = makeDb();
-  db.store.user.push({
+  db.store.account.push({
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -53,7 +53,7 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
     {
       id: "member-1",
       organizationId: "org-1",
-      userId: "user-1",
+      accountId: "user-1",
       role: options.role ?? "owner",
       createdAt: now,
       updatedAt: now,
@@ -61,7 +61,7 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
     {
       id: "member-2",
       organizationId: "org-2",
-      userId: "user-1",
+      accountId: "user-1",
       role: "owner",
       createdAt: now,
       updatedAt: now,
@@ -73,7 +73,7 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return headers.cookie
-        ? Effect.succeed({ user: db.store.user[0], apiToken: undefined })
+        ? Effect.succeed({ user: db.store.account[0], apiToken: undefined })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),

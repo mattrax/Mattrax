@@ -42,10 +42,10 @@ export type AccountAuditAction = (typeof ACCOUNT_AUDIT)[keyof typeof ACCOUNT_AUD
 
 export type AccountAuditInput = {
   /** Owner of the stream. Null once the account has been deleted. */
-  readonly subjectUserId: string | null;
+  readonly subjectAccountId: string | null;
   /** Address snapshot; kept after deletion so the record stays meaningful. */
   readonly subjectEmail: string | null;
-  readonly actorUserId?: string | null;
+  readonly actorAccountId?: string | null;
   readonly actorEmail?: string | null;
   readonly action: AccountAuditAction;
   readonly targetType: string;
@@ -71,9 +71,9 @@ export const recordAccountAudit = (
   Effect.gen(function* () {
     yield* db.insert(schema.accountAuditLog).values({
       id: accountAuditId(),
-      subjectUserId: input.subjectUserId,
+      subjectAccountId: input.subjectAccountId,
       subjectEmail: input.subjectEmail,
-      actorUserId: input.actorUserId ?? input.subjectUserId,
+      actorAccountId: input.actorAccountId ?? input.subjectAccountId,
       actorEmail: input.actorEmail ?? input.subjectEmail,
       action: input.action,
       targetType: input.targetType,
@@ -218,11 +218,11 @@ export type AccountAuditEntry = AuditExportEntry;
 
 export const accountAuditWhere = (
   schema: EnterpriseSchema,
-  subjectUserId: string,
+  subjectAccountId: string,
   filters: AuditSearchFilters,
 ): SQL => {
   const conditions: [SQL, ...Array<SQL>] = [
-    eq(schema.accountAuditLog.subjectUserId, subjectUserId),
+    eq(schema.accountAuditLog.subjectAccountId, subjectAccountId),
   ];
 
   if (filters.action) conditions.push(eq(schema.accountAuditLog.action, filters.action));
@@ -238,7 +238,7 @@ export const accountAuditWhere = (
 
     const condition = or(
       like(schema.accountAuditLog.actorEmail, pattern),
-      like(schema.accountAuditLog.actorUserId, pattern),
+      like(schema.accountAuditLog.actorAccountId, pattern),
     );
 
     if (condition) conditions.push(condition);
@@ -275,7 +275,7 @@ export const accountAuditEntry = (entry: {
   action: string;
   targetType: string;
   targetId: string | null;
-  actorUserId?: string | null;
+  actorAccountId?: string | null;
   actorEmail?: string | null;
   metadata?: unknown;
   createdAt: Date;
@@ -284,7 +284,7 @@ export const accountAuditEntry = (entry: {
   action: entry.action,
   targetType: entry.targetType,
   targetId: entry.targetId,
-  actorUserId: entry.actorUserId ?? null,
+  actorAccountId: entry.actorAccountId ?? null,
   actorEmail: entry.actorEmail ?? null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),

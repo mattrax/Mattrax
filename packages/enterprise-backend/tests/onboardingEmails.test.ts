@@ -44,7 +44,7 @@ const makeTransport = (
 const recipientsOf = (message: OutboundEmailMessage): string[] =>
   Array.isArray(message.to) ? [...message.to] : [message.to];
 
-type UserSeed = {
+type AccountSeed = {
   readonly id: string;
   readonly name: string;
   readonly email: string;
@@ -70,7 +70,7 @@ type OrganizationSeed = {
 type MemberSeed = {
   readonly id: string;
   readonly organizationId: string;
-  readonly userId: string;
+  readonly accountId: string;
   readonly role: string;
   readonly customRoleId: string | null;
   readonly createdAt: Date;
@@ -84,7 +84,7 @@ type FollowUpOverrides = {
   readonly concurrency?: number;
 };
 
-const seedUser = (overrides: Partial<UserSeed> = {}): UserSeed => ({
+const seedAccount = (overrides: Partial<AccountSeed> = {}): AccountSeed => ({
   id: "user-1",
   name: "Ada Lovelace",
   email: "ada@example.com",
@@ -121,7 +121,7 @@ const seedMember = (
 ): MemberSeed => ({
   id,
   organizationId,
-  userId: "user-1",
+  accountId: "user-1",
   role: "owner",
   customRoleId: null,
   createdAt: now,
@@ -131,7 +131,7 @@ const seedMember = (
 
 const tenantContext = (organization: OrganizationSeed) => {
   const db = makeDb({
-    user: [seedUser()],
+    account: [seedAccount()],
     organization: [organization],
     member: [seedMember("member-1", organization.id)],
   });
@@ -156,13 +156,13 @@ const runFollowUp = (
 
 describe("welcome email", () => {
   it("claims and sends exactly once", async () => {
-    const db = makeDb({ user: [seedUser()] });
+    const db = makeDb({ account: [seedAccount()] });
     const transport = makeTransport();
 
     const first = await runEffect(
       sendWelcomeEmailOnce({
         db,
-        user: seedUser(),
+        user: seedAccount(),
         email: transport,
         origin,
         now,
@@ -179,12 +179,12 @@ describe("welcome email", () => {
     });
     expect(transport.sent[0]!.text).toContain("Hey Ada,");
     expect(transport.sent[0]!.text).toContain(`${origin}/dashboard`);
-    expect(db.store.user[0]!.welcomeEmailSentAt).toEqual(now);
+    expect(db.store.account[0]!.welcomeEmailSentAt).toEqual(now);
 
     const second = await runEffect(
       sendWelcomeEmailOnce({
         db,
-        user: seedUser(),
+        user: seedAccount(),
         email: transport,
         origin,
         now,
@@ -196,12 +196,12 @@ describe("welcome email", () => {
   });
 
   it("lets exactly one concurrent claim win", async () => {
-    const db = makeDb({ user: [seedUser()] });
+    const db = makeDb({ account: [seedAccount()] });
     const transport = makeTransport();
 
     const outcomes = await Promise.all([
-      runEffect(sendWelcomeEmailOnce({ db, user: seedUser(), email: transport, origin, now })),
-      runEffect(sendWelcomeEmailOnce({ db, user: seedUser(), email: transport, origin, now })),
+      runEffect(sendWelcomeEmailOnce({ db, user: seedAccount(), email: transport, origin, now })),
+      runEffect(sendWelcomeEmailOnce({ db, user: seedAccount(), email: transport, origin, now })),
     ]);
 
     expect(outcomes.filter((outcome) => outcome === "sent")).toHaveLength(1);
@@ -209,13 +209,13 @@ describe("welcome email", () => {
   });
 
   it("clears the claim after a provider failure so a retry sends", async () => {
-    const db = makeDb({ user: [seedUser()] });
+    const db = makeDb({ account: [seedAccount()] });
     const failing = makeTransport("fail");
 
     const failed = await runEffect(
       sendWelcomeEmailOnce({
         db,
-        user: seedUser(),
+        user: seedAccount(),
         email: failing,
         origin,
         now,
@@ -223,14 +223,14 @@ describe("welcome email", () => {
     );
 
     expect(failed).toBe("failed");
-    expect(db.store.user[0]!.welcomeEmailSentAt).toBeNull();
+    expect(db.store.account[0]!.welcomeEmailSentAt).toBeNull();
 
     const transport = makeTransport();
 
     const retried = await runEffect(
       sendWelcomeEmailOnce({
         db,
-        user: seedUser(),
+        user: seedAccount(),
         email: transport,
         origin,
         now,
@@ -242,19 +242,19 @@ describe("welcome email", () => {
   });
 
   it("leaves the marker unset when no transport is configured", async () => {
-    const db = makeDb({ user: [seedUser()] });
+    const db = makeDb({ account: [seedAccount()] });
 
     const outcome = await runEffect(
-      sendWelcomeEmailOnce({ db, user: seedUser(), email: undefined, origin, now }),
+      sendWelcomeEmailOnce({ db, user: seedAccount(), email: undefined, origin, now }),
     );
 
     expect(outcome).toBe("skipped");
-    expect(db.store.user[0]!.welcomeEmailSentAt).toBeNull();
+    expect(db.store.account[0]!.welcomeEmailSentAt).toBeNull();
   });
 
   it.each(["scim", "graph"] as const)("never emails a %s account", async (source) => {
-    const user = seedUser({ source });
-    const db = makeDb({ user: [user] });
+    const user = seedAccount({ source });
+    const db = makeDb({ account: [user] });
     const transport = makeTransport();
 
     const outcome = await runEffect(
@@ -263,12 +263,12 @@ describe("welcome email", () => {
 
     expect(outcome).toBe("skipped");
     expect(transport.sent).toHaveLength(0);
-    expect(db.store.user[0]!.welcomeEmailSentAt).toBeNull();
+    expect(db.store.account[0]!.welcomeEmailSentAt).toBeNull();
   });
 
   it("never emails an unverified account", async () => {
-    const user = seedUser({ emailVerified: false });
-    const db = makeDb({ user: [user] });
+    const user = seedAccount({ emailVerified: false });
+    const db = makeDb({ account: [user] });
     const transport = makeTransport();
 
     const outcome = await runEffect(
@@ -277,17 +277,17 @@ describe("welcome email", () => {
 
     expect(outcome).toBe("skipped");
     expect(transport.attempts).toHaveLength(0);
-    expect(db.store.user[0]!.welcomeEmailSentAt).toBeNull();
+    expect(db.store.account[0]!.welcomeEmailSentAt).toBeNull();
   });
 
   it("falls back to the default Reply-To when it is malformed", async () => {
-    const db = makeDb({ user: [seedUser()] });
+    const db = makeDb({ account: [seedAccount()] });
     const transport = makeTransport();
 
     const outcome = await runEffect(
       sendWelcomeEmailOnce({
         db,
-        user: seedUser(),
+        user: seedAccount(),
         email: transport,
         origin,
         now,
@@ -302,11 +302,11 @@ describe("welcome email", () => {
 
   it("sweeps recent verified manual accounts with no marker", async () => {
     const db = makeDb({
-      user: [
-        seedUser({ id: "user-1", email: "recent@example.com" }),
-        seedUser({ id: "user-2", email: "old@example.com", createdAt: daysAgo(3) }),
-        seedUser({ id: "user-3", email: "scim@example.com", source: "scim" }),
-        seedUser({ id: "user-4", email: "unverified@example.com", emailVerified: false }),
+      account: [
+        seedAccount({ id: "user-1", email: "recent@example.com" }),
+        seedAccount({ id: "user-2", email: "old@example.com", createdAt: daysAgo(3) }),
+        seedAccount({ id: "user-3", email: "scim@example.com", source: "scim" }),
+        seedAccount({ id: "user-4", email: "unverified@example.com", emailVerified: false }),
       ],
     });
 
@@ -456,7 +456,7 @@ describe("one-week onboarding follow-up", () => {
 
   it("leaves a tenant unmarked when no verified owner/admin exists", async () => {
     const db = makeDb({
-      user: [seedUser({ emailVerified: false })],
+      account: [seedAccount({ emailVerified: false })],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [seedMember("member-1", "tenant-1")],
     });
@@ -525,7 +525,7 @@ describe("one-week onboarding follow-up", () => {
 
   it("applies the per-recipient cooldown across tenants", async () => {
     const db = makeDb({
-      user: [seedUser()],
+      account: [seedAccount()],
       organization: [seedTenant("tenant-1", daysAgo(9)), seedTenant("tenant-2", daysAgo(8))],
       member: [
         seedMember("member-1", "tenant-1"),
@@ -548,7 +548,7 @@ describe("one-week onboarding follow-up", () => {
 
   it("sends at most once when concurrent tenants share an owner", async () => {
     const db = makeDb({
-      user: [seedUser()],
+      account: [seedAccount()],
       organization: [seedTenant("tenant-1", daysAgo(9)), seedTenant("tenant-2", daysAgo(8))],
       member: [
         seedMember("member-1", "tenant-1"),
@@ -572,14 +572,14 @@ describe("one-week onboarding follow-up", () => {
 
   it("honours a cooldown row written by an earlier run", async () => {
     const db = makeDb({
-      user: [seedUser()],
+      account: [seedAccount()],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [seedMember("member-1", "tenant-1")],
       audit_log: [
         {
           id: "audit-1",
           organizationId: "tenant-0",
-          actorUserId: "user-1",
+          actorAccountId: "user-1",
           actorEmail: "ada@example.com",
           action: ONBOARDING_FOLLOW_UP_AUDIT_ACTION,
           targetType: "organization",
@@ -601,14 +601,14 @@ describe("one-week onboarding follow-up", () => {
 
   it("sends one private message per verified admin", async () => {
     const db = makeDb({
-      user: [
-        seedUser({ id: "user-1", name: "Ada Lovelace", email: "ada@example.com" }),
-        seedUser({ id: "user-2", name: "Grace Hopper", email: "grace@example.com" }),
+      account: [
+        seedAccount({ id: "user-1", name: "Ada Lovelace", email: "ada@example.com" }),
+        seedAccount({ id: "user-2", name: "Grace Hopper", email: "grace@example.com" }),
       ],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [
-        seedMember("member-1", "tenant-1", { userId: "user-1" }),
-        seedMember("member-2", "tenant-1", { userId: "user-2", role: "admin" }),
+        seedMember("member-1", "tenant-1", { accountId: "user-1" }),
+        seedMember("member-2", "tenant-1", { accountId: "user-2", role: "admin" }),
       ],
     });
 
@@ -636,14 +636,14 @@ describe("one-week onboarding follow-up", () => {
 
   it("keeps sending to the other admins when one recipient fails", async () => {
     const db = makeDb({
-      user: [
-        seedUser({ id: "user-1", name: "Ada Lovelace", email: "ada@example.com" }),
-        seedUser({ id: "user-2", name: "Grace Hopper", email: "grace@example.com" }),
+      account: [
+        seedAccount({ id: "user-1", name: "Ada Lovelace", email: "ada@example.com" }),
+        seedAccount({ id: "user-2", name: "Grace Hopper", email: "grace@example.com" }),
       ],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [
-        seedMember("member-1", "tenant-1", { userId: "user-1" }),
-        seedMember("member-2", "tenant-1", { userId: "user-2", role: "admin" }),
+        seedMember("member-1", "tenant-1", { accountId: "user-1" }),
+        seedMember("member-2", "tenant-1", { accountId: "user-2", role: "admin" }),
       ],
     });
 
@@ -661,12 +661,14 @@ describe("one-week onboarding follow-up", () => {
     expect(db.store.organization[0]!.onboardingFollowUpSentAt).toEqual(now);
     expect(
       db.store.audit_log.filter((row) => row.action === ONBOARDING_FOLLOW_UP_AUDIT_ACTION),
-    ).toEqual([expect.objectContaining({ actorUserId: "user-1", actorEmail: "ada@example.com" })]);
+    ).toEqual([
+      expect.objectContaining({ actorAccountId: "user-1", actorEmail: "ada@example.com" }),
+    ]);
   });
 
   it("excludes a disabled owner", async () => {
     const db = makeDb({
-      user: [seedUser({ disabled: true })],
+      account: [seedAccount({ disabled: true })],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [seedMember("member-1", "tenant-1")],
     });
@@ -684,7 +686,7 @@ describe("one-week onboarding follow-up", () => {
     "never emails a custom-role member with a legacy %s role",
     async (role) => {
       const db = makeDb({
-        user: [seedUser()],
+        account: [seedAccount()],
         organization: [seedTenant("tenant-1", daysAgo(8))],
         member: [seedMember("member-1", "tenant-1", { role, customRoleId: "custom-role-1" })],
       });
@@ -701,14 +703,14 @@ describe("one-week onboarding follow-up", () => {
 
   it("deduplicates recipients case-insensitively", async () => {
     const db = makeDb({
-      user: [
-        seedUser({ id: "user-1", email: "ada@example.com" }),
-        seedUser({ id: "user-2", email: "ADA@Example.com" }),
+      account: [
+        seedAccount({ id: "user-1", email: "ada@example.com" }),
+        seedAccount({ id: "user-2", email: "ADA@Example.com" }),
       ],
       organization: [seedTenant("tenant-1", daysAgo(8))],
       member: [
-        seedMember("member-1", "tenant-1", { userId: "user-1" }),
-        seedMember("member-2", "tenant-1", { userId: "user-2", role: "admin" }),
+        seedMember("member-1", "tenant-1", { accountId: "user-1" }),
+        seedMember("member-2", "tenant-1", { accountId: "user-2", role: "admin" }),
       ],
     });
 

@@ -41,7 +41,7 @@ const makeContext = (planLimits = planConfig()) => {
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   const auth = {
     requireUser: (input: any) => {

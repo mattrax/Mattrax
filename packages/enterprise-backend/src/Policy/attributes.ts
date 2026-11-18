@@ -469,7 +469,7 @@ export const claimEnrollmentAnswers = (
           attributeId: definition.id,
           organizationId,
           value: result.value,
-          updatedByUserId: null,
+          updatedByAccountId: null,
           updatedAt: timestamp,
         })
         .onDuplicateKeyUpdate({ set: { value: result.value, updatedAt: timestamp } });

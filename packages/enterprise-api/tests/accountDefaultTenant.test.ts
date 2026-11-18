@@ -36,7 +36,7 @@ const makeContext = (options: { readonly defaultTenantId?: string | null } = {})
     updatedAt: now,
   };
 
-  db.store.user.push(user, otherUser);
+  db.store.account.push(user, otherUser);
   db.store.organization.push(
     {
       id: "tenant-a",
@@ -65,7 +65,7 @@ const makeContext = (options: { readonly defaultTenantId?: string | null } = {})
     {
       id: "member-a",
       organizationId: "tenant-a",
-      userId: user.id,
+      accountId: user.id,
       role: "owner",
       customRoleId: null,
       createdAt: now,
@@ -74,7 +74,7 @@ const makeContext = (options: { readonly defaultTenantId?: string | null } = {})
     {
       id: "member-b",
       organizationId: "tenant-b",
-      userId: otherUser.id,
+      accountId: otherUser.id,
       role: "owner",
       customRoleId: null,
       createdAt: now,
@@ -115,10 +115,10 @@ describe("account default tenant", () => {
     );
 
     expect(result).toEqual({ status: "ok" });
-    expect(db.store.user[0]!.defaultTenantId).toBe("tenant-a");
+    expect(db.store.account[0]!.defaultTenantId).toBe("tenant-a");
 
     const me = await runEffect(service.me(request(headers)));
-    expect(me.user.defaultTenantId).toBe("tenant-a");
+    expect(me.account.defaultTenantId).toBe("tenant-a");
   });
 
   it("rejects a tenant another account belongs to", async () => {
@@ -128,10 +128,10 @@ describe("account default tenant", () => {
       runEffect(service.updateMe(request(headers), { defaultTenantId: "tenant-b" })),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
-    expect(db.store.user.find((entry) => entry.id === "user-1")!.defaultTenantId).toBeNull();
+    expect(db.store.account.find((entry) => entry.id === "user-1")!.defaultTenantId).toBeNull();
     // The other owner's membership must not authorise this caller, and their
     // own row stays untouched.
-    expect(db.store.user.find((entry) => entry.id === "user-2")!.defaultTenantId).toBeNull();
+    expect(db.store.account.find((entry) => entry.id === "user-2")!.defaultTenantId).toBeNull();
   });
 
   it("clears the default without changing the rest of the profile", async () => {
@@ -139,7 +139,7 @@ describe("account default tenant", () => {
 
     await runEffect(service.updateMe(request(headers), { defaultTenantId: null }));
 
-    expect(db.store.user[0]).toMatchObject({
+    expect(db.store.account[0]).toMatchObject({
       name: "Owner",
       image: null,
       defaultTenantId: null,
@@ -151,7 +151,7 @@ describe("account default tenant", () => {
 
     await runEffect(service.updateMe(request(headers), { defaultTenantId: "" }));
 
-    expect(db.store.user[0]!.defaultTenantId).toBeNull();
+    expect(db.store.account[0]!.defaultTenantId).toBeNull();
   });
 
   it("keeps the current default when the request omits the field", async () => {
@@ -159,7 +159,7 @@ describe("account default tenant", () => {
 
     await runEffect(service.updateMe(request(headers), { name: "Renamed" }));
 
-    expect(db.store.user[0]).toMatchObject({
+    expect(db.store.account[0]).toMatchObject({
       name: "Renamed",
       defaultTenantId: "tenant-a",
     });
@@ -173,6 +173,6 @@ describe("account default tenant", () => {
     const me = await runEffect(service.me(request(headers)));
 
     expect(me.tenants.map((tenant) => tenant.id)).toEqual(["tenant-a"]);
-    expect(me.user.defaultTenantId).toBeNull();
+    expect(me.account.defaultTenantId).toBeNull();
   });
 });

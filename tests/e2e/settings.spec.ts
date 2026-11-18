@@ -86,7 +86,7 @@ test.describe("tenant settings", () => {
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
 
     for (const [tab, text] of [
-      ["Members", /Invite a member/],
+      ["Administrators", /Invite an administrator/],
       ["Identity", /Single sign-on/],
       ["Enrollment", /Enrollment link/],
       ["Management", /Apple push notifications/],
@@ -114,7 +114,7 @@ test.describe("tenant settings", () => {
   test("shows the auditor role in administrator settings", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
-    await expect(page.getByText("Invite a member")).toBeVisible();
+    await expect(page.getByText("Invite an administrator")).toBeVisible();
     const inviteRole = page.getByLabel("Invitation role");
     await expect(inviteRole.locator('option[value="builtin:auditor"]')).toHaveText("Auditor");
     await expect(inviteRole.locator('option[value="builtin:member"]')).toHaveText("Member");

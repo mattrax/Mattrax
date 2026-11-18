@@ -101,7 +101,7 @@ const makeStorage = (): FakeStorage => {
 const makeContext = (role = "owner") => {
   const db = makeDb();
   const timestamp = new Date();
-  db.store.user.push({
+  db.store.account.push({
     id: "user-1",
     name: "Owner",
     email: "owner@example.com",
@@ -129,7 +129,7 @@ const makeContext = (role = "owner") => {
   db.store.member.push({
     id: "member-1",
     organizationId: "org-1",
-    userId: "user-1",
+    accountId: "user-1",
     role,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -142,7 +142,7 @@ const makeContext = (role = "owner") => {
         input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return inputHeaders.cookie
-        ? Effect.succeed({ user: db.store.user[0] })
+        ? Effect.succeed({ user: db.store.account[0] })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -178,7 +178,7 @@ describe("tenant backup runs", () => {
     const result = await runEffect(
       runTenantBackup(db, storage, "org-1", "manual", {
         now,
-        actor: { userId: "user-1", email: "owner@example.com" },
+        actor: { accountId: "user-1", email: "owner@example.com" },
       }),
     );
 

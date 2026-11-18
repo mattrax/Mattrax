@@ -374,7 +374,7 @@ export const loadTenantAdminRecipients = (
     const members = memberRows.map((row) =>
       Schema.decodeUnknownSync(
         Schema.Struct({
-          userId: Schema.String,
+          accountId: Schema.String,
           role: Schema.String,
           customRoleId: Schema.optional(Schema.NullOr(Schema.String)),
         }),
@@ -388,15 +388,15 @@ export const loadTenantAdminRecipients = (
       // leak notifications to a delegated member, and owner authority must be
       // the built-in role rather than a custom-role delegation.
       if (!isBuiltInManager(member)) continue;
-      roles.set(member.userId, member.role);
+      roles.set(member.accountId, member.role);
     }
 
     if (roles.size === 0) return [];
 
     const userRows = yield* db
       .select()
-      .from(s.user)
-      .where(inArray(s.user.id, [...roles.keys()]));
+      .from(s.account)
+      .where(inArray(s.account.id, [...roles.keys()]));
 
     const users = userRows.map((row) =>
       Schema.decodeUnknownSync(
@@ -821,7 +821,7 @@ export const runMaintenance = (
         yield* db.insert(s.auditLog).values({
           id: id(),
           organizationId: organization.id,
-          actorUserId: null,
+          actorAccountId: null,
           actorEmail: null,
           action: CREDENTIAL_ALERT_ACTION,
           targetType: "organization",

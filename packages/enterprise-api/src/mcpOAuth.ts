@@ -124,7 +124,7 @@ const clientAndRedirect = (
   });
 
 type McpSessionView = {
-  readonly user: { readonly id: string; readonly name: string; readonly email: string };
+  readonly account: { readonly id: string; readonly name: string; readonly email: string };
   readonly tenants: ReadonlyArray<{
     readonly id: string;
     readonly name: string;
@@ -366,7 +366,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       return consentPage({
         requestUrl: url,
         client,
-        user: me.user,
+        user: me.account,
         tenants: me.tenants,
         redirectUri: redirectUri!,
         state: url.searchParams.get("state"),
@@ -416,7 +416,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
       const existing = yield* db.query.mcpOAuthConnection.findFirst({
         where: {
-          userId: me.user.id,
+          accountId: me.account.id,
           clientId: client.id,
           revokedAt: { isNull: true },
         },
@@ -432,7 +432,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       else
         yield* db.insert(schema.mcpOAuthConnection).values({
           id: connectionId,
-          userId: me.user.id,
+          accountId: me.account.id,
           clientId: client.id,
           scopes: ["mcp"],
           requestCount: 0,

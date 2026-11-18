@@ -151,7 +151,7 @@ const makeContext = async (
     updatedAt: now,
   };
 
-  db.store.user.push(user);
+  db.store.account.push(user);
 
   for (const id of [organizationId, otherOrganizationId]) {
     db.store.organization.push({
@@ -166,7 +166,7 @@ const makeContext = async (
   db.store.member.push({
     id: "member-1",
     organizationId,
-    userId: user.id,
+    accountId: user.id,
     role: "owner",
     createdAt: now,
     updatedAt: now,
@@ -174,7 +174,7 @@ const makeContext = async (
   db.store.member.push({
     id: "member-2",
     organizationId: otherOrganizationId,
-    userId: user.id,
+    accountId: user.id,
     role: "owner",
     createdAt: now,
     updatedAt: now,

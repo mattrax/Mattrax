@@ -50,13 +50,13 @@ type RoleChoice = {
   blockedReason: string | null;
 };
 
-const roleValue = (user: { role: string; roleId?: string | null }) =>
-  user.roleId ? `role:${user.roleId}` : `builtin:${user.role}`;
+const roleValue = (account: { role: string; roleId?: string | null }) =>
+  account.roleId ? `role:${account.roleId}` : `builtin:${account.role}`;
 
 /** Owner authority is the built-in role only, never a custom-role delegation. */
-const isBuiltInOwnerUser = (user: { role: string; roleId?: string | null }) =>
-  !user.roleId &&
-  user.role
+const isBuiltInOwnerUser = (account: { role: string; roleId?: string | null }) =>
+  !account.roleId &&
+  account.role
     .split(",")
     .map((value) => value.trim())
     .includes("owner");
@@ -207,9 +207,9 @@ export default function AdministratorsSettingsPage() {
       .map((role) => role.trim())
       .includes("owner");
 
-  const users = useQuery(() => ({
-    queryKey: enterpriseKeys.users(params.tenantId),
-    queryFn: () => enterprise.listUsers(params.tenantId),
+  const accounts = useQuery(() => ({
+    queryKey: enterpriseKeys.accounts(params.tenantId),
+    queryFn: () => enterprise.listAccounts(params.tenantId),
   }));
 
   const invitations = useQuery(() => ({
@@ -246,19 +246,19 @@ export default function AdministratorsSettingsPage() {
     }),
   );
 
-  const memberChoices = createMemo<RoleChoice[]>(() => {
+  const accountRoleChoices = createMemo<RoleChoice[]>(() => {
     const choices = roleChoices();
     const seen = new Set(choices.map((choice) => choice.value));
     const extras: RoleChoice[] = [];
 
-    for (const user of users.data?.users ?? []) {
-      const value = roleValue(user);
+    for (const account of accounts.data?.accounts ?? []) {
+      const value = roleValue(account);
 
       if (seen.has(value)) continue;
       seen.add(value);
       extras.push({
         value,
-        label: user.roleName ?? value,
+        label: account.roleName ?? value,
         assignable: false,
         blockedReason: "Your role can't assign this role",
       });
@@ -302,21 +302,23 @@ export default function AdministratorsSettingsPage() {
   const transferCandidates = createMemo(() => {
     const selfId = session().data?.user?.id;
 
-    return (users.data?.users ?? []).filter(
-      (user) => user.userId !== selfId && !isBuiltInOwnerUser(user),
+    return (accounts.data?.accounts ?? []).filter(
+      (candidate) => candidate.accountId !== selfId && !isBuiltInOwnerUser(candidate),
     );
   });
 
-  // Keep the transfer picker on a valid member as the list loads or changes.
+  // Keep the transfer picker on a valid administrator as the list loads or changes.
   createEffect(
     () =>
       transferCandidates()
-        .map((user) => user.userId)
+        .map((candidate) => candidate.accountId)
         .join(","),
     () => {
-      const current = transferCandidates().find((user) => user.userId === transferTarget());
+      const current = transferCandidates().find(
+        (candidate) => candidate.accountId === transferTarget(),
+      );
 
-      if (!current) setTransferTarget(transferCandidates()[0]?.userId ?? "");
+      if (!current) setTransferTarget(transferCandidates()[0]?.accountId ?? "");
     },
   );
 
@@ -349,7 +351,7 @@ export default function AdministratorsSettingsPage() {
 
   const refreshAccess = async () => {
     await Promise.all([
-      qc.invalidateQueries({ queryKey: enterpriseKeys.users(params.tenantId) }),
+      qc.invalidateQueries({ queryKey: enterpriseKeys.accounts(params.tenantId) }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.me() }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) }),
     ]);
@@ -358,7 +360,7 @@ export default function AdministratorsSettingsPage() {
   const invalidateRoleData = async () => {
     await Promise.all([
       qc.invalidateQueries({ queryKey: enterpriseKeys.roles(params.tenantId) }),
-      qc.invalidateQueries({ queryKey: enterpriseKeys.users(params.tenantId) }),
+      qc.invalidateQueries({ queryKey: enterpriseKeys.accounts(params.tenantId) }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.invitationOptions(params.tenantId) }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.me() }),
@@ -382,7 +384,7 @@ export default function AdministratorsSettingsPage() {
         ? { roleId: choice.roleId, role: "member" as const }
         : { role: choice.role ?? "member" };
 
-      return enterprise.inviteUser(params.tenantId, {
+      return enterprise.inviteAccount(params.tenantId, {
         email: email().trim(),
         ...invitation,
       });
@@ -441,23 +443,27 @@ export default function AdministratorsSettingsPage() {
     onError: (error, item) => setRowError({ id: item.id, error }),
   }));
 
-  const removeUser = useMutation(() => ({
+  const removeAccount = useMutation(() => ({
     meta: { inlineError: true },
-    mutationFn: (memberId: string) => enterprise.removeUser(params.tenantId, memberId),
+    mutationFn: (accountId: string) => enterprise.removeAccount(params.tenantId, accountId),
     onSuccess: refreshAccess,
   }));
 
   const requestOwnershipTransfer = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: () => {
-      const target = transferCandidates().find((user) => user.userId === transferTarget());
+      const target = transferCandidates().find(
+        (candidate) => candidate.accountId === transferTarget(),
+      );
 
-      if (!target) throw new Error("Choose a member to take over ownership");
+      if (!target) throw new Error("Choose an administrator to take over ownership");
 
-      return enterprise.requestOwnershipTransfer(params.tenantId, target.userId);
+      return enterprise.requestOwnershipTransfer(params.tenantId, target.accountId);
     },
     onSuccess: async (result) => {
-      const target = users.data?.users.find((user) => user.userId === result.targetUserId);
+      const target = accounts.data?.accounts.find(
+        (candidate) => candidate.accountId === result.targetAccountId,
+      );
 
       setTransferResult({
         ...result,
@@ -486,10 +492,10 @@ export default function AdministratorsSettingsPage() {
 
   const changeRole = useMutation(() => ({
     meta: { inlineError: true },
-    mutationFn: ({ memberId, role }: { memberId: string; role: string }) =>
-      enterprise.patchUser(
+    mutationFn: ({ accountId, role }: { accountId: string; role: string }) =>
+      enterprise.patchAccount(
         params.tenantId,
-        memberId,
+        accountId,
         role.startsWith("role:")
           ? { roleId: role.slice(5), role: "member" }
           : { role: role.slice(8), roleId: null },
@@ -614,17 +620,17 @@ export default function AdministratorsSettingsPage() {
     (invitations.data?.invitations ?? []).filter((item) => matchesFilter(item, filter())),
   );
 
-  const memberCount = () => users.data?.users.length ?? 0;
+  const accountCount = () => accounts.data?.accounts.length ?? 0;
 
   return (
     <div class="grid gap-5 xl:grid-cols-2">
       <QueryError
         class="xl:col-span-2"
         error={
-          users.error ?? invitations.error ?? invitationOptions.error ?? ownershipTransfer.error
+          accounts.error ?? invitations.error ?? invitationOptions.error ?? ownershipTransfer.error
         }
         onRetry={() => {
-          void users.refetch();
+          void accounts.refetch();
           void invitations.refetch();
           void invitationOptions.refetch();
           void ownershipTransfer.refetch();
@@ -634,8 +640,8 @@ export default function AdministratorsSettingsPage() {
       <Show when={can("members.write")}>
         <Panel
           class="xl:col-span-2"
-          title="Invite a member"
-          description="Send a one-time invitation link. New members join with the role you choose."
+          title="Invite an administrator"
+          description="Send a one-time invitation link. New administrators join with the role you choose."
         >
           <form
             class="flex flex-col gap-2 sm:flex-row"
@@ -695,7 +701,7 @@ export default function AdministratorsSettingsPage() {
           <Show when={invitationOptions.data && !roleChoices().some((choice) => choice.assignable)}>
             <p role="status" class="mt-2 text-xs text-muted-foreground">
               Your role doesn't include the permissions needed to invite anyone. Ask a tenant owner
-              to invite members or raise your role's ceiling.
+              to invite administrators or raise your role's ceiling.
             </p>
           </Show>
 
@@ -762,7 +768,7 @@ export default function AdministratorsSettingsPage() {
         <Panel
           class="xl:col-span-2"
           title="Roles"
-          description="Create custom roles with a precise set of tenant permissions, then assign them to members. Built-in roles are fixed."
+          description="Create custom roles with a precise set of tenant permissions, then assign them to administrators. Built-in roles are fixed."
           actions={
             <Show when={can("roles.write")}>
               <Button onClick={openCreateRole}>Create role</Button>
@@ -898,7 +904,7 @@ export default function AdministratorsSettingsPage() {
                       </Show>
                     </p>
                     <p class="mt-0.5 text-[11px] text-muted-foreground">
-                      {item.memberCount} member{item.memberCount === 1 ? "" : "s"} ·{" "}
+                      {item.memberCount} administrator{item.memberCount === 1 ? "" : "s"} ·{" "}
                       {item.permissions.length} permission
                       {item.permissions.length === 1 ? "" : "s"}
                       {item.description ? ` · ${item.description}` : ""}
@@ -921,7 +927,7 @@ export default function AdministratorsSettingsPage() {
                         disabled={removeRole.isPending || item.memberCount > 0}
                         title={
                           item.memberCount > 0
-                            ? "Reassign members before deleting this role"
+                            ? "Reassign administrators before deleting this role"
                             : undefined
                         }
                         onClick={() => setRoleToDelete({ id: item.id, name: item.name })}
@@ -939,30 +945,32 @@ export default function AdministratorsSettingsPage() {
       </Show>
 
       <Panel
-        title="Current members"
+        title="Current administrators"
         description="Everyone with access to this tenant."
         actions={
           <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <UsersRound class="size-3.5" />
-            {memberCount()} {memberCount() === 1 ? "member" : "members"}
+            {accountCount()} {accountCount() === 1 ? "administrator" : "administrators"}
           </span>
         }
         flush
       >
         <Show
-          when={memberCount() > 0}
+          when={accountCount() > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">No members yet.</p>
+            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+              No administrators yet.
+            </p>
           }
         >
           <ul class="divide-y divide-border">
-            <For each={users.data?.users ?? []}>
-              {(user) => {
-                const isSelf = () => user.userId === session().data?.user?.id;
+            <For each={accounts.data?.accounts ?? []}>
+              {(account) => {
+                const isSelf = () => account.accountId === session().data?.user?.id;
 
                 const targetIsOwner = () =>
-                  !user.roleId &&
-                  user.role
+                  !account.roleId &&
+                  account.role
                     .split(",")
                     .map((value) => value.trim())
                     .includes("owner");
@@ -976,17 +984,17 @@ export default function AdministratorsSettingsPage() {
                         class="flex size-7 shrink-0 items-center justify-center rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border"
                         aria-hidden="true"
                       >
-                        {initials(user.name)}
+                        {initials(account.name)}
                       </span>
                       <div class="min-w-0">
                         <strong class="block truncate text-[13px] font-medium text-foreground">
-                          {user.name}
+                          {account.name}
                         </strong>
                         <span class="block truncate text-xs text-muted-foreground">
-                          {user.email}
+                          {account.email}
                         </span>
                         <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                          {user.roleName ?? user.role}
+                          {account.roleName ?? account.role}
                         </span>
                       </div>
                     </div>
@@ -995,33 +1003,33 @@ export default function AdministratorsSettingsPage() {
                         when={!isSelf() && can("members.write")}
                         fallback={
                           <Chip tone="neutral">
-                            {isSelf() ? "You" : (user.roleName ?? user.role)}
+                            {isSelf() ? "You" : (account.roleName ?? account.role)}
                           </Chip>
                         }
                       >
                         <select
                           class={selectClass}
-                          value={roleValue(user)}
+                          value={roleValue(account)}
                           onChange={(event) =>
                             changeRole.mutate({
-                              memberId: user.memberId,
+                              accountId: account.accountId,
                               role: event.currentTarget.value,
                             })
                           }
                           disabled={changeRole.isPending || ownerLocked()}
-                          aria-label={`Role for ${user.name} (${user.email})`}
+                          aria-label={`Role for ${account.name} (${account.email})`}
                           title={
                             ownerLocked()
                               ? "Only a tenant owner can change the owner role"
                               : undefined
                           }
                         >
-                          <For each={memberChoices()}>
+                          <For each={accountRoleChoices()}>
                             {(option) => (
                               <option
                                 value={option.value}
                                 disabled={!option.assignable}
-                                selected={option.value === roleValue(user)}
+                                selected={option.value === roleValue(account)}
                               >
                                 {option.assignable
                                   ? option.label
@@ -1034,9 +1042,9 @@ export default function AdministratorsSettingsPage() {
                           size="sm"
                           class="min-h-11 sm:min-h-0"
                           variant="destructive"
-                          aria-label={`Remove ${user.name} (${user.email})`}
-                          onClick={() => removeUser.mutate(user.memberId)}
-                          disabled={removeUser.isPending || ownerLocked()}
+                          aria-label={`Remove ${account.name} (${account.email})`}
+                          onClick={() => removeAccount.mutate(account.accountId)}
+                          disabled={removeAccount.isPending || ownerLocked()}
                           title={
                             ownerLocked() ? "Only a tenant owner can remove an owner" : undefined
                           }
@@ -1052,14 +1060,14 @@ export default function AdministratorsSettingsPage() {
           </ul>
         </Show>
         <div class="px-4 pb-4 sm:px-5">
-          <ErrorText error={removeUser.error || changeRole.error} />
+          <ErrorText error={removeAccount.error || changeRole.error} />
         </div>
       </Panel>
 
       <Show when={isOwner() || Boolean(ownershipTransfer.data?.transfer)}>
         <Panel
           title="Ownership transfer"
-          description="Hand tenant ownership to another member. Ownership only moves when they accept the emailed link."
+          description="Hand tenant ownership to another administrator. Ownership only moves when they accept the emailed link."
           class="xl:col-span-2"
         >
           <Show when={transferResult()}>
@@ -1104,8 +1112,8 @@ export default function AdministratorsSettingsPage() {
                   when={transferCandidates().length > 0}
                   fallback={
                     <p class="text-[13px] text-muted-foreground">
-                      Invite another member before transferring ownership. Owners cannot take over
-                      from each other.
+                      Invite another administrator before transferring ownership. Owners cannot
+                      take over from each other.
                     </p>
                   }
                 >
@@ -1123,16 +1131,16 @@ export default function AdministratorsSettingsPage() {
                       class={cn(selectClass, "min-w-0 flex-1 sm:w-auto")}
                       value={transferTarget()}
                       onChange={(event) => setTransferTarget(event.currentTarget.value)}
-                      aria-label="Member to take over ownership"
+                      aria-label="Administrator to take over ownership"
                       disabled={
                         requestOwnershipTransfer.isPending ||
-                        users.isPending ||
+                        accounts.isPending ||
                         ownershipTransfer.isPending
                       }
                     >
                       <For each={transferCandidates()}>
                         {(candidate) => (
-                          <option value={candidate.userId}>
+                          <option value={candidate.accountId}>
                             {candidate.name} ({candidate.email})
                           </option>
                         )}
@@ -1504,7 +1512,7 @@ export default function AdministratorsSettingsPage() {
           if (!open) setRoleToDelete(null);
         }}
         title={`Delete “${roleToDelete()?.name ?? "this role"}”?`}
-        description="Members assigned to this role lose the permissions it grants. This cannot be undone."
+        description="Administrators assigned to this role lose the permissions it grants. This cannot be undone."
         confirmLabel="Delete role"
         destructive
         pending={removeRole.isPending}

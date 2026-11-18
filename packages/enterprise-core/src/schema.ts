@@ -38,8 +38,17 @@ const shortText = (name: string) => varchar(name, { length: 255 });
 
 const timestamp = (name: string) => datetime(name, { mode: "date", fsp: 3 });
 
-export const user = mysqlTable(
-  "user",
+/**
+ * A dashboard administrator account.
+ *
+ * Accounts are the only identity that can authenticate to Mattrax: they own
+ * passkeys, sessions, API tokens, memberships and tenant roles. They are
+ * created by registering on the website (or by an administrator invitation)
+ * and are never provisioned by directory sync. A directory person is a `user`
+ * below, which has no credentials and no tenant access.
+ */
+export const account = mysqlTable(
+  "account",
   {
     id: id().primaryKey(),
     name: varchar("name", { length: 255 }).notNull(),
@@ -56,8 +65,13 @@ export const user = mysqlTable(
       onDelete: "set null",
     }),
     disabled: boolean("disabled").notNull().default(false),
-    /** Where this account came from; directory sync updates it on creation. */
-    source: varchar("source", { length: 16, enum: ["manual", "scim", "graph"] })
+    /**
+     * How this account was created. `manual` is website registration and
+     * invitation acceptance; `sso` is first-sign-in provisioning. `scim` and
+     * `graph` remain for accounts provisioned before directory sync was split
+     * from accounts.
+     */
+    source: varchar("source", { length: 16, enum: ["manual", "sso", "scim", "graph"] })
       .notNull()
       .default("manual"),
     /**
@@ -84,9 +98,9 @@ export const user = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    uniqueIndex("user_email_unique").on(table.email),
+    uniqueIndex("account_email_unique").on(table.email),
     // Backstop sweep: manual + verified + unmarked, ordered by creation.
-    index("user_welcome_email_sweep_idx").on(
+    index("account_welcome_email_sweep_idx").on(
       table.source,
       table.welcomeEmailSentAt,
       table.createdAt,
@@ -95,9 +109,44 @@ export const user = mysqlTable(
 );
 
 /**
+ * A person from a tenant's directory.
+ *
+ * Users are provisioned by Entra or SCIM (or created by an administrator) and
+ * belong to exactly one organization. They have no credentials, sessions or
+ * tenant membership: they exist so policies, directory groups and device
+ * links can target a person, and so the MDM user channel can resolve who is
+ * signed in. An account and a user may describe the same human, but they are
+ * separate identities with separate lifecycles.
+ */
+export const user = mysqlTable(
+  "user",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    email: varchar("email", { length: 320 }).notNull(),
+    /** Provider object id (Graph id or SCIM external id), when known. */
+    externalId: shortText("external_id"),
+    source: varchar("source", { length: 16, enum: ["manual", "entra", "scim"] })
+      .notNull()
+      .default("manual"),
+    disabled: boolean("disabled").notNull().default(false),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("user_organization_email_unique").on(table.organizationId, table.email),
+    uniqueIndex("user_organization_external_unique").on(table.organizationId, table.externalId),
+    index("user_organization_idx").on(table.organizationId, table.name),
+  ],
+);
+
+/**
  * Yielded Auth owns identifiers, credentials, sessions, pending authentication
- * and passkey ceremonies. The application owns `user` above; Yielded maps it as
- * the subject table so user IDs remain stable.
+ * and passkey ceremonies. The application owns `account` above; Yielded maps
+ * it as the subject table so account IDs remain stable.
  */
 /**
  * Baseline assurance for accounts without an authenticator app. Passkeys are
@@ -163,7 +212,7 @@ export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
 
 export const authStorage: any = AuthPersistenceConfig.managed({
   subjects: {
-    table: user,
+    table: account,
     id: "id",
     status: "disabled",
     activeValue: false,
@@ -278,11 +327,11 @@ export const totpMapping = {
     toSubject: (subjectId: string) => AuthSchema.SubjectId.make(subjectId),
   },
   subject: {
-    table: user,
+    table: account,
     id: "id",
     securityRevision: "authRevision",
     factorEnabled: "totpEnabled",
-    activeCondition: sql`${user.disabled} = false`,
+    activeCondition: sql`${account.disabled} = false`,
     encodeEnabled: (enabled: boolean) => enabled,
     decodeRequirement: (row: AuthSubjectFactors) => authRequirementForSubject(row),
     requirementColumns: ["totpEnabled", "passkeyEnabled", "disabled"],
@@ -379,17 +428,17 @@ export const passkeyRegistrationMapping: any = {
   moduleId: PASSKEY_MODULE_ID,
   read: {
     subject: {
-      table: user,
+      table: account,
       id: "id",
       status: "disabled",
       securityRevision: "authRevision",
       // SAFETY: the registration read always selects the subject row; the
       // library widens the row to Partial because other call sites project it.
-      decodeId: (row: Readonly<Partial<typeof user.$inferSelect>>) => row.id!,
+      decodeId: (row: Readonly<Partial<typeof account.$inferSelect>>) => row.id!,
       decodeRequirement: (row: AuthSubjectFactors) =>
         Effect.succeed(authRequirementForSubject(row)),
       isActiveStatus: (value: PersistedStatus) => value === false,
-      activeCondition: sql`${user.disabled} = false`,
+      activeCondition: sql`${account.disabled} = false`,
     },
     credential: {
       table: authPasskeyCredentials,
@@ -550,9 +599,9 @@ export const passkeyRegistrationMapping: any = {
           ],
         }),
       metadata: (subjectId: string) =>
-        sql`exists(select 1 from ${user} where ${user.id} = ${subjectId} and ${user.disabled} = false)`,
+        sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.disabled} = false)`,
       action: (subjectId: string) =>
-        sql`exists(select 1 from ${user} where ${user.id} = ${subjectId} and ${user.disabled} = false)`,
+        sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.disabled} = false)`,
       remainingSignIn: () => Effect.succeed(sql`true`),
     },
   },
@@ -564,7 +613,7 @@ export const passkeyRegistrationMapping: any = {
       displayName: value.name,
     }),
     eligible: (value: typeof Registration.Type) =>
-      sql`not exists(select 1 from ${user} where ${user.email} = ${value.email})`,
+      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email})`,
     finalEligibility: ({
       registration,
       subjectId,
@@ -572,7 +621,7 @@ export const passkeyRegistrationMapping: any = {
       registration: typeof Registration.Type;
       subjectId: string;
     }) =>
-      sql`exists(select 1 from ${user} where ${user.id} = ${subjectId} and ${user.email} = ${registration.email} and ${user.disabled} = false)`,
+      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.disabled} = false)`,
     subject: ({
       registration,
       marker,
@@ -660,7 +709,7 @@ export const tenantRole = mysqlTable(
     name: shortText("name").notNull(),
     description: text("description"),
     permissions: json("permissions").$type<string[]>().notNull(),
-    createdByUserId: id("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -677,9 +726,9 @@ export const member = mysqlTable(
     organizationId: id("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     role: varchar("role", { length: 32 }).notNull(),
     /** Custom RBAC role; when set it replaces the built-in `role` capabilities. */
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
@@ -687,7 +736,7 @@ export const member = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    uniqueIndex("member_user_organization_unique").on(table.userId, table.organizationId),
+    uniqueIndex("member_account_organization_unique").on(table.accountId, table.organizationId),
     index("member_custom_role_idx").on(table.customRoleId),
     index("member_organization_id_idx").on(table.organizationId),
   ],
@@ -698,19 +747,19 @@ export const member = mysqlTable(
  * that exist before, or independently of, a tenant. `audit_log` requires an
  * organisation, so pre-tenant events get their own table.
  *
- * `subject_user_id` is nullable so the account-deletion record survives the
- * person row (the email snapshot stays for investigation until retention
- * prunes it). Every read is scoped by `subject_user_id`, so one account can
+ * `subject_account_id` is nullable so the account-deletion record survives the
+ * account row (the email snapshot stays for investigation until retention
+ * prunes it). Every read is scoped by `subject_account_id`, so one account can
  * never page another's stream.
  */
 export const accountAuditLog = mysqlTable(
   "account_audit_log",
   {
     id: id().primaryKey(),
-    subjectUserId: id("subject_user_id").references(() => user.id, { onDelete: "set null" }),
+    subjectAccountId: id("subject_account_id").references(() => account.id, { onDelete: "set null" }),
     /** Snapshot of the subject's address; kept after deletion. */
     subjectEmail: varchar("subject_email", { length: 320 }),
-    actorUserId: id("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    actorAccountId: id("actor_account_id").references(() => account.id, { onDelete: "set null" }),
     actorEmail: varchar("actor_email", { length: 320 }),
     action: shortText("action").notNull(),
     targetType: shortText("target_type").notNull(),
@@ -719,8 +768,8 @@ export const accountAuditLog = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
-    index("account_audit_log_subject_created_idx").on(table.subjectUserId, table.createdAt),
-    index("account_audit_log_subject_action_idx").on(table.subjectUserId, table.action),
+    index("account_audit_log_subject_created_idx").on(table.subjectAccountId, table.createdAt),
+    index("account_audit_log_subject_action_idx").on(table.subjectAccountId, table.action),
     // Break-glass rate limiting counts recent attempts per action window.
     index("account_audit_log_action_created_idx").on(table.action, table.createdAt),
   ],
@@ -739,9 +788,9 @@ export const accountSessionContext = mysqlTable(
   "account_session_context",
   {
     sessionId: id("session_id").primaryKey(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     /** First eight bytes of SHA-256("<AUTH_SECRET>:ip:<address>"), hex. */
     ipHash: varchar("ip_hash", { length: 32 }),
     /** Parsed `User-Agent`: browser, platform and device class only. */
@@ -752,7 +801,7 @@ export const accountSessionContext = mysqlTable(
     lastUsedAt: timestamp("last_used_at").notNull(),
   },
   (table) => [
-    index("account_session_context_user_idx").on(table.userId, table.lastUsedAt),
+    index("account_session_context_account_idx").on(table.accountId, table.lastUsedAt),
     index("account_session_context_last_used_idx").on(table.lastUsedAt),
   ],
 );
@@ -767,9 +816,9 @@ export const accountEmailChange = mysqlTable(
   "account_email_change",
   {
     id: id().primaryKey(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     oldEmail: varchar("old_email", { length: 320 }).notNull(),
     newEmail: varchar("new_email", { length: 320 }).notNull(),
     confirmTokenHash: varchar("confirm_token_hash", { length: 255 }).notNull(),
@@ -783,7 +832,7 @@ export const accountEmailChange = mysqlTable(
   (table) => [
     uniqueIndex("account_email_change_confirm_unique").on(table.confirmTokenHash),
     uniqueIndex("account_email_change_cancel_unique").on(table.cancelTokenHash),
-    index("account_email_change_user_idx").on(table.userId, table.createdAt),
+    index("account_email_change_account_idx").on(table.accountId, table.createdAt),
   ],
 );
 
@@ -819,9 +868,9 @@ export const accountRecovery = mysqlTable(
   "account_recovery",
   {
     id: id().primaryKey(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     email: varchar("email", { length: 320 }).notNull(),
     /** `pending_proof`, `pending_approval`, `ready`, `completed`, `cancelled`. */
     status: varchar("status", { length: 32 }).notNull(),
@@ -838,7 +887,7 @@ export const accountRecovery = mysqlTable(
     proofTokenHash: varchar("proof_token_hash", { length: 255 }).notNull(),
     approvalTokenHash: varchar("approval_token_hash", { length: 255 }),
     completionTokenHash: varchar("completion_token_hash", { length: 255 }),
-    approvedByUserId: id("approved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    approvedByAccountId: id("approved_by_account_id").references(() => account.id, { onDelete: "set null" }),
     approvedAt: timestamp("approved_at"),
     completedAt: timestamp("completed_at"),
     cancelledAt: timestamp("cancelled_at"),
@@ -850,7 +899,7 @@ export const accountRecovery = mysqlTable(
     uniqueIndex("account_recovery_proof_unique").on(table.proofTokenHash),
     uniqueIndex("account_recovery_approval_unique").on(table.approvalTokenHash),
     uniqueIndex("account_recovery_completion_unique").on(table.completionTokenHash),
-    index("account_recovery_user_idx").on(table.userId, table.createdAt),
+    index("account_recovery_account_idx").on(table.accountId, table.createdAt),
     index("account_recovery_status_idx").on(table.status, table.createdAt),
   ],
 );
@@ -864,7 +913,7 @@ export const invitation = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     inviterId: id("inviter_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     email: varchar("email", { length: 320 }).notNull(),
     role: varchar("role", { length: 32 }),
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
@@ -905,13 +954,13 @@ export const tenantOwnershipTransfer = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     /** The owner handing ownership over; demoted on acceptance. */
-    requestedByUserId: id("requested_by_user_id")
+    requestedByAccountId: id("requested_by_account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     /** The member who becomes the new owner when they accept. */
-    targetUserId: id("target_user_id")
+    targetAccountId: id("target_account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     /** `pending`, `accepted`, `cancelled` or `expired`. */
     status: varchar("status", { length: 32 }).notNull(),
     /** SHA-256 of the one-time acceptance token; the raw token is only emailed. */
@@ -927,7 +976,7 @@ export const tenantOwnershipTransfer = mysqlTable(
     // permits multiple NULLs in a unique index.
     uniqueIndex("tenant_ownership_transfer_token_unique").on(table.tokenHash),
     index("tenant_ownership_transfer_organization_idx").on(table.organizationId, table.status),
-    index("tenant_ownership_transfer_target_idx").on(table.targetUserId, table.status),
+    index("tenant_ownership_transfer_target_idx").on(table.targetAccountId, table.status),
   ],
 );
 
@@ -1017,9 +1066,9 @@ export const accountApiToken = mysqlTable(
   "account_api_token",
   {
     id: id().primaryKey(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     name: shortText("name").notNull(),
     tokenPrefix: shortText("token_prefix").notNull(),
     tokenHash: varchar("token_hash", { length: 255 }).notNull(),
@@ -1041,7 +1090,7 @@ export const accountApiToken = mysqlTable(
   },
   (table) => [
     uniqueIndex("account_api_token_hash_unique").on(table.tokenHash),
-    index("account_api_token_user_id_idx").on(table.userId),
+    index("account_api_token_account_id_idx").on(table.accountId),
     index("account_api_token_tenant_id_idx").on(table.tenantId),
   ],
 );
@@ -1070,9 +1119,9 @@ export const mcpOAuthConnection = mysqlTable(
   "mcp_oauth_connection",
   {
     id: id().primaryKey(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     clientId: varchar("client_id", { length: 255 })
       .notNull()
       .references(() => mcpOAuthClient.id, { onDelete: "cascade" }),
@@ -1084,7 +1133,7 @@ export const mcpOAuthConnection = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
-    index("mcp_oauth_connection_user_idx").on(table.userId),
+    index("mcp_oauth_connection_account_idx").on(table.accountId),
     index("mcp_oauth_connection_client_idx").on(table.clientId),
   ],
 );
@@ -1251,9 +1300,9 @@ export const ssoIdentity = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     objectId: shortText("object_id").notNull(),
-    userId: id("user_id")
+    accountId: id("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => account.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.organizationId, table.objectId] })],
@@ -1363,7 +1412,7 @@ export const auditLog = mysqlTable(
     organizationId: id("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    actorUserId: id("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    actorAccountId: id("actor_account_id").references(() => account.id, { onDelete: "set null" }),
     actorEmail: varchar("actor_email", { length: 320 }),
     action: shortText("action").notNull(),
     targetType: shortText("target_type").notNull(),
@@ -1375,7 +1424,7 @@ export const auditLog = mysqlTable(
     index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
     index("audit_log_organization_action_idx").on(table.organizationId, table.action),
     // Cross-tenant onboarding cooldown: action + actor within a date window.
-    index("audit_log_actor_action_idx").on(table.actorUserId, table.action, table.createdAt),
+    index("audit_log_actor_action_idx").on(table.actorAccountId, table.action, table.createdAt),
   ],
 );
 
@@ -1452,7 +1501,7 @@ export const webhookDelivery = mysqlTable(
  *
  * `dedupeKey` (unique, nullable) makes enqueue idempotent where a claim is
  * possible, e.g. one message per invitation generation. `organizationId` and
- * `subjectUserId` scope a permanent failure to the tenant audit log or the
+ * `subjectAccountId` scope a permanent failure to the tenant audit log or the
  * account audit stream respectively. Cluster indexes keep the drain bounded to
  * due rows and let an operator inspect one tenant's delivery history.
  */
@@ -1463,7 +1512,7 @@ export const emailOutbox = mysqlTable(
     organizationId: id("organization_id").references(() => organization.id, {
       onDelete: "cascade",
     }),
-    subjectUserId: id("subject_user_id").references(() => user.id, { onDelete: "cascade" }),
+    subjectAccountId: id("subject_account_id").references(() => account.id, { onDelete: "cascade" }),
     /** Envelope recipient; one row per recipient so addresses never leak. */
     recipient: varchar("recipient", { length: 320 }).notNull(),
     /** Template name for operations and audit, e.g. `invitation`. */
@@ -1552,7 +1601,7 @@ export const tenantDeletion = mysqlTable(
     steps: json("steps").$type<ReadonlyArray<TenantDeletionStep>>().notNull(),
     attempts: int("attempts").notNull().default(0),
     lastError: text("last_error"),
-    requestedByUserId: shortText("requested_by_user_id"),
+    requestedByAccountId: shortText("requested_by_account_id"),
     requestedByEmail: varchar("requested_by_email", { length: 320 }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
@@ -1885,7 +1934,7 @@ export const attributeDefinition = mysqlTable(
 /**
  * One value per device and registered attribute.
  *
- * `updatedByUserId` records the administrator who last wrote the value (null
+ * `updatedByAccountId` records the administrator who last wrote the value (null
  * for enrollment answers and script/API writes without a user). `value` is the
  * canonical string form: `true`/`false` for booleans and `YYYY-MM-DD` for
  * dates, so filtering and CSV round-trips do not depend on the writer.
@@ -1903,7 +1952,9 @@ export const deviceAttribute = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     value: text("value").notNull(),
-    updatedByUserId: id("updated_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    updatedByAccountId: id("updated_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
@@ -1955,7 +2006,7 @@ export const enrollmentQuestion = mysqlTable(
  * and hardware serial are the only identity available. Answers are keyed by
  * `(organizationId, serial, attributeId)` and consumed when a device with that
  * serial appears; the write then goes through the normal device-attribute path
- * with `updatedByUserId` null and an audit entry naming the enrollment.
+ * with `updatedByAccountId` null and an audit entry naming the enrollment.
  */
 export const enrollmentAnswer = mysqlTable(
   "enrollment_answer",
@@ -2654,7 +2705,7 @@ export const dashboard = mysqlTable(
     description: text("description"),
     /** Exactly one dashboard per tenant is rendered at `/t/:id`. */
     isDefault: boolean("is_default").notNull().default(false),
-    createdByUserId: id("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -2744,7 +2795,7 @@ export const policyDeployment = mysqlTable(
       .references(() => policy.id, { onDelete: "cascade" }),
     version: int("version").notNull(),
     snapshot: json("snapshot").notNull(),
-    createdByUserId: id("created_by_user_id"),
+    createdByAccountId: id("created_by_account_id"),
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
@@ -3257,7 +3308,7 @@ export const script = mysqlTable(
     /** Five-field cron expression for the `cron` trigger. */
     cronExpression: shortText("cron_expression"),
     enabled: boolean("enabled").notNull().default(true),
-    createdByUserId: id("created_by_user_id").references(() => user.id, {
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").notNull(),
@@ -3329,7 +3380,7 @@ export const scriptExecution = mysqlTable(
       .default("queued"),
     /** SHA-256 of the run identity while active; null for trigger history. */
     dedupeKey: varchar("dedupe_key", { length: 64 }),
-    requestedByUserId: id("requested_by_user_id").references(() => user.id, {
+    requestedByAccountId: id("requested_by_account_id").references(() => account.id, {
       onDelete: "set null",
     }),
     exitCode: int("exit_code"),
@@ -3363,6 +3414,7 @@ export const scriptExecution = mysqlTable(
 
 export const relations = defineRelations(
   {
+    account,
     user,
     organization,
     tenantRole,
@@ -3443,10 +3495,22 @@ export const relations = defineRelations(
     authPasskeyCredentials,
   },
   (r) => ({
+    account: {
+      memberships: r.many.member({ from: r.account.id, to: r.member.accountId }),
+      invitations: r.many.invitation({ from: r.account.id, to: r.invitation.inviterId }),
+      apiTokens: r.many.accountApiToken({ from: r.account.id, to: r.accountApiToken.accountId }),
+    },
     user: {
-      memberships: r.many.member({ from: r.user.id, to: r.member.userId }),
-      invitations: r.many.invitation({ from: r.user.id, to: r.invitation.inviterId }),
-      apiTokens: r.many.accountApiToken({ from: r.user.id, to: r.accountApiToken.userId }),
+      organization: r.one.organization({
+        from: r.user.organizationId,
+        to: r.organization.id,
+      }),
+      groups: r.many.userGroupMember({
+        from: r.user.id,
+        to: r.userGroupMember.userId,
+      }),
+      devices: r.many.deviceUser({ from: r.user.id, to: r.deviceUser.userId }),
+      policies: r.many.userPolicy({ from: r.user.id, to: r.userPolicy.userId }),
     },
     organization: {
       members: r.many.member({ from: r.organization.id, to: r.member.organizationId }),
@@ -3523,30 +3587,31 @@ export const relations = defineRelations(
         from: r.organization.id,
         to: r.deviceApplication.organizationId,
       }),
+      users: r.many.user({ from: r.organization.id, to: r.user.organizationId }),
     },
     member: {
       organization: r.one.organization({ from: r.member.organizationId, to: r.organization.id }),
-      user: r.one.user({ from: r.member.userId, to: r.user.id }),
+      account: r.one.account({ from: r.member.accountId, to: r.account.id }),
     },
     invitation: {
       organization: r.one.organization({
         from: r.invitation.organizationId,
         to: r.organization.id,
       }),
-      inviter: r.one.user({ from: r.invitation.inviterId, to: r.user.id }),
+      inviter: r.one.account({ from: r.invitation.inviterId, to: r.account.id }),
     },
     tenantOwnershipTransfer: {
       organization: r.one.organization({
         from: r.tenantOwnershipTransfer.organizationId,
         to: r.organization.id,
       }),
-      requestedBy: r.one.user({
-        from: r.tenantOwnershipTransfer.requestedByUserId,
-        to: r.user.id,
+      requestedBy: r.one.account({
+        from: r.tenantOwnershipTransfer.requestedByAccountId,
+        to: r.account.id,
       }),
-      target: r.one.user({
-        from: r.tenantOwnershipTransfer.targetUserId,
-        to: r.user.id,
+      target: r.one.account({
+        from: r.tenantOwnershipTransfer.targetAccountId,
+        to: r.account.id,
       }),
     },
     ssoDomain: {
@@ -3566,10 +3631,10 @@ export const relations = defineRelations(
         from: r.ssoIdentity.organizationId,
         to: r.organization.id,
       }),
-      user: r.one.user({ from: r.ssoIdentity.userId, to: r.user.id }),
+      account: r.one.account({ from: r.ssoIdentity.accountId, to: r.account.id }),
     },
     accountApiToken: {
-      user: r.one.user({ from: r.accountApiToken.userId, to: r.user.id }),
+      account: r.one.account({ from: r.accountApiToken.accountId, to: r.account.id }),
     },
     webhookEndpoint: {
       organization: r.one.organization({
@@ -3820,6 +3885,10 @@ export const relations = defineRelations(
     userPolicy: {
       user: r.one.user({ from: r.userPolicy.userId, to: r.user.id }),
       policy: r.one.policy({ from: r.userPolicy.policyId, to: r.policy.id }),
+    },
+    userGroupMember: {
+      group: r.one.userGroup({ from: r.userGroupMember.groupId, to: r.userGroup.id }),
+      user: r.one.user({ from: r.userGroupMember.userId, to: r.user.id }),
     },
     userGroupPolicy: {
       group: r.one.userGroup({ from: r.userGroupPolicy.groupId, to: r.userGroup.id }),

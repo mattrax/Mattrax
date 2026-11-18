@@ -17,9 +17,9 @@ test.describe("account", () => {
     await expect
       .poll(async () =>
         page.evaluate(async () => {
-          const body: { user: { name: string } } = await (await fetch("/api/v1/me")).json();
+          const body: { account: { name: string } } = await (await fetch("/api/v1/me")).json();
 
-          return body.user.name;
+          return body.account.name;
         }),
       )
       .toBe("Renamed User");

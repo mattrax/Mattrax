@@ -49,7 +49,7 @@ const enqueue = (
 type SeedRow = {
   id: string;
   organizationId: string | null;
-  subjectUserId: string | null;
+  subjectAccountId: string | null;
   recipient: string;
   template: string;
   dedupeKey: string;
@@ -66,7 +66,7 @@ type SeedRow = {
 const record = (overrides: Partial<SeedRow> = {}): SeedRow => ({
   id: "outbox-1",
   organizationId: "org-1",
-  subjectUserId: null,
+  subjectAccountId: null,
   recipient: "invitee@example.com",
   template: "invitation",
   dedupeKey: "invitation:inv-1:1",

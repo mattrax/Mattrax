@@ -49,7 +49,7 @@ export type TokenPayload = {
   jti?: string;
   iat?: number;
   ver?: string;
-  user?: unknown;
+  account?: unknown;
   tenants?: unknown;
 };
 
@@ -79,7 +79,7 @@ export const TokenPayloadSchema = Schema.Struct({
   jti: Schema.optional(Schema.String),
   iat: Schema.optional(Schema.Number),
   ver: Schema.optional(Schema.String),
-  user: Schema.optional(Schema.Unknown),
+  account: Schema.optional(Schema.Unknown),
   tenants: Schema.optional(Schema.Unknown),
 });
 

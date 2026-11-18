@@ -84,13 +84,13 @@ export const buildTenantExport = (
       .from(schema.member)
       .where(eq(schema.member.organizationId, organizationId));
 
-    const userIds = [...new Set(members.map((member) => member.userId))];
+    const userIds = [...new Set(members.map((member) => member.accountId))];
 
     const users = userIds.length
       ? yield* db
-          .select({ id: schema.user.id, name: schema.user.name, email: schema.user.email })
-          .from(schema.user)
-          .where(inArray(schema.user.id, userIds))
+          .select({ id: schema.account.id, name: schema.account.name, email: schema.account.email })
+          .from(schema.account)
+          .where(inArray(schema.account.id, userIds))
       : [];
 
     const usersById = new Map(users.map((user) => [user.id, user]));
@@ -305,7 +305,7 @@ export const buildTenantExport = (
     };
 
     const exportedMembers: TenantExportMember[] = members.flatMap((member) => {
-      const user = usersById.get(member.userId);
+      const user = usersById.get(member.accountId);
 
       if (!user) return [];
 

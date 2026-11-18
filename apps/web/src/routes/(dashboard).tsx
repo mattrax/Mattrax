@@ -59,8 +59,8 @@ function DashboardLayout(props: ParentProps) {
   const canLoadSession = () =>
     Boolean(session().data?.user) || (session().isPending && presenceActive());
 
-  // Session claims are a snapshot from sign-in. `me` reads the user row so a
-  // verification completed in this tab takes effect without signing out.
+  // Session claims are a snapshot from sign-in. `me` reads the account row so
+  // a verification completed in this tab takes effect without signing out.
   const me = useQuery(() =>
     meQueryOptions(session().data?.user?.id, !isServer && canLoadSession()),
   );
@@ -69,13 +69,13 @@ function DashboardLayout(props: ParentProps) {
     me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
 
   const shellUser = () =>
-    session().data?.user ?? (session().isPending && presenceActive() ? me.data?.user : undefined);
+    session().data?.user ?? (session().isPending && presenceActive() ? me.data?.account : undefined);
 
   createEffect(
     () => ({
       pending: session().isPending,
       user: session().data?.user,
-      verified: me.data?.user.emailVerified,
+      verified: me.data?.account.emailVerified,
       unauthorized: unauthorized(),
       presence: presenceState(),
       path: `${location.pathname}${location.search}`,

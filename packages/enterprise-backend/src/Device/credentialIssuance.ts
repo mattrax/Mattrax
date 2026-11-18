@@ -127,7 +127,7 @@ const recordSystemAudit = (
     yield* db.insert(s.auditLog).values({
       id: systemAuditId(),
       organizationId: input.organizationId,
-      actorUserId: null,
+      actorAccountId: null,
       actorEmail: "system",
       action: input.action,
       targetType: "scep_ca",

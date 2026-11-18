@@ -3,6 +3,7 @@
 | Term                 | Meaning                                                                                                  |
 | -------------------- | -------------------------------------------------------------------------------------------------------- |
 | **ABM**              | Apple Business Manager. Assigns devices to an MDM server and provides the Business API.                  |
+| **Account**          | A dashboard administrator: owns credentials, sessions, API tokens and tenant memberships.                |
 | **ADE**              | Automated Device Enrollment. Apple's zero-touch enrollment flow driven by ABM.                           |
 | **AMAPI**            | Android Management API. Google's API for Android Enterprise.                                             |
 | **APNs**             | Apple Push Notification service. Wakes Apple devices for MDM check-in.                                   |
@@ -29,6 +30,7 @@
 | **Step-up**          | A recent re-authentication required for sensitive actions.                                               |
 | **SyncML**           | OMA-DM protocol used by Windows MDM.                                                                     |
 | **Tenant**           | An isolated environment with its own devices, policies and billing.                                      |
+| **User**             | A tenant-scoped directory person used for policy scoping; no credentials or dashboard access.            |
 | **VPP**              | Apple Volume Purchase Program, now Apps & Books.                                                         |
 | **WSTEP**            | Windows certificate enrollment protocol used by MDM.                                                     |
 | **Webhook**          | An outbound HMAC-signed event delivered to your endpoint.                                                |

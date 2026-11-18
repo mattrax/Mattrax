@@ -16,10 +16,10 @@ type CachedMe = typeof CachedMe.Type;
 const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
 
 /**
- * The dashboard shell needs the user and tenant list on every page. Cache it
+ * The dashboard shell needs the account and tenant list on every page. Cache it
  * per account so a reload paints immediately while TanStack Query refreshes in
- * the background. The account id check prevents one user's cache leaking into
- * another user's session on a shared browser.
+ * the background. The account id check prevents one account's cache leaking
+ * into another account's session on a shared browser.
  */
 export function readMeCache(userId: string | undefined): CachedMe | undefined {
   if (!userId || typeof localStorage === "undefined") return undefined;
@@ -35,7 +35,7 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
 
     if (
       cached.userId !== userId ||
-      cached.data?.user?.id !== userId ||
+      cached.data?.account?.id !== userId ||
       !Array.isArray(cached.data?.tenants) ||
       Date.now() - cached.updatedAt > MAX_AGE_MS
     )
@@ -54,7 +54,7 @@ export function writeMeCache(data: MeResponse): void {
     localStorage.setItem(
       ME_CACHE_KEY,
       JSON.stringify({
-        userId: data.user.id,
+        userId: data.account.id,
         updatedAt: Date.now(),
         data,
       } satisfies CachedMe),
