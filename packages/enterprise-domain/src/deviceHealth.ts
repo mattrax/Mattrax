@@ -20,8 +20,9 @@ export const DEVICE_STALE_AFTER_DAYS = 7;
  *   and gains a `stale` reason.
  * - 14 days (`DEVICE_MISSING_AFTER_DAYS`): MIA. An **enrolled** device that has
  *   not checked in gets the `missing` level, replacing the stale reason.
- * - 30 days: daily maintenance unenrols it, which reads `critical` and is never
- *   MIA.
+ * - `MAINTENANCE_STALE_DEVICE_DAYS` (30 days by default): daily maintenance
+ *   unenrols it, which reads `critical` and is never MIA. Setting the
+ *   maintenance window at or below the MIA threshold makes MIA unobservable.
  *
  * `unenrolled`/`unenrolling` always win over MIA, so a retired device never
  * looks missing. A `critical` reason (for example an unenrolled status or a
@@ -299,8 +300,11 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
   const status = input.status?.trim();
 
   // Only an enrolled device can be MIA. Once maintenance retires it the
-  // `unenrolled` status and its critical reason take precedence.
-  const missing = age !== null && age > missingAfterDays * MS_PER_DAY && status === "enrolled";
+  // `unenrolled` status and its critical reason take precedence. MIA also
+  // requires the device to be stale: a custom stale threshold must not produce
+  // `level: missing` with `stale: false`.
+  const missing =
+    age !== null && stale && age > missingAfterDays * MS_PER_DAY && status === "enrolled";
 
   if (!status) {
     reasons.push(reason("status_unknown", "Enrollment status is unknown", "info"));

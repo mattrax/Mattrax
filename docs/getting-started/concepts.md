@@ -156,7 +156,8 @@ session. Android commands are issued through AMAPI. See
 state, last-seen age, declaration failures, FileVault state, disk pressure and battery
 condition into `healthy`, `attention`, `missing` (MIA), `critical` or `unknown`. Stale
 (7 days) is an attention warning; a still-enrolled device that has not checked in for 14
-days is MIA, and daily maintenance unenrols it after 30.
+days is MIA, and daily maintenance unenrols it after the configured window (30 days by
+default).
 
 ## Audit and webhooks
 

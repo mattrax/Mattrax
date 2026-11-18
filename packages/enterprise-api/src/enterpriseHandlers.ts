@@ -57,6 +57,7 @@ import {
   evaluateDeviceQuery,
   normalizeDeviceCommandStatus,
   type DashboardQueryRequest,
+  type DeviceQuery,
   DeviceActionName,
   DashboardWidgetType,
   WEBHOOK_EVENT_TYPES,
@@ -4845,6 +4846,7 @@ export const createEnterpriseService = ({
   const loadDeviceSnapshots = (
     organizationId: string,
     candidates?: ReadonlyArray<typeof schema.device.$inferSelect>,
+    options: { readonly includeApplications?: boolean } = {},
   ) =>
     Effect.gen(function* () {
       const rows = candidates
@@ -4864,21 +4866,24 @@ export const createEnterpriseService = ({
             .where(inArray(schema.deviceDeclaration.deviceId, ids))
         : [];
 
-      const applications = ids.length
-        ? yield* db
-            .select({
-              deviceId: schema.deviceApplication.deviceId,
-              bundleId: schema.deviceApplication.bundleId,
-              name: schema.deviceApplication.name,
-            })
-            .from(schema.deviceApplication)
-            .where(
-              and(
-                eq(schema.deviceApplication.organizationId, organizationId),
-                inArray(schema.deviceApplication.deviceId, ids),
-              ),
-            )
-        : [];
+      // Count-only device stats do not render rows, so the application
+      // inventory scan is skipped unless the query actually references apps.
+      const applications =
+        options.includeApplications !== false && ids.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceApplication.deviceId,
+                bundleId: schema.deviceApplication.bundleId,
+                name: schema.deviceApplication.name,
+              })
+              .from(schema.deviceApplication)
+              .where(
+                and(
+                  eq(schema.deviceApplication.organizationId, organizationId),
+                  inArray(schema.deviceApplication.deviceId, ids),
+                ),
+              )
+          : [];
 
       const awaiting = ids.length
         ? yield* db
@@ -4946,12 +4951,26 @@ export const createEnterpriseService = ({
     }
   };
 
+  /** Whether any clause of a dashboard query needs installed-application data. */
+  const deviceQueryNeedsApplications = (query: DeviceQuery): boolean =>
+    (query.all ?? [])
+      .concat(query.any ?? [], query.none ?? [])
+      .some((condition) => condition.field === "application");
+
   const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
     Effect.gen(function* () {
       const timestamp = now();
       const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
 
-      const snapshots = (yield* loadDeviceSnapshots(organizationId)).filter((snapshot) =>
+      // A stat card renders only `total`. Keeping the device count path out of
+      // the row/bucket projection (and skipping application inventory when the
+      // query does not use it) keeps the overview bounded as widgets grow.
+      const countOnly =
+        payload.countOnly === true && payload.dataset === "devices" && !payload.groupBy;
+
+      const snapshots = (yield* loadDeviceSnapshots(organizationId, undefined, {
+        includeApplications: !countOnly || deviceQueryNeedsApplications(payload.query),
+      })).filter((snapshot) =>
         evaluateDeviceQuery(
           payload.query,
           {
@@ -4962,6 +4981,8 @@ export const createEnterpriseService = ({
           { now: timestamp },
         ),
       );
+
+      if (countOnly) return { total: snapshots.length, buckets: [], rows: [] };
 
       if (payload.dataset === "devices") {
         const buckets = payload.groupBy

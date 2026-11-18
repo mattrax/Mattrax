@@ -30,6 +30,7 @@ describe("route builders", () => {
 
     expect(tenant.devices()).toBe("/t/acme/devices");
     expect(tenant.devices({ health: "attention" })).toBe("/t/acme/devices?health=attention");
+    expect(tenant.devices({ health: "missing" })).toBe("/t/acme/devices?health=missing");
     expect(tenant.devices({ proto: "apple", q: "mac book" })).toBe(
       "/t/acme/devices?proto=apple&q=mac+book",
     );

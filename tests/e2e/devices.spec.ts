@@ -199,6 +199,7 @@ test.describe("device fleet management", () => {
         healthy: number;
         attention: number;
         critical: number;
+        missing: number;
         stale: number;
         unknown: number;
       };
@@ -211,6 +212,7 @@ test.describe("device fleet management", () => {
       healthy: 0,
       attention: 0,
       critical: 0,
+      missing: 0,
       stale: 0,
       unknown: 0,
     });

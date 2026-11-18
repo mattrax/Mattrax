@@ -6,17 +6,22 @@ import { Button } from "~/components/ui/button";
 import { CircleAlert, X } from "~/components/ui/icons";
 import { missingDeviceCount } from "~/lib/device-health";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import {
+  readMiaBannerDismissed,
+  shouldShowMiaBanner,
+  writeMiaBannerDismissed,
+  type MiaBannerStorage,
+} from "~/lib/mia-banner";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 
-const dismissKey = (tenantId: string) => `mattrax:mia-banner-dismissed:${tenantId}`;
+const browserSessionStorage = (): MiaBannerStorage | undefined => {
+  if (isServer) return undefined;
 
-const readSessionDismissal = (tenantId: string): boolean => {
   try {
-    return window.sessionStorage.getItem(dismissKey(tenantId)) === "1";
+    return window.sessionStorage;
   } catch {
-    // Storage can be disabled; the banner simply stays visible.
-    return false;
+    return undefined;
   }
 };
 
@@ -30,7 +35,9 @@ const readSessionDismissal = (tenantId: string): boolean => {
  */
 export function MissingDevicesBanner(props: { tenantId: string }) {
   const { can } = useCan();
-  const [dismissed, setDismissed] = createSignal(!isServer && readSessionDismissal(props.tenantId));
+  const [dismissed, setDismissed] = createSignal(
+    readMiaBannerDismissed(browserSessionStorage(), props.tenantId),
+  );
 
   const summary = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealthSummary(props.tenantId),
@@ -40,14 +47,16 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
 
   const count = () => missingDeviceCount(summary.data?.counts);
 
+  const visible = () =>
+    shouldShowMiaBanner({
+      count: count(),
+      canRead: can("devices.read"),
+      dismissed: dismissed(),
+    });
+
   const dismiss = () => {
     setDismissed(true);
-
-    try {
-      window.sessionStorage.setItem(dismissKey(props.tenantId), "1");
-    } catch {
-      // Same storage policy as the read above.
-    }
+    writeMiaBannerDismissed(browserSessionStorage(), props.tenantId);
   };
 
   const title = () =>
@@ -56,7 +65,7 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
       : `${count()} devices are MIA (missing in action)`;
 
   return (
-    <Show when={can("devices.read") && !dismissed() && count() > 0}>
+    <Show when={visible()}>
       <div
         role="status"
         aria-live="polite"
@@ -68,7 +77,8 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
           <p class="mt-0.5 text-muted-foreground">
             {count() === 1 ? "It has" : "They have"} not checked in for more than{" "}
             {DEVICE_MISSING_AFTER_DAYS} days but {count() === 1 ? "is" : "are"} still enrolled.
-            Review {count() === 1 ? "it" : "them"} before the 30-day automatic unenrol.
+            Review {count() === 1 ? "it" : "them"} before the configured auto-unenrol (30 days by
+            default).
           </p>
           <Button
             as="a"

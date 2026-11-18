@@ -311,4 +311,20 @@ describe("MIA device health", () => {
     expect(codes(summary)).toContain("stale");
     expect(codes(summary)).not.toContain("missing");
   });
+
+  it("requires the device to be stale before it can be MIA", () => {
+    // A custom stale window above the MIA threshold must not produce
+    // `missing` while `stale` is false.
+    const notYetStale = enrolled(20, { staleAfterDays: 30 });
+
+    expect(notYetStale.stale).toBe(false);
+    expect(notYetStale.level).toBe("healthy");
+    expect(codes(notYetStale)).not.toContain("missing");
+
+    const staleAndMissing = enrolled(31, { staleAfterDays: 30 });
+
+    expect(staleAndMissing.stale).toBe(true);
+    expect(staleAndMissing.level).toBe("missing");
+    expect(codes(staleAndMissing)).toEqual(["missing"]);
+  });
 });

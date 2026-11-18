@@ -153,6 +153,10 @@ export function DashboardWidgetView(props: { widget: DashboardWidget; tenantId: 
     query: query(),
     groupBy,
     limit,
+    // Stats render only `total`, so the API can skip row projection and (for
+    // device queries that do not reference installed apps) the application
+    // inventory scan.
+    countOnly: props.widget.type === "stat",
   });
 
   const columns = () => {

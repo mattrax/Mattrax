@@ -308,6 +308,18 @@ describe("enterprise service tenant flow", () => {
     expect(query.total).toBe(0);
     expect(query.buckets).toEqual([]);
 
+    // Stat widgets opt into a count-only response: no row projection or
+    // buckets, so the dashboard overview does not pay for unused data.
+    const countOnly = await runEffect(
+      service.queryDashboard(request(headers), tenant.id, {
+        dataset: "devices",
+        query: { all: [] },
+        countOnly: true,
+      }),
+    );
+
+    expect(countOnly).toEqual({ total: 0, rows: [], buckets: [] });
+
     const second = await runEffect(
       service.createDashboard(request(headers), tenant.id, { name: "Second" }),
     );

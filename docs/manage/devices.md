@@ -100,12 +100,12 @@ reasons show a quiet badge with no tooltip.
 MIA (missing in action) is a distinct state between stale and unenrolled. The check-in
 timeline is:
 
-| Check-in age | State                                                                     |
-| ------------ | ------------------------------------------------------------------------- |
-| ≤ 7 days     | Healthy unless another rule applies.                                      |
-| > 7 days     | **Stale** — `attention`, with a `stale` reason.                           |
-| > 14 days    | **MIA** — the `missing` level, still enrolled.                            |
-| > 30 days    | Daily maintenance unenrols the device, so it reads `critical`, never MIA. |
+| Check-in age                                          | State                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| ≤ 7 days                                              | Healthy unless another rule applies.                                      |
+| > 7 days                                              | **Stale** — `attention`, with a `stale` reason.                           |
+| > 14 days                                             | **MIA** — the `missing` level, still enrolled.                            |
+| Past the configured auto-unenrol (30 days by default) | Daily maintenance unenrols the device, so it reads `critical`, never MIA. |
 
 Precedence is fixed: an unknown enrollment status wins; then `critical` (including an
 unenrolled device or a critical rule such as a full disk); then MIA; then warnings

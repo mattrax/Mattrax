@@ -123,6 +123,12 @@ export const DashboardQueryRequest = Schema.Struct({
   /** Bucket dimension for pie widgets. */
   groupBy: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.Number),
+  /**
+   * Stat widgets only need the total. The backend may then skip work that is
+   * only used to project or bucket rows (for example application inventory).
+   * `rows` and `buckets` are empty in the response.
+   */
+  countOnly: Schema.optional(Schema.Boolean),
 });
 
 export type DashboardQueryRequest = typeof DashboardQueryRequest.Type;
@@ -203,7 +209,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
     config: { dataset: "devices", query: { all: [] }, label: "devices" },
     x: 0,
     y: 0,
-    w: 4,
+    w: 3,
     h: 2,
   },
   {
@@ -214,22 +220,9 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
       query: { all: [{ field: "health", op: "eq", value: "attention" }] },
       label: "need attention",
     },
-    x: 4,
+    x: 3,
     y: 0,
-    w: 4,
-    h: 2,
-  },
-  {
-    type: "stat",
-    title: "MIA devices",
-    config: {
-      dataset: "devices",
-      query: { all: [{ field: "health", op: "eq", value: "missing" }] },
-      label: "MIA",
-    },
-    x: 8,
-    y: 0,
-    w: 4,
+    w: 3,
     h: 2,
   },
   {
@@ -240,9 +233,9 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
       query: { all: [{ field: "health", op: "eq", value: "critical" }] },
       label: "critical",
     },
-    x: 0,
-    y: 2,
-    w: 4,
+    x: 6,
+    y: 0,
+    w: 3,
     h: 2,
   },
   {
@@ -253,22 +246,9 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
       query: { all: [{ field: "health", op: "eq", value: "stale" }] },
       label: "stale",
     },
-    x: 4,
-    y: 2,
-    w: 4,
-    h: 2,
-  },
-  {
-    type: "stat",
-    title: "Unknown health",
-    config: {
-      dataset: "devices",
-      query: { all: [{ field: "health", op: "eq", value: "unknown" }] },
-      label: "unknown",
-    },
-    x: 8,
-    y: 2,
-    w: 4,
+    x: 9,
+    y: 0,
+    w: 3,
     h: 2,
   },
   {
@@ -280,7 +260,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
       dimension: "platform",
     },
     x: 0,
-    y: 4,
+    y: 2,
     w: 6,
     h: 5,
   },
@@ -294,7 +274,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
       limit: 10,
     },
     x: 6,
-    y: 4,
+    y: 2,
     w: 6,
     h: 5,
   },
@@ -306,7 +286,7 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
         "## Your fleet at a glance\n\nThis dashboard is shared with everyone in the tenant. Add widgets, resize the grid, or write team notes and links from the dashboard editor.",
     },
     x: 0,
-    y: 9,
+    y: 7,
     w: 12,
     h: 3,
   },
