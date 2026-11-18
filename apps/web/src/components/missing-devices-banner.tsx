@@ -35,9 +35,14 @@ const browserSessionStorage = (): MiaBannerStorage | undefined => {
  */
 export function MissingDevicesBanner(props: { tenantId: string }) {
   const { can } = useCan();
-  const [dismissed, setDismissed] = createSignal(
-    readMiaBannerDismissed(browserSessionStorage(), props.tenantId),
-  );
+  // Dismissal is per tenant. The component survives a tenant switch, so the
+  // stored flag must be re-read for the current tenant rather than captured
+  // once at mount.
+  const [dismissedTenant, setDismissedTenant] = createSignal<string | null>(null);
+
+  const dismissed = () =>
+    dismissedTenant() === props.tenantId ||
+    readMiaBannerDismissed(browserSessionStorage(), props.tenantId);
 
   const summary = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealthSummary(props.tenantId),
@@ -55,7 +60,7 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
     });
 
   const dismiss = () => {
-    setDismissed(true);
+    setDismissedTenant(props.tenantId);
     writeMiaBannerDismissed(browserSessionStorage(), props.tenantId);
   };
 
