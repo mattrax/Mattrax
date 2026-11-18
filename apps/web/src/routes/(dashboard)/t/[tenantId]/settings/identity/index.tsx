@@ -8,6 +8,8 @@ import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { TenantSecuritySettings } from "~/lib/enterprise";
+import { optimisticallyRemoveCollectionItems, optimisticUpdate } from "~/lib/optimistic";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -53,9 +55,17 @@ export default function IdentitySettingsPage() {
   const saveSecurity = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchTenantSecurity(params.tenantId, { requireMfa: requireTenantMfa() }),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.tenantSecurity(params.tenantId) });
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
+    onMutate: async () =>
+      optimisticUpdate<TenantSecuritySettings>(
+        qc,
+        enterpriseKeys.tenantSecurity(params.tenantId),
+        (current) => ({ ...current, requireMfa: requireTenantMfa() }),
+      ),
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.tenantSecurity(params.tenantId) });
+      // `me` carries the account-level MFA requirement derived from tenants.
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
     },
   }));
 
@@ -106,10 +116,13 @@ export default function IdentitySettingsPage() {
 
   const revoke = useMutation(() => ({
     mutationFn: (tokenId: string) => enterprise.revokeScimToken(params.tenantId, tokenId),
-    onSuccess: async () => {
-      setRevokeTarget(null);
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) });
-    },
+    onMutate: async (tokenId) =>
+      optimisticallyRemoveCollectionItems(qc, enterpriseKeys.scim(params.tenantId), "tokens", [
+        tokenId,
+      ]),
+    onSuccess: () => setRevokeTarget(null),
+    onError: (_error, _tokenId, restore) => restore?.(),
+    onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.scim(params.tenantId) }),
   }));
 
   const baseUrl = () => `${globalThis.location?.origin ?? ""}/scim/v2/${params.tenantId}`;
@@ -167,11 +180,23 @@ export default function IdentitySettingsPage() {
         azureTenantId: azureTenantId().trim() || null,
         autoProvision: autoProvision(),
       }),
-    onSuccess: async () => {
+    onMutate: async () =>
+      optimisticUpdate<Awaited<ReturnType<typeof enterprise.getSsoConfig>>>(
+        qc,
+        enterpriseKeys.sso(params.tenantId),
+        (current) => ({
+          ...current,
+          enabled: ssoEnabled(),
+          azureTenantId: azureTenantId().trim() || null,
+          autoProvision: autoProvision(),
+        }),
+      ),
+    onSuccess: () => {
       setSsoSaved(true);
       setTimeout(() => setSsoSaved(false), 3000);
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
     },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) }),
   }));
 
   const [ssoError, setSsoError] = createSignal<string | null>(null);

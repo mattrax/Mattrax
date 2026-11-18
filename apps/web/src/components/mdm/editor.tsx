@@ -22,6 +22,7 @@ import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { optimisticallyPatchItem } from "~/lib/optimistic";
 import {
   APPLE_PROFILE_DOCS,
   WINDOWS_CSP_DOCS,
@@ -144,17 +145,24 @@ export function PolicyConfigurationEditor() {
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchPolicy(params.tenantId, params.policyId, { configurations: config() }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
-      });
+    onMutate: async () =>
+      optimisticallyPatchItem(queryClient, params.tenantId!, "policy", params.policyId!, {
+        configurations: config(),
+      }),
+    onSuccess: () => {
       setCanEdit(false);
       setInitial(JSON.stringify(config()));
       toast.success("Policy configurations saved");
     },
-    onError: (error) =>
+    onError: (error, _variables, restore) => {
+      restore?.();
       toast.error("Could not save the configurations", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+    onSettled: () =>
+      void queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
       }),
   }));
 

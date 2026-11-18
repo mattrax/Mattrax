@@ -95,9 +95,11 @@ export default function NewApplicationPage() {
         storeId: storeId() || null,
         notes: notes() || null,
       }),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
+    onSuccess: ({ id }) => {
+      // Navigate immediately: the detail page is a cold load for the new id, and
+      // the catalogue list refreshes in the background.
       navigate(`/t/${params.tenantId}/applications/${id}`);
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
     },
   }));
 

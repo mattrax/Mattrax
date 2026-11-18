@@ -34,12 +34,14 @@ export default function NewScriptPage() {
         description: values.description || null,
         environment: values.environment.filter((entry) => entry.name.trim()),
       }),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
+    onSuccess: ({ id }) => {
+      // The list is refreshed in the background; navigating first avoids a
+      // pending form while the new detail route loads.
+      navigate(`/t/${params.tenantId}/scripts/${id}`);
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.scripts(params.tenantId) });
       toast.success("Script created", {
         description: "Assign it to devices or groups to deliver it.",
       });
-      navigate(`/t/${params.tenantId}/scripts/${id}`);
     },
   }));
 
