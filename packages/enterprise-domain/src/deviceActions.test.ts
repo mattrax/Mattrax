@@ -52,6 +52,50 @@ describe("deviceAvailableActions", () => {
     expect(actions).not.toContain("return-to-service");
   });
 
+  it("narrows Android actions by ownership and management mode", () => {
+    const companyWorkProfile = deviceAvailableActions({
+      proto: "android",
+      status: "enrolled",
+      ownership: "COMPANY_OWNED",
+      managementMode: "PROFILE_OWNER",
+    });
+
+    expect(companyWorkProfile).toContain("reset-password");
+    expect(companyWorkProfile).toContain("relinquish-ownership");
+
+    // A profile owner cannot reset the device password on a personal phone,
+    // and Google cannot relinquish a device the employee owns.
+    const personalWorkProfile = deviceAvailableActions({
+      proto: "android",
+      status: "enrolled",
+      ownership: "PERSONALLY_OWNED",
+      managementMode: "PROFILE_OWNER",
+    });
+
+    expect(personalWorkProfile).not.toContain("reset-password");
+    expect(personalWorkProfile).not.toContain("relinquish-ownership");
+    expect(personalWorkProfile).toContain("lock");
+
+    // Fully managed devices can reset the password but have no work profile to
+    // relinquish.
+    const fullyManaged = deviceAvailableActions({
+      proto: "android",
+      status: "enrolled",
+      ownership: "COMPANY_OWNED",
+      managementMode: "DEVICE_OWNER",
+    });
+
+    expect(fullyManaged).toContain("reset-password");
+    expect(fullyManaged).not.toContain("relinquish-ownership");
+  });
+
+  it("keeps Android mode-restricted actions while the report is unknown", () => {
+    const actions = deviceAvailableActions({ proto: "android", status: "enrolled" });
+
+    expect(actions).toContain("reset-password");
+    expect(actions).toContain("relinquish-ownership");
+  });
+
   it("narrows the platform set when a device reports action capabilities", () => {
     const actions = deviceAvailableActions({
       proto: "win",

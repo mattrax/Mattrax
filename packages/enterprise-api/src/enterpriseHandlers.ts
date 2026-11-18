@@ -3121,6 +3121,10 @@ export const createEnterpriseService = ({
       readonly returnToServiceRequestedAt?: Date | null;
       readonly returnToServiceCompletedAt?: Date | null;
     },
+    android?: {
+      readonly managementMode?: string | null;
+      readonly ownership?: string | null;
+    },
   ) => ({
     id: row.id,
     proto: row.proto,
@@ -3189,6 +3193,8 @@ export const createEnterpriseService = ({
       capabilities: Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
       ),
+      managementMode: android?.managementMode ?? null,
+      ownership: android?.ownership ?? null,
     }),
   });
 
@@ -3237,6 +3243,37 @@ export const createEnterpriseService = ({
     networkOperator: row.networkOperator,
     totalRam: row.totalRam,
   });
+
+  /** Android ownership/management mode for a page of devices, keyed by id. */
+  const androidDeviceAccessFor = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0)
+        return new Map<
+          string,
+          { readonly managementMode: string | null; readonly ownership: string | null }
+        >();
+
+      const rows = yield* db
+        .select({
+          deviceId: schema.androidDevice.deviceId,
+          managementMode: schema.androidDevice.managementMode,
+          ownership: schema.androidDevice.ownership,
+        })
+        .from(schema.androidDevice)
+        .where(
+          and(
+            eq(schema.androidDevice.organizationId, organizationId),
+            inArray(schema.androidDevice.deviceId, [...deviceIds]),
+          ),
+        );
+
+      return new Map(
+        rows.map((row) => [
+          row.deviceId,
+          { managementMode: row.managementMode, ownership: row.ownership },
+        ]),
+      );
+    });
 
   const rowDeviceApplication = (row: typeof schema.deviceApplication.$inferSelect) => ({
     bundleId: row.bundleId,
@@ -12203,6 +12240,25 @@ export const createEnterpriseService = ({
 
         const action = body.action ?? "sync";
 
+        // Android Management API limits some commands to particular management
+        // modes, so the Android row joins the capability decision.
+        const [android] =
+          device.proto === "android"
+            ? yield* db
+                .select({
+                  managementMode: schema.androidDevice.managementMode,
+                  ownership: schema.androidDevice.ownership,
+                })
+                .from(schema.androidDevice)
+                .where(
+                  and(
+                    eq(schema.androidDevice.deviceId, device.id),
+                    eq(schema.androidDevice.organizationId, ctx.organization.id),
+                  ),
+                )
+                .limit(1)
+            : [];
+
         // Capability gating: the platform, enrollment state and the device's
         // own reported capabilities decide which actions are legal. RBAC is
         // still enforced by `requireTenant` above.
@@ -12212,6 +12268,8 @@ export const createEnterpriseService = ({
           osEdition: device.osEdition,
           osVersion: device.osVersion,
           model: device.model,
+          managementMode: android?.managementMode ?? null,
+          ownership: android?.ownership ?? null,
           capabilities: Option.getOrUndefined(
             Schema.decodeUnknownOption(Schema.Json)(device.capabilities),
           ),
@@ -12948,6 +13006,10 @@ export const createEnterpriseService = ({
 
         if (device.proto === "android" && device.status === "enrolled")
           return yield* Effect.gen(function* () {
+            // Deleting the Google Enterprise record is destructive, so it
+            // demands the same recent step-up proof as the /action commands.
+            yield* requireStepUp(auth, request, "device-command");
+
             // Deleting the Google Enterprise device resource removes Android
             // Device Policy and its work data, then moves the row to
             // `unenrolled` in one step (Google has no asynchronous retirement
@@ -15814,9 +15876,14 @@ export const createEnterpriseService = ({
               )
           : [];
 
+        const androidByDevice = yield* androidDeviceAccessFor(
+          ctx.organization.id,
+          devices.map((row) => row.id),
+        );
+
         return {
           rows: [
-            ...devices.map((row) => rowDevice(row)),
+            ...devices.map((row) => rowDevice(row, undefined, androidByDevice.get(row.id))),
             ...groups.map((row: EnterpriseGroup) => rowGroup(row)),
             ...(yield* Effect.all(policies.map((row) => rowPolicy(row)))),
             ...users,
@@ -15849,10 +15916,15 @@ export const createEnterpriseService = ({
 
         const appleByDevice = yield* deviceSetupStateFor(rows.map((row) => row.id));
 
+        const androidByDevice = yield* androidDeviceAccessFor(
+          ctx.organization.id,
+          rows.map((row) => row.id),
+        );
+
         return {
           rows: rows.map((row) => {
             const values = attributes.get(row.id);
-            const device = rowDevice(row, appleByDevice.get(row.id));
+            const device = rowDevice(row, appleByDevice.get(row.id), androidByDevice.get(row.id));
 
             return values ? { ...device, attributes: values } : device;
           }),
@@ -15934,9 +16006,18 @@ export const createEnterpriseService = ({
 
           const setup = yield* deviceSetupStateFor(page.map((snapshot) => snapshot.row.id));
 
+          const androidByDevice = yield* androidDeviceAccessFor(
+            ctx.organization.id,
+            page.map((snapshot) => snapshot.row.id),
+          );
+
           return {
             devices: page.map((snapshot) => ({
-              ...rowDevice(snapshot.row, setup.get(snapshot.row.id)),
+              ...rowDevice(
+                snapshot.row,
+                setup.get(snapshot.row.id),
+                androidByDevice.get(snapshot.row.id),
+              ),
               attributes: attributes.get(snapshot.row.id),
               health: normalizeDeviceHealth(snapshot.health),
               groups: groups.get(snapshot.row.id) ?? [],
@@ -15985,13 +16066,18 @@ export const createEnterpriseService = ({
 
           const setup = yield* deviceSetupStateFor(page.map((row) => row.id));
 
+          const androidByDevice = yield* androidDeviceAccessFor(
+            ctx.organization.id,
+            page.map((row) => row.id),
+          );
+
           return {
             devices: page.map((row) => {
               const summary = health.get(row.id);
               const values = attributes.get(row.id);
 
               return {
-                ...rowDevice(row, setup.get(row.id)),
+                ...rowDevice(row, setup.get(row.id), androidByDevice.get(row.id)),
                 attributes: values,
                 health: normalizeDeviceHealth(
                   summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
@@ -16028,13 +16114,18 @@ export const createEnterpriseService = ({
 
         const setup = yield* deviceSetupStateFor(rows.map((row) => row.id));
 
+        const androidByDevice = yield* androidDeviceAccessFor(
+          ctx.organization.id,
+          rows.map((row) => row.id),
+        );
+
         return {
           devices: rows.map((row) => {
             const summary = health.get(row.id);
             const values = attributes.get(row.id);
 
             return {
-              ...rowDevice(row, setup.get(row.id)),
+              ...rowDevice(row, setup.get(row.id), androidByDevice.get(row.id)),
               attributes: values,
               health: normalizeDeviceHealth(
                 summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
@@ -16636,7 +16727,7 @@ export const createEnterpriseService = ({
 
         // Presence metadata only — the sealed value never leaves the backend.
         return {
-          ...rowDevice(row, apple),
+          ...rowDevice(row, apple, android),
           attributes: attributes.get(row.id),
           groups: groups.get(row.id) ?? [],
           recoveryKeyEscrowed: Boolean(recoveryKey),

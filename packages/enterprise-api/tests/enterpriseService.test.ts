@@ -10,6 +10,7 @@ import {
   sealSecret,
 } from "@mattrax/crypto";
 import { ApnsError, generateApnsKeyPair, makeApnsService } from "@mattrax/apns";
+import { AndroidManagement, GoogleApiError } from "@mattrax/dm-android";
 import {
   EnterpriseBadRequest,
   EnterpriseConflict,
@@ -21,6 +22,7 @@ import {
   EnterpriseStripeError,
   EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
+  EnterpriseUpstreamError,
   StepUpRequired,
   scriptAgentToken,
   type DeviceSearchQuery,
@@ -140,6 +142,7 @@ const makeContext = async (
     db?: any;
     analytics?: any;
     auth?: { requireStepUp?: (request: any, action: any) => Effect.Effect<any, any> };
+    android?: Parameters<typeof createEnterpriseService>[0]["android"];
     enrollmentProfileTtlSeconds?: number;
   } = {},
 ) => {
@@ -187,6 +190,7 @@ const makeContext = async (
     auth: auth as any,
     authSecret: overrides.authSecret === null ? undefined : (overrides.authSecret ?? authSecret),
     apns: overrides.apns,
+    android: overrides.android,
     email: overrides.email,
     analytics: overrides.analytics,
     enrollmentProfileTtlSeconds: overrides.enrollmentProfileTtlSeconds,
@@ -1948,6 +1952,232 @@ describe("enterprise service APNs", () => {
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
     expect(db.store.device.find((item: any) => item.id === "device-1")?.status).toBe("unenrolling");
     expect(pushes).toHaveLength(2);
+  });
+
+  const seedAndroidDevice = (
+    db: any,
+    organizationId: string,
+    overrides: {
+      id?: string;
+      status?: string;
+      managementMode?: string | null;
+      ownership?: string | null;
+    } = {},
+  ) => {
+    const now = new Date();
+    const id = overrides.id ?? "device-android";
+    const enterpriseName = "enterprises/LC123";
+    const dmIdentifier = `${enterpriseName}/devices/${id}`;
+
+    db.store.android_enterprise.push({
+      organizationId,
+      enterpriseName,
+      signupUrl: null,
+      signupState: null,
+      pubsubTopic: null,
+      pubsubSubscription: null,
+      serviceAccountEmail: null,
+      status: "active",
+      lastError: null,
+      lastSyncedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.device.push({
+      id,
+      organizationId,
+      proto: "android",
+      status: overrides.status ?? "enrolled",
+      name: "Pixel",
+      dmIdentifier,
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.android_device.push({
+      deviceId: id,
+      organizationId,
+      enterpriseName,
+      deviceName: dmIdentifier,
+      managementMode: overrides.managementMode ?? "DEVICE_OWNER",
+      ownership: overrides.ownership ?? "COMPANY_OWNED",
+      state: "ACTIVE",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { id, enterpriseName, deviceName: dmIdentifier };
+  };
+
+  // SAFETY: the service only checks that Android delivery is configured; every
+  // outbound Google call goes through the injected fake below.
+  const androidConfig = {} as NonNullable<Parameters<typeof createEnterpriseService>[0]["android"]>;
+
+  const makeAndroidDeleteService = (
+    deleteDevice: (input: { deviceName: string }) => Effect.Effect<void, GoogleApiError>,
+  ) => {
+    // SAFETY: the unenroll path only calls `deleteDevice`; the fake omits the
+    // rest of the AndroidManagementService surface.
+    return AndroidManagement.of({ deleteDevice } as any);
+  };
+
+  it("unenrolls an Android device by deleting the Google resource", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+
+    db.store.device_command.push({
+      id: "command-1",
+      organizationId: tenant.id,
+      deviceId: androidDevice.id,
+      requestType: "AndroidWipe",
+      payload: { type: "WIPE" },
+      status: "sent",
+      dedupeKey: "dedupe-1",
+      expiresAt: null,
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const deleted: Array<string> = [];
+
+    const android = makeAndroidDeleteService((input) => {
+      deleted.push(input.deviceName);
+
+      return Effect.void;
+    });
+
+    await runEffect(
+      service
+        .deviceUnenroll(request(headers), tenant.id, androidDevice.id)
+        .pipe(Effect.provideService(AndroidManagement, android)),
+    );
+
+    expect(deleted).toEqual([androidDevice.deviceName]);
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)?.status).toBe(
+      "unenrolled",
+    );
+    expect(db.store.device_command.find((item: any) => item.id === "command-1")?.status).toBe(
+      "cancelled",
+    );
+    expect(db.store.audit_log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "device.unenrolled",
+          targetId: androidDevice.id,
+          metadata: expect.objectContaining({ platform: "android", revokedCertificates: 0 }),
+        }),
+      ]),
+    );
+  });
+
+  it("maps Android delete failures without moving the device", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+
+    const android = makeAndroidDeleteService(() =>
+      Effect.fail(new GoogleApiError({ message: "Google is unavailable", status: 503 })),
+    );
+
+    await expect(
+      runEffect(
+        service
+          .deviceUnenroll(request(headers), tenant.id, androidDevice.id)
+          .pipe(Effect.provideService(AndroidManagement, android)),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseUpstreamError);
+
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)?.status).toBe(
+      "enrolled",
+    );
+  });
+
+  it("requires step-up before deleting an Android device", async () => {
+    const { db, service, headers } = await makeContext({
+      android: androidConfig,
+      auth: {
+        requireStepUp: (_request: any, action: any) =>
+          Effect.fail(
+            new StepUpRequired({
+              message: "Confirm this action with your authenticator or passkey.",
+              action,
+              methods: ["passkey", "totp"],
+            }),
+          ),
+      },
+    });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+
+    const deleted: Array<string> = [];
+
+    const android = makeAndroidDeleteService((input) => {
+      deleted.push(input.deviceName);
+
+      return Effect.void;
+    });
+
+    await expect(
+      runEffect(
+        service
+          .deviceUnenroll(request(headers), tenant.id, androidDevice.id)
+          .pipe(Effect.provideService(AndroidManagement, android)),
+      ),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+
+    expect(deleted).toEqual([]);
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)?.status).toBe(
+      "enrolled",
+    );
+  });
+
+  it("refuses Android password resets for personally-owned work profiles", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id, {
+      managementMode: "PROFILE_OWNER",
+      ownership: "PERSONALLY_OWNED",
+    });
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, androidDevice.id, {
+          action: "reset-password",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      message: "Android only permits password resets on company-owned devices.",
+    });
+
+    expect(db.store.device_command).toHaveLength(0);
+
+    // The device page uses the same capability model, so it must not offer the
+    // action the handler would reject.
+    const detail = await runEffect(
+      service.getDevice(request(headers), tenant.id, androidDevice.id),
+    );
+
+    expect(detail.actions).not.toContain("reset-password");
+    expect(detail.actions).not.toContain("relinquish-ownership");
+    expect(detail.actions).toContain("lock");
   });
 
   it("lists Apple user channels for a device", async () => {

@@ -100,7 +100,10 @@ See [Android policies](/platforms/android/policies).
 | `sync`                 | Push the current policy now  |
 
 `reset-password` generates a temporary password for Google and never stores or returns it.
-`clear-app-data` clears the data of every managed app currently assigned to the device.
+`clear-app-data` clears the data of every managed app in the device's compiled policy, including
+apps declared by policy fragments and catalogue assignments.
+`reset-password` is only offered on company-owned devices, and `relinquish-ownership` only on
+company-owned work profiles; the device page hides controls Android would reject.
 
 Command results arrive through Pub/Sub and update the command row.
 
@@ -181,8 +184,10 @@ the new policy on the next sync. See
   AMAPI delivers apps through the policy.
 - No eSIM commands are exposed.
 - No Android compliance state ingestion.
+- Deleting a device with the dashboard's Delete action removes local rows only; it does not
+  delete the Google device resource. Use Unenroll to retire the Google device.
 - Unenrolling deletes the Google device resource. `relinquish-ownership` is available
-  separately for company-owned devices that should keep their personal data.
+  separately for company-owned work profiles that should keep their personal data.
 - Android devices are stored with `serial = null` when the serial would collide with an
   Apple or Windows device in the same tenant.
 - Signup, Pub/Sub, enrollment, policy convergence and commands have not been validated

@@ -1301,6 +1301,98 @@ const assignedAndroidApplications = (
     });
   });
 
+/** Applications declared by a compiled policy that can hold managed data. */
+const managedAndroidPackageNames = (policy: Schema.JsonObject): string[] => {
+  const applications = policy["applications"];
+
+  if (!Array.isArray(applications)) return [];
+  const packageNames = new Set<string>();
+
+  for (const entry of applications) {
+    const record = recordOf(entry);
+    const packageName = stringOf(record?.["packageName"]);
+
+    if (!packageName) continue;
+
+    // A blocked package is present in the policy but never installed, so it
+    // has no app data to clear.
+    if (stringOf(record?.["installType"]) === "BLOCKED") continue;
+
+    packageNames.add(packageName);
+  }
+
+  return [...packageNames];
+};
+
+/**
+ * Compile the AMAPI policy Google will receive for one device.
+ *
+ * This is the single source of truth for "managed on this device": tenant
+ * policy fragments, the status-reporting baseline and assigned catalogue
+ * applications. Remote actions that target managed apps must use the same
+ * compiled list rather than only catalogue assignments.
+ */
+const compileEffectiveAndroidPolicy = (input: {
+  readonly db: EnterpriseDb;
+  readonly organizationId: string;
+  readonly deviceId: string;
+}): Effect.Effect<{ readonly policy: Schema.JsonObject; readonly hash: string }, unknown> =>
+  Effect.gen(function* () {
+    const effective = yield* resolveEffectivePolicyForDevice(input.db, {
+      id: input.deviceId,
+      organizationId: input.organizationId,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not resolve the Android policy: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
+    const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
+      (configuration) => ({ kind: configuration.kind, data: configuration.data }),
+    );
+
+    // Managed Google Play delivery is the policy's `applications` array. Assigned
+    // catalogue apps are merged underneath the tenant's own policy fragments, so
+    // an explicit `installType` or managed configuration always wins.
+    const assignedApplications = yield* assignedAndroidApplications(input.db, {
+      organizationId: input.organizationId,
+      deviceId: input.deviceId,
+    });
+
+    for (const application of assignedApplications) {
+      if (!isAndroidPackageName(application.packageName))
+        yield* Effect.logWarning(
+          `Android application ${application.applicationId} has an invalid package name and was not added to the policy for ${input.deviceId}`,
+        );
+    }
+
+    return yield* Effect.tryPromise({
+      try: async () => {
+        // Mattrax needs software and application status to inventory a
+        // device, and Google disables both by default. The baseline sits
+        // underneath the tenant's own reporting settings, so an operator can
+        // still turn either off (at the cost of that inventory).
+        const policy = mergeAssignedAndroidApplications(
+          withStatusReporting(compileAndroidPolicy(configurations)),
+          assignedApplications,
+        );
+
+        return { policy, hash: await androidPolicyHash(policy) };
+      },
+      catch: (cause) =>
+        new AndroidDeliveryError({
+          kind: "invalid_payload",
+          message: `Could not compile the Android policy: ${describeAndroidError(cause)}`,
+          cause,
+        }),
+    });
+  });
+
 const syncAndroidPolicyForDevice = (input: {
   readonly db: EnterpriseDb;
   readonly config: AndroidDeliveryConfig;
@@ -1325,58 +1417,10 @@ const syncAndroidPolicyForDevice = (input: {
       );
     const android = yield* AndroidManagement;
 
-    const effective = yield* resolveEffectivePolicyForDevice(input.db, {
-      id: input.device.id,
-      organizationId: input.organizationId,
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new AndroidDeliveryError({
-            kind: "upstream",
-            message: `Could not resolve the Android policy: ${describeAndroidError(cause)}`,
-            cause,
-          }),
-      ),
-    );
-
-    const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
-      (configuration) => ({ kind: configuration.kind, data: configuration.data }),
-    );
-
-    // Managed Google Play delivery is the policy's `applications` array. Assigned
-    // catalogue apps are merged underneath the tenant's own policy fragments, so
-    // an explicit `installType` or managed configuration always wins.
-    const assignedApplications = yield* assignedAndroidApplications(input.db, {
+    const compiled = yield* compileEffectiveAndroidPolicy({
+      db: input.db,
       organizationId: input.organizationId,
       deviceId: input.device.id,
-    });
-
-    for (const application of assignedApplications) {
-      if (!isAndroidPackageName(application.packageName))
-        yield* Effect.logWarning(
-          `Android application ${application.applicationId} has an invalid package name and was not added to the policy for ${input.device.id}`,
-        );
-    }
-
-    const compiled = yield* Effect.tryPromise({
-      try: async () => {
-        // Mattrax needs software and application status to inventory a
-        // device, and Google disables both by default. The baseline sits
-        // underneath the tenant's own reporting settings, so an operator can
-        // still turn either off (at the cost of that inventory).
-        const policy = mergeAssignedAndroidApplications(
-          withStatusReporting(compileAndroidPolicy(configurations)),
-          assignedApplications,
-        );
-
-        return { policy, hash: await androidPolicyHash(policy) };
-      },
-      catch: (cause) =>
-        new AndroidDeliveryError({
-          kind: "invalid_payload",
-          message: `Could not compile the Android policy: ${describeAndroidError(cause)}`,
-          cause,
-        }),
     });
 
     const policyId = androidPolicyIdForHash(compiled.hash);
@@ -1667,6 +1711,27 @@ const applyDeviceNotification = (
     return { status: "ok" as const };
   });
 
+/**
+ * Detail stored on a successfully reconciled command.
+ *
+ * `REQUEST_DEVICE_INFO` is the one command whose result is a value rather than
+ * an acknowledgement, and the Operation is the only place Google returns it.
+ * Keep the EID status JSON on the row so the device page can show it. Every
+ * other command finishes without a detail.
+ */
+const commandResultDetail = (
+  operation: Record<string, Schema.Json> | undefined,
+  requestType: string,
+): string | null => {
+  if (requestType !== "AndroidRequestDeviceInfo") return null;
+  const metadata = recordOf(operation?.["metadata"]);
+  const status = metadata?.["requestDeviceInfoStatus"];
+
+  if (status === undefined) return null;
+
+  return JSON.stringify(status).slice(0, 2000);
+};
+
 const applyCommandNotification = (
   input: ApplyNotificationInput,
 ): Effect.Effect<ApplyNotificationResult, unknown> =>
@@ -1737,7 +1802,10 @@ const applyCommandNotification = (
             status: nextStatus,
             dedupeKey: null,
             resultStatus: status ?? null,
-            resultDetail: nextStatus === "failed" ? describeAndroidError(input.data) : null,
+            resultDetail:
+              nextStatus === "failed"
+                ? describeAndroidError(input.data)
+                : commandResultDetail(record, command.requestType),
             updatedAt: now(),
           })
           .where(eq(schema.deviceCommand.id, command.id));
@@ -2106,15 +2174,17 @@ export const issueAndroidCommand = (input: {
         extra.requestDeviceInfoParams = { deviceInfo: "EID" };
         break;
       case "AndroidClearAppData": {
-        // The work-profile apps Mattrax manages are exactly the apps the
-        // operator can clear; a raw package list is never accepted from the
-        // dashboard.
-        const applications = yield* assignedAndroidApplications(input.db, {
+        // The compiled policy is exactly what Google applies, so it includes
+        // apps declared by policy fragments as well as catalogue assignments.
+        // Reading only `assignedAndroidApplications` would silently skip the
+        // fragment-declared apps the confirmation promises to clear.
+        const compiled = yield* compileEffectiveAndroidPolicy({
+          db: input.db,
           organizationId: input.organizationId,
           deviceId: input.device.id,
         });
 
-        const packageNames = [...new Set(applications.map((item) => item.packageName))];
+        const packageNames = managedAndroidPackageNames(compiled.policy);
 
         if (packageNames.length === 0)
           return yield* Effect.fail(

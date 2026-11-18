@@ -1035,6 +1035,33 @@ describe("Android remote actions", () => {
       organization: [organizationRow(organizationId, "Acme")],
       android_enterprise: [activeEnterpriseRow()],
       device: [androidDeviceRow()],
+      policy: [
+        {
+          id: "policy-1",
+          organizationId,
+          name: "Android baseline",
+          notes: null,
+          priority: 10,
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          updatedAt: new Date("2026-01-02T00:00:00Z"),
+        },
+      ],
+      configuration: [
+        {
+          policyId: "policy-1",
+          kind: "mttx.android.policy.designer",
+          data: {
+            policy: {
+              applications: [
+                { packageName: "com.example.browser", installType: "FORCE_INSTALLED" },
+                { packageName: "com.example.blocked", installType: "BLOCKED" },
+              ],
+            },
+          },
+          hash: "hash-1",
+        },
+      ],
+      device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
       application: [
         {
           id: "app-1",
@@ -1127,9 +1154,17 @@ describe("Android remote actions", () => {
       deviceName,
       type: "CLEAR_APP_DATA",
       clearAppsDataParams: {
-        packageNames: ["com.example.mail", "com.example.chat"],
+        packageNames: expect.arrayContaining([
+          "com.example.browser",
+          "com.example.mail",
+          "com.example.chat",
+        ]),
       },
     });
+    // A blocked package is in the policy but was never installed.
+    expect(calls.commands[3]!.clearAppsDataParams?.packageNames).not.toContain(
+      "com.example.blocked",
+    );
   });
 
   it("rejects clearing app data when no managed app is assigned", async () => {
@@ -1378,6 +1413,61 @@ describe("Android remote actions", () => {
     expect(db.store.audit_log!.map((entry: any) => entry.action)).toContain(
       "device.command_failed",
     );
+  });
+
+  it("stores the requested device information on the reconciled command", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [androidMappingRow()],
+      device_command: [
+        activeCommandRow({
+          id: "command-1",
+          requestType: "AndroidRequestDeviceInfo",
+          payload: {
+            type: "REQUEST_DEVICE_INFO",
+            operationName: `${deviceName}/operations/op-eid`,
+          },
+        }),
+      ],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+
+    await provideAndroid(
+      handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body: pushBody(
+          {
+            name: `${deviceName}/operations/op-eid`,
+            metadata: {
+              deviceName,
+              requestDeviceInfoStatus: {
+                status: "SUCCESS",
+                eidInfo: { eid: { eidValue: "89049032005008882600000000000001" } },
+              },
+            },
+            done: true,
+          },
+          "COMMAND",
+          "command-message-eid",
+        ),
+        fetch: jwksFetch,
+      }),
+      service,
+    );
+
+    expect(db.store.device_command![0]).toMatchObject({
+      status: "succeeded",
+      resultStatus: "COMPLETED",
+    });
+    expect(db.store.device_command![0]!.resultDetail).toContain("89049032005008882600000000000001");
   });
 });
 

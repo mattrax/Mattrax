@@ -205,6 +205,14 @@ export type DeviceActionInput = {
   readonly osEdition?: string | null;
   readonly osVersion?: string | null;
   readonly model?: string | null;
+  /**
+   * Android Management API management mode (`DEVICE_OWNER`, `PROFILE_OWNER`).
+   * Unknown or omitted values leave the action available so a stale report
+   * cannot hide a valid control.
+   */
+  readonly managementMode?: string | null;
+  /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
+  readonly ownership?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -239,6 +247,31 @@ const supportsReturnToService = (input: DeviceActionInput): boolean => {
 };
 
 /**
+ * Whether an Android Management API command is valid for the device's
+ * management mode and ownership.
+ *
+ * Google reports both on the device resource. Unknown values (an older status
+ * report, or a call site that did not load the Android row) leave the action
+ * available rather than hiding a control the operator may need.
+ */
+const androidActionSupported = (input: DeviceActionInput, action: DeviceActionName): boolean => {
+  const ownership = input.ownership?.trim().toUpperCase();
+  const managementMode = input.managementMode?.trim().toUpperCase();
+
+  // A profile owner cannot reset the device password on a personally-owned
+  // phone; Android only permits it on company-owned devices.
+  if (action === "reset-password") return ownership !== "PERSONALLY_OWNED";
+
+  // Relinquishing ownership removes the work profile and hands the device to
+  // personal use. Google only supports it for company-owned work profiles, not
+  // for fully managed devices and not for BYOD work profiles.
+  if (action === "relinquish-ownership")
+    return ownership !== "PERSONALLY_OWNED" && managementMode !== "DEVICE_OWNER";
+
+  return true;
+};
+
+/**
  * The remote actions a specific device currently supports.
  *
  * Platform and enrollment status are the baseline. A device that reports
@@ -255,9 +288,9 @@ export const deviceAvailableActions = (
 ): ReadonlyArray<DeviceActionName> => {
   const status = input.status?.trim();
 
-  const base = platformActions(input.proto).filter(
-    (action) => action !== "return-to-service" || supportsReturnToService(input),
-  );
+  const base = platformActions(input.proto)
+    .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
+    .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
 
@@ -303,6 +336,16 @@ export const deviceActionUnavailableReason = (
 
   if (input.status !== "enrolled")
     return "This action is only available while the device is enrolled.";
+
+  if (
+    input.proto === "android" &&
+    action === "reset-password" &&
+    input.ownership?.trim().toUpperCase() === "PERSONALLY_OWNED"
+  )
+    return "Android only permits password resets on company-owned devices.";
+
+  if (input.proto === "android" && action === "relinquish-ownership")
+    return "Relinquishing ownership is only available on company-owned work profiles, not on fully managed or personally-owned devices.";
 
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";

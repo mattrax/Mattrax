@@ -324,29 +324,29 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
   -d '{ "action": "sync" }'
 ```
 
-| Action                         | Apple                         | Windows       | Android     | Step-up |
-| ------------------------------ | ----------------------------- | ------------- | ----------- | ------- |
-| `sync`                         | APNs wake-up                  | Not supported | Push policy | No      |
-| `lock`                         | Yes (PIN)                     | No            | Yes         | Yes     |
-| `wipe`                         | Yes (PIN)                     | Yes           | Yes         | Yes     |
-| `return-to-service`            | iOS 17+/tvOS 18+/visionOS 26+ | No            | No          | Yes     |
-| `restart`                      | Yes                           | Yes           | Yes         | Yes     |
-| `shutdown`                     | Yes                           | No            | No          | Yes     |
-| `clear-passcode`               | Yes                           | No            | No          | Yes     |
-| `install-app`                  | Manifest or Store id          | No            | No          | Yes     |
-| `collect-security-info`        | Yes                           | No            | No          | No      |
-| `refresh-applications`         | Yes (manual refresh)          | No            | No          | No      |
-| `collect-activation-lock-code` | Yes (supervised)              | No            | No          | Yes     |
-| `rotate-filevault-key`         | Yes                           | No            | No          | Yes     |
-| `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes     |
-| `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes     |
-| `start-lost-mode`              | No                            | No            | Yes         | Yes     |
-| `stop-lost-mode`               | No                            | No            | Yes         | Yes     |
-| `reset-password`               | No                            | No            | Yes         | Yes     |
-| `clear-app-data`               | No                            | No            | Yes         | Yes     |
-| `request-device-info`          | No                            | No            | Yes         | Yes     |
-| `relinquish-ownership`         | No                            | No            | Yes         | Yes     |
-| `unenroll` (endpoint)          | Yes                           | Yes           | Yes         | No      |
+| Action                         | Apple                         | Windows       | Android     | Step-up      |
+| ------------------------------ | ----------------------------- | ------------- | ----------- | ------------ |
+| `sync`                         | APNs wake-up                  | Not supported | Push policy | No           |
+| `lock`                         | Yes (PIN)                     | No            | Yes         | Yes          |
+| `wipe`                         | Yes (PIN)                     | Yes           | Yes         | Yes          |
+| `return-to-service`            | iOS 17+/tvOS 18+/visionOS 26+ | No            | No          | Yes          |
+| `restart`                      | Yes                           | Yes           | Yes         | Yes          |
+| `shutdown`                     | Yes                           | No            | No          | Yes          |
+| `clear-passcode`               | Yes                           | No            | No          | Yes          |
+| `install-app`                  | Manifest or Store id          | No            | No          | Yes          |
+| `collect-security-info`        | Yes                           | No            | No          | No           |
+| `refresh-applications`         | Yes (manual refresh)          | No            | No          | No           |
+| `collect-activation-lock-code` | Yes (supervised)              | No            | No          | Yes          |
+| `rotate-filevault-key`         | Yes                           | No            | No          | Yes          |
+| `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes          |
+| `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes          |
+| `start-lost-mode`              | No                            | No            | Yes         | Yes          |
+| `stop-lost-mode`               | No                            | No            | Yes         | Yes          |
+| `reset-password`               | No                            | No            | Yes         | Yes          |
+| `clear-app-data`               | No                            | No            | Yes         | Yes          |
+| `request-device-info`          | No                            | No            | Yes         | Yes          |
+| `relinquish-ownership`         | No                            | No            | Yes         | Yes          |
+| `unenroll` (endpoint)          | Yes                           | Yes           | Yes         | Android only |
 
 The action menu is capability-driven: `GET /api/v1/tenants/:tenantId/devices/:id` returns an
 `actions` array for the device. The API rejects an action that is not in that list, so a
