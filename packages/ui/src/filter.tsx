@@ -10,6 +10,14 @@ import {
 } from "@ui-sdk/solid/popover";
 import { cn } from "./lib/cn";
 import { Check, ChevronDown, Filter as FilterIcon, Plus, Search, X } from "./icons";
+import {
+  formatFilterValues,
+  isMultiFilterValue,
+  normaliseFilterOperatorValues,
+  normaliseFilterValues,
+  normaliseNumericFilterValues,
+  splitFilterValues,
+} from "./filter-values";
 
 /**
  * Filter primitives.
@@ -121,63 +129,6 @@ export const filterValueLabel = (field: FilterField, condition: FilterCondition)
   // empty single-value condition, which leaves the field unconstrained.
   return condition.operator === "in" ? "None" : "Any";
 };
-
-/**
- * Multi-value operands use the same comma-separated grammar as the shareable
- * text form: quotes protect commas inside a value.
- */
-const quoteFilterValue = (value: string) =>
-  /[\s",]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
-
-const unquoteFilterValue = (value: string) =>
-  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
-
-const splitFilterValues = (text: string): string[] => {
-  const parts: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
-
-    if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
-
-    if (!quoted && character === ",") {
-      parts.push(current);
-      current = "";
-      continue;
-    }
-
-    current += character;
-  }
-
-  parts.push(current);
-
-  const values: string[] = [];
-
-  for (const part of parts) {
-    const value = unquoteFilterValue(part.trim());
-
-    if (value !== "") values.push(value);
-  }
-
-  return values;
-};
-
-const formatFilterValues = (values: ReadonlyArray<string>): string => {
-  const parts: string[] = [];
-
-  for (const value of values) {
-    const trimmed = value.trim();
-
-    if (trimmed !== "") parts.push(quoteFilterValue(trimmed));
-  }
-
-  return parts.join(", ");
-};
-
-const isMultiValue = (field: FilterField, operator: string) =>
-  operator === "in" || (field.kind === "select" && field.multiple === true);
 
 const surface =
   "w-[264px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0 transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift";
@@ -319,7 +270,7 @@ function ValueEditor(props: {
   });
 
   const toggle = (value: string) => {
-    if (isMultiValue(props.field, props.condition.operator)) {
+    if (isMultiFilterValue(props.field, props.condition.operator)) {
       const next = props.condition.values.includes(value)
         ? props.condition.values.filter((item) => item !== value)
         : [...props.condition.values.filter((item) => item !== ""), value];
@@ -354,7 +305,7 @@ function ValueEditor(props: {
           role="listbox"
           aria-label={`${props.field.label} value`}
           aria-multiselectable={
-            isMultiValue(props.field, props.condition.operator) ? "true" : undefined
+            isMultiFilterValue(props.field, props.condition.operator) ? "true" : undefined
           }
           class="max-h-[260px] overflow-y-auto overscroll-contain py-1"
         >
@@ -427,6 +378,8 @@ function MultiTextValueEditor(props: {
   onChange: (values: string[]) => void;
 }) {
   const [draft, setDraft] = createSignal(formatFilterValues(props.condition.values));
+  const [rejected, setRejected] = createSignal(false);
+  const numeric = () => props.field.kind === "number";
 
   createEffect(
     () => props.condition.values,
@@ -438,22 +391,42 @@ function MultiTextValueEditor(props: {
 
   const update = (text: string) => {
     setDraft(text);
+    setRejected(false);
     props.onChange(splitFilterValues(text));
+  };
+
+  /** Commit turns a loose draft into the predicate the chip displays. */
+  const commit = () => {
+    const values = splitFilterValues(draft());
+    const next = numeric() ? normaliseNumericFilterValues(values) : values;
+
+    setRejected(numeric() && next.length !== values.length);
+    setDraft(formatFilterValues(next));
+    props.onChange(next);
   };
 
   return (
     <div class="p-1">
       <input
         type="text"
-        inputmode={props.field.kind === "number" ? "decimal" : undefined}
+        inputmode={numeric() ? "decimal" : undefined}
         value={draft()}
         placeholder={props.field.placeholder ? `${props.field.placeholder}, …` : "Value, value"}
         aria-label={`${props.field.label} values`}
+        aria-invalid={rejected() ? "true" : undefined}
         onInput={(event) => update(event.currentTarget.value)}
-        onBlur={() => setDraft(formatFilterValues(props.condition.values))}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.isComposing) {
+            event.preventDefault();
+            commit();
+          }
+        }}
         class="h-8 w-full rounded-[6px] border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
       />
-      <p class="px-1 pt-1 text-[10.5px] text-muted-foreground">Separate values with commas.</p>
+      <p class="px-1 pt-1 text-[10.5px] text-muted-foreground">
+        {rejected() ? "Only numbers are kept in this filter." : "Separate values with commas."}
+      </p>
     </div>
   );
 }
@@ -509,7 +482,18 @@ function ConditionPanel(props: {
   onRemove?: () => void;
   onField: () => void;
 }) {
-  const operator = (value: string) => props.onChange({ ...props.condition, operator: value });
+  const operator = (value: string) =>
+    props.onChange({
+      ...props.condition,
+      operator: value,
+      values: normaliseFilterOperatorValues(props.field, value, props.condition.values),
+    });
+
+  const done = () =>
+    props.onDone({
+      ...props.condition,
+      values: normaliseFilterValues(props.field, props.condition.operator, props.condition.values),
+    });
 
   return (
     <div>
@@ -559,7 +543,7 @@ function ConditionPanel(props: {
             type="button"
             disabled={!props.condition.values.some((value) => value.trim() !== "")}
             class="h-6 rounded-[6px] bg-primary px-2 text-[11.5px] font-medium text-primary-foreground outline-none hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40"
-            onClick={() => props.onDone(props.condition)}
+            onClick={done}
           >
             Apply
           </button>
@@ -572,7 +556,12 @@ function ConditionPanel(props: {
 function FilterChip(props: {
   fields: ReadonlyArray<FilterField>;
   field: FilterField;
-  condition: FilterCondition;
+  /**
+   * A getter, not a snapshot: the condition editor must survive parent
+   * updates. The bar keys chips by position so Solid never re-creates this
+   * component while a value is being typed or a second enum option is ticked.
+   */
+  condition: () => FilterCondition;
   onChange: (condition: FilterCondition) => void;
   onRemove: () => void;
 }) {
@@ -580,6 +569,7 @@ function FilterChip(props: {
   const [view, setView] = createSignal<"condition" | "fields">("condition");
 
   const field = () => props.field;
+  const condition = () => props.condition();
   const close = () => setOpen(false);
 
   const changeField = (next: FilterField) => {
@@ -600,7 +590,7 @@ function FilterChip(props: {
       >
         <PopoverTrigger
           class="flex h-full min-w-0 items-center gap-1 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
-          aria-label={`${field().label} ${filterOperatorLabel(field(), props.condition.operator)} ${filterValueLabel(field(), props.condition)}`}
+          aria-label={`${field().label} ${filterOperatorLabel(field(), condition().operator)} ${filterValueLabel(field(), condition())}`}
         >
           <Show when={field().icon}>
             {(icon) => {
@@ -611,10 +601,10 @@ function FilterChip(props: {
           </Show>
           <span class="truncate text-muted-foreground">{field().label}</span>{" "}
           <span class="shrink-0 text-subtle-foreground">
-            {filterOperatorLabel(field(), props.condition.operator)}
+            {filterOperatorLabel(field(), condition().operator)}
           </span>{" "}
           <span class="min-w-0 truncate font-[520] text-foreground">
-            {filterValueLabel(field(), props.condition)}
+            {filterValueLabel(field(), condition())}
           </span>
         </PopoverTrigger>
 
@@ -628,7 +618,7 @@ function FilterChip(props: {
             fallback={
               <ConditionPanel
                 field={field()}
-                condition={props.condition}
+                condition={condition()}
                 onChange={props.onChange}
                 onDone={() => close()}
                 onRemove={() => {
@@ -781,22 +771,22 @@ export function FilterBar(props: FilterBarProps) {
 
   return (
     <div class={cn("flex min-w-0 flex-wrap items-center gap-1.5", props.class)}>
-      <For each={props.conditions}>
+      <For each={props.conditions} keyed={false}>
         {(condition, index) => (
           <div class="flex min-w-0 items-center gap-1.5">
-            <Show when={index() > 0}>
+            <Show when={index > 0}>
               <span class="shrink-0 text-[11px] text-subtle-foreground">
                 {props.conjunction ?? "and"}
               </span>
             </Show>
-            <Show when={fieldById(condition.field)}>
+            <Show when={fieldById(condition().field)}>
               {(field) => (
                 <FilterChip
                   fields={fields()}
                   field={field()}
                   condition={condition}
-                  onChange={(next) => update(index(), next)}
-                  onRemove={() => remove(index())}
+                  onChange={(next) => update(index, next)}
+                  onRemove={() => remove(index)}
                 />
               )}
             </Show>

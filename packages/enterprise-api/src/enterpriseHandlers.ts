@@ -6685,6 +6685,9 @@ export const createEnterpriseService = ({
           azureTenantId: config?.azureTenantId ?? null,
           lastSyncedAt: state?.lastSyncedAt ? iso(state.lastSyncedAt) : null,
           lastAttemptedAt: state?.lastAttemptedAt ? iso(state.lastAttemptedAt) : null,
+          // Lock heartbeat, refreshed as each page completes. The dashboard
+          // uses it (not the initial attempt time) to decide a run is stuck.
+          lastHeartbeatAt: state?.updatedAt ? iso(state.updatedAt) : null,
           lastRunTrigger: state?.lastRunTrigger ?? null,
           lastError: state?.lastError ?? null,
           lastCounts: state?.lastCounts ?? null,

@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  DIRECTORY_SYNC_STALE_MS,
   directorySyncProgress,
+  directorySyncRunIsStale,
   formatDirectorySyncCounts,
+  shouldPollDirectorySync,
   type DirectorySyncCounts,
 } from "./directory-sync";
 
 const counts: DirectorySyncCounts = { users: 12, groups: 3, domains: 2 };
+
+const now = Date.parse("2026-01-01T12:00:00.000Z");
+
+const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
 
 describe("formatDirectorySyncCounts", () => {
   it("spells out the three count classes", () => {
@@ -25,17 +32,126 @@ describe("formatDirectorySyncCounts", () => {
   });
 });
 
+describe("directorySyncRunIsStale", () => {
+  it("treats a fresh running row as live", () => {
+    expect(
+      directorySyncRunIsStale({
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(1),
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats a run past the lock window as abandoned", () => {
+    expect(
+      directorySyncRunIsStale({
+        remoteStatus: "running",
+        lastAttemptedAt: new Date(now - DIRECTORY_SYNC_STALE_MS - 1).toISOString(),
+        now,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a long run live while its heartbeat is fresh", () => {
+    expect(
+      directorySyncRunIsStale({
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(120),
+        lastHeartbeatAt: minutesAgo(1),
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not call a non-running row stale", () => {
+    expect(
+      directorySyncRunIsStale({
+        remoteStatus: "idle",
+        lastAttemptedAt: minutesAgo(60),
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  it("treats a running row without an attempt timestamp as abandoned", () => {
+    expect(directorySyncRunIsStale({ remoteStatus: "running", now })).toBe(true);
+  });
+});
+
+describe("shouldPollDirectorySync", () => {
+  it("polls only a live running row", () => {
+    expect(
+      shouldPollDirectorySync({
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(1),
+        now,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPollDirectorySync({
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(60),
+        now,
+      }),
+    ).toBe(false);
+    expect(shouldPollDirectorySync({ remoteStatus: "idle", now })).toBe(false);
+  });
+});
+
 describe("directorySyncProgress", () => {
-  const base = { isPending: false, isError: false };
+  const base = { isPending: false, localError: false, now };
 
   it("shows an indeterminate run while the request is in flight", () => {
     expect(
-      directorySyncProgress({ ...base, isPending: true, data: counts, remoteStatus: "idle" }),
-    ).toEqual({ state: "running", message: "Syncing users, groups and domains from Entra ID…" });
+      directorySyncProgress({
+        ...base,
+        isPending: true,
+        data: counts,
+        remoteStatus: "idle",
+      }),
+    ).toEqual({
+      state: "running",
+      message: "Syncing users, groups and domains from Entra ID…",
+    });
   });
 
-  it("reports a run that is still marked running on the server", () => {
-    expect(directorySyncProgress({ ...base, remoteStatus: "running" })).toEqual({
+  it("reports a live run that is still marked running on the server", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(1),
+      }),
+    ).toEqual({
+      state: "running",
+      message: "Syncing users, groups and domains from Entra ID…",
+    });
+  });
+
+  it("stops claiming a run is live once it passes the stale window", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(60),
+      }),
+    ).toEqual({
+      state: "stale",
+      message:
+        "The last directory sync did not report back. It may have been interrupted; try again.",
+    });
+  });
+
+  it("keeps a long run live while its heartbeat is fresh", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(120),
+        lastHeartbeatAt: minutesAgo(1),
+      }),
+    ).toEqual({
       state: "running",
       message: "Syncing users, groups and domains from Entra ID…",
     });
@@ -49,13 +165,57 @@ describe("directorySyncProgress", () => {
     });
   });
 
-  it("prefers a local failure over stale running status", () => {
+  it("reports a stored failure from the remote status", () => {
     expect(
       directorySyncProgress({
         ...base,
-        isError: true,
-        data: counts,
+        remoteStatus: "error",
+        remoteError: "Graph exploded",
+      }),
+    ).toEqual({ state: "failed", message: "Directory sync failed. See the error below." });
+  });
+
+  it("shows a conflicting run as live rather than a permanent local failure", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        localError: true,
+        localErrorAt: now - 30_000,
         remoteStatus: "running",
+        lastAttemptedAt: minutesAgo(1),
+      }),
+    ).toEqual({
+      state: "running",
+      message: "Syncing users, groups and domains from Entra ID…",
+    });
+  });
+
+  it("supersedes a local lock failure with a later remote success", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        localError: true,
+        localErrorAt: now - 10 * 60_000,
+        remoteStatus: "idle",
+        lastSyncedAt: minutesAgo(1),
+        remoteCounts: counts,
+      }),
+    ).toEqual({
+      state: "succeeded",
+      message: "Synced 12 users, 3 groups and 2 domains.",
+      counts,
+    });
+  });
+
+  it("keeps a local failure when no newer remote run succeeded", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        localError: true,
+        localErrorAt: now - 10 * 60_000,
+        remoteStatus: "idle",
+        lastSyncedAt: minutesAgo(30),
+        remoteCounts: counts,
       }),
     ).toEqual({ state: "failed", message: "Directory sync failed. See the error below." });
   });

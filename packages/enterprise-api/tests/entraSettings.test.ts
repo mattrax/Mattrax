@@ -84,6 +84,7 @@ describe("Entra directory schedule settings", () => {
     const updated = await runEffect(service.getEntraDirectorySync(request(headers), "org-1"));
     expect(updated.syncIntervalMinutes).toBe(1440);
     expect(updated.nextSyncAt).toBeTruthy();
+    expect(updated.lastHeartbeatAt).toBeTruthy();
     expect(new Date(updated.nextSyncAt!).getTime()).toBeGreaterThan(Date.now());
   });
 

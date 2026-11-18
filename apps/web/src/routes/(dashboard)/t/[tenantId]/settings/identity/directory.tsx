@@ -7,7 +7,7 @@ import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import { directorySyncProgress } from "~/lib/directory-sync";
+import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 
@@ -37,9 +37,16 @@ export default function DirectorySyncPage() {
   const status = useQuery(() => ({
     ...enterpriseQueries.directorySync(params.tenantId),
     // A scheduled run writes `running` before it starts and `idle` when it
-    // finishes; poll only while that state is live so the progress row tells
-    // the truth without keeping the page busy forever.
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 3000 : false),
+    // finishes; poll only while that state is live and still inside the lock's
+    // stale window, so a crashed worker does not keep the page busy forever.
+    refetchInterval: (query) =>
+      shouldPollDirectorySync({
+        remoteStatus: query.state.data?.status,
+        lastAttemptedAt: query.state.data?.lastAttemptedAt,
+        lastHeartbeatAt: query.state.data?.lastHeartbeatAt,
+      })
+        ? 3000
+        : false,
   }));
 
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
@@ -64,7 +71,9 @@ export default function DirectorySyncPage() {
 
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncEntraDirectory(params.tenantId),
-    onSuccess: invalidate,
+    // Refresh on settled, not only success: a 409 lock failure must learn the
+    // outcome of the run that beat it instead of freezing a red error.
+    onSettled: invalidate,
   }));
 
   const counts = () =>
@@ -74,12 +83,31 @@ export default function DirectorySyncPage() {
       ),
     );
 
+  /** Last counts in the shape the progress copy expects. */
+  const remoteCounts = () => {
+    const current = counts();
+
+    if (!current) return null;
+
+    return {
+      users: current.users ?? 0,
+      groups: current.groups ?? 0,
+      domains: current.domains ?? 0,
+    };
+  };
+
   const progress = () =>
     directorySyncProgress({
       isPending: sync.isPending,
-      isError: sync.isError,
+      localError: sync.isError,
+      localErrorAt: sync.submittedAt,
       data: sync.data ?? null,
       remoteStatus: status.data?.status ?? null,
+      remoteError: status.data?.lastError ?? null,
+      remoteCounts: remoteCounts(),
+      lastSyncedAt: status.data?.lastSyncedAt ?? null,
+      lastAttemptedAt: status.data?.lastAttemptedAt ?? null,
+      lastHeartbeatAt: status.data?.lastHeartbeatAt ?? null,
     });
 
   const intervalOptions = () => {
@@ -214,30 +242,38 @@ export default function DirectorySyncPage() {
                   </Show>
                 </div>
 
-                <Show when={progress()}>
-                  {(current) => (
-                    <div class="mt-3 space-y-1.5" role="status" aria-live="polite">
-                      <Show when={current().state === "running"}>
-                        <div
-                          class="h-0.5 overflow-hidden rounded-full bg-border"
-                          aria-hidden="true"
+                <div
+                  class={cn("space-y-1.5", progress() && "mt-3")}
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <Show when={progress()}>
+                    {(current) => (
+                      <>
+                        <Show when={current().state === "running"}>
+                          <div
+                            class="h-0.5 overflow-hidden rounded-full bg-border"
+                            aria-hidden="true"
+                          >
+                            <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+                          </div>
+                        </Show>
+                        <p
+                          class={cn(
+                            "text-[11.5px] leading-relaxed",
+                            current().state === "running" && "text-muted-foreground",
+                            current().state === "stale" && "text-warning-foreground",
+                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "failed" && "text-destructive",
+                          )}
                         >
-                          <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
-                        </div>
-                      </Show>
-                      <p
-                        class={cn(
-                          "text-[11.5px] leading-relaxed",
-                          current().state === "running" && "text-muted-foreground",
-                          current().state === "succeeded" && "text-success-foreground",
-                          current().state === "failed" && "text-destructive",
-                        )}
-                      >
-                        {current().message}
-                      </p>
-                    </div>
-                  )}
-                </Show>
+                          {current().message}
+                        </p>
+                      </>
+                    )}
+                  </Show>
+                </div>
               </div>
 
               <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">

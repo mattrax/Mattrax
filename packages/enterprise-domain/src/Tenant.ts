@@ -464,6 +464,7 @@ export const EntraDirectorySyncStatus = Schema.Struct({
   azureTenantId: Schema.optional(NullableString),
   lastSyncedAt: Schema.optional(NullableString),
   lastAttemptedAt: Schema.optional(NullableString),
+  lastHeartbeatAt: Schema.optional(NullableString),
   lastRunTrigger: Schema.optional(NullableString),
   lastError: Schema.optional(NullableString),
   lastCounts: Schema.optional(Schema.NullOr(Schema.Unknown)),

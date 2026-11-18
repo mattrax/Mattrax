@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./filter-values": "./src/filter-values.ts",
     "./styles.css": "./src/styles.css",
     "./package.json": "./package.json"
   },

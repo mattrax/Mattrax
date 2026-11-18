@@ -1,4 +1,11 @@
 import { Match, Schema } from "effect";
+import {
+  formatFilterValues,
+  normaliseNumericFilterValues,
+  quoteFilterValue,
+  splitFilterValues,
+  unquoteFilterValue,
+} from "@mattrax/ui/filter-values";
 
 /**
  * The pure filter engine behind {@link parseEntityQuery} and the entity tables.
@@ -69,64 +76,11 @@ const defaultFor = <T>(field: EntityField<T>): EntityCondition => ({
   ),
 });
 
-const quote = (value: string) =>
-  /[\s",]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
-
-const unquote = (value: string) =>
-  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
-
-/**
- * Split a multi-value (`in`) operand into its values.
- *
- * Commas separate values; a double-quoted value may contain commas and is
- * unescaped the same way as the surrounding query text. Whitespace around a
- * value is ignored, and empty entries are dropped so `field in ,` can never
- * turn into an accidental "match every row" predicate.
- */
-export const splitEntityValues = (text: string): string[] => {
-  const values: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
-
-    if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
-
-    if (!quoted && character === ",") {
-      values.push(current.trim());
-      current = "";
-      continue;
-    }
-
-    current += character;
-  }
-
-  values.push(current.trim());
-
-  const result: string[] = [];
-
-  for (const value of values) {
-    const unquoted = unquote(value);
-
-    if (unquoted !== "") result.push(unquoted);
-  }
-
-  return result;
-};
+export const splitEntityValues = (text: string): string[] => splitFilterValues(text);
 
 /** Format values as the canonical comma-separated `in` operand. */
-export const joinEntityValues = (values: ReadonlyArray<string>): string => {
-  const parts: string[] = [];
-
-  for (const value of values) {
-    const trimmed = value.trim();
-
-    if (trimmed !== "") parts.push(quote(trimmed));
-  }
-
-  return parts.join(", ");
-};
+export const joinEntityValues = (values: ReadonlyArray<string>): string =>
+  formatFilterValues(values);
 
 /**
  * Format one operand. An empty `in` list has a canonical representation
@@ -134,7 +88,7 @@ export const joinEntityValues = (values: ReadonlyArray<string>): string => {
  * nothing, rather than silently disappearing into an unfiltered table.
  */
 const formatConditionValue = (condition: EntityCondition): string => {
-  if (condition.op !== "in") return quote(condition.value);
+  if (condition.op !== "in") return quoteFilterValue(condition.value);
 
   const values = joinEntityValues(splitEntityValues(condition.value));
 
@@ -156,11 +110,28 @@ const splitAnd = (text: string): string[] => {
   const parts: string[] = [];
   let current = "";
   let quoted = false;
+  let escaped = false;
 
   for (let index = 0; index < text.length; index++) {
     const character = text[index]!;
 
-    if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      current += character;
+      escaped = true;
+      continue;
+    }
+
+    if (character === '"') {
+      quoted = !quoted;
+      current += character;
+      continue;
+    }
 
     if (!quoted && text.slice(index, index + 5).toLowerCase() === " and ") {
       parts.push(current.trim());
@@ -201,14 +172,16 @@ export const parseEntityQuery = <T>(
 
     if (op === "in") {
       // Keep an empty list as a real, matches-nothing predicate so a shared
-      // `field in ""` link cannot degrade into an unfiltered table.
+      // `field in ""` link cannot degrade into an unfiltered table. Numeric
+      // lists drop junk here so the chip and the predicate always agree.
       const values = splitEntityValues(match[3]!.trim());
+      const normalised = field.kind === "number" ? normaliseNumericFilterValues(values) : values;
 
-      conditions.push({ field: field.id, op, value: joinEntityValues(values) });
+      conditions.push({ field: field.id, op, value: joinEntityValues(normalised) });
       continue;
     }
 
-    conditions.push({ field: field.id, op, value: unquote(match[3]!.trim()) });
+    conditions.push({ field: field.id, op, value: unquoteFilterValue(match[3]!.trim()) });
   }
 
   return conditions;

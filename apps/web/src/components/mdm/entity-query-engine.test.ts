@@ -74,6 +74,35 @@ describe("parseEntityQuery with in", () => {
     expect(formatEntityQuery(conditions)).toBe('name in "ACME, Inc", Beta');
   });
 
+  it("round-trips Windows paths instead of swallowing the list", () => {
+    const text = 'name in "C:\\\\Users\\\\Admin", Beta';
+    const conditions = parseEntityQuery(text, fields);
+
+    expect(conditions).toEqual([
+      { field: "name", op: "in", value: '"C:\\\\Users\\\\Admin", Beta' },
+    ]);
+    expect(formatEntityQuery(conditions)).toBe(text);
+    expect(matchesEntityQuery(conditions, row({ name: "C:\\Users\\Admin" }), fields)).toBe(true);
+  });
+
+  it("round-trips escaped quotes", () => {
+    const text = 'name in "say \\"hi\\"", Beta';
+    const conditions = parseEntityQuery(text, fields);
+
+    expect(conditions).toEqual([{ field: "name", op: "in", value: '"say \\"hi\\"", Beta' }]);
+    expect(formatEntityQuery(conditions)).toBe(text);
+    expect(matchesEntityQuery(conditions, row({ name: 'say "hi"' }), fields)).toBe(true);
+  });
+
+  it("still splits conditions after a value ending in a backslash", () => {
+    const text = 'name in "ends\\\\", Beta and devices at least 2';
+
+    expect(parseEntityQuery(text, fields)).toEqual([
+      { field: "name", op: "in", value: '"ends\\\\", Beta' },
+      { field: "devices", op: "at least", value: "2" },
+    ]);
+  });
+
   it("keeps an empty in operand as a matches-nothing predicate", () => {
     // No operand at all is still not a clause; the grammar needs a value.
     expect(parseEntityQuery("name in", fields)).toEqual([]);
@@ -99,6 +128,15 @@ describe("parseEntityQuery with in", () => {
     ]);
     expect(parseEntityQuery("platform in apple, win", fields)).toEqual([
       { field: "platform", op: "in", value: "apple, win" },
+    ]);
+  });
+
+  it("drops junk from a numeric in operand so the chip matches the predicate", () => {
+    expect(parseEntityQuery("devices in 03, nope, 10", fields)).toEqual([
+      { field: "devices", op: "in", value: "3, 10" },
+    ]);
+    expect(parseEntityQuery("devices in nope", fields)).toEqual([
+      { field: "devices", op: "in", value: "" },
     ]);
   });
 });
