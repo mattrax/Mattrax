@@ -2,13 +2,14 @@ import { Head, Link, Meta, Title } from "@solidjs/meta";
 import { createRouter, intentPreload, pendingLinks, tapPreload, useLocation, viewportPreload } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
-import { Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
+import { createEffect, Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
 import { NewVersionNotice } from "~/components/new-version-notice";
 import { installSkewProtection } from "~/lib/skew-protection";
 import { installTheme } from "~/lib/theme";
+import { capturePostHogPageview } from "~/lib/posthog";
 import {
   LANDING_DESCRIPTION,
   LANDING_OG_DESCRIPTION,
@@ -125,6 +126,13 @@ export default function App() {
 function HeadTags(props: ParentProps<{ origin: string }>) {
   const location = useLocation();
   const landing = () => location.pathname === "/";
+
+  // The browser analytics client captures a pageview for every SPA navigation,
+  // including the first render. Search strings are intentionally omitted.
+  createEffect(
+    () => location.pathname,
+    (pathname) => capturePostHogPageview(pathname),
+  );
 
   return (
     <Head>

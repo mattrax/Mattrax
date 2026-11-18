@@ -1,70 +1,228 @@
 import { isServer } from "@solidjs/web";
-import { Schema } from "effect";
-import type posthogSdk from "posthog-js";
+import { Option, Schema } from "effect";
 import type { RaisedFailure } from "~/lib/errors";
-
-type PostHog = typeof posthogSdk;
-
-import { registerPostHogReader, analyticsHeaders } from "./posthog-context";
+import { analyticsHeaders, registerPostHogReader } from "./posthog-context";
 import { sanitizePostHogCapture } from "./posthog-sanitize";
 
-export type PostHogUser = {
-  readonly id: string;
-  readonly name?: string | null;
-  readonly email?: string | null;
-  readonly emailVerified?: boolean;
-};
-
-let initialized = false;
-
-let starting: Promise<boolean> | undefined;
-
-let posthog: PostHog | undefined;
-
-let loading: Promise<PostHog | undefined> | undefined;
-
-let lastUserSignature: string | undefined;
-
-let lastTenantSignature: string | undefined;
-
-let fetchInstalled = false;
-
 /**
- * `posthog-js` is ~470KB. Import it only when analytics is configured and the
- * browser is idle, so it never delays hydration or the first page load.
- */
-const loadPostHog = (): Promise<PostHog | undefined> => {
-  if (posthog) return Promise.resolve(posthog);
-
-  loading ??= import("posthog-js")
-    .then((module) => {
-      posthog = module.default;
-
-      return posthog;
-    })
-    .catch((error) => {
-      console.warn("PostHog failed to load", error);
-
-      return undefined;
-    });
-
-  return loading;
-};
-
-const applyAnalyticsHeaders = (headers: Headers): void => {
-  for (const [name, value] of Object.entries(analyticsHeaders())) headers.set(name, value);
-};
-
-/**
- * Add PostHog correlation headers to same-origin API calls.
+ * Minimal browser analytics client.
  *
- * Covering `fetch` centrally means the dashboard's typed API client, auth
- * client and the handful of raw settings/account requests all join the same
- * browser session without every call site remembering to pass headers.
+ * The official `posthog-js` bundle is ~470 KB before it is useful to a page
+ * whose analytics are pageviews, identity, groups, exceptions and click
+ * autocapture. This client posts the same `/batch/` envelope as the API Worker,
+ * which keeps the browser bundle small and lets events share a session id with
+ * server-side product analytics.
+ *
+ * Session identity is local to the browser and rotates after 30 idle minutes.
+ * The distinct id is anonymous until `syncPostHogUser` identifies the account.
  */
+
+type PostHogConfig = {
+  readonly key: string;
+  readonly host: string;
+  readonly environment?: string;
+  readonly release?: string;
+  readonly deploymentId?: string;
+};
+
+type AnalyticsProperties = Record<string, Schema.Json>;
+
+type CapturedEvent = {
+  event: string;
+  distinct_id: string;
+  properties: AnalyticsProperties;
+  timestamp: string;
+  groups?: Record<string, string>;
+};
+
+const isString = Schema.is(Schema.String);
+
+const STORAGE_KEY = "mattrax.posthog";
+
+const SESSION_IDLE_MILLIS = 30 * 60 * 1000;
+
+const FLUSH_AFTER_MILLIS = 2_000;
+
+const MAX_QUEUE = 20;
+
+const randomId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `anon-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+
+type StoredIdentity = {
+  distinctId?: string;
+  sessionId?: string;
+  activeAt?: number;
+};
+
+const readStorage = (): StoredIdentity => {
+  try {
+    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+
+    if (!raw) return {};
+
+    const decoded = Schema.decodeUnknownOption(
+      Schema.Struct({
+        distinctId: Schema.optional(Schema.String),
+        sessionId: Schema.optional(Schema.String),
+        activeAt: Schema.optional(Schema.Number),
+      }),
+    )(JSON.parse(raw));
+
+    return Option.isSome(decoded) ? decoded.value : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeStorage = (value: StoredIdentity): void => {
+  try {
+    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Private mode or a full quota: analytics degrades to this page.
+  }
+};
+
+let config: PostHogConfig | undefined;
+
+let started = false;
+
+let ready = false;
+
+let distinctId = "";
+
+let sessionId = "";
+
+let sessionActiveAt = 0;
+
+let tenant: { id: string; name?: string } | undefined;
+
+let identifySignature: string | undefined;
+
+let lastPage: string | undefined;
+
+let queue: CapturedEvent[] = [];
+
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+
+const persist = (): void => {
+  writeStorage({ distinctId, sessionId, activeAt: sessionActiveAt });
+};
+
+const ensureSession = (): void => {
+  const now = Date.now();
+
+  if (!sessionId || now - sessionActiveAt >= SESSION_IDLE_MILLIS) sessionId = randomId();
+
+  sessionActiveAt = now;
+  persist();
+};
+
+const pageUrl = (): string => {
+  try {
+    const url = new URL(globalThis.location.href);
+    url.search = "";
+    url.hash = "";
+
+    return url.toString();
+  } catch {
+    return "";
+  }
+};
+
+const externalReferrer = (): string | undefined => {
+  try {
+    if (!document.referrer) return undefined;
+    const referrer = new URL(document.referrer);
+
+    if (referrer.origin === globalThis.location.origin) return undefined;
+    referrer.search = "";
+    referrer.hash = "";
+
+    return referrer.toString();
+  } catch {
+    return undefined;
+  }
+};
+
+const baseProperties = () => {
+  const referrer = externalReferrer();
+
+  return {
+    $lib: "web",
+    $lib_version: "1.0.0",
+    $current_url: pageUrl(),
+    ...(referrer ? { $referrer: referrer } : {}),
+    ...(config?.environment ? { environment: config.environment } : {}),
+    ...(config?.release ? { release: config.release } : {}),
+    ...(config?.deploymentId ? { deployment_id: config.deploymentId } : {}),
+    $session_id: sessionId,
+  } satisfies AnalyticsProperties;
+};
+
+const endpoint = (): string => `${config!.host.replace(/\/+$/, "")}/batch/`;
+
+const scheduleFlush = (): void => {
+  flushTimer ??= setTimeout(() => {
+    flushTimer = undefined;
+    void flush();
+  }, FLUSH_AFTER_MILLIS);
+};
+
+const flush = async (beacon = false): Promise<void> => {
+  if (!config || queue.length === 0) return;
+
+  const batch = queue;
+  queue = [];
+  const body = JSON.stringify({ api_key: config.key, batch });
+
+  if (beacon && navigator.sendBeacon) {
+    navigator.sendBeacon(endpoint(), new Blob([body], { type: "application/json" }));
+
+    return;
+  }
+
+  try {
+    await fetch(endpoint(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      keepalive: true,
+      mode: "cors",
+    });
+  } catch {
+    // Analytics is best-effort and must never affect the dashboard.
+  }
+};
+
+const enqueue = (event: string, properties: AnalyticsProperties): void => {
+  if (!config) return;
+  ensureSession();
+
+  const capture = sanitizePostHogCapture({
+    event,
+    properties: { ...baseProperties(), ...properties },
+  });
+
+  queue.push({
+    event,
+    distinct_id: distinctId,
+    properties: capture.properties ?? {},
+    timestamp: new Date().toISOString(),
+    ...(tenant ? { groups: { tenant: tenant.id } } : {}),
+  });
+
+  if (queue.length >= MAX_QUEUE) {
+    void flush();
+
+    return;
+  }
+
+  scheduleFlush();
+};
+
 const installFetchHeaders = (): void => {
-  if (fetchInstalled || typeof window === "undefined") return;
-  fetchInstalled = true;
+  if (typeof window === "undefined") return;
   const originalFetch = window.fetch.bind(window);
   // SAFETY: the wrapper accepts the same `(input, init)` arguments and forwards
   // every request unchanged to the bound native fetch.
@@ -84,155 +242,234 @@ const installFetchHeaders = (): void => {
     )
       return originalFetch(input, init);
 
-    if (input instanceof Request) {
-      const headers = new Headers(init?.headers ?? input.headers);
-      applyAnalyticsHeaders(headers);
+    const headers = new Headers(
+      input instanceof Request ? (init?.headers ?? input.headers) : init?.headers,
+    );
 
-      return originalFetch(new Request(input, { ...init, headers }));
-    }
+    for (const [name, value] of Object.entries(analyticsHeaders())) headers.set(name, value);
 
-    const headers = new Headers(init?.headers);
-    applyAnalyticsHeaders(headers);
-
-    return originalFetch(input, { ...init, headers });
+    return originalFetch(
+      input instanceof Request ? new Request(input, { ...init, headers }) : input,
+      input instanceof Request ? undefined : { ...init, headers },
+    );
   }) as typeof window.fetch;
 };
 
-/** Initialise the browser SDK once, from the config injected by the SSR shell. */
-const startPostHog = async (): Promise<boolean> => {
-  if (isServer || initialized) return initialized;
-  const config = window.__MATTRAX_POSTHOG__;
+const stackFrames = (stack: string | undefined) => {
+  if (!stack) return [];
 
-  if (!config?.key) return false;
+  const frames = [];
 
-  const sdk = await loadPostHog();
+  for (const line of stack.split("\n").slice(1)) {
+    const match = line.match(/^\s*at (?:(.+?) \()?(.+?):(\d+):(\d+)\)?$/);
 
-  if (!sdk || initialized) return initialized;
-
-  try {
-    sdk.init(config.key, {
-      api_host: config.host,
-      capture_pageview: "history_change",
-      capture_pageleave: true,
-      autocapture: true,
-      capture_exceptions: true,
-      person_profiles: "identified_only",
-      persistence: "localStorage+cookie",
-      disable_session_recording: true,
-      // Super properties every browser event carries, so product analytics
-      // can be filtered by the same release/environment as the API Worker.
-      before_send: (event) =>
-        sanitizePostHogCapture(event, {
-          ...(config.environment ? { environment: config.environment } : {}),
-          ...(config.release ? { release: config.release } : {}),
-          ...(config.deploymentId ? { deployment_id: config.deploymentId } : {}),
-        }),
+    if (!match) continue;
+    frames.push({
+      function: match[1] ?? "<anonymous>",
+      filename: match[2],
+      lineno: Number(match[3]),
+      colno: Number(match[4]),
     });
-    initialized = true;
-    registerPostHogReader(() => ({
-      distinctId: sdk.get_distinct_id(),
-      sessionId: sdk.get_session_id(),
-    }));
-    installFetchHeaders();
-
-    return true;
-  } catch (error) {
-    console.warn("PostHog initialisation failed", error);
-
-    return false;
   }
+
+  return frames;
 };
 
-export const initPostHog = (): Promise<boolean> => {
-  starting ??= startPostHog();
+const describeFailure = (failure: RaisedFailure) => {
+  if (isString(failure)) return { type: "Error", value: failure, stack: undefined };
 
-  return starting;
+  const value = failure instanceof Error ? failure.message : String(failure);
+  const type = failure instanceof Error ? failure.name : "Error";
+  const stack = failure instanceof Error ? failure.stack : undefined;
+
+  return { type, value, stack };
 };
 
-/** Keep the PostHog person in sync with the dashboard's authenticated user. */
-export const syncPostHogUser = (user: PostHogUser | null): void => {
-  void initPostHog().then((ready) => {
-    if (!ready || !posthog) return;
+const start = (): void => {
+  if (isServer || started) return;
+  started = true;
 
-    if (user) {
-      // Re-identify when the profile changes too: an account can rename itself
-      // or verify its email without signing out, and PostHog should not keep
-      // the previous person properties.
-      const signature = JSON.stringify([
-        user.id,
-        user.email ?? null,
-        user.name ?? null,
-        user.emailVerified ?? null,
-      ]);
+  const injected = window.__MATTRAX_POSTHOG__;
 
-      if (lastUserSignature === signature) return;
+  if (!injected?.key) return;
+  config = injected;
 
-      const properties: Record<string, Schema.Json> = {};
+  const stored = readStorage();
+  distinctId = stored.distinctId ?? randomId();
+  sessionId = stored.sessionId ?? randomId();
+  sessionActiveAt = stored.activeAt ?? Date.now();
+  ensureSession();
+  ready = true;
 
-      if (user.email) properties.email = user.email;
+  registerPostHogReader(() => ({ distinctId, sessionId }));
+  installFetchHeaders();
 
-      if (user.name) properties.name = user.name;
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (!ready) return;
+      const target = event.target instanceof Element ? event.target : undefined;
+      const element = target?.closest("a,button,[role='button'],input,select,textarea,label");
 
-      if (user.emailVerified !== undefined) properties.email_verified = user.emailVerified;
+      if (!element || element.closest("[data-ph-no-capture]")) return;
+      const href = element instanceof HTMLAnchorElement ? element.href : undefined;
+      const text = element.textContent?.trim().slice(0, 120) ?? "";
 
-      posthog.identify(user.id, properties);
-      lastUserSignature = signature;
+      enqueue("$autocapture", {
+        $event_type: "click",
+        $el_text: text,
+        $elements: [
+          {
+            tag_name: element.tagName.toLowerCase(),
+            ...(href ? { attr__href: href } : {}),
+            ...(text ? { $el_text: text } : {}),
+          },
+        ],
+      });
+    },
+    true,
+  );
 
-      return;
-    }
+  window.addEventListener("pagehide", () => {
+    enqueue("$pageleave", { $pathname: location.pathname });
+    void flush(true);
+  });
 
-    // A first-time signed-out visitor keeps their anonymous id. Only a real
-    // sign-out (identified -> signed out) starts a fresh anonymous session.
-    if (lastUserSignature !== undefined) posthog.reset();
-    lastUserSignature = undefined;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") return;
+    enqueue("$pageleave", { $pathname: location.pathname });
+    void flush(true);
   });
 };
 
-/** Group browser pageviews and interactions by the current tenant. */
+export const initPostHog = (): Promise<boolean> => {
+  start();
+
+  return Promise.resolve(ready);
+};
+
+export const capturePostHogPageview = (pathname: string): void => {
+  start();
+
+  if (!config || lastPage === pathname) return;
+  lastPage = pathname;
+  enqueue("$pageview", { $pathname: pathname });
+};
+
+export type PostHogUser = {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly email?: string | null;
+  readonly emailVerified?: boolean;
+};
+
+/** Keep the person in sync with the dashboard's authenticated account. */
+export const syncPostHogUser = (user: PostHogUser | null): void => {
+  start();
+
+  if (!config) return;
+
+  if (!user) {
+    // Only a real sign-out (identified -> signed out) starts a new person and
+    // session; a first-time anonymous visitor keeps their id.
+    if (identifySignature === undefined) return;
+    distinctId = randomId();
+    sessionId = randomId();
+    sessionActiveAt = Date.now();
+    tenant = undefined;
+    identifySignature = undefined;
+    lastPage = undefined;
+    persist();
+    void flush();
+
+    return;
+  }
+
+  const signature = JSON.stringify([
+    user.id,
+    user.email ?? null,
+    user.name ?? null,
+    user.emailVerified ?? null,
+  ]);
+
+  if (identifySignature === signature) return;
+
+  const previous = distinctId;
+  distinctId = user.id;
+
+  const set: AnalyticsProperties = {};
+
+  if (user.email) set.email = user.email;
+
+  if (user.name) set.name = user.name;
+
+  if (user.emailVerified !== undefined) set.email_verified = user.emailVerified;
+
+  enqueue("$identify", {
+    $set: set,
+    $set_once: { first_seen_at: new Date().toISOString() },
+    ...(previous && previous !== distinctId ? { $anon_distinct_id: previous } : {}),
+  });
+
+  identifySignature = signature;
+  persist();
+};
+
+/** Group pageviews and interactions by the active tenant. */
 export const syncPostHogTenant = (
   tenantId?: string | null,
   tenantName?: string | null,
 ): void => {
-  void initPostHog().then((ready) => {
-    if (!ready || !posthog) return;
+  start();
 
-    const signature = tenantId ? `${tenantId}\u0000${tenantName ?? ""}` : undefined;
+  if (!config) return;
+  const next = tenantId ? { id: tenantId, ...(tenantName ? { name: tenantName } : {}) } : undefined;
 
-    if (lastTenantSignature === signature) return;
+  if (tenant?.id === next?.id && tenant?.name === next?.name) return;
+  tenant = next;
 
-    if (tenantId) {
-      posthog.group("tenant", tenantId, tenantName ? { name: tenantName } : undefined);
-    } else {
-      posthog.resetGroups();
-    }
-
-    lastTenantSignature = signature;
-  });
+  if (next)
+    enqueue("$groupidentify", {
+      $group_type: "tenant",
+      $group_key: next.id,
+      $group_set: next.name ? { name: next.name } : {},
+    });
 };
 
 /** Capture a product event from the dashboard when server capture is not the source. */
-export const capturePostHog = (event: string, properties?: Record<string, Schema.Json>): void => {
-  void initPostHog().then((ready) => {
-    if (ready) posthog?.capture(event, properties);
-  });
+export const capturePostHog = (event: string, properties?: AnalyticsProperties): void => {
+  start();
+  enqueue(event, properties ?? {});
 };
 
 /**
  * Report a caught render error.
  *
- * `capture_exceptions` only sees uncaught window errors; Solid error boundaries
- * handle their error and never rethrow, so boundaries call this explicitly. The
- * additional properties carry the boundary's support reference id.
+ * `capture_exceptions` sees uncaught window errors; Solid boundaries handle
+ * their error and never rethrow, so they call this explicitly.
  */
 export const capturePostHogException = (
   error: RaisedFailure,
-  properties?: Record<string, Schema.Json>,
+  properties?: AnalyticsProperties,
 ): void => {
-  void initPostHog().then((ready) => {
-    if (ready && posthog) posthog.captureException(error, properties);
+  start();
+
+  if (!config) return;
+  const failure = describeFailure(error);
+
+  enqueue("$exception", {
+    ...properties,
+    $exception_list: [
+      {
+        type: failure.type,
+        value: failure.value,
+        mechanism: { handled: true, synthetic: false },
+        stacktrace: { type: "raw", frames: stackFrames(failure.stack) },
+      },
+    ],
+    $exception_values: [`${failure.type}: ${failure.value}`],
   });
+  void flush();
 };
 
-// Analytics is not on the critical path. Give hydration a head start, then
-// load the SDK while the browser is otherwise idle.
-if (!isServer) setTimeout(() => void initPostHog(), 1_500);
+if (!isServer) start();
