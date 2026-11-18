@@ -317,6 +317,7 @@ export default function DashboardPage() {
       }),
     onMutate: async () => {
       setSettingsError(null);
+
       const restore = await optimisticUpdate<{ name: string; description?: string | null }>(
         queryClient,
         enterpriseKeys.dashboard(params.tenantId, params.dashboardId),
@@ -340,6 +341,7 @@ export default function DashboardPage() {
       enterprise.patchDashboard(params.tenantId, params.dashboardId, { isDefault: true }),
     onMutate: async () => {
       setMakeDefaultError(null);
+
       const restores = await Promise.all([
         optimisticUpdate<{ isDefault?: boolean }>(
           queryClient,
@@ -376,6 +378,7 @@ export default function DashboardPage() {
     mutationFn: () => enterprise.deleteDashboard(params.tenantId, params.dashboardId),
     onMutate: async () => {
       setRemoveDashboardError(null);
+
       const restore = await optimisticUpdate<{ dashboards: { id: string }[] }>(
         queryClient,
         enterpriseKeys.dashboards(params.tenantId),
@@ -452,6 +455,7 @@ export default function DashboardPage() {
       // painted from the form. Both paths close the dialog on submit.
       if (!existing) {
         setEditorOpen(false);
+
         return;
       }
 
@@ -496,6 +500,7 @@ export default function DashboardPage() {
       enterprise.deleteDashboardWidget(params.tenantId, params.dashboardId, widget.id),
     onMutate: async (widget) => {
       setRemoveWidgetError(null);
+
       const restore = await optimisticUpdate<{ widgets: DashboardWidget[] }>(
         queryClient,
         enterpriseKeys.dashboard(params.tenantId, params.dashboardId),

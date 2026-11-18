@@ -453,6 +453,7 @@ export function EntityActions(props: {
             // Unenrolment moves an enrolled device to `unenrolling`; show that
             // immediately and restore the row if the command is rejected.
             const selectedIds = new Set(selected.map((row) => row.id));
+
             const restore = await optimisticallyUpdateDeviceSearch(
               qc,
               params.tenantId!,

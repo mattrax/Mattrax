@@ -74,6 +74,7 @@ export default function DashboardsPage() {
     mutationFn: (id: string) => enterprise.patchDashboard(params.tenantId, id, { isDefault: true }),
     onMutate: async (id) => {
       setMakeDefaultError(null);
+
       const restore = await optimisticUpdate<{ dashboards: { id: string; isDefault?: boolean }[] }>(
         queryClient,
         enterpriseKeys.dashboards(params.tenantId),
@@ -103,6 +104,7 @@ export default function DashboardsPage() {
     mutationFn: (id: string) => enterprise.deleteDashboard(params.tenantId, id),
     onMutate: async (id) => {
       setRemoveError(null);
+
       const restore = await optimisticUpdate<{ dashboards: { id: string }[] }>(
         queryClient,
         enterpriseKeys.dashboards(params.tenantId),

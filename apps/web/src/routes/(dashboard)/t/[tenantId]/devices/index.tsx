@@ -102,7 +102,7 @@ export const route = {
     intent,
   }: {
     params: { tenantId?: string };
-    location: { query: Record<string, unknown> };
+    location: { query: Record<string, string | string[] | undefined> };
     intent: string;
   }) => {
     const tenantId = params.tenantId;
