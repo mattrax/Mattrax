@@ -82,6 +82,7 @@ const healthClass = (value: string | null | undefined) =>
   Match.value(value).pipe(
     Match.when("healthy", () => "text-success"),
     Match.when("attention", () => "text-warning"),
+    Match.when("missing", () => "text-info"),
     Match.when("critical", () => "text-destructive"),
     Match.orElse(() => "text-muted-foreground"),
   );

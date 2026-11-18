@@ -299,7 +299,8 @@ the API for support rather than being shown as an unexplained integer.
 - Pre-registrations are not consumed: enrollment has no hardware serial to match.
 - Federated Entra enrollment and Autopilot OOBE are fixture-tested, not validated on real
   hardware.
-- There is no compliance engine; device health is derived from enrollment and staleness.
+- There is no compliance engine; device health is derived from enrollment and check-in age
+  (stale after 7 days, MIA after 14, auto-unenrolled after 30 by default).
 
 ## API endpoints
 

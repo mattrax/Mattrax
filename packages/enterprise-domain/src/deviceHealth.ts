@@ -12,6 +12,26 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export const DEVICE_STALE_AFTER_DAYS = 7;
 
 /**
+ * Default age after which an enrolled device is MIA (missing in action).
+ *
+ * Timeline and precedence:
+ *
+ * - 7 days (`DEVICE_STALE_AFTER_DAYS`): stale. The device stays `attention`
+ *   and gains a `stale` reason.
+ * - 14 days (`DEVICE_MISSING_AFTER_DAYS`): MIA. An **enrolled** device that has
+ *   not checked in gets the `missing` level, replacing the stale reason.
+ * - 30 days: daily maintenance unenrols it, which reads `critical` and is never
+ *   MIA.
+ *
+ * `unenrolled`/`unenrolling` always win over MIA, so a retired device never
+ * looks missing. A `critical` reason (for example an unenrolled status or a
+ * full disk) still outranks MIA; `missing` outranks every warning/attention
+ * reason. A device that has never checked in stays `attention` rather than
+ * MIA because there is no check-in age to measure.
+ */
+export const DEVICE_MISSING_AFTER_DAYS = 14;
+
+/**
  * How long an escrow answer is trusted before the page warns that recovery-key
  * status may have moved. Apple re-wraps the key only when FileVault rotates it,
  * so this tracks the last confirmation, not the key's age.
@@ -91,6 +111,8 @@ export type DeviceHealthInput = {
   /** Injectable clock so the derivation stays pure and testable. */
   readonly now?: Date;
   readonly staleAfterDays?: number;
+  /** Age at which a still-enrolled device becomes MIA. Defaults to 14 days. */
+  readonly missingAfterDays?: number;
 };
 
 /** The `mdm.app` fields health uses: Apple's install state per app. */
@@ -266,11 +288,19 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
   const staleAfterDays =
     input.staleAfterDays === undefined ? DEVICE_STALE_AFTER_DAYS : input.staleAfterDays;
 
+  const missingAfterDays =
+    input.missingAfterDays === undefined ? DEVICE_MISSING_AFTER_DAYS : input.missingAfterDays;
+
   const lastSeen = parseDate(input.lastSeenAt);
   const lastSeenAt = lastSeen ? lastSeen.toISOString() : null;
-  const stale = lastSeen ? now.getTime() - lastSeen.getTime() > staleAfterDays * MS_PER_DAY : false;
+  const age = lastSeen ? now.getTime() - lastSeen.getTime() : null;
+  const stale = age !== null && age > staleAfterDays * MS_PER_DAY;
   const reasons: DeviceHealthReason[] = [];
   const status = input.status?.trim();
+
+  // Only an enrolled device can be MIA. Once maintenance retires it the
+  // `unenrolled` status and its critical reason take precedence.
+  const missing = age !== null && age > missingAfterDays * MS_PER_DAY && status === "enrolled";
 
   if (!status) {
     reasons.push(reason("status_unknown", "Enrollment status is unknown", "info"));
@@ -294,6 +324,16 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
 
   if (!lastSeen) {
     reasons.push(reason("never_seen", "Device has never checked in", "warning"));
+  } else if (missing) {
+    // One reason, not stale plus missing: the badge and fleet grouping should
+    // say MIA once rather than counting the device twice.
+    reasons.push(
+      reason(
+        "missing",
+        `Device has not checked in for more than ${missingAfterDays} days and is still enrolled`,
+        "warning",
+      ),
+    );
   } else if (stale && status !== "unenrolled" && status !== "unenrolling") {
     reasons.push(
       reason(
@@ -504,17 +544,26 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     );
   }
 
-  return { level: healthLevel(status, reasons), reasons, lastSeenAt, stale };
+  return { level: healthLevel(status, reasons, missing), reasons, lastSeenAt, stale };
 };
 
-/** Severity of the worst reason, with unknown device status dominating. */
+/**
+ * Severity of the worst reason, with unknown device status dominating.
+ *
+ * Precedence: unknown status, then critical (including an unenrolled status),
+ * then MIA, then warnings/attention, then healthy. MIA therefore reads
+ * differently from both a merely stale device and a retired one.
+ */
 const healthLevel = (
   status: string | undefined,
   reasons: ReadonlyArray<DeviceHealthReason>,
+  missing: boolean,
 ): DeviceHealthLevel => {
   if (!status || !KNOWN_STATUSES.has(status)) return "unknown";
 
   if (reasons.some((item) => item.severity === "critical")) return "critical";
+
+  if (missing) return "missing";
 
   if (reasons.some((item) => item.severity === "warning")) return "attention";
 
@@ -530,6 +579,7 @@ export const countDeviceHealth = (
     healthy: 0,
     attention: 0,
     critical: 0,
+    missing: 0,
     stale: 0,
     unknown: 0,
   };
@@ -552,6 +602,7 @@ const REASON_GROUP_LABELS = new Map<string, string>([
   ["awaiting_configuration", "Awaiting setup"],
   ["never_seen", "Never checked in"],
   ["stale", "Not checking in"],
+  ["missing", "MIA"],
   ["declaration_invalid", "Policy not applied"],
   ["declaration_inactive", "Policy inactive"],
   ["disk_critical", "Storage full"],

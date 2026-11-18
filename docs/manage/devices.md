@@ -79,7 +79,7 @@ Query parameters:
 | `groupId`            | Group id                                                                |
 | `notSeenSince`       | ISO timestamp                                                           |
 | `staleDays`          | Integer                                                                 |
-| `health`             | `healthy`, `attention`, `critical`, `unknown`, `stale`                  |
+| `health`             | `healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`       |
 | `push`               | `failing`, `invalid`                                                    |
 | `setup`              | `awaiting` (ADE held in Setup Assistant), `complete`                    |
 | `limit` / `offset`   | Pagination                                                              |
@@ -90,11 +90,29 @@ Query parameters:
 
 ## Health in the list
 
-The **Health** column shows each device's derived rollup (healthy, attention, critical,
-unknown) using the same computation as the health filter, the fleet summary and the
-device page. Reasons are not a separate request: hovering or focusing the badge lists
+The **Health** column shows each device's derived rollup (healthy, attention, **MIA**,
+critical, unknown) using the same computation as the health filter, the fleet summary and
+the device page. Reasons are not a separate request: hovering or focusing the badge lists
 the rule labels that pulled the device out of `healthy` (for example "FileVault off" or
-"No check-in for 14 days"). Devices with no reasons show a quiet badge with no tooltip.
+"Device has not checked in for more than 14 days and is still enrolled"). Devices with no
+reasons show a quiet badge with no tooltip.
+
+MIA (missing in action) is a distinct state between stale and unenrolled. The check-in
+timeline is:
+
+| Check-in age | State                                                                     |
+| ------------ | ------------------------------------------------------------------------- |
+| ≤ 7 days     | Healthy unless another rule applies.                                      |
+| > 7 days     | **Stale** — `attention`, with a `stale` reason.                           |
+| > 14 days    | **MIA** — the `missing` level, still enrolled.                            |
+| > 30 days    | Daily maintenance unenrols the device, so it reads `critical`, never MIA. |
+
+Precedence is fixed: an unknown enrollment status wins; then `critical` (including an
+unenrolled device or a critical rule such as a full disk); then MIA; then warnings
+(`attention`); then `healthy`. An `unenrolled`/`unenrolling` device is never MIA, and a
+device that has never checked in stays `attention` because there is no check-in age to
+measure. `stale` remains the broad "not checking in" filter and includes MIA devices;
+`health is missing` matches only the MIA level.
 
 Health is derived from declarations and inventory fields, not stored on the device row.
 The list therefore computes it once per response:
@@ -102,11 +120,15 @@ The list therefore computes it once per response:
 - `/devices/search` reads the declarations for the page it is returning (one query) and
   attaches `health` to every row.
 - Sorting by `health` is a server sort. Ascending lists the worst devices first —
-  `critical`, `attention`, `unknown`, `healthy` — so it matches the "needs attention"
-  filter and the dashboard's health counts. The two agree because both call the same
-  rollup.
+  `critical`, `missing`, `attention`, `unknown`, `healthy` — so it matches the "needs
+  attention" filter and the dashboard's health counts. The two agree because both call the
+  same rollup.
 - `GET /devices` (the unpaginated listing) omits `health` to avoid reading declarations
   for an entire fleet; use the search endpoint when the field is needed.
+
+The tenant overview also shows a dismissible **MIA** banner when one or more enrolled
+devices are MIA, linking to the `?health=missing` device list. Dismissal lasts for the
+browser session, so the warning is proactive without blocking the page.
 
 ## Export
 

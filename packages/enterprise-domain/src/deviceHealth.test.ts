@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEVICE_MISSING_AFTER_DAYS,
   DEVICE_SECURITY_INFO_STALE_AFTER_DAYS,
+  DEVICE_STALE_AFTER_DAYS,
   deriveDeviceHealth,
   isWindowsDevice,
   type DeviceHealthInput,
 } from "./deviceHealth.ts";
 
 const now = new Date("2026-01-01T12:00:00Z");
+
+const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
 const windows = (overrides: Partial<DeviceHealthInput> = {}) =>
   deriveDeviceHealth({
@@ -201,5 +205,110 @@ describe("Apple compliance status health", () => {
     expect(codes(apple({ recoveryKeyUpdatedAt: now, securityInfoUpdatedAt: now }))).not.toContain(
       "security_info_stale",
     );
+  });
+});
+
+describe("MIA device health", () => {
+  const enrolled = (days: number, overrides: Partial<DeviceHealthInput> = {}) =>
+    deriveDeviceHealth({
+      status: "enrolled",
+      lastSeenAt: daysAgo(days),
+      now,
+      ...overrides,
+    });
+
+  it("walks the stale and MIA boundaries in order", () => {
+    const atStaleBoundary = enrolled(DEVICE_STALE_AFTER_DAYS);
+
+    expect(atStaleBoundary.stale).toBe(false);
+    expect(atStaleBoundary.level).toBe("healthy");
+
+    const justStale = enrolled(DEVICE_STALE_AFTER_DAYS + 0.1);
+
+    expect(justStale.stale).toBe(true);
+    expect(justStale.level).toBe("attention");
+    expect(codes(justStale)).toContain("stale");
+    expect(codes(justStale)).not.toContain("missing");
+
+    const atMiaBoundary = enrolled(DEVICE_MISSING_AFTER_DAYS);
+
+    expect(atMiaBoundary.level).toBe("attention");
+    expect(codes(atMiaBoundary)).toContain("stale");
+    expect(codes(atMiaBoundary)).not.toContain("missing");
+
+    // MIA replaces the stale reason rather than adding to it.
+    const justMia = enrolled(DEVICE_MISSING_AFTER_DAYS + 0.1);
+
+    expect(justMia.stale).toBe(true);
+    expect(justMia.level).toBe("missing");
+    expect(codes(justMia)).toEqual(["missing"]);
+  });
+
+  it("stays MIA through 29 and 30 days until maintenance retires the device", () => {
+    for (const days of [29, 30]) {
+      const summary = enrolled(days);
+
+      expect(summary.level).toBe("missing");
+      expect(summary.stale).toBe(true);
+      expect(codes(summary)).toEqual(["missing"]);
+    }
+  });
+
+  it("never calls a retired or transitioning device MIA", () => {
+    const unenrolled = deriveDeviceHealth({
+      status: "unenrolled",
+      lastSeenAt: daysAgo(30),
+      now,
+    });
+
+    expect(unenrolled.level).toBe("critical");
+    expect(codes(unenrolled)).toEqual(["enrollment_unenrolled"]);
+
+    const unenrolling = deriveDeviceHealth({
+      status: "unenrolling",
+      lastSeenAt: daysAgo(20),
+      now,
+    });
+
+    expect(unenrolling.level).toBe("attention");
+    expect(codes(unenrolling)).not.toContain("missing");
+
+    const enrolling = deriveDeviceHealth({
+      status: "enrolling",
+      lastSeenAt: daysAgo(20),
+      now,
+    });
+
+    expect(enrolling.level).toBe("attention");
+    expect(codes(enrolling)).toContain("stale");
+    expect(codes(enrolling)).not.toContain("missing");
+  });
+
+  it("keeps a never-seen device out of MIA", () => {
+    const summary = deriveDeviceHealth({ status: "enrolled", lastSeenAt: null, now });
+
+    expect(summary.level).toBe("attention");
+    expect(codes(summary)).toEqual(["never_seen"]);
+  });
+
+  it("lets a critical reason outrank MIA", () => {
+    const summary = enrolled(20, {
+      proto: "windows",
+      osEdition: "Windows 11 Pro",
+      diskTotal: 100,
+      diskUsed: 99,
+    });
+
+    expect(summary.level).toBe("critical");
+    expect(codes(summary)).toContain("disk_critical");
+    expect(codes(summary)).toContain("missing");
+  });
+
+  it("supports a configurable MIA threshold", () => {
+    const summary = enrolled(15, { missingAfterDays: 20 });
+
+    expect(summary.level).toBe("attention");
+    expect(codes(summary)).toContain("stale");
+    expect(codes(summary)).not.toContain("missing");
   });
 });

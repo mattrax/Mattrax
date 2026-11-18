@@ -67,15 +67,15 @@ no `none` condition may match. An empty rule set matches nothing.
 
 ### Fields and operators
 
-| Field                      | Operators                                               |
-| -------------------------- | ------------------------------------------------------- |
-| `platform` (alias `proto`) | `eq`                                                    |
-| `osVersion`                | `eq`, `lt`, `lte`, `gt`, `gte` (numeric dotted compare) |
-| `model`                    | `contains`, `eq` (case-insensitive)                     |
-| `serial`                   | `prefix`, `eq`                                          |
-| `assetTag`                 | `prefix`, `eq`                                          |
-| `staleDays`                | `eq`, `lt`, `lte`, `gt`, `gte` (default `gte`)          |
-| `health`                   | `eq` (`healthy`, `attention`, `critical`, `unknown`)    |
+| Field                      | Operators                                                                |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `platform` (alias `proto`) | `eq`                                                                     |
+| `osVersion`                | `eq`, `lt`, `lte`, `gt`, `gte` (numeric dotted compare)                  |
+| `model`                    | `contains`, `eq` (case-insensitive)                                      |
+| `serial`                   | `prefix`, `eq`                                                           |
+| `assetTag`                 | `prefix`, `eq`                                                           |
+| `staleDays`                | `eq`, `lt`, `lte`, `gt`, `gte` (default `gte`)                           |
+| `health`                   | `eq` (`healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`) |
 
 Missing device values never match.
 

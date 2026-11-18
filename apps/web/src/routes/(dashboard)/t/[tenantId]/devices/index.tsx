@@ -127,6 +127,7 @@ const statusMeta = {
 const healthMeta = {
   healthy: { variant: "success", dot: "success", label: "Healthy" },
   attention: { variant: "warning", dot: "warning", label: "Attention" },
+  missing: { variant: "info", dot: "info", label: "MIA" },
   critical: { variant: "destructive", dot: "destructive", label: "Critical" },
   unknown: { variant: "outline", dot: "neutral", label: "Unknown" },
 } as const;
@@ -182,7 +183,9 @@ function DeviceHealthTag(props: { level: string; reasons?: ReadonlyArray<HealthR
           {badge()}
         </TooltipTrigger>
         <TooltipContent>
-          <p class="text-[11px] font-medium">Why {meta().label.toLowerCase()}</p>
+          <p class="text-[11px] font-medium">
+            Why {meta().label === "MIA" ? "MIA" : meta().label.toLowerCase()}
+          </p>
           <ul class="mt-1 space-y-0.5 text-[11.5px]">
             <For each={props.reasons ?? []}>{(reason) => <li>{reason.label}</li>}</For>
           </ul>
@@ -677,6 +680,7 @@ export default function DevicesPage() {
         options: [
           { value: "healthy", label: "Healthy" },
           { value: "attention", label: "Attention" },
+          { value: "missing", label: "MIA (still enrolled)" },
           { value: "critical", label: "Critical" },
           { value: "stale", label: "Stale" },
           { value: "unknown", label: "Unknown" },
@@ -820,7 +824,7 @@ export default function DevicesPage() {
         setHealth(
           Option.getOrUndefined(
             Schema.decodeUnknownOption(
-              Schema.Literals(["healthy", "attention", "critical", "unknown", "stale"]),
+              Schema.Literals(["healthy", "attention", "missing", "critical", "unknown", "stale"]),
             )(value),
           ) ?? "",
         );

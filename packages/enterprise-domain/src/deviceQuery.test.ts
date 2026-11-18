@@ -97,6 +97,30 @@ describe("device query", () => {
     ).toBe(true);
   });
 
+  it("filters MIA separately from stale", () => {
+    const mia = device({ health: { level: "missing", stale: true } });
+    const staleOnly = device({ health: { level: "attention", stale: true } });
+
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", value: "missing" }] }, mia, { now }),
+    ).toBe(true);
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", value: "missing" }] }, staleOnly, { now }),
+    ).toBe(false);
+
+    // The stale filter stays the broad "not checking in" filter.
+    expect(evaluateDeviceQuery({ all: [{ field: "health", value: "stale" }] }, mia, { now })).toBe(
+      true,
+    );
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", value: "stale" }] }, staleOnly, { now }),
+    ).toBe(true);
+
+    expect(
+      evaluateDeviceQuery({ all: [{ field: "health", op: "ne", value: "missing" }] }, mia, { now }),
+    ).toBe(false);
+  });
+
   it("round-trips a shareable URL query", () => {
     const query = parseDeviceQueryText(
       'platform is apple and osVersion at least 14.4 and model contains "MacBook Pro" and staleDays at least 14',
@@ -107,6 +131,14 @@ describe("device query", () => {
     expect(evaluateDeviceQuery(query, device({ model: "MacBook Pro 16" }), { now })).toBe(false);
     const text = formatDeviceQueryText(query);
     expect(parseDeviceQueryText(text)).toEqual(query);
+  });
+
+  it("round-trips the MIA health filter", () => {
+    const query = parseDeviceQueryText("health is missing");
+
+    expect(query).not.toBeNull();
+    expect(formatDeviceQueryText(query)).toBe("health is missing");
+    expect(parseDeviceQueryText(formatDeviceQueryText(query))).toEqual(query);
   });
 
   it("ignores clauses it cannot understand instead of failing the page", () => {

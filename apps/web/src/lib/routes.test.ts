@@ -81,6 +81,10 @@ describe("device search codecs", () => {
     });
   });
 
+  it("keeps the MIA health filter", () => {
+    expect(decodeDeviceSearchParams({ health: "missing" })).toEqual({ health: "missing" });
+  });
+
   it("keeps the documented filter fields", () => {
     expect(
       decodeDeviceSearchParams({

@@ -64,6 +64,7 @@ export const DEVICE_PROTOCOLS = ["apple", "win", "android"] as const;
 export const DEVICE_HEALTH_FILTERS = [
   "healthy",
   "attention",
+  "missing",
   "critical",
   "unknown",
   "stale",

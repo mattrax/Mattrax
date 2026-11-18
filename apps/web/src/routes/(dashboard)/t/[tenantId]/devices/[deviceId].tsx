@@ -151,6 +151,7 @@ const statusMeta = {
 const healthMeta = {
   healthy: { variant: "success", dot: "success", label: "Healthy" },
   attention: { variant: "warning", dot: "warning", label: "Attention" },
+  missing: { variant: "info", dot: "info", label: "MIA" },
   critical: { variant: "destructive", dot: "destructive", label: "Critical" },
   unknown: { variant: "outline", dot: "neutral", label: "Unknown" },
 } as const;
@@ -2032,7 +2033,15 @@ export default function DeviceDetailPage() {
                           <div class="space-y-2">
                             <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
                               Last seen {formatDeviceDate(health.data!.health.lastSeenAt)}
-                              <Show when={health.data!.health.stale}>
+                              <Show when={health.data!.health.level === "missing"}>
+                                <Chip tone="brand">MIA</Chip>
+                              </Show>
+                              <Show
+                                when={
+                                  health.data!.health.stale &&
+                                  health.data!.health.level !== "missing"
+                                }
+                              >
                                 <Chip tone="warning">Stale</Chip>
                               </Show>
                             </p>

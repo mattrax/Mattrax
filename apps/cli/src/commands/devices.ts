@@ -70,10 +70,14 @@ const list = Command.make(
       Flag.withDescription("Only members of this group (id or exact name)"),
       Flag.optional,
     ),
-    health: Flag.Literals("health", ["healthy", "attention", "critical", "unknown", "stale"]).pipe(
-      Flag.withDescription("Only devices with this derived health level"),
-      Flag.optional,
-    ),
+    health: Flag.Literals("health", [
+      "healthy",
+      "attention",
+      "missing",
+      "critical",
+      "unknown",
+      "stale",
+    ]).pipe(Flag.withDescription("Only devices with this derived health level"), Flag.optional),
     limit: Flag.Int("limit").pipe(
       Flag.withDescription("Page size (the API caps it at 200)"),
       Flag.withDefault(50),

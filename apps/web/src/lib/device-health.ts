@@ -7,20 +7,25 @@
  * worst devices first, which is the same order the "needs attention" filter and
  * the fleet summary use.
  */
-export const HEALTH_LEVELS = ["critical", "attention", "unknown", "healthy"] as const;
+export const HEALTH_LEVELS = ["critical", "missing", "attention", "unknown", "healthy"] as const;
 
 export type HealthLevel = (typeof HEALTH_LEVELS)[number];
 
 const RANK: Record<HealthLevel, number> = {
   critical: 0,
-  attention: 1,
-  unknown: 2,
-  healthy: 3,
+  missing: 1,
+  attention: 2,
+  unknown: 3,
+  healthy: 4,
 };
 
 /** Unknown levels sort with `unknown` rather than above `healthy`. */
 export const healthRank = (level: string | undefined | null): number =>
-  level === "critical" || level === "attention" || level === "unknown" || level === "healthy"
+  level === "critical" ||
+  level === "missing" ||
+  level === "attention" ||
+  level === "unknown" ||
+  level === "healthy"
     ? RANK[level]
     : RANK.unknown;
 
@@ -29,6 +34,8 @@ export const healthLabel = (level: string | undefined | null): string => {
   switch (level) {
     case "critical":
       return "Critical";
+    case "missing":
+      return "MIA";
     case "attention":
       return "Attention";
     case "healthy":
@@ -36,4 +43,18 @@ export const healthLabel = (level: string | undefined | null): string => {
     default:
       return "Unknown";
   }
+};
+
+/**
+ * How many MIA devices a proactive banner should report.
+ *
+ * The API counts enrolled devices past the 14-day MIA threshold in
+ * `counts.missing`; an absent rollup (still loading, or no permission) is zero.
+ */
+export const missingDeviceCount = (
+  counts: { readonly missing?: number } | null | undefined,
+): number => {
+  const count = counts?.missing ?? 0;
+
+  return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0;
 };

@@ -61,13 +61,13 @@ with the write and avoids similar stale reads on policy and membership changes.
 
 ## Billing
 
-| Variable                         | Purpose                           |
-| -------------------------------- | --------------------------------- |
-| `STRIPE_SECRET_KEY`              | Stripe API key                    |
-| `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature          |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan |
+| Variable                         | Purpose                                              |
+| -------------------------------- | ---------------------------------------------------- |
+| `STRIPE_SECRET_KEY`              | Stripe API key                                       |
+| `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature                             |
+| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan                    |
 | `STRIPE_LICENSE_PRICE_ID`        | Per-device price for self-hosted deployment licences |
-| `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue          |
+| `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue                             |
 
 All are optional. Without them billing reports `configured: false`.
 
@@ -125,15 +125,20 @@ Without the service account, Android endpoints return `EnterpriseNotConfigured`.
 
 ## Maintenance
 
-| Variable                                | Default | Purpose                           |
-| --------------------------------------- | ------- | --------------------------------- |
-| `MAINTENANCE_STALE_DEVICE_DAYS`         | `30`    | Mark devices stale                |
-| `MAINTENANCE_AUDIT_RETENTION_DAYS`      | `365`   | `0` keeps forever                 |
-| `MAINTENANCE_BACKUP_RETENTION_DAYS`     | `30`    | `0` keeps forever                 |
-| `MAINTENANCE_BACKUP_CONCURRENCY`        | `4`     | Tenants backed up at once         |
-| `MAINTENANCE_ENTRA_SYNC_CONCURRENCY`    | `2`     | Tenants synced at once            |
-| `MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY`  | `4`     | Outbox deliveries in flight       |
-| `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` | `5`     | Attempts before permanent failure |
+| Variable                                | Default | Purpose                                          |
+| --------------------------------------- | ------- | ------------------------------------------------ |
+| `MAINTENANCE_STALE_DEVICE_DAYS`         | `30`    | Auto-unenrol devices not seen for this many days |
+| `MAINTENANCE_AUDIT_RETENTION_DAYS`      | `365`   | `0` keeps forever                                |
+| `MAINTENANCE_BACKUP_RETENTION_DAYS`     | `30`    | `0` keeps forever                                |
+| `MAINTENANCE_BACKUP_CONCURRENCY`        | `4`     | Tenants backed up at once                        |
+| `MAINTENANCE_ENTRA_SYNC_CONCURRENCY`    | `2`     | Tenants synced at once                           |
+| `MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY`  | `4`     | Outbox deliveries in flight                      |
+| `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` | `5`     | Attempts before permanent failure                |
+
+Device health uses fixed thresholds ahead of the auto-unenrol sweep: stale after 7 days
+(`attention`) and MIA after 14 days (still enrolled). `MAINTENANCE_STALE_DEVICE_DAYS` must
+stay above 14 for MIA to be observable; the default 30 retires the device after both
+states. If this is lowered below 14, maintenance unenrols devices before they can be MIA.
 
 ## Transactional email
 
@@ -160,16 +165,16 @@ an outage delays mail instead of failing the request or losing the message.
 
 Transport selection is explicit:
 
-| Variable                 | Purpose                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------- |
-| `MAIL_TRANSPORT`         | `smtp`, `cloudflare` or `disabled`.                                           |
-| `MAIL_FROM`              | Verified sender, e.g. `Mattrax <notifications@example.com>`.                  |
-| `MAIL_SMTP_HOST`         | SMTP server for `MAIL_TRANSPORT=smtp`.                                        |
-| `MAIL_SMTP_PORT`         | SMTP port; defaults to 587, or 465 with `MAIL_SMTP_SECURE`.                   |
-| `MAIL_SMTP_SECURE`       | `true` for implicit TLS instead of STARTTLS.                                  |
-| `MAIL_SMTP_USER`         | SMTP AUTH username.                                                           |
-| `MAIL_SMTP_PASSWORD`     | SMTP AUTH password.                                                           |
-| `MAIL_SMTP_HELO`         | EHLO name; defaults to the runtime hostname.                                  |
+| Variable             | Purpose                                                      |
+| -------------------- | ------------------------------------------------------------ |
+| `MAIL_TRANSPORT`     | `smtp`, `cloudflare` or `disabled`.                          |
+| `MAIL_FROM`          | Verified sender, e.g. `Mattrax <notifications@example.com>`. |
+| `MAIL_SMTP_HOST`     | SMTP server for `MAIL_TRANSPORT=smtp`.                       |
+| `MAIL_SMTP_PORT`     | SMTP port; defaults to 587, or 465 with `MAIL_SMTP_SECURE`.  |
+| `MAIL_SMTP_SECURE`   | `true` for implicit TLS instead of STARTTLS.                 |
+| `MAIL_SMTP_USER`     | SMTP AUTH username.                                          |
+| `MAIL_SMTP_PASSWORD` | SMTP AUTH password.                                          |
+| `MAIL_SMTP_HELO`     | EHLO name; defaults to the runtime hostname.                 |
 
 Hosted Mattrax uses the Cloudflare `send_email` binding when `MAIL_TRANSPORT`
 is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defaults to `hello@mattrax.cloud` there, and

@@ -4935,7 +4935,7 @@ export const createEnterpriseService = ({
   const groupBucketOrder = (groupBy: string | undefined): ReadonlyArray<string> | undefined => {
     switch (groupBy) {
       case "health":
-        return ["Healthy", "Attention", "Critical", "Unknown"];
+        return ["Healthy", "Attention", "Missing", "Critical", "Unknown"];
       case "platform":
         return ["Apple", "Windows", "Android", "Unknown"];
       default:
@@ -13621,7 +13621,13 @@ export const createEnterpriseService = ({
           rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null),
         );
 
-        const levelRank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
+        const levelRank = {
+          critical: 0,
+          missing: 1,
+          attention: 2,
+          unknown: 3,
+          healthy: 4,
+        } as const;
 
         const attention = devices
           .map((device: EnterpriseDevice, index: number) => ({
@@ -16333,7 +16339,9 @@ export const createEnterpriseService = ({
               case "status":
                 return snapshot.row.status;
               case "health":
-                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
+                return { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 }[
+                  snapshot.health.level
+                ];
               case "activation":
                 return activationSortRank(snapshot.row.windowsActivationStatus);
               default:
@@ -16402,7 +16410,7 @@ export const createEnterpriseService = ({
         if (filters.sort === "health") {
           const matches = yield* db.select().from(schema.device).where(where);
           const health = yield* deviceHealthFor(matches);
-          const rank = { critical: 0, attention: 1, unknown: 2, healthy: 3 } as const;
+          const rank = { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 } as const;
           const direction = filters.direction === "desc" ? -1 : 1;
 
           matches.sort((left, right) => {
@@ -16907,7 +16915,9 @@ export const createEnterpriseService = ({
               case "status":
                 return snapshot.row.status;
               case "health":
-                return { critical: 0, attention: 1, unknown: 2, healthy: 3 }[snapshot.health.level];
+                return { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 }[
+                  snapshot.health.level
+                ];
               case "activation":
                 return activationSortRank(snapshot.row.windowsActivationStatus);
               default:

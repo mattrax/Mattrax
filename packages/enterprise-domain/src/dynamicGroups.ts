@@ -15,6 +15,7 @@ export type { DeviceQueryEvaluationOptions };
 export const DynamicGroupHealthLevel = Schema.Literals([
   "healthy",
   "attention",
+  "missing",
   "critical",
   "unknown",
 ]);

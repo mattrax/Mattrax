@@ -525,7 +525,18 @@ export const DeviceDeclarationsResponse = Schema.Struct({
   declarations: Schema.Array(DeviceDeclarationInfo),
 });
 
-export const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
+/**
+ * Derived health rollup. `missing` is the MIA state: the device is still
+ * enrolled but has not checked in for the MIA threshold (14 days), which sits
+ * between `attention` (stale at 7 days) and the 30-day auto-unenrol.
+ */
+export const DeviceHealthLevel = Schema.Literals([
+  "healthy",
+  "attention",
+  "missing",
+  "critical",
+  "unknown",
+]);
 
 export type DeviceHealthLevel = typeof DeviceHealthLevel.Type;
 
@@ -713,7 +724,12 @@ export const DeviceHealthCounts = Schema.Struct({
   healthy: Schema.Number,
   attention: Schema.Number,
   critical: Schema.Number,
-  /** Devices past the stale threshold, regardless of their health level. */
+  /** Enrolled devices past the MIA threshold (14 days without a check-in). */
+  missing: Schema.Number,
+  /**
+   * Devices past the stale threshold (7 days), regardless of their health
+   * level. MIA devices are stale too, so this count includes `missing`.
+   */
   stale: Schema.Number,
   unknown: Schema.Number,
 });

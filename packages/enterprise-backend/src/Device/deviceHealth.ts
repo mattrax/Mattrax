@@ -4,6 +4,7 @@
  * Re-exported here to keep the existing backend import path stable.
  */
 export {
+  DEVICE_MISSING_AFTER_DAYS,
   DEVICE_STALE_AFTER_DAYS,
   countDeviceHealth,
   declarationReasonLabels,

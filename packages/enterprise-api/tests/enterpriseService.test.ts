@@ -2638,6 +2638,7 @@ describe("enterprise service APNs", () => {
       healthy: 0,
       attention: 2,
       critical: 0,
+      missing: 0,
       stale: 1,
       unknown: 0,
     });
@@ -2696,6 +2697,31 @@ describe("enterprise service APNs", () => {
       "attention",
       "attention",
     ]);
+
+    // MIA is a distinct level between stale and the auto-unenrol sweep.
+    db.store.device[1].lastSeenAt = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+
+    const miaSummary = await runEffect(service.getDeviceHealthSummary(request(headers), tenant.id));
+
+    expect(miaSummary.counts).toMatchObject({ attention: 1, missing: 1, stale: 1 });
+    expect(miaSummary.devices[0]).toMatchObject({ id: "device-2", level: "missing" });
+
+    const mia = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { health: "missing" }),
+    );
+
+    expect(mia.total).toBe(miaSummary.counts.missing);
+    expect(mia.devices.map((row: any) => row.id)).toEqual(["device-2"]);
+    expect(mia.devices[0].health.reasons).toContainEqual(
+      expect.objectContaining({ code: "missing" }),
+    );
+
+    // `stale` remains the broader filter and includes the MIA device.
+    const stillStale = await runEffect(
+      service.searchDevices(request(headers), tenant.id, { health: "stale" }),
+    );
+
+    expect(stillStale.devices.map((row: any) => row.id)).toEqual(["device-2"]);
 
     await expect(
       runEffect(service.getDeviceHealth(request(headers), tenant.id, "missing")),

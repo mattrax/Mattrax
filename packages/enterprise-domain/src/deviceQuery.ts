@@ -14,8 +14,19 @@ const DevicePlatform = Schema.Literals(["apple", "win", "android"]);
 
 const DeviceStatusValue = Schema.Literals(["enrolling", "enrolled", "unenrolling", "unenrolled"]);
 
-const DeviceHealthLevel = Schema.Literals(["healthy", "attention", "critical", "unknown"]);
+const DeviceHealthLevel = Schema.Literals([
+  "healthy",
+  "attention",
+  "missing",
+  "critical",
+  "unknown",
+]);
 
+/**
+ * Health filters extend the rollup with `stale`, which matches the stale flag
+ * regardless of level. MIA devices are also stale, so `stale` includes them;
+ * `missing` matches only the MIA level.
+ */
 export type DeviceQueryHealth = typeof DeviceHealthLevel.Type | "stale";
 
 const DeviceFileVault = Schema.Literals(["enabled", "disabled", "unknown"]);

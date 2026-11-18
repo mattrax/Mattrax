@@ -50,10 +50,7 @@ import { cn } from "~/lib/utils";
  * pages start with their own masthead rather than another breadcrumb row. */
 export function Page(props: { children: JSX.Element; class?: string; wide?: boolean }) {
   return (
-    <UIPage
-      wide={props.wide}
-      class={cn("page-enter gap-5 px-4 py-4 sm:px-6 sm:py-5", props.class)}
-    >
+    <UIPage wide={props.wide} class={cn("page-enter gap-5 px-4 py-4 sm:px-6 sm:py-5", props.class)}>
       {props.children}
     </UIPage>
   );
@@ -232,9 +229,7 @@ export function StatCard(props: {
       <div class="flex items-center justify-between gap-2">
         <div class="label-caps truncate">{props.label}</div>
         <Show when={props.icon}>
-          {(icon) => (
-            <span class="text-subtle-foreground">{icon()({ class: "size-3.5" })}</span>
-          )}
+          {(icon) => <span class="text-subtle-foreground">{icon()({ class: "size-3.5" })}</span>}
         </Show>
       </div>
       <div class="mt-1.5 flex items-baseline gap-2">
@@ -473,6 +468,7 @@ const healthStyles = new Map<string, { class: string; label: string }>([
     "attention",
     { class: "border-warning/25 bg-warning/10 text-warning-foreground", label: "Attention" },
   ],
+  ["missing", { class: "border-info/25 bg-info/10 text-info", label: "MIA" }],
   [
     "critical",
     { class: "border-destructive/25 bg-destructive/10 text-destructive", label: "Critical" },
@@ -527,7 +523,9 @@ export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArra
           {badge()}
         </TooltipTrigger>
         <TooltipContent>
-          <p class="text-[11px] font-medium">Why {style().label.toLowerCase()}</p>
+          <p class="text-[11px] font-medium">
+            Why {style().label === "MIA" ? "MIA" : style().label.toLowerCase()}
+          </p>
           <ul class="mt-1 space-y-0.5 text-[11.5px]">
             <For each={reasons()}>{(reason) => <li>{reason.label}</li>}</For>
           </ul>

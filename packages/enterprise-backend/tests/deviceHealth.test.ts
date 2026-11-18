@@ -249,25 +249,44 @@ describe("deriveDeviceHealth", () => {
 });
 
 describe("countDeviceHealth", () => {
-  it("aggregates levels and counts stale devices separately", () => {
+  it("aggregates levels, MIA devices and stale devices separately", () => {
     const health = (status: string, lastSeenAt: Date) =>
       deriveDeviceHealth({ status, lastSeenAt, now });
 
     const counts = countDeviceHealth([
       health("enrolled", daysAgo(1)),
+      health("enrolled", daysAgo(8)),
       health("enrolled", daysAgo(30)),
       health("enrolling", daysAgo(1)),
       health("unenrolled", daysAgo(1)),
     ]);
 
     expect(counts).toEqual({
-      total: 4,
+      total: 5,
       healthy: 1,
       attention: 2,
       critical: 1,
-      stale: 1,
+      missing: 1,
+      // MIA devices are past the stale threshold too, so the stale count
+      // includes both the 8-day attention device and the 30-day MIA device.
+      stale: 2,
       unknown: 0,
     });
+  });
+
+  it("derives the MIA banner count from enrolled devices only", () => {
+    const health = (status: string, lastSeenAt: Date) =>
+      deriveDeviceHealth({ status, lastSeenAt, now });
+
+    const counts = countDeviceHealth([
+      health("enrolled", daysAgo(20)),
+      health("enrolled", daysAgo(18)),
+      health("unenrolled", daysAgo(20)),
+      health("enrolled", daysAgo(2)),
+    ]);
+
+    expect(counts.missing).toBe(2);
+    expect(counts.critical).toBe(1);
   });
 });
 
@@ -304,7 +323,7 @@ describe("groupDeviceHealthReasons", () => {
     expect(groups).toEqual([
       { code: "disk_critical", label: "Storage full", severity: "critical", count: 1 },
       { code: "enrollment_unenrolled", label: "Unenrolled", severity: "critical", count: 1 },
-      { code: "stale", label: "Not checking in", severity: "warning", count: 1 },
+      { code: "missing", label: "MIA", severity: "warning", count: 1 },
     ]);
   });
 

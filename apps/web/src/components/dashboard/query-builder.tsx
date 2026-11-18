@@ -131,6 +131,7 @@ export const QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
     options: [
       { value: "healthy", label: "Healthy" },
       { value: "attention", label: "Attention" },
+      { value: "missing", label: "MIA (missing)" },
       { value: "critical", label: "Critical" },
       { value: "unknown", label: "Unknown" },
       { value: "stale", label: "Stale" },

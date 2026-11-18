@@ -227,26 +227,29 @@ update availability, managed flag and last-reported time.
 
 Health is a derived rollup, not a compliance engine. It evaluates:
 
-| Reason                               | Level    |
-| ------------------------------------ | -------- |
-| `unanrolled`                         | Critical |
-| `unenrolling` / `enrolling`          | Warning  |
-| Never seen                           | Warning  |
-| Stale (default 7 days)               | Warning  |
-| Invalid or inactive DDM declarations | Warning  |
-| Disk ≥ 90%                           | Warning  |
-| Disk ≥ 97%                           | Critical |
-| FileVault disabled on macOS          | Warning  |
-| FileVault on with no escrowed key    | Info     |
-| Security report older than 90 days   | Info     |
-| No passcode / passcode non-compliant | Warning  |
-| Software update failed               | Warning  |
-| Software update pending              | Info     |
-| Management app failed to install     | Warning  |
-| Battery service/replace/poor         | Warning  |
+| Reason                                 | Level    |
+| -------------------------------------- | -------- |
+| `unanrolled`                           | Critical |
+| `unenrolling` / `enrolling`            | Warning  |
+| Never seen                             | Warning  |
+| Stale (default 7 days)                 | Warning  |
+| MIA: enrolled, no check-in for 14 days | MIA      |
+| Invalid or inactive DDM declarations   | Warning  |
+| Disk ≥ 90%                             | Warning  |
+| Disk ≥ 97%                             | Critical |
+| FileVault disabled on macOS            | Warning  |
+| FileVault on with no escrowed key      | Info     |
+| Security report older than 90 days     | Info     |
+| No passcode / passcode non-compliant   | Warning  |
+| Software update failed                 | Warning  |
+| Software update pending                | Info     |
+| Management app failed to install       | Warning  |
+| Battery service/replace/poor           | Warning  |
 
-Levels are `healthy`, `attention`, `critical` and `unknown`. A level change writes
-an audit event and emits `device.compliance_changed`.
+Levels are `healthy`, `attention`, `missing` (MIA), `critical` and `unknown`. MIA only
+applies to an enrolled device; `unenrolled`/`unenrolling` take precedence and a critical
+reason still outranks it. A level change writes an audit event and emits
+`device.compliance_changed`.
 
 Endpoints:
 

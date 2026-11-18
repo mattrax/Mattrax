@@ -140,11 +140,11 @@ describe("csv", () => {
     expect(csvEscape('=HYPERLINK("x")')).toBe('"\'=HYPERLINK(""x"")"');
   });
 
-  it("passes the health filter through", () => {
-    expect(
-      normalizeDeviceSearchQuery({ health: "critical" }, new Date("2026-11-10T12:00:00.000Z"))
-        .health,
-    ).toBe("critical");
+  it("passes the health filters through", () => {
+    const now = new Date("2026-11-10T12:00:00.000Z");
+
+    expect(normalizeDeviceSearchQuery({ health: "critical" }, now).health).toBe("critical");
+    expect(normalizeDeviceSearchQuery({ health: "missing" }, now).health).toBe("missing");
   });
 
   it("passes the push delivery filter through", () => {

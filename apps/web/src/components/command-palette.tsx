@@ -443,6 +443,15 @@ export function CommandPalette() {
         run: go(routes.tenant(id).devices({ health: "stale" })),
       },
       {
+        id: "query-missing",
+        title: "MIA devices",
+        group: "Queries",
+        icon: Laptop,
+        href: routes.tenant(id).devices({ health: "missing" }),
+        keywords: ["mia", "missing", "still enrolled", "not checking in", "table", "filter"],
+        run: go(routes.tenant(id).devices({ health: "missing" })),
+      },
+      {
         id: "query-push-failing",
         title: "Apple push failures",
         group: "Queries",
@@ -519,8 +528,22 @@ export function CommandPalette() {
     const words: string[] = [];
 
     for (const token of rest.split(/\s+/)) {
-      if (["critical", "attention", "warning", "healthy", "unknown", "stale"].includes(token)) {
-        params.set("health", token === "warning" ? "attention" : token);
+      if (
+        [
+          "critical",
+          "attention",
+          "warning",
+          "healthy",
+          "unknown",
+          "stale",
+          "mia",
+          "missing",
+        ].includes(token)
+      ) {
+        params.set(
+          "health",
+          token === "warning" ? "attention" : token === "mia" ? "missing" : token,
+        );
         continue;
       }
 

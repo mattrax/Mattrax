@@ -26,7 +26,13 @@ export const DEVICE_EXPORT_MAX_ROWS = 10_000;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export type DeviceHealthFilter = "healthy" | "attention" | "critical" | "unknown" | "stale";
+export type DeviceHealthFilter =
+  | "healthy"
+  | "attention"
+  | "missing"
+  | "critical"
+  | "unknown"
+  | "stale";
 
 /** APNs delivery state filters for the device list. */
 export type DevicePushFilter = "failing" | "invalid";
