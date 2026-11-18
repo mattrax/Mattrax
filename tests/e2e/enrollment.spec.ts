@@ -267,6 +267,9 @@ test.describe("device enrollment", () => {
     await page.getByLabel("Maximum devices").fill("0");
     await page.getByRole("button", { name: /^save$/i }).click();
     await expect(page.getByLabel("Maximum devices")).toHaveValue("0");
+    // Wait for the save to close the editor before reading the stored value;
+    // the input keeps its typed value while the PATCH is still in flight.
+    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
 
     const enrollment = await api<{ id: string; maxDevices: number }>(
       page,

@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-const SITE_DESCRIPTION =
-  "Enrollment, policy, inventory and remote actions for Apple, Windows and Android fleets, with a clean API, a real audit trail and a deployment model that fits how you work.";
+const LANDING_DESCRIPTION =
+  "Device management for Apple, Windows and Android from one MDM. Native protocols, a readable policy trace, audit export, self-host or cloud. Free in alpha.";
+
+const LANDING_OG_DESCRIPTION =
+  "One control plane for Apple, Windows and Android fleets. Native protocols, a policy trace you can read, and an audit trail you can export. Cloud or self-hosted.";
 
 type ArdEntry = {
   identifier: string;
@@ -65,9 +68,11 @@ test.describe("social metadata", () => {
     const html = await response.text();
     const tags = metaTags(html);
 
-    expect(metaContent(tags, "name", "description")).toBe(SITE_DESCRIPTION);
-    expect(metaContent(tags, "property", "og:title")).toBe("Mattrax");
-    expect(metaContent(tags, "property", "og:description")).toBe(SITE_DESCRIPTION);
+    expect(metaContent(tags, "name", "description")).toBe(LANDING_DESCRIPTION);
+    expect(metaContent(tags, "property", "og:title")).toBe(
+      "Mattrax — device management without the black box",
+    );
+    expect(metaContent(tags, "property", "og:description")).toBe(LANDING_OG_DESCRIPTION);
     expect(metaContent(tags, "property", "og:type")).toBe("website");
     expect(metaContent(tags, "property", "og:url")).toMatch(/^https?:\/\/.+\/$/);
     expect(metaContent(tags, "property", "og:image")).toContain("/assets/brand/og-image.jpg");
@@ -75,6 +80,21 @@ test.describe("social metadata", () => {
 
     const canonical = /<link\b[^>]*rel="canonical"[^>]*>/i.exec(html);
     expect(canonical?.[0]).toMatch(/href="https?:\/\/[^"]+\/"/);
+
+    // The route title is emitted by the head registry (as a tag or a title
+    // script depending on the shell), so assert the string rather than markup.
+    expect(html).toContain("MDM for Apple, Windows and Android fleets | Mattrax");
+
+    // The landing page carries FAQPage data for the six questions it renders.
+    const structuredData = [
+      ...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g),
+    ].map((match) => JSON.parse(match[1]!));
+
+    const faq = structuredData.find((entry) => entry["@type"] === "FAQPage");
+
+    expect(faq, "FAQPage JSON-LD").toBeTruthy();
+    expect(faq.mainEntity).toHaveLength(6);
+    expect(faq.mainEntity[0].name).toMatch(/re-enroll/);
 
     const touchIcon = /<link\b[^>]*rel="apple-touch-icon"[^>]*>/i.exec(html);
     expect(touchIcon?.[0]).toContain("/assets/brand/apple-touch-icon.png");

@@ -69,7 +69,7 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
   return (
     <a
       href={props.href}
-      class={`transition-colors duration-[var(--duration-hover)] ease-swift ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+      class={`rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
       target={props.target}
     >
       {props.label}
@@ -81,7 +81,7 @@ function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
     <a
       href={props.href}
-      class="transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+      class="rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       target={props.target}
     >
       {props.label}
@@ -92,7 +92,7 @@ function FooterLink(props: { href: string; label: string; target?: string }) {
 const navigation = [
   { href: "/#platforms", label: "Platforms" },
   { href: "/#product", label: "Product" },
-  { href: "/#migration", label: "Migration" },
+  { href: "/#security", label: "Security" },
   { href: "/#pricing", label: "Pricing" },
   { href: "/docs/", label: "Docs", target: "_self" },
 ];
@@ -126,7 +126,11 @@ function TopNavigation() {
     <header class="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
       <div class="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between gap-6 px-6 sm:px-8">
         <div class="flex min-w-0 items-center gap-9">
-          <a href="/" class="flex shrink-0 items-center gap-2.5" aria-label="Mattrax home">
+          <a
+            href="/"
+            class="flex shrink-0 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            aria-label="Mattrax home"
+          >
             <BrandLogo class="h-3.5" />
           </a>
 
@@ -168,7 +172,7 @@ function TopNavigation() {
             type="button"
             popovertarget="landing-site-menu"
             aria-label="Open navigation menu"
-            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground md:hidden"
+            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -194,7 +198,7 @@ function TopNavigation() {
                 <a
                   href={item.href}
                   target={item.target}
-                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground"
+                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
                 >
                   {item.label}
                 </a>
@@ -203,7 +207,7 @@ function TopNavigation() {
             <div class="mt-1 border-t border-border p-1">
               <a
                 href={session().data?.user ? "/dashboard" : "/register"}
-                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90"
+                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
               >
                 {session().data?.user ? "Open dashboard" : "Create an account"}
               </a>
@@ -221,7 +225,11 @@ function Footer() {
       <div class="mx-auto w-full max-w-[1200px] px-6 py-14 sm:px-8">
         <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
-            <a href="/" class="flex items-center gap-2.5" aria-label="Mattrax home">
+            <a
+              href="/"
+              class="flex items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              aria-label="Mattrax home"
+            >
               <BrandLogo class="h-3.5" />
             </a>
             <p class="mt-4 max-w-[15rem] text-[12px] leading-5 text-muted-foreground">
@@ -233,7 +241,8 @@ function Footer() {
             title="Product"
             links={[
               { href: "/#platforms", label: "Platforms" },
-              { href: "/#product", label: "Features" },
+              { href: "/#product", label: "Product" },
+              { href: "/#security", label: "Security" },
               { href: "/#pricing", label: "Pricing" },
               { href: "/designer", label: "Policy designer" },
             ]}
@@ -243,7 +252,6 @@ function Footer() {
             links={[
               { href: "/docs/", label: "Documentation", target: "_self" },
               { href: "/docs/api/", label: "REST API", target: "_self" },
-              { href: "/docs/migration/", label: "Migration", target: "_self" },
             ]}
           />
           <FooterColumn
@@ -263,10 +271,7 @@ function Footer() {
 
         <div class="mt-12 flex flex-col gap-3 border-t border-border pt-5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Mattrax Technologies Inc.</p>
-          <p class="flex items-center gap-2">
-            <span class="size-1.5 rounded-full bg-success" aria-hidden="true" />
-            All systems operational
-          </p>
+          <p>AGPL-3.0 source · free during alpha</p>
         </div>
       </div>
     </footer>

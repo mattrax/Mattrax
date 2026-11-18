@@ -1,0 +1,1732 @@
+/*
+ * Landing page.
+ *
+ * Layout, surface and motion for `(landing)/index.tsx` only. The static rules
+ * describe a complete document; every rule that can hide content lives inside
+ * `@media (prefers-reduced-motion: no-preference)` and is gated on `html.js`,
+ * so the server-rendered page is readable without JavaScript and never depends
+ * on a motion token to be legible.
+ */
+
+.lx-page {
+  --lx-max: 1200px;
+  --lx-gutter: clamp(20px, 4vw, 32px);
+  --lx-header: 56px;
+  --lx-fast: 180ms;
+  --lx-base: 320ms;
+  --lx-slow: 560ms;
+  --lx-stagger: 26ms;
+
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.lx-shell {
+  width: 100%;
+  max-width: var(--lx-max);
+  margin-inline: auto;
+  padding-inline: var(--lx-gutter);
+}
+
+.lx-section {
+  padding-block: clamp(64px, 9vw, 104px);
+}
+
+.lx-page section[id] {
+  scroll-margin-top: calc(var(--lx-header) + 16px);
+}
+
+.lx-section--ruled {
+  border-top: 1px solid var(--border);
+}
+
+.lx-h2 {
+  max-width: 22ch;
+  margin-top: 12px;
+  font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+  font-weight: 560;
+  line-height: 1.05;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+}
+
+.lx-h3 {
+  font-size: clamp(1.2rem, 2vw, 1.45rem);
+  font-weight: 550;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.lx-muted {
+  color: var(--muted-foreground);
+}
+
+.lx-lead {
+  max-width: 36rem;
+  margin-top: 16px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+
+.lx-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 520;
+  text-decoration: none;
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+.lx-link:hover {
+  color: var(--muted-foreground);
+}
+
+.lx-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.lx-note {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.lx-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.lx-note a:hover {
+  color: var(--foreground);
+}
+
+.lx-note a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* -------------------------------------------------------------------------
+ * Hero
+ * ---------------------------------------------------------------------- */
+
+.lx-hero {
+  padding-block: clamp(40px, 7vw, 72px) clamp(56px, 9vw, 88px);
+}
+
+.lx-hero__pin {
+  display: grid;
+  gap: 40px;
+  align-items: center;
+}
+
+.lx-hero__copy {
+  max-width: 36rem;
+  min-width: 0;
+}
+
+.lx-hero h1 {
+  margin-top: 18px;
+  font-size: clamp(2.5rem, 4.5vw, 3.4rem);
+  font-weight: 560;
+  line-height: 1.02;
+  letter-spacing: -0.042em;
+  text-wrap: balance;
+}
+
+.lx-hero__sub {
+  max-width: 34rem;
+  margin-top: 20px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+
+.lx-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.lx-hero__note {
+  margin-top: 20px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-proof__sep {
+  color: var(--subtle-foreground);
+}
+
+.lx-hero__surface {
+  width: 100%;
+  max-width: 560px;
+  min-width: 0;
+  justify-self: center;
+}
+
+.lx-console {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--card);
+  box-shadow: var(--shadow-panel-value);
+}
+
+.lx-console__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding-inline: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lx-console__dots {
+  display: flex;
+  gap: 5px;
+}
+
+.lx-console__dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background-color: var(--border-strong);
+}
+
+.lx-console__body {
+  padding: 16px;
+}
+
+.lx-console__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lx-console__title {
+  margin-top: 5px;
+  font-size: 16px;
+  font-weight: 560;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.lx-devices {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.lx-device {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.lx-device + .lx-device {
+  border-top: 1px solid var(--border);
+}
+
+.lx-device__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--surface);
+  color: var(--muted-foreground);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lx-device__name {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx-device__meta {
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx-state {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  background-color: var(--hover);
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 520;
+  white-space: nowrap;
+}
+
+.lx-state--ok {
+  background-color: color-mix(in oklab, var(--success) 10%, transparent);
+  color: var(--success);
+}
+
+.lx-state--warn {
+  background-color: color-mix(in oklab, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.lx-console__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+/* Desktop: the record opens through an aperture while the copy stays put. */
+@media (min-width: 900px) {
+  .lx-hero__pin {
+    grid-template-columns: 1.02fr 0.98fr;
+    gap: 64px;
+  }
+
+  .lx-hero__surface {
+    justify-self: end;
+  }
+}
+
+@media (min-width: 900px) and (prefers-reduced-motion: no-preference) {
+  html.js .lx-hero {
+    --p: 0;
+  }
+
+  html.js .lx-hero__surface {
+    clip-path: inset(
+      0 0 calc((1 - clamp(0, calc(var(--p) * 1.176), 1)) * var(--lx-closed, 45%)) 0 round 12px
+    );
+  }
+
+  html.js .lx-hero[data-p="active"] .lx-hero__surface {
+    will-change: clip-path;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Manifesto
+ * ---------------------------------------------------------------------- */
+
+.lx-manifesto__grid {
+  display: grid;
+  gap: clamp(32px, 6vw, 72px);
+}
+
+.lx-manifesto h2 {
+  max-width: 44rem;
+  margin-top: 12px;
+  font-size: clamp(1.9rem, 3.7vw, 2.8rem);
+  font-weight: 560;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+}
+
+.lx-manifesto__body {
+  max-width: 42rem;
+  margin-top: 22px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+
+.lx-w {
+  display: inline-block;
+}
+
+.lx-notes {
+  display: grid;
+  gap: 18px;
+  align-self: end;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx-notes li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.lx-notes__rule {
+  height: 1px;
+  margin-top: 9px;
+  background-color: var(--border-strong);
+  transform-origin: left;
+}
+
+.lx-manifesto__after {
+  margin-top: 28px;
+}
+
+@media (min-width: 900px) {
+  .lx-manifesto__grid {
+    grid-template-columns: minmax(0, 1fr) 240px;
+    align-items: end;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.js .lx-manifesto[data-reveal="pending"] .lx-w {
+    opacity: 0;
+    transform: translateY(0.28em);
+  }
+
+  html.js .lx-manifesto[data-reveal="in"] .lx-w {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 200ms var(--ease-swift),
+      transform 440ms var(--ease-glide);
+    transition-delay: calc(var(--i) * var(--lx-stagger));
+  }
+
+  html.js .lx-manifesto .lx-notes li {
+    transform: translateY(5px);
+  }
+
+  html.js .lx-manifesto[data-reveal="in"] .lx-notes li {
+    transform: none;
+    transition: transform 320ms var(--ease-glide);
+    transition-delay: calc(400ms + var(--i) * 90ms);
+  }
+
+  html.js .lx-manifesto .lx-notes__rule {
+    transform: scaleX(0);
+  }
+
+  html.js .lx-manifesto[data-reveal="in"] .lx-notes__rule {
+    transform: scaleX(1);
+    transition: transform 380ms var(--ease-glide);
+    transition-delay: calc(400ms + var(--i) * 90ms);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Generic block reveal (the manifesto owns its own word rules)
+ * ---------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  html.js .lx-reveal-block[data-reveal="pending"] {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  html.js .lx-reveal-block[data-reveal="in"] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 500ms var(--ease-swift),
+      transform 500ms var(--ease-swift);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Product story
+ * ---------------------------------------------------------------------- */
+
+.lx-story__pin {
+  display: grid;
+  gap: 40px;
+  padding-block: clamp(64px, 9vw, 104px);
+}
+
+.lx-story__inner {
+  display: grid;
+  gap: 40px;
+}
+
+.lx-story__intro {
+  max-width: 36rem;
+}
+
+.lx-story__link {
+  margin-top: 20px;
+}
+
+.lx-spine {
+  margin-top: 28px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--card);
+}
+
+.lx-spine__name {
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.lx-spine__meta {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-spine__evidence {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.lx-spine__evidence li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.lx-spine__evidence b {
+  font-weight: 520;
+  color: var(--foreground);
+}
+
+.lx-steps {
+  display: grid;
+  gap: 0;
+}
+
+.lx-step {
+  padding-block: 26px;
+  border-top: 1px solid var(--border);
+}
+
+.lx-step:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.lx-step__label {
+  font-size: 10.5px;
+  font-weight: 560;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.lx-step h3 {
+  margin-top: 10px;
+  font-size: clamp(1.25rem, 2.2vw, 1.55rem);
+  font-weight: 550;
+  line-height: 1.15;
+  letter-spacing: -0.028em;
+}
+
+.lx-step__body {
+  max-width: 40rem;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+.lx-step__micro {
+  margin-top: 14px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--subtle-foreground);
+}
+
+.lx-policy {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--background);
+  transition:
+    opacity 220ms var(--ease-swift),
+    transform 220ms var(--ease-swift);
+}
+
+.lx-policy + .lx-policy {
+  margin-top: 6px;
+}
+
+.lx-policy[data-state="won"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  left: 0;
+  width: 2px;
+  background-color: var(--brand-solid);
+  transform-origin: top;
+}
+
+.lx-policy__name {
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--foreground);
+}
+
+.lx-policy__meta {
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-policy__why {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  overflow: hidden;
+  font-size: 10.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-policy__why > span {
+  min-height: 0;
+}
+
+.lx-policy[data-state="won"] .lx-policy__name {
+  color: var(--brand);
+}
+
+.lx-story__resolution {
+  margin-top: 26px;
+}
+
+.lx-story__resolution-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--subtle-foreground);
+}
+
+@media (min-width: 1024px) {
+  .lx-story__pin {
+    align-content: center;
+  }
+
+  .lx-story__inner {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: clamp(32px, 5vw, 64px);
+    align-items: center;
+  }
+}
+
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  html.js .lx-story__track {
+    height: 280svh;
+  }
+
+  html.js .lx-story__pin {
+    position: sticky;
+    top: var(--lx-header);
+    display: flex;
+    align-items: center;
+    height: calc(100svh - var(--lx-header));
+    padding-block: 0;
+    overflow: clip;
+  }
+
+  html.js .lx-story__inner {
+    width: 100%;
+  }
+
+  html.js .lx-story .lx-steps {
+    display: grid;
+  }
+
+  html.js .lx-story .lx-step {
+    grid-area: 1 / 1;
+    align-self: center;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    user-select: none;
+    transition:
+      opacity 240ms var(--ease-swift),
+      transform 320ms var(--ease-glide);
+  }
+
+  html.js .lx-story[data-step="0"] .lx-step[data-panel="0"],
+  html.js .lx-story[data-step="1"] .lx-step[data-panel="1"],
+  html.js .lx-story[data-step="2"] .lx-step[data-panel="2"] {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    user-select: text;
+    transition-delay: 40ms, 40ms;
+  }
+
+  /* Future evidence stays in the layout but out of the accessibility tree:
+     dimmed text would still be read, and at 11px it fails contrast. */
+  html.js .lx-story .lx-spine__evidence li {
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  html.js .lx-story[data-step="0"] .lx-spine__evidence li:nth-child(1),
+  html.js .lx-story[data-step="1"] .lx-spine__evidence li:nth-child(-n + 2),
+  html.js .lx-story[data-step="2"] .lx-spine__evidence li {
+    visibility: visible;
+    opacity: 1;
+    transition: opacity 220ms var(--ease-swift);
+  }
+
+  /* Enforce: candidates leave in sequence until the accountable policy wins. */
+  /* Rejected candidates stay legible: dim the surface, not the text. */
+  html.js .lx-story:not([data-step="0"]) .lx-policy[data-state="out"] {
+    transform: translateX(-6px);
+    border-color: color-mix(in oklab, var(--border) 60%, transparent);
+    background-color: transparent;
+    transition-delay: calc(var(--i) * 90ms);
+  }
+
+  html.js .lx-story:not([data-step="0"]) .lx-policy[data-state="out"] .lx-policy__name {
+    color: var(--subtle-foreground);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  html.js .lx-story:not([data-step="0"]) .lx-policy[data-state="out"] .lx-policy__meta {
+    color: var(--subtle-foreground);
+  }
+
+  html.js .lx-story:not([data-step="0"]) .lx-policy[data-state="won"]::before {
+    animation: lx-rule 260ms var(--ease-glide) both;
+  }
+
+  html.js .lx-story .lx-policy__why {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 260ms var(--ease-glide),
+      opacity 180ms var(--ease-swift);
+  }
+
+  html.js .lx-story[data-step="1"] .lx-policy[data-state="won"] .lx-policy__why,
+  html.js .lx-story[data-step="2"] .lx-policy[data-state="won"] .lx-policy__why {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+
+@keyframes lx-rule {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Prove band
+ *
+ * The `dark` class is the existing dark token set, so this plate uses the same
+ * palette as the dashboard in dark mode instead of a second one-off theme.
+ * ---------------------------------------------------------------------- */
+
+.lx-plate {
+  display: grid;
+  margin-top: clamp(20px, 3vw, 32px);
+  gap: clamp(28px, 5vw, 48px);
+  padding: clamp(24px, 4vw, 48px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.lx-plate__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.lx-plate h3 {
+  font-size: 12px;
+  font-weight: 540;
+  letter-spacing: -0.01em;
+}
+
+.lx-plate__label {
+  font-size: 10px;
+  color: var(--subtle-foreground);
+}
+
+.lx-signal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding-block: 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lx-signal__label {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-signal__value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.lx-signal__value small {
+  margin-left: 1px;
+  font-size: 10px;
+  color: var(--subtle-foreground);
+}
+
+.lx-signal__bar {
+  grid-column: 1 / -1;
+  height: 2px;
+  margin-top: 3px;
+  overflow: hidden;
+  background-color: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.lx-signal__bar i {
+  display: block;
+  width: calc(var(--v) * 1%);
+  height: 100%;
+  background-color: var(--success);
+  transform-origin: left;
+}
+
+.lx-plate__checkin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.lx-audit {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx-audit li {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.lx-audit time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--subtle-foreground);
+}
+
+.lx-audit__event {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lx-audit__event b {
+  font-weight: 520;
+  color: var(--foreground);
+}
+
+.lx-audit__event code {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--subtle-foreground);
+}
+
+.lx-audit__state {
+  font-size: 10px;
+  color: var(--success);
+  white-space: nowrap;
+}
+
+@media (min-width: 860px) {
+  .lx-plate {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.js .lx-plate[data-reveal="pending"] .lx-signal__bar i {
+    transform: scaleX(0);
+  }
+
+  html.js .lx-plate[data-reveal="in"] .lx-signal__bar i {
+    transform: scaleX(1);
+    transition: transform 600ms var(--ease-glide);
+    transition-delay: calc(var(--i) * 40ms);
+  }
+
+  html.js .lx-plate[data-reveal="pending"] .lx-audit li {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  html.js .lx-plate[data-reveal="in"] .lx-audit li {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 260ms var(--ease-swift),
+      transform 300ms var(--ease-glide);
+    transition-delay: calc(120ms + var(--i) * 70ms);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Platforms
+ * ---------------------------------------------------------------------- */
+
+.lx-platforms {
+  border-block: 1px solid var(--border);
+  background-color: var(--surface);
+}
+
+.lx-platforms__head {
+  display: grid;
+  gap: 24px;
+}
+
+.lx-platforms__lead {
+  max-width: 34rem;
+  margin-top: 16px;
+}
+
+.lx-cards3 {
+  display: grid;
+  gap: 1px;
+  margin-top: 40px;
+  border-block: 1px solid var(--border);
+  background-color: var(--border);
+}
+
+.lx-platform {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: clamp(20px, 3vw, 28px);
+  background-color: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--duration-hover) var(--ease-swift);
+}
+
+.lx-platform:hover {
+  background-color: var(--card);
+}
+
+.lx-platform:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+.lx-platform__tag {
+  margin-top: -4px;
+  font-size: 11px;
+  color: var(--subtle-foreground);
+}
+
+.lx-platform h3 {
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -0.015em;
+}
+
+.lx-platform__body {
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+.lx-platform__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  font-weight: 520;
+}
+
+.lx-platforms__preview {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--card);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+
+.lx-platforms__preview b {
+  font-weight: 540;
+  color: var(--foreground);
+}
+
+.lx-platforms__link {
+  margin-top: 26px;
+}
+
+@media (min-width: 800px) {
+  .lx-cards3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .lx-platforms__head {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    align-items: end;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Capabilities and the remote-action demo
+ * ---------------------------------------------------------------------- */
+
+.lx-caps {
+  display: grid;
+  margin: 36px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.lx-cap {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding-block: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lx-cap__n {
+  padding-top: 2px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--subtle-foreground);
+}
+
+.lx-cap h3 {
+  font-size: 13px;
+  font-weight: 540;
+  letter-spacing: -0.008em;
+}
+
+.lx-cap p {
+  max-width: 34rem;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+.lx-caps__link {
+  margin-top: 26px;
+}
+
+.lx-demo {
+  margin-top: 40px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background-color: var(--card);
+}
+
+.lx-demo__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lx-demo__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+  font-weight: 540;
+}
+
+.lx-demo__body {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.lx-demo__hint {
+  max-width: 46rem;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.lx-demo__static-list {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.lx-demo__static-list b {
+  font-weight: 540;
+  color: var(--foreground);
+}
+
+.lx-demo__interactive {
+  display: none;
+}
+
+html.js .lx-demo__static {
+  display: none;
+}
+
+html.js .lx-demo__interactive {
+  display: grid;
+  gap: 16px;
+}
+
+.lx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lx-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding-inline: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-hover) var(--ease-swift),
+    border-color var(--duration-hover) var(--ease-swift),
+    color var(--duration-hover) var(--ease-swift);
+}
+
+.lx-action:hover {
+  border-color: var(--border-strong);
+  background-color: var(--hover);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lx-action:active {
+    transform: scale(0.99);
+  }
+}
+
+.lx-action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.lx-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.lx-action--danger {
+  border-color: color-mix(in oklab, var(--destructive) 35%, var(--border));
+  color: var(--destructive);
+  touch-action: none;
+  user-select: none;
+}
+
+.lx-action--danger[data-holding] {
+  background-color: color-mix(in oklab, var(--destructive) 8%, var(--card));
+}
+
+.lx-ring {
+  width: 14px;
+  height: 14px;
+}
+
+.lx-ring__track {
+  fill: none;
+  stroke: color-mix(in oklab, currentColor 28%, transparent);
+  stroke-width: 2;
+}
+
+.lx-ring__fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.lx-demo__log {
+  display: grid;
+  gap: 5px;
+  min-height: 76px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--background);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+  list-style: none;
+}
+
+.lx-demo__empty {
+  font-size: 11px;
+  color: var(--subtle-foreground);
+}
+
+.lx-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--destructive) 30%, var(--border));
+  border-radius: 8px;
+  background-color: color-mix(in oklab, var(--destructive) 6%, var(--card));
+}
+
+.lx-confirm p {
+  flex: 1 1 16rem;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (min-width: 800px) {
+  .lx-caps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 48px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Trust, security and deployment
+ * ---------------------------------------------------------------------- */
+
+.lx-trust {
+  border-top: 1px solid var(--border);
+  background-color: var(--surface);
+}
+
+.lx-trust__grid {
+  display: grid;
+  gap: 40px;
+}
+
+.lx-trust__body {
+  max-width: 40rem;
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+
+.lx-trust__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.lx-proof-list {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lx-proof-list li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+
+.lx-proof-list svg {
+  margin-top: 3px;
+  color: var(--success);
+}
+
+.lx-deploy {
+  margin-top: 40px;
+  padding: clamp(20px, 3vw, 32px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background-color: var(--card);
+}
+
+.lx-deploy__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lx-seg {
+  display: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--background);
+}
+
+html.js .lx-seg {
+  display: inline-flex;
+}
+
+.lx-seg button {
+  height: 26px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 520;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-hover) var(--ease-swift),
+    color var(--duration-hover) var(--ease-swift);
+}
+
+.lx-seg button:hover {
+  color: var(--foreground);
+}
+
+.lx-seg button[aria-pressed="true"] {
+  background-color: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-card-value);
+}
+
+.lx-seg button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.lx-deploy__panels {
+  margin-top: 20px;
+}
+
+.lx-deploy__panel + .lx-deploy__panel {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.lx-deploy__panel-title {
+  font-size: 10.5px;
+  font-weight: 560;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.lx-deploy__panel p + p {
+  margin-top: 8px;
+}
+
+.lx-deploy__panel-body {
+  max-width: 36rem;
+  margin-top: 8px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+.lx-deploy__note {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--subtle-foreground);
+}
+
+html.js .lx-deploy__panels {
+  display: grid;
+}
+
+html.js .lx-deploy__panel {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+
+html.js .lx-deploy__panel[data-on] {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.js .lx-deploy__panel {
+    transform: translateY(2px);
+    transition:
+      opacity 160ms var(--ease-swift),
+      transform 160ms var(--ease-swift),
+      visibility 0s linear 160ms;
+  }
+
+  html.js .lx-deploy__panel[data-on] {
+    transform: none;
+    transition-delay: 60ms, 60ms, 0s;
+  }
+}
+
+@media (min-width: 960px) {
+  .lx-trust__grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(40px, 6vw, 72px);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Pricing
+ * ---------------------------------------------------------------------- */
+
+.lx-price-grid {
+  display: grid;
+  gap: 16px;
+  max-width: 860px;
+  margin-top: 36px;
+}
+
+.lx-price {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(20px, 3vw, 26px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background-color: var(--card);
+}
+
+.lx-price__name {
+  font-size: 13px;
+  font-weight: 540;
+}
+
+.lx-price__amount {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.lx-price__amount strong {
+  font-size: 28px;
+  font-weight: 560;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.lx-price__amount span {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-price__body {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+
+.lx-price ul {
+  display: grid;
+  gap: 9px;
+  margin: 22px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.lx-price li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.lx-price li svg {
+  margin-top: 3px;
+  color: var(--subtle-foreground);
+}
+
+.lx-price .lx-button-slot {
+  margin-top: auto;
+  padding-top: 22px;
+}
+
+.lx-price__micro {
+  margin-top: 24px;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+
+@media (min-width: 700px) {
+  .lx-price-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * FAQ
+ * ---------------------------------------------------------------------- */
+
+.lx-faq {
+  border-top: 1px solid var(--border);
+}
+
+.lx-faq__grid {
+  display: grid;
+  gap: 40px;
+}
+
+.lx-faq__list {
+  border-top: 1px solid var(--border);
+}
+
+.lx-faq details {
+  padding-block: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lx-faq summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 1.5;
+  cursor: pointer;
+  list-style: none;
+}
+
+.lx-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.lx-faq summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.lx-faq summary svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  transition: color var(--duration-hover) var(--ease-swift);
+}
+
+.lx-faq summary:hover svg {
+  color: var(--foreground);
+}
+
+.lx-faq__answer {
+  max-width: 44rem;
+  margin-top: 12px;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+
+.lx-faq__answer a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.lx-faq__answer a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.lx-faq__answer p + p {
+  margin-top: 8px;
+}
+
+@media (min-width: 900px) {
+  .lx-faq__grid {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: clamp(40px, 6vw, 72px);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Closing CTA
+ * ---------------------------------------------------------------------- */
+
+.lx-closing {
+  padding-block: clamp(56px, 9vw, 104px);
+}
+
+.lx-closing__panel {
+  padding: clamp(32px, 6vw, 64px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background-color: var(--card);
+  text-align: center;
+}
+
+.lx-closing__panel .lx-h2 {
+  max-width: 24ch;
+  margin-inline: auto;
+}
+
+.lx-closing__lead {
+  max-width: 38rem;
+  margin: 16px auto 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+
+.lx-closing__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.lx-closing__note {
+  margin-top: 22px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.lx-closing__note a,
+.lx-price__micro a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.lx-closing__note a:focus-visible,
+.lx-price__micro a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* The badge repeats the demo label in the title, which needs the space. */
+@media (max-width: 639px) {
+  .lx-demo__badge {
+    display: none;
+  }
+
+  .lx-audit li {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .lx-audit__state {
+    grid-column: 2;
+  }
+
+  .lx-audit__event {
+    overflow: visible;
+    white-space: normal;
+  }
+}

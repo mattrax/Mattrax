@@ -2,7 +2,7 @@ import { Head, Link, Meta, Title } from "@solidjs/meta";
 import { createRouter, useLocation } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
-import { Errored, Loading, onSettled } from "solid-js";
+import { Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { GlobalErrorBanner } from "~/components/global-error-banner";
@@ -10,6 +10,10 @@ import { NewVersionNotice } from "~/components/new-version-notice";
 import { installSkewProtection } from "~/lib/skew-protection";
 import { installTheme } from "~/lib/theme";
 import {
+  LANDING_DESCRIPTION,
+  LANDING_OG_DESCRIPTION,
+  LANDING_OG_TITLE,
+  LANDING_TITLE,
   SITE_DEFAULT_ORIGIN,
   SITE_DESCRIPTION,
   SITE_SOCIAL_IMAGE,
@@ -84,16 +88,7 @@ export default function App() {
   return (
     <Router>
       {(props) => (
-        <Head>
-          <Title>{SITE_TITLE}</Title>
-          <Meta name="description" content={SITE_DESCRIPTION} />
-          <Meta property="og:title" content={SITE_TITLE} />
-          <Meta property="og:description" content={SITE_DESCRIPTION} />
-          <Meta property="og:type" content="website" />
-          <Meta property="og:image" content={`${origin}${SITE_SOCIAL_IMAGE}`} />
-          <Meta name="twitter:card" content="summary_large_image" />
-          <RouteUrl origin={origin} />
-          <Link rel="apple-touch-icon" sizes="180x180" href={SITE_TOUCH_ICON} />
+        <HeadTags origin={origin}>
           <Errored
             fallback={(error, reset) => (
               <PageErrorFallback boundary="app" error={error()} reset={reset} />
@@ -103,8 +98,46 @@ export default function App() {
           </Errored>
           <GlobalErrorBanner />
           <NewVersionNotice />
-        </Head>
+        </HeadTags>
       )}
     </Router>
+  );
+}
+
+/**
+ * Document metadata, resolved per route.
+ *
+ * The landing page is the one page that sells the product, so it carries its
+ * own search title and description; every other page keeps the brand defaults.
+ * This lives inside the router so client-side navigation updates it too.
+ */
+function HeadTags(props: ParentProps<{ origin: string }>) {
+  const location = useLocation();
+  const landing = () => location.pathname === "/";
+
+  return (
+    <Head>
+      <Title>{landing() ? LANDING_TITLE : SITE_TITLE}</Title>
+      <Show
+        when={landing()}
+        fallback={
+          <>
+            <Meta name="description" content={SITE_DESCRIPTION} />
+            <Meta property="og:title" content={SITE_TITLE} />
+            <Meta property="og:description" content={SITE_DESCRIPTION} />
+          </>
+        }
+      >
+        <Meta name="description" content={LANDING_DESCRIPTION} />
+        <Meta property="og:title" content={LANDING_OG_TITLE} />
+        <Meta property="og:description" content={LANDING_OG_DESCRIPTION} />
+      </Show>
+      <Meta property="og:type" content="website" />
+      <Meta property="og:image" content={`${props.origin}${SITE_SOCIAL_IMAGE}`} />
+      <Meta name="twitter:card" content="summary_large_image" />
+      <RouteUrl origin={props.origin} />
+      <Link rel="apple-touch-icon" sizes="180x180" href={SITE_TOUCH_ICON} />
+      {props.children}
+    </Head>
   );
 }
