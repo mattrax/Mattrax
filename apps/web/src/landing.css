@@ -8,6 +8,7 @@
  * on a motion token to be legible.
  */
 
+.lx-layout,
 .lx-page {
   --lx-max: 1200px;
   --lx-gutter: clamp(20px, 4vw, 32px);
@@ -175,7 +176,8 @@
   color: var(--muted-foreground);
 }
 
-.lx-proof__sep {
+.lx-proof__item:not(:last-child)::after {
+  content: " ·";
   color: var(--subtle-foreground);
 }
 
@@ -391,6 +393,7 @@
 
 .lx-notes li {
   display: grid;
+  text-wrap: pretty;
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 12px;
   font-size: 12.5px;
@@ -411,7 +414,7 @@
 
 @media (min-width: 900px) {
   .lx-manifesto__grid {
-    grid-template-columns: minmax(0, 1fr) 240px;
+    grid-template-columns: minmax(0, 1fr) 272px;
     align-items: end;
   }
 }
@@ -691,7 +694,7 @@
 
   html.js .lx-story .lx-step {
     grid-area: 1 / 1;
-    align-self: center;
+    align-self: start;
     padding: 0;
     border: 0;
     opacity: 0;
@@ -1007,6 +1010,7 @@
 
 .lx-platform__body {
   flex: 1;
+  text-wrap: pretty;
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--muted-foreground);
@@ -1566,6 +1570,12 @@ html.js .lx-deploy__panel[data-on] {
   }
 }
 
+@media (min-width: 1100px) {
+  .lx-price-grid {
+    max-width: none;
+  }
+}
+
 /* -------------------------------------------------------------------------
  * FAQ
  * ---------------------------------------------------------------------- */
@@ -1584,15 +1594,16 @@ html.js .lx-deploy__panel[data-on] {
 }
 
 .lx-faq details {
-  padding-block: 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .lx-faq summary {
   display: flex;
+  min-height: 44px;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
+  padding-block: 18px;
   font-size: 13px;
   font-weight: 520;
   line-height: 1.5;
@@ -1623,7 +1634,7 @@ html.js .lx-deploy__panel[data-on] {
 
 .lx-faq__answer {
   max-width: 44rem;
-  margin-top: 12px;
+  padding-bottom: 18px;
   font-size: 12.5px;
   line-height: 1.75;
   color: var(--muted-foreground);
@@ -1728,5 +1739,37 @@ html.js .lx-deploy__panel[data-on] {
   .lx-audit__event {
     overflow: visible;
     white-space: normal;
+  }
+}
+
+@media (max-width: 640px) {
+  .lx-link {
+    min-height: 44px;
+  }
+
+  .lx-action,
+  .lx-price a[data-slot="button"],
+  .lx-seg button {
+    min-height: 44px;
+  }
+
+  .lx-demo__head {
+    padding-block: 14px;
+  }
+}
+
+@media (pointer: coarse) {
+  :is(.lx-action, .lx-seg button, .lx-price a[data-slot="button"], .lx-link) {
+    position: relative;
+  }
+
+  :is(.lx-action, .lx-seg button, .lx-price a[data-slot="button"], .lx-link)::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
   }
 }

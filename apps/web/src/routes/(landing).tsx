@@ -13,7 +13,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <div
-      class={`flex min-h-screen flex-col bg-background font-sans text-foreground ${
+      class={`lx-layout flex min-h-screen flex-col bg-background font-sans text-foreground ${
         location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
       }`}
     >
@@ -81,7 +81,7 @@ function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
     <a
       href={props.href}
-      class="rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      class="touch-target rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
       target={props.target}
     >
       {props.label}
@@ -123,12 +123,12 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md supports-[backdrop-filter]:bg-background/70">
-      <div class="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between gap-6 px-6 sm:px-8">
+    <header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
+      <div class="mx-auto flex h-14 w-full max-w-[var(--lx-max)] items-center justify-between gap-6 px-[var(--lx-gutter)]">
         <div class="flex min-w-0 items-center gap-9">
           <a
             href="/"
-            class="flex shrink-0 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            class="touch-target flex min-h-11 shrink-0 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Mattrax home"
           >
             <BrandLogo class="h-3.5" />
@@ -222,12 +222,12 @@ function TopNavigation() {
 function Footer() {
   return (
     <footer class="border-t border-border bg-background">
-      <div class="mx-auto w-full max-w-[1200px] px-6 py-14 sm:px-8">
+      <div class="mx-auto w-full max-w-[var(--lx-max)] px-[var(--lx-gutter)] py-14">
         <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
             <a
               href="/"
-              class="flex items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              class="touch-target flex min-h-11 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Mattrax home"
             >
               <BrandLogo class="h-3.5" />

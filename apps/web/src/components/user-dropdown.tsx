@@ -51,7 +51,7 @@ export function UserDropdown(props: UserDropdownProps) {
         when={props.user}
         fallback={
           props.signInHref ? (
-            <Button as="a" href={props.signInHref} size="sm">
+            <Button as="a" href={props.signInHref} size="sm" class="touch-target">
               Sign in
             </Button>
           ) : null

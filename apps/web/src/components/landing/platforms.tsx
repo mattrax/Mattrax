@@ -5,7 +5,7 @@ const platforms = [
   {
     name: "Apple",
     tag: "macOS · iOS · iPadOS",
-    body: "Native Apple device management: signed enrollment profiles, APNs, ABM/ADE assignment, Apps & Books and DDM declarations, with legacy profiles where DDM stops.",
+    body: "Native Apple device management: signed enrollment profiles, APNs, ABM/ADE assignment, Apps & Books and DDM declarations, with legacy profiles where DDM\u00a0stops.",
     href: "/docs/platforms/apple/",
   },
   {

@@ -1,5 +1,5 @@
 import { ArrowRight } from "@mattrax/ui";
-import { For, Show } from "solid-js";
+import { For } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { installHeroProgress } from "~/lib/landing-motion";
 import { Eyebrow } from "./primitives";
@@ -80,7 +80,7 @@ export function Hero() {
               <h1 id="hero-title">
                 Device management
                 <br />
-                <span class="lx-muted">without the black box.</span>
+                <span class="lx-muted">without the {"black\u00a0box."}</span>
               </h1>
 
               <p class="lx-hero__sub">
@@ -112,18 +112,7 @@ export function Hero() {
               </p>
 
               <p class="lx-proof">
-                <For each={proofPoints}>
-                  {(point, index) => (
-                    <span>
-                      <Show when={index() > 0}>
-                        <span class="lx-proof__sep" aria-hidden="true">
-                          ·
-                        </span>{" "}
-                      </Show>
-                      {point}
-                    </span>
-                  )}
-                </For>
+                <For each={proofPoints}>{(point) => <span class="lx-proof__item">{point}</span>}</For>
               </p>
             </div>
 
