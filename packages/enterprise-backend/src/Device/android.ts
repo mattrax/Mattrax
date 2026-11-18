@@ -8,10 +8,12 @@ import {
   androidPolicyIdForHash,
   bearerToken,
   commandStatus,
+  GoogleApiError,
   isAndroidPackageName,
   mergeAssignedAndroidApplications,
   verifyPubSubOidcToken,
   type AndroidPolicyConfiguration,
+  type IssueCommandParams,
 } from "@mattrax/dm-android";
 import {
   deviceLimitForOrganization,
@@ -35,6 +37,7 @@ import {
   commandDedupeKey,
   commandIsExpired,
   deviceCommandExpiresAt,
+  RECONCILED_RESULT_STATUS,
   resolveEffectivePolicyForDevice,
   syncDynamicGroupsForDevice,
   writeSystemAudit,
@@ -1889,7 +1892,12 @@ export const handleAndroidPubSub = (input: {
     } satisfies AndroidPubSubResult;
   }).pipe(mapAndroidError);
 
-/** Map a device action onto a Google command. Returns null for a plain sync. */
+/**
+ * Map a device action onto a Google command. Returns null for a plain sync and
+ * for actions that are not AMAPI commands. Ownership can be relinquished with
+ * a command; the unenrolment endpoint instead deletes the device resource, so
+ * it never passes through here.
+ */
 export const androidCommandForAction = (
   action: string,
 ): { readonly type: string; readonly requestType: string } | null => {
@@ -1900,12 +1908,87 @@ export const androidCommandForAction = (
       return { type: "REBOOT", requestType: "AndroidReboot" };
     case "lock":
       return { type: "LOCK", requestType: "AndroidLock" };
+    case "start-lost-mode":
+      return { type: "START_LOST_MODE", requestType: "AndroidStartLostMode" };
+    case "stop-lost-mode":
+      return { type: "STOP_LOST_MODE", requestType: "AndroidStopLostMode" };
+    case "reset-password":
+      return { type: "RESET_PASSWORD", requestType: "AndroidResetPassword" };
+    case "clear-app-data":
+      return { type: "CLEAR_APP_DATA", requestType: "AndroidClearAppData" };
+    case "request-device-info":
+      return { type: "REQUEST_DEVICE_INFO", requestType: "AndroidRequestDeviceInfo" };
+    case "relinquish-ownership":
+      return { type: "RELINQUISH_OWNERSHIP", requestType: "AndroidRelinquishOwnership" };
     default:
       return null;
   }
 };
 
-/** Issue a direct AMAPI command and record it for the device timeline. */
+/** What a lost device shows on its lock screen. */
+const ANDROID_LOST_MODE_MESSAGE =
+  "This device has been reported lost. Please return it to your organisation.";
+
+/**
+ * Password classes for a temporary Android password. The alphabet omits
+ * look-alike characters (0/O, 1/l/I) because the password is entered by hand.
+ */
+const PASSWORD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+const PASSWORD_LOWER = "abcdefghijkmnopqrstuvwxyz";
+
+const PASSWORD_DIGITS = "23456789";
+
+const PASSWORD_ALPHABET = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_DIGITS}`;
+
+const randomCharacter = (alphabet: string): string => {
+  const [value] = crypto.getRandomValues(new Uint32Array(1));
+
+  return alphabet[value! % alphabet.length]!;
+};
+
+/**
+ * A temporary password for `RESET_PASSWORD`.
+ *
+ * The value only exists for the lifetime of the request: it is passed straight
+ * to Google and is never written to the command payload, the audit log or the
+ * API response. Three required character classes satisfy the stricter device
+ * password policies, and the result is shuffled so the classes are not
+ * predictable by position.
+ */
+const generateAndroidPassword = (length = 16): string => {
+  const characters = [
+    randomCharacter(PASSWORD_UPPER),
+    randomCharacter(PASSWORD_LOWER),
+    randomCharacter(PASSWORD_DIGITS),
+  ];
+
+  while (characters.length < length) characters.push(randomCharacter(PASSWORD_ALPHABET));
+
+  for (let index = characters.length - 1; index > 0; index--) {
+    const swap = Number(crypto.getRandomValues(new Uint32Array(1))[0]! % (index + 1));
+    [characters[index], characters[swap]] = [characters[swap]!, characters[index]!];
+  }
+
+  return characters.join("");
+};
+
+/**
+ * Flags Mattrax always sends with a password reset. `REQUIRE_ENTRY` stops
+ * another administrator from replacing the password before the user has seen
+ * it, and `LOCK_NOW` returns the device to the lock screen so the new password
+ * is needed immediately.
+ */
+const ANDROID_RESET_PASSWORD_FLAGS = ["REQUIRE_ENTRY", "LOCK_NOW"] as const;
+
+/**
+ * Issue a direct AMAPI command and record it for the device timeline.
+ *
+ * The operation name is stored on the command so the `COMMAND` Pub/Sub
+ * notification can reconcile the terminal status onto the right row. Command
+ * payloads never carry secrets: a reset password is generated, sent to Google
+ * and dropped.
+ */
 export const issueAndroidCommand = (input: {
   readonly db: EnterpriseDb;
   readonly config?: AndroidDeliveryConfig;
@@ -1990,7 +2073,7 @@ export const issueAndroidCommand = (input: {
         .set({
           status: "cancelled",
           dedupeKey: null,
-          resultStatus: "Reconciled",
+          resultStatus: RECONCILED_RESULT_STATUS,
           resultDetail: "The device was wiped before this action could run.",
           updatedAt: timestamp,
         })
@@ -2001,12 +2084,61 @@ export const issueAndroidCommand = (input: {
           ),
         );
 
+    const extra: Mutable<Omit<IssueCommandParams, "type">> = {};
+
+    switch (command.requestType) {
+      case "AndroidResetPassword":
+        extra.newPassword = generateAndroidPassword();
+        extra.resetPasswordFlags = [...ANDROID_RESET_PASSWORD_FLAGS];
+        break;
+      case "AndroidStartLostMode":
+        // Google requires at least one field other than the organisation name
+        // to put a device into lost mode.
+        extra.startLostModeParams = {
+          lostMessage: { defaultMessage: ANDROID_LOST_MODE_MESSAGE },
+        };
+        break;
+      case "AndroidStopLostMode":
+        extra.stopLostModeParams = {};
+        break;
+      case "AndroidRequestDeviceInfo":
+        // EID is the only device information AMAPI exposes today.
+        extra.requestDeviceInfoParams = { deviceInfo: "EID" };
+        break;
+      case "AndroidClearAppData": {
+        // The work-profile apps Mattrax manages are exactly the apps the
+        // operator can clear; a raw package list is never accepted from the
+        // dashboard.
+        const applications = yield* assignedAndroidApplications(input.db, {
+          organizationId: input.organizationId,
+          deviceId: input.device.id,
+        });
+
+        const packageNames = [...new Set(applications.map((item) => item.packageName))];
+
+        if (packageNames.length === 0)
+          return yield* Effect.fail(
+            new AndroidDeliveryError({
+              kind: "invalid_payload",
+              message: "This device has no managed Android applications whose data can be cleared.",
+            }),
+          );
+
+        extra.clearAppsDataParams = { packageNames };
+        break;
+      }
+
+      default:
+        break;
+    }
+
     const commandId = crypto.randomUUID();
 
     const operation = yield* android
       .issueCommand({
         deviceName: input.device.dmIdentifier,
         type: command.type,
+        ...extra,
       })
       .pipe(
         Effect.mapError(
@@ -2035,6 +2167,108 @@ export const issueAndroidCommand = (input: {
     });
 
     return { operationName: operation.operationName, commandId };
+  }).pipe(mapAndroidError);
+
+export type AndroidUnenrollResult = {
+  readonly deviceId: string;
+};
+
+/**
+ * Retire an Android device by deleting its Google Enterprise record.
+ *
+ * `enterprises.devices.delete` is the only AMAPI path that ends management
+ * without the device's cooperation: Google removes Android Device Policy and
+ * the work data it manages, and the device row becomes `unenrolled`. Active
+ * commands are cancelled first so a queued wipe or lock cannot fire during
+ * retirement. Deleting a device Google has already removed is treated as
+ * success so a retried unenroll is idempotent.
+ */
+export const unenrollAndroidDevice = (input: {
+  readonly db: EnterpriseDb;
+  readonly config?: AndroidDeliveryConfig;
+  readonly organizationId: string;
+  readonly device: { readonly id: string; readonly dmIdentifier: string | null };
+}): Effect.Effect<AndroidUnenrollResult, AndroidDeliveryError, AndroidManagement> =>
+  Effect.gen(function* () {
+    const config = input.config;
+
+    if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
+    const enterprise = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
+    if (enterprise?.status !== "active" || !enterprise.enterpriseName)
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "conflict",
+          message: "Android Enterprise is not connected for this tenant.",
+        }),
+      );
+
+    if (
+      !input.device.dmIdentifier ||
+      !deviceNameBelongs(enterprise.enterpriseName, input.device.dmIdentifier)
+    )
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "invalid_payload",
+          message: "This device is not linked to the tenant's Android enterprise.",
+        }),
+      );
+    const android = yield* AndroidManagement;
+
+    yield* android.deleteDevice({ deviceName: input.device.dmIdentifier }).pipe(
+      Effect.catchIf(
+        (cause) => cause instanceof GoogleApiError && cause.status === 404,
+        () => Effect.void,
+      ),
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not unenroll the Android device: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
+    const timestamp = now();
+
+    yield* input.db
+      .update(schema.device)
+      .set({ status: "unenrolled" })
+      .where(
+        and(
+          eq(schema.device.id, input.device.id),
+          eq(schema.device.organizationId, input.organizationId),
+        ),
+      );
+
+    yield* input.db
+      .update(schema.androidDevice)
+      .set({ state: "DELETED", updatedAt: timestamp })
+      .where(
+        and(
+          eq(schema.androidDevice.deviceId, input.device.id),
+          eq(schema.androidDevice.organizationId, input.organizationId),
+        ),
+      );
+
+    yield* input.db
+      .update(schema.deviceCommand)
+      .set({
+        status: "cancelled",
+        dedupeKey: null,
+        resultStatus: RECONCILED_RESULT_STATUS,
+        resultDetail: "The device was unenrolled before the command was delivered.",
+        updatedAt: timestamp,
+      })
+      .where(
+        and(
+          eq(schema.deviceCommand.deviceId, input.device.id),
+          inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+        ),
+      );
+
+    return { deviceId: input.device.id };
   }).pipe(mapAndroidError);
 
 /** Prune the Pub/Sub idempotency ledger during daily maintenance. */

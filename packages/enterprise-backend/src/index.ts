@@ -260,6 +260,7 @@ export {
   pruneAndroidPubSubMessages,
   setAndroidEnabled,
   syncAndroidPoliciesForTenant,
+  unenrollAndroidDevice,
 } from "./Device/android.ts";
 
 export type {
@@ -272,6 +273,7 @@ export type {
   AndroidServiceAccount,
   AndroidSignupOrganization,
   AndroidSyncResult,
+  AndroidUnenrollResult,
 } from "./Device/android.ts";
 
 export { makeSsoStrategy } from "./Identity/sso.ts";

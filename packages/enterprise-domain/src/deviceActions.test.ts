@@ -29,10 +29,27 @@ describe("deviceAvailableActions", () => {
     expect(actions).toContain("refresh-applications");
   });
 
-  it("does not offer Android unenrollment", () => {
-    expect(deviceAvailableActions({ proto: "android", status: "enrolled" })).not.toContain(
-      "unenroll",
+  it("offers Android's full command set including retirement", () => {
+    const actions = deviceAvailableActions({ proto: "android", status: "enrolled" });
+
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        "sync",
+        "lock",
+        "wipe",
+        "restart",
+        "start-lost-mode",
+        "stop-lost-mode",
+        "reset-password",
+        "clear-app-data",
+        "request-device-info",
+        "relinquish-ownership",
+        "unenroll",
+      ]),
     );
+    // Android commands do not include Apple-only or Windows-only vocabulary.
+    expect(actions).not.toContain("clear-passcode");
+    expect(actions).not.toContain("return-to-service");
   });
 
   it("narrows the platform set when a device reports action capabilities", () => {

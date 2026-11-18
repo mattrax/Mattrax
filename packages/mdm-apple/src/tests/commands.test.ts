@@ -68,6 +68,22 @@ describe("command expiry budgets", () => {
     );
   });
 
+  it("budgets Android commands so a lost notification cannot block a retry forever", () => {
+    const queuedAt = at("2026-01-01T00:00:00.000Z");
+    const minutes = (value: number) => value * 60 * 1000;
+
+    expect(
+      deviceCommandExpiresAt("AndroidResetPassword", queuedAt)!.getTime() - queuedAt.getTime(),
+    ).toBe(minutes(15));
+    expect(
+      deviceCommandExpiresAt("AndroidRequestDeviceInfo", queuedAt)!.getTime() - queuedAt.getTime(),
+    ).toBe(minutes(60 * 24));
+    expect(
+      deviceCommandExpiresAt("AndroidRelinquishOwnership", queuedAt)!.getTime() -
+        queuedAt.getTime(),
+    ).toBe(minutes(60 * 24 * 7));
+  });
+
   it("leaves request types without a budget unbounded", () => {
     expect(deviceCommandBudget("SomethingNew")).toBeUndefined();
     expect(deviceCommandExpiresAt("SomethingNew", at("2026-01-01T00:00:00.000Z"))).toBeNull();

@@ -340,7 +340,13 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `rotate-filevault-key`         | Yes                           | No            | No          | Yes     |
 | `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes     |
 | `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes     |
-| `unenroll` (endpoint)          | Yes                           | Yes           | No          | No      |
+| `start-lost-mode`              | No                            | No            | Yes         | Yes     |
+| `stop-lost-mode`               | No                            | No            | Yes         | Yes     |
+| `reset-password`               | No                            | No            | Yes         | Yes     |
+| `clear-app-data`               | No                            | No            | Yes         | Yes     |
+| `request-device-info`          | No                            | No            | Yes         | Yes     |
+| `relinquish-ownership`         | No                            | No            | Yes         | Yes     |
+| `unenroll` (endpoint)          | Yes                           | Yes           | Yes         | No      |
 
 The action menu is capability-driven: `GET /api/v1/tenants/:tenantId/devices/:id` returns an
 `actions` array for the device. The API rejects an action that is not in that list, so a

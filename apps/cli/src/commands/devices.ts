@@ -18,6 +18,12 @@ const DEVICE_ACTIONS = [
   "rotate-filevault-key",
   "set-recovery-lock",
   "verify-recovery-lock",
+  "start-lost-mode",
+  "stop-lost-mode",
+  "reset-password",
+  "clear-app-data",
+  "request-device-info",
+  "relinquish-ownership",
 ] as const;
 
 const DESTRUCTIVE_ACTIONS = new Set<string>([
@@ -27,6 +33,10 @@ const DESTRUCTIVE_ACTIONS = new Set<string>([
   "clear-passcode",
   "set-recovery-lock",
   "rotate-filevault-key",
+  "start-lost-mode",
+  "reset-password",
+  "clear-app-data",
+  "relinquish-ownership",
 ]);
 
 const timestamp = (value: string): string => value.replace("T", " ").slice(0, 16);

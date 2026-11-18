@@ -10,6 +10,7 @@ import {
 import {
   AndroidDeliveryError,
   DEFAULT_ANDROID_POLICY_ID,
+  androidCommandForAction,
   androidEnterpriseInfo,
   completeAndroidSignup,
   createAndroidEnrollmentToken,
@@ -20,6 +21,7 @@ import {
   mergeAndroidDeviceInfo,
   parseAndroidDeviceResource,
   syncAndroidPoliciesForTenant,
+  unenrollAndroidDevice,
   withStatusReporting,
   type AndroidDeliveryConfig,
 } from "../src/Device/android.ts";
@@ -122,12 +124,15 @@ type CreateEnterpriseInput = Parameters<AndroidManagementService["createEnterpri
 
 type PatchPolicyInput = Parameters<AndroidManagementService["patchPolicy"]>[0];
 
+type IssueCommandInput = Parameters<AndroidManagementService["issueCommand"]>[0];
+
 type AndroidCalls = {
   signupUrls: Array<{ callbackUrl: string }>;
   enterprises: Array<CreateEnterpriseInput>;
   policies: Array<{ enterpriseName: string; policyId: string; policy: PatchPolicyInput["policy"] }>;
   devices: Array<{ deviceName: string; policyName: string }>;
-  commands: Array<{ deviceName: string; type: string }>;
+  commands: Array<IssueCommandInput>;
+  deleted: Array<string>;
 };
 
 function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
@@ -137,6 +142,7 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
     policies: [],
     devices: [],
     commands: [],
+    deleted: [],
   };
 
   const service = AndroidManagement.of({
@@ -177,11 +183,15 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
     },
     listDevices: () => Effect.succeed({ devices: [] }),
     issueCommand: (input) => {
-      calls.commands.push({ deviceName: input.deviceName, type: input.type });
+      calls.commands.push({ ...input });
 
       return Effect.succeed({ operationName: `${input.deviceName}/operations/op-1` });
     },
-    deleteDevice: () => Effect.void,
+    deleteDevice: (input) => {
+      calls.deleted.push(input.deviceName);
+
+      return Effect.void;
+    },
     ...overrides,
   });
 
@@ -830,7 +840,7 @@ describe("Android Enterprise delivery", () => {
     );
 
     expect(wipe?.operationName).toContain("/operations/op-1");
-    expect(calls.commands).toEqual([{ deviceName, type: "WIPE" }]);
+    expect(calls.commands[0]).toMatchObject({ deviceName, type: "WIPE" });
     expect(db.store.device_command![0]).toMatchObject({
       organizationId,
       deviceId: "device-1",
@@ -850,7 +860,7 @@ describe("Android Enterprise delivery", () => {
     );
 
     expect(restart?.operationName).toBeDefined();
-    expect(calls.commands[1]).toEqual({ deviceName, type: "REBOOT" });
+    expect(calls.commands[1]).toMatchObject({ deviceName, type: "REBOOT" });
   });
 
   it("does not leak another tenant's enterprise when completing signup", async () => {
@@ -919,6 +929,455 @@ describe("Android Enterprise delivery", () => {
     expect(error.kind).toBe("upstream");
     expect(error.message).not.toContain(serviceAccountEmail);
     expect(error.message).toContain("[email]");
+  });
+});
+
+describe("Android remote actions", () => {
+  const device = { id: "device-1", dmIdentifier: deviceName };
+
+  const activeCommandRow = (
+    overrides: {
+      id?: string;
+      status?: string;
+      requestType?: string;
+      payload?: { type: string; operationName: string };
+    } = {},
+  ) => ({
+    id: "command-1",
+    organizationId,
+    deviceId: "device-1",
+    requestType: "AndroidResetPassword",
+    payload: {
+      type: "RESET_PASSWORD",
+      operationName: `${deviceName}/operations/op-1`,
+    },
+    status: "sent",
+    dedupeKey: "dedupe-1",
+    expiresAt: null,
+    resultStatus: null,
+    resultDetail: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+    ...overrides,
+  });
+
+  const androidMappingRow = () => ({
+    deviceId: "device-1",
+    organizationId,
+    enterpriseName,
+    deviceName,
+    policyId: null,
+    policyHash: null,
+    state: "ACTIVE",
+    managementMode: "DEVICE_OWNER",
+    ownership: "COMPANY_OWNED",
+    apiLevel: 34,
+    securityPatchLevel: null,
+    appliedPolicyName: null,
+    appliedPolicyVersion: null,
+    enrollmentTokenName: null,
+    disabledReason: null,
+    networkOperator: null,
+    totalRam: null,
+    lastError: null,
+    lastSyncedAt: null,
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    updatedAt: new Date("2026-01-01T00:00:00Z"),
+  });
+
+  it("maps every supported action onto an AMAPI command", () => {
+    expect(androidCommandForAction("wipe")).toEqual({
+      type: "WIPE",
+      requestType: "AndroidWipe",
+    });
+    expect(androidCommandForAction("restart")).toEqual({
+      type: "REBOOT",
+      requestType: "AndroidReboot",
+    });
+    expect(androidCommandForAction("lock")).toEqual({
+      type: "LOCK",
+      requestType: "AndroidLock",
+    });
+    expect(androidCommandForAction("start-lost-mode")).toEqual({
+      type: "START_LOST_MODE",
+      requestType: "AndroidStartLostMode",
+    });
+    expect(androidCommandForAction("stop-lost-mode")).toEqual({
+      type: "STOP_LOST_MODE",
+      requestType: "AndroidStopLostMode",
+    });
+    expect(androidCommandForAction("reset-password")).toEqual({
+      type: "RESET_PASSWORD",
+      requestType: "AndroidResetPassword",
+    });
+    expect(androidCommandForAction("clear-app-data")).toEqual({
+      type: "CLEAR_APP_DATA",
+      requestType: "AndroidClearAppData",
+    });
+    expect(androidCommandForAction("request-device-info")).toEqual({
+      type: "REQUEST_DEVICE_INFO",
+      requestType: "AndroidRequestDeviceInfo",
+    });
+    expect(androidCommandForAction("relinquish-ownership")).toEqual({
+      type: "RELINQUISH_OWNERSHIP",
+      requestType: "AndroidRelinquishOwnership",
+    });
+
+    // Sync is a policy push, not a command, and unsupported/platform-specific
+    // actions must not reach Google as an empty command.
+    expect(androidCommandForAction("sync")).toBeNull();
+    expect(androidCommandForAction("shutdown")).toBeNull();
+    expect(androidCommandForAction("clear-passcode")).toBeNull();
+  });
+
+  it("sends lost mode, device info and managed app data parameters", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      application: [
+        {
+          id: "app-1",
+          organizationId,
+          name: "Mail",
+          platform: "android",
+          bundleId: "com.example.mail",
+          source: "store",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+        },
+        {
+          id: "app-2",
+          organizationId,
+          name: "Chat",
+          platform: "android",
+          bundleId: "com.example.chat",
+          source: "store",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      application_device: [
+        { deviceId: "device-1", applicationId: "app-1" },
+        { deviceId: "device-1", applicationId: "app-2" },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "start-lost-mode",
+      }),
+      service,
+    );
+    expect(calls.commands[0]).toMatchObject({
+      deviceName,
+      type: "START_LOST_MODE",
+      startLostModeParams: { lostMessage: { defaultMessage: expect.any(String) } },
+    });
+
+    await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "stop-lost-mode",
+      }),
+      service,
+    );
+    expect(calls.commands[1]).toMatchObject({
+      deviceName,
+      type: "STOP_LOST_MODE",
+      stopLostModeParams: {},
+    });
+
+    await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "request-device-info",
+      }),
+      service,
+    );
+    expect(calls.commands[2]).toMatchObject({
+      deviceName,
+      type: "REQUEST_DEVICE_INFO",
+      requestDeviceInfoParams: { deviceInfo: "EID" },
+    });
+
+    await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "clear-app-data",
+      }),
+      service,
+    );
+    expect(calls.commands[3]).toMatchObject({
+      deviceName,
+      type: "CLEAR_APP_DATA",
+      clearAppsDataParams: {
+        packageNames: ["com.example.mail", "com.example.chat"],
+      },
+    });
+  });
+
+  it("rejects clearing app data when no managed app is assigned", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        issueAndroidCommand({
+          db,
+          config,
+          organizationId,
+          device,
+          action: "clear-app-data",
+        }).pipe(Effect.provideService(AndroidManagement, service)),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(AndroidDeliveryError);
+    expect(error.kind).toBe("invalid_payload");
+    expect(calls.commands).toHaveLength(0);
+    expect(db.store.device_command ?? []).toHaveLength(0);
+  });
+
+  it("generates a temporary password without persisting or returning it", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const result = await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "reset-password",
+      }),
+      service,
+    );
+
+    const sent = calls.commands[0]!;
+
+    expect(sent).toMatchObject({ deviceName, type: "RESET_PASSWORD" });
+    expect(sent.resetPasswordFlags).toEqual(["REQUIRE_ENTRY", "LOCK_NOW"]);
+    expect(sent.newPassword).toMatch(/^[A-Za-z0-9]{16}$/);
+    expect(sent.newPassword).toMatch(/[A-Z]/);
+    expect(sent.newPassword).toMatch(/[a-z]/);
+    expect(sent.newPassword).toMatch(/[0-9]/);
+    expect(result).toEqual({
+      operationName: expect.stringContaining("op-1"),
+      commandId: expect.any(String),
+    });
+    expect(JSON.stringify(result)).not.toContain(sent.newPassword!);
+    expect(JSON.stringify(db.store.device_command![0])).not.toContain(sent.newPassword!);
+  });
+
+  it("de-duplicates a repeated command instead of issuing it twice", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const first = await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "request-device-info",
+      }),
+      service,
+    );
+
+    const second = await provideAndroid(
+      issueAndroidCommand({
+        db,
+        config,
+        organizationId,
+        device,
+        action: "request-device-info",
+      }),
+      service,
+    );
+
+    expect(second).toEqual(first);
+    expect(calls.commands).toHaveLength(1);
+    expect(db.store.device_command).toHaveLength(1);
+  });
+
+  it("retires a device by deleting its Google resource and cancelling commands", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [androidMappingRow()],
+      device_command: [activeCommandRow(), activeCommandRow({ id: "command-2", status: "queued" })],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const result = await provideAndroid(
+      unenrollAndroidDevice({ db, config, organizationId, device }),
+      service,
+    );
+
+    expect(result).toEqual({ deviceId: "device-1" });
+    expect(calls.deleted).toEqual([deviceName]);
+    expect(db.store.device![0]).toMatchObject({ status: "unenrolled" });
+    expect(db.store.android_device![0]).toMatchObject({ state: "DELETED" });
+    expect(db.store.device_command).toMatchObject([
+      { status: "cancelled", dedupeKey: null, resultStatus: "Reconciled" },
+      { status: "cancelled", dedupeKey: null, resultStatus: "Reconciled" },
+    ]);
+  });
+
+  it("treats an already-deleted Google device as a successful unenroll", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+    });
+
+    const { service } = makeAndroid({
+      deleteDevice: () => Effect.fail(new GoogleApiError({ message: "not found", status: 404 })),
+    });
+
+    await expect(
+      provideAndroid(unenrollAndroidDevice({ db, config, organizationId, device }), service),
+    ).resolves.toEqual({ deviceId: "device-1" });
+    expect(db.store.device![0]).toMatchObject({ status: "unenrolled" });
+  });
+
+  it("refuses to unenroll a device linked to another enterprise", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        unenrollAndroidDevice({
+          db,
+          config,
+          organizationId,
+          device: { id: "device-1", dmIdentifier: "enterprises/LC999/devices/device-9" },
+        }).pipe(Effect.provideService(AndroidManagement, service)),
+      ),
+    );
+
+    expect(error.kind).toBe("invalid_payload");
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("reconciles the matching Android command from a COMMAND Pub/Sub notification", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [androidMappingRow()],
+      device_command: [
+        activeCommandRow(),
+        activeCommandRow({
+          id: "command-2",
+          requestType: "AndroidLock",
+          payload: { type: "LOCK", operationName: `${deviceName}/operations/op-2` },
+        }),
+      ],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+
+    const completed = await provideAndroid(
+      handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body: pushBody(
+          {
+            name: `${deviceName}/operations/op-1`,
+            metadata: { deviceName },
+            done: true,
+          },
+          "COMMAND",
+          "command-message-1",
+        ),
+        fetch: jwksFetch,
+      }),
+      service,
+    );
+
+    expect(completed.status).toBe("ok");
+    expect(db.store.device_command![0]).toMatchObject({
+      status: "succeeded",
+      resultStatus: "COMPLETED",
+      dedupeKey: null,
+    });
+    // The other in-flight command keeps waiting for its own operation.
+    expect(db.store.device_command![1]).toMatchObject({ status: "sent" });
+
+    const failed = await provideAndroid(
+      handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body: pushBody(
+          {
+            name: `${deviceName}/operations/op-2`,
+            metadata: { deviceName },
+            error: { code: 3, message: "The device rejected the command." },
+          },
+          "COMMAND",
+          "command-message-2",
+        ),
+        fetch: jwksFetch,
+      }),
+      service,
+    );
+
+    expect(failed.status).toBe("ok");
+    expect(db.store.device_command![1]).toMatchObject({
+      status: "failed",
+      resultStatus: "FAILED",
+      dedupeKey: null,
+    });
+    expect(db.store.device_command![1]!.resultDetail).toContain("rejected");
+    expect(db.store.audit_log!.map((entry: any) => entry.action)).toContain(
+      "device.command_failed",
+    );
   });
 });
 

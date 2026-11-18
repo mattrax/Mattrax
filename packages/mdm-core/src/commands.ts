@@ -16,6 +16,7 @@ const BUDGETS = new Map<string, number>([
   ["DeviceLock", 15 * MINUTE],
   ["ClearPasscode", 15 * MINUTE],
   ["AndroidLock", 15 * MINUTE],
+  ["AndroidResetPassword", 15 * MINUTE],
   ["RestartDevice", 30 * MINUTE],
   ["ShutdownDevice", 30 * MINUTE],
   ["WindowsReboot", 30 * MINUTE],
@@ -23,6 +24,7 @@ const BUDGETS = new Map<string, number>([
   // Queries: harmless whenever they land, but still bounded.
   ["SecurityInfo", 24 * HOUR],
   ["DeviceInformation", 24 * HOUR],
+  ["AndroidRequestDeviceInfo", 24 * HOUR],
   ["ActivationLockBypassCode", 24 * HOUR],
   // Legacy policy profiles and FileVault key maintenance.
   ["InstallProfile", 7 * DAY],
@@ -43,6 +45,12 @@ const BUDGETS = new Map<string, number>([
   ["EraseDevice", 7 * DAY],
   ["WindowsWipe", 7 * DAY],
   ["AndroidWipe", 7 * DAY],
+  ["AndroidRelinquishOwnership", 7 * DAY],
+  // Lost mode and managed-app data clearing stay meaningful while the device
+  // is still out with the user.
+  ["AndroidStartLostMode", 24 * HOUR],
+  ["AndroidStopLostMode", HOUR],
+  ["AndroidClearAppData", 24 * HOUR],
 ]);
 
 /**

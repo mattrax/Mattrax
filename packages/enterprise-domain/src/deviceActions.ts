@@ -22,6 +22,12 @@ export const DeviceActionName = Schema.Literals([
   "rotate-filevault-key",
   "set-recovery-lock",
   "verify-recovery-lock",
+  "start-lost-mode",
+  "stop-lost-mode",
+  "reset-password",
+  "clear-app-data",
+  "request-device-info",
+  "relinquish-ownership",
   "unenroll",
 ]);
 
@@ -88,10 +94,26 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
 const WINDOWS_ACTIONS: ReadonlyArray<DeviceActionName> = ["wipe", "restart", "unenroll"];
 
 /**
- * Android Management API commands support lock, wipe and reboot, and a policy
- * sync is a real push to Google. Unenrollment is not implemented for Android.
+ * Android Management API commands cover lock, wipe, reboot, lost mode,
+ * password resets, clearing managed app data, device information requests and
+ * relinquishing ownership. A policy sync is a real push to Google.
+ *
+ * `relinquish-ownership` is the Android spelling of unenrolment: Google removes
+ * the work profile and the device leaves the enterprise. `unenroll` is still
+ * accurate when Mattrax deletes the device resource outright.
  */
-const ANDROID_ACTIONS: ReadonlyArray<DeviceActionName> = ["sync", "lock", "wipe", "restart"];
+const ANDROID_ACTIONS: ReadonlyArray<DeviceActionName> = [
+  "sync",
+  "lock",
+  "wipe",
+  "restart",
+  "start-lost-mode",
+  "stop-lost-mode",
+  "reset-password",
+  "clear-app-data",
+  "request-device-info",
+  "relinquish-ownership",
+];
 
 /**
  * Capability tokens a device may report that name an action directly. Apple's
@@ -221,9 +243,9 @@ const supportsReturnToService = (input: DeviceActionInput): boolean => {
  *
  * Platform and enrollment status are the baseline. A device that reports
  * action capability tokens narrows that baseline, so an operator cannot queue
- * an action the device itself says it cannot run. Unenrollment is only
- * advertised where the platform implements it (Apple and Windows) and the
- * device is still managed.
+ * an action the device itself says it cannot run. Unenrollment is advertised
+ * on every managed platform: Apple and Windows remove their management profile
+ * and Android relinquishes ownership or deletes the device resource.
  *
  * This is a capability decision, not a permission decision: the caller still
  * enforces RBAC separately.
@@ -254,7 +276,7 @@ export const deviceAvailableActions = (
   // device's command capabilities, so keep it when the platform supports it.
   if (
     status === "enrolled" &&
-    (input.proto === "apple" || input.proto === "win") &&
+    ["apple", "win", "android"].includes(input.proto ?? "") &&
     !actions.includes("unenroll")
   )
     actions.push("unenroll");

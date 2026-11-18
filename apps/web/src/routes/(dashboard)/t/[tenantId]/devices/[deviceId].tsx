@@ -828,7 +828,13 @@ export default function DeviceDetailPage() {
         | "clear-passcode"
         | "install-app"
         | "collect-security-info"
-        | "refresh-applications";
+        | "refresh-applications"
+        | "start-lost-mode"
+        | "stop-lost-mode"
+        | "reset-password"
+        | "clear-app-data"
+        | "request-device-info"
+        | "relinquish-ownership";
       manifestUrl?: string;
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
     onSuccess: async (result) => {
@@ -1241,7 +1247,11 @@ export default function DeviceDetailPage() {
         () =>
           "The SCEP identity certificates issued to this device will be revoked. The device cannot renew them and may need to re-enroll.",
       ),
-      Match.orElse(() => "The device will be asked to remove its management profile."),
+      Match.orElse(() =>
+        row()?.proto === "android"
+          ? "Mattrax deletes this device's Google Enterprise record, which removes Android Device Policy and the work data it manages. To let an employee keep the device for personal use, use Relinquish ownership in Remote actions instead."
+          : "The device will be asked to remove its management profile.",
+      ),
     );
 
   const confirmLabel = () =>
@@ -2440,6 +2450,98 @@ export default function DeviceDetailPage() {
                               onClick={() => command.mutate({ action: "clear-passcode" })}
                             >
                               Clear passcode
+                            </Button>
+                          </Show>
+                          <Show when={supports("start-lost-mode")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Put this device into lost mode? It locks, and its screen shows a message asking for its return.",
+                                  )
+                                )
+                                  command.mutate({ action: "start-lost-mode" });
+                              }}
+                            >
+                              Start lost mode
+                            </Button>
+                          </Show>
+                          <Show when={supports("stop-lost-mode")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "stop-lost-mode" })}
+                            >
+                              End lost mode
+                            </Button>
+                          </Show>
+                          <Show when={supports("reset-password")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Reset the device password? Android Device Policy sets a new temporary password and locks the device. Mattrax never stores or displays the password.",
+                                  )
+                                )
+                                  command.mutate({ action: "reset-password" });
+                              }}
+                            >
+                              Reset password
+                            </Button>
+                          </Show>
+                          <Show when={supports("request-device-info")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "request-device-info" })}
+                            >
+                              Request device info
+                            </Button>
+                          </Show>
+                          <Show when={supports("clear-app-data")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Clear work-profile app data? Data stored by every managed app on this device is erased. Personal apps and data are not affected.",
+                                  )
+                                )
+                                  command.mutate({ action: "clear-app-data" });
+                              }}
+                            >
+                              Clear app data
+                            </Button>
+                          </Show>
+                          <Show when={supports("relinquish-ownership")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Relinquish ownership of this device? The work profile and all policies are removed, the device leaves the organisation, and Google deletes it from the enterprise once it acknowledges the command. Personal apps and data are kept.",
+                                  )
+                                )
+                                  command.mutate({ action: "relinquish-ownership" });
+                              }}
+                            >
+                              Relinquish ownership
                             </Button>
                           </Show>
                           <Show when={supports("return-to-service")}>

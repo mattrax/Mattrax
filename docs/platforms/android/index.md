@@ -85,12 +85,22 @@ See [Android policies](/platforms/android/policies).
 
 ## Commands
 
-| Action    | AMAPI command               |
-| --------- | --------------------------- |
-| `wipe`    | `WIPE`                      |
-| `restart` | `REBOOT`                    |
-| `lock`    | `LOCK`                      |
-| `sync`    | Push the current policy now |
+| Action                 | AMAPI command / call         |
+| ---------------------- | ---------------------------- |
+| `wipe`                 | `WIPE`                       |
+| `restart`              | `REBOOT`                     |
+| `lock`                 | `LOCK`                       |
+| `start-lost-mode`      | `START_LOST_MODE`            |
+| `stop-lost-mode`       | `STOP_LOST_MODE`             |
+| `reset-password`       | `RESET_PASSWORD`             |
+| `clear-app-data`       | `CLEAR_APP_DATA`             |
+| `request-device-info`  | `REQUEST_DEVICE_INFO`        |
+| `relinquish-ownership` | `RELINQUISH_OWNERSHIP`       |
+| `unenroll` (endpoint)  | `enterprises.devices.delete` |
+| `sync`                 | Push the current policy now  |
+
+`reset-password` generates a temporary password for Google and never stores or returns it.
+`clear-app-data` clears the data of every managed app currently assigned to the device.
 
 Command results arrive through Pub/Sub and update the command row.
 
@@ -169,10 +179,10 @@ the new policy on the next sync. See
   policy that turns it off leaves the list empty.
 - Assigning an app only changes the policy; there is no per-device install command because
   AMAPI delivers apps through the policy.
-- No password reset, lost mode, clear app data or eSIM commands exposed.
+- No eSIM commands are exposed.
 - No Android compliance state ingestion.
-- Deleting a device removes local rows only; the Google device and enterprise mapping
-  remain.
+- Unenrolling deletes the Google device resource. `relinquish-ownership` is available
+  separately for company-owned devices that should keep their personal data.
 - Android devices are stored with `serial = null` when the serial would collide with an
   Apple or Windows device in the same tenant.
 - Signup, Pub/Sub, enrollment, policy convergence and commands have not been validated

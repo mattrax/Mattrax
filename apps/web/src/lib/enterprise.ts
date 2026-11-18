@@ -985,7 +985,13 @@ export const enterprise = {
         | "clear-passcode"
         | "install-app"
         | "collect-security-info"
-        | "refresh-applications";
+        | "refresh-applications"
+        | "start-lost-mode"
+        | "stop-lost-mode"
+        | "reset-password"
+        | "clear-app-data"
+        | "request-device-info"
+        | "relinquish-ownership";
       manifestUrl?: string;
       iTunesStoreId?: number;
     } = { action: "sync" },

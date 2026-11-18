@@ -325,6 +325,7 @@ import {
   loadAndroidEnterprise,
   setAndroidEnabled,
   syncAndroidPoliciesForTenant,
+  unenrollAndroidDevice,
   type AndroidDeliveryConfig,
 } from "@mattrax/enterprise-backend";
 import {
@@ -408,13 +409,7 @@ import {
   signAppleProfilePlist,
   type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
-import {
-  ensureScepCa,
-  importScepCa,
-  replaceScepCa,
-  rotateScepCa,
-  ScepError,
-} from "@mattrax/scep";
+import { ensureScepCa, importScepCa, replaceScepCa, rotateScepCa, ScepError } from "@mattrax/scep";
 import {
   listUserSessions,
   revokeAllUserSessions,
@@ -11544,7 +11539,7 @@ export const createEnterpriseService = ({
           if (!command)
             return yield* Effect.fail(
               new EnterpriseBadRequest({
-                message: "Android supports remote erase, restart and lock",
+                message: "This remote action is not available for Android devices.",
               }),
             );
           yield* audit(ctx, "device.action", "device", deviceId, {
@@ -12208,10 +12203,35 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
+        if (device.proto === "android" && device.status === "enrolled")
+          return yield* Effect.gen(function* () {
+            // Deleting the Google Enterprise device resource removes Android
+            // Device Policy and its work data, then moves the row to
+            // `unenrolled` in one step (Google has no asynchronous retirement
+            // acknowledgement to wait for here).
+            yield* mapAndroidFailure(
+              unenrollAndroidDevice({
+                db,
+                config: androidConfig,
+                organizationId: ctx.organization.id,
+                device: { id: device.id, dmIdentifier: device.dmIdentifier },
+              }),
+            );
+
+            const revoked = yield* revokeDeviceCertificates(ctx.organization.id, [device]);
+            yield* audit(ctx, "device.unenrolled", "device", deviceId, {
+              revokedCertificates: revoked,
+              platform: "android",
+            });
+            yield* reconcileSeats(ctx.organization.id);
+
+            return ok;
+          });
+
         if (device.proto === "android")
           return yield* Effect.fail(
             new EnterpriseBadRequest({
-              message: "Remote unenroll is only available for Apple and Windows devices.",
+              message: "This Android device is not enrolled, so it cannot be unenrolled.",
             }),
           );
 
