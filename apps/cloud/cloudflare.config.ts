@@ -60,15 +60,23 @@ const publicOrigin = (() => {
  * development, previews and self-hosting, and SSR keeps using the `API`
  * service binding.
  */
+/**
+ * The zone that owns the public host. A Custom Domain is a SaaS wildcard host,
+ * so the routes API requires the zone explicitly; derive it from the hostname
+ * (dropping the leftmost label) unless the deployment names it.
+ */
+const publicZone =
+  process.env.MATTRAX_ZONE?.trim() ||
+  (() => {
+    const labels = publicOrigin.host.split(".");
+
+    return labels.length > 2 ? labels.slice(1).join(".") : publicOrigin.host;
+  })();
+
 const publicApiRoutes =
   publicOrigin.protocol === "https:"
     ? ["/api/*", "/mdm/*", "/scim/*"].map((path) =>
-        triggers.fetch({
-          pattern: `${publicOrigin.host}${path}`,
-          // Optional for an account with more than one zone that contains this
-          // host.
-          ...(process.env.MATTRAX_ZONE ? { zone: process.env.MATTRAX_ZONE } : {}),
-        }),
+        triggers.fetch({ pattern: `${publicOrigin.host}${path}`, zone: publicZone }),
       )
     : [];
 
