@@ -9,7 +9,7 @@
 # SMTP, and the dashboard is the Solid SSR Node server. One Node process owns
 # both behind a single port, with `/api`, `/mdm` and `/scim` routed to the API.
 
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 
 # Node validates the system trust store when it starts, even for a build.
 # binutils strips debug symbols from the Node binary that reaches the runtime;
