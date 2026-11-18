@@ -1534,11 +1534,15 @@ export const syncAndroidPoliciesForTenant = (input: {
           ? and(
               eq(schema.device.organizationId, input.organizationId),
               eq(schema.device.proto, "android"),
+              eq(schema.device.status, "enrolled"),
               inArray(schema.device.id, scopedIds),
             )
           : and(
               eq(schema.device.organizationId, input.organizationId),
               eq(schema.device.proto, "android"),
+              // A retired device's Google resource no longer exists; pushing
+              // policy to it would 404 and poison the tenant's sync status.
+              eq(schema.device.status, "enrolled"),
             ),
       );
 

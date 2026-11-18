@@ -5279,6 +5279,22 @@ describe("Windows activation reporting", () => {
       "win-activated",
       "win-unreported",
     ]);
+
+    // The structured-query path sorts in memory rather than in SQL. It must
+    // agree with the database order, including unreported devices first.
+    const structured = await runEffect(
+      service.searchDevices(request(headers), tenantId, {
+        query: "name starts with win",
+        sort: "activation",
+        direction: "asc",
+      }),
+    );
+
+    expect(structured.devices.map((device) => device.id)).toEqual([
+      "win-unreported",
+      "win-activated",
+      "win-not-activated",
+    ]);
   });
 
   it("exports Windows activation in the device CSV", async () => {

@@ -9,7 +9,9 @@ import {
   enterpriseApi,
   enterpriseAttributeApi,
 } from "./enterprise.ts";
+import { EnterpriseNotConfigured, EnterpriseUpstreamError } from "./Errors.js";
 import { Registration } from "./auth.js";
+import { StepUpRequired } from "./stepUp.js";
 
 const endpoints = {
   ...enterpriseAccountApi.endpoints,
@@ -31,6 +33,29 @@ describe("enterprise API error contract", () => {
         Schema.is(union)(internal),
         `${identifier} does not declare EnterpriseInternal as an error`,
       ).toBe(true);
+    }
+  });
+
+  it("declares the errors Android device commands can produce", () => {
+    const stepUp = new StepUpRequired({
+      message: "Confirm this action",
+      action: "device-command",
+      methods: ["passkey"],
+    });
+    const notConfigured = new EnterpriseNotConfigured({ message: "Android is not connected" });
+    const upstream = new EnterpriseUpstreamError({ message: "Google rejected the request" });
+
+    for (const identifier of ["deviceAction", "deviceUnenroll"]) {
+      const endpoint = endpoints[identifier as keyof typeof endpoints];
+      expect(endpoint, `${identifier} is missing`).toBeDefined();
+      const union = Schema.Union([...endpoint.error]);
+
+      for (const [name, error] of [
+        ["StepUpRequired", stepUp],
+        ["EnterpriseNotConfigured", notConfigured],
+        ["EnterpriseUpstreamError", upstream],
+      ] as const)
+        expect(Schema.is(union)(error), `${identifier} does not encode ${name}`).toBe(true);
     }
   });
 

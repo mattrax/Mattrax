@@ -4369,15 +4369,21 @@ export const createEnterpriseService = ({
       return and(...conditions);
     });
 
-  /** Administrative order for activation sorting: activated, not, unknown. */
+  /**
+   * Administrative order for activation sorting: unreported, activated, not,
+   * unknown. Unreported sorts first, matching the SQL ordering where the
+   * nullable column sorts before the stored enum values.
+   */
   const activationSortRank = (status: string | null | undefined): number => {
     switch (status) {
       case "activated":
         return 0;
       case "not-activated":
         return 1;
-      default:
+      case "unknown":
         return 2;
+      default:
+        return -1;
     }
   };
 

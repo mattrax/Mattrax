@@ -487,21 +487,23 @@ user's channel. Results from a user channel never overwrite device inventory.
 
 These are different operations.
 
-**Unenroll** asks the device to remove management. Apple and Windows support it:
+**Unenroll** asks the device to remove management. Apple, Windows and Android support it:
 
 ```bash
 curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/unenroll" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
-The status becomes `unenrolling` and certificates are revoked. Apple completes removal at
-its next check-in (and a device that checks in after its tenant or device row is gone
+Apple and Windows move to `unenrolling` (Android goes straight to `unenrolled`) and
+certificates are revoked. Apple completes removal at its next check-in (and a device that checks in after its tenant or device row is gone
 receives `410 Gone`). Windows receives an OMA-DM `Exec` on
 `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll`; while the device is `unenrolling`, the
 next session also deletes the OMA-URIs that were applied, then removes the management
 account. A Windows device that removes management locally reports the `1226` Generic Alert
-on its next check-in, which moves it straight to `unenrolled`. Android does not expose
-remote unenroll yet.
+on its next check-in, which moves it straight to `unenrolled`. Android relinquishes
+ownership by deleting the device from the tenant's Android enterprise, cancels queued
+commands and moves the row straight to `unenrolled`; it requires a recent step-up grant
+because it erases work data.
 
 **Delete** removes the local device row and revokes certificates. It does not wipe or
 unenroll the physical device.

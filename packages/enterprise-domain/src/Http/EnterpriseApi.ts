@@ -1334,7 +1334,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      // Android and Apple command issues are upstream calls and can require a
+      // step-up grant; declare those errors so they encode instead of 500ing.
+      error: [
+        ...EnterpriseAndroidErrors,
+        ...EnterpriseAppleWriteErrors,
+        ...EnterpriseStepUpRequired,
+      ],
       params: TenantIdParam,
       payload: DeviceActionRequest,
       success: DeviceActionResponse,
@@ -1382,7 +1388,9 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", {
-      error: EnterpriseTenantWriteErrors,
+      // Android unenrolment is a Google API call: it can require a step-up
+      // grant and can fail because the integration is unavailable.
+      error: [...EnterpriseAndroidErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),

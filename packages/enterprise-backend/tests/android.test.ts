@@ -696,6 +696,31 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies).toHaveLength(1);
   });
 
+  it("does not push policy to a device that has already been retired", async () => {
+    const retired = {
+      ...androidDeviceRow(),
+      id: "device-2",
+      status: "unenrolled" as const,
+      name: "Retired Pixel",
+      dmIdentifier: "enterprises/enterprise-1/devices/device-2",
+    };
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow(), retired],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const result = await provideAndroid(
+      syncAndroidPoliciesForTenant({ db, config, organizationId }),
+      service,
+    );
+
+    expect(result).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
+    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
+  });
+
   it("adds assigned Managed Google Play apps and removes unassigned ones", async () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],
