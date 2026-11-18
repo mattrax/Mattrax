@@ -1,0 +1,2 @@
+CREATE INDEX `audit_log_organization_target_created_idx` ON `audit_log` (`organization_id`,`target_type`,`target_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `device_command_device_updated_idx` ON `device_command` (`device_id`,`updated_at`);

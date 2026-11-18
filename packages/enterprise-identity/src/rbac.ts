@@ -1,5 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import { Context, Effect } from "effect";
-import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
 import {
   builtInRolePermissions,
   BUILT_IN_ROLE_LABELS,
@@ -408,36 +409,115 @@ export const resolveTenantRole = (
         where: { id: member.customRoleId, organizationId: member.organizationId },
       });
 
-      if (role) {
-        const permissions = Array.isArray(role.permissions) ? role.permissions : [];
-
-        return {
-          roleName: role.name,
-          roleKey: role.id,
-          roleKind: "custom" as const,
-          roleId: role.id,
-          permissions: new Set(
-            permissions.filter((permission): permission is Permission =>
-              PERMISSION_SET.has(permission),
-            ),
-          ),
-        };
-      }
+      if (role) return resolveTenantRoleFrom(member, role);
     }
 
-    return {
-      roleName: member.role
-        .split(",")
-        .map((raw) => {
-          const part = raw.trim();
+    return resolveTenantRoleFrom(member);
+  });
 
-          return isBuiltInTenantRole(part) ? BUILT_IN_ROLE_LABELS[part] : part;
-        })
-        .join(", "),
-      roleKey: member.role,
-      roleKind: "built-in" as const,
-      roleId: null,
-      permissions: builtInRolePermissions(member.role),
+type CustomRoleRow = {
+  readonly id: string;
+  readonly name: string;
+  readonly permissions: unknown;
+};
+
+/**
+ * Resolve a membership's effective role from rows the caller already loaded.
+ *
+ * Tenant resolution reads the member, organisation and (for custom roles) the
+ * role row anyway, so accepting them here avoids a second query per request
+ * while keeping the permission derivation in one place.
+ */
+export const resolveTenantRoleFrom = (
+  member: MemberRole,
+  customRole?: CustomRoleRow | null,
+): ResolvedTenantRole => {
+  if (member.customRoleId && customRole) {
+    const permissions = Array.isArray(customRole.permissions) ? customRole.permissions : [];
+
+    return {
+      roleName: customRole.name,
+      roleKey: customRole.id,
+      roleKind: "custom" as const,
+      roleId: customRole.id,
+      permissions: new Set(
+        permissions.filter((permission): permission is Permission =>
+          PERMISSION_SET.has(permission),
+        ),
+      ),
+    };
+  }
+
+  return {
+    roleName: member.role
+      .split(",")
+      .map((raw) => {
+        const part = raw.trim();
+
+        return isBuiltInTenantRole(part) ? BUILT_IN_ROLE_LABELS[part] : part;
+      })
+      .join(", "),
+    roleKey: member.role,
+    roleKind: "built-in" as const,
+    roleId: null,
+    permissions: builtInRolePermissions(member.role),
+  };
+};
+
+export type TenantAccess = {
+  readonly member: typeof schema.member.$inferSelect;
+  readonly organization: typeof schema.organization.$inferSelect;
+  readonly role: ResolvedTenantRole;
+};
+
+/**
+ * Load a caller's membership, organisation and effective role in one query.
+ *
+ * Every tenant-scoped endpoint needs all three before it can authorise the
+ * request. Reading them separately cost three sequential round trips on the
+ * request path, which dominates a dashboard load at production database
+ * latency. A custom role's row is joined rather than fetched afterwards, so the
+ * query count stays at one for both built-in and custom roles.
+ */
+export const loadTenantAccess = (
+  db: EnterpriseDb,
+  accountId: string,
+  organizationId: string,
+): Effect.Effect<TenantAccess | undefined, unknown, never> =>
+  Effect.gen(function* () {
+    const [row] = yield* db
+      .select({
+        member: schema.member,
+        organization: schema.organization,
+        customRole: {
+          id: schema.tenantRole.id,
+          name: schema.tenantRole.name,
+          permissions: schema.tenantRole.permissions,
+        },
+      })
+      .from(schema.member)
+      .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+      .leftJoin(
+        schema.tenantRole,
+        and(
+          eq(schema.tenantRole.id, schema.member.customRoleId),
+          eq(schema.tenantRole.organizationId, schema.member.organizationId),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.member.accountId, accountId),
+          eq(schema.member.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return undefined;
+
+    return {
+      member: row.member,
+      organization: row.organization,
+      role: resolveTenantRoleFrom(row.member, row.customRole?.id ? row.customRole : undefined),
     };
   });
 

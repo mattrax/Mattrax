@@ -342,6 +342,69 @@ describe("enterprise service tenant flow", () => {
     expect(afterDelete.dashboards[0].isDefault).toBe(true);
   });
 
+  it("evaluates batched dashboard widget queries against one snapshot", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    const stale = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+
+    const devices = [
+      ["device-1", "apple", "S1", now],
+      ["device-2", "win", "S2", stale],
+      ["device-3", "android", "S3", now],
+    ] as const;
+
+    for (const [id, proto, serial, lastSeenAt] of devices)
+      db.store.device.push({
+        id,
+        organizationId: tenant.id,
+        proto,
+        status: "enrolled",
+        name: id,
+        serial,
+        enrolledAt: now,
+        lastSeenAt,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+    const queries = [
+      { dataset: "devices" as const, query: { all: [] }, countOnly: true },
+      {
+        dataset: "devices" as const,
+        query: { all: [{ field: "health" as const, op: "eq" as const, value: "attention" }] },
+        countOnly: true,
+      },
+      { dataset: "devices" as const, query: { all: [] }, groupBy: "platform" },
+    ];
+
+    const batch = await runEffect(
+      service.queryDashboardBatch(request(headers), tenant.id, { queries }),
+    );
+
+    // Counts, health filters and bucket dimensions all resolve from the same
+    // loaded devices, in the order the widgets asked for them.
+    expect(batch.results[0]).toEqual({ total: 3, rows: [], buckets: [] });
+    expect(batch.results[1]).toEqual({ total: 1, rows: [], buckets: [] });
+    expect(batch.results[2].total).toBe(3);
+    expect(batch.results[2].buckets).toEqual([
+      { label: "Apple", value: 1 },
+      { label: "Windows", value: 1 },
+      { label: "Android", value: 1 },
+    ]);
+
+    // Batching must not change how a single-widget request behaves.
+    const single = await runEffect(
+      service.queryDashboard(request(headers), tenant.id, queries[2]!),
+    );
+
+    expect(single).toEqual(batch.results[2]);
+  });
+
   it("lists only tenants for the authenticated user", async () => {
     const { service, headers } = await makeContext();
 

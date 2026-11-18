@@ -7,6 +7,7 @@ import { enterpriseAccountApi } from "./AccountApi.js";
 import { enterpriseAdeApi } from "./AdeApi.js";
 import { enterpriseAttributeApi } from "./AttributeApi.js";
 import { enterpriseApi } from "./EnterpriseApi.js";
+import { enterpriseDashboardApi } from "./DashboardApi.js";
 
 export * from "./AccountApi.js";
 
@@ -15,6 +16,8 @@ export * from "./AdeApi.js";
 export * from "./AttributeApi.js";
 
 export * from "./EnterpriseApi.js";
+
+export * from "./DashboardApi.js";
 
 export * from "./Params.js";
 
@@ -26,17 +29,20 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseApi
   | typeof enterpriseAdeApi
   | typeof enterpriseAttributeApi
+  | typeof enterpriseDashboardApi
 > = HttpApi.make("MattraxEnterprise")
   .add(enterpriseAccountApi)
   .add(enterpriseApi)
   .add(enterpriseAdeApi)
-  .add(enterpriseAttributeApi);
+  .add(enterpriseAttributeApi)
+  .add(enterpriseDashboardApi);
 
 /** The flattened client groups the dashboard can call. */
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
   HttpApiClient.Client<typeof enterpriseApi> &
   HttpApiClient.Client<typeof enterpriseAdeApi> &
-  HttpApiClient.Client<typeof enterpriseAttributeApi>;
+  HttpApiClient.Client<typeof enterpriseAttributeApi> &
+  HttpApiClient.Client<typeof enterpriseDashboardApi>;
 
 export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
 

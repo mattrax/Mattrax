@@ -11,6 +11,7 @@ import {
   enterpriseApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
+  enterpriseDashboardApi,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
@@ -21,6 +22,7 @@ import {
   enterpriseAccountHandlers,
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
+  enterpriseDashboardHandlers,
   enterpriseHandlers,
   mcpOAuthRoutes,
   scriptAgentHandlers,
@@ -178,6 +180,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
+  .add(enterpriseDashboardApi)
   .add(scriptApi)
   .add(scriptAgentApi)
   .add(authHttp)
@@ -234,6 +237,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
@@ -1073,7 +1077,8 @@ export const createApiRuntime = (
 ) => {
   // A Node process serves many requests from one runtime, so rebuilding the
   // service graph per request would create a new MySQL pool every time. The
-  // Cloudflare entry keeps the per-request build (one isolate, short-lived).
+  // Cloudflare entry keeps the per-request build: Workers forbid reusing I/O
+  // objects (including a MySQL socket) across request contexts.
   const handlers = new WeakMap<Env, ReturnType<typeof getAppHandler>>();
 
   const appHandler = (env: Env) => {

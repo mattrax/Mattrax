@@ -1,0 +1,245 @@
+{
+  "label": "bench",
+  "baseUrl": "http://localhost:9050",
+  "latency": "http://127.0.0.1:3309",
+  "runs": 5,
+  "generatedAt": "2026-11-18T10:40:32.137Z",
+  "results": [
+    {
+      "name": "GET /v1/tenants",
+      "queries": 10,
+      "ms": 465.3,
+      "minMs": 455.2,
+      "maxMs": 471.6
+    },
+    {
+      "name": "GET /v1/tenants/:id",
+      "queries": 10,
+      "ms": 464.5,
+      "minMs": 460.9,
+      "maxMs": 474.8
+    },
+    {
+      "name": "GET /v1/tenants/:id/security",
+      "queries": 10,
+      "ms": 471.8,
+      "minMs": 451.8,
+      "maxMs": 478.1
+    },
+    {
+      "name": "GET /v1/tenants/:id/devices",
+      "queries": 15,
+      "ms": 694.1,
+      "minMs": 681,
+      "maxMs": 697.8
+    },
+    {
+      "name": "GET devices/search (page)",
+      "queries": 18,
+      "ms": 666.4,
+      "minMs": 662.8,
+      "maxMs": 678.6
+    },
+    {
+      "name": "GET devices/search (text q)",
+      "queries": 18,
+      "ms": 676.6,
+      "minMs": 664.1,
+      "maxMs": 686.4
+    },
+    {
+      "name": "GET devices/search (health sort)",
+      "queries": 18,
+      "ms": 750.1,
+      "minMs": 725.9,
+      "maxMs": 753.1
+    },
+    {
+      "name": "GET devices/search (structured query)",
+      "queries": 18,
+      "ms": 650.2,
+      "minMs": 642.5,
+      "maxMs": 668.5
+    },
+    {
+      "name": "GET /devices/:id",
+      "queries": 16,
+      "ms": 694.5,
+      "minMs": 688,
+      "maxMs": 698.1
+    },
+    {
+      "name": "GET /devices/:id/health",
+      "queries": 14,
+      "ms": 621.2,
+      "minMs": 614,
+      "maxMs": 674.8
+    },
+    {
+      "name": "GET /devices/:id/activity",
+      "queries": 15,
+      "ms": 618.2,
+      "minMs": 602.4,
+      "maxMs": 626
+    },
+    {
+      "name": "GET /devices/:id/applications",
+      "queries": 12,
+      "ms": 541.2,
+      "minMs": 535.4,
+      "maxMs": 554.4
+    },
+    {
+      "name": "GET /devices/:id/users",
+      "queries": 12,
+      "ms": 556.8,
+      "minMs": 547.9,
+      "maxMs": 561.9
+    },
+    {
+      "name": "GET /device-health",
+      "queries": 13,
+      "ms": 553.9,
+      "minMs": 548.3,
+      "maxMs": 594.7
+    },
+    {
+      "name": "GET /v1/tenants/:id/policies",
+      "queries": 21,
+      "ms": 743,
+      "minMs": 740.7,
+      "maxMs": 767.1
+    },
+    {
+      "name": "GET /policies/:id",
+      "queries": 12,
+      "ms": 537.8,
+      "minMs": 532.9,
+      "maxMs": 550.6
+    },
+    {
+      "name": "GET /policies/:id/assignments",
+      "queries": 18,
+      "ms": 660.2,
+      "minMs": 648.1,
+      "maxMs": 668.9
+    },
+    {
+      "name": "GET /policies/:id/deployments",
+      "queries": 12,
+      "ms": 542.5,
+      "minMs": 533.5,
+      "maxMs": 547.8
+    },
+    {
+      "name": "GET /v1/tenants/:id/groups",
+      "queries": 13,
+      "ms": 587.6,
+      "minMs": 584.3,
+      "maxMs": 601.2
+    },
+    {
+      "name": "GET /groups/:id",
+      "queries": 15,
+      "ms": 593,
+      "minMs": 587.1,
+      "maxMs": 598.5
+    },
+    {
+      "name": "GET /v1/tenants/:id/applications",
+      "queries": 14,
+      "ms": 619,
+      "minMs": 606.4,
+      "maxMs": 621.8
+    },
+    {
+      "name": "GET /applications/inventory",
+      "queries": 11,
+      "ms": 509.8,
+      "minMs": 502.8,
+      "maxMs": 519.3
+    },
+    {
+      "name": "GET /applications/:id",
+      "queries": 16,
+      "ms": 660.2,
+      "minMs": 652.9,
+      "maxMs": 680.4
+    },
+    {
+      "name": "GET /v1/tenants/:id/accounts",
+      "queries": 12,
+      "ms": 504.6,
+      "minMs": 486.6,
+      "maxMs": 513.8
+    },
+    {
+      "name": "GET /v1/tenants/:id/directory",
+      "queries": 13,
+      "ms": 542.9,
+      "minMs": 534.7,
+      "maxMs": 548.1
+    },
+    {
+      "name": "GET /v1/tenants/:id/dashboards",
+      "queries": 12,
+      "ms": 550.8,
+      "minMs": 548.7,
+      "maxMs": 570.9
+    },
+    {
+      "name": "GET /v1/tenants/:id/audit-log",
+      "queries": 11,
+      "ms": 489.4,
+      "minMs": 485.9,
+      "maxMs": 516
+    },
+    {
+      "name": "POST dashboard-query (count all)",
+      "queries": 11,
+      "ms": 497.7,
+      "minMs": 490.2,
+      "maxMs": 500.2
+    },
+    {
+      "name": "POST dashboard-query (count attention)",
+      "queries": 13,
+      "ms": 564.5,
+      "minMs": 559,
+      "maxMs": 570.6
+    },
+    {
+      "name": "POST dashboard-query (pie platform)",
+      "queries": 13,
+      "ms": 569,
+      "minMs": 555.4,
+      "maxMs": 575.2
+    },
+    {
+      "name": "POST dashboard-query (table attention)",
+      "queries": 13,
+      "ms": 564.5,
+      "minMs": 553.7,
+      "maxMs": 568
+    },
+    {
+      "name": "POST dashboard-query/batch (default)",
+      "queries": 13,
+      "ms": 565.3,
+      "minMs": 554.5,
+      "maxMs": 583.3
+    }
+  ],
+  "overviewPage": {
+    "requests": 7,
+    "queriesSerial": 85,
+    "msSerial": 3764.9,
+    "msParallelApprox": 569
+  },
+  "overviewPageWithBatch": {
+    "requests": 4,
+    "queriesSerial": 48,
+    "msSerial": 2134.5,
+    "msParallelApprox": 565.3
+  }
+}
