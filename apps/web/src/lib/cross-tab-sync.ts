@@ -68,19 +68,29 @@ const decode = Schema.decodeUnknownOption(CrossTabMessage);
 export const decodeCrossTabMessage = (value: unknown): CrossTabMessage | undefined =>
   Option.getOrUndefined(decode(value));
 
-const tabId = (() => {
+let tabId: string | undefined;
+
+/**
+ * Resolve the tab id on first use. The Workers runtime rejects random values
+ * during module evaluation, and this module is part of the server bundle too.
+ */
+const currentTabId = (): string => {
+  if (tabId) return tabId;
+
   const uuid = globalThis.crypto?.randomUUID?.();
 
-  if (uuid) return uuid;
+  tabId = uuid ?? `tab-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 
-  return `tab-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-})();
+  return tabId;
+};
 
-export const crossTabTabId = (): string => tabId;
+export const crossTabTabId = (): string => currentTabId();
 
 /** A tab never applies its own message; the local cache already changed. */
-export const isOwnMessage = (message: CrossTabMessage, self: string = tabId): boolean =>
-  message.tabId === self;
+export const isOwnMessage = (
+  message: CrossTabMessage,
+  self: string = currentTabId(),
+): boolean => message.tabId === self;
 
 /** Stable key identity for dedupe inside a flush window. */
 export const queryKeyId = (key: readonly unknown[]): string => JSON.stringify(key);
@@ -135,7 +145,7 @@ let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
 const envelope = () => ({
   v: 1 as const,
-  tabId,
+  tabId: currentTabId(),
   sentAt: Date.now(),
 });
 
@@ -293,7 +303,7 @@ export const installCrossTabSync = (target: QueryClient): void => {
         try {
           localStorage.setItem(
             CROSS_TAB_STORAGE_KEY,
-            JSON.stringify({ ...message, nonce: `${tabId}:${Date.now()}` }),
+            JSON.stringify({ ...message, nonce: `${currentTabId()}:${Date.now()}` }),
           );
         } catch {
           // Storage disabled: cross-tab sync silently degrades to this tab only.
