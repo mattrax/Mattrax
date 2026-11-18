@@ -38,6 +38,11 @@ import {
   type PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import {
+  optimisticallyPatchItem,
+  optimisticallyRemoveRows,
+  optimisticallyUpdateList,
+} from "~/lib/optimistic";
 import { useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
@@ -247,13 +252,27 @@ export default function GroupDetailPage() {
   });
 
   const invalidate = async () => {
-    await qc.invalidateQueries({
-      queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
-    });
-    await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
-    await qc.invalidateQueries({
-      queryKey: [...enterpriseKeys.item(params.tenantId, "group", params.groupId), "preview"],
-    });
+    await Promise.all([
+      qc.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "group", params.groupId),
+      }),
+      qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") }),
+      qc.invalidateQueries({
+        queryKey: [...enterpriseKeys.item(params.tenantId, "group", params.groupId), "preview"],
+      }),
+    ]);
+  };
+
+  /** Patch the group header and its list row in one snapshot. */
+  const patchGroup = async (patch: Partial<GroupNode>) => {
+    const restores = await Promise.all([
+      optimisticallyPatchItem(qc, params.tenantId!, "group", params.groupId!, patch),
+      optimisticallyUpdateList(qc, params.tenantId!, "group", (rows) =>
+        rows.map((row) => (row.id === params.groupId ? { ...row, ...patch } : row)),
+      ),
+    ]);
+
+    return () => restores.forEach((restore) => restore());
   };
 
   const save = useMutation(() => ({
@@ -292,36 +311,80 @@ export default function GroupDetailPage() {
         },
       });
     },
-    onSuccess: async () => {
+    onMutate: async () => {
+      const nextDevices = kind() === "dynamic" ? undefined : deviceIds();
+      const nextPolicies = policyModes();
+
+      const restore = await patchGroup({
+        name: name(),
+        notes: notes() || null,
+        kind: kind(),
+        rules: kind() === "dynamic" ? rules() : null,
+        ...(nextDevices
+          ? {
+              devicesCount: nextDevices.size,
+              policiesCount: nextPolicies.size,
+            }
+          : { policiesCount: nextPolicies.size }),
+      });
+
+      // Leave edit mode on submit; the membership table reconciles from the
+      // background refetch.
       setEdit(false);
-      await invalidate();
-      toast.success("Group saved");
+
+      return { restore };
     },
-    onError: (error) =>
+    onSuccess: () => {
+      toast.success("Group saved");
+      void invalidate();
+    },
+    onError: (error, _payload, context) => {
+      context?.restore();
       toast.error("Could not save the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncGroups(params.tenantId, [params.groupId!]),
+    onSuccess: () => {
+      toast.success("Group sync requested");
+      void invalidate();
+    },
+    onError: (error) =>
+      toast.error("Could not request a group sync", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
   }));
 
   const dup = useMutation(() => ({
     mutationFn: () => enterprise.duplicateGroup(params.tenantId, params.groupId),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+    onSuccess: ({ id }) => {
       navigate(`/t/${params.tenantId}/groups/${id}`);
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
     },
   }));
 
   const del = useMutation(() => ({
     mutationFn: () =>
       enterprise.deleteGroups(params.tenantId, params.groupId ? [params.groupId] : []),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+    onMutate: async () => {
+      const restore = await optimisticallyRemoveRows(
+        qc,
+        params.tenantId!,
+        "group",
+        params.groupId ? [params.groupId] : [],
+      );
+
       navigate(`/t/${params.tenantId}/groups`);
+
+      return { restore };
     },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+    },
+    onError: (_error, _payload, context) => context?.restore(),
   }));
 
   const setPolicyMode = (id: string, mode: "include" | "exclude" | "") => {

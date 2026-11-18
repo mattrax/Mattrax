@@ -23,6 +23,7 @@ import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";
 import { queryClient as appQueryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
+import { optimisticUpdate } from "~/lib/optimistic";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -59,11 +60,11 @@ export default function DashboardsPage() {
 
       return enterprise.createDashboard(params.tenantId, { name: title });
     },
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       setName("");
       setError(null);
-      await invalidate();
       navigate(routes.tenant(params.tenantId).dashboard(result.id, { edit: "1" }));
+      void invalidate();
     },
     onError: (cause) => setError(errorMessage(cause, "Could not create the dashboard. Try again.")),
   }));
@@ -71,24 +72,58 @@ export default function DashboardsPage() {
   const makeDefault = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.patchDashboard(params.tenantId, id, { isDefault: true }),
-    onMutate: () => setMakeDefaultError(null),
-    onSuccess: async () => {
+    onMutate: async (id) => {
       setMakeDefaultError(null);
-      await invalidate();
+      const restore = await optimisticUpdate<{ dashboards: { id: string; isDefault?: boolean }[] }>(
+        queryClient,
+        enterpriseKeys.dashboards(params.tenantId),
+        (current) => ({
+          ...current,
+          dashboards: current.dashboards.map((dashboard) => ({
+            ...dashboard,
+            isDefault: dashboard.id === id,
+          })),
+        }),
+      );
+
+      return { restore };
     },
-    onError: (cause) => setMakeDefaultError(cause),
+    onSuccess: () => {
+      setMakeDefaultError(null);
+      void invalidate();
+    },
+    onError: (cause, _id, context) => {
+      context?.restore();
+      setMakeDefaultError(cause);
+    },
   }));
 
   const remove = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.deleteDashboard(params.tenantId, id),
-    onMutate: () => setRemoveError(null),
-    onSuccess: async () => {
+    onMutate: async (id) => {
       setRemoveError(null);
+      const restore = await optimisticUpdate<{ dashboards: { id: string }[] }>(
+        queryClient,
+        enterpriseKeys.dashboards(params.tenantId),
+        (current) => ({
+          ...current,
+          dashboards: current.dashboards.filter((dashboard) => dashboard.id !== id),
+        }),
+      );
+
       setRemoveTarget(null);
-      await invalidate();
+
+      return { restore };
     },
-    onError: (cause) => setRemoveError(cause),
+    onSuccess: () => {
+      setRemoveError(null);
+      void invalidate();
+    },
+    onError: (cause, _id, context) => {
+      context?.restore();
+      setRemoveError(cause);
+    },
   }));
 
   return (
