@@ -1,9 +1,9 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "13b9a483-c13d-4d43-93cb-2c8832c0c173",
+  "id": "b77aa5e7-b09d-4631-aecf-2ba243a7a690",
   "prevIds": [
-    "127b4d9a-66fc-4cc3-8cb7-ab365f857079"
+    "2cf1538f-2065-4a73-a68c-4b2cdfbe82ff"
   ],
   "ddl": [
     {
@@ -18397,6 +18397,26 @@
         },
         {
           "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "device",
+      "name": "device_organization_enrolled_idx",
+      "columns": [
+        {
+          "value": "organization_id",
+          "isExpression": false
+        },
+        {
+          "value": "enrolled_at",
           "isExpression": false
         }
       ],

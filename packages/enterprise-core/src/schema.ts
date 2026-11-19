@@ -1536,9 +1536,10 @@ export const auditLog = mysqlTable(
     // (the audit search matches it with a leading-wildcard LIKE, which cannot
     // use an index).
     index("audit_log_actor_action_idx").on(table.actorAccountId, table.action, table.createdAt),
-    // Audit retention deletes by age across every tenant, and the cross-tenant
-    // onboarding cooldown reads a recent date window; without this the daily
-    // prune scans the whole append-only stream.
+    // Audit retention deletes by age across every tenant. The cross-tenant
+    // onboarding cooldown (`action = ? AND created_at >= ?`) can use this to
+    // bound its scan to the cooldown window, but `(action, created_at)` would
+    // be the exact shape for it; the prune is what this index exists for.
     index("audit_log_created_idx").on(table.createdAt),
   ],
 );
@@ -2020,13 +2021,18 @@ export const device = mysqlTable(
   },
   (table) => [
     uniqueIndex("device_organization_serial_unique").on(table.organizationId, table.serial),
-    // Fleet lists sort and paginate inside one tenant. The composite index
-    // bounds every page to the tenant and supplies the name order; the `id`
-    // tiebreaker still needs a sort, and appending it would grow the key past
-    // 3 KB (all three columns are varchar(255) under utf8mb4).
+    // Fleet lists, CSV export and global search page inside one tenant, ordered
+    // by name. The composite bounds the page to the tenant and supplies the
+    // name order; the `id` tiebreaker is served by InnoDB's implicit
+    // primary-key suffix, so no separate `(organization_id, name, id)` index is
+    // needed.
     index("device_organization_name_idx").on(table.organizationId, table.name),
     index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
     index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
+    // `sort=enrolledAt` (ascending by default) pages by `enrolled_at, id`; the
+    // composite supplies that order through the implicit primary-key suffix.
+    // Without it the fleet list and CSV export sort the tenant's whole fleet.
+    index("device_organization_enrolled_idx").on(table.organizationId, table.enrolledAt),
     // Every Apple and Windows check-in resolves the device by its protocol
     // identifier. The per-tenant indexes cannot serve that lookup, so this is
     // the single most important index on the table.
@@ -2536,9 +2542,10 @@ export const deviceApplication = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.deviceId, table.bundleId] }),
-    // Software inventory groups a tenant's rows in application code, and every
-    // device-scoped read uses the primary key. No query constrains the bundle
-    // id in SQL, so there is no `(organization_id, bundle_id)` index.
+    // Software inventory groups a tenant's rows in application code, and the
+    // tenant-wide read only filters the organisation. No query filters
+    // `bundle_id` without a `device_id`, so the primary key serves those and
+    // there is no `(organization_id, bundle_id)` index.
     index("device_application_organization_idx").on(table.organizationId),
   ],
 );

@@ -9,12 +9,13 @@ DROP INDEX `autopilot_profile_organization_idx` ON `autopilot_profile`;--> state
 DROP INDEX `dashboard_organization_id_idx` ON `dashboard`;--> statement-breakpoint
 DROP INDEX `deployment_license_last_seen_idx` ON `deployment_license`;--> statement-breakpoint
 DROP INDEX `device_organization_id_idx` ON `device`;--> statement-breakpoint
-DROP INDEX `device_organization_enrolled_idx` ON `device`;--> statement-breakpoint
 DROP INDEX `device_application_bundle_idx` ON `device_application`;--> statement-breakpoint
 DROP INDEX `device_user_device_idx` ON `device_user`;--> statement-breakpoint
 DROP INDEX `device_vpp_assignment_organization_idx` ON `device_vpp_assignment`;--> statement-breakpoint
 DROP INDEX `device_vpp_assignment_asset_idx` ON `device_vpp_assignment`;--> statement-breakpoint
 DROP INDEX `enrollment_answer_organization_serial_idx` ON `enrollment_answer`;--> statement-breakpoint
+DROP INDEX `enterprise_group_organization_id_idx` ON `enterprise_group`;--> statement-breakpoint
+DROP INDEX `invitation_organization_id_idx` ON `invitation`;--> statement-breakpoint
 DROP INDEX `mcp_oauth_client_created_idx` ON `mcp_oauth_client`;--> statement-breakpoint
 DROP INDEX `policy_deployment_policy_idx` ON `policy_deployment`;--> statement-breakpoint
 DROP INDEX `scep_ca_trust_org_idx` ON `scep_ca_trust`;--> statement-breakpoint
