@@ -3,6 +3,7 @@ import {
   isPolicyEnabled,
   policyDeliveryPresentation,
   policyDeliverySortRank,
+  policyRowDeliveryPresentation,
   policyScopePresentation,
   policyStatePresentation,
 } from "./policy-delivery";
@@ -138,6 +139,27 @@ describe("policyStatePresentation", () => {
     expect(state).toMatchObject({ label: "Disabled", tone: "warning" });
     expect(state.description).toContain("withdrawn");
     expect(state.description).toContain("assignments are kept");
+  });
+});
+
+describe("policyRowDeliveryPresentation", () => {
+  it("shows Disabled instead of a stale delivered rollup", () => {
+    const stale = policyRowDeliveryPresentation({
+      enabled: false,
+      delivery: delivery("delivered"),
+    });
+
+    expect(stale).toMatchObject({ label: "Disabled", tone: "warning", dot: "warning" });
+    expect(stale?.description).toContain("withdrawn");
+  });
+
+  it("keeps the derived delivery state for an enabled policy", () => {
+    expect(
+      policyRowDeliveryPresentation({ enabled: true, delivery: delivery("delivered") }),
+    ).toMatchObject({ label: "Delivered", tone: "success" });
+    expect(policyRowDeliveryPresentation({ delivery: delivery("pending") })).toMatchObject({
+      label: "Pending",
+    });
   });
 });
 

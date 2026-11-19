@@ -179,6 +179,21 @@ export const policyStatePresentation = (policy: { readonly enabled?: boolean }) 
       };
 
 /**
+ * Delivery presentation for a policy row. Disabled wins over the derived
+ * delivery rollup: a disabled policy keeps its last declaration rows, so it
+ * would otherwise keep reading "Delivered" after delivery stopped.
+ */
+export const policyRowDeliveryPresentation = (policy: {
+  readonly enabled?: boolean;
+  readonly delivery?: PolicyDeliveryInfo;
+}) =>
+  isPolicyEnabled(policy)
+    ? policy.delivery
+      ? policyDeliveryPresentation(policy.delivery)
+      : undefined
+    : { ...policyStatePresentation(policy), dot: "warning" as const };
+
+/**
  * Scope tooltip for the device and user counts. The device number is the
  * distinct device set after group and direct exclusions; the user number is
  * the directory users that still contribute after user/group exclusions.

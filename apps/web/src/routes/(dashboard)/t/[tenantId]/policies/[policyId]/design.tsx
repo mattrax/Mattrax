@@ -296,6 +296,13 @@ export default function PolicyDesignerPage() {
                 storageKey={storageKey()}
                 saving={save.isPending}
                 saveDisabled={!writable() || !enabled()}
+                disabledHint={
+                  !enabled()
+                    ? "Enable the policy to save designer changes."
+                    : !writable()
+                      ? "Your role cannot save policies."
+                      : undefined
+                }
                 canDeploy={writable() && enabled()}
                 error={save.error}
                 onSave={

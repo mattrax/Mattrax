@@ -286,6 +286,9 @@ export default function PolicyDetailPage() {
   const [priority, setPriority] = createSignal("0");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [enabledOpen, setEnabledOpen] = createSignal(false);
+  // Snapshot the requested state when the dialog opens so optimistic updates
+  // and a pending request cannot flip the wording underneath the user.
+  const [enabledTarget, setEnabledTarget] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [addOpen, setAddOpen] = createSignal(false);
   const [seeded, setSeeded] = createSignal(false);
@@ -605,7 +608,10 @@ export default function PolicyDetailPage() {
                   size="sm"
                   variant="outline"
                   disabled={!writable()}
-                  onClick={() => setEnabledOpen(true)}
+                  onClick={() => {
+                    setEnabledTarget(!enabled());
+                    setEnabledOpen(true);
+                  }}
                 >
                   {enabled() ? "Disable" : "Enable"}
                 </Button>
@@ -768,19 +774,15 @@ export default function PolicyDetailPage() {
       <ConfirmDialog
         open={enabledOpen()}
         onOpenChange={setEnabledOpen}
-        title={
-          enabled()
-            ? `Disable ${row()?.name ?? "policy"}?`
-            : `Enable ${row()?.name ?? "policy"}?`
-        }
+        title={`${enabledTarget() ? "Enable" : "Disable"} ${row()?.name ?? "policy"}?`}
         description={
-          enabled()
-            ? "Its settings are withdrawn from every scoped device on the next delivery. The configuration and assignments are kept, so you can enable it again later."
-            : "Its saved configuration is delivered to every scoped device again. Apple devices are woken immediately, Android is synced, and Windows applies it on its next check-in."
+          enabledTarget()
+            ? "Its saved configuration is delivered to every scoped device again. Apple devices are woken immediately, Android is synced, and Windows applies it on its next check-in."
+            : "Its settings are withdrawn from every scoped device on the next delivery. The configuration and assignments are kept, so you can enable it again later."
         }
-        confirmLabel={enabled() ? "Disable policy" : "Enable policy"}
+        confirmLabel={enabledTarget() ? "Enable policy" : "Disable policy"}
         pending={setEnabled.isPending}
-        onConfirm={() => setEnabled.mutate(!enabled())}
+        onConfirm={() => setEnabled.mutate(enabledTarget())}
       />
 
       <Dialog

@@ -37,7 +37,9 @@ const setup = () => {
       { id: "org-1", name: "One", slug: "one", metadata: null },
       { id: "org-2", name: "Two", slug: "two", metadata: null },
     ],
-    [tableName(schema.policy)]: [{ id: policyId, organizationId: "org-1", name: "Policy" }],
+    [tableName(schema.policy)]: [
+      { id: policyId, organizationId: "org-1", name: "Policy", enabled: true },
+    ],
     [tableName(schema.configuration)]: [
       {
         id: "configuration-1",
@@ -45,6 +47,13 @@ const setup = () => {
         kind,
         data: { pem },
         hash: "certificate-hash",
+      },
+      {
+        id: "configuration-2",
+        policyId,
+        kind: "mttx.apple.device",
+        data: { camera: false },
+        hash: "device-hash",
       },
     ],
     [tableName(schema.device)]: [
@@ -137,6 +146,29 @@ describe("DDM asset URLs", () => {
     ).resolves.toMatchObject({ contentType: "application/pem" });
     await expect(
       run(backend.getAppleAsset("CN=Device,OU=org-2", identifier, undefined)),
+    ).resolves.toBeNull();
+  });
+
+  it("stops serving signed assets and profiles once the policy is disabled", async () => {
+    const { db, backend } = setup();
+    const token = await tokenFor("device-enrolled");
+    // SAFETY: the enterprise backend always implements the Apple profile route.
+    const getProfile = backend.getAppleProfile!;
+
+    await expect(run(backend.getAppleAsset(undefined, identifier, token))).resolves.toMatchObject({
+      contentType: "application/pem",
+    });
+    await expect(
+      run(getProfile(policyId, "mttx.apple.device", "device-enrolled")),
+    ).resolves.toMatchObject({ contentType: "application/x-apple-aspen-config" });
+
+    // The signed URL stays well-formed and the device stays enrolled; only
+    // the policy's enabled state withdraws the content.
+    db.store[tableName(schema.policy)][0]!.enabled = false;
+
+    await expect(run(backend.getAppleAsset(undefined, identifier, token))).resolves.toBeNull();
+    await expect(
+      run(getProfile(policyId, "mttx.apple.device", "device-enrolled")),
     ).resolves.toBeNull();
   });
 });

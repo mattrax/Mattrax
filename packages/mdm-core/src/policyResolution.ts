@@ -343,6 +343,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       .filter((policy) => policy.enabled !== false)
       .map((policy) => [policy.id, policy]),
   );
+
   const configurations = new Map<string, Array<PolicyResolutionConfiguration>>();
 
   for (const configuration of input.configurations) {

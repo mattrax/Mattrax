@@ -15233,12 +15233,17 @@ export const createEnterpriseService = ({
           );
 
         // Older snapshots have no state key and are therefore enabled.
+        const restoredEnabled = snapshot[POLICY_SNAPSHOT_ENABLED_KEY] !== false;
+
         yield* db
           .update(schema.policy)
-          .set({ enabled: snapshot[POLICY_SNAPSHOT_ENABLED_KEY] !== false, updatedAt: now() })
+          .set({ enabled: restoredEnabled, updatedAt: now() })
           .where(eq(schema.policy.id, policyId));
         yield* snapshotPolicy(ctx, policyId);
-        yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
+        yield* audit(ctx, "policy.rolled_back", "policy", policyId, {
+          deploymentId,
+          enabled: restoredEnabled,
+        });
         // Rollback replaces configurations, so both Apple and Android devices
         // must be woken; previously only Android was resynced.
         yield* refreshDevicePolicies(

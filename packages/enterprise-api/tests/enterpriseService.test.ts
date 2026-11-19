@@ -1888,6 +1888,81 @@ describe("enterprise service policy flow", () => {
     });
   });
 
+  it("restores the enabled state from deployment snapshots", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, { enabled: false }),
+    );
+
+    const deployments = await runEffect(
+      service.listPolicyDeployments(request(headers), tenant.id, policy.id),
+    );
+
+    const disabledDeployment = deployments.deployments.find((item) => item.version === 3)!;
+    const enabledDeployment = deployments.deployments.find((item) => item.version === 2)!;
+
+    // Rolling back to an older, enabled snapshot re-enables the policy and
+    // must not turn the reserved state key into a configuration kind.
+    await runEffect(
+      service.rollbackPolicy(request(headers), tenant.id, policy.id, enabledDeployment.id),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: true });
+    expect(
+      db.store.configuration.some((row: any) => row.kind === "@@enabled"),
+    ).toBe(false);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "policy.rolled_back",
+      metadata: { deploymentId: enabledDeployment.id, enabled: true },
+    });
+
+    // Restoring a disabled snapshot disables it again.
+    await runEffect(
+      service.rollbackPolicy(request(headers), tenant.id, policy.id, disabledDeployment.id),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: false });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "policy.rolled_back",
+      metadata: { deploymentId: disabledDeployment.id, enabled: false },
+    });
+
+    // A hand-written snapshot from before the flag existed restores enabled.
+    db.store.policy_deployment.push({
+      id: "pre-feature-deployment",
+      organizationId: tenant.id,
+      policyId: policy.id,
+      version: 1000,
+      snapshot: { "mttx.apple.device": { camera: false } },
+      createdByAccountId: null,
+      createdAt: new Date(),
+    });
+
+    await runEffect(
+      service.rollbackPolicy(request(headers), tenant.id, policy.id, "pre-feature-deployment"),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: true });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "policy.rolled_back",
+      metadata: { deploymentId: "pre-feature-deployment", enabled: true },
+    });
+  });
+
   it("rejects patching policies outside the tenant", async () => {
     const { db, service, headers } = await makeContext();
 

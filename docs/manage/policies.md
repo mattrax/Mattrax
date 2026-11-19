@@ -108,6 +108,24 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/policies/sync" \
 Apple devices receive an APNs wake-up. Windows waits for polling. Android pushes the
 policy directly.
 
+## Disable a policy
+
+Disabling stops delivery without deleting the policy. Its configuration and assignments
+stay in place, so you can enable it again later.
+
+```bash
+curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/policies/$POLICY_ID" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "enabled": false }'
+```
+
+A disabled policy contributes nothing to resolution: its settings are withdrawn from
+scoped devices and it cannot override or exclude another policy. Apple devices and Android
+are updated immediately; Windows converges on its next check-in, where settings that are
+no longer desired are deleted. Deployment history records the state change, and rolling
+back to an older deployment restores its enabled state.
+
 ## Deployment history
 
 Every save creates a snapshot:
