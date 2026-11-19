@@ -19345,13 +19345,10 @@ export const createEnterpriseService = ({
                   mode: schema.userGroupPolicy.mode,
                 })
                 .from(schema.userGroupPolicy)
-                .innerJoin(
-                  schema.userGroup,
-                  eq(schema.userGroup.id, schema.userGroupPolicy.groupId),
-                )
+                // The assignment row carries its own organisation, so the
+                // directory-group join is not needed to scope this read.
                 .where(
                   and(
-                    eq(schema.userGroup.organizationId, ctx.organization.id),
                     eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
                     inArray(schema.userGroupPolicy.policyId, policyIds),
                   ),
