@@ -153,5 +153,5 @@ jobs:
             echo "| Tables | $(jq -r .tables "$OUT_DIR/$stamp.json") |"
             echo "| Server | $(jq -r .mysql_server "$OUT_DIR/$stamp.json") |"
             echo "| sha256 | \`$(jq -r .sha256 "$OUT_DIR/$stamp.json")\` |"
-            echo "| Retained | $RETENTION_DAYS days, then deleted by R2 lifecycle |"
+            echo "| Retention | R2 lifecycle rule on the bucket (see docs/operations/backups.md) |"
           } >>"$GITHUB_STEP_SUMMARY"
