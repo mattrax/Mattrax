@@ -2006,6 +2006,27 @@ export const createEnterpriseService = ({
     });
 
   /**
+   * Configuration kinds are compared case-insensitively by the primary key, so
+   * `mttx.apple.custom.WiFi` and `mttx.apple.custom.wifi` are one row. Reject
+   * the ambiguity before validation or an insert, naming both spellings.
+   */
+  const duplicateConfigurationKind = (
+    entries: ReadonlyArray<readonly [string, Schema.Json]>,
+  ): { first: string; duplicate: string } | null => {
+    const seen = new Map<string, string>();
+
+    for (const [kind] of entries) {
+      const key = kind.toLowerCase();
+      const first = seen.get(key);
+
+      if (first !== undefined) return { first, duplicate: kind };
+      seen.set(key, kind);
+    }
+
+    return null;
+  };
+
+  /**
    * Validate configuration writes before a policy is created or patched, so a
    * rejected kind cannot leave the policy half-written. Both the create and
    * patch handlers share this path, which means an imported configuration is
@@ -15637,6 +15658,15 @@ export const createEnterpriseService = ({
           data === null ? [] : [[kind, data] as const],
         );
 
+        const duplicate = duplicateConfigurationKind(configurations);
+
+        if (duplicate)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Configuration kinds "${duplicate.first}" and "${duplicate.duplicate}" differ only by case, but configuration kinds are case-insensitive.`,
+            }),
+          );
+
         const scopeFor = (kind: string): "device" | "user" =>
           body.configurationScopes?.[kind] ?? "device";
 
@@ -15658,31 +15688,35 @@ export const createEnterpriseService = ({
           escrowCertificateFingerprintSha256: escrowFingerprint,
         });
 
-        yield* db.insert(schema.policy).values({
-          id: policyId,
-          organizationId: ctx.organization.id,
-          name: body.name,
-          notes: body.notes ?? null,
-          priority: body.priority ?? 0,
-          enabled: body.enabled ?? true,
-          createdAt: now(),
-          updatedAt: now(),
-        });
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx.insert(schema.policy).values({
+              id: policyId,
+              organizationId: ctx.organization.id,
+              name: body.name,
+              notes: body.notes ?? null,
+              priority: body.priority ?? 0,
+              enabled: body.enabled ?? true,
+              createdAt: now(),
+              updatedAt: now(),
+            });
 
-        if (configurations.length > 0)
-          yield* db.insert(schema.configuration).values(
-            yield* Effect.all(
-              configurations.map(([kind, data]) =>
-                Effect.map(hashJson(data), (hash) => ({
-                  policyId,
-                  kind,
-                  scope: scopeFor(kind),
-                  data,
-                  hash,
-                })),
-              ),
-            ),
-          );
+            if (configurations.length > 0)
+              yield* tx.insert(schema.configuration).values(
+                yield* Effect.all(
+                  configurations.map(([kind, data]) =>
+                    Effect.map(hashJson(data), (hash) => ({
+                      policyId,
+                      kind,
+                      scope: scopeFor(kind),
+                      data,
+                      hash,
+                    })),
+                  ),
+                ),
+              );
+          }),
+        );
 
         yield* audit(ctx, "policy.created", "policy", policyId, {
           name: body.name,

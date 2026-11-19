@@ -196,6 +196,49 @@ describe("policy import through createPolicy", () => {
     expect(context.db.store.policy).toEqual([]);
   });
 
+  it("rejects kinds that differ only by case before writing anything", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context, "acme");
+
+    // MySQL compares the configuration primary key case-insensitively, so
+    // these two would collide into one row and leave an ambiguous policy.
+    await expect(
+      runEffect(
+        context.service.createPolicy(request(headers), tenant.id, {
+          name: "Ambiguous",
+          configurations: {
+            "mttx.apple.custom.WiFi": { content: restrictionsProfile },
+            "mttx.apple.custom.wifi": { content: restrictionsProfile },
+          },
+        }),
+      ),
+    ).rejects.toThrow(/"mttx\.apple\.custom\.WiFi" and "mttx\.apple\.custom\.wifi"/);
+
+    expect(context.db.store.policy).toEqual([]);
+    expect(context.db.store.configuration).toEqual([]);
+    expect(context.db.store.policy_deployment).toEqual([]);
+  });
+
+  it("rejects a scope map that contradicts the payload without persisting", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context, "acme");
+
+    // A device restriction cannot be delivered on the user channel.
+    await expect(
+      runEffect(
+        context.service.createPolicy(request(headers), tenant.id, {
+          name: "Wrong channel",
+          configurations: { "mttx.apple.device": { camera: false } },
+          configurationScopes: { "mttx.apple.device": "user" },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    expect(context.db.store.policy).toEqual([]);
+    expect(context.db.store.configuration).toEqual([]);
+    expect(context.db.store.policy_deployment).toEqual([]);
+  });
+
   it("keeps configurations inside the target tenant", async () => {
     const context = makeContext();
     const acme = await makeTenant(context, "acme");
