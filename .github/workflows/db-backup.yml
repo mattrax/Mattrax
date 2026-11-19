@@ -108,12 +108,21 @@ jobs:
           export OUT_DIR="$RUNNER_TEMP/db-backup"
           stamp="${{ steps.dump.outputs.stamp }}"
           key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
-          wrangler r2 object put "$key.sql.zst" \
-            --file "$OUT_DIR/$stamp.sql.zst" \
-            --content-type application/zstd
-          wrangler r2 object put "$key.json" \
-            --file "$OUT_DIR/$stamp.json" \
-            --content-type application/json
+
+          upload() {
+            local output
+            output="$(wrangler r2 object put "$1" --file "$2" --content-type "$3" --remote 2>&1)"
+            printf '%s\n' "$output"
+            # Without --remote wrangler writes to a local simulation and still
+            # says "Upload complete", leaving the job green with nothing in R2.
+            if grep -q "Resource location: local" <<<"$output"; then
+              echo "::error::wrangler wrote $1 to local storage instead of R2"
+              return 1
+            fi
+          }
+
+          upload "$key.sql.zst" "$OUT_DIR/$stamp.sql.zst" application/zstd
+          upload "$key.json" "$OUT_DIR/$stamp.json" application/json
 
       # An upload that reports success is not the same as a restorable object.
       # Pull it back, compare the checksum and decompress it before calling the
@@ -126,7 +135,7 @@ jobs:
           key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
           expected="$(jq -r .sha256 "$OUT_DIR/$stamp.json")"
 
-          wrangler r2 object get "$key.sql.zst" --file "$OUT_DIR/roundtrip.sql.zst"
+          wrangler r2 object get "$key.sql.zst" --file "$OUT_DIR/roundtrip.sql.zst" --remote
           actual="$(sha256sum "$OUT_DIR/roundtrip.sql.zst" | cut -d' ' -f1)"
           if [ "$expected" != "$actual" ]; then
             echo "::error::Checksum mismatch for $key.sql.zst: expected $expected, downloaded $actual"

@@ -124,8 +124,8 @@ applied restores both look plausible, so the rehearsal is not optional.
 ```bash
 # 1. Fetch the backup and its manifest.
 stamp=2026-11-18T03-17-04Z
-wrangler r2 object get "mattrax-backups/daily/$stamp.sql.zst" --file "$stamp.sql.zst"
-wrangler r2 object get "mattrax-backups/daily/$stamp.json"   --file "$stamp.json"
+wrangler r2 object get "mattrax-backups/daily/$stamp.sql.zst" --file "$stamp.sql.zst" --remote
+wrangler r2 object get "mattrax-backups/daily/$stamp.json"   --file "$stamp.json"   --remote
 
 # 2. Check it is the object the backup wrote.
 sha256sum "$stamp.sql.zst"
