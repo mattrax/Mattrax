@@ -25,31 +25,20 @@ import {
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import {
+  bulkEntityNoun,
+  bulkFailureDetails,
+  bulkFailureReason,
+  bulkNouns,
+  bulkReport,
+  type BulkFailure,
+  type BulkOutcome,
+} from "~/lib/bulk-members";
+import {
   optimisticallyRemoveRows,
   optimisticallyUpdateDeviceSearch,
 } from "~/lib/optimistic";
 
 type Named = { id: string; name: string };
-
-/** One row that a bulk action could not complete, with a readable reason. */
-type BulkFailure = { id: string; name: string; reason: string };
-
-type BulkOutcome = { succeeded: number; failed: BulkFailure[] };
-
-const entityNoun = (entity: Entity, count: number) => {
-  const plural = entity === "policy" ? "policies" : `${entity}s`;
-
-  return `${count} ${count === 1 ? entity : plural}`;
-};
-
-const capitalise = (value: string) => value.slice(0, 1).toUpperCase() + value.slice(1);
-
-/**
- * The API reports why a row was skipped. Translate the tagged reasons into
- * sentences; anything unrecognised is shown as sent rather than hidden.
- */
-const failureReason = (reason: string) =>
-  reason === "notFound" ? "No longer exists" : capitalise(reason.replace(/[_-]+/g, " "));
 
 /**
  * Run one request per row with bounded concurrency and keep every outcome. A
@@ -103,34 +92,16 @@ const settleRows = async <T,>(
   return { succeeded: targets.length - failed.length, failed };
 };
 
-const reasonDetails = (failed: readonly BulkFailure[]) =>
-  failed.map((row) => `${row.name}: ${row.reason}`);
-
 /**
- * Report a bulk outcome: a plain success, a warning naming what failed, or an
- * outright error when nothing worked. The failure list is kept on the toast so
- * the operator can see why, not just how many.
+ * Report a bulk outcome through the shared copy so list pages and member
+ * actions cannot drift, including the `lastOwner` label.
  */
 const reportBulk = (entity: Entity, copy: { ok: string; fail: string }, outcome: BulkOutcome) => {
-  const requested = outcome.succeeded + outcome.failed.length;
+  const report = bulkReport(bulkNouns(entity), copy, outcome);
 
-  if (outcome.failed.length === 0) {
-    toast.success(`${capitalise(copy.ok)} ${entityNoun(entity, outcome.succeeded)}`);
-
-    return;
-  }
-
-  if (outcome.succeeded === 0) {
-    toast.error(`${capitalise(copy.fail)} ${entityNoun(entity, requested)}`, {
-      details: reasonDetails(outcome.failed),
-    });
-
-    return;
-  }
-
-  toast.warning(`${capitalise(copy.ok)} ${outcome.succeeded} of ${entityNoun(entity, requested)}`, {
-    description: `${capitalise(entityNoun(entity, outcome.failed.length))} did not complete.`,
-    details: reasonDetails(outcome.failed),
+  toast[report.tone](report.title, {
+    description: report.description,
+    details: report.details,
   });
 };
 
@@ -267,7 +238,7 @@ function ScopeGroupsAction(props: {
       else
         toast.warning(`Group assignments updated for ${total - failed.length} of ${total} groups`, {
           description: `${failed.length === 1 ? "One group" : `${failed.length} groups`} could not be updated.`,
-          details: reasonDetails(failed),
+          details: bulkFailureDetails(failed),
         });
 
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
@@ -441,7 +412,7 @@ export function EntityActions(props: {
           description="Unenroll selected devices."
           target={
             props.allMatching
-              ? `Unenroll ${entityNoun("device", count())}`
+              ? `Unenroll ${bulkEntityNoun("device", count())}`
               : confirmTarget(rows(), "device", "Unenroll")
           }
           destructive
@@ -489,11 +460,11 @@ export function EntityActions(props: {
       </Show>
       <Show when={props.entity !== "device" && canDelete()}>
         <ConfirmAction
-          title={`Delete ${entityNoun(props.entity, count())}?`}
+          title={`Delete ${bulkEntityNoun(props.entity, count())}?`}
           description="This cannot be undone."
           target={
             props.allMatching
-              ? entityNoun(props.entity, count())
+              ? bulkEntityNoun(props.entity, count())
               : confirmTarget(rows(), props.entity)
           }
           destructive
@@ -533,7 +504,7 @@ export function EntityActions(props: {
             const failures = result.failed.map((row) => ({
               id: row.id,
               name: names.get(row.id) ?? row.id,
-              reason: failureReason(row.reason),
+              reason: bulkFailureReason(row.reason),
             }));
 
             // The API deletes what it can; nothing deleted is a hard failure and

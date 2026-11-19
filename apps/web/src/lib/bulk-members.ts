@@ -53,10 +53,27 @@ export type BulkReport = {
   details: string[];
 };
 
+/** The list kinds that share bulk actions and report copy. */
+export type BulkEntity = "device" | "group" | "policy";
+
 const capitalise = (value: string) => value.slice(0, 1).toUpperCase() + value.slice(1);
+
+/** Singular and plural nouns for a bulk report; `policy` is the irregular one. */
+export const bulkNouns = (entity: BulkEntity) => ({
+  one: entity,
+  many: entity === "policy" ? "policies" : `${entity}s`,
+});
 
 const entityNoun = (noun: { one: string; many: string }, count: number) =>
   `${count} ${count === 1 ? noun.one : noun.many}`;
+
+/** `3 devices`, `1 policy`, ... for confirmation copy and report titles. */
+export const bulkEntityNoun = (entity: BulkEntity, count: number): string =>
+  entityNoun(bulkNouns(entity), count);
+
+/** One `name: reason` line per failed row, for a toast's details. */
+export const bulkFailureDetails = (failed: ReadonlyArray<BulkFailure>): string[] =>
+  failed.map((row) => `${row.name}: ${row.reason}`);
 
 /**
  * The API uses short tagged reasons so clients can translate them. Anything
@@ -93,7 +110,7 @@ export function bulkReport(
   outcome: BulkOutcome,
 ): BulkReport {
   const requested = outcome.succeeded + outcome.failed.length;
-  const details = outcome.failed.map((row) => `${row.name}: ${row.reason}`);
+  const details = bulkFailureDetails(outcome.failed);
 
   if (outcome.failed.length === 0)
     return {

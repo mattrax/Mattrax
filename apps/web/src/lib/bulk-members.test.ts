@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  bulkEntityNoun,
+  bulkFailureDetails,
   bulkFailureReason,
   bulkReport,
   chunkIds,
@@ -30,6 +32,20 @@ describe("bulkFailureReason", () => {
 
   it("humanises other tags instead of hiding them", () => {
     expect(bulkFailureReason("last_owner")).toBe("Last owner");
+  });
+});
+
+describe("bulk entity copy", () => {
+  it("pluralises policies without drifting from the member labels", () => {
+    expect(bulkEntityNoun("policy", 1)).toBe("1 policy");
+    expect(bulkEntityNoun("policy", 3)).toBe("3 policies");
+    expect(bulkEntityNoun("device", 2)).toBe("2 devices");
+  });
+
+  it("formats one detail line per failed row", () => {
+    expect(
+      bulkFailureDetails([{ id: "user-1", name: "Ada", reason: "No longer exists" }]),
+    ).toEqual(["Ada: No longer exists"]);
   });
 });
 
