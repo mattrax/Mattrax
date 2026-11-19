@@ -330,9 +330,9 @@ The audit source includes MDM protocol activity: check-ins, policy deliveries, s
 reports that changed something, command results and failed requests. A failed check-in
 shows the protocol phase, a bounded reason, the verified client address and the identity
 certificate serial/fingerprint, which is enough to distinguish a bad device identity from
-a malformed payload. Repeated check-ins are folded into one entry per device and window;
-the event's `mdm.checkin` row reports the count, so a quiet device is not mistaken for a
-missing one. See [Audit, webhooks and billing](/admin/operations#what-mdm-records).
+a malformed payload. Repeated check-ins are folded into one entry per device, fixed time bucket, user and
+presenting identity; the event's `mdm.checkin` row reports the count and bucket start, so
+a quiet device is not mistaken for a missing one. See [Audit, webhooks and billing](/admin/operations#what-mdm-records).
 
 ## Edit a device
 

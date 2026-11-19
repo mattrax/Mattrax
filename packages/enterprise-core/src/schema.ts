@@ -1566,6 +1566,11 @@ export const auditLog = mysqlTable(
     deviceCertificateFingerprint: varchar("device_certificate_fingerprint", { length: 64 }),
     /** Serial of the identity certificate, lowercase hex where available. */
     deviceCertificateSerial: varchar("device_certificate_serial", { length: 128 }),
+    /**
+     * Device principal: an Apple user-channel id (Shared iPad or a Mac login).
+     * Part of the check-in fold key so two users never share one row.
+     */
+    principalId: shortText("principal_id"),
     protocol: varchar("protocol", { length: 16, enum: ["apple", "win", "android"] }),
     createdAt: timestamp("created_at").notNull(),
   },

@@ -11,4 +11,4 @@ ALTER TABLE `audit_log` ADD CONSTRAINT `audit_log_device_id_device_id_fkey` FORE
 -- Existing rows predate `actor_type`; an event with no account is system
 -- activity. Device/MDM protocol rows are the `device.*`/`mdm.*` actions;
 -- everything else with no account is background deployment work.
-UPDATE `audit_log` SET `actor_type` = 'system', `category` = CASE WHEN `action` LIKE 'device.%' OR `action` LIKE 'mdm.%' THEN 'mdm' ELSE 'system' END WHERE `actor_account_id` IS NULL;
+UPDATE `audit_log` SET `actor_type` = 'system', `category` = CASE WHEN `action` LIKE 'device.%' OR `action` LIKE 'mdm.%' OR `action` LIKE 'enrollment.%' THEN 'mdm' ELSE 'system' END WHERE `actor_account_id` IS NULL;

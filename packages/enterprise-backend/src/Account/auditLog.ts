@@ -308,6 +308,7 @@ export type AuditExportEntry = {
   readonly deviceId: string | null;
   readonly deviceCertificateFingerprint: string | null;
   readonly deviceCertificateSerial: string | null;
+  readonly principalId: string | null;
   readonly protocol: string | null;
   readonly metadata: Schema.Json;
   readonly createdAt: string;
@@ -340,6 +341,7 @@ export const auditCsv = (entries: ReadonlyArray<AuditExportEntry>) =>
       "IP",
       "Certificate fingerprint",
       "Certificate serial",
+      "Principal",
       "User agent",
       "Metadata",
     ],
@@ -356,6 +358,7 @@ export const auditCsv = (entries: ReadonlyArray<AuditExportEntry>) =>
       cell(entry.ip),
       cell(entry.deviceCertificateFingerprint),
       cell(entry.deviceCertificateSerial),
+      cell(entry.principalId),
       cell(entry.userAgent),
       metadataCell(entry.metadata),
     ]),

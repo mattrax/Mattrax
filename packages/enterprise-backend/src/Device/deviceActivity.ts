@@ -130,7 +130,9 @@ type AuditRow = {
   readonly actorEmail?: string | null;
   readonly protocol?: string | null;
   readonly ip?: string | null;
+  readonly principalId?: string | null;
   readonly deviceCertificateSerial?: string | null;
+  readonly deviceCertificateFingerprint?: string | null;
   readonly metadata?: Schema.Json;
   readonly createdAt: Date | string;
 };
@@ -226,6 +228,10 @@ const auditDetail = (row: AuditRow) => {
   );
 
   const parts: string[] = [];
+  const platform = trimmed(metadata.platform, 16);
+
+  if (platform) parts.push(platform);
+
   const action = trimmed(metadata.action, 40);
 
   if (action) parts.push(`Action: ${action}`);
@@ -259,10 +265,38 @@ const auditDetail = (row: AuditRow) => {
 
   if (reason) parts.push(reason);
 
+  const phase = trimmed(metadata.phase, 40);
+
+  if (phase) parts.push(`phase ${phase}`);
+
+  const checkIns = Schema.is(Schema.Number)(metadata.checkIns)
+    ? Math.trunc(metadata.checkIns)
+    : undefined;
+
+  if (checkIns !== undefined && checkIns > 1) parts.push(`${checkIns} check-ins`);
+
+  const channels = Array.isArray(metadata.channels)
+    ? metadata.channels
+        .flatMap((channel) =>
+          Schema.is(Schema.String)(channel) ? [channel.slice(0, 16)] : [],
+        )
+        .slice(0, 4)
+    : [];
+
+  if (channels.length > 0) parts.push(`channels: ${channels.join(", ")}`);
+
   const protocol = trimmed(row.protocol, 16);
   const ip = trimmed(row.ip, 64);
 
   if (protocol || ip) parts.push([protocol, ip].filter(Boolean).join(" · "));
+
+  const principal = trimmed(row.principalId, 120);
+
+  if (principal) parts.push(`user ${principal}`);
+
+  const certificate = trimmed(row.deviceCertificateSerial, 128);
+
+  if (certificate) parts.push(`cert ${certificate}`);
 
   const actor = trimmed(row.actorEmail, 120);
 

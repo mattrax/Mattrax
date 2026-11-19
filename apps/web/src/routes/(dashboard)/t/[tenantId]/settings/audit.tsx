@@ -730,6 +730,10 @@ export default function AuditSettingsPage() {
                                   <dd>{auditProtocolLabel(entry.protocol) ?? "—"}</dd>
                                 </div>
                                 <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">Principal</dt>
+                                  <dd class="break-all">{entry.principalId ?? "—"}</dd>
+                                </div>
+                                <div class="flex gap-2">
                                   <dt class="text-muted-foreground">Certificate</dt>
                                   <dd class="break-all font-mono">
                                     {entry.deviceCertificateSerial ?? "—"}

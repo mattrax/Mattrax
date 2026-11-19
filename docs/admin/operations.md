@@ -5,8 +5,10 @@ This page covers the tenant-level operational features that sit beside device ma
 ## Audit log
 
 Every meaningful mutation writes an audit event with actor, action, target and metadata.
-The same append-only stream also carries device (MDM) activity, so an operator can explain
-a device's behaviour without reading a second log.
+The same stream also carries device (MDM) activity, so an operator can explain a device's
+behaviour without reading a second log. Rows are append-only except the current check-in
+bucket, whose count and last-seen fields are updated in place; everything else is written
+once and never changed.
 
 ### Who acted
 
@@ -19,28 +21,39 @@ a device's behaviour without reading a second log.
 | `system`   | The deployment acting on a device or in the background. `actorAccountId` is null.|
 
 `category` splits the stream: `account` (someone changed something), `mdm` (device
-protocol traffic) and `system` (maintenance, scheduled rotation, delivery failures). MDM
-events always have the system actor: a device check-in can never impersonate an account.
+protocol traffic and enrollment answers) and `system` (Android tenant connection events,
+script results, maintenance, scheduled rotation, delivery failures). MDM events always have
+the system actor: a device check-in can never impersonate an account. The classification
+rule is shared by new writes and the migration backfill (`defaultAuditCategory`).
 
 ### What MDM records
 
 | Action                  | When it is written                                                                 |
 | ----------------------- | ---------------------------------------------------------------------------------- |
-| `mdm.checkin`           | A device checked in (Apple device or user channel, Windows discovery/management, Android notification). Repeated check-ins fold into one row per device and window; `metadata.checkIns` and `metadata.firstSeenAt` describe the fold. |
+| `mdm.checkin`           | A device checked in (Apple device or user channel, Windows discovery/management, Android notification). Repeated check-ins fold into one row per device, fixed time bucket, user principal and presenting identity; `metadata.checkIns` and `metadata.firstSeenAt` describe the fold. |
 | `mdm.policy_delivered`  | Declarations, legacy profiles, Windows policy changes or an Android policy actually reached the device. |
-| `mdm.status_report`     | A status/inventory report changed at least one stored value or the health level. Apple reports that repeat the same values stay invisible; an Android status notification is recorded as the report it carries. |
+| `mdm.status_report`     | A status/inventory report changed at least one stored value or the health level. Timestamps (`lastSeenAt`, `inventoryUpdatedAt`) are excluded from the diff, so identical Apple/Windows reports stay invisible. Android notifications fold per bucket and mean “a report arrived” (there is no payload diff to compare). |
 | `mdm.command_result`    | A command reached a successful terminal state. Failures keep `device.command_failed`, deferrals `device.command_not_now`. |
-| `mdm.failure`           | A check-in failed: an unparseable payload, an invalid identity, a SOAP/SyncML fault, a rejected policy or a failed Android policy sync. `metadata.code` is stable; `metadata.reason` is bounded and redacted. |
+| `mdm.failure`           | A check-in failed: an unparseable payload, an invalid identity, a SOAP/SyncML fault, a rejected policy or a failed Android policy sync. `metadata.code` is stable; `metadata.reason` is bounded and redacted; `metadata.attribution` says whether the device was resolved from a bound certificate (`bound`) or from an asserted UDID/DeviceID (`asserted`). |
 
 Enrollment, checkout, unenrollment, compliance and declaration failures keep their
 `device.*` actions. Each state change is appended once per occurrence and is never folded
 into a check-in row.
 
 `mdm.checkin` is coalesced because a fleet of devices polls continuously. The window is
-`MDM_AUDIT_CHECKIN_COALESCE_SECONDS` (default 15 minutes, `0` records every request); the
-row is keyed by organisation, action and device, so two devices or two tenants can never
-merge. The row carries the latest verified address, identity certificate serial and
-fingerprint. Certificate PEMs, tokens and payload bodies are never stored.
+`MDM_AUDIT_CHECKIN_COALESCE_SECONDS` (default 15 minutes, `0` records every request) and
+the bucket is **fixed**, not sliding: `createdAt` is the bucket start, so a device that
+keeps polling produces one row per window instead of one row forever. The fold key is the
+organisation, action, device, bucket, user principal and presenting identity (certificate
+fingerprint, serial and address). Two tenants, two devices, two users on one device, a
+rotated certificate and a changed address therefore never share a row. The row carries the
+bucket's first and latest event times, its check-in count and the latest identity.
+Certificate PEMs, tokens and payload bodies are never stored.
+
+During a rolling deploy, an older worker that still writes audit rows without the new
+columns uses the database default (`actor_type = account`, `category = account`). Those
+rows remain identifiable by a null system actor and can be corrected with the same
+classifier after the deploy; new workers always set both columns explicitly.
 
 ### Search
 
@@ -54,8 +67,10 @@ Filters: `action`, `actor`, `actorType`, `category`, `protocol`, `deviceId`, `ta
 fingerprint), `from`, `to`, `limit`, `cursor`, `offset`.
 
 The dashboard's **Settings → Audit log** exposes the same filters and shows the system
-actor, the device, the protocol, the verified IP and the identity certificate fields. The
-device page's activity feed shows that device's MDM events with the same details.
+actor, the device, the protocol, the principal, the verified IP and the identity
+certificate fields. The device page's activity feed matches both the device target and the
+`deviceId` column, so command results and newer MDM rows appear there too, with channel,
+phase, check-in count and certificate details in the event line.
 
 ### Export
 

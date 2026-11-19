@@ -830,6 +830,64 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     });
 
   /**
+   * Resolve a device by the identity certificate it presented. The issued
+   * certificate is bound to an internal device id at enrollment, so it is
+   * stronger proof than the `DeviceID` a request asserts. Serial formats vary
+   * by forwarder, so every candidate form is tried.
+   */
+  const findDeviceByIssuedCertificate = (
+    organizationId: string,
+    serial: string | undefined,
+  ): Effect.Effect<typeof s.device.$inferSelect | null, unknown> =>
+    Effect.gen(function* () {
+      const candidates = serial ? certificateSerialCandidates(serial) : [];
+
+      if (candidates.length === 0) return null;
+
+      const certificates = yield* db
+        .select()
+        .from(s.scepIssuedCertificate)
+        .where(
+          and(
+            eq(s.scepIssuedCertificate.organizationId, organizationId),
+            inArray(s.scepIssuedCertificate.serial, candidates),
+          ),
+        );
+
+      for (const certificate of certificates) {
+        if (!certificate.deviceId) continue;
+
+        const [byId] = yield* db
+          .select()
+          .from(s.device)
+          .where(
+            and(
+              eq(s.device.organizationId, organizationId),
+              eq(s.device.id, certificate.deviceId),
+            ),
+          )
+          .limit(1);
+
+        if (byId) return byId;
+
+        const [byIdentifier] = yield* db
+          .select()
+          .from(s.device)
+          .where(
+            and(
+              eq(s.device.organizationId, organizationId),
+              eq(s.device.dmIdentifier, certificate.deviceId),
+            ),
+          )
+          .limit(1);
+
+        if (byIdentifier) return byIdentifier;
+      }
+
+      return null;
+    });
+
+  /**
    * Record one failed Windows request. Never fails: a diagnostic write must not
    * change the SOAP fault or SyncML status the device receives. Failures with
    * no attributable tenant (an unsigned or forged enrollment link) are skipped,
@@ -847,6 +905,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     readonly detail?: string | null;
     readonly clientIp?: string | null;
     readonly userAgent?: string | null;
+    /** How the device was identified: a bound certificate or an asserted id. */
+    readonly attribution?: "bound" | "asserted";
   }): Effect.Effect<boolean> =>
     input.organizationId
       ? recordWindowsFailure(db, {
@@ -883,6 +943,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
                   phase: input.phase,
                   code: input.code,
                   reason: describeAuditFailure(input.message),
+                  ...(input.attribution ? { attribution: input.attribution } : {}),
                   ...(input.deviceIdentifier ? { deviceIdentifier: input.deviceIdentifier } : {}),
                 },
               },
@@ -2070,6 +2131,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const policyHistory: Array<{ uri: string; resultStatus: string; detail: string }> = [];
 
         let policyStateChanged = false;
+        // Only a real success/plan change is a delivery; a rejection is
+        // recorded separately as `mdm.failure` + `device.command_failed`.
+        let policyDelivered = false;
         let revertedAt = device.windowsPolicyRevertedAt;
         let unenrolled = false;
 
@@ -2078,36 +2142,53 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const reportedInventoryCommandIds = new Set<string>();
 
         const recordPolicySuccess = (row: CommandRow, uri: string) => {
-          applied.add(uri);
-          failures.delete(uri);
-          policyStateChanged = true;
+          const isDelete = row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE;
+          const wasApplied = applied.has(uri);
+          const hadFailure = failures.delete(uri);
 
-          if (row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE) {
+          const removed =
+            isDelete && (wasApplied || delivered.has(uri) || reverting.has(uri));
+
+          if (isDelete) {
             applied.delete(uri);
             delivered.delete(uri);
             reverting.delete(uri);
             revertedAt = timestamp;
+          } else {
+            applied.add(uri);
+          }
+
+          // A device re-acks an unchanged policy on every poll; that is not a
+          // new delivery. A delete only counts when it actually removed state.
+          if ((isDelete && removed) || (!isDelete && (!wasApplied || hadFailure))) {
+            policyStateChanged = true;
+            policyDelivered = true;
           }
         };
 
         const recordPolicyFailure = (row: CommandRow, uri: string, resultStatus: string) => {
           const detail = windowsPolicyRejectionDetail(uri, resultStatus);
           const previous = failures.get(uri);
+          const hash = payloadString(commandPayload(row.payload), "hash") ?? "";
+
+          const unchanged =
+            previous?.resultStatus === resultStatus && previous?.hash === hash;
 
           // Append to the failure history once per distinct rejection. A device
           // re-reports the same status on every poll while a setting is stuck;
-          // repeating that in the history would bury everything else.
-          if (!previous || previous.detail !== detail || previous.resultStatus !== resultStatus)
+          // repeating that in the history would bury everything else (and would
+          // make the policy look like it changed on every poll).
+          if (!unchanged) {
             policyHistory.push({ uri, resultStatus, detail });
-
-          failures.set(uri, {
-            uri,
-            hash: payloadString(commandPayload(row.payload), "hash") ?? "",
-            resultStatus,
-            detail,
-            at: timestamp.toISOString(),
-          });
-          policyStateChanged = true;
+            failures.set(uri, {
+              uri,
+              hash,
+              resultStatus,
+              detail,
+              at: timestamp.toISOString(),
+            });
+            policyStateChanged = true;
+          }
 
           return detail;
         };
@@ -2661,7 +2742,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // A management response that changed what the device must apply is a
         // delivered policy, not just another poll. Record the count rather than
         // the OMA-URI payloads (which can contain tenant configuration).
-        if (policyStateChanged)
+        if (policyDelivered)
           yield* writeSystemAudit(
             db,
             {
@@ -3137,14 +3218,21 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const deviceIdentifier =
           report.deviceId?.trim() || certificateAttribute(report.identityCertificate, "CN") || null;
 
-        const device = deviceIdentifier
-          ? yield* findDevice(organizationId, deviceIdentifier)
-          : null;
+        // A bound certificate wins over the asserted `DeviceID`: otherwise a
+        // caller presenting another device's certificate could write a failure
+        // against the device it names.
+        const bound = yield* findDeviceByIssuedCertificate(
+          organizationId,
+          report.identityCertificateSerial,
+        ).pipe(Effect.catch(() => Effect.succeed(null)));
+
+        const device =
+          bound ?? (deviceIdentifier ? yield* findDevice(organizationId, deviceIdentifier) : null);
 
         yield* reportFailure({
           organizationId,
           deviceId: device?.id,
-          deviceIdentifier,
+          deviceIdentifier: bound?.dmIdentifier ?? deviceIdentifier,
           serial: device?.serial,
           hostname: device?.name,
           phase: report.phase,
@@ -3153,6 +3241,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           detail: report.detail,
           clientIp: report.clientIp,
           userAgent: report.userAgent,
+          attribution: bound ? "bound" : device ? "asserted" : undefined,
         });
       }).pipe(
         Effect.catchCause((cause) =>

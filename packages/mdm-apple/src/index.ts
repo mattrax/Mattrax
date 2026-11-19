@@ -981,11 +981,14 @@ const updateInventoryFromStatus = (
     // `Object.fromEntries` keeps this readable without asserting the device
     // row to an index-signature type: the key came from `update`, which is a
     // partial device patch.
+    // Timestamps move on every report even when the device's inventory is
+    // identical, so they are not part of the comparison.
+    const NON_INVENTORY_COLUMNS = new Set(["lastSeenAt", "inventoryUpdatedAt"]);
     const beforeValues = Object.fromEntries(Object.entries(deviceBefore ?? {}));
 
     const inventoryChanged = Object.entries(update).some(
       ([key, value]) =>
-        key !== "lastSeenAt" &&
+        !NON_INVENTORY_COLUMNS.has(key) &&
         JSON.stringify(value ?? null) !== JSON.stringify(beforeValues[key] ?? null),
     );
 
@@ -2520,6 +2523,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           userAgent: scope.userAgent ?? null,
           certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
           certificateSerial: scope.identityCertificateSerial ?? null,
+          principalId: Predicate.isTagged(scope, "user") ? scope.userId : null,
           metadata: { platform: "apple", channel, channels: [channel] },
           coalesce: true,
         },
@@ -3009,19 +3013,97 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           // let an anonymous caller pollute its audit history.
           if (!organizationId) return;
 
-          const [device] = report.udid
-            ? yield* db
+          // A failure is attributed by the identity the device presented, not
+          // by what its payload asserts. A certificate bound to device B must
+          // never let a caller that presents it write against device A.
+          let device: DeviceRow | undefined;
+          let attribution: "bound" | "asserted" | undefined;
+
+          const serial = normalizeIssuedCertificateSerial(
+            report.identityCertificateSerial ?? "",
+          );
+
+          if (serial) {
+            const [certificate] = yield* db
+              .select()
+              .from(s.scepIssuedCertificate)
+              .where(eq(s.scepIssuedCertificate.serial, serial))
+              .limit(1);
+
+            // The serial is global; reject a certificate issued to another
+            // tenant before using its device binding.
+            if (certificate?.organizationId === organizationId && certificate.deviceId) {
+              const [byId] = yield* db
                 .select()
                 .from(s.device)
                 .where(
                   and(
                     eq(s.device.organizationId, organizationId),
-                    eq(s.device.proto, "apple"),
-                    eq(s.device.dmIdentifier, report.udid),
+                    eq(s.device.id, certificate.deviceId),
                   ),
                 )
-                .limit(1)
-            : [];
+                .limit(1);
+
+              // Legacy rows were bound by `device.dmIdentifier`; try that only
+              // when the internal id did not resolve.
+              const [bound] =
+                byId !== undefined
+                  ? [byId]
+                  : yield* db
+                      .select()
+                      .from(s.device)
+                      .where(
+                        and(
+                          eq(s.device.organizationId, organizationId),
+                          eq(s.device.dmIdentifier, certificate.deviceId),
+                        ),
+                      )
+                      .limit(1);
+
+              if (bound) {
+                device = bound;
+                attribution = "bound";
+              }
+            }
+          }
+
+          if (!device && report.identityCertificateFingerprintSha256) {
+            const [bound] = yield* db
+              .select()
+              .from(s.device)
+              .where(
+                and(
+                  eq(s.device.organizationId, organizationId),
+                  eq(s.device.proto, "apple"),
+                  eq(s.device.dmIdentityFingerprint, report.identityCertificateFingerprintSha256),
+                ),
+              )
+              .limit(1);
+
+            if (bound) {
+              device = bound;
+              attribution = "bound";
+            }
+          }
+
+          if (!device && report.udid) {
+            const [asserted] = yield* db
+              .select()
+              .from(s.device)
+              .where(
+                and(
+                  eq(s.device.organizationId, organizationId),
+                  eq(s.device.proto, "apple"),
+                  eq(s.device.dmIdentifier, report.udid),
+                ),
+              )
+              .limit(1);
+
+            if (asserted) {
+              device = asserted;
+              attribution = "asserted";
+            }
+          }
 
           yield* writeSystemAudit(
             db,
@@ -3036,11 +3118,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               userAgent: report.userAgent ?? null,
               certificateFingerprint: report.identityCertificateFingerprintSha256 ?? null,
               certificateSerial: report.identityCertificateSerial ?? null,
+              principalId: report.userId ?? null,
               metadata: {
                 platform: "apple",
                 phase: report.phase ?? "checkin",
                 code: report.code,
                 reason: describeAuditFailure(report.message),
+                ...(attribution ? { attribution } : {}),
                 ...(report.udid ? { udid: report.udid } : {}),
                 ...(report.userId ? { userId: report.userId } : {}),
               },
@@ -4379,25 +4463,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return { _tag: "Idle" as const };
 
               // The token is persisted when the channel fetches the items, not
-              // here: a device that never syncs must be asked again.
-              yield* writeSystemAudit(
-                db,
-                {
-                  organizationId: device.organizationId,
-                  action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
-                  targetType: "device",
-                  targetId: device.id,
-                  deviceId: device.id,
-                  protocol: "apple",
-                                    ip: scope.clientIp ?? null,
-                  userAgent: scope.userAgent ?? null,
-                  certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
-                  certificateSerial: scope.identityCertificateSerial ?? null,
-                  metadata: { platform: "apple", channel: "user", mode: "ddm" },
-                },
-                auditOptions,
-              );
-
+              // here: a device that never syncs must be asked again. The
+              // delivery event is written by `getAppleDeclarationItems`, so a
+              // sync looks like one delivery, not two.
               return { _tag: "DdmSync" as const, serverToken: declarations.token };
             }
 
@@ -4596,26 +4664,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (device.ddmDeclarationsToken === token) return { _tag: "Idle" as const };
 
             // Do not persist the token here: that would mark the sync complete
-            // before the device has fetched anything. The declaration
-            // endpoints record it once the device actually asks for content.
-            yield* writeSystemAudit(
-              db,
-              {
-                organizationId: device.organizationId,
-                action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
-                targetType: "device",
-                targetId: device.id,
-                deviceId: device.id,
-                protocol: "apple",
-                                ip: scope.clientIp ?? null,
-                userAgent: scope.userAgent ?? null,
-                certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
-                certificateSerial: scope.identityCertificateSerial ?? null,
-                metadata: { platform: "apple", channel: "device", mode: "ddm" },
-              },
-              auditOptions,
-            );
-
+            // before the device has fetched anything. The declaration items
+            // handler records it (and the policy-delivery event) once the
+            // device actually asks for content.
             return { _tag: "DdmSync" as const, serverToken: token };
           }).pipe(
             Effect.mapError((cause) =>

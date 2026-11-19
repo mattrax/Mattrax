@@ -2453,6 +2453,9 @@ const applyDeviceNotification = (
           deviceId: device.deviceId,
           protocol: "android",
           metadata: { platform: "android", inventory: true, state: resource.state ?? null },
+          // A device can deliver several status notifications in one poll
+          // window; fold them the same way check-ins are folded.
+          coalesce: true,
         },
         { authSecret: input.authSecret },
       ).pipe(Effect.catch(() => Effect.void));

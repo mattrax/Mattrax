@@ -592,6 +592,8 @@ describe("Android Enterprise delivery", () => {
 
     await push("ENROLLMENT", "message-1");
     await push("STATUS_REPORT", "message-2");
+    // A second status notification in the same bucket folds into the first.
+    await push("STATUS_REPORT", "message-3");
 
     const audit = db.store.audit_log ?? [];
     const rowsFor = (action: string) => audit.filter((row) => row.action === action);
@@ -615,7 +617,7 @@ describe("Android Enterprise delivery", () => {
       // Google Pub/Sub is the caller, not the device; there is no device
       // address to record and the column stays null.
       ip: null,
-      metadata: { checkIns: 2, channels: ["android"] },
+      metadata: { checkIns: 3, channels: ["android"] },
     });
   });
 

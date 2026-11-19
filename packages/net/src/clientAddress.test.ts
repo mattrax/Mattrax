@@ -38,12 +38,20 @@ describe("trusted client address", () => {
     );
   });
 
-  it("bounds the stored value to the column width", () => {
-    const ipv6 = `2001:db8:${"a".repeat(80)}`;
+  it("keeps a valid IPv6 address and rejects a header that is not an IP", () => {
+    const ipv6 = "2001:db8:85a3::8a2e:370:7334";
 
     expect(
       boundedClientAddress(headers({ "cf-connecting-ip": ipv6 }), { cloudflare: true }),
-    ).toHaveLength(64);
+    ).toBe(ipv6);
+    expect(
+      clientAddress(headers({ "cf-connecting-ip": "not-an-ip" }), { cloudflare: true }),
+    ).toBeNull();
+    expect(
+      clientAddress(headers({ "x-forwarded-for": "203.0.113.4, junk" }), {
+        trustForwarded: true,
+      }),
+    ).toBeNull();
   });
 
   it("reads Headers as well as a plain record", () => {

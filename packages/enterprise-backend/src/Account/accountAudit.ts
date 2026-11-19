@@ -295,6 +295,7 @@ export const accountAuditEntry = (entry: {
   deviceId: null,
   deviceCertificateFingerprint: null,
   deviceCertificateSerial: null,
+  principalId: null,
   protocol: null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),

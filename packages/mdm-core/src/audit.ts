@@ -1,5 +1,5 @@
 import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
 
@@ -38,10 +38,11 @@ export const SYSTEM_AUDIT_ACTIONS = {
   /**
    * A device presented a check-in: an Apple MDM check-in (device or user
    * channel), a Windows discovery or management session, or an Android
-   * Management notification. Repeated check-ins from the same device are
-   * folded into one row per coalescing window; `metadata.checkIns`,
-   * `metadata.firstSeenAt` and `metadata.lastSeenAt` describe the fold, and
-   * `metadata.channels` lists every channel that reported.
+   * Management notification. Repeated check-ins from the same device fold into
+   * one row per fixed time bucket, user principal and presenting identity.
+   * `metadata.checkIns`, `metadata.firstSeenAt` and `metadata.lastSeenAt`
+   * describe the fold, and `metadata.channels` lists every channel that
+   * reported.
    */
   mdmCheckin: "mdm.checkin",
   /**
@@ -100,8 +101,13 @@ export type SystemAuditEvent = {
   readonly certificateFingerprint?: string | null;
   readonly certificateSerial?: string | null;
   /**
-   * Fold repeats of this action for the same target into the newest row while
-   * it is inside the coalescing window. Only check-ins should set this.
+   * Who on the device reported: an Apple user-channel id on a Shared iPad or
+   * Mac login. Part of the check-in fold key, so two users never share a row.
+   */
+  readonly principalId?: string | null;
+  /**
+   * Fold repeats of this action for the same target into the current bucket.
+   * Only check-ins should set this.
    */
   readonly coalesce?: boolean;
 };
@@ -117,10 +123,34 @@ export type SystemAuditOptions = {
   /** Disable delivery for a specific call site (tests). */
   readonly webhooks?: boolean;
   /**
-   * How long repeated coalescible events stay in one row. Defaults to 15
-   * minutes; `0` disables coalescing (every occurrence appends).
+   * How long a check-in bucket lasts. Defaults to 15 minutes; `0` disables
+   * coalescing (every occurrence appends). Buckets are aligned to the epoch,
+   * not to the first event, so a continuous poller rolls over on time.
    */
   readonly coalesceWindowMs?: number;
+  /** Injectable clock for deterministic tests. */
+  readonly now?: Date;
+};
+
+/**
+ * Default category for a system-actor action.
+ *
+ * The classifier is shared by new writes, the migration backfill and its test,
+ * so a row written by the protocol paths and a row backfilled from history
+ * always agree. `enrollment.*` is device-facing (the answers arrive from a
+ * device or its pre-registration), while Android tenant connection events and
+ * background work (`script.run_*`, SCEP rotation, delivery failures) stay
+ * `system`.
+ */
+export const defaultAuditCategory = (action: string): AuditCategory => {
+  if (
+    action.startsWith("device.") ||
+    action.startsWith("mdm.") ||
+    action.startsWith("enrollment.")
+  )
+    return "mdm";
+
+  return "system";
 };
 
 /**
@@ -131,6 +161,20 @@ export type SystemAuditOptions = {
  * instead of one row per request. State changes are never coalesced.
  */
 export const DEFAULT_AUDIT_CHECKIN_COALESCE_WINDOW_MS = 15 * 60 * 1_000;
+
+/**
+ * Fixed start of the bucket containing `at`.
+ *
+ * Coalescing must not slide: if the stored timestamp moved on every fold, a
+ * continuously checking-in device would keep one row forever. The bucket start
+ * is derived from the wall clock instead, so a device produces at most one
+ * check-in row per window. Timestamps are therefore stable per row and may
+ * repeat across a principal/identity split in the same bucket; keyset
+ * pagination already breaks ties on `(createdAt, id)`, and retention measures
+ * the bucket (at most one window behind the event), not the last fold.
+ */
+export const auditCoalesceBucketStart = (at: Date, windowMs: number): Date =>
+  new Date(Math.floor(at.getTime() / windowMs) * windowMs);
 
 /** Maximum length of each stored audit string. Matches the schema columns. */
 const AUDIT_TEXT_LIMITS = {
@@ -165,8 +209,28 @@ const checkInCount = (metadata: Schema.JsonObject): number => {
 };
 
 /**
+ * Build the metadata for the first occurrence of a folded check-in. The row's
+ * `createdAt` is the bucket start, so the actual first event time lives here.
+ */
+const initialCheckInMetadata = (
+  metadata: Schema.Json | undefined,
+  now: Date,
+): Schema.JsonObject => {
+  const next = jsonObject(metadata);
+  const channels = stringArray(next["channels"]);
+
+  return {
+    ...next,
+    firstSeenAt: now.toISOString(),
+    lastSeenAt: now.toISOString(),
+    checkIns: 1,
+    ...(channels.length > 0 ? { channels } : {}),
+  };
+};
+
+/**
  * Build the metadata for a folded check-in. The row describes the latest
- * occurrence; `firstSeenAt` keeps when the window's first check-in happened and
+ * occurrence; `firstSeenAt` keeps when the bucket's first check-in happened and
  * `channels` accumulates every channel (Apple device/user, Windows, Android)
  * that reported into it.
  */
@@ -197,6 +261,10 @@ const coalescedMetadata = (input: {
   };
 };
 
+/** `col = value`, or `col IS NULL` when the fold key is absent. */
+const sameOrAbsent = (column: AnyColumn, value: string | null | undefined): SQL =>
+  value === null || value === undefined ? sql`${column} is null` : eq(column, value);
+
 /**
  * Write a tenant-scoped audit row without a request context.
  *
@@ -204,10 +272,12 @@ const coalescedMetadata = (input: {
  * so write errors are logged and swallowed. Callers should still `yield*` the
  * effect when ordering matters for tests/telemetry.
  *
- * Coalescing is one extra read on the check-in paths only: when `coalesce` is
- * set, the newest matching row inside the window is updated in place instead of
- * inserting a new one. The predicate includes the organisation and target, so
- * two devices (or tenants) can never fold into the same row.
+ * Coalescing is one extra read on the check-in paths only. The fold key is the
+ * organisation, action, target, system actor, **fixed time bucket**, device
+ * principal and presenting identity (certificate fingerprint/serial and IP).
+ * A continuous check-in therefore produces one row per bucket, two users on
+ * one device never share a row, and a certificate or address change starts a
+ * new row instead of being hidden by the old one.
  */
 export const writeSystemAudit = (
   db: Db["Service"],
@@ -215,54 +285,74 @@ export const writeSystemAudit = (
   options: SystemAuditOptions = {},
 ) =>
   Effect.gen(function* () {
-    const now = new Date();
+    const now = options.now ?? new Date();
     const window = options.coalesceWindowMs ?? DEFAULT_AUDIT_CHECKIN_COALESCE_WINDOW_MS;
+
+    const coalesceTargetId =
+      event.coalesce === true && window > 0 && event.targetId ? event.targetId : null;
+
+    const bucketStart =
+      coalesceTargetId === null ? now : auditCoalesceBucketStart(now, window);
+
+    const ip = bound(event.ip, AUDIT_TEXT_LIMITS.ip);
+
+    const certificateFingerprint = bound(
+      event.certificateFingerprint?.toLowerCase(),
+      AUDIT_TEXT_LIMITS.certificateFingerprint,
+    );
+
+    const certificateSerial = bound(
+      event.certificateSerial?.toLowerCase(),
+      AUDIT_TEXT_LIMITS.certificateSerial,
+    );
+
+    const principalId = bound(event.principalId, 255);
 
     const values = {
       organizationId: event.organizationId,
       actorAccountId: null,
       actorEmail: SYSTEM_AUDIT_ACTOR,
       actorType: "system" as const,
-      category: event.category ?? ("mdm" as const),
+      category: event.category ?? defaultAuditCategory(event.action),
       action: event.action,
       targetType: event.targetType,
       targetId: event.targetId ?? null,
       metadata: event.metadata === undefined ? null : event.metadata,
-      ip: bound(event.ip, AUDIT_TEXT_LIMITS.ip),
+      ip,
       userAgent: bound(event.userAgent, AUDIT_TEXT_LIMITS.userAgent),
       deviceId: event.deviceId ?? null,
-      deviceCertificateFingerprint: bound(
-        event.certificateFingerprint?.toLowerCase(),
-        AUDIT_TEXT_LIMITS.certificateFingerprint,
-      ),
-      deviceCertificateSerial: bound(
-        event.certificateSerial?.toLowerCase(),
-        AUDIT_TEXT_LIMITS.certificateSerial,
-      ),
+      deviceCertificateFingerprint: certificateFingerprint,
+      deviceCertificateSerial: certificateSerial,
       protocol: event.protocol ?? null,
-      createdAt: now,
+      principalId,
+      createdAt: bucketStart,
     };
 
-    const previous =
-      event.coalesce && event.targetId && window > 0
-        ? (
-            yield* db
-              .select()
-              .from(s.auditLog)
-              .where(
-                and(
-                  eq(s.auditLog.organizationId, event.organizationId),
-                  eq(s.auditLog.action, event.action),
-                  eq(s.auditLog.targetType, event.targetType),
-                  eq(s.auditLog.targetId, event.targetId),
-                  eq(s.auditLog.actorType, "system"),
-                  gte(s.auditLog.createdAt, new Date(now.getTime() - window)),
-                ),
-              )
-              .orderBy(desc(s.auditLog.createdAt))
-              .limit(1)
-          )[0]
-        : undefined;
+    const previous = coalesceTargetId !== null
+      ? (
+          yield* db
+            .select()
+            .from(s.auditLog)
+            .where(
+              and(
+                eq(s.auditLog.organizationId, event.organizationId),
+                eq(s.auditLog.action, event.action),
+                eq(s.auditLog.targetType, event.targetType),
+                eq(s.auditLog.targetId, coalesceTargetId),
+                eq(s.auditLog.actorType, "system"),
+                // The exact bucket, not a moving window: a device that keeps
+                // checking in rolls over to a new row when the bucket ends.
+                eq(s.auditLog.createdAt, bucketStart),
+                sameOrAbsent(s.auditLog.principalId, principalId),
+                sameOrAbsent(s.auditLog.deviceCertificateFingerprint, certificateFingerprint),
+                sameOrAbsent(s.auditLog.deviceCertificateSerial, certificateSerial),
+                sameOrAbsent(s.auditLog.ip, ip),
+              ),
+            )
+            .orderBy(desc(s.auditLog.id))
+            .limit(1)
+        )[0]
+      : undefined;
 
     if (previous) {
       const previousMetadata = Option.getOrUndefined(
@@ -283,7 +373,14 @@ export const writeSystemAudit = (
         })
         .where(eq(s.auditLog.id, previous.id));
     } else {
-      yield* db.insert(s.auditLog).values({ id: id(), ...values });
+      yield* db.insert(s.auditLog).values({
+        id: id(),
+        ...values,
+        metadata:
+          coalesceTargetId === null
+            ? values.metadata
+            : initialCheckInMetadata(event.metadata, now),
+      });
     }
 
     // Device lifecycle transitions are mirrored to customer webhooks. Only

@@ -6,8 +6,10 @@ import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import {
   commandFailureTransition,
   declarationFailedTransition,
+  defaultAuditCategory,
   isDeclarationFailure,
   pushInvalidTokenTransition,
+  writeSystemAudit,
 } from "@mattrax/mdm-apple";
 import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
 
@@ -404,5 +406,277 @@ describe("system audit transition helpers", () => {
     expect(commandFailureTransition("sent", "deferred")).toBe(true);
     expect(commandFailureTransition("failed", "failed")).toBe(false);
     expect(commandFailureTransition("sent", "succeeded")).toBe(false);
+  });
+});
+
+
+describe("fixed-window check-in coalescing", () => {
+  const windowMs = 15 * 60 * 1_000;
+
+  const checkin = (
+    db: ReturnType<typeof makeDb>,
+    at: Date,
+    targetId = "device-1",
+    overrides: Row = {},
+  ) =>
+    run(
+      writeSystemAudit(
+        // SAFETY: the fake store implements the select/update/insert chains.
+        db as any,
+        {
+          organizationId: "org-1",
+          action: "mdm.checkin",
+          targetType: "device",
+          targetId,
+          deviceId: targetId,
+          protocol: "apple",
+          metadata: { platform: "apple", channels: ["device"] },
+          coalesce: true,
+          ...overrides,
+        },
+        { coalesceWindowMs: windowMs, now: at },
+      ),
+    );
+
+  it("rolls over to a new row when the fixed bucket ends", async () => {
+    const db = makeDb();
+    const base = new Date("2026-11-11T10:00:00.000Z");
+
+    await checkin(db, base);
+    await checkin(db, new Date(base.getTime() + 10 * 60_000));
+    await checkin(db, new Date(base.getTime() + 20 * 60_000));
+
+    const rows = auditRows(db);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.createdAt).toEqual(base);
+    expect(rows[1]!.createdAt).toEqual(new Date(base.getTime() + 15 * 60_000));
+    expect(rows[0]!.metadata).toMatchObject({ checkIns: 2 });
+    expect(rows[1]!.metadata).toMatchObject({ checkIns: 1 });
+
+    // A repeat in the second bucket updates that row; the first bucket's
+    // timestamp never moves.
+    await checkin(db, new Date(base.getTime() + 21 * 60_000));
+    expect(auditRows(db)).toHaveLength(2);
+    expect(auditRows(db)[0]!.createdAt).toEqual(base);
+    expect(auditRows(db)[1]!.metadata).toMatchObject({ checkIns: 2 });
+  });
+
+  it("keeps two devices in separate rows", async () => {
+    const db = makeDb();
+    const at = new Date("2026-11-11T10:00:00.000Z");
+
+    await checkin(db, at, "device-1");
+    await checkin(db, at, "device-2");
+
+    expect(auditRows(db)).toHaveLength(2);
+  });
+
+  it("starts a new row when the presenting identity changes", async () => {
+    const db = makeDb();
+    const at = new Date("2026-11-11T10:00:00.000Z");
+
+    await checkin(db, at, "device-1", {
+      certificateFingerprint: "fingerprint-1",
+      certificateSerial: "0a1b",
+      ip: "203.0.113.9",
+    });
+    await checkin(db, at, "device-1", {
+      certificateFingerprint: "fingerprint-2",
+      certificateSerial: "0a1b",
+      ip: "203.0.113.9",
+    });
+    await checkin(db, at, "device-1", {
+      certificateFingerprint: "fingerprint-2",
+      certificateSerial: "0a1b",
+      ip: "198.51.100.4",
+    });
+
+    expect(auditRows(db)).toHaveLength(3);
+  });
+});
+
+describe("Apple user-channel coalescing", () => {
+  const userTokenUpdate = (userId: string) => ({
+    _tag: "TokenUpdate" as const,
+    pushToken: `push-${userId}`,
+    pushMagic: `magic-${userId}`,
+    topic: "com.apple.mgmt.External.acme",
+    channel: "user" as const,
+    userId,
+  });
+
+  const userScope = (userId: string, overrides: Row = {}) => ({
+    _tag: "user" as const,
+    udid: "udid-device-1",
+    userId,
+    source: "user-channel" as const,
+    identityCertificate: "CN=Device,OU=org-1",
+    identityCertificateFingerprintSha256: "fingerprint-1",
+    identityCertificateSerial: "0a1b2c",
+    clientIp: "203.0.113.9",
+    mdmOrigin,
+    ...overrides,
+  });
+
+  it("never folds two users on one Shared iPad into one row", async () => {
+    const { db, backend } = setup();
+    db.store[tableName(schema.device)]![0]!.osEdition = "iOS";
+
+    await run(backend.appleDeviceEvent(userScope("user-a"), userTokenUpdate("user-a")));
+    await run(backend.appleDeviceEvent(userScope("user-b"), userTokenUpdate("user-b")));
+
+    const rows = rowsFor(db, "mdm.checkin");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.principalId).sort()).toEqual(["user-a", "user-b"]);
+  });
+
+  it("starts a new row when the certificate rotates", async () => {
+    const { db, backend } = setup();
+    db.store[tableName(schema.device)]![0]!.osEdition = "iOS";
+
+    await run(backend.appleDeviceEvent(userScope("user-a"), userTokenUpdate("user-a")));
+
+    // Simulate a renewed identity: the device row now trusts the new
+    // certificate, so the check-in is accepted and must start a new row.
+    db.store[tableName(schema.device)]![0]!.dmIdentityFingerprint = "fingerprint-2";
+
+    await run(
+      backend.appleDeviceEvent(
+        userScope("user-a", {
+          identityCertificateFingerprintSha256: "fingerprint-2",
+          identityCertificateSerial: "ffff",
+        }),
+        userTokenUpdate("user-a"),
+      ),
+    );
+
+    const rows = rowsFor(db, "mdm.checkin");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatchObject({
+      deviceCertificateFingerprint: "fingerprint-2",
+      deviceCertificateSerial: "ffff",
+      metadata: { checkIns: 1 },
+    });
+  });
+});
+
+describe("Apple status-report diffs", () => {
+  it("records one status report for identical inventory reports", async () => {
+    const { db, backend } = setup();
+    db.store[tableName(schema.device)]![0]!.serial = "OLD-SERIAL";
+
+    const report = {
+      _tag: "DeclarationStatus" as const,
+      statusItems: { "device.identifier.serial-number": "SERIAL-device-1" },
+    };
+
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), report));
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), report));
+
+    expect(rowsFor(db, "mdm.status_report")).toHaveLength(1);
+    expect(rowsFor(db, "mdm.status_report")[0]!.metadata).toMatchObject({
+      inventoryChanged: true,
+    });
+  });
+
+  it("records one delivery for declaration items, not one per sync", async () => {
+    const db = makeDb({
+      [tableName(schema.organization)]: [organization("org-1", "first")],
+      [tableName(schema.device)]: [device("device-1", "org-1")],
+    });
+
+    // SAFETY: the fake store implements only the query chains this test uses.
+    const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
+
+    const manifest = await run(backend.appleManagementCheckin(scope("udid-device-1")));
+    expect(manifest._tag).toBe("DdmSync");
+    // Asking the device to sync is not a delivery on its own.
+    expect(rowsFor(db, "mdm.policy_delivered")).toHaveLength(0);
+
+    await run(backend.getAppleDeclarationItems(scope("udid-device-1")));
+    await run(backend.getAppleDeclarationItems(scope("udid-device-1")));
+
+    const rows = rowsFor(db, "mdm.policy_delivered");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "mdm.policy_delivered",
+      protocol: "apple",
+      metadata: { mode: "declarations", channel: "device" },
+    });
+  });
+});
+
+describe("failure attribution", () => {
+  it("binds the failure to the certificate owner, not the asserted UDID", async () => {
+    const { db, backend } = setup();
+
+    // A second device in the same tenant owns the certificate the request
+    // presents.
+    db.store[tableName(schema.device)]!.push({
+      __table: tableName(schema.device),
+      ...device("device-3", "org-1"),
+    });
+
+    (db.store[tableName(schema.scepIssuedCertificate)] ??= []).push({
+      __table: tableName(schema.scepIssuedCertificate),
+      serial: "a1b2c",
+      organizationId: "org-1",
+      deviceId: "device-3",
+      notAfter: new Date("2027-01-01T00:00:00Z"),
+      createdAt: now,
+      revokedAt: null,
+    });
+
+    await run(
+      backend.appleRecordFailure!({
+        code: "invalid_plist",
+        message: "Invalid plist",
+        // The device asserts another device's UDID.
+        udid: "udid-device-1",
+        identityCertificate: "CN=Device,OU=org-1",
+        identityCertificateSerial: "0A:1B:2C",
+        clientIp: "203.0.113.9",
+      }),
+    );
+
+    const rows = rowsFor(db, "mdm.failure");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      targetId: "device-3",
+      deviceId: "device-3",
+      metadata: { attribution: "bound" },
+    });
+    expect(JSON.stringify(rows[0]!.metadata)).toContain('"attribution":"bound"');
+  });
+
+  it("falls back to the asserted device id when no identity is bound", async () => {
+    const { db, backend } = setup();
+
+    await run(
+      backend.appleRecordFailure!({
+        code: "invalid_plist",
+        message: "Invalid plist",
+        udid: "udid-device-1",
+        identityCertificate: "CN=Device,OU=org-1",
+        clientIp: "203.0.113.9",
+      }),
+    );
+
+    expect(rowsFor(db, "mdm.failure")[0]).toMatchObject({
+      deviceId: "device-1",
+      metadata: { attribution: "asserted" },
+    });
+  });
+});
+
+describe("system audit category classifier", () => {
+  it("classifies device protocol traffic, enrollment and background work", () => {
+    expect(defaultAuditCategory("device.enrolled")).toBe("mdm");
+    expect(defaultAuditCategory("mdm.checkin")).toBe("mdm");
+    expect(defaultAuditCategory("enrollment.answers_submitted")).toBe("mdm");
+    expect(defaultAuditCategory("android.signup_started")).toBe("system");
+    expect(defaultAuditCategory("android.enterprise_connected")).toBe("system");
+    expect(defaultAuditCategory("script.run_completed")).toBe("system");
+    expect(defaultAuditCategory("scep_ca.auto_rotated")).toBe("system");
   });
 });

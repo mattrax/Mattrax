@@ -1099,6 +1099,7 @@ const auditEntry = (entry: {
   deviceId?: string | null;
   deviceCertificateFingerprint?: string | null;
   deviceCertificateSerial?: string | null;
+  principalId?: string | null;
   protocol?: string | null;
   metadata?: unknown;
   createdAt: Date;
@@ -1116,6 +1117,7 @@ const auditEntry = (entry: {
   deviceId: entry.deviceId ?? null,
   deviceCertificateFingerprint: entry.deviceCertificateFingerprint ?? null,
   deviceCertificateSerial: entry.deviceCertificateSerial ?? null,
+  principalId: entry.principalId ?? null,
   protocol: entry.protocol ?? null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
@@ -14576,8 +14578,16 @@ export const createEnterpriseService = ({
           .where(
             and(
               eq(schema.auditLog.organizationId, ctx.organization.id),
-              eq(schema.auditLog.targetType, "device"),
-              eq(schema.auditLog.targetId, device.id),
+              // Device-scoped rows set `targetId` to the internal device id.
+              // Command results and newer MDM rows use `deviceId`, so both the
+              // new column and the legacy target pair are read.
+              or(
+                and(
+                  eq(schema.auditLog.targetType, "device"),
+                  eq(schema.auditLog.targetId, device.id),
+                ),
+                eq(schema.auditLog.deviceId, device.id),
+              ),
               auditFilter,
             ),
           )

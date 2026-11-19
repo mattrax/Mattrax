@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * Client address extraction with one trust policy for the whole server.
  *
@@ -60,7 +62,7 @@ export const clientAddress = (
   headers: HeaderSource,
   { trustForwarded = false, cloudflare = false }: ClientAddressOptions = {},
 ): string | null => {
-  if (cloudflare) return headerValue(headers, "cf-connecting-ip") ?? null;
+  if (cloudflare) return validAddress(headerValue(headers, "cf-connecting-ip"));
 
   if (!trustForwarded) return null;
 
@@ -69,8 +71,17 @@ export const clientAddress = (
     .map((item) => item.trim())
     .filter(Boolean);
 
-  return chain?.at(-1) ?? headerValue(headers, "x-real-ip") ?? null;
+  return validAddress(chain?.at(-1) ?? headerValue(headers, "x-real-ip"));
 };
+
+/**
+ * A header value is only an address when the runtime agrees. Forwarded headers
+ * are attacker-controlled in an untrusted deployment, and even a trusted one
+ * can forward a malformed value; storing "unknown" is better than storing a
+ * string that looks like an address.
+ */
+const validAddress = (value: string | undefined): string | null =>
+  value !== undefined && isIP(value) !== 0 ? value : null;
 
 /** A stored address is bounded; IPv6 with a zone id still fits comfortably. */
 export const CLIENT_ADDRESS_MAX_LENGTH = 64;

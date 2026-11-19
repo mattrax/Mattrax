@@ -164,6 +164,7 @@ describe("audit export", () => {
     deviceId: null,
     deviceCertificateFingerprint: null,
     deviceCertificateSerial: null,
+    principalId: null,
     protocol: null,
     metadata: { serial: "C02A" },
     createdAt: "2026-11-11T10:00:00.000Z",
@@ -174,10 +175,10 @@ describe("audit export", () => {
     const csv = auditCsv([entry({ actorEmail: "Acme, Inc.", action: 'say "hi"' })]);
     const [header, row] = csv.split("\r\n");
     expect(header).toBe(
-      "Time,Actor,Actor type,Category,Action,Target type,Target id,Protocol,Device,IP,Certificate fingerprint,Certificate serial,User agent,Metadata",
+      "Time,Actor,Actor type,Category,Action,Target type,Target id,Protocol,Device,IP,Certificate fingerprint,Certificate serial,Principal,User agent,Metadata",
     );
     expect(row).toBe(
-      '2026-11-11T10:00:00.000Z,"Acme, Inc.",account,mdm,"say ""hi""",device,device-1,,,,,,,"{""serial"":""C02A""}"',
+      '2026-11-11T10:00:00.000Z,"Acme, Inc.",account,mdm,"say ""hi""",device,device-1,,,,,,,,"{""serial"":""C02A""}"',
     );
   });
 
@@ -200,7 +201,7 @@ describe("audit export", () => {
     const [, row] = csv.split("\r\n");
 
     expect(row).toContain(",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,");
-    expect(row).toContain(",0a1b,MDM/1.0,");
+    expect(row).toContain(",0a1b,,MDM/1.0,");
   });
 
   it("neutralises spreadsheet formula prefixes", () => {

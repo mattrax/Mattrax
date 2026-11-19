@@ -54,6 +54,8 @@ export type AuditLogEntry = {
   readonly deviceId?: string | null;
   readonly deviceCertificateFingerprint?: string | null;
   readonly deviceCertificateSerial?: string | null;
+  /** Apple user-channel id when the event belongs to one login on a device. */
+  readonly principalId?: string | null;
   readonly protocol?: AuditProtocol | null;
   readonly metadata?: unknown;
   readonly createdAt: string;
@@ -76,6 +78,7 @@ export const AuditLogEntry: Schema.Codec<AuditLogEntry> = Schema.Struct({
   deviceId: Schema.optional(NullableString),
   deviceCertificateFingerprint: Schema.optional(NullableString),
   deviceCertificateSerial: Schema.optional(NullableString),
+  principalId: Schema.optional(NullableString),
   protocol: Schema.optional(Schema.NullOr(AuditProtocol)),
   metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
   createdAt: Schema.String,

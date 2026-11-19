@@ -2364,6 +2364,44 @@ describe("Windows MDM activity in the organisation event log", () => {
     );
   });
 
+  it("records a repeated policy rejection once and never calls it a delivery", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
+
+    const deviceRow = db.store[tableName(schema.device)]![0]!;
+    const commandTable = tableName(schema.deviceCommand);
+
+    (db.store[commandTable] ??= []).push({
+      __table: commandTable,
+      id: "policy-1",
+      organizationId: "org-early",
+      deviceId: deviceRow.id,
+      requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+      payload: {
+        kind: "Replace",
+        locURI: "./Vendor/MSFT/Policy/Config/Test",
+        hash: "hash-1",
+      },
+      status: "sent",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const rejection = {
+      ...managementRequest,
+      statuses: [{ cmdRef: "policy-1", data: "500" }],
+    };
+
+    await run(backend.windowsManagementCheckin(managementScope, rejection));
+    await run(backend.windowsManagementCheckin(managementScope, rejection));
+
+    expect(rowsFor(db, "mdm.failure")).toHaveLength(1);
+    expect(rowsFor(db, "mdm.policy_delivered")).toHaveLength(0);
+    expect(rowsFor(db, "device.command_failed")).toHaveLength(1);
+  });
+
   it("records a successful command result once", async () => {
     const { backend, db } = await setup();
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
