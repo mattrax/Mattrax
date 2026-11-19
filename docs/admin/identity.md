@@ -20,6 +20,16 @@ groups.
 3. Enable SSO.
 4. Choose whether to create an account and membership on first sign-in.
 
+Clearing the Entra tenant id (or replacing it with another directory) unlinks the tenant
+and, best-effort, revokes this app's delegated admin consent in the old directory. Mattrax
+finds its own service principal by app id and deletes only the OAuth2 permission grants
+whose client is that service principal; a missing service principal or grant counts as
+already revoked. The local unlink succeeds even if Graph rejects the cleanup, and the
+dashboard reports whether consent was revoked, skipped (no Graph credentials) or failed.
+Removing grants needs the `DelegatedPermissionGrant.ReadWrite.All` application permission.
+Consent granted to a different application, application role assignments and tenant-wide
+policies cannot be revoked this way and must be removed by an Entra administrator.
+
 The MFA requirement is not part of this form any more: it is a tenant property under
 **Settings → Identity → Multi-factor authentication**, so a tenant that signs in with
 passkeys can require it without configuring an IdP.

@@ -151,6 +151,25 @@ export const GraphDomainsResponse = Schema.Struct({
 
 export type GraphDomainsResponse = typeof GraphDomainsResponse.Type;
 
+export const GraphServicePrincipalsResponse = Schema.Struct({
+  value: Schema.Array(Schema.Struct({ id: Schema.String })),
+  "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphServicePrincipalsResponse = typeof GraphServicePrincipalsResponse.Type;
+
+export const GraphOAuth2PermissionGrantsResponse = Schema.Struct({
+  value: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      clientId: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphOAuth2PermissionGrantsResponse = typeof GraphOAuth2PermissionGrantsResponse.Type;
+
 /**
  * One page of a Graph delta query. Pass `nextLink` back into the same delta
  * method until it is `null`; persist `deltaLink` for the next sync.

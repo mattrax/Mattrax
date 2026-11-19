@@ -710,3 +710,129 @@ describe("AzureGraph Autopilot", () => {
     ).rejects.toBeInstanceOf(AzureGraphNotFound);
   });
 });
+
+describe("AzureGraph delegated consent revocation", () => {
+  const servicePrincipalId = "sp-1";
+  const nextGrantsLink = "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?$skiptoken=grants-2";
+
+  it("finds our service principal and deletes only our delegated grants", async () => {
+    const requested: Array<{ url: string; method?: string }> = [];
+    let grantPage = 0;
+
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url, init) => {
+        requested.push({ url, method: init?.method });
+
+        if (isTokenRequest(url)) return tokenResponse();
+
+        const decoded = decodeURIComponent(url);
+
+        if (decoded.includes("/servicePrincipals?")) {
+          expect(decoded).toContain("appId eq 'client-id'");
+
+          return json({ value: [{ id: servicePrincipalId }] });
+        }
+
+        if (decoded.includes("/oauth2PermissionGrants?") && init?.method !== "DELETE") {
+          // Only the first page carries the filter; the nextLink is followed
+          // verbatim, as Graph returns it.
+          if (!decoded.includes("$skiptoken"))
+            expect(decoded).toContain(`clientId eq '${servicePrincipalId}'`);
+          grantPage++;
+
+          if (grantPage === 1)
+            return json({
+              value: [
+                { id: "grant-ours-1", clientId: servicePrincipalId },
+                { id: "grant-theirs", clientId: "another-app" },
+              ],
+              "@odata.nextLink": nextGrantsLink,
+            });
+
+          return json({ value: [{ id: "grant-ours-2", clientId: servicePrincipalId }] });
+        }
+
+        return new Response(null, { status: 204 });
+      },
+    );
+
+    expect(result).toEqual({ servicePrincipalId, grantsRemoved: 2 });
+
+    const deletes = requested.filter((entry) => entry.method === "DELETE");
+    expect(deletes.map((entry) => entry.url.split("/").at(-1))).toEqual([
+      "grant-ours-1",
+      "grant-ours-2",
+    ]);
+    expect(deletes.some((entry) => entry.url.includes("grant-theirs"))).toBe(false);
+  });
+
+  it("treats a missing service principal as already revoked", async () => {
+    const methods: Array<string | undefined> = [];
+
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+
+        methods.push(init?.method);
+
+        return json({ value: [] });
+      },
+    );
+
+    expect(result).toEqual({ servicePrincipalId: null, grantsRemoved: 0 });
+    // Only the service-principal lookup ran; no grant request was made.
+    expect(methods).toEqual(["GET"]);
+  });
+
+  it("treats a grant that disappeared before deletion as removed", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url) => {
+        if (isTokenRequest(url)) return tokenResponse();
+
+        const decoded = decodeURIComponent(url);
+
+        if (decoded.includes("/servicePrincipals?"))
+          return json({ value: [{ id: servicePrincipalId }] });
+
+        if (decoded.includes("/oauth2PermissionGrants?"))
+          return json({ value: [{ id: "grant-1", clientId: servicePrincipalId }] });
+
+        return json({ error: "not found" }, 404);
+      },
+    );
+
+    expect(result).toEqual({ servicePrincipalId, grantsRemoved: 1 });
+  });
+
+  it("surfaces a Graph rejection so the caller can report a failed revocation", async () => {
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.revokeDelegatedConsent(tenantId);
+        }),
+        (url) => {
+          if (isTokenRequest(url)) return tokenResponse();
+
+          return json({ error: "forbidden" }, 403);
+        },
+      ),
+    ).rejects.toBeInstanceOf(AzureGraphConsentRequired);
+  });
+});

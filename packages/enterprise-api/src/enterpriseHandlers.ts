@@ -2124,6 +2124,71 @@ export const createEnterpriseService = ({
       );
     });
 
+  /**
+   * Best-effort removal of this app's delegated Entra consent. Unlinking must
+   * never fail because Graph is unavailable, so every failure (including an
+   * audit write) is recorded and swallowed. The returned outcome is surfaced
+   * on the SSO response so the dashboard can tell the operator what happened.
+   */
+  const revokeEntraConsent = (ctx: Parameters<typeof audit>[0], azureTenantId: string) =>
+    Effect.gen(function* () {
+      const record = (action: string, metadata: Schema.Json) =>
+        audit(ctx, action, "sso", ctx.organization.id, metadata).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(`Entra consent audit write failed: ${String(cause)}`),
+          ),
+        );
+
+      if (!azureGraph) {
+        yield* record("sso.consent_revocation_skipped", {
+          azureTenantId,
+          result: "skipped",
+        });
+
+        return {
+          status: "skipped" as const,
+          reason: "Microsoft Graph credentials are not configured.",
+        };
+      }
+
+      return yield* azureGraph.revokeDelegatedConsent(azureTenantId).pipe(
+        Effect.flatMap((revocation) =>
+          record("sso.consent_revoked", {
+            azureTenantId,
+            result: "revoked",
+            grantsRemoved: revocation.grantsRemoved,
+            servicePrincipalFound: revocation.servicePrincipalId !== null,
+          }).pipe(
+            Effect.as({ status: "revoked" as const, grantsRemoved: revocation.grantsRemoved }),
+          ),
+        ),
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            const httpStatus =
+              "status" in error && Schema.is(Schema.Number)(error.status)
+                ? error.status
+                : undefined;
+
+            // Graph error messages name the endpoint, never a token or secret.
+            const message = error.message.slice(0, 200);
+
+            yield* Effect.logWarning(
+              `Entra consent revocation failed for ${azureTenantId}: ${message}`,
+            );
+
+            yield* record("sso.consent_revocation_failed", {
+              azureTenantId,
+              result: "failed",
+              message,
+              httpStatus: httpStatus ?? null,
+            });
+
+            return { status: "failed" as const, reason: message };
+          }),
+        ),
+      );
+    });
+
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
 
   /**
@@ -7859,8 +7924,10 @@ export const createEnterpriseService = ({
           where: { organizationId: ctx.organization.id },
         });
 
+        const previousAzureTenantId = existing?.azureTenantId ?? null;
+
         const nextAzureTenantId =
-          body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
+          body.azureTenantId === undefined ? previousAzureTenantId : body.azureTenantId;
 
         if (nextAzureTenantId) {
           if (
@@ -7960,6 +8027,13 @@ export const createEnterpriseService = ({
           fields: Object.keys(body),
         });
 
+        // The local unlink is already committed. Anything below is best-effort
+        // so a Graph outage cannot trap the tenant in a link it wants removed.
+        const consentRevocation =
+          previousAzureTenantId && previousAzureTenantId !== nextAzureTenantId
+            ? yield* revokeEntraConsent(ctx, previousAzureTenantId)
+            : undefined;
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
@@ -7969,6 +8043,7 @@ export const createEnterpriseService = ({
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
           requireMfa,
+          consentRevocation,
         };
       }),
     listScimTokens: (request, tenantId) =>
