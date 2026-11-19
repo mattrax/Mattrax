@@ -68,5 +68,9 @@ test("rejects a user-scoped setting the platform cannot deliver", async ({ page 
   await page.getByLabel("Scope").selectOption("user");
   await page.getByRole("button", { name: /^save$/i }).click();
 
-  await expect(page.getByText(/assigns a policy to a device, not a user/)).toBeVisible();
+  // The message is shown inline, in a toast and in its screen-reader status,
+  // so assert on the inline alert rather than matching every copy.
+  await expect(
+    page.getByRole("region", { name: "JSON" }).getByRole("alert"),
+  ).toContainText(/assigns a policy to a device, not a user/);
 });
