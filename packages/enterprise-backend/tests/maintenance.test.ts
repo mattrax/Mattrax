@@ -572,6 +572,37 @@ describe("maintenance Windows state command retention", () => {
     expect(second.pruned).toBe(1);
     expect(db.store.device_command).toHaveLength(0);
   });
+
+  it("prunes Windows failure history on the same daily run", async () => {
+    const db = makeDb();
+
+    const failure = (id: string, ageDays: number) => ({
+      id,
+      organizationId: "org-1",
+      deviceId: null,
+      deviceIdentifier: `device-${id}`,
+      serial: null,
+      hostname: null,
+      phase: "enrollment",
+      code: "windows_disabled",
+      message: "Windows enrollment is disabled for this tenant.",
+      detail: null,
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.windows_failure.push(failure("old", 31), failure("boundary", 30), failure("fresh", 1));
+
+    const result = await run(db);
+
+    expect(result.purgedWindowsFailures).toBe(1);
+    expect(db.store.windows_failure.map((row: { id: string }) => row.id).sort()).toEqual([
+      "boundary",
+      "fresh",
+    ]);
+
+    // Idempotent on the next run.
+    expect((await run(db)).purgedWindowsFailures).toBe(0);
+  });
 });
 
 describe("maintenance credential issuance", () => {

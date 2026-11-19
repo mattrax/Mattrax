@@ -1967,6 +1967,54 @@ export const device = mysqlTable(
 );
 
 /**
+ * One Windows SOAP/SyncML request that failed.
+ *
+ * These are the faults the WSTEP, policy and management endpoints return to the
+ * device. They are recorded here because a device that never enrols (or stops
+ * checking in) has no row to hang the reason on; an operator otherwise sees
+ * only a device that never appears. `organizationId` is only set when the
+ * failure could be attributed to a tenant (a valid signed enrollment token or a
+ * verified identity certificate), so an unauthenticated caller cannot write
+ * into another tenant's history. Rows are retained for 30 days by daily
+ * maintenance.
+ */
+export const windowsFailure = mysqlTable(
+  "windows_failure",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /**
+     * The internal device row, when the request resolved to an enrolled device.
+     * A first-time enrollment that failed has no row yet, so this stays null
+     * and `deviceIdentifier` carries what the client asserted.
+     */
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    /** Windows `DeviceID` asserted by the request, when it got that far. */
+    deviceIdentifier: shortText("device_identifier"),
+    serial: shortText("serial"),
+    hostname: shortText("hostname"),
+    /** Where in the protocol the failure happened. */
+    phase: varchar("phase", {
+      length: 16,
+      enum: ["discovery", "wstep", "enrollment", "policy", "command"],
+    }).notNull(),
+    /** Stable machine-readable cause, e.g. `certificate_signing_failed`. */
+    code: shortText("code").notNull(),
+    /** Redacted, bounded operator-facing reason; never certificate material. */
+    message: text("message").notNull(),
+    /** Optional redacted, bounded diagnostic text (internal error, OMA-URI). */
+    detail: text("detail"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("windows_failure_organization_created_idx").on(table.organizationId, table.createdAt),
+    index("windows_failure_device_created_idx").on(table.deviceId, table.createdAt),
+  ],
+);
+
+/**
  * The tenant's device-attribute registry.
  *
  * Attributes are declared once per tenant with a stable `key` so scripts, the
@@ -3548,6 +3596,7 @@ export const relations = defineRelations(
     androidDevice,
     androidPubSubMessage,
     device,
+    windowsFailure,
     devicePreRegistration,
     deviceCommand,
     script,

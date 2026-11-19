@@ -36,6 +36,7 @@ export function mockManagementBackend(overrides?: Partial<ManagementBackendType>
       windowsManagementCheckin:
         overrides?.windowsManagementCheckin ?? (() => Effect.fail(new ManagementNotSupported())),
       windowsDeviceEvent: overrides?.windowsDeviceEvent ?? (() => Effect.void),
+      windowsRecordFailure: overrides?.windowsRecordFailure ?? (() => Effect.void),
     }),
   );
 }

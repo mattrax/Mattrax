@@ -257,6 +257,8 @@ type EnterpriseDashboardClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseDashboard"];
 
+type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -289,6 +291,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-health-summary", keyTenant(tenantId)] as const,
   devicePushHealth: (tenantId: RouteParam) =>
     ["enterprise", "device-push-health", keyTenant(tenantId)] as const,
+  windowsFailures: (tenantId: RouteParam, deviceId?: string) =>
+    ["enterprise", "windows-failures", keyTenant(tenantId), deviceId ?? "tenant"] as const,
   deviceActivity: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-activity", keyTenant(tenantId), id ?? ""] as const,
   credentialHealth: (tenantId: RouteParam) =>
@@ -535,6 +539,15 @@ function dashboardEndpoint<A, E>(
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
+    call,
+  );
+}
+
+function windowsEndpoint<A, E>(
+  call: (api: EnterpriseWindowsClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseWindows),
     call,
   );
 }
@@ -1116,6 +1129,16 @@ export const enterprise = {
   getDevicePushHealth: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getDevicePushHealth({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listWindowsFailures: (
+    tenantId: RouteParam,
+    options: { deviceId?: string; limit?: number } = {},
+  ) =>
+    windowsEndpoint((api) =>
+      api.listWindowsFailures({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query: { deviceId: options.deviceId, limit: options.limit },
+      }),
     ),
   getDeviceActivity: (
     tenantId: RouteParam,
@@ -2553,6 +2576,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.devicePushHealth(tenantId),
       queryFn: () => enterprise.getDevicePushHealth(tenantId),
       enabled: Boolean(tenantId),
+    }),
+  windowsFailures: (tenantId: RouteParam, limit = 5) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.windowsFailures(tenantId),
+      queryFn: () => enterprise.listWindowsFailures(tenantId, { limit }),
+      enabled: Boolean(tenantId),
+    }),
+  deviceWindowsFailures: (tenantId: RouteParam, deviceId: string | undefined, limit = 5) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.windowsFailures(tenantId, deviceId),
+      queryFn: () => enterprise.listWindowsFailures(tenantId, { deviceId, limit }),
+      enabled: Boolean(tenantId) && Boolean(deviceId),
     }),
   autopilot: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

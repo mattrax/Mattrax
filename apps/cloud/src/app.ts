@@ -12,6 +12,7 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
+  enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
@@ -24,6 +25,7 @@ import {
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
   enterpriseHandlers,
+  enterpriseWindowsHandlers,
   mcpOAuthRoutes,
   scriptAgentHandlers,
   scriptHandlers,
@@ -182,6 +184,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
+  .add(enterpriseWindowsApi)
   .add(scriptApi)
   .add(scriptAgentApi)
   .add(authHttp)
@@ -239,6 +242,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),

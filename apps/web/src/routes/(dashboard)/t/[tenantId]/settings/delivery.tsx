@@ -4,7 +4,7 @@ import { For, Show } from "solid-js";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { CheckCircle2, CircleAlert } from "~/components/ui/icons";
+import { CheckCircle2, CircleAlert, MonitorSmartphone } from "~/components/ui/icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -24,6 +24,7 @@ export const route = {
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.devicePushHealth(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.windowsFailures(params.tenantId)),
     ]);
   },
 };
@@ -35,6 +36,8 @@ export default function DeliverySettingsPage() {
   const pushHealth = useQuery(() => enterpriseQueries.devicePushHealth(tenantId()));
 
   const apns = useQuery(() => enterpriseQueries.apns(tenantId()));
+
+  const windowsFailures = useQuery(() => enterpriseQueries.windowsFailures(tenantId()));
 
   const cards = () => {
     const counts = pushHealth.data?.counts;
@@ -194,6 +197,85 @@ export default function DeliverySettingsPage() {
             error={pushHealth.error}
             class="mt-3"
             onRetry={() => void pushHealth.refetch()}
+          />
+        </Show>
+      </Panel>
+
+      <Panel
+        title="Windows enrollment & management"
+        description="Faults returned to Windows devices at discovery, certificate issuance, policy or check-in. A device that never enrolls appears only here."
+        actions={
+          <Badge variant="outline" class="gap-1.5">
+            <MonitorSmartphone class="size-3.5" />
+            {windowsFailures.data?.count ?? 0} in 30 days
+          </Badge>
+        }
+      >
+        <Show
+          when={(windowsFailures.data?.failures.length ?? 0) > 0}
+          fallback={
+            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
+              {windowsFailures.isPending ? "Loading…" : "No failures recorded."}
+            </p>
+          }
+        >
+          <ul class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+            <For each={windowsFailures.data?.failures ?? []}>
+              {(failure) => {
+                const label =
+                  failure.hostname ??
+                  failure.deviceIdentifier ??
+                  failure.serial ??
+                  "Unknown device";
+
+                const body = () => (
+                  <>
+                    <span class="min-w-0">
+                      <span class="block truncate font-medium text-foreground">{label}</span>
+                      <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        {failure.phase.toUpperCase()} · {failure.message}
+                      </span>
+                    </span>
+                    <span class="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                      <span class="font-mono">{failure.code}</span>
+                      <span class="text-muted-foreground/40" aria-hidden="true">
+                        ·
+                      </span>
+                      <span>{relativeTime(failure.at)}</span>
+                    </span>
+                  </>
+                );
+
+                return (
+                  <li>
+                    <Show
+                      when={failure.deviceId}
+                      fallback={
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px]">
+                          {body()}
+                        </div>
+                      }
+                    >
+                      {(deviceId) => (
+                        <a
+                          href={`/t/${tenantId()}/devices/${deviceId()}`}
+                          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-hover"
+                        >
+                          {body()}
+                        </a>
+                      )}
+                    </Show>
+                  </li>
+                );
+              }}
+            </For>
+          </ul>
+        </Show>
+        <Show when={windowsFailures.isError}>
+          <QueryError
+            error={windowsFailures.error}
+            class="mt-3"
+            onRetry={() => void windowsFailures.refetch()}
           />
         </Show>
       </Panel>
