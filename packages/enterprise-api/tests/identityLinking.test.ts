@@ -379,4 +379,36 @@ describe("linking an existing SSO identity to a directory user", () => {
       runEffect(context.service.linkDirectoryUserSso(request(headers), "org-1", directoryUser.id)),
     ).rejects.toBeInstanceOf(EnterpriseConflict);
   });
+
+  it("reports which directory users already have a linked SSO identity", async () => {
+    const context = makeContext();
+    seedDirectoryUser(context.db);
+    seedDirectoryUser(context.db, {
+      id: "directory-2",
+      name: "Another Person",
+      email: "another@example.com",
+      externalId: "entra-object-2",
+    });
+    context.db.store.sso_identity.push({
+      organizationId: "org-1",
+      objectId: "entra-object-1",
+      accountId: "target-1",
+      createdAt: now,
+    });
+
+    const directory = await runEffect(context.service.listDirectory(request(headers), "org-1"));
+
+    expect(directory.users).toEqual([
+      expect.objectContaining({
+        id: "directory-2",
+        externalId: "entra-object-2",
+        linked: false,
+      }),
+      expect.objectContaining({
+        id: "directory-1",
+        externalId: "entra-object-1",
+        linked: true,
+      }),
+    ]);
+  });
 });

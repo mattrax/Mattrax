@@ -561,9 +561,17 @@ export default function DirectorySyncPage() {
                             <span class="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
                               {user.source}
                             </span>
+                            <Show when={user.linked}>
+                              <span class="shrink-0 rounded-full border border-success/25 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success-foreground">
+                                SSO linked
+                              </span>
+                            </Show>
                             <Show
                               when={
-                                writable() && user.source === "entra" && user.externalId
+                                writable() &&
+                                !user.linked &&
+                                user.source === "entra" &&
+                                user.externalId
                                   ? user
                                   : undefined
                               }
@@ -598,7 +606,6 @@ export default function DirectorySyncPage() {
                     </p>
                   )}
                 </Show>
-                <ErrorText error={linkSso.error} />
               </div>
               <div>
                 <p class="mb-2 text-[12px] font-medium text-foreground">
@@ -691,6 +698,7 @@ export default function DirectorySyncPage() {
         } to the Mattrax account with the same email. That account must already be a member of this tenant.`}
         confirmLabel="Link SSO"
         pending={linkSso.isPending}
+        error={linkSso.error}
         onConfirm={() => {
           const target = linkTarget();
 

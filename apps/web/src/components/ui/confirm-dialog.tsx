@@ -1,4 +1,5 @@
 import { Button } from "~/components/ui/button";
+import { ErrorText } from "~/components/mdm/common";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,8 @@ export function ConfirmDialog(props: {
   cancelLabel?: string;
   destructive?: boolean;
   pending?: boolean;
+  /** Failure from the confirmed action, shown without closing the dialog. */
+  error?: unknown;
   onConfirm: () => void;
 }) {
   return (
@@ -31,6 +34,7 @@ export function ConfirmDialog(props: {
           <DialogTitle>{props.title}</DialogTitle>
           <DialogDescription>{props.description}</DialogDescription>
         </DialogHeader>
+        <ErrorText error={props.error} />
         <DialogFooter class="mt-5">
           <Button
             type="button"

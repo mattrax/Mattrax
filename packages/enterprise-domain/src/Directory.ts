@@ -14,6 +14,8 @@ export const DirectoryUser = Schema.Struct({
   externalId: Schema.optional(NullableString),
   disabled: Schema.Boolean,
   source: Schema.Literals(["entra", "scim", "manual"]),
+  /** True when this Entra identity is already linked to a Mattrax account. */
+  linked: Schema.Boolean,
 });
 
 export type DirectoryUser = typeof DirectoryUser.Type;

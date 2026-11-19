@@ -16400,7 +16400,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        const [userRows, groups] = yield* Effect.all(
+        const [userRows, groups, identities] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -16425,9 +16425,20 @@ export const createEnterpriseService = ({
                 .from(schema.userGroup)
                 .where(eq(schema.userGroup.organizationId, ctx.organization.id)),
             ),
+            // Linking is keyed by the Entra object id the directory person was
+            // imported with, so this read exposes the same state the link
+            // action would write.
+            queryEffect(
+              db
+                .select({ objectId: schema.ssoIdentity.objectId })
+                .from(schema.ssoIdentity)
+                .where(eq(schema.ssoIdentity.organizationId, ctx.organization.id)),
+            ),
           ],
           { concurrency: "unbounded" },
         );
+
+        const linkedObjectIds = new Set(identities.map((identity) => identity.objectId));
 
         const counts = groups.length
           ? yield* db
@@ -16445,7 +16456,12 @@ export const createEnterpriseService = ({
         const countsByGroup = new Map(counts.map((row) => [row.groupId, Number(row.value)]));
 
         return {
-          users: userRows.sort((left, right) => left.name.localeCompare(right.name)),
+          users: userRows
+            .map((user) => ({
+              ...user,
+              linked: user.externalId != null && linkedObjectIds.has(user.externalId),
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
           groups: groups
             .map((group) => ({
               ...group,
