@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { NullableString } from "./Errors.js";
+import { BULK_MEMBER_LIMIT } from "./Common.js";
 import { ApplicationSearchRow } from "./Application.js";
 import { DeviceRow, SoftwareSearchRow } from "./Device.js";
 import { GroupRow } from "./Group.js";
@@ -49,6 +50,14 @@ export type DeviceUsersResponse = typeof DeviceUsersResponse.Type;
 
 export const SetDeviceUsersRequest = Schema.Struct({
   userIds: Schema.Array(Schema.String),
+});
+
+/** Add directory users to one directory (user) group. */
+export const AddUserGroupMembersRequest = Schema.Struct({
+  userIds: Schema.Array(Schema.String).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(BULK_MEMBER_LIMIT),
+  ),
 });
 
 /** Scope of an assignment that contributed to the effective policy. */

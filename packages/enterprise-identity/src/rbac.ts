@@ -232,6 +232,8 @@ const MEMBER_WRITE = new Set([
   "cancelTenantInvitation",
   "resendTenantInvitation",
   "patchTenantAccount",
+  "patchTenantAccountRoles",
+  "addUserGroupMembers",
   "removeTenantAccount",
   "requestTenantOwnershipTransfer",
 ]);

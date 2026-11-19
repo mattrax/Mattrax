@@ -31,6 +31,16 @@ Sensitive owner-only capabilities can be delegated deliberately: a custom role
 can include `tenant.export`, `backups.read`, `backups.write` or
 `tenant.delete`. Only an owner can change an owner's role.
 
+## Bulk role changes
+
+Select several administrators in **Settings → Administrators** and choose a role
+once. The same ceiling applies: you can only grant a role your own permissions
+cover, and only an owner can change an owner's role or assign the owner role.
+Rows the server refuses stay selected and the result names each one; rows that
+already hold the chosen role count as successful, so retrying is safe. One audit
+entry records the requested, updated and failed counts plus a bounded list of
+account ids.
+
 ## Credentials use the same catalogue
 
 API tokens and MCP OAuth connections carry their own permission ceiling,

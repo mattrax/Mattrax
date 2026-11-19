@@ -1400,6 +1400,17 @@ export const enterprise = {
     ),
   listDirectory: (tenantId: RouteParam) =>
     endpoint((api) => api.listDirectory({ params: { tenantId: required(tenantId, "tenantId") } })),
+  /** Add selected directory users to one directory (user) group. */
+  addUserGroupMembers: (tenantId: RouteParam, groupId: RouteParam, userIds: string[]) =>
+    attributeEndpoint((api) =>
+      api.addUserGroupMembers({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          groupId: required(groupId, "groupId"),
+        },
+        payload: { userIds },
+      }),
+    ),
   getDeviceUsers: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
       api.getDeviceUsers({
@@ -2145,6 +2156,17 @@ export const enterprise = {
           tenantId: required(tenantId, "tenantId"),
           accountId: required(accountId, "accountId"),
         },
+        payload,
+      }),
+    ),
+  /** Change several members to the same built-in or custom role. */
+  patchAccountRoles: (
+    tenantId: RouteParam,
+    payload: { accountIds: string[]; role?: string; roleId?: string | null },
+  ) =>
+    attributeEndpoint((api) =>
+      api.patchTenantAccountRoles({
+        params: { tenantId: required(tenantId, "tenantId") },
         payload,
       }),
     ),

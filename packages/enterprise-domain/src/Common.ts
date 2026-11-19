@@ -15,6 +15,19 @@ export const BulkOperationResult = Schema.Struct({
   failed: Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String })),
 });
 
+/**
+ * Per-row outcome for a bulk update. `updated` contains every requested id the
+ * server accepted, including rows that already held the desired value, so a
+ * retry is idempotent from the caller's point of view.
+ */
+export const BulkUpdateResult = Schema.Struct({
+  updated: Schema.Array(Schema.String),
+  failed: Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String })),
+});
+
+/** Upper bound for one bulk member request; the dashboard selects client-side. */
+export const BULK_MEMBER_LIMIT = 500;
+
 export const PolicyDeploymentInfo = Schema.Struct({
   id: Schema.String,
   version: Schema.Number,

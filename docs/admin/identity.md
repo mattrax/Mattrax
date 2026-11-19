@@ -99,6 +99,20 @@ GET/PATCH /api/v1/tenants/:tenantId/identity/directory
 POST      /api/v1/tenants/:tenantId/identity/directory/sync
 ```
 
+### Choosing members in bulk
+
+On **Settings → Identity → Directory sync**, the synced user list has checkboxes
+once at least one directory group exists. Select users, choose a group and use
+**Add to group**. Adding is idempotent: users already in the group count as
+successful. Rows the server cannot resolve stay selected and the toast names each
+failure.
+
+A synced group is owned by its provider. Manual additions are kept until the
+next Graph or SCIM sync replaces that group's membership, so use a provider-side
+group change when the membership must persist. Each bulk change wakes the
+affected users' linked devices and writes one audit entry with the requested,
+updated and failed counts and a bounded list of user ids.
+
 ## SCIM 2.0
 
 SCIM is an alternative to Graph sync and works with any compatible IdP.

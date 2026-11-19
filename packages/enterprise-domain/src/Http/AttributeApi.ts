@@ -24,6 +24,9 @@ import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantParam } from "./Params.js";
+import { BulkUpdateResult } from "../Common.js";
+import { AddUserGroupMembersRequest } from "../Directory.js";
+import { PatchTenantAccountRolesRequest } from "../Tenant.js";
 
 const MobileconfigRequest = Schema.Struct({ mobileconfig: Schema.String });
 
@@ -143,6 +146,32 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
       payload: SetDeviceAttributesRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
+  )
+  .add(
+    // Bulk member operations live here rather than in `EnterpriseApi`: that
+    // group's generated declaration is already at the compiler's size limit.
+    HttpApiEndpoint.post(
+      "patchTenantAccountRoles",
+      "/v1/tenants/:tenantId/accounts/roles",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: PatchTenantAccountRolesRequest,
+        success: BulkUpdateResult,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "addUserGroupMembers",
+      "/v1/tenants/:tenantId/directory/groups/:groupId/members",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: { tenantId: Schema.String, groupId: Schema.String },
+        payload: AddUserGroupMembersRequest,
+        success: BulkUpdateResult,
+      },
+    ),
   )
   .prefix("/api");
 

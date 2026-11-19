@@ -10279,6 +10279,141 @@ export const createEnterpriseService = ({
           emailSent,
         };
       }),
+    patchTenantAccountRoles: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const body: {
+          accountIds: ReadonlyArray<string>;
+          role?: string;
+          roleId?: string | null;
+        } = payload;
+
+        const selectingCustomRole = body.roleId !== undefined && body.roleId !== null;
+
+        if (selectingCustomRole && body.role !== undefined && body.role !== "member")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "When a custom role is selected, the built-in fallback must be member",
+            }),
+          );
+
+        const customRole = selectingCustomRole
+          ? yield* db.query.tenantRole.findFirst({
+              where: { id: body.roleId!, organizationId: tenantId },
+            })
+          : undefined;
+
+        if (body.roleId && !customRole)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Role not found" }));
+
+        if (customRole)
+          yield* assertPermissionsWithinActor(
+            ctx,
+            normalizePermissions(
+              Array.isArray(customRole.permissions) ? customRole.permissions : [],
+            ),
+          );
+
+        if (!selectingCustomRole && body.role === undefined)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Choose a role for these members" }),
+          );
+
+        const role = selectingCustomRole ? "member" : body.role!;
+
+        if (!validRoles(role))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: customRole ? "Choose a valid fallback role" : "Choose a valid tenant role",
+            }),
+          );
+
+        if (!customRole) yield* assertBuiltInRoleAssignable(ctx, role);
+
+        const accountIds = [...new Set(body.accountIds)];
+
+        const members = accountIds.length
+          ? yield* db
+              .select()
+              .from(schema.member)
+              .where(
+                and(
+                  eq(schema.member.organizationId, tenantId),
+                  inArray(schema.member.accountId, accountIds),
+                ),
+              )
+          : [];
+
+        const membersByAccount = new Map(members.map((member) => [member.accountId, member]));
+
+        const actorIsOwner = isBuiltInOwnerMember(ctx.member);
+        const assignsOwner = !customRole && hasOwnerRole(role);
+        const owners = assignsOwner ? 0 : yield* ownerCount(tenantId);
+        let removedOwners = 0;
+        const updated: string[] = [];
+        const failed: Array<{ id: string; reason: string }> = [];
+
+        for (const accountId of accountIds) {
+          const member = membersByAccount.get(accountId);
+
+          if (!member) {
+            failed.push({ id: accountId, reason: "notFound" });
+            continue;
+          }
+
+          const targetIsOwner = isBuiltInOwnerMember(member);
+
+          // Assigning or changing an owner is reserved for built-in owners,
+          // exactly like the single-member endpoint.
+          if ((targetIsOwner || assignsOwner) && !actorIsOwner) {
+            failed.push({ id: accountId, reason: "forbidden" });
+            continue;
+          }
+
+          const removingOwner = targetIsOwner && !assignsOwner;
+
+          if (removingOwner && owners - removedOwners <= 1) {
+            failed.push({ id: accountId, reason: "lastOwner" });
+            continue;
+          }
+
+          const nextRoleId = customRole?.id ?? null;
+
+          if (member.role !== role || (member.customRoleId ?? null) !== nextRoleId) {
+            yield* db
+              .update(schema.member)
+              .set({ role, customRoleId: nextRoleId, updatedAt: now() })
+              .where(eq(schema.member.id, member.id));
+
+            if (removingOwner) removedOwners++;
+          }
+
+          updated.push(accountId);
+        }
+
+        const auditMetadata = {
+          role,
+          roleId: customRole?.id ?? null,
+          roleName: customRole?.name ?? null,
+          permissionCeiling: customRole ? "actor" : null,
+          requested: accountIds.length,
+          updated: updated.length,
+          failed: failed.length,
+          accountIds: accountIds.slice(0, 50),
+          truncated: accountIds.length > 50,
+        } satisfies Schema.Json;
+
+        yield* audit(
+          ctx,
+          "member.roles_changed",
+          "user",
+          updated.length === 1 ? updated[0]! : null,
+          auditMetadata,
+        );
+
+        return { updated, failed };
+      }),
     patchTenantAccount: (request, tenantId, accountId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -16207,6 +16342,83 @@ export const createEnterpriseService = ({
             .sort((left, right) => left.name.localeCompare(right.name)),
         };
       }),
+    addUserGroupMembers: (request, tenantId, groupId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantUserGroups(ctx.organization.id, [groupId]);
+
+        const group = yield* db.query.userGroup.findFirst({
+          where: { id: groupId, organizationId: ctx.organization.id },
+        });
+
+        if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
+        const body: { readonly userIds: ReadonlyArray<string> } = payload;
+
+        const userIds = [...new Set(body.userIds)];
+
+        const users = userIds.length
+          ? yield* db
+              .select({ id: schema.user.id })
+              .from(schema.user)
+              .where(
+                and(
+                  eq(schema.user.organizationId, ctx.organization.id),
+                  inArray(schema.user.id, userIds),
+                ),
+              )
+          : [];
+
+        const knownUsers = new Set(users.map((user) => user.id));
+
+        const existing = knownUsers.size
+          ? yield* db
+              .select({ userId: schema.userGroupMember.userId })
+              .from(schema.userGroupMember)
+              .where(
+                and(
+                  eq(schema.userGroupMember.groupId, groupId),
+                  inArray(schema.userGroupMember.userId, [...knownUsers]),
+                ),
+              )
+          : [];
+
+        const existingUsers = new Set(existing.map((row) => row.userId));
+        const updated = userIds.filter((userId) => knownUsers.has(userId));
+        const toInsert = updated.filter((userId) => !existingUsers.has(userId));
+
+        if (toInsert.length)
+          yield* db
+            .insert(schema.userGroupMember)
+            .ignore()
+            .values(toInsert.map((userId) => ({ groupId, userId })));
+
+        if (toInsert.length)
+          yield* db
+            .update(schema.userGroup)
+            .set({ updatedAt: now() })
+            .where(eq(schema.userGroup.id, groupId));
+
+        // Membership changes reach user-scoped policies and directory-linked
+        // device groups, so wake the linked devices rather than waiting for the
+        // next scheduled check-in.
+        yield* refreshDevicesForDirectoryUsers(ctx.organization.id, updated);
+
+        const failed = userIds.flatMap((userId) =>
+          knownUsers.has(userId) ? [] : [{ id: userId, reason: "notFound" }],
+        );
+
+        yield* audit(ctx, "directory.group_members_added", "directoryGroup", groupId, {
+          source: group.source,
+          requested: userIds.length,
+          updated: updated.length,
+          failed: failed.length,
+          userIds: userIds.slice(0, 50),
+          truncated: userIds.length > 50,
+        });
+
+        return { updated, failed };
+      }),
     getDeviceUsers: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -20162,6 +20374,16 @@ export const enterpriseAttributeHandlers = (
     .handle("setDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.setDeviceAttributes(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("patchTenantAccountRoles", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantAccountRoles(request, params.tenantId, payload),
+      ),
+    )
+    .handle("addUserGroupMembers", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.addUserGroupMembers(request, params.tenantId, params.groupId, payload),
       ),
     );
 
