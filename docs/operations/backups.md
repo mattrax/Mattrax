@@ -59,10 +59,10 @@ call. Verify with `cf r2 buckets lifecycle get mattrax-backups`.
 ### Upload token
 
 The workflow uses `CLOUDFLARE_API_TOKEN`, the same repository secret as the
-deploy workflow, but only its bucket-scoped R2 policy is relevant here. That
-policy must grant **Workers R2 Storage Bucket Item Read & Write** on
-`mattrax-backups`. Bucket item permissions cover objects; they cannot create,
-list or delete buckets, so the backup job cannot remove the backups.
+deploy workflow. Its R2 policy must grant **Workers R2 Storage Bucket Item Read
+& Write** on `mattrax-backups`. Bucket item permissions cover objects; they
+cannot create, list or delete buckets, so the backup job cannot remove the
+backups.
 
 The S3 API does not accept a token as a bearer value. It uses the token itself
 as a credential pair: the token id is the access key ID and SHA-256 of the
@@ -70,6 +70,12 @@ token value is the secret access key. The workflow asks
 `/accounts/:id/tokens/verify` for the id and derives the secret locally, so
 there are no `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets to create or
 rotate.
+
+These credentials are the token, so they inherit every R2 permission on it. The
+shared deploy token also carries the account-level **Workers R2 Storage
+Write** permission group, which is broader than the bucket item policy. A
+dedicated token with only the bucket item permissions closes that gap without
+changing the workflow.
 
 `CLOUDFLARE_ACCOUNT_ID` forms the S3 endpoint:
 
