@@ -24,6 +24,7 @@ type RowOverrides = Record<string, RowValue>;
 const makeContext = (options: { role?: string; tenantIds?: ReadonlyArray<string> } = {}) => {
   const db = makeDb();
   const tenantIds = options.tenantIds ?? ["org-1"];
+  const stepUps: string[] = [];
 
   const user = {
     id: "caller-1",
@@ -71,7 +72,11 @@ const makeContext = (options: { role?: string; tenantIds?: ReadonlyArray<string>
     revokeApiToken: () => Effect.succeed({ status: "ok" }),
     requestEmailChange: () => Effect.succeed({ status: "ok" }),
     verifyEmailChange: () => Effect.succeed({ status: "ok" }),
-    requireStepUp: () => Effect.void,
+    requireStepUp: (_request: any, action: string) => {
+      stepUps.push(action);
+
+      return Effect.void;
+    },
   };
 
   const service = createEnterpriseService({
@@ -86,7 +91,7 @@ const makeContext = (options: { role?: string; tenantIds?: ReadonlyArray<string>
     authSecret: "identity-linking-test-secret",
   });
 
-  return { db, service, user };
+  return { db, service, user, stepUps };
 };
 
 const seedDirectoryUser = (db: any, overrides: RowOverrides = {}) => {
@@ -138,12 +143,22 @@ const seedMembership = (db: any, organizationId: string, accountId = "target-1",
     updatedAt: now,
   });
 
+const seedVerifiedDomain = (db: any, domain = "example.com", organizationId = "org-1") =>
+  db.store.sso_domain.push({
+    domain,
+    organizationId,
+    isVerified: true,
+    source: "entra",
+    verifiedAt: now,
+  });
+
 describe("linking an existing SSO identity to a directory user", () => {
-  it("links the directory user's Entra object id to the account with the same email", async () => {
+  it("links the Entra object to the same-email account when the domain is verified", async () => {
     const context = makeContext();
     const directoryUser = seedDirectoryUser(context.db);
     const target = seedAccount(context.db);
 
+    seedVerifiedDomain(context.db);
     seedMembership(context.db, "org-1");
     // The account's other tenant is the reason the callback cannot auto-link.
     seedMembership(context.db, "org-2");
@@ -153,6 +168,7 @@ describe("linking an existing SSO identity to a directory user", () => {
     );
 
     expect(result).toEqual({ status: "ok" });
+    expect(context.stepUps).toEqual(["sso-policy"]);
     expect(context.db.store.sso_identity).toEqual([
       {
         organizationId: "org-1",
@@ -181,6 +197,43 @@ describe("linking an existing SSO identity to a directory user", () => {
     await expect(
       runEffect(context.service.linkDirectoryUserSso(request(headers), "org-1", directoryUser.id)),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+
+    expect(context.db.store.sso_identity).toEqual([]);
+  });
+
+  it("refuses a directory email whose domain is not verified for this tenant", async () => {
+    const context = makeContext();
+    const directoryUser = seedDirectoryUser(context.db, { email: "target@unverified.test" });
+    seedAccount(context.db, { email: "target@unverified.test" });
+    seedMembership(context.db, "org-1");
+
+    // An unverified domain row is not proof of control.
+    context.db.store.sso_domain.push({
+      domain: "unverified.test",
+      organizationId: "org-1",
+      isVerified: false,
+      source: "entra",
+      verifiedAt: null,
+    });
+
+    await expect(
+      runEffect(context.service.linkDirectoryUserSso(request(headers), "org-1", directoryUser.id)),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    expect(context.db.store.sso_identity).toEqual([]);
+    expect(context.db.store.audit_log).toEqual([]);
+  });
+
+  it("does not accept a verified domain owned by another tenant", async () => {
+    const context = makeContext({ tenantIds: ["org-1", "org-2"] });
+    const directoryUser = seedDirectoryUser(context.db);
+    seedAccount(context.db);
+    seedVerifiedDomain(context.db, "example.com", "org-2");
+    seedMembership(context.db, "org-1");
+
+    await expect(
+      runEffect(context.service.linkDirectoryUserSso(request(headers), "org-1", directoryUser.id)),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
 
     expect(context.db.store.sso_identity).toEqual([]);
   });
@@ -268,6 +321,7 @@ describe("linking an existing SSO identity to a directory user", () => {
     const directoryUser = seedDirectoryUser(context.db);
     seedAccount(context.db, { id: "target-1", email: "target@example.com" });
     seedAccount(context.db, { id: "target-2", email: "other@example.com" });
+    seedVerifiedDomain(context.db);
     seedMembership(context.db, "org-1", "target-1");
     seedMembership(context.db, "org-1", "target-2");
     context.db.store.sso_identity.push({
@@ -289,6 +343,7 @@ describe("linking an existing SSO identity to a directory user", () => {
     const context = makeContext();
     const directoryUser = seedDirectoryUser(context.db);
     seedAccount(context.db);
+    seedVerifiedDomain(context.db);
     seedMembership(context.db, "org-1");
     context.db.store.sso_identity.push({
       organizationId: "org-1",
@@ -303,12 +358,15 @@ describe("linking an existing SSO identity to a directory user", () => {
 
     expect(result).toEqual({ status: "ok" });
     expect(context.db.store.sso_identity).toHaveLength(1);
+    // No new grant happened, so the confirmation must not appear as one.
+    expect(context.db.store.audit_log).toEqual([]);
   });
 
   it("refuses to move an account away from a different identity", async () => {
     const context = makeContext();
     const directoryUser = seedDirectoryUser(context.db);
     seedAccount(context.db);
+    seedVerifiedDomain(context.db);
     seedMembership(context.db, "org-1");
     context.db.store.sso_identity.push({
       organizationId: "org-1",

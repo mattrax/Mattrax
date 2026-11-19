@@ -715,6 +715,30 @@ describe("Entra SSO callback success and replay", () => {
     expect(location).not.toContain("id-token-value");
   });
 
+  it("drops a return path that is not a plain internal path", async () => {
+    const db = makeDb({
+      account: [account()],
+      ssoConfig: [config()],
+      ssoIdentity: [identity()],
+      member: [{ id: "member-1", organizationId: tenantId, accountId: "account-1" }],
+      authCredentials: [
+        {
+          credentialId: "credential-1",
+          subjectId: "account-1",
+          revision: "revision-1",
+          active: true,
+        },
+      ],
+    });
+
+    for (const unsafe of ["/\\evil.example", "//evil.example"]) {
+      const { response } = await successfulRequest(db, unsafe);
+      const url = new URL(response.headers.get("location")!);
+
+      expect(url.searchParams.get("returnTo"), unsafe).toBeNull();
+    }
+  });
+
   it("rejects a replayed callback after the browser drops the state cookie", async () => {
     const db = makeDb({
       account: [account()],

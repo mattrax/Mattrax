@@ -1,3 +1,5 @@
+import type { SsoFailureCode } from "@mattrax/enterprise-domain/client";
+
 /**
  * Copy for the SSO completion page.
  *
@@ -26,13 +28,11 @@ const FAILURE_MESSAGES = {
     "No Mattrax account exists for this email, and this organisation does not create accounts on first sign-in. Ask an administrator to invite you.",
   unknown_account: "No Mattrax account matches this identity. Ask an administrator to invite you.",
   sign_in_failed: "Single sign-on could not be completed. Try again, or sign in another way.",
-} satisfies Record<string, string>;
-
-type KnownFailureCode = keyof typeof FAILURE_MESSAGES;
+} satisfies Record<SsoFailureCode, string>;
 
 const GENERIC_FAILURE = "Single sign-on could not be completed. Try again, or sign in another way.";
 
-const isKnownFailure = (code: string): code is KnownFailureCode =>
+const isKnownFailure = (code: string): code is SsoFailureCode =>
   Object.hasOwn(FAILURE_MESSAGES, code);
 
 /** `null` means the redirect carried no error; unknown codes stay generic. */

@@ -5,6 +5,7 @@ import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import type { SsoFailureCode } from "@mattrax/enterprise-domain";
 import {
   loginAttemptClient,
   recordLoginAttempt,
@@ -55,35 +56,11 @@ const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: 
 
 /** Only internal, absolute-path destinations can be resumed after sign-in. */
 const safeReturnTo = (value: string | null | undefined) => {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
+    return undefined;
 
   return value.slice(0, 2048);
 };
-
-/**
- * Stable failure codes the completion page knows how to present. The callback
- * redirects with one of these instead of a message: the URL is visited by the
- * browser and can end up in history, logs and referrers, so it must never
- * carry an IdP error, email address, token or raw exception.
- */
-export const SSO_FAILURE_CODES = [
-  "sso_unavailable",
-  "invalid_request",
-  "state_mismatch",
-  "state_expired",
-  "sso_disabled",
-  "idp_unavailable",
-  "idp_rejected",
-  "not_a_member",
-  "account_disabled",
-  "domain_not_verified",
-  "sso_link_required",
-  "provisioning_disabled",
-  "unknown_account",
-  "sign_in_failed",
-] as const;
-
-export type SsoFailureCode = (typeof SSO_FAILURE_CODES)[number];
 
 const SSO_STATE_COOKIE_CLEAR =
   "__Host-sso_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";

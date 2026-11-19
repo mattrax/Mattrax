@@ -16,6 +16,8 @@ export type LinkDirectoryUserSsoInput = {
 export type LinkDirectoryUserSsoResult = {
   readonly accountId: string;
   readonly objectId: string;
+  /** False when the same link already existed, so callers can skip the audit. */
+  readonly created: boolean;
 };
 
 /**
@@ -93,6 +95,29 @@ export const linkDirectoryUserSso = (
         }),
       );
 
+    // The callback only auto-links an email whose domain this tenant has
+    // proven it controls. The explicit link must not be a way around that,
+    // or an administrator could add a victim's address to an Entra object
+    // they own and sign in as them across tenants.
+    const emailDomain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+
+    const verifiedDomain = yield* db.query.ssoDomain.findFirst({
+      where: {
+        domain: emailDomain,
+        organizationId: input.organizationId,
+        isVerified: true,
+        source: "entra",
+      },
+    });
+
+    if (!verifiedDomain)
+      return yield* Effect.fail(
+        new EnterpriseForbidden({
+          message:
+            "This email domain is not verified for this tenant. Finish Entra directory sync before linking single sign-on.",
+        }),
+      );
+
     const objectId = directoryUser.externalId;
 
     const byObject = yield* db.query.ssoIdentity.findFirst({
@@ -100,7 +125,8 @@ export const linkDirectoryUserSso = (
     });
 
     if (byObject) {
-      if (byObject.accountId === account.id) return { accountId: account.id, objectId };
+      if (byObject.accountId === account.id)
+        return { accountId: account.id, objectId, created: false };
 
       return yield* Effect.fail(
         new EnterpriseConflict({
@@ -127,7 +153,7 @@ export const linkDirectoryUserSso = (
       createdAt: new Date(),
     });
 
-    return { accountId: account.id, objectId };
+    return { accountId: account.id, objectId, created: true };
   }).pipe(
     // Database failures are the only non-domain error this path can produce.
     // Translate them so the endpoint's declared error union stays accurate.

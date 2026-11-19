@@ -7582,10 +7582,13 @@ export const createEnterpriseService = ({
           directoryUserId,
         });
 
-        yield* audit(ctx, "sso.identity_linked", "account", linked.accountId, {
-          directoryUserId,
-          objectId: linked.objectId,
-        });
+        // A repeat confirmation of an existing link changes nothing, so it
+        // must not look like a new grant in the tenant audit log.
+        if (linked.created)
+          yield* audit(ctx, "sso.identity_linked", "account", linked.accountId, {
+            directoryUserId,
+            objectId: linked.objectId,
+          });
 
         return ok;
       }),

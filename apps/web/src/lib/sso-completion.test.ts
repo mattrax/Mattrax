@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SSO_FAILURE_CODES } from "@mattrax/enterprise-domain/client";
 import { ssoFailureMessage } from "./sso-completion";
 
 describe("SSO completion failure copy", () => {
@@ -9,22 +10,7 @@ describe("SSO completion failure copy", () => {
   });
 
   it("maps every code the callback can send to actionable copy", () => {
-    for (const code of [
-      "sso_unavailable",
-      "invalid_request",
-      "state_mismatch",
-      "state_expired",
-      "sso_disabled",
-      "idp_unavailable",
-      "idp_rejected",
-      "not_a_member",
-      "account_disabled",
-      "domain_not_verified",
-      "sso_link_required",
-      "provisioning_disabled",
-      "unknown_account",
-      "sign_in_failed",
-    ]) {
+    for (const code of SSO_FAILURE_CODES) {
       expect(ssoFailureMessage(code), code).toBeTruthy();
     }
   });
