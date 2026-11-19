@@ -19,6 +19,7 @@ import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { HttpApiSchema } from "effect/http-api";
 import { MobileconfigPreview } from "../Policy.js";
+import { GroupScopeSummary, PolicyScopeSummary } from "../PolicyScope.js";
 import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
@@ -79,6 +80,23 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: PolicyVariablesResponse,
+    }),
+  )
+  .add(
+    // Computed policy/group scope. These live here rather than in
+    // `EnterpriseApi` because that group's generated declaration is already at
+    // the compiler's size limit; this group already serves traffic.
+    HttpApiEndpoint.get("getPolicyScope", "/v1/tenants/:tenantId/policies/:id/scope", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: PolicyScopeSummary,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getGroupScope", "/v1/tenants/:tenantId/groups/:id/scope", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: GroupScopeSummary,
     }),
   )
   .add(

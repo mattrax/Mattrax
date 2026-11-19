@@ -144,6 +144,9 @@ import {
   generateWebhookSecret,
   previewDynamicGroup,
   replayWebhookDelivery as redeliverWebhook,
+  loadPolicyScopeResolutionInput,
+  resolveGroupScope,
+  resolvePolicyScope,
   resolveEffectivePolicyForDevice,
   sendTestWebhook,
   syncDynamicGroup,
@@ -19187,6 +19190,39 @@ export const createEnterpriseService = ({
 
         return yield* rowPolicy(row, true);
       }),
+    getPolicyScope: (request, tenantId, policyId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const row = yield* db.query.policy.findFirst({
+          where: { id: policyId, organizationId: ctx.organization.id },
+        });
+
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+
+        const input = yield* loadPolicyScopeResolutionInput(db, ctx.organization.id, {
+          policyId,
+        });
+
+        return yield* Effect.promise(() => resolvePolicyScope(input, policyId));
+      }),
+    getGroupScope: (request, tenantId, groupId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const row = yield* db.query.enterpriseGroup.findFirst({
+          where: { id: groupId, organizationId: ctx.organization.id },
+        });
+
+        if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
+        const input = yield* loadPolicyScopeResolutionInput(db, ctx.organization.id, {
+          groupId,
+        });
+
+        return yield* Effect.promise(() => resolveGroupScope(input, groupId));
+      }),
     billing: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -19594,6 +19630,16 @@ export const enterpriseAttributeHandlers = (
     .handle("getPolicyVariables", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getPolicyVariables(request, params.tenantId),
+      ),
+    )
+    .handle("getPolicyScope", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getPolicyScope(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getGroupScope", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getGroupScope(request, params.tenantId, params.id),
       ),
     )
     .handle("submitEnrollmentAnswers", ({ params, payload }) =>

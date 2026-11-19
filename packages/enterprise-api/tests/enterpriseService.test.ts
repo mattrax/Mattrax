@@ -2592,6 +2592,164 @@ describe("enterprise service effective policy", () => {
     ]);
   });
 
+  it("reports a policy's reverse scope and a group's computed reach", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Engineering" }),
+    );
+
+    const low = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Low", priority: 1 }),
+    );
+
+    const high = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "High", priority: 10 }),
+    );
+
+    const kind = "mttx.apple.device";
+
+    for (const policyId of [low.id, high.id])
+      await runEffect(
+        service.patchPolicy(request(headers), tenant.id, policyId, {
+          configurations: { [kind]: { camera: false } },
+        }),
+      );
+
+    seedDevice(db, tenant.id, "device-1");
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, group.id, {
+        assign: {
+          devices: ["device-1"],
+          policies: [
+            { id: low.id, mode: "include" },
+            { id: high.id, mode: "include" },
+          ],
+        },
+      }),
+    );
+
+    const policyScope = await runEffect(
+      service.getPolicyScope(request(headers), tenant.id, low.id),
+    );
+
+    expect(policyScope).toMatchObject({
+      policyId: low.id,
+      platforms: ["apple"],
+      channels: ["device"],
+      deviceCount: 1,
+      devices: [
+        expect.objectContaining({
+          deviceId: "device-1",
+          channel: "device",
+          status: "overridden",
+          reason: "higher-priority",
+          losses: [
+            expect.objectContaining({
+              kind,
+              winnerPolicyId: high.id,
+              winnerPolicyName: "High",
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const groupScope = await runEffect(
+      service.getGroupScope(request(headers), tenant.id, group.id),
+    );
+
+    expect(groupScope.memberCount).toBe(1);
+    expect(groupScope.policies).toEqual([
+      expect.objectContaining({
+        policyId: high.id,
+        mode: "include",
+        devices: [expect.objectContaining({ status: "applies", kinds: [kind] })],
+      }),
+      expect.objectContaining({
+        policyId: low.id,
+        mode: "include",
+        devices: [expect.objectContaining({ status: "overridden" })],
+      }),
+    ]);
+  });
+
+  it("resolves a user-scoped policy on the linked user's channel", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "User settings" }),
+    );
+
+    const kind = "mttx.apple.declaration.safari";
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: {
+          [kind]: {
+            kind: "com.apple.configuration.safari.bookmarks",
+            configuration: {},
+          },
+        },
+        configurationScopes: { [kind]: "user" },
+      }),
+    );
+
+    seedDevice(db, tenant.id, "device-1");
+
+    const now = new Date();
+
+    db.store.user.push({
+      id: "user-1",
+      organizationId: tenant.id,
+      name: "Oscar",
+      email: "oscar@example.com",
+      disabled: false,
+      source: "manual",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    db.store.device_user.push({
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      userId: "user-1",
+      source: "manual",
+      createdAt: now,
+    });
+
+    db.store.user_policy.push({
+      organizationId: tenant.id,
+      userId: "user-1",
+      policyId: policy.id,
+      mode: "include",
+      createdAt: now,
+    });
+
+    const scope = await runEffect(service.getPolicyScope(request(headers), tenant.id, policy.id));
+
+    expect(scope.channels).toEqual(["user"]);
+    expect(scope.devices).toEqual([
+      expect.objectContaining({
+        deviceId: "device-1",
+        channel: "user",
+        userId: "user-1",
+        userName: "Oscar",
+        status: "applies",
+        kinds: [kind],
+      }),
+    ]);
+  });
+
   it("scopes the effective policy to the tenant", async () => {
     const { db, service, headers } = await makeContext();
 

@@ -386,6 +386,10 @@ export const enterpriseKeys = {
     ["enterprise", "script-executions", keyTenant(tenantId), id ?? "", deviceId ?? ""] as const,
   policyAssignments: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "policy-assignments", keyTenant(tenantId), id ?? ""] as const,
+  policyScope: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "policy-scope", keyTenant(tenantId), id ?? ""] as const,
+  groupScope: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "group-scope", keyTenant(tenantId), id ?? ""] as const,
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-effective-policy", keyTenant(tenantId), id ?? ""] as const,
   directory: (tenantId: RouteParam) => ["enterprise", "directory", keyTenant(tenantId)] as const,
@@ -982,6 +986,18 @@ export const enterprise = {
   getPolicyVariables: (tenantId: RouteParam) =>
     attributeEndpoint((api) =>
       api.getPolicyVariables({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getPolicyScope: (tenantId: RouteParam, id: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.getPolicyScope({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getGroupScope: (tenantId: RouteParam, id: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.getGroupScope({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
     ),
   listDevicePreRegistrations: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -2377,6 +2393,18 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.policyAssignments(tenantId, id),
       queryFn: () => enterprise.getPolicyAssignments(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  policyScope: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.policyScope(tenantId, id),
+      queryFn: () => enterprise.getPolicyScope(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  groupScope: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.groupScope(tenantId, id),
+      queryFn: () => enterprise.getGroupScope(tenantId, id),
       enabled: Boolean(tenantId && id) && !isServer,
     }),
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>

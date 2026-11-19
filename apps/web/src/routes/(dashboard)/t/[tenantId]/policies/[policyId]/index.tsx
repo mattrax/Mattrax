@@ -13,6 +13,7 @@ import {
   Panel,
   QueryError,
   relativeTime,
+  SkeletonRows,
 } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
@@ -46,6 +47,18 @@ import {
   optimisticallyUpdateList,
 } from "~/lib/optimistic";
 import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
+import {
+  policyOsRangeLabel,
+  policyScopeChannelLabel,
+  policyScopeCounts,
+  policyScopeCountsLabel,
+  policyScopePlatformLabel,
+  policyScopeReasonLabel,
+  policyScopeStatusLabel,
+  policyScopeStatusTone,
+  policyScopeWarnings,
+  type PolicyScopeCounts,
+} from "~/lib/policy-scope";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
@@ -325,6 +338,9 @@ export default function PolicyDetailPage() {
         queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
       }),
       qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") }),
+      qc.invalidateQueries({
+        queryKey: enterpriseKeys.policyScope(params.tenantId, params.policyId),
+      }),
     ]);
   };
 
@@ -494,6 +510,22 @@ export default function PolicyDetailPage() {
 
   const configurations = () =>
     Object.entries(Option.getOrUndefined(decodeJsonObject(row()?.configurations)) ?? {});
+
+  const scope = useQuery(() => enterpriseQueries.policyScope(params.tenantId, params.policyId));
+
+  const scopeCounts = (): PolicyScopeCounts | undefined => {
+    const data = scope.data;
+
+    return data ? policyScopeCounts(data.devices) : undefined;
+  };
+
+  const scopeWarnings = () => {
+    const data = scope.data;
+
+    return data ? policyScopeWarnings(data) : [];
+  };
+
+  const [scopeLimit, setScopeLimit] = createSignal(50);
 
   return (
     <Page>
@@ -710,6 +742,158 @@ export default function PolicyDetailPage() {
             </div>
           </Show>
           <ErrorText error={addConfigurations.error} />
+        </Panel>
+
+        <Panel
+          class="lg:col-span-2"
+          title="Scope"
+          description="Where this policy actually applies, and why it loses anywhere it does not."
+          actions={
+            <Show when={scope.data}>
+              {(data) => (
+                <span class="flex flex-wrap items-center justify-end gap-1.5">
+                  <For each={data().platforms}>
+                    {(platform) => (
+                      <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                        {policyScopePlatformLabel(platform)}
+                      </Badge>
+                    )}
+                  </For>
+                  <Show when={policyOsRangeLabel(data())}>
+                    {(range) => (
+                      <Badge variant="secondary" class="text-[10px] tabular-nums">
+                        {range()}
+                      </Badge>
+                    )}
+                  </Show>
+                  <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                    {policyScopeChannelLabel(data().channels)}
+                  </Badge>
+                </span>
+              )}
+            </Show>
+          }
+        >
+          <Show
+            when={scope.data}
+            fallback={
+              <Show when={scope.isError} fallback={<SkeletonRows rows={3} />}>
+                <QueryError error={scope.error} onRetry={() => void scope.refetch()} />
+              </Show>
+            }
+          >
+            {(data) => (
+              <div class="space-y-4">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <p class="text-[12.5px] text-muted-foreground">
+                    {policyScopeCountsLabel(scopeCounts()!)}
+                  </p>
+                  <Show when={data().channels.includes("user")}>
+                    <p class="text-[11.5px] text-muted-foreground">
+                      User-scoped settings are resolved on a user channel where the platform has one
+                      (Apple), so a device can appear once per linked user. Windows delivers its
+                      per-user OMA-URI settings on the device channel.
+                    </p>
+                  </Show>
+                </div>
+
+                <Show when={scopeWarnings().length > 0}>
+                  <div class="space-y-2">
+                    <For each={scopeWarnings()}>
+                      {(warning) => (
+                        <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
+                          <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
+                          <span>
+                            <a
+                              class="font-medium underline-offset-2 hover:underline"
+                              href={`/t/${params.tenantId}/devices/${warning.deviceId}`}
+                            >
+                              {warning.deviceName}
+                            </a>{" "}
+                            {warning.message}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+
+                <Show
+                  when={data().devices.length > 0}
+                  fallback={
+                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                      No device is assigned this policy yet. Assign it to a device, a group, or a
+                      directory user to see where it applies.
+                    </p>
+                  }
+                >
+                  <div class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                    <For each={data().devices.slice(0, scopeLimit())}>
+                      {(entry) => (
+                        <div class="space-y-1.5 bg-muted/10 px-3 py-2.5 text-[12.5px]">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <a
+                              class="min-w-0 truncate font-medium text-foreground hover:underline"
+                              href={`/t/${params.tenantId}/devices/${entry.deviceId}`}
+                            >
+                              {entry.deviceName}
+                            </a>
+                            <span class="flex shrink-0 flex-wrap items-center gap-1.5">
+                              <Badge variant={policyScopeStatusTone(entry)}>
+                                {policyScopeStatusLabel(entry)}
+                              </Badge>
+                              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                                {policyScopePlatformLabel(entry.platform)}
+                                <Show when={entry.deviceOs}> · {entry.deviceOs}</Show>
+                              </Badge>
+                              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                                {entry.channel === "user"
+                                  ? `User: ${entry.userName ?? "linked user"}`
+                                  : "Device channel"}
+                              </Badge>
+                              <Show when={entry.kinds.length > 0}>
+                                <Badge variant="subtle" class="text-[10px] tabular-nums">
+                                  {entry.kinds.length} setting
+                                  {entry.kinds.length === 1 ? "" : "s"}
+                                </Badge>
+                              </Show>
+                            </span>
+                          </div>
+                          <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                            {policyScopeReasonLabel(entry)}
+                          </p>
+                          <Show when={entry.losses.length > 0}>
+                            <ul class="space-y-0.5 text-[11px] text-muted-foreground">
+                              <For each={entry.losses.slice(0, 6)}>
+                                {(loss) => (
+                                  <li>
+                                    <span class="font-mono text-[10.5px]">{loss.kind}</span>
+                                    <Show when={loss.winnerPolicyName}>
+                                      {" "}
+                                      → {loss.winnerPolicyName}
+                                    </Show>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                  <Show when={data().devices.length > scopeLimit()}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setScopeLimit((current) => current + 100)}
+                    >
+                      Show more devices ({data().devices.length - scopeLimit()} remaining)
+                    </Button>
+                  </Show>
+                </Show>
+              </div>
+            )}
+          </Show>
         </Panel>
 
         <Panel
