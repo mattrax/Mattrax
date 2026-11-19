@@ -1106,17 +1106,20 @@ export const deploymentLicense = mysqlTable(
  * deliberately no foreign key to `organization` so the ledger survives a
  * tenant teardown; it contains no tenant data beyond the id.
  *
- * The ledger is only ever read by id (the dedupe probe), so there are no
- * secondary indexes. It also has no retention sweep; when one is added, it
- * should prune by `received_at` and carry an index on that column.
+ * The ledger is only ever read by id (the dedupe probe). Daily maintenance
+ * prunes it by `received_at`, so that column carries its own index.
  */
-export const stripeEvent = mysqlTable("stripe_event", {
-  /** Stripe's `event.id` (`evt_…`). */
-  id: id().primaryKey(),
-  type: shortText("type").notNull(),
-  organizationId: id("organization_id"),
-  receivedAt: timestamp("received_at").notNull(),
-});
+export const stripeEvent = mysqlTable(
+  "stripe_event",
+  {
+    /** Stripe's `event.id` (`evt_…`). */
+    id: id().primaryKey(),
+    type: shortText("type").notNull(),
+    organizationId: id("organization_id"),
+    receivedAt: timestamp("received_at").notNull(),
+  },
+  (table) => [index("stripe_event_received_at_idx").on(table.receivedAt)],
+);
 
 export const accountApiToken = mysqlTable(
   "account_api_token",

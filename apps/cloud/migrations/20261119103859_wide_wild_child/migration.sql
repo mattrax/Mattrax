@@ -1,0 +1,1 @@
+CREATE INDEX `stripe_event_received_at_idx` ON `stripe_event` (`received_at`);

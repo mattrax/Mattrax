@@ -78,6 +78,46 @@ describe("maintenance enrollment-attempt retention", () => {
   });
 });
 
+describe("maintenance Stripe event retention", () => {
+  const event = (id: string, ageDays: number) => ({
+    id,
+    type: "customer.subscription.updated",
+    organizationId: "org-1",
+    receivedAt: new Date(now.getTime() - ageDays * DAY),
+  });
+
+  it("deletes ledger rows older than 90 days and keeps newer ones", async () => {
+    const db = makeDb();
+    db.store.stripe_event.push(event("old", 91), event("boundary", 90), event("fresh", 5));
+
+    const result = await run(db);
+
+    expect(result.purgedStripeEvents).toBe(1);
+    expect(db.store.stripe_event.map((row: { id: string }) => row.id).sort()).toEqual([
+      "boundary",
+      "fresh",
+    ]);
+    expect((await run(db)).purgedStripeEvents).toBe(0);
+  });
+
+  it("can be disabled with a retention of 0", async () => {
+    const db = makeDb();
+    db.store.stripe_event.push(event("old", 365));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        stripeEventRetentionDays: 0,
+        credentialAlerts: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedStripeEvents).toBe(0);
+    expect(db.store.stripe_event).toHaveLength(1);
+  });
+});
+
 describe("maintenance login-attempt retention", () => {
   it("prunes login attempts with the audit window", async () => {
     const db = makeDb();

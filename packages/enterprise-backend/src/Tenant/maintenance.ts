@@ -209,6 +209,12 @@ export type MaintenanceOptions = {
    */
   readonly tenantDeletionLogRetentionDays?: number;
   /**
+   * Stripe webhook-event ledger rows older than this many days are deleted.
+   * Defaults to 90 so a late or replayed event is still deduped, while the
+   * ledger does not grow forever. Set to `0` to keep it indefinitely.
+   */
+  readonly stripeEventRetentionDays?: number;
+  /**
    * Stripe client used to reconcile subscription seats and customer names.
    * Omit it on deployments without billing, or to skip the billing sweep.
    */
@@ -287,6 +293,8 @@ export type MaintenanceResult = {
   readonly purgedScriptRuns: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
+  /** Stripe webhook-event ledger rows deleted by retention. */
+  readonly purgedStripeEvents: number;
   /** Tenants whose Stripe seat quantity was brought in line this run. */
   readonly billingSeatsUpdated: number;
   /** Tenants checked against Stripe where the quantity already matched. */
@@ -480,6 +488,8 @@ export const runMaintenance = (
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
 
+    const stripeEventRetentionDays = options.stripeEventRetentionDays ?? 90;
+
     /** Latest origin observation, reused by the missing-certificate sweep. */
     let serverCertificateState: ServerCertificateInfo | null = null;
 
@@ -519,6 +529,7 @@ export const runMaintenance = (
       expiredScriptRuns: 0,
       purgedScriptRuns: 0,
       purgedTenantDeletionLogs: 0,
+      purgedStripeEvents: 0,
       billingSeatsUpdated: 0,
       billingSeatsUnchanged: 0,
       billingSeatsSkipped: 0,
@@ -1064,6 +1075,29 @@ export const runMaintenance = (
         );
 
       result.purgedTenantDeletionLogs = staleJournals.length;
+    }
+
+    // 11b. Stripe webhook-event ledger retention. The ledger only dedupes
+    //      retries, so it needs to outlive Stripe's retry window, not forever.
+    //      Bounded per run; the next daily pass continues from the same cutoff.
+    if (stripeEventRetentionDays > 0) {
+      const cutoff = new Date(now.getTime() - stripeEventRetentionDays * day);
+
+      const staleEvents = yield* db
+        .select({ id: s.stripeEvent.id })
+        .from(s.stripeEvent)
+        .where(lt(s.stripeEvent.receivedAt, cutoff))
+        .limit(5_000);
+
+      if (staleEvents.length > 0)
+        yield* db.delete(s.stripeEvent).where(
+          inArray(
+            s.stripeEvent.id,
+            staleEvents.map((row) => row.id),
+          ),
+        );
+
+      result.purgedStripeEvents = staleEvents.length;
     }
 
     // 12. Billing seats. Devices enrol through the protocol layer, which has
