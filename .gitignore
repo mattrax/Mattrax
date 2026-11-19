@@ -80,3 +80,6 @@ dist-attrib/
 # Swift build output
 **/.build/
 apps/mattraxd/build/
+
+# Local dumps from apps/cloud/scripts/db-backup.sh
+.backups/
