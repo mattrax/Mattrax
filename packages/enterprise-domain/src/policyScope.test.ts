@@ -19,6 +19,7 @@ describe("policy scope contract", () => {
       windowsMinimum: null,
       channels: ["device"],
       deviceCount: 2,
+      truncated: false,
       devices: [
         {
           deviceId: "device-1",
@@ -42,7 +43,7 @@ describe("policy scope contract", () => {
           status: "overridden",
           reason: "higher-priority",
           kinds: [],
-          unsupportedKinds: ["mttx.apple.certificate.cert"],
+          unsupportedKinds: [],
           losses: [
             {
               kind: "mttx.apple.device",
@@ -75,6 +76,7 @@ describe("policy scope contract", () => {
     const group = Schema.decodeUnknownSync(GroupScopeSummary)({
       groupId: "group-1",
       memberCount: 1,
+      truncated: false,
       policies: [
         {
           policyId: "policy-1",

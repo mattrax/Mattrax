@@ -43,7 +43,7 @@ export const PolicyScopeReason = Schema.Literals([
   "os-unsupported",
   "wrong-scope",
   "not-included",
-  "no-linked-user",
+  "no-verified-user-channel",
   "disabled",
   "no-configurations",
 ]);
@@ -111,6 +111,8 @@ export const PolicyScopeSummary = Schema.Struct({
   channels: Schema.Array(PolicyScopeChannel),
   /** Candidate devices considered by the resolver. */
   deviceCount: Schema.Number,
+  /** True when `devices` is a capped prefix of the real result. */
+  truncated: Schema.Boolean,
   devices: Schema.Array(PolicyScopeDevice),
 });
 
@@ -128,6 +130,8 @@ export type GroupScopePolicy = typeof GroupScopePolicy.Type;
 export const GroupScopeSummary = Schema.Struct({
   groupId: Schema.String,
   memberCount: Schema.Number,
+  /** True when a per-policy device list (or the member set) hit the cap. */
+  truncated: Schema.Boolean,
   policies: Schema.Array(GroupScopePolicy),
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PolicyScopeDevice } from "@mattrax/enterprise-domain/client";
 import {
+  groupScopeBlockedDeviceIds,
   groupScopePolicyIsInert,
   groupScopeWinningDeviceIds,
   policyOsRangeLabel,
@@ -103,10 +104,7 @@ describe("policyScopeReasonLabel", () => {
     ).toBe("macOS 13.6 does not support mttx.apple.certificate.cert");
   });
 
-  it("distinguishes the two wrong-scope directions", () => {
-    expect(policyScopeReasonLabel(entry({ status: "wrong-scope", reason: "wrong-scope" }))).toBe(
-      "Only user-scoped settings, which are delivered on a user channel",
-    );
+  it("explains a user-scoped policy on a platform with no user channel", () => {
     expect(
       policyScopeReasonLabel(
         entry({ channel: "user", status: "wrong-scope", reason: "wrong-scope" }),
@@ -148,7 +146,7 @@ describe("policyScopeWarnings", () => {
     });
   });
 
-  it("warns about wrong-scope assignments", () => {
+  it("warns about a platform with no user channel", () => {
     const warnings = policyScopeWarnings({
       apple: [],
       windowsMinimum: null,
@@ -157,13 +155,14 @@ describe("policyScopeWarnings", () => {
         entry({
           deviceId: "device-2",
           platform: "android",
+          channel: "user",
           status: "wrong-scope",
           reason: "wrong-scope",
         }),
       ],
     });
 
-    expect(warnings[0]?.message).toContain("only has user-scoped settings");
+    expect(warnings[0]?.message).toContain("platform has no user channel");
   });
 });
 
@@ -202,6 +201,19 @@ describe("group scope helpers", () => {
 
   it("lists only the devices the policy wins on", () => {
     expect(groupScopeWinningDeviceIds(policy)).toEqual(["device-1"]);
+  });
+
+  it("lists the devices an exclude assignment blocks", () => {
+    expect(
+      groupScopeBlockedDeviceIds({
+        ...policy,
+        mode: "exclude",
+        devices: [
+          entry({ deviceId: "device-1", status: "excluded", reason: "group-exclude" }),
+          entry({ deviceId: "device-1", status: "excluded", reason: "group-exclude" }),
+        ],
+      }),
+    ).toEqual(["device-1"]);
   });
 
   it("marks an include that wins nowhere as inert", () => {

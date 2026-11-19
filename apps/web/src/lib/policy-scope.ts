@@ -97,16 +97,16 @@ export const policyScopeReasonLabel = (entry: PolicyScopeDevice): string => {
           }`
         : "The device's OS does not support this policy's settings";
     case "wrong-scope":
-      return entry.channel === "device"
-        ? "Only user-scoped settings, which are delivered on a user channel"
+      return entry.platform !== "apple"
+        ? "This platform has no user channel for user-scoped settings"
         : "Only device-scoped settings, which are delivered on the device channel";
     case "disabled":
       return "The policy is disabled";
     case "no-configurations":
       return "The policy has no configurations";
     default:
-      return entry.reason === "no-linked-user"
-        ? "No directory user is linked to this device, so the user channel has no target"
+      return entry.reason === "no-verified-user-channel"
+        ? "No verified Apple user channel is bound to this device, so user-scoped settings have nowhere to land"
         : "No assignment includes this device";
   }
 };
@@ -219,8 +219,8 @@ export const policyScopeWarnings = (
         ? `${entry.deviceOs ?? "This device's OS"} does not support ${
             [...new Set(entry.unsupportedKinds)].join(", ") || "this policy"
           }${range ? ` (requires ${range})` : ""}.`
-        : entry.channel === "device"
-          ? "This policy only has user-scoped settings, but the device has no user channel to deliver them on."
+        : entry.platform !== "apple"
+          ? "This policy only has user-scoped settings, but the platform has no user channel to deliver them on."
           : "This policy only has device-scoped settings, so it never applies on the user channel.";
 
     warnings.set(key, {
@@ -288,6 +288,14 @@ export const policyScopeCountsLabel = (counts: PolicyScopeCounts) => {
 
   return parts.join(" · ");
 };
+
+/** Distinct member devices an exclude assignment blocks from the policy. */
+export const groupScopeBlockedDeviceIds = (policy: GroupScopePolicy) =>
+  [
+    ...new Set(
+      policy.devices.filter((entry) => entry.status === "excluded").map((entry) => entry.deviceId),
+    ),
+  ].sort();
 
 /** Devices a group policy actually wins at least one setting on. */
 export const groupScopeWinningDeviceIds = (policy: GroupScopePolicy) =>

@@ -1,6 +1,7 @@
 import {
   applePayloadMinimumOs,
   applePayloadOsVersions,
+  applePayloadRemovedIn,
   compareOsVersion,
   type AppleOsFamily,
 } from "@mattrax/dm-apple";
@@ -24,6 +25,15 @@ import {
   type PolicyResolutionUserGroupAssignment,
 } from "./policyResolution.ts";
 import { scopeConfigurationsToDevice, windowsConfigurationMinimumBuild } from "./policySupport.ts";
+
+/**
+ * Hard cap on the device entries a scope response returns.
+ *
+ * A tenant can hold far more devices than a page can render, and the resolver
+ * does real work per device. Responses stay bounded; `deviceCount` and
+ * `truncated` tell the caller how much was left out.
+ */
+export const MAX_SCOPE_DEVICES = 500;
 
 /**
  * Policy → device scope.
@@ -73,7 +83,7 @@ export type PolicyScopeReason =
   | "os-unsupported"
   | "wrong-scope"
   | "not-included"
-  | "no-linked-user"
+  | "no-verified-user-channel"
   | "disabled"
   | "no-configurations";
 
@@ -133,6 +143,8 @@ export type PolicyScopeSummary = {
   readonly channels: ReadonlyArray<PolicyChannel>;
   /** Devices considered by the request, before per-channel classification. */
   readonly deviceCount: number;
+  /** True when `devices` is a capped prefix of the real result. */
+  readonly truncated: boolean;
   readonly devices: ReadonlyArray<PolicyScopeDeviceEntry>;
 };
 
@@ -146,6 +158,8 @@ export type GroupScopePolicy = {
 export type GroupScopeSummary = {
   readonly groupId: string;
   readonly memberCount: number;
+  /** True when a per-policy device list (or the member set) hit the cap. */
+  readonly truncated: boolean;
   readonly policies: ReadonlyArray<GroupScopePolicy>;
 };
 
@@ -169,6 +183,10 @@ export type PolicyScopeResolutionInput = {
   readonly policies: ReadonlyArray<PolicyResolutionPolicy>;
   readonly configurations: ReadonlyArray<PolicyResolutionConfiguration>;
   readonly devices: ReadonlyArray<PolicyScopeDevice>;
+  /** Candidate devices before the loader applied its cap. */
+  readonly deviceCount?: number;
+  /** True when `devices` is a capped prefix of the candidate set. */
+  readonly truncated?: boolean;
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
   readonly groupAssignments: ReadonlyArray<PolicyResolutionGroupAssignment>;
   readonly groupMembers: ReadonlyArray<{ readonly groupId: string; readonly deviceId: string }>;
@@ -195,6 +213,7 @@ const platformOf = (kind: ConfigurationKind): PolicyPlatform | null => {
       return "android";
     case "windows":
       return "windows";
+    case "application":
     case "certificate":
     case "custom":
     case "declaration":
@@ -263,18 +282,21 @@ const OS_FAMILY_ORDER: ReadonlyArray<AppleOsFamily> = [
 /**
  * Derive the platforms and minimum OS range a policy's configurations support.
  *
- * Apple's `supportedOS` data is intersected across every payload a policy
- * carries: a policy is only applicable to a family when all of its payloads are.
- * Custom payloads with no metadata do not narrow the range (the delivery path
- * trusts them too), and a policy with no metadata reports no minimum rather
- * than guessing one.
+ * Apple families are intersected within one configuration (every payload in a
+ * mobileconfig has to support the OS) and unioned across configurations: a
+ * macOS-only setting and an iOS-only setting make a policy that targets both,
+ * not one that targets neither. A family whose payload Apple has removed is
+ * dropped, because `${minimum}+` would advertise an OS that can no longer
+ * apply it. Custom payloads with no metadata do not narrow the range (the
+ * delivery path trusts them too), and a policy with no metadata reports no
+ * minimum rather than guessing one.
  */
 export const derivePolicyPlatformSupport = async (
   configurations: ReadonlyArray<Pick<PolicyResolutionConfiguration, "kind" | "data" | "scope">>,
 ): Promise<PolicyPlatformSupport> => {
   const platforms = new Set<PolicyPlatform>();
   const channels = new Set<PolicyChannel>();
-  let appleFamilies: Set<AppleOsFamily> | null = null;
+  const appleFamilies = new Set<AppleOsFamily>();
   const appleMinimums = new Map<AppleOsFamily, string>();
   let windowsMinimum: string | null = null;
 
@@ -305,6 +327,9 @@ export const derivePolicyPlatformSupport = async (
 
     if (payloadTypes.length === 0) continue;
 
+    let configurationFamilies: Set<AppleOsFamily> | null = null;
+    const configurationMinimums = new Map<AppleOsFamily, string>();
+
     for (const payloadType of payloadTypes) {
       const versions = applePayloadOsVersions(payloadType);
 
@@ -314,32 +339,46 @@ export const derivePolicyPlatformSupport = async (
       for (const version of versions) {
         const family: AppleOsFamily | null = normalizeAppleFamily(version);
 
-        if (family) families.add(family);
+        if (!family) continue;
+
+        // A removed payload cannot be advertised as a `minimum+` range.
+        if (applePayloadRemovedIn(payloadType, family)) continue;
+        families.add(family);
       }
 
       if (families.size === 0) continue;
 
-      if (appleFamilies === null) appleFamilies = families;
+      if (configurationFamilies === null) configurationFamilies = families;
       else {
         const narrowed = new Set<AppleOsFamily>();
 
-        for (const family of appleFamilies) if (families.has(family)) narrowed.add(family);
-        appleFamilies = narrowed;
+        for (const family of configurationFamilies) if (families.has(family)) narrowed.add(family);
+        configurationFamilies = narrowed;
       }
 
       for (const family of families) {
         const minimum = applePayloadMinimumOs(payloadType, family);
 
         if (!minimum) continue;
-        const existing = appleMinimums.get(family);
+        const existing = configurationMinimums.get(family);
 
         if (!existing || compareOsVersion(minimum, existing) > 0)
-          appleMinimums.set(family, minimum);
+          configurationMinimums.set(family, minimum);
       }
+    }
+
+    for (const family of configurationFamilies ?? []) {
+      appleFamilies.add(family);
+      const minimum = configurationMinimums.get(family);
+
+      if (!minimum) continue;
+      const existing = appleMinimums.get(family);
+
+      if (!existing || compareOsVersion(minimum, existing) > 0) appleMinimums.set(family, minimum);
     }
   }
 
-  const apple = [...(appleFamilies ?? [])]
+  const apple = [...appleFamilies]
     .sort((left, right) => OS_FAMILY_ORDER.indexOf(left) - OS_FAMILY_ORDER.indexOf(right))
     .flatMap((family) => {
       const minimum = appleMinimums.get(family);
@@ -353,6 +392,83 @@ export const derivePolicyPlatformSupport = async (
     windowsMinimum,
     channels: (["device", "user"] as const).filter((channel) => channels.has(channel)),
   };
+};
+
+type ScopeIndex = {
+  readonly groups: Map<string, PolicyResolutionGroup>;
+  readonly groupAssignments: Map<string, Array<PolicyResolutionGroupAssignment>>;
+  readonly groupIdsByDevice: Map<string, Array<string>>;
+  readonly deviceAssignments: Map<
+    string,
+    Array<{ policyId: string; mode?: "include" | "exclude" }>
+  >;
+  readonly users: Map<string, PolicyResolutionUser>;
+  readonly userIdsByDevice: Map<string, Array<string>>;
+  readonly userGroups: Map<string, PolicyResolutionUserGroup>;
+  readonly userGroupIdsByUser: Map<string, Array<string>>;
+  readonly userIdsByGroup: Map<string, Array<string>>;
+  readonly userAssignments: Map<string, Array<PolicyResolutionUserAssignment>>;
+  readonly userGroupAssignments: Map<string, Array<PolicyResolutionUserGroupAssignment>>;
+};
+
+const pushTo = <A>(map: Map<string, Array<A>>, key: string, value: A) => {
+  const list = map.get(key) ?? [];
+
+  list.push(value);
+  map.set(key, list);
+};
+
+/**
+ * Index the tenant-wide input once. Building facts per device from these maps
+ * keeps a large page linear instead of scanning every assignment per device.
+ */
+const scopeIndex = (input: PolicyScopeResolutionInput): ScopeIndex => {
+  const index: ScopeIndex = {
+    groups: new Map(),
+    groupAssignments: new Map(),
+    groupIdsByDevice: new Map(),
+    deviceAssignments: new Map(),
+    users: new Map(),
+    userIdsByDevice: new Map(),
+    userGroups: new Map(),
+    userGroupIdsByUser: new Map(),
+    userIdsByGroup: new Map(),
+    userAssignments: new Map(),
+    userGroupAssignments: new Map(),
+  };
+
+  for (const group of input.groups) index.groups.set(group.id, group);
+
+  for (const group of input.userGroups) index.userGroups.set(group.id, group);
+
+  for (const user of input.users) index.users.set(user.id, user);
+
+  for (const assignment of input.groupAssignments)
+    pushTo(index.groupAssignments, assignment.groupId, assignment);
+
+  for (const member of input.groupMembers)
+    pushTo(index.groupIdsByDevice, member.deviceId, member.groupId);
+
+  for (const assignment of input.deviceAssignments)
+    pushTo(index.deviceAssignments, assignment.deviceId, {
+      policyId: assignment.policyId,
+      ...(assignment.mode ? { mode: assignment.mode } : {}),
+    });
+
+  for (const link of input.deviceUsers) pushTo(index.userIdsByDevice, link.deviceId, link.userId);
+
+  for (const member of input.userGroupMembers) {
+    pushTo(index.userGroupIdsByUser, member.userId, member.groupId);
+    pushTo(index.userIdsByGroup, member.groupId, member.userId);
+  }
+
+  for (const assignment of input.userAssignments)
+    pushTo(index.userAssignments, assignment.userId, assignment);
+
+  for (const assignment of input.userGroupAssignments)
+    pushTo(index.userGroupAssignments, assignment.groupId, assignment);
+
+  return index;
 };
 
 type DeviceFacts = {
@@ -369,41 +485,49 @@ type DeviceFacts = {
   readonly results: Map<string, EffectivePolicy>;
 };
 
-const factsFor = (input: PolicyScopeResolutionInput, device: PolicyScopeDevice): DeviceFacts => {
-  const groupIds = new Set(
-    input.groupMembers
-      .filter((member) => member.deviceId === device.id)
-      .map((member) => member.groupId),
+const factsFor = (index: ScopeIndex, device: PolicyScopeDevice): DeviceFacts => {
+  const groupIds = index.groupIdsByDevice.get(device.id) ?? [];
+  const userIds = index.userIdsByDevice.get(device.id) ?? [];
+  const userIdSet = new Set(userIds);
+
+  const userGroupIds = new Set(
+    userIds.flatMap((userId) => index.userGroupIdsByUser.get(userId) ?? []),
   );
 
-  const deviceUserIds = new Set(
-    input.deviceUsers.filter((row) => row.deviceId === device.id).map((row) => row.userId),
-  );
+  const groups = groupIds.flatMap((groupId) => {
+    const group = index.groups.get(groupId);
 
-  const groups = input.groups.filter((group) => groupIds.has(group.id));
-  const users = input.users.filter((user) => deviceUserIds.has(user.id));
-  const userIds = new Set(users.map((user) => user.id));
+    return group ? [group] : [];
+  });
 
-  const userGroups = input.userGroups.filter((group) =>
-    input.userGroupMembers.some((row) => row.groupId === group.id && userIds.has(row.userId)),
-  );
+  const users = userIds.flatMap((userId) => {
+    const user = index.users.get(userId);
 
-  const userGroupIds = new Set(userGroups.map((group) => group.id));
+    return user ? [user] : [];
+  });
+
+  const userGroups = [...userGroupIds].flatMap((groupId) => {
+    const group = index.userGroups.get(groupId);
+
+    return group ? [group] : [];
+  });
 
   return {
     device,
     groups,
-    groupAssignments: input.groupAssignments.filter((row) => groupIds.has(row.groupId)),
-    deviceAssignments: input.deviceAssignments
-      .filter((row) => row.deviceId === device.id)
-      .map((row) => ({ policyId: row.policyId, ...(row.mode ? { mode: row.mode } : {}) })),
+    groupAssignments: groupIds.flatMap((groupId) => index.groupAssignments.get(groupId) ?? []),
+    deviceAssignments: index.deviceAssignments.get(device.id) ?? [],
     users,
     userGroups,
-    userGroupMembers: input.userGroupMembers.filter(
-      (row) => userIds.has(row.userId) && userGroupIds.has(row.groupId),
+    userGroupMembers: [...userGroupIds].flatMap((groupId) =>
+      (index.userIdsByGroup.get(groupId) ?? [])
+        .filter((userId) => userIdSet.has(userId))
+        .map((userId) => ({ groupId, userId })),
     ),
-    userAssignments: input.userAssignments.filter((row) => userIds.has(row.userId)),
-    userGroupAssignments: input.userGroupAssignments.filter((row) => userGroupIds.has(row.groupId)),
+    userAssignments: userIds.flatMap((userId) => index.userAssignments.get(userId) ?? []),
+    userGroupAssignments: [...userGroupIds].flatMap(
+      (groupId) => index.userGroupAssignments.get(groupId) ?? [],
+    ),
     results: new Map<string, EffectivePolicy>(),
   };
 };
@@ -505,7 +629,7 @@ const reasonRank: Record<PolicyScopeReason, number> = {
   "os-unsupported": 11,
   "wrong-scope": 12,
   "not-included": 13,
-  "no-linked-user": 14,
+  "no-verified-user-channel": 14,
   disabled: 15,
   "no-configurations": 16,
 };
@@ -798,7 +922,7 @@ const entriesForPolicyOnDevice = async (args: {
         platform: "apple",
         channel: "user",
         status: "not-included",
-        reason: "no-linked-user",
+        reason: "no-verified-user-channel",
         kinds: [],
         unsupportedKinds: [],
         losses: [],
@@ -842,6 +966,11 @@ const policyChannels = (
   for (const configuration of configurations)
     if (configuration.policyId === policyId) scopes.add(scopeOf(configuration));
 
+  // A policy with assignments but no settings is still device-scoped as far as
+  // its assignments are concerned. Without this fallback it would produce no
+  // entry and the page would claim no device is assigned.
+  if (scopes.size === 0) return ["device"];
+
   return (["device", "user"] as const).filter((channel) => scopes.has(channel));
 };
 
@@ -867,6 +996,7 @@ export const resolvePolicyScope = async (
       windowsMinimum: null,
       channels: [],
       deviceCount: 0,
+      truncated: false,
       devices: [],
     };
 
@@ -877,10 +1007,11 @@ export const resolvePolicyScope = async (
   const support = await derivePolicyPlatformSupport(configurations);
 
   const channels = policyChannels(configurations, policyId);
+  const index = scopeIndex(input);
   const entries: Array<PolicyScopeDeviceEntry> = [];
 
   for (const device of input.devices) {
-    const facts = factsFor(input, device);
+    const facts = factsFor(index, device);
     entries.push(
       ...(await entriesForPolicyOnDevice({
         input,
@@ -891,20 +1022,28 @@ export const resolvePolicyScope = async (
     );
   }
 
+  const sorted = entries.sort(
+    (left, right) =>
+      compareText(left.deviceName, right.deviceName) ||
+      compareText(left.channel, right.channel) ||
+      compareText(left.userName ?? "", right.userName ?? "") ||
+      compareId(left.deviceId, right.deviceId),
+  );
+
+  const deviceCount = input.deviceCount ?? input.devices.length;
+
   return {
     policyId,
     platforms: support.platforms,
     apple: support.apple,
     windowsMinimum: support.windowsMinimum,
     channels: support.channels.length > 0 ? support.channels : channels,
-    deviceCount: input.devices.length,
-    devices: entries.sort(
-      (left, right) =>
-        compareText(left.deviceName, right.deviceName) ||
-        compareText(left.channel, right.channel) ||
-        compareText(left.userName ?? "", right.userName ?? "") ||
-        compareId(left.deviceId, right.deviceId),
-    ),
+    deviceCount,
+    truncated:
+      (input.truncated ?? false) ||
+      deviceCount > input.devices.length ||
+      sorted.length > MAX_SCOPE_DEVICES,
+    devices: sorted.slice(0, MAX_SCOPE_DEVICES),
   };
 };
 
@@ -924,15 +1063,19 @@ export const resolveGroupScope = async (
   const members = input.groupMembers.filter((member) => member.groupId === groupId);
   const policyById = new Map(input.policies.map((policy) => [policy.id, policy]));
 
+  const memberById = new Map(input.devices.map((device) => [device.id, device]));
+  const index = scopeIndex(input);
+
   // Build each member's facts once: every policy below reads the same groups,
   // linked users and resolutions.
   const memberFacts = members.flatMap((member) => {
-    const device = input.devices.find((candidate) => candidate.id === member.deviceId);
+    const device = memberById.get(member.deviceId);
 
-    return device ? [factsFor(input, device)] : [];
+    return device ? [factsFor(index, device)] : [];
   });
 
   const policies: Array<GroupScopePolicy> = [];
+  let truncated = input.truncated ?? false;
 
   for (const assignment of assigned) {
     const policy = policyById.get(assignment.policyId);
@@ -958,23 +1101,30 @@ export const resolveGroupScope = async (
       );
     }
 
+    const sorted = devices.sort(
+      (left, right) =>
+        compareText(left.deviceName, right.deviceName) ||
+        compareText(left.channel, right.channel) ||
+        compareText(left.userName ?? "", right.userName ?? "") ||
+        compareId(left.deviceId, right.deviceId),
+    );
+
+    if (sorted.length > MAX_SCOPE_DEVICES) truncated = true;
+
     policies.push({
       policyId: policy.id,
       policyName: policy.name,
       mode: assignment.mode ?? "include",
-      devices: devices.sort(
-        (left, right) =>
-          compareText(left.deviceName, right.deviceName) ||
-          compareText(left.channel, right.channel) ||
-          compareText(left.userName ?? "", right.userName ?? "") ||
-          compareId(left.deviceId, right.deviceId),
-      ),
+      devices: sorted.slice(0, MAX_SCOPE_DEVICES),
     });
   }
 
+  const memberCount = input.deviceCount ?? members.length;
+
   return {
     groupId,
-    memberCount: members.length,
+    memberCount,
+    truncated: truncated || memberCount > members.length,
     policies: policies.sort((left, right) => compareText(left.policyName, right.policyName)),
   };
 };

@@ -45,6 +45,7 @@ import {
 } from "~/lib/optimistic";
 import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
 import {
+  groupScopeBlockedDeviceIds,
   groupScopePolicyIsInert,
   groupScopeWinningDeviceIds,
   policyScopeReasonLabel,
@@ -709,93 +710,113 @@ export default function GroupDetailPage() {
               }
             >
               {(data) => (
-                <Show
-                  when={data().policies.length > 0}
-                  fallback={
-                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
-                      This group carries no policies. Assign one from the Policies tab to see what
-                      its membership receives.
-                    </p>
-                  }
-                >
-                  <div class="space-y-3">
-                    <For each={data().policies}>
-                      {(policy) => {
-                        const winning = () => groupScopeWinningDeviceIds(policy);
+                <div class="space-y-3">
+                  <Show
+                    when={data().policies.length > 0}
+                    fallback={
+                      <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                        This group carries no policies. Assign one from the Policies tab to see what
+                        its membership receives.
+                      </p>
+                    }
+                  >
+                    <div class="space-y-3">
+                      <For each={data().policies}>
+                        {(policy) => {
+                          const winning = () => groupScopeWinningDeviceIds(policy);
+                          const blocked = () => groupScopeBlockedDeviceIds(policy);
 
-                        return (
-                          <div class="overflow-hidden rounded-lg border border-border">
-                            <div class="flex flex-wrap items-center justify-between gap-2 bg-muted/20 px-3 py-2.5">
-                              <a
-                                class="min-w-0 truncate text-[13px] font-medium text-foreground hover:underline"
-                                href={`/t/${params.tenantId}/policies/${policy.policyId}`}
-                              >
-                                {policy.policyName}
-                              </a>
-                              <span class="flex flex-wrap items-center gap-1.5">
-                                <Badge
-                                  variant={policy.mode === "exclude" ? "destructive" : "secondary"}
+                          return (
+                            <div class="overflow-hidden rounded-lg border border-border">
+                              <div class="flex flex-wrap items-center justify-between gap-2 bg-muted/20 px-3 py-2.5">
+                                <a
+                                  class="min-w-0 truncate text-[13px] font-medium text-foreground hover:underline"
+                                  href={`/t/${params.tenantId}/policies/${policy.policyId}`}
                                 >
-                                  {policy.mode === "exclude" ? "Excluded" : "Included"}
-                                </Badge>
-                                <Badge
-                                  variant={groupScopePolicyIsInert(policy) ? "warning" : "success"}
-                                  class="tabular-nums"
-                                >
-                                  Wins on {winning().length} of {data().memberCount}
-                                </Badge>
-                              </span>
-                            </div>
-                            <Show
-                              when={policy.devices.length > 0}
-                              fallback={
-                                <p class="px-3 py-2.5 text-[12px] text-muted-foreground">
-                                  No member device is in this policy's assignment graph.
-                                </p>
-                              }
-                            >
-                              <div class="divide-y divide-border/60">
-                                <For each={policy.devices.slice(0, 8)}>
-                                  {(entry) => (
-                                    <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[12px]">
-                                      <span class="flex min-w-0 items-center gap-2">
-                                        <a
-                                          class="truncate font-medium text-foreground hover:underline"
-                                          href={`/t/${params.tenantId}/devices/${entry.deviceId}`}
-                                        >
-                                          {entry.deviceName}
-                                        </a>
-                                        <Show when={entry.channel === "user"}>
-                                          <span class="truncate text-[11px] text-muted-foreground">
-                                            ({entry.userName})
-                                          </span>
-                                        </Show>
-                                      </span>
-                                      <span class="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                                        <span class="truncate text-[11px] text-muted-foreground">
-                                          {policyScopeReasonLabel(entry)}
-                                        </span>
-                                        <Badge variant={policyScopeStatusTone(entry)}>
-                                          {policyScopeStatusLabel(entry)}
-                                        </Badge>
-                                      </span>
-                                    </div>
-                                  )}
-                                </For>
+                                  {policy.policyName}
+                                </a>
+                                <span class="flex flex-wrap items-center gap-1.5">
+                                  <Badge
+                                    variant={policy.mode === "exclude" ? "subtle" : "secondary"}
+                                  >
+                                    {policy.mode === "exclude" ? "Excluded" : "Included"}
+                                  </Badge>
+                                  <Show
+                                    when={policy.mode !== "exclude"}
+                                    fallback={
+                                      <Badge variant="subtle" class="tabular-nums">
+                                        Blocks {blocked().length} of {data().memberCount}
+                                      </Badge>
+                                    }
+                                  >
+                                    <Badge
+                                      variant={
+                                        groupScopePolicyIsInert(policy) ? "warning" : "success"
+                                      }
+                                      class="tabular-nums"
+                                    >
+                                      Wins on {winning().length} of {data().memberCount}
+                                    </Badge>
+                                  </Show>
+                                </span>
                               </div>
-                              <Show when={policy.devices.length > 8}>
-                                <p class="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
-                                  +{policy.devices.length - 8} more entries. Open the policy's Scope
-                                  panel for the full list.
-                                </p>
+                              <Show
+                                when={policy.devices.length > 0}
+                                fallback={
+                                  <p class="px-3 py-2.5 text-[12px] text-muted-foreground">
+                                    No member device is in this policy's assignment graph.
+                                  </p>
+                                }
+                              >
+                                <div class="divide-y divide-border/60">
+                                  <For each={policy.devices.slice(0, 8)}>
+                                    {(entry) => (
+                                      <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[12px]">
+                                        <span class="flex min-w-0 items-center gap-2">
+                                          <a
+                                            class="truncate font-medium text-foreground hover:underline"
+                                            href={`/t/${params.tenantId}/devices/${entry.deviceId}`}
+                                          >
+                                            {entry.deviceName}
+                                          </a>
+                                          <Show when={entry.channel === "user"}>
+                                            <span class="truncate text-[11px] text-muted-foreground">
+                                              ({entry.userName})
+                                            </span>
+                                          </Show>
+                                        </span>
+                                        <span class="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                                          <span class="truncate text-[11px] text-muted-foreground">
+                                            {policyScopeReasonLabel(entry)}
+                                          </span>
+                                          <Badge variant={policyScopeStatusTone(entry)}>
+                                            {policyScopeStatusLabel(entry)}
+                                          </Badge>
+                                        </span>
+                                      </div>
+                                    )}
+                                  </For>
+                                </div>
+                                <Show when={policy.devices.length > 8}>
+                                  <p class="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+                                    +{policy.devices.length - 8} more entries. Open the policy's
+                                    Scope panel for the full list.
+                                  </p>
+                                </Show>
                               </Show>
-                            </Show>
-                          </div>
-                        );
-                      }}
-                    </For>
-                  </div>
-                </Show>
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show when={data().truncated}>
+                    <p class="text-[11px] text-muted-foreground">
+                      The member list is capped. Open a policy's Scope panel for its bounded device
+                      list.
+                    </p>
+                  </Show>
+                </div>
               )}
             </Show>
           </Panel>

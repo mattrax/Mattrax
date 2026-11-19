@@ -2,11 +2,16 @@ import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   derivePolicyPlatformSupport,
+  MAX_SCOPE_DEVICES,
   resolveGroupScope,
   resolvePolicyScope,
   type PolicyScopeResolutionInput,
 } from "./policyScope.ts";
-import type { PolicyResolutionConfiguration, PolicyResolutionPolicy } from "./policyResolution.ts";
+import {
+  resolveEffectivePolicy,
+  type PolicyResolutionConfiguration,
+  type PolicyResolutionPolicy,
+} from "./policyResolution.ts";
 
 const policy = (
   id: string,
@@ -259,7 +264,12 @@ describe("resolvePolicyScope", () => {
     const scope = await resolvePolicyScope(
       input({
         policies: [policy("policy-a")],
-        configurations: [configuration("policy-a", "mttx.apple.device", { scope: "user" })],
+        configurations: [
+          configuration("policy-a", "mttx.apple.declaration.safari", {
+            scope: "user",
+            data: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+          }),
+        ],
         devices: [device("device-1", { proto: "android", osEdition: "Android", osVersion: "14" })],
         deviceAssignments: [{ deviceId: "device-1", policyId: "policy-a", mode: "include" }],
       }),
@@ -278,8 +288,13 @@ describe("resolvePolicyScope", () => {
     const scope = await resolvePolicyScope(
       input({
         policies: [policy("policy-a")],
-        configurations: [configuration("policy-a", "mttx.apple.device", { scope: "user" })],
-        devices: [device("device-1")],
+        configurations: [
+          configuration("policy-a", "mttx.apple.declaration.safari", {
+            scope: "user",
+            data: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+          }),
+        ],
+        devices: [device("device-1", { osVersion: "26.0" })],
         users: [{ id: "user-1", name: "Oscar" }],
         deviceUsers: [{ deviceId: "device-1", userId: "user-1" }],
         userAssignments: [{ userId: "user-1", policyId: "policy-a", mode: "include" }],
@@ -295,16 +310,21 @@ describe("resolvePolicyScope", () => {
         userName: "Oscar",
         status: "applies",
         reason: "applies",
-        kinds: ["mttx.apple.device"],
+        kinds: ["mttx.apple.declaration.safari"],
       }),
     ]);
   });
 
-  it("reports a device with no linked user on a user policy", async () => {
+  it("reports a service channel with no verified Apple user binding", async () => {
     const scope = await resolvePolicyScope(
       input({
         policies: [policy("policy-a")],
-        configurations: [configuration("policy-a", "mttx.apple.device", { scope: "user" })],
+        configurations: [
+          configuration("policy-a", "mttx.apple.declaration.safari", {
+            scope: "user",
+            data: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+          }),
+        ],
         devices: [device("device-1")],
         deviceAssignments: [{ deviceId: "device-1", policyId: "policy-a", mode: "include" }],
       }),
@@ -313,8 +333,131 @@ describe("resolvePolicyScope", () => {
 
     expect(scope.devices[0]).toMatchObject({
       status: "not-included",
-      reason: "no-linked-user",
+      reason: "no-verified-user-channel",
     });
+  });
+
+  it("reports a disabled policy without running precedence", async () => {
+    const scope = await resolvePolicyScope(
+      input({
+        policies: [{ ...policy("policy-a"), enabled: false }],
+        configurations: [configuration("policy-a")],
+        devices: [device("device-1")],
+        deviceAssignments: [{ deviceId: "device-1", policyId: "policy-a", mode: "include" }],
+      }),
+      "policy-a",
+    );
+
+    expect(scope.devices[0]).toMatchObject({
+      status: "disabled",
+      reason: "disabled",
+      kinds: [],
+    });
+  });
+
+  it("reports an assigned policy that has no configurations", async () => {
+    const scope = await resolvePolicyScope(
+      input({
+        policies: [policy("policy-a")],
+        devices: [device("device-1")],
+        deviceAssignments: [{ deviceId: "device-1", policyId: "policy-a", mode: "include" }],
+      }),
+      "policy-a",
+    );
+
+    expect(scope.channels).toEqual(["device"]);
+    expect(scope.devices[0]).toMatchObject({
+      channel: "device",
+      status: "no-configurations",
+      reason: "no-configurations",
+    });
+  });
+
+  it("caps the returned entries but keeps the real device count", async () => {
+    const devices = Array.from({ length: MAX_SCOPE_DEVICES + 1 }, (_, index) =>
+      device(`device-${String(index).padStart(4, "0")}`),
+    );
+
+    const scope = await resolvePolicyScope(
+      input({
+        policies: [policy("policy-a")],
+        configurations: [configuration("policy-a")],
+        devices,
+        deviceAssignments: devices.map((item) => ({
+          deviceId: item.id,
+          policyId: "policy-a",
+          mode: "include" as const,
+        })),
+      }),
+      "policy-a",
+    );
+
+    expect(scope.truncated).toBe(true);
+    expect(scope.deviceCount).toBe(MAX_SCOPE_DEVICES + 1);
+    expect(scope.devices).toHaveLength(MAX_SCOPE_DEVICES);
+  });
+
+  it("agrees with the per-device resolver for every entry it reports as applying", async () => {
+    const scope = await resolvePolicyScope(
+      input({
+        policies: [policy("policy-a")],
+        configurations: [
+          configuration("policy-a", "mttx.apple.device"),
+          configuration("policy-a", "mttx.apple.declaration.safari", {
+            scope: "user",
+            data: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+          }),
+        ],
+        devices: [device("device-1")],
+        groups: [{ id: "group-1", name: "Engineering" }],
+        groupAssignments: [{ groupId: "group-1", policyId: "policy-a", mode: "include" }],
+        groupMembers: [{ groupId: "group-1", deviceId: "device-1" }],
+        users: [{ id: "user-1", name: "Oscar" }],
+        deviceUsers: [{ deviceId: "device-1", userId: "user-1" }],
+        userAssignments: [{ userId: "user-1", policyId: "policy-a", mode: "include" }],
+      }),
+      "policy-a",
+    );
+
+    const applying = scope.devices.filter(
+      (entry) => entry.status === "applies" || entry.status === "partial",
+    );
+
+    expect(applying.length).toBeGreaterThan(0);
+
+    for (const entry of applying) {
+      const result = resolveEffectivePolicy({
+        deviceId: entry.deviceId,
+        channel: entry.channel,
+        ...(entry.userId ? { forUserId: entry.userId } : {}),
+        groups: [{ id: "group-1", name: "Engineering" }],
+        groupAssignments: [{ groupId: "group-1", policyId: "policy-a", mode: "include" }],
+        deviceAssignments: [],
+        users: [{ id: "user-1", name: "Oscar" }],
+        userGroupMembers: [],
+        userAssignments: [{ userId: "user-1", policyId: "policy-a", mode: "include" }],
+        userGroupAssignments: [],
+        policies: [policy("policy-a")],
+        configurations: [
+          configuration("policy-a", "mttx.apple.device"),
+          configuration("policy-a", "mttx.apple.declaration.safari", {
+            scope: "user",
+            data: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+          }),
+        ],
+      });
+
+      expect(
+        result.configurations.some(
+          (configuration) =>
+            configuration.policyId === "policy-a" &&
+            entry.kinds.includes(configuration.kind) &&
+            (entry.channel === "device"
+              ? configuration.configurationScope === "device"
+              : configuration.configurationScope === "user"),
+        ),
+      ).toBe(true);
+    }
   });
 });
 
@@ -364,6 +507,24 @@ describe("resolveGroupScope", () => {
     expect(scope.policies[0]).toMatchObject({ policyId: "policy-a", mode: "exclude" });
     expect(scope.policies[0]!.devices[0]).toMatchObject({ status: "excluded" });
   });
+
+  it("keeps a group's policies visible when the group has no members", async () => {
+    const scope = await resolveGroupScope(
+      input({
+        policies: [policy("policy-a")],
+        configurations: [configuration("policy-a")],
+        devices: [],
+        groups: [{ id: "group-1", name: "Engineering" }],
+        groupAssignments: [{ groupId: "group-1", policyId: "policy-a", mode: "include" }],
+      }),
+      "group-1",
+    );
+
+    expect(scope).toMatchObject({ memberCount: 0, truncated: false });
+    expect(scope.policies).toEqual([
+      expect.objectContaining({ policyId: "policy-a", devices: [] }),
+    ]);
+  });
 });
 
 describe("derivePolicyPlatformSupport", () => {
@@ -389,5 +550,33 @@ describe("derivePolicyPlatformSupport", () => {
     ]);
 
     expect(support.channels).toEqual(["device", "user"]);
+  });
+
+  it("unions OS families across configurations", async () => {
+    const support = await derivePolicyPlatformSupport([
+      configuration("policy-a", "mttx.apple.declaration.disk", {
+        data: { kind: "com.apple.configuration.diskmanagement.settings", configuration: {} },
+      }),
+      configuration("policy-a", "mttx.apple.declaration.audio", {
+        data: { kind: "com.apple.configuration.audio-accessory.settings", configuration: {} },
+      }),
+    ]);
+
+    expect(support.apple).toEqual(
+      expect.arrayContaining([
+        { family: "macOS", minimum: "15.0" },
+        { family: "iOS", minimum: "26.0" },
+      ]),
+    );
+  });
+
+  it("does not advertise a family whose payload was removed", async () => {
+    const support = await derivePolicyPlatformSupport([
+      configuration("policy-a", "mttx.apple.declaration.legacy", {
+        data: { kind: "com.apple.AIM.account", configuration: {} },
+      }),
+    ]);
+
+    expect(support.apple).toEqual([]);
   });
 });

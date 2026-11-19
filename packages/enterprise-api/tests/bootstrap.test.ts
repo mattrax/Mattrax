@@ -107,6 +107,10 @@ describe("GET /api/v1/bootstrap", () => {
     // The tenant endpoints keep their existing mappings.
     expect(permissionForMethod("listDevices")).toBe("devices.read");
     expect(permissionForMethod("patchTenant")).toBe("tenant.write");
+    // Reverse scope reads enumerate devices, groups and linked users, so they
+    // must not fall through to the tenant-wide read permission.
+    expect(permissionForMethod("getPolicyScope")).toBe("policies.read");
+    expect(permissionForMethod("getGroupScope")).toBe("groups.read");
     // Device secrets are not ordinary reads: a read-only role must not reveal
     // the managed local-admin password or Activation Lock bypass code.
     expect(permissionForMethod("getDeviceLocalAdmin")).toBe("devices.recovery_key");
@@ -159,9 +163,7 @@ describe("GET /api/v1/bootstrap", () => {
     const context = makeContext();
 
     const result = await runEffect(
-      context.service.bootstrap(
-        request({ ...context.headers, "cf-ray": "8f2f3c1d0e4a5b6c-PER" }),
-      ),
+      context.service.bootstrap(request({ ...context.headers, "cf-ray": "8f2f3c1d0e4a5b6c-PER" })),
     );
 
     // The browser still receives its own session and shell...

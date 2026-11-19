@@ -822,8 +822,9 @@ export default function PolicyDetailPage() {
                   when={data().devices.length > 0}
                   fallback={
                     <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
-                      No device is assigned this policy yet. Assign it to a device, a group, or a
-                      directory user to see where it applies.
+                      {configurations().length === 0
+                        ? "This policy has no settings yet. Add a configuration to see where it applies."
+                        : "No device is assigned this policy yet. Assign it to a device, a group, or a directory user to see where it applies."}
                     </p>
                   }
                 >
@@ -881,7 +882,13 @@ export default function PolicyDetailPage() {
                       )}
                     </For>
                   </div>
-                  <Show when={data().devices.length > scopeLimit()}>
+                  <Show when={data().truncated}>
+                    <p class="text-[11px] text-muted-foreground">
+                      Showing a capped list of {data().devices.length} entries for{" "}
+                      {data().deviceCount} devices in scope.
+                    </p>
+                  </Show>
+                  <Show when={!data().truncated && data().devices.length > scopeLimit()}>
                     <Button
                       size="sm"
                       variant="outline"

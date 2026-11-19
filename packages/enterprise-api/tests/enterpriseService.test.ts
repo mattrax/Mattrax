@@ -2719,12 +2719,18 @@ describe("enterprise service effective policy", () => {
       updatedAt: now,
     });
 
-    db.store.device_user.push({
-      organizationId: tenant.id,
+    db.store.device_apple.push({
       deviceId: "device-1",
-      userId: "user-1",
-      source: "manual",
-      createdAt: now,
+      declarationMode: "ddm",
+    });
+
+    db.store.device_apple_user.push({
+      deviceId: "device-1",
+      userId: "apple-user-1",
+      directoryUserId: "user-1",
+      identityVerifiedAt: now,
+      consecutivePushFailures: 0,
+      updatedAt: now,
     });
 
     db.store.user_policy.push({
@@ -2750,13 +2756,214 @@ describe("enterprise service effective policy", () => {
     ]);
   });
 
+  it("reports a user policy with no verified Apple channel", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "User settings" }),
+    );
+
+    const kind = "mttx.apple.declaration.safari";
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: {
+          [kind]: { kind: "com.apple.configuration.safari.bookmarks", configuration: {} },
+        },
+        configurationScopes: { [kind]: "user" },
+      }),
+    );
+
+    seedDevice(db, tenant.id, "device-1");
+
+    const now = new Date();
+
+    db.store.user.push({
+      id: "user-1",
+      organizationId: tenant.id,
+      name: "Oscar",
+      email: "oscar@example.com",
+      disabled: false,
+      source: "manual",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    db.store.device_user.push({
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      userId: "user-1",
+      source: "manual",
+      createdAt: now,
+    });
+
+    db.store.device_apple.push({ deviceId: "device-1", declarationMode: "ddm" });
+
+    db.store.user_policy.push({
+      organizationId: tenant.id,
+      userId: "user-1",
+      policyId: policy.id,
+      mode: "include",
+      createdAt: now,
+    });
+
+    const scope = await runEffect(service.getPolicyScope(request(headers), tenant.id, policy.id));
+
+    expect(scope.devices).toEqual([
+      expect.objectContaining({
+        deviceId: "device-1",
+        channel: "user",
+        status: "not-included",
+        reason: "no-verified-user-channel",
+      }),
+    ]);
+  });
+
+  it("caps a policy's device list and reports the real count", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Fleet" }),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    const now = new Date();
+
+    for (let index = 0; index <= 500; index += 1) {
+      const id = `device-${String(index).padStart(4, "0")}`;
+
+      db.store.device.push({
+        id,
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: id,
+        dmIdentifier: `dm-${id}`,
+        enrolledAt: now,
+        lastSeenAt: now,
+      });
+      db.store.device_policy.push({
+        deviceId: id,
+        policyId: policy.id,
+        mode: "include",
+      });
+    }
+
+    const scope = await runEffect(service.getPolicyScope(request(headers), tenant.id, policy.id));
+
+    expect(scope.truncated).toBe(true);
+    expect(scope.deviceCount).toBe(501);
+    expect(scope.devices).toHaveLength(500);
+  });
+
+  it("keeps a group's assigned policies visible without members", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Empty" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Security" }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, group.id, {
+        assign: { policies: [{ id: policy.id, mode: "include" }] },
+      }),
+    );
+
+    const scope = await runEffect(service.getGroupScope(request(headers), tenant.id, group.id));
+
+    expect(scope).toMatchObject({ memberCount: 0, truncated: false });
+    expect(scope.policies).toEqual([expect.objectContaining({ policyId: policy.id, devices: [] })]);
+  });
+
+  it("includes Windows user-scoped settings on the device effective policy", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Per-user" }),
+    );
+
+    const kind = "mttx.windows.custom.wifi";
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: {
+          [kind]: {
+            nodes: [
+              {
+                omaUri: "./User/Vendor/MSFT/Policy/Config/Foo",
+                value: 1,
+                format: "int",
+              },
+            ],
+          },
+        },
+        configurationScopes: { [kind]: "user" },
+      }),
+    );
+
+    const now = new Date();
+
+    db.store.device.push({
+      id: "windows-1",
+      organizationId: tenant.id,
+      proto: "win",
+      status: "enrolled",
+      name: "windows-1",
+      dmIdentifier: "dm-windows-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    db.store.device_policy.push({
+      deviceId: "windows-1",
+      policyId: policy.id,
+      mode: "include",
+    });
+
+    const effective = await runEffect(
+      service.getDeviceEffectivePolicy(request(headers), tenant.id, "windows-1"),
+    );
+
+    expect(effective.configurations).toEqual([
+      expect.objectContaining({
+        kind,
+        policyId: policy.id,
+        configurationScope: "user",
+      }),
+    ]);
+  });
+
   it("scopes the effective policy to the tenant", async () => {
     const { db, service, headers } = await makeContext();
 
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
-
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );

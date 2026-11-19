@@ -18628,10 +18628,16 @@ export const createEnterpriseService = ({
 
         yield* claimEnrollmentAnswers(db, ctx.organization.id, [row]);
 
-        return yield* resolveEffectivePolicyForDevice(db, {
-          id: row.id,
-          organizationId: ctx.organization.id,
-        });
+        return yield* resolveEffectivePolicyForDevice(
+          db,
+          {
+            id: row.id,
+            organizationId: ctx.organization.id,
+          },
+          // Windows has no per-login MDM channel: `./User/` OMA-URI settings
+          // are delivered by the device check-in and apply to every user.
+          { includeUserScoped: row.proto === "win" },
+        );
       }),
     listGroups: (request, tenantId) =>
       Effect.gen(function* () {
