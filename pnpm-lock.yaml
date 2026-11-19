@@ -515,6 +515,7 @@ snapshots:
 				"tailwindcss": "catalog:",
 				"tw-animate-css": "catalog:",
 				"uqr": "catalog:",
+				"yaml": "catalog:",
 			},
 			"devDependencies": {
 				"@cloudflare/vite-plugin": "catalog:",

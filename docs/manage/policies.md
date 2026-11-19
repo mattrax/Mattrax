@@ -23,6 +23,80 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/policies" \
 Patching a configuration with `null` deletes that kind. Every configuration is validated
 before any write.
 
+## Import a policy
+
+**Policies → Import** creates a policy, or adds configurations to an existing policy when
+you open Import from that policy's page. Supported sources:
+
+- a `.mobileconfig` profile, uploaded or pasted as text;
+- a policy document exported from Mattrax, YAML or JSON;
+- a bare policy object with a `name`, pasted as JSON.
+
+### The document format
+
+An import contains exactly one policy, in the same versioned document that
+`mattrax policies export` writes:
+
+```json
+{
+  "version": 1,
+  "policies": [
+    {
+      "name": "Baseline",
+      "notes": "Company defaults",
+      "priority": 100,
+      "enabled": true,
+      "configurations": {
+        "mttx.apple.device": { "camera": false }
+      },
+      "configurationScopes": {
+        "mttx.apple.custom.wifi": "user"
+      }
+    }
+  ]
+}
+```
+
+`name` is required; `notes`, `priority` and `enabled` are optional. Each key in
+`configurations` is a [configuration kind](#configuration-kinds) and its value is the same
+payload the editor saves. `configurationScopes` is optional and an omitted kind is
+device-scoped. A document with several policies is refused: export the one you need.
+
+```bash
+mattrax policies export --id "$POLICY_ID" --format json -o policy.json
+```
+
+The same import is available over the API: `POST /policies` accepts `configurations` and
+`configurationScopes` alongside the metadata, and `PATCH /policies/:id` adds or replaces
+them on an existing policy. A configuration rejected by validation aborts the whole
+request.
+
+### Preview and conflicts
+
+The preview lists every imported kind as **Added**, **Replaced**, **Unchanged** or
+**Skipped** before anything is saved. Importing into an existing policy:
+
+- changes only configurations: its name, notes, priority, assignments and enabled state
+  stay as they are;
+- keeps a kind it already has unless you choose **Replace existing kinds**;
+- keeps the stored delivery scope of an existing kind when the document does not name one;
+- reports an identical configuration as unchanged, so re-importing is a no-op.
+
+### Mobileconfig
+
+A profile is stored as `mttx.apple.custom.imported` (or the next free `imported2`, …) with
+its bytes base64-encoded. A signed profile keeps its signature and deploys byte-for-byte.
+A top-level `PayloadScope` of `User` selects the Apple user channel; anything else is
+device-scoped.
+
+### Validation
+
+Saving validates every imported configuration through the same rules as the editor:
+unknown kinds, a malformed profile, an escrow certificate the tenant does not hold, a
+policy variable that does not resolve, or an application that does not exist in the tenant
+reject the request and nothing is written. The import requires `policies.write` and only
+touches the current tenant.
+
 ## Configuration kinds
 
 | Kind                          | Platform | Payload                                              |

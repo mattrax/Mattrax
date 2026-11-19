@@ -128,6 +128,26 @@ describe("exportPolicyDocument", () => {
     expect(yaml).toContain("version: 1");
     expect(JSON.parse(json).policies).toEqual(document.policies);
   });
+
+  it("keeps the user channel and a disabled state for the dashboard import", async () => {
+    const document = exportPolicyDocument(
+      [
+        row({
+          enabled: false,
+          configurationScopes: { "mttx.apple.custom.wifi": "user" },
+        }),
+      ],
+      { includeIds: false },
+    );
+
+    const json = serializePolicyDocument(document, "json");
+    const parsed = await Effect.runPromise(parsePolicyDocument(json, "exported.json"));
+
+    expect(parsed.policies[0]?.enabled).toBe(false);
+    expect(parsed.policies[0]?.configurationScopes).toEqual({
+      "mttx.apple.custom.wifi": "user",
+    });
+  });
 });
 
 describe("stableJson", () => {

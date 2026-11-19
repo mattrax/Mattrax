@@ -1248,7 +1248,15 @@ export const enterprise = {
     ),
   createPolicy: (
     tenantId: RouteParam,
-    payload: { name: string; notes?: string | null; priority?: number; enabled?: boolean },
+    payload: {
+      name: string;
+      notes?: string | null;
+      priority?: number;
+      enabled?: boolean;
+      /** Import writes the policy and its settings together. */
+      configurations?: PolicyRow["configurations"];
+      configurationScopes?: PolicyRow["configurationScopes"];
+    },
   ) =>
     endpoint((api) =>
       api.createPolicy({ params: { tenantId: required(tenantId, "tenantId") }, payload }),

@@ -236,6 +236,8 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
     throw new Error("The mobileconfig is missing PayloadContent");
   }
 
+  const scope = plistString(plist.PayloadScope) === "User" ? "user" : "device";
+
   return {
     displayName: plistString(plist.PayloadDisplayName),
     description: plistString(plist.PayloadDescription),
@@ -243,6 +245,7 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
     identifier: plistString(plist.PayloadIdentifier),
     uuid: plistString(plist.PayloadUUID),
     type: plistString(plist.PayloadType),
+    scope,
     payloadDisplayName: plistString(plist.PayloadDisplayName),
     payloadDescription: plistString(plist.PayloadDescription),
     payloadOrganization: plistString(plist.PayloadOrganization),

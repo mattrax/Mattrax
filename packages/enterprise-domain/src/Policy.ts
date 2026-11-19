@@ -135,6 +135,14 @@ export const CreatePolicyRequest = Schema.Struct({
   priority: Schema.optional(Schema.Number),
   /** Defaults to enabled. */
   enabled: Schema.optional(Schema.Boolean),
+  /**
+   * Configurations stored with the policy in the same request. The policy
+   * import uses this so a created policy and its settings cannot drift apart.
+   * Every configuration is validated before anything is written.
+   */
+  configurations: Schema.optional(JsonRecord),
+  /** Delivery scope per created kind. Missing entries are `device`. */
+  configurationScopes: Schema.optional(Schema.Record(Schema.String, ConfigurationScope)),
 });
 
 export const PatchPolicyRequest = Schema.Struct({
@@ -356,6 +364,11 @@ export const MobileconfigPreview = Schema.Struct({
   payloadDisplayName: Schema.optional(Schema.String),
   payloadDescription: Schema.optional(Schema.String),
   payloadOrganization: Schema.optional(Schema.String),
+  /**
+   * The profile's top-level `PayloadScope`. Import uses it to name the kind's
+   * delivery channel, because `validateConfiguration` rejects a mismatch.
+   */
+  scope: Schema.optional(ConfigurationScope),
   payloads: Schema.Array(MobileconfigPayloadPreview),
 });
 

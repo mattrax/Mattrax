@@ -172,8 +172,17 @@ export default function PoliciesPage() {
           </Show>
         }
         actions={
-          <Show when={can("policies.write") && rows().length > 0}>
-            <LinkButton href={routes.tenant(params.tenantId).newPolicy()}>Create policy</LinkButton>
+          <Show when={can("policies.write")}>
+            <div class="flex items-center gap-2">
+              <LinkButton variant="outline" href={routes.tenant(params.tenantId).importPolicy()}>
+                Import
+              </LinkButton>
+              <Show when={rows().length > 0}>
+                <LinkButton href={routes.tenant(params.tenantId).newPolicy()}>
+                  Create policy
+                </LinkButton>
+              </Show>
+            </div>
           </Show>
         }
       />

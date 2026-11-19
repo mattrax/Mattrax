@@ -2004,6 +2004,96 @@ export const createEnterpriseService = ({
     });
 
   /**
+   * Validate configuration writes before a policy is created or patched, so a
+   * rejected kind cannot leave the policy half-written. Both the create and
+   * patch handlers share this path, which means an imported configuration is
+   * held to exactly the same rules as one saved in the editor.
+   */
+  const validatePolicyConfigurations = (input: {
+    readonly organizationId: string;
+    readonly policyId: string;
+    readonly entries: ReadonlyArray<readonly [string, Schema.Json]>;
+    readonly scopeFor: (kind: string) => "device" | "user";
+    readonly escrowCertificateFingerprintSha256: string | null;
+  }) =>
+    Effect.gen(function* () {
+      if (input.entries.length === 0) return;
+
+      const attributeKeys = (yield* listAttributeDefinitions(db, input.organizationId)).map(
+        (definition) => definition.key,
+      );
+
+      for (const [kind, data] of input.entries) {
+        const configuration = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(data));
+
+        if (configuration === undefined) continue;
+        const scope = input.scopeFor(kind);
+
+        yield* validateConfiguration(kind, configuration, {
+          escrowCertificateFingerprintSha256: input.escrowCertificateFingerprintSha256,
+          scope,
+        }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
+
+        const variableProblem = policyConfigurationVariableProblem(configuration, attributeKeys);
+
+        if (variableProblem)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: `${kind}: ${variableProblem}` }),
+          );
+
+        if (!isApplicationKind(kind)) continue;
+        const application = parseAppleApplicationConfiguration(configuration);
+
+        if (!application)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${kind}" is not a valid Apple application configuration`,
+            }),
+          );
+
+        if (application.type === "catalogue") {
+          const catalogue = yield* db.query.application.findFirst({
+            where: {
+              id: application.applicationId,
+              organizationId: input.organizationId,
+            },
+          });
+
+          if (!catalogue)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${kind}" references an application that does not exist in this tenant`,
+              }),
+            );
+
+          if (catalogue.platform !== "apple")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${kind}" references a ${catalogue.platform} application; only Apple applications can be added to an Apple policy`,
+              }),
+            );
+
+          continue;
+        }
+
+        if (application.source !== "upload") continue;
+
+        const r2 = yield* R2Storage;
+
+        const uploaded = yield* r2
+          .head(policyApplicationKey(input.organizationId, input.policyId, application.sha256!))
+          .pipe(Effect.option);
+
+        if (Option.isNone(uploaded))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${kind}" references an uploaded package that is not in this policy's storage. Upload the .pkg first, then save.`,
+            }),
+          );
+      }
+    });
+
+  /**
    * Apply the tenant-wide MFA requirement and record the change.
    *
    * The requirement binds every role, so enabling it is refused while any
@@ -15355,6 +15445,8 @@ export const createEnterpriseService = ({
           notes?: string | null;
           priority?: number;
           enabled?: boolean;
+          configurations?: Record<string, Schema.Json>;
+          configurationScopes?: Record<string, "device" | "user">;
         } = payload;
 
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
@@ -15362,7 +15454,33 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
           );
 
+        // A create has no stored kinds, so an explicit null (a delete in the
+        // patch shape) has nothing to remove and is dropped.
+        const configurations = Object.entries(body.configurations ?? {}).flatMap(([kind, data]) =>
+          data === null ? [] : [[kind, data] as const],
+        );
+
+        const scopeFor = (kind: string): "device" | "user" =>
+          body.configurationScopes?.[kind] ?? "device";
+
+        const escrowFingerprint =
+          configurations.length > 0
+            ? yield* tenantEscrowFingerprint(ctx.organization.id)
+            : null;
+
         const policyId = id();
+
+        // Validate before the insert: a rejected kind must not leave an empty
+        // policy behind, and an import saves the policy and its settings as one
+        // operation.
+        yield* validatePolicyConfigurations({
+          organizationId: ctx.organization.id,
+          policyId,
+          entries: configurations,
+          scopeFor,
+          escrowCertificateFingerprintSha256: escrowFingerprint,
+        });
+
         yield* db.insert(schema.policy).values({
           id: policyId,
           organizationId: ctx.organization.id,
@@ -15373,9 +15491,28 @@ export const createEnterpriseService = ({
           createdAt: now(),
           updatedAt: now(),
         });
+
+        if (configurations.length > 0)
+          yield* db.insert(schema.configuration).values(
+            yield* Effect.all(
+              configurations.map(([kind, data]) =>
+                Effect.map(hashJson(data), (hash) => ({
+                  policyId,
+                  kind,
+                  scope: scopeFor(kind),
+                  data,
+                  hash,
+                })),
+              ),
+            ),
+          );
+
         yield* audit(ctx, "policy.created", "policy", policyId, {
           name: body.name,
           ...(body.enabled === false ? { enabled: false } : {}),
+          ...(configurations.length > 0
+            ? { configurations: configurations.map(([kind]) => kind) }
+            : {}),
         });
         yield* snapshotPolicy(ctx, policyId);
 
@@ -15472,84 +15609,17 @@ export const createEnterpriseService = ({
             ? (existingScopes.get(kind) ?? "device")
             : (body.configurationScopes[kind] ?? "device");
 
-        const attributeKeys = (yield* listAttributeDefinitions(db, ctx.organization.id)).map(
-          (definition) => definition.key,
-        );
-
         // Validate the whole patch before mutating anything so a bad
         // configuration cannot leave the policy half-updated.
-        for (const [kind, data] of configurations) {
-          if (data === null) continue;
-
-          const configuration = Option.getOrUndefined(
-            Schema.decodeUnknownOption(Schema.Json)(data),
-          );
-
-          if (configuration === undefined) continue;
-          const scope = scopeFor(kind);
-
-          yield* validateConfiguration(kind, configuration, {
-            escrowCertificateFingerprintSha256: escrowFingerprint,
-            scope,
-          }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
-
-          const variableProblem = policyConfigurationVariableProblem(configuration, attributeKeys);
-
-          if (variableProblem)
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({ message: `${kind}: ${variableProblem}` }),
-            );
-
-          if (!isApplicationKind(kind)) continue;
-          const application = parseAppleApplicationConfiguration(configuration);
-
-          if (!application)
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: `"${kind}" is not a valid Apple application configuration`,
-              }),
-            );
-
-          if (application.type === "catalogue") {
-            const catalogue = yield* db.query.application.findFirst({
-              where: {
-                id: application.applicationId,
-                organizationId: ctx.organization.id,
-              },
-            });
-
-            if (!catalogue)
-              return yield* Effect.fail(
-                new EnterpriseBadRequest({
-                  message: `"${kind}" references an application that does not exist in this tenant`,
-                }),
-              );
-
-            if (catalogue.platform !== "apple")
-              return yield* Effect.fail(
-                new EnterpriseBadRequest({
-                  message: `"${kind}" references a ${catalogue.platform} application; only Apple applications can be added to an Apple policy`,
-                }),
-              );
-
-            continue;
-          }
-
-          if (application.source !== "upload") continue;
-
-          const r2 = yield* R2Storage;
-
-          const uploaded = yield* r2
-            .head(policyApplicationKey(ctx.organization.id, policyId, application.sha256!))
-            .pipe(Effect.option);
-
-          if (Option.isNone(uploaded))
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: `"${kind}" references an uploaded package that is not in this policy's storage. Upload the .pkg first, then save.`,
-              }),
-            );
-        }
+        yield* validatePolicyConfigurations({
+          organizationId: ctx.organization.id,
+          policyId,
+          entries: configurations.flatMap(([kind, data]) =>
+            data === null ? [] : [[kind, data] as const],
+          ),
+          scopeFor,
+          escrowCertificateFingerprintSha256: escrowFingerprint,
+        });
 
         yield* db
           .update(schema.policy)
