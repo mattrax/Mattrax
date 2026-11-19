@@ -48,7 +48,7 @@ would ship the files twice. Licences are kept.
 ## Requirements
 
 - Docker 24 or newer.
-- A MySQL 8.4 database. `docker-compose.selfhost.yml` starts one next to the app.
+- A MySQL 26.10 database. `docker-compose.selfhost.yml` starts one next to the app.
 - An HTTPS reverse proxy in front of the container. `ORIGIN` must be `https://`,
   because WebAuthn passkeys and email magic links require a secure origin.
 
@@ -203,6 +203,12 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
   local bucket is not readable by the Node runtime. Export or restore tenant files
   and backups through the product before switching, or copy them into
   `/data/storage` using the same keys.
+- **MySQL 26.10.** The bundled compose file now runs MySQL 26.10. A 26.10 server
+  refuses to start on an 8.4 data directory (`Invalid MySQL server upgrade`), so
+  an existing stack must dump and restore rather than swap the image under the
+  `mattrax-mysql` volume: dump from the old container (`mysqldump --databases
+  mattrax`), start 26.10 with an empty volume, and load the dump before starting
+  the app. A development stack can simply recreate the volume.
 - **Backups.** Back up MySQL and the `mattrax-data` volume. The volume holds
   tenant file uploads, configuration profiles, app packages and backups created
   by the scheduled job.
