@@ -555,6 +555,13 @@ export default function PolicyDetailPage() {
         actions={
           <Show when={writable()}>
             <>
+              <Button
+                as="a"
+                variant="outline"
+                href={`/t/${params.tenantId}/policies/import?policy=${params.policyId}`}
+              >
+                Import
+              </Button>
               <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
                 {sync.isPending ? "Syncing…" : "Sync"}
               </Button>

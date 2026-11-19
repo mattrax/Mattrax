@@ -8,6 +8,9 @@ import {
   PatchPolicyRequest as PatchPolicyRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
   PolicyRow as PolicyRowSchema,
+  PORTABLE_POLICY_VERSION,
+  PortablePolicy as PortablePolicySchema,
+  PortablePolicyDocument as PortablePolicyDocumentSchema,
 } from "@mattrax/enterprise-domain/client";
 import { CliFailure } from "./settings.ts";
 
@@ -21,24 +24,14 @@ type CreatePolicy = typeof CreatePolicyRequestSchema.Type;
 
 type PatchPolicy = typeof PatchPolicyRequestSchema.Type;
 
-export const PORTABLE_POLICY_VERSION = 1;
+/** The document format is shared with the dashboard's policy import. */
+export { PORTABLE_POLICY_VERSION };
 
-export const PortablePolicy = Schema.Struct({
-  /** Optional server id for in-place updates on the same deployment. */
-  id: Schema.optional(Schema.String),
-  name: Schema.String,
-  notes: Schema.optional(Schema.NullOr(Schema.String)),
-  priority: Schema.optional(Schema.Number),
-  /** Configuration kind (for example `passcode`) mapped to its stored payload. */
-  configurations: Schema.optional(JsonRecord),
-});
+export const PortablePolicy = PortablePolicySchema;
 
 export type PortablePolicy = typeof PortablePolicy.Type;
 
-export const PortablePolicyDocument = Schema.Struct({
-  version: Schema.Literal(PORTABLE_POLICY_VERSION),
-  policies: Schema.Array(PortablePolicy),
-});
+export const PortablePolicyDocument = PortablePolicyDocumentSchema;
 
 export type PortablePolicyDocument = typeof PortablePolicyDocument.Type;
 
@@ -216,7 +209,18 @@ const portablePolicy = (policy: PolicyRow, includeIds: boolean): PortablePolicy 
   name: policy.name,
   notes: policy.notes,
   priority: policy.priority,
+  // Absence means enabled in the document, so only a disabled policy is
+  // written out.
+  enabled: policy.enabled === false ? false : undefined,
   configurations: policy.configurations,
+  // Omitted scopes are device-scoped; write only the user channel entries.
+  ...(Object.values(policy.configurationScopes ?? {}).includes("user")
+    ? {
+        configurationScopes: Object.fromEntries(
+          Object.entries(policy.configurationScopes ?? {}).filter(([, scope]) => scope === "user"),
+        ),
+      }
+    : {}),
 });
 
 /** Build a deterministic document sorted by name, then id. */
@@ -287,6 +291,7 @@ interface MutablePolicyPatch {
   notes?: string | null;
   priority?: number;
   configurations?: Record<string, Schema.Json | null>;
+  configurationScopes?: Record<string, "device" | "user">;
 }
 
 const buildPatch = (desired: PortablePolicy, existing: PolicyRow): PolicyPatch => {
@@ -328,10 +333,46 @@ const buildPatch = (desired: PortablePolicy, existing: PolicyRow): PolicyPatch =
     for (const kind of Object.keys(existingConfigurations))
       if (!(kind in desired.configurations)) changes[kind] = null;
 
-    if (Object.keys(changes).length > 0) {
-      fields.push("configurations");
-      payload.configurations = changes;
+    // A supplied scope map is authoritative for the kinds it carries, so every
+    // written kind needs an entry. An omitted scope keeps the stored channel,
+    // which preserves user-scoped settings across a document that predates
+    // scope.
+    const storedScopes = existing.configurationScopes ?? {};
+    const scopes: Record<string, "device" | "user"> = {};
+    const written = { ...changes };
+    let scopeChanged = false;
+
+    for (const kind of Object.keys(changes)) {
+      if (changes[kind] === null) continue;
+
+      const scope = desired.configurationScopes?.[kind] ?? storedScopes[kind] ?? "device";
+
+      scopes[kind] = scope;
+
+      if (scope !== (storedScopes[kind] ?? "device")) scopeChanged = true;
     }
+
+    // A scope-only change must be detected even when no payload differs, and
+    // the patch re-sends the stored payload so the server validates the new
+    // channel instead of ignoring the scope map.
+    for (const [kind, scope] of Object.entries(desired.configurationScopes ?? {})) {
+      if (kind in written || scope === (storedScopes[kind] ?? "device")) continue;
+
+      const stored = existing.configurations?.[kind];
+
+      if (stored === undefined) continue;
+      written[kind] = Schema.decodeUnknownSync(Schema.Json)(stored);
+      scopes[kind] = scope;
+      scopeChanged = true;
+    }
+
+    if (Object.keys(changes).length > 0) fields.push("configurations");
+
+    if (Object.keys(written).length > 0) payload.configurations = written;
+
+    if (Object.keys(scopes).length > 0) payload.configurationScopes = scopes;
+
+    if (scopeChanged) fields.push("configurationScopes");
   }
 
   return { payload, fields };
@@ -366,7 +407,12 @@ const applyOne = (
       const { id } = yield* target.createPolicy(payload);
 
       if (policy.configurations !== undefined)
-        yield* target.patchPolicy(id, { configurations: policy.configurations });
+        yield* target.patchPolicy(id, {
+          configurations: policy.configurations,
+          ...(policy.configurationScopes
+            ? { configurationScopes: policy.configurationScopes }
+            : {}),
+        });
 
       return { action: "created" as const, name: policy.name, id, fields };
     });

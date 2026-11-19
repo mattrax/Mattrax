@@ -29,6 +29,10 @@ const doc = async (policies: ReadonlyArray<PortablePolicy>) =>
 const makeTarget = (initial: ReadonlyArray<PolicyRow>) => {
   const policies = initial.map((policy) => ({ ...policy }));
   const calls = { create: 0, patch: 0 };
+
+  const patches: Array<{ id: string; payload: Parameters<PolicyApplyTarget["patchPolicy"]>[1] }> =
+    [];
+
   let sequence = policies.length;
 
   const target: PolicyApplyTarget = {
@@ -61,6 +65,7 @@ const makeTarget = (initial: ReadonlyArray<PolicyRow>) => {
     patchPolicy: (id, payload) =>
       Effect.sync(() => {
         calls.patch += 1;
+        patches.push({ id, payload });
         const policy = policies.find((item) => item.id === id);
 
         if (!policy) throw new Error(`Policy ${id} not found`);
@@ -87,7 +92,7 @@ const makeTarget = (initial: ReadonlyArray<PolicyRow>) => {
       }),
   };
 
-  return { target, policies, calls };
+  return { target, policies, calls, patches };
 };
 
 const documents = async (
@@ -141,6 +146,42 @@ describe("applyPolicyDocuments", () => {
     expect(calls.patch).toBe(1);
     expect(policies[0]?.configurations).toEqual({ passcode: { required: false } });
     expect(policies[0]?.priority).toBe(10);
+  });
+
+  it("patches a scope-only change even when every payload is identical", async () => {
+    const existing = row({
+      name: "Baseline",
+      priority: 10,
+      configurations: { passcode: { required: true } },
+      configurationScopes: {},
+    });
+
+    const { target, policies, calls, patches } = makeTarget([existing]);
+
+    const source = await documents([
+      {
+        name: "Baseline",
+        priority: 10,
+        configurations: { passcode: { required: true } },
+        configurationScopes: { passcode: "user" },
+      },
+    ]);
+
+    const report = await Effect.runPromise(
+      applyPolicyDocuments(target, source, { dryRun: false, id: undefined }),
+    );
+
+    expect(report.entries[0]?.action).toBe("updated");
+    expect(report.entries[0]?.fields).toEqual(["configurationScopes"]);
+    expect(calls.patch).toBe(1);
+    expect(patches[0]).toMatchObject({
+      id: "p1",
+      payload: {
+        configurations: { passcode: { required: true } },
+        configurationScopes: { passcode: "user" },
+      },
+    });
+    expect(policies[0]?.configurations).toEqual({ passcode: { required: true } });
   });
 
   it("does not write in dry-run mode", async () => {
