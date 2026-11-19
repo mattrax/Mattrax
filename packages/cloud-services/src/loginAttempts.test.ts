@@ -17,9 +17,9 @@ const waitForRows = async (rows: Array<Schema.Json>, expected: number) => {
 };
 
 /** Serve one request through a router that has the observer and a fake database. */
-const request = async (
+const requestWith = async (
   rows: Array<Schema.Json>,
-  body: Schema.Json,
+  response: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>,
   path: string,
 ): Promise<Response> => {
   const db = {
@@ -35,15 +35,11 @@ const request = async (
     }),
   };
 
-  const route = HttpRouter.add(
-    "POST",
-    "/api/v1/completePasskeySignIn",
-    HttpServerResponse.json(body),
-  );
+  const endpoint = HttpRouter.add("POST", "/api/v1/completePasskeySignIn", response);
 
   const other = HttpRouter.add("POST", "/api/v1/getSession", HttpServerResponse.json({}));
 
-  const app = Layer.mergeAll(loginAttemptObserver, route, other).pipe(
+  const app = Layer.mergeAll(loginAttemptObserver, endpoint, other).pipe(
     // SAFETY: the observer only calls the `insert`/`select` chains the fake
     // implements.
     Layer.provideMerge(Layer.succeed(Db, db as never)),
@@ -67,6 +63,10 @@ const request = async (
     ),
   );
 };
+
+/** The routes the tests use answer with a fixed JSON body. */
+const request = (rows: Array<Schema.Json>, body: Schema.Json, path: string) =>
+  requestWith(rows, HttpServerResponse.json(body), path);
 
 describe("login attempt observer", () => {
   it("records a completed session without changing the response", async () => {
@@ -101,6 +101,44 @@ describe("login attempt observer", () => {
         ip: "203.0.113.0/24",
       },
     ]);
+  });
+
+  it("leaves a streamed completion body intact", async () => {
+    const rows: Array<Schema.Json> = [];
+
+    const body = {
+      _tag: "Success",
+      value: {
+        _tag: "Authenticated",
+        session: {
+          subjectId: "account-1",
+          claims: { email: "owner@example.com" },
+          assurance: { method: "passkey" },
+        },
+      },
+    };
+
+    // The auth library answers through `HttpServerResponse.fromWeb`, which wraps
+    // a one-shot stream: reading it through `toWeb` would consume the body the
+    // client still needs.
+    const response = await requestWith(
+      rows,
+      Effect.succeed(
+        HttpServerResponse.fromWeb(
+          new Response(JSON.stringify(body), {
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      ),
+      "/api/v1/completePasskeySignIn",
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(body);
+
+    await waitForRows(rows, 1);
+
+    expect(rows).toHaveLength(1);
   });
 
   it("matches the route after case, duplicate-slash and trailing-slash normalisation", async () => {

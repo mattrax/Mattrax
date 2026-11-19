@@ -497,6 +497,7 @@ describe("tenant import", () => {
     expect(bundle.policies[0]).toMatchObject({ enabled: false });
 
     const result = await runEffect(context.service.importTenant(request(headers), bundle));
+
     const importedPolicy = context.db.store.policy.find(
       (row: any) => row.organizationId === result.tenantId,
     )!;

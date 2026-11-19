@@ -2964,6 +2964,7 @@ describe("enterprise service effective policy", () => {
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );

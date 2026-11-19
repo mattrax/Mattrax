@@ -6865,6 +6865,7 @@ export const createEnterpriseService = ({
           }
 
           policyConfigurations.set(key, entries);
+
           if (Object.keys(scopes).length > 0) policyConfigurationScopes.set(key, scopes);
         }
 
@@ -14059,6 +14060,7 @@ export const createEnterpriseService = ({
           enrollmentMode: apple?.enrollmentMode ?? null,
           users: users.map((user) => {
             const configured = Boolean(user.token && user.pushMagic);
+
             const identityTarget = user.directoryUserId
               ? boundById.get(user.directoryUserId)
               : undefined;
@@ -15347,6 +15349,7 @@ export const createEnterpriseService = ({
     createPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+
         const body: {
           name: string;
           notes?: string | null;
@@ -15634,6 +15637,8 @@ export const createEnterpriseService = ({
             new EnterpriseNotFound({ message: "Policy deployment not found" }),
           );
 
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // `Record<string, Schema.Json>` when the stored snapshot does not decode.
         const snapshot = Option.getOrElse(
           Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
             deployment.snapshot,
@@ -15641,6 +15646,8 @@ export const createEnterpriseService = ({
           () => ({}) as Record<string, Schema.Json>,
         );
 
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // `Record<string, "device" | "user">`; lookups below fall back to `"device"`.
         const snapshotScopes = Option.getOrElse(
           Schema.decodeUnknownOption(
             Schema.Record(Schema.String, Schema.Literals(["device", "user"])),

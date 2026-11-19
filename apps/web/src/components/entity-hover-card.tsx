@@ -270,6 +270,7 @@ function PolicyCard(props: { policy: PolicyRow }) {
   const policy = () => props.policy;
   const delivery = () => policy().delivery;
   const enabled = () => isPolicyEnabled(policy());
+
   const presentation = () =>
     policyRowDeliveryPresentation({
       ...policy(),
