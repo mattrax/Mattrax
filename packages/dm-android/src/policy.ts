@@ -110,6 +110,36 @@ function mergeInto(
 }
 
 /**
+ * Keep one `applications` entry per package.
+ *
+ * AMAPI rejects a policy that lists the same package twice, and the deep merge
+ * concatenates arrays, so two fragments that both describe a package would
+ * otherwise produce an invalid policy. The later entry wins (matching scalar
+ * precedence) while the package keeps its first position so the output stays
+ * deterministic. Entries without a package name are left untouched.
+ */
+function canonicalizeApplications<T extends Record<string, Schema.Json>>(policy: T) {
+  const applications = policy["applications"];
+
+  if (!Array.isArray(applications)) return policy;
+  const byPackage = new Map<string, Schema.Json>();
+  const unnamed: Array<Schema.Json> = [];
+
+  for (const entry of applications) {
+    const packageName = isPlainObject(entry) ? entry["packageName"] : undefined;
+
+    if (!Schema.is(Schema.String)(packageName)) {
+      unnamed.push(entry);
+      continue;
+    }
+
+    byPackage.set(packageName, entry);
+  }
+
+  return { ...policy, applications: [...byPackage.values(), ...unnamed] };
+}
+
+/**
  * Merge Android policies deterministically.
  *
  * - later policies win for scalar values
@@ -140,7 +170,7 @@ export function mergeAndroidPolicies(
     merged = mergeInto(merged, policy, "");
   }
 
-  const sorted = sortKeysDeep(merged);
+  const sorted = sortKeysDeep(canonicalizeApplications(merged));
 
   if (!isPlainObject(sorted))
     throw new PolicyMergeError({ message: "Compiled policy must be an object", path: "" });

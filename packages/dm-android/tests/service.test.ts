@@ -55,7 +55,54 @@ function router(request: RecordedRequest): Response {
 
     const displayName = Schema.is(Schema.JsonObject)(body) ? body["displayName"] : undefined;
 
-    return jsonResponse(displayName === undefined ? { name: enterprise } : { name: enterprise, displayName });
+    return jsonResponse(
+      displayName === undefined ? { name: enterprise } : { name: enterprise, displayName },
+    );
+  }
+
+  if (method === "GET" && pathname === `/v1/${enterprise}`) {
+    return jsonResponse({
+      name: enterprise,
+      displayName: "Acme",
+      enabledNotificationTypes: ["ENROLLMENT"],
+    });
+  }
+
+  if (method === "PATCH" && pathname === `/v1/${enterprise}`) {
+    const body = jsonBody(request);
+    const types = Schema.is(Schema.JsonObject)(body) ? body["enabledNotificationTypes"] : undefined;
+
+    return jsonResponse({
+      name: enterprise,
+      enabledNotificationTypes: Array.isArray(types) ? types : [],
+    });
+  }
+
+  if (method === "DELETE" && pathname === `/v1/${enterprise}`) {
+    return emptyResponse(204);
+  }
+
+  if (method === "GET" && pathname === `/v1/${enterprise}/policies`) {
+    const pageToken = request.searchParams.get("pageToken");
+
+    return pageToken === "next"
+      ? jsonResponse({ policies: [{ name: `${enterprise}/policies/second` }] })
+      : jsonResponse({
+          policies: [{ name: `${enterprise}/policies/first` }],
+          nextPageToken: "next",
+        });
+  }
+
+  if (method === "DELETE" && pathname.startsWith(`/v1/${enterprise}/policies/`)) {
+    return emptyResponse(204);
+  }
+
+  if (method === "GET" && pathname === `/v1/${device}`) {
+    return jsonResponse({ name: device, state: "ACTIVE", managementMode: "PROFILE_OWNER" });
+  }
+
+  if (method === "GET" && pathname === `/v1/${device}/operations/op-1`) {
+    return jsonResponse({ name: `${device}/operations/op-1`, done: true });
   }
 
   if (method === "POST" && pathname === `/v1/${enterprise}/enrollmentTokens`) {
@@ -339,6 +386,152 @@ describe("AndroidManagement service", () => {
       ),
     ).resolves.toBeUndefined();
     expect(mock.requests.some((item) => item.method === "DELETE")).toBe(true);
+  });
+
+  it("reads and updates the enterprise notification types", async () => {
+    const { mock, run } = harness();
+
+    const result = await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+        const current = yield* android.getEnterprise({ enterpriseName: enterprise });
+
+        const updated = yield* android.patchEnterprise({
+          enterpriseName: enterprise,
+          enabledNotificationTypes: ["ENROLLMENT", "STATUS_REPORT", "COMMAND"],
+        });
+
+        return { current, updated };
+      }),
+    );
+
+    expect(result.current.enabledNotificationTypes).toEqual(["ENROLLMENT"]);
+    expect(result.updated.enabledNotificationTypes).toEqual([
+      "ENROLLMENT",
+      "STATUS_REPORT",
+      "COMMAND",
+    ]);
+
+    const patch = mock.requests.find(
+      (request) => request.method === "PATCH" && request.pathname === `/v1/${enterprise}`,
+    );
+
+    expect(patch?.searchParams.get("updateMask")).toBe("enabledNotificationTypes");
+    expect(jsonBody(patch!)).toEqual({
+      enabledNotificationTypes: ["ENROLLMENT", "STATUS_REPORT", "COMMAND"],
+    });
+  });
+
+  it("deletes the enterprise", async () => {
+    const { mock, run } = harness();
+
+    await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+
+        return yield* android.deleteEnterprise({ enterpriseName: enterprise });
+      }),
+    );
+
+    expect(
+      mock.requests.some(
+        (request) => request.method === "DELETE" && request.pathname === `/v1/${enterprise}`,
+      ),
+    ).toBe(true);
+  });
+
+  it("lists and deletes policies", async () => {
+    const { mock, run } = harness();
+
+    const policies = await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+
+        return yield* android.listPolicies({ enterpriseName: enterprise });
+      }),
+    );
+
+    expect(policies.policies.map((policy) => policy["name"])).toEqual([
+      `${enterprise}/policies/first`,
+    ]);
+    expect(policies.nextPageToken).toBe("next");
+
+    await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+
+        return yield* android.deletePolicy({ enterpriseName: enterprise, policyId: "mattrax-abc" });
+      }),
+    );
+
+    expect(
+      mock.requests.some(
+        (request) =>
+          request.method === "DELETE" &&
+          request.pathname === `/v1/${enterprise}/policies/mattrax-abc`,
+      ),
+    ).toBe(true);
+  });
+
+  it("reads a single device and polls an operation", async () => {
+    const { mock, run } = harness();
+
+    const result = await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+        const fetched = yield* android.getDevice({ deviceName: device });
+
+        const operation = yield* android.getOperation({
+          operationName: `${device}/operations/op-1`,
+        });
+
+        return { fetched, operation };
+      }),
+    );
+
+    expect(result.fetched).toMatchObject({ name: device, state: "ACTIVE" });
+    expect(result.operation.done).toBe(true);
+    expect(mock.requests.some((request) => request.pathname === `/v1/${device}`)).toBe(true);
+  });
+
+  it("sends the provisioning mode on an enrollment token", async () => {
+    const { mock, run } = harness();
+
+    await run(
+      Effect.gen(function* () {
+        const android = yield* AndroidManagement;
+
+        return yield* android.createEnrollmentToken({
+          enterpriseName: enterprise,
+          policyName: "default",
+          allowPersonalUsage: "PERSONAL_USAGE_ALLOWED",
+          oneTimeOnly: true,
+        });
+      }),
+    );
+
+    const request = mock.requests.find(
+      (item) => item.pathname === `/v1/${enterprise}/enrollmentTokens`,
+    );
+
+    expect(jsonBody(request!)).toMatchObject({
+      allowPersonalUsage: "PERSONAL_USAGE_ALLOWED",
+      oneTimeOnly: true,
+    });
+  });
+
+  it("rejects an operation name outside a device or enterprise", async () => {
+    const { run } = harness();
+
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const android = yield* AndroidManagement;
+
+          return yield* android.getOperation({ operationName: "projects/p/operations/1" });
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AndroidManagementValidationError);
   });
 
   it("reuses one access token across API calls", async () => {

@@ -2843,6 +2843,156 @@ describe("enterprise service APNs", () => {
     );
   });
 
+  it("records a new provisioning mode for future enrollments", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedAndroidDevice(db, tenant.id);
+
+    await runEffect(
+      service.patchTenantAndroid(request(headers), tenant.id, {
+        provisioningMode: "fully-managed",
+      }),
+    );
+
+    expect(db.store.android_enterprise[0]).toMatchObject({ provisioningMode: "fully-managed" });
+    expect(db.store.audit_log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "android.provisioning_mode_changed",
+          metadata: expect.objectContaining({ mode: "fully-managed" }),
+        }),
+      ]),
+    );
+  });
+
+  it("disconnects Android Enterprise and retires its devices", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+    const deleted: string[] = [];
+
+    // SAFETY: the disconnect path only calls `deleteEnterprise`; the fake omits
+    // the rest of the AndroidManagementService surface.
+    const android = AndroidManagement.of({
+      deleteEnterprise: (input: { enterpriseName: string }) => {
+        deleted.push(input.enterpriseName);
+
+        return Effect.void;
+      },
+    } as any);
+
+    await runEffect(
+      service
+        .patchTenantAndroid(request(headers), tenant.id, { disconnect: true })
+        .pipe(Effect.provideService(AndroidManagement, android)),
+    );
+
+    expect(deleted).toEqual([androidDevice.enterpriseName]);
+    expect(db.store.android_enterprise).toHaveLength(0);
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)?.status).toBe(
+      "unenrolled",
+    );
+    expect(db.store.audit_log).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "android.enterprise_disconnected" }),
+      ]),
+    );
+  });
+
+  it("deprovisions Google before deleting Android device rows", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+    const deleted: string[] = [];
+
+    const android = makeAndroidDeleteService((input) => {
+      deleted.push(input.deviceName);
+
+      return Effect.void;
+    });
+
+    await runEffect(
+      service
+        .deleteDevices(request(headers), tenant.id, [androidDevice.id])
+        .pipe(Effect.provideService(AndroidManagement, android)),
+    );
+
+    expect(deleted).toEqual([androidDevice.deviceName]);
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)).toBeUndefined();
+  });
+
+  it("keeps an Android device row when Google refuses to delete it", async () => {
+    const { db, service, headers } = await makeContext({ android: androidConfig });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const androidDevice = seedAndroidDevice(db, tenant.id);
+
+    const android = makeAndroidDeleteService(() =>
+      Effect.fail(new GoogleApiError({ message: "Google is unavailable", status: 503 })),
+    );
+
+    await expect(
+      runEffect(
+        service
+          .deleteDevices(request(headers), tenant.id, [androidDevice.id])
+          .pipe(Effect.provideService(AndroidManagement, android)),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseConflict);
+
+    // The row survives: deleting it would leave Google managing a device the
+    // dashboard no longer knows about.
+    expect(db.store.device.find((item: any) => item.id === androidDevice.id)).toBeDefined();
+  });
+
+  it("requires step-up before disconnecting Android Enterprise", async () => {
+    const actions: Array<string> = [];
+
+    const { db, service, headers } = await makeContext({
+      android: androidConfig,
+      auth: {
+        requireStepUp: (_request: any, action: any) => {
+          actions.push(String(action));
+
+          return Effect.fail(
+            new StepUpRequired({
+              message: "Confirm this action with your authenticator or passkey.",
+              action,
+              methods: ["passkey", "totp"],
+            }),
+          );
+        },
+      },
+    });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedAndroidDevice(db, tenant.id);
+
+    await expect(
+      runEffect(service.patchTenantAndroid(request(headers), tenant.id, { disconnect: true })),
+    ).rejects.toBeInstanceOf(StepUpRequired);
+
+    expect(actions).toEqual(["android-disconnect"]);
+    expect(db.store.android_enterprise).toHaveLength(1);
+  });
+
   it("requires step-up before deleting an Android device", async () => {
     const { db, service, headers } = await makeContext({
       android: androidConfig,
@@ -3024,6 +3174,7 @@ describe("enterprise service APNs", () => {
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
+
     const other = await runEffect(
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );

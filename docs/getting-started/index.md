@@ -10,16 +10,16 @@ The code paths below are implemented. "Validation" is separate: some flows are c
 fixtures and unit tests but have not yet been exercised against real hardware or a real
 vendor tenant.
 
-| Capability             | Apple                                                                                          | Windows                                   | Android                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------- | -------------------------------------- |
-| Enrollment             | Profile link + SCEP + MDM payload                                                              | WSTEP discovery/policy/enroll             | AMAPI enrollment token / QR            |
-| Zero-touch             | ABM/ADE assignment (profile delivery caveat)                                                   | Autopilot import and profiles             | Google signup + policy                 |
-| Policy delivery        | DDM declarations + legacy profiles                                                             | SyncML OMA-URI                            | AMAPI policy                           |
-| Push                   | APNs                                                                                           | Device polling                            | Google Pub/Sub                         |
-| Remote actions         | Sync, lock, wipe, restart, shutdown, clear passcode, install app, security info, app inventory | Wipe, restart                             | Wipe, restart, lock, policy sync       |
-| Inventory              | DDM status items, `SecurityInfo`, installed applications                                       | Minimal (Autopilot metadata)              | Model, manufacturer, serial, OS, state |
-| Compliance             | Derived device health (not a policy engine)                                                    | Derived device health                     | Derived device health                  |
-| Real-device validation | Partial; see [readiness](/reference/production-readiness)                                      | Partial; Entra/Autopilot OOBE outstanding | Outstanding                            |
+| Capability             | Apple                                                                                          | Windows                                   | Android                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
+| Enrollment             | Profile link + SCEP + MDM payload                                                              | WSTEP discovery/policy/enroll             | AMAPI enrollment token / QR             |
+| Zero-touch             | ABM/ADE assignment (profile delivery caveat)                                                   | Autopilot import and profiles             | Not supported; use an AMAPI token or QR |
+| Policy delivery        | DDM declarations + legacy profiles                                                             | SyncML OMA-URI                            | AMAPI policy                            |
+| Push                   | APNs                                                                                           | Device polling                            | Google Pub/Sub                          |
+| Remote actions         | Sync, lock, wipe, restart, shutdown, clear passcode, install app, security info, app inventory | Wipe, restart                             | Wipe, restart, lock, policy sync        |
+| Inventory              | DDM status items, `SecurityInfo`, installed applications                                       | Minimal (Autopilot metadata)              | Model, manufacturer, serial, OS, state  |
+| Compliance             | Derived device health (not a policy engine)                                                    | Derived device health                     | Derived device health                   |
+| Real-device validation | Partial; see [readiness](/reference/production-readiness)                                      | Partial; Entra/Autopilot OOBE outstanding | Outstanding                             |
 
 ## How the pieces fit
 

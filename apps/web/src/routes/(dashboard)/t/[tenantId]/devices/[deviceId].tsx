@@ -1275,6 +1275,33 @@ export default function DeviceDetailPage() {
 
   const appNames = (): readonly DeviceApplication[] => applications.data?.applications ?? [];
 
+  /**
+   * Provisioning mode Google actually gave the device. `DEVICE_OWNER` is a
+   * fully managed (company-owned) device; `PROFILE_OWNER` is a work profile on
+   * a device that may be personally owned.
+   */
+  const androidManagementModeLabel = (value: string | null | undefined) => {
+    switch (value) {
+      case "DEVICE_OWNER":
+        return "Fully managed";
+      case "PROFILE_OWNER":
+        return "Work profile";
+      default:
+        return "Not reported";
+    }
+  };
+
+  const androidOwnershipLabel = (value: string | null | undefined) => {
+    switch (value) {
+      case "COMPANY_OWNED":
+        return "Company owned";
+      case "PERSONALLY_OWNED":
+        return "Personally owned";
+      default:
+        return "Not reported";
+    }
+  };
+
   /** Human label for the raw AMAPI enum values stored on Android devices. */
   const androidLabel = (value: string | null | undefined) => {
     if (!value) return "Not reported";
@@ -1463,7 +1490,11 @@ export default function DeviceDetailPage() {
 
   const confirmDescription = () =>
     Match.value(confirmAction()).pipe(
-      Match.when("delete", () => "The device record and its history will be removed."),
+      Match.when("delete", () =>
+        row()?.proto === "android"
+          ? "The device is removed from the tenant and this device's Google Enterprise record is deleted, which removes Android Device Policy and the work data it manages. The record and its history are removed from Mattrax. This cannot be undone."
+          : "The device record and its history will be removed.",
+      ),
       Match.when(
         "revoke",
         () =>
@@ -1900,9 +1931,11 @@ export default function DeviceDetailPage() {
                       >
                         <dl class="grid gap-x-6 sm:grid-cols-2">
                           <MetaRow label="Management mode">
-                            {androidLabel(android().managementMode)}
+                            {androidManagementModeLabel(android().managementMode)}
                           </MetaRow>
-                          <MetaRow label="Ownership">{androidLabel(android().ownership)}</MetaRow>
+                          <MetaRow label="Ownership">
+                            {androidOwnershipLabel(android().ownership)}
+                          </MetaRow>
                           <MetaRow label="Google state">{androidLabel(android().state)}</MetaRow>
                           <MetaRow label="API level">
                             {android().apiLevel === null

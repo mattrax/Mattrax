@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, like, lt } from "drizzle-orm";
 import { Data, Effect, Option, Schema } from "effect";
 import {
   AndroidManagement,
@@ -66,6 +66,11 @@ export const DEFAULT_ANDROID_POLICY_ID = "mattrax-default";
 const STATUS_REPORTING_BASELINE = {
   softwareInfoEnabled: true,
   applicationReportsEnabled: true,
+  // RAM and the carrier/operator are part of the device page's hardware card.
+  // Both reports are opt-in on each applied policy, so without these the fields
+  // stay empty no matter what Google sends.
+  memoryInfoEnabled: true,
+  networkInfoEnabled: true,
 } as const;
 
 /**
@@ -88,6 +93,34 @@ export const withStatusReporting = (policy: Schema.JsonObject): Schema.JsonObjec
 
 /** Notification types requested when the enterprise is created. */
 export const ANDROID_NOTIFICATION_TYPES = ["ENROLLMENT", "STATUS_REPORT", "COMMAND"] as const;
+
+/**
+ * Provisioning modes Mattrax can request through an enrollment token.
+ *
+ * `work-profile` permits personal usage so a personally owned phone gets a
+ * managed work profile; `fully-managed` requires a company-owned device with no
+ * personal profile; `dedicated` is a userless kiosk device. Google decides the
+ * real mode at provisioning time and reports it as the device's
+ * `managementMode`, so a mode that a device ignores is visible rather than
+ * silently assumed.
+ */
+export const ANDROID_PROVISIONING_MODES = ["work-profile", "fully-managed", "dedicated"] as const;
+
+export type AndroidProvisioningMode = (typeof ANDROID_PROVISIONING_MODES)[number];
+
+export const DEFAULT_ANDROID_PROVISIONING_MODE: AndroidProvisioningMode = "work-profile";
+
+/** The AMAPI `allowPersonalUsage` value for a provisioning mode. */
+export const allowPersonalUsageFor = (mode: AndroidProvisioningMode): string => {
+  switch (mode) {
+    case "fully-managed":
+      return "PERSONAL_USAGE_DISALLOWED";
+    case "dedicated":
+      return "PERSONAL_USAGE_DISALLOWED_USERLESS";
+    default:
+      return "PERSONAL_USAGE_ALLOWED";
+  }
+};
 
 const SIGNUP_STATE_PURPOSE = "android-signup";
 
@@ -239,6 +272,7 @@ export type AndroidEnterpriseInfoResult = {
   readonly pubsubTopic: string | null;
   readonly pubsubSubscription: string | null;
   readonly serviceAccountEmail: string | null;
+  readonly provisioningMode: AndroidProvisioningMode;
   readonly lastError: string | null;
   readonly lastSyncedAt: string | null;
   readonly deviceCount: number;
@@ -273,6 +307,7 @@ export const androidEnterpriseInfo = (
       pubsubTopic: row?.pubsubTopic ?? config?.pubsubTopic ?? null,
       pubsubSubscription: row?.pubsubSubscription ?? config?.pubsubSubscription ?? null,
       serviceAccountEmail: row?.serviceAccountEmail ?? config?.serviceAccount.clientEmail ?? null,
+      provisioningMode: row?.provisioningMode ?? DEFAULT_ANDROID_PROVISIONING_MODE,
       lastError: row?.lastError ?? null,
       lastSyncedAt: iso(row?.lastSyncedAt ?? null),
       deviceCount: mappings.length,
@@ -311,6 +346,7 @@ export const setAndroidEnabled = (input: {
         pubsubTopic: input.config?.pubsubTopic ?? null,
         pubsubSubscription: input.config?.pubsubSubscription ?? null,
         serviceAccountEmail: input.config?.serviceAccount.clientEmail ?? null,
+        provisioningMode: DEFAULT_ANDROID_PROVISIONING_MODE,
         status: "disabled",
         lastError: null,
         lastSyncedAt: null,
@@ -323,6 +359,144 @@ export const setAndroidEnabled = (input: {
         lastError: null,
       });
     }
+  }).pipe(mapAndroidError);
+
+/**
+ * Choose how devices enrolled from now on are provisioned.
+ *
+ * The mode lives on the enterprise because enrollment tokens are minted per
+ * enrollment page load and never persisted; the token carries the mode to
+ * Google, and the device reports the mode it actually received. Existing
+ * devices keep the mode they were enrolled with.
+ */
+export const setAndroidProvisioningMode = (input: {
+  readonly db: EnterpriseDb;
+  readonly config?: AndroidDeliveryConfig;
+  readonly organizationId: string;
+  readonly mode: AndroidProvisioningMode;
+}): Effect.Effect<void, AndroidDeliveryError> =>
+  Effect.gen(function* () {
+    if (!isAndroidConfigured(input.config)) return yield* Effect.fail(notConfigured());
+
+    if (!ANDROID_PROVISIONING_MODES.includes(input.mode))
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "invalid_payload",
+          message: `Unknown Android provisioning mode "${String(input.mode)}".`,
+        }),
+      );
+
+    const row = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
+    if (!row)
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "conflict",
+          message: "Connect Android Enterprise before choosing a provisioning mode.",
+        }),
+      );
+
+    yield* updateAndroidEnterprise(input.db, input.organizationId, {
+      provisioningMode: input.mode,
+    });
+  }).pipe(mapAndroidError);
+
+export type AndroidDisconnectResult = {
+  readonly enterpriseName: string;
+};
+
+/**
+ * Disconnect the tenant from Google.
+ *
+ * `enterprises.delete` removes the enterprise together with every policy and
+ * device record Google holds for it, so the tenant cannot leave managed devices
+ * behind when it disconnects or is deleted. The local mapping rows go with the
+ * connection: the devices are no longer managed, and their shared `device` rows
+ * are marked unenrolled so the dashboard stops offering Android actions.
+ *
+ * A Google 404 is treated as success so a retried disconnect (or a tenant whose
+ * enterprise was deleted in the Google console) still cleans up locally.
+ */
+export const disconnectAndroidEnterprise = (input: {
+  readonly db: EnterpriseDb;
+  readonly config?: AndroidDeliveryConfig;
+  readonly organizationId: string;
+}): Effect.Effect<AndroidDisconnectResult | null, AndroidDeliveryError, AndroidManagement> =>
+  Effect.gen(function* () {
+    if (!isAndroidConfigured(input.config)) return yield* Effect.fail(notConfigured());
+    const row = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
+    if (!row?.enterpriseName) return null;
+    const android = yield* AndroidManagement;
+
+    yield* android.deleteEnterprise({ enterpriseName: row.enterpriseName }).pipe(
+      Effect.catchIf(
+        (cause) => cause instanceof GoogleApiError && cause.status === 404,
+        () => Effect.void,
+      ),
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not disconnect the Android enterprise: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
+    const timestamp = now();
+
+    yield* input.db
+      .update(schema.device)
+      .set({ status: "unenrolled" })
+      .where(
+        and(
+          eq(schema.device.organizationId, input.organizationId),
+          eq(schema.device.proto, "android"),
+          eq(schema.device.status, "enrolled"),
+        ),
+      );
+
+    yield* input.db
+      .delete(schema.androidDevice)
+      .where(eq(schema.androidDevice.organizationId, input.organizationId));
+
+    yield* input.db
+      .delete(schema.androidEnterprise)
+      .where(eq(schema.androidEnterprise.organizationId, input.organizationId));
+
+    // Nothing can be delivered to a device Google no longer manages.
+    const androidDeviceIds = (yield* input.db
+      .select({ id: schema.device.id })
+      .from(schema.device)
+      .where(
+        and(
+          eq(schema.device.organizationId, input.organizationId),
+          eq(schema.device.proto, "android"),
+        ),
+      )).map((device) => device.id);
+
+    if (androidDeviceIds.length > 0)
+      yield* ignoreDbFailure(
+        input.db
+          .update(schema.deviceCommand)
+          .set({
+            status: "cancelled",
+            dedupeKey: null,
+            resultStatus: RECONCILED_RESULT_STATUS,
+            resultDetail: "Android Enterprise was disconnected before the command was delivered.",
+            updatedAt: timestamp,
+          })
+          .where(
+            and(
+              eq(schema.deviceCommand.organizationId, input.organizationId),
+              inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+              inArray(schema.deviceCommand.deviceId, androidDeviceIds),
+            ),
+          ),
+      );
+
+    return { enterpriseName: row.enterpriseName };
   }).pipe(mapAndroidError);
 
 export type AndroidSignupOrganization = {
@@ -452,6 +626,7 @@ export const createAndroidSignup = (input: {
         pubsubTopic: config.pubsubTopic ?? null,
         pubsubSubscription: config.pubsubSubscription ?? null,
         serviceAccountEmail: config.serviceAccount.clientEmail,
+        provisioningMode: DEFAULT_ANDROID_PROVISIONING_MODE,
         status: "pending",
         lastError: null,
         lastSyncedAt: null,
@@ -644,11 +819,15 @@ export const completeAndroidSignup = (input: {
     ),
   );
 
+/** How long an enrollment token stays valid. */
+export const ANDROID_ENROLLMENT_TOKEN_DURATION = "3600s";
+
 export type AndroidEnrollmentTokenResult = {
   readonly value: string;
   readonly qrCode?: string;
   readonly policyName?: string;
   readonly expiresAt?: string;
+  readonly provisioningMode: AndroidProvisioningMode;
 };
 
 export const createAndroidEnrollmentToken = (input: {
@@ -671,12 +850,19 @@ export const createAndroidEnrollmentToken = (input: {
       );
     const android = yield* AndroidManagement;
 
+    // The token decides what the device may become. Sending it explicitly stops
+    // Google from applying its own default, which is what silently produced a
+    // fully managed device when an operator expected a work profile.
     const token = yield* android
       .createEnrollmentToken({
         enterpriseName: row.enterpriseName,
         policyName: config.defaultPolicyId ?? DEFAULT_ANDROID_POLICY_ID,
         additionalData: input.organizationId,
         oneTimeOnly: true,
+        allowPersonalUsage: allowPersonalUsageFor(row.provisioningMode),
+        // Enrollment tokens default to one hour; make it explicit so the value
+        // the page shows and the value Google enforces cannot drift.
+        duration: ANDROID_ENROLLMENT_TOKEN_DURATION,
       })
       .pipe(
         Effect.mapError(
@@ -689,7 +875,10 @@ export const createAndroidEnrollmentToken = (input: {
         ),
       );
 
-    const result: Mutable<AndroidEnrollmentTokenResult> = { value: token.value };
+    const result: Mutable<AndroidEnrollmentTokenResult> = {
+      value: token.value,
+      provisioningMode: row.provisioningMode,
+    };
 
     if (token.qrCode) result.qrCode = token.qrCode;
 
@@ -736,13 +925,21 @@ function intOf(value: Schema.Json | undefined): number | undefined {
   return raw !== undefined && Number.isSafeInteger(raw) && raw >= 0 ? raw : undefined;
 }
 
+/**
+ * Map an AMAPI device state onto the shared lifecycle.
+ *
+ * `DISABLED` (an administrator suspended the device) and `LOST` (lost mode) are
+ * still managed devices: Google keeps applying policy and the dashboard must
+ * keep offering commands such as re-enable or stop-lost-mode. Only a device
+ * Google has deleted, or one finance deactivated, has actually left management.
+ */
 function androidDeviceStatus(value: string | undefined): "enrolling" | "enrolled" | "unenrolled" {
   switch (value) {
     case "ACTIVE":
-      return "enrolled";
-    case "DELETED":
     case "DISABLED":
     case "LOST":
+      return "enrolled";
+    case "DELETED":
     case "DEACTIVATED_BY_DEVICE_FINANCE":
       return "unenrolled";
     default:
@@ -1612,6 +1809,564 @@ export const syncAndroidPoliciesForTenant = (input: {
     );
 
     return { devices: devices.length, updated, skipped, failed };
+  }).pipe(mapAndroidError);
+
+export type AndroidRefreshResult = {
+  readonly status: "refreshed" | "retired";
+};
+
+/**
+ * Refresh one device from Google.
+ *
+ * The device page's **Sync** action should reflect Google, not the last push
+ * Mattrax sent, and it should not have to list the whole enterprise to do it.
+ * A 404 means Google no longer has the device (it was deleted or
+ * deprovisioned), so the local row is retired instead of pushing policy into a
+ * void.
+ */
+export const refreshAndroidDevice = (input: {
+  readonly db: EnterpriseDb;
+  readonly config?: AndroidDeliveryConfig;
+  readonly authSecret?: string;
+  readonly organizationId: string;
+  readonly device: { readonly id: string; readonly dmIdentifier: string | null };
+}): Effect.Effect<AndroidRefreshResult, AndroidDeliveryError, AndroidManagement> =>
+  Effect.gen(function* () {
+    const config = input.config;
+
+    if (!isAndroidConfigured(config)) return yield* Effect.fail(notConfigured());
+    const enterprise = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
+    if (enterprise?.status !== "active" || !enterprise.enterpriseName)
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "conflict",
+          message: "Android Enterprise is not connected for this tenant.",
+        }),
+      );
+
+    if (
+      !input.device.dmIdentifier ||
+      !deviceNameBelongs(enterprise.enterpriseName, input.device.dmIdentifier)
+    )
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "invalid_payload",
+          message: "This device is not linked to the tenant's Android enterprise.",
+        }),
+      );
+    const android = yield* AndroidManagement;
+
+    const deviceName = input.device.dmIdentifier;
+
+    const resource = yield* android.getDevice({ deviceName }).pipe(
+      Effect.catchIf(
+        (cause) => cause instanceof GoogleApiError && cause.status === 404,
+        () => Effect.succeed(null),
+      ),
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not read the Android device: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
+    if (!resource) {
+      const timestamp = now();
+
+      yield* input.db
+        .update(schema.device)
+        .set({ status: "unenrolled" })
+        .where(
+          and(
+            eq(schema.device.id, input.device.id),
+            eq(schema.device.organizationId, input.organizationId),
+          ),
+        );
+
+      yield* updateAndroidDevice(input.db, input.device.id, {
+        state: "DELETED",
+        policyId: null,
+        policyHash: null,
+        appliedPolicyName: null,
+        appliedPolicyVersion: null,
+        lastSyncedAt: timestamp,
+      });
+
+      return { status: "retired" as const };
+    }
+
+    const parsed = parseAndroidDeviceResource(
+      Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(resource)),
+      enterprise.enterpriseName,
+    );
+
+    if (!parsed)
+      return yield* Effect.fail(
+        new AndroidDeliveryError({
+          kind: "upstream",
+          message: "Google returned a device without a resource name.",
+        }),
+      );
+
+    const device = yield* upsertAndroidDevice({
+      db: input.db,
+      organizationId: input.organizationId,
+      enterpriseName: enterprise.enterpriseName,
+      resource: parsed,
+    }).pipe(Effect.mapError(toAndroidDeliveryError));
+
+    yield* syncDynamicGroupsForDevice(input.db, input.organizationId, device.deviceId, {
+      now: now(),
+    }).pipe(Effect.catch(() => Effect.void));
+
+    // A missed command notification is exactly the kind of stale state an
+    // operator presses Sync to fix, so resolve this device's operations too.
+    yield* reconcileAndroidCommands({
+      db: input.db,
+      authSecret: input.authSecret,
+      organizationId: input.organizationId,
+      deviceId: device.deviceId,
+    }).pipe(Effect.mapError(toAndroidDeliveryError));
+
+    yield* syncAndroidPoliciesForTenant({
+      db: input.db,
+      config,
+      organizationId: input.organizationId,
+      deviceIds: [device.deviceId],
+    }).pipe(
+      Effect.mapError((error) =>
+        error instanceof AndroidDeliveryError
+          ? error
+          : new AndroidDeliveryError({
+              kind: "upstream",
+              message: describeAndroidError(error),
+              cause: error,
+            }),
+      ),
+    );
+
+    return { status: "refreshed" as const };
+  }).pipe(mapAndroidError);
+
+/**
+ * Resolve Android commands whose operation Google has already finished.
+ *
+ * Command results arrive as Pub/Sub notifications, which can be dropped. Polling
+ * the operation closes that gap; without it a wipe or lock stays `sent` until
+ * its budget expires even though Google finished it. One broken operation logs
+ * a warning and the rest continue.
+ */
+const reconcileAndroidCommands = (input: {
+  readonly db: EnterpriseDb;
+  readonly authSecret?: string;
+  readonly organizationId: string;
+  /** Restrict to one device; omitted for a whole-enterprise reconcile. */
+  readonly deviceId?: string;
+}): Effect.Effect<number, unknown, AndroidManagement> =>
+  Effect.gen(function* () {
+    const android = yield* AndroidManagement;
+
+    const pending = yield* input.db
+      .select()
+      .from(schema.deviceCommand)
+      .where(
+        and(
+          eq(schema.deviceCommand.organizationId, input.organizationId),
+          eq(schema.deviceCommand.status, "sent"),
+          like(schema.deviceCommand.requestType, "Android%"),
+          ...(input.deviceId ? [eq(schema.deviceCommand.deviceId, input.deviceId)] : []),
+        ),
+      )
+      .orderBy(desc(schema.deviceCommand.createdAt))
+      .limit(50);
+
+    const payloadSchema = Schema.Struct({ operationName: Schema.optional(Schema.String) });
+    let resolved = 0;
+
+    for (const command of pending) {
+      const payload = Option.getOrUndefined(
+        Schema.decodeUnknownOption(payloadSchema)(command.payload),
+      );
+
+      if (!payload?.operationName) continue;
+
+      const operation = yield* android.getOperation({ operationName: payload.operationName }).pipe(
+        Effect.catchIf(
+          (cause) => cause instanceof GoogleApiError && cause.status === 404,
+          () => Effect.succeed(undefined),
+        ),
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Could not poll Android operation ${payload.operationName}: ${describeAndroidError(error)}`,
+          ).pipe(Effect.as(undefined)),
+        ),
+      );
+
+      if (!operation || !operation.done) continue;
+
+      const operationRecord = recordOf(
+        Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(operation)),
+      );
+
+      const operationMetadata = recordOf(operationRecord?.["metadata"]);
+
+      yield* input.db
+        .update(schema.deviceCommand)
+        .set({
+          status: operation.error ? "failed" : "succeeded",
+          dedupeKey: null,
+          resultStatus: operation.error
+            ? (operation.error.status ?? "FAILED")
+            : (stringOf(operationMetadata?.["status"]) ?? "COMPLETED"),
+          resultDetail: operation.error
+            ? describeAndroidError(operation.error)
+            : commandResultDetail(operationRecord, command.requestType),
+          updatedAt: now(),
+        })
+        .where(eq(schema.deviceCommand.id, command.id));
+
+      if (operation.error)
+        yield* writeSystemAudit(
+          input.db,
+          {
+            organizationId: input.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.commandFailed,
+            targetType: "device_command",
+            targetId: command.id,
+            metadata: { deviceId: command.deviceId, requestType: command.requestType },
+          },
+          { authSecret: input.authSecret },
+        ).pipe(Effect.catch(() => Effect.void));
+
+      resolved += 1;
+    }
+
+    return resolved;
+  });
+
+export type AndroidReconcileResult = {
+  /** Devices Google reported for the enterprise. */
+  readonly reconciled: number;
+  /** Local devices marked unenrolled because Google no longer lists them. */
+  readonly removed: number;
+  /** In-flight commands whose operation Google had already finished. */
+  readonly commands: number;
+  /** Superseded `mattrax-*` policies deleted from Google. */
+  readonly policiesPruned: number;
+};
+
+/** Bound the number of API pages one reconcile will walk. */
+const ANDROID_RECONCILE_MAX_PAGES = 50;
+
+/**
+ * Make the tenant's view match Google's, without waiting for Pub/Sub.
+ *
+ * Pub/Sub is at-least-once and can drop a delivery (a misconfigured
+ * subscription, a deploy that misses the endpoint), so state that only arrives
+ * through it eventually goes stale: a device wiped in the Google console stays
+ * "enrolled" forever, and a finished command stays "sent". This walks the
+ * enterprise instead:
+ *
+ * 1. re-asserts the notification types the tenant needs,
+ * 2. lists every device and applies the same merge a notification would,
+ * 3. retires local devices Google no longer lists,
+ * 4. polls in-flight command operations,
+ * 5. pushes policy to the devices it saw,
+ * 6. deletes superseded `mattrax-*` policies no device references.
+ *
+ * Every step is tenant-scoped by the enterprise name, and a failure is reported
+ * instead of silently leaving a half-synced tenant.
+ */
+export const reconcileAndroidEnterprise = (input: {
+  readonly db: EnterpriseDb;
+  readonly config?: AndroidDeliveryConfig;
+  readonly authSecret?: string;
+  readonly organizationId: string;
+  readonly planLimits?: PlanLimitsConfig;
+}): Effect.Effect<
+  AndroidReconcileResult & AndroidSyncResult,
+  AndroidDeliveryError,
+  AndroidManagement
+> =>
+  Effect.gen(function* () {
+    const empty = {
+      devices: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
+      reconciled: 0,
+      removed: 0,
+      commands: 0,
+      policiesPruned: 0,
+    };
+
+    const config = input.config;
+
+    if (!isAndroidConfigured(config)) return empty;
+    const enterprise = yield* loadAndroidEnterprise(input.db, input.organizationId);
+
+    if (enterprise?.status !== "active" || !enterprise.enterpriseName) return empty;
+    const enterpriseName = enterprise.enterpriseName;
+    const android = yield* AndroidManagement;
+
+    // A second enterprise on the same Google project is not ours to manage, so
+    // a 404 here means the tenant's enterprise was deleted in the console.
+    const remote = yield* android.getEnterprise({ enterpriseName }).pipe(
+      Effect.catchIf(
+        (cause) => cause instanceof GoogleApiError && cause.status === 404,
+        () =>
+          Effect.fail(
+            new AndroidDeliveryError({
+              kind: "conflict",
+              message:
+                "The Android enterprise no longer exists in Google. Disconnect it here and connect again.",
+            }),
+          ),
+      ),
+      Effect.mapError(toAndroidDeliveryError),
+    );
+
+    const missingNotifications = ANDROID_NOTIFICATION_TYPES.filter(
+      (type) => !(remote.enabledNotificationTypes ?? []).includes(type),
+    );
+
+    // `enabledNotificationTypes` is fixed at creation, so an enterprise created
+    // before Mattrax asked for COMMAND events would never report command
+    // results. Re-assert it here; a failure is not fatal to the rest of the
+    // reconcile, and the next run retries.
+    if (missingNotifications.length > 0)
+      yield* android
+        .patchEnterprise({
+          enterpriseName,
+          enabledNotificationTypes: [
+            ...new Set([...(remote.enabledNotificationTypes ?? []), ...ANDROID_NOTIFICATION_TYPES]),
+          ],
+        })
+        .pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Could not update Android notification types for ${enterpriseName}: ${describeAndroidError(error)}`,
+            ),
+          ),
+        );
+
+    const resources: Array<AndroidDeviceResource> = [];
+    let pageToken: string | undefined;
+    let pages = 0;
+
+    do {
+      const page = yield* android.listDevices({ enterpriseName, pageToken }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new AndroidDeliveryError({
+              kind: "upstream",
+              message: `Could not list Android devices: ${describeAndroidError(cause)}`,
+              cause,
+            }),
+        ),
+      );
+
+      for (const device of page.devices) {
+        const resource = parseAndroidDeviceResource(
+          Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(device)),
+          enterpriseName,
+        );
+
+        if (!resource || resource.enterpriseName !== enterpriseName) continue;
+
+        if (!deviceNameBelongs(enterpriseName, resource.name)) continue;
+        resources.push(resource);
+      }
+
+      pageToken = page.nextPageToken;
+      pages += 1;
+    } while (pageToken && pages < ANDROID_RECONCILE_MAX_PAGES);
+
+    let reconciled = 0;
+
+    for (const resource of resources) {
+      const device = yield* upsertAndroidDevice({
+        db: input.db,
+        organizationId: input.organizationId,
+        enterpriseName,
+        resource,
+        planLimits: input.planLimits,
+      }).pipe(Effect.mapError(toAndroidDeliveryError));
+
+      if (device.limitReached) continue;
+      reconciled += 1;
+
+      yield* syncDynamicGroupsForDevice(input.db, input.organizationId, device.deviceId, {
+        now: now(),
+      }).pipe(Effect.catch(() => Effect.void));
+
+      if (device.created || (device.previousStatus !== "enrolled" && resource.state === "ACTIVE")) {
+        yield* writeSystemAudit(
+          input.db,
+          {
+            organizationId: input.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
+            targetType: "device",
+            targetId: device.deviceId,
+            metadata: {
+              platform: "android",
+              serial: resource.serial ?? null,
+              model: resource.model ?? null,
+              reconciled: true,
+            },
+          },
+          { authSecret: input.authSecret },
+        ).pipe(Effect.catch(() => Effect.void));
+      }
+    }
+
+    // Anything local that Google did not list has left management: a device
+    // retired in the console, or one whose enterprise record was deleted.
+    const reported = new Set(resources.map((resource) => resource.name));
+
+    const localMappings = yield* input.db
+      .select()
+      .from(schema.androidDevice)
+      .where(eq(schema.androidDevice.organizationId, input.organizationId));
+
+    const localDeviceIds = localMappings.map((mapping) => mapping.deviceId);
+
+    // Two plain reads rather than a join: the same shape the rest of this
+    // module uses, and the mapping row already carries the Google device name.
+    const localDevices = localDeviceIds.length
+      ? yield* input.db
+          .select()
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, input.organizationId),
+              inArray(schema.device.id, localDeviceIds),
+            ),
+          )
+      : [];
+
+    const localDeviceById = new Map(localDevices.map((device) => [device.id, device]));
+
+    const removedAt = now();
+    let removed = 0;
+
+    for (const device of localMappings) {
+      const row = localDeviceById.get(device.deviceId);
+
+      if (!row || reported.has(device.deviceName) || row.status === "unenrolled") continue;
+
+      yield* input.db
+        .update(schema.device)
+        .set({ status: "unenrolled" })
+        .where(
+          and(eq(schema.device.id, row.id), eq(schema.device.organizationId, input.organizationId)),
+        );
+
+      yield* updateAndroidDevice(input.db, row.id, {
+        state: "DELETED",
+        // Nothing is applied any more, so do not keep a superseded policy
+        // alive on the strength of a retired device's stale mapping.
+        policyId: null,
+        policyHash: null,
+        appliedPolicyName: null,
+        appliedPolicyVersion: null,
+        lastSyncedAt: removedAt,
+      });
+
+      removed += 1;
+      yield* writeSystemAudit(
+        input.db,
+        {
+          organizationId: input.organizationId,
+          action: SYSTEM_AUDIT_ACTIONS.deviceUnenrolled,
+          targetType: "device",
+          targetId: row.id,
+          metadata: { platform: "android", reconciled: true, reason: "not listed by Google" },
+        },
+        { authSecret: input.authSecret },
+      ).pipe(Effect.catch(() => Effect.void));
+    }
+
+    // Command results also arrive over Pub/Sub; polling closes the gap when a
+    // notification was lost, which would otherwise leave the action spinning
+    // until its budget expired.
+    const commands = yield* reconcileAndroidCommands({
+      db: input.db,
+      authSecret: input.authSecret,
+      organizationId: input.organizationId,
+    }).pipe(Effect.mapError(toAndroidDeliveryError));
+
+    const sync = yield* syncAndroidPoliciesForTenant({
+      db: input.db,
+      config,
+      organizationId: input.organizationId,
+    });
+
+    // Every device-specific policy is a new Google-side resource, so the
+    // enterprise would otherwise accumulate one per policy edit forever. Keep
+    // the baseline and anything a device currently references.
+    const keep = new Set<string>([config.defaultPolicyId ?? DEFAULT_ANDROID_POLICY_ID]);
+
+    const mappings = yield* input.db
+      .select({
+        policyId: schema.androidDevice.policyId,
+        appliedPolicyName: schema.androidDevice.appliedPolicyName,
+      })
+      .from(schema.androidDevice)
+      .where(eq(schema.androidDevice.organizationId, input.organizationId));
+
+    for (const mapping of mappings) {
+      if (mapping.policyId) keep.add(mapping.policyId);
+
+      if (mapping.appliedPolicyName)
+        keep.add(mapping.appliedPolicyName.split("/").at(-1) ?? mapping.appliedPolicyName);
+    }
+
+    let policiesPruned = 0;
+    let policyPageToken: string | undefined;
+    let policyPages = 0;
+
+    do {
+      const page = yield* android.listPolicies({ enterpriseName, pageToken: policyPageToken }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Could not list Android policies for ${enterpriseName}: ${describeAndroidError(error)}`,
+          ).pipe(Effect.as({ policies: [], nextPageToken: undefined })),
+        ),
+      );
+
+      for (const policy of page.policies) {
+        const name = Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.String)(policy["name"]),
+        );
+
+        if (!name) continue;
+        const policyId = name.split("/").at(-1);
+
+        if (!policyId || !policyId.startsWith("mattrax-") || keep.has(policyId)) continue;
+
+        const deleted = yield* android
+          .deletePolicy({ enterpriseName, policyId })
+          .pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }));
+
+        if (deleted) policiesPruned += 1;
+      }
+
+      policyPageToken = page.nextPageToken;
+      policyPages += 1;
+    } while (policyPageToken && policyPages < ANDROID_RECONCILE_MAX_PAGES);
+
+    return {
+      ...sync,
+      reconciled,
+      removed,
+      commands,
+      policiesPruned,
+    };
   }).pipe(mapAndroidError);
 
 export type AndroidPubSubResult = {

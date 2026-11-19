@@ -15,11 +15,15 @@ import {
   completeAndroidSignup,
   createAndroidEnrollmentToken,
   createAndroidSignup,
+  disconnectAndroidEnterprise,
   handleAndroidPubSub,
   issueAndroidCommand,
   mergeAndroidDevice,
   mergeAndroidDeviceInfo,
   parseAndroidDeviceResource,
+  reconcileAndroidEnterprise,
+  refreshAndroidDevice,
+  setAndroidProvisioningMode,
   syncAndroidPoliciesForTenant,
   unenrollAndroidDevice,
   withStatusReporting,
@@ -133,6 +137,10 @@ type AndroidCalls = {
   devices: Array<{ deviceName: string; policyName: string }>;
   commands: Array<IssueCommandInput>;
   deleted: Array<string>;
+  tokens: Array<Parameters<AndroidManagementService["createEnrollmentToken"]>[0]>;
+  enterprisePatches: Array<Parameters<AndroidManagementService["patchEnterprise"]>[0]>;
+  enterpriseDeletes: Array<string>;
+  policyDeletes: Array<{ enterpriseName: string; policyId: string }>;
 };
 
 function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
@@ -143,6 +151,10 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
     devices: [],
     commands: [],
     deleted: [],
+    tokens: [],
+    enterprisePatches: [],
+    enterpriseDeletes: [],
+    policyDeletes: [],
   };
 
   const service = AndroidManagement.of({
@@ -159,14 +171,17 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
 
       return Effect.succeed({ name: enterpriseName });
     },
-    createEnrollmentToken: () =>
-      Effect.succeed({
+    createEnrollmentToken: (input) => {
+      calls.tokens.push({ ...input });
+
+      return Effect.succeed({
         name: `${enterpriseName}/enrollmentTokens/t1`,
         value: "TOKEN-VALUE",
         qrCode: "QR-JSON",
         expirationTimestamp: "2026-11-12T00:00:00Z",
         policyName: `${enterpriseName}/policies/${DEFAULT_ANDROID_POLICY_ID}`,
-      }),
+      });
+    },
     patchPolicy: (input) => {
       calls.policies.push({
         enterpriseName: input.enterpriseName,
@@ -181,7 +196,30 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
 
       return Effect.succeed({ name: input.deviceName, policyName: input.policyName });
     },
+    getEnterprise: () =>
+      Effect.succeed({ name: enterpriseName, enabledNotificationTypes: ["ENROLLMENT"] }),
+    patchEnterprise: (input) => {
+      calls.enterprisePatches.push({ ...input });
+
+      return Effect.succeed({
+        name: enterpriseName,
+        enabledNotificationTypes: [...input.enabledNotificationTypes],
+      });
+    },
+    deleteEnterprise: (input) => {
+      calls.enterpriseDeletes.push(input.enterpriseName);
+
+      return Effect.void;
+    },
+    listPolicies: () => Effect.succeed({ policies: [] }),
+    deletePolicy: (input) => {
+      calls.policyDeletes.push({ enterpriseName: input.enterpriseName, policyId: input.policyId });
+
+      return Effect.void;
+    },
     listDevices: () => Effect.succeed({ devices: [] }),
+    getDevice: (input) => Effect.succeed({ name: input.deviceName }),
+    getOperation: (input) => Effect.succeed({ name: input.operationName }),
     issueCommand: (input) => {
       calls.commands.push({ ...input });
 
@@ -679,7 +717,12 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies[0]!.policy).toEqual({
       applications: [{ packageName: "com.example.app", installType: "FORCE_INSTALLED" }],
       cameraDisabled: true,
-      statusReportingSettings: { softwareInfoEnabled: true, applicationReportsEnabled: true },
+      statusReportingSettings: {
+        softwareInfoEnabled: true,
+        applicationReportsEnabled: true,
+        memoryInfoEnabled: true,
+        networkInfoEnabled: true,
+      },
     });
     expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
     expect(db.store.android_device![0]).toMatchObject({
@@ -1794,10 +1837,15 @@ describe("Android device inventory", () => {
     expect(db.store.device_application).toHaveLength(2);
   });
 
-  it("keeps application reporting on in every compiled policy", () => {
+  it("keeps inventory reporting on in every compiled policy", () => {
     expect(withStatusReporting({ cameraDisabled: true })).toEqual({
       cameraDisabled: true,
-      statusReportingSettings: { softwareInfoEnabled: true, applicationReportsEnabled: true },
+      statusReportingSettings: {
+        softwareInfoEnabled: true,
+        applicationReportsEnabled: true,
+        memoryInfoEnabled: true,
+        networkInfoEnabled: true,
+      },
     });
 
     // An explicit tenant value still wins.
@@ -1806,7 +1854,409 @@ describe("Android device inventory", () => {
         statusReportingSettings: { applicationReportsEnabled: false },
       }),
     ).toEqual({
-      statusReportingSettings: { applicationReportsEnabled: false, softwareInfoEnabled: true },
+      statusReportingSettings: {
+        applicationReportsEnabled: false,
+        softwareInfoEnabled: true,
+        memoryInfoEnabled: true,
+        networkInfoEnabled: true,
+      },
     });
+  });
+});
+
+describe("Android provisioning modes", () => {
+  it("sends the tenant's mode on every enrollment token", async () => {
+    for (const [mode, allowPersonalUsage] of [
+      ["work-profile", "PERSONAL_USAGE_ALLOWED"],
+      ["fully-managed", "PERSONAL_USAGE_DISALLOWED"],
+      ["dedicated", "PERSONAL_USAGE_DISALLOWED_USERLESS"],
+    ] as const) {
+      const db = makeDb({
+        organization: [organizationRow(organizationId, "Acme")],
+        android_enterprise: [{ ...activeEnterpriseRow(), provisioningMode: mode }],
+      });
+
+      const { service, calls } = makeAndroid({
+        createEnrollmentToken: (input) => {
+          calls.tokens.push({ ...input });
+
+          return Effect.succeed({
+            name: `${enterpriseName}/enrollmentTokens/t1`,
+            value: "TOKEN-VALUE",
+            qrCode: "QR-JSON",
+            expirationTimestamp: "2026-11-12T00:00:00Z",
+            policyName: `${enterpriseName}/policies/${DEFAULT_ANDROID_POLICY_ID}`,
+          });
+        },
+      });
+
+      const token = await provideAndroid(
+        createAndroidEnrollmentToken({ db, config, organizationId }),
+        service,
+      );
+
+      expect(token.provisioningMode).toBe(mode);
+      expect(calls.tokens[0]).toMatchObject({ allowPersonalUsage, oneTimeOnly: true });
+    }
+  });
+
+  it("records the mode used for tokens issued from now on", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    await runEffect(
+      setAndroidProvisioningMode({
+        db,
+        config,
+        organizationId,
+        mode: "fully-managed",
+      }),
+    );
+
+    expect(db.store.android_enterprise![0]).toMatchObject({ provisioningMode: "fully-managed" });
+
+    const info = await runEffect(androidEnterpriseInfo(db, organizationId, config));
+
+    expect(info.provisioningMode).toBe("fully-managed");
+  });
+
+  it("refuses a mode before the enterprise exists", async () => {
+    const db = makeDb({ organization: [organizationRow(organizationId, "Acme")] });
+
+    await expect(
+      runEffect(setAndroidProvisioningMode({ db, config, organizationId, mode: "fully-managed" })),
+    ).rejects.toBeInstanceOf(AndroidDeliveryError);
+  });
+});
+
+describe("Android reconciliation", () => {
+  /** A second Google device the tenant does not know about yet. */
+  const secondDeviceName = `${enterpriseName}/devices/device-2`;
+
+  it("pulls devices, retires missing ones and re-asserts notifications", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      // device-1 still exists in Google; device-gone was deleted there.
+      device: [
+        androidDeviceRow(),
+        {
+          ...androidDeviceRow(),
+          id: "device-gone",
+          name: "Old Pixel",
+          dmIdentifier: `${enterpriseName}/devices/gone`,
+        },
+      ],
+      android_device: [
+        {
+          deviceId: "device-1",
+          organizationId,
+          enterpriseName,
+          deviceName,
+          policyId: null,
+          policyHash: null,
+          state: "ACTIVE",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+        {
+          deviceId: "device-gone",
+          organizationId,
+          enterpriseName,
+          deviceName: `${enterpriseName}/devices/gone`,
+          policyId: "mattrax-stale",
+          policyHash: "stale",
+          state: "ACTIVE",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      android_pubsub_message: [],
+    });
+
+    const { service, calls } = makeAndroid({
+      listDevices: () =>
+        Effect.succeed({
+          devices: [
+            {
+              name: deviceName,
+              state: "ACTIVE",
+              managementMode: "PROFILE_OWNER",
+              ownership: "PERSONALLY_OWNED",
+              hardwareInfo: { model: "Pixel 9", manufacturer: "Google" },
+              softwareInfo: { androidVersion: "15" },
+            },
+            {
+              name: secondDeviceName,
+              state: "ACTIVE",
+              managementMode: "DEVICE_OWNER",
+              ownership: "COMPANY_OWNED",
+              hardwareInfo: { model: "Pixel 8", manufacturer: "Google" },
+              softwareInfo: { androidVersion: "14" },
+            },
+          ],
+        }),
+      // The enterprise was created before Mattrax asked for COMMAND events.
+      getEnterprise: () =>
+        Effect.succeed({ name: enterpriseName, enabledNotificationTypes: ["ENROLLMENT"] }),
+      listPolicies: () =>
+        Effect.succeed({
+          policies: [
+            { name: `${enterpriseName}/policies/${DEFAULT_ANDROID_POLICY_ID}` },
+            { name: `${enterpriseName}/policies/mattrax-stale` },
+            { name: `${enterpriseName}/policies/mattrax-live` },
+          ],
+        }),
+    });
+
+    const result = await provideAndroid(
+      reconcileAndroidEnterprise({ db, config, organizationId }),
+      service,
+    );
+
+    // Two Google devices, one of which was new to the tenant.
+    expect(result.reconciled).toBe(2);
+    expect(db.store.device).toHaveLength(3);
+
+    const pulled = db.store.device!.find((row) => row.dmIdentifier === secondDeviceName);
+
+    expect(pulled).toMatchObject({ proto: "android", status: "enrolled", model: "Pixel 8" });
+
+    // The device Google no longer lists is retired rather than left enrolled.
+    expect(result.removed).toBe(1);
+    expect(db.store.device!.find((row) => row.id === "device-gone")).toMatchObject({
+      status: "unenrolled",
+    });
+
+    // Notification types are re-asserted so a missed COMMAND event can be fixed.
+    expect(calls.enterprisePatches).toEqual([
+      {
+        enterpriseName,
+        enabledNotificationTypes: ["ENROLLMENT", "STATUS_REPORT", "COMMAND"],
+      },
+    ]);
+
+    // Superseded policies are deleted: the retired device no longer references
+    // `mattrax-stale`, and no device references `mattrax-live`. The baseline
+    // policy and the freshly assigned policy survive.
+    expect(result.policiesPruned).toBe(2);
+    expect(calls.policyDeletes).toEqual([
+      { enterpriseName, policyId: "mattrax-stale" },
+      { enterpriseName, policyId: "mattrax-live" },
+    ]);
+    expect(db.store.android_device!.find((row) => row.deviceId === "device-gone")).toMatchObject({
+      policyId: null,
+      state: "DELETED",
+    });
+  });
+
+  it("reconciles a command whose notification never arrived", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [
+        {
+          deviceId: "device-1",
+          organizationId,
+          enterpriseName,
+          deviceName,
+          policyId: null,
+          policyHash: null,
+          state: "ACTIVE",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      device_command: [
+        {
+          id: "command-1",
+          organizationId,
+          deviceId: "device-1",
+          requestType: "AndroidLock",
+          payload: { type: "LOCK", operationName: `${deviceName}/operations/op-1` },
+          status: "sent",
+          dedupeKey: "android:lock",
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          resultStatus: null,
+          resultDetail: null,
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const { service } = makeAndroid({
+      listDevices: () => Effect.succeed({ devices: [{ name: deviceName, state: "ACTIVE" }] }),
+      getEnterprise: () =>
+        Effect.succeed({
+          name: enterpriseName,
+          enabledNotificationTypes: ["ENROLLMENT", "STATUS_REPORT", "COMMAND"],
+        }),
+      getOperation: () => Effect.succeed({ name: `${deviceName}/operations/op-1`, done: true }),
+    });
+
+    const result = await provideAndroid(
+      reconcileAndroidEnterprise({ db, config, organizationId }),
+      service,
+    );
+
+    expect(result.commands).toBe(1);
+    expect(db.store.device_command![0]).toMatchObject({
+      status: "succeeded",
+      dedupeKey: null,
+      resultStatus: "COMPLETED",
+    });
+  });
+
+  it("reports an enterprise deleted in the Google console instead of guessing", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid({
+      getEnterprise: () => Effect.fail(new GoogleApiError({ message: "not found", status: 404 })),
+    });
+
+    await expect(
+      provideAndroid(reconcileAndroidEnterprise({ db, config, organizationId }), service),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("no longer exists in Google"),
+    });
+  });
+});
+
+describe("Android disconnection", () => {
+  it("deletes the enterprise and retires local devices", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [
+        {
+          deviceId: "device-1",
+          organizationId,
+          enterpriseName,
+          deviceName,
+          policyId: null,
+          policyHash: null,
+          state: "ACTIVE",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    const result = await provideAndroid(
+      disconnectAndroidEnterprise({ db, config, organizationId }),
+      service,
+    );
+
+    expect(result).toEqual({ enterpriseName });
+    expect(calls.enterpriseDeletes).toEqual([enterpriseName]);
+    expect(db.store.android_enterprise).toHaveLength(0);
+    expect(db.store.android_device).toHaveLength(0);
+    expect(db.store.device![0]).toMatchObject({ status: "unenrolled" });
+  });
+
+  it("treats an already-deleted enterprise as disconnected", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid({
+      deleteEnterprise: () => Effect.fail(new GoogleApiError({ message: "gone", status: 404 })),
+    });
+
+    await expect(
+      provideAndroid(disconnectAndroidEnterprise({ db, config, organizationId }), service),
+    ).resolves.toEqual({ enterpriseName });
+    expect(db.store.android_enterprise).toHaveLength(0);
+  });
+});
+
+describe("Android device refresh", () => {
+  const seed = () =>
+    makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      android_device: [
+        {
+          deviceId: "device-1",
+          organizationId,
+          enterpriseName,
+          deviceName,
+          policyId: null,
+          policyHash: null,
+          state: "ACTIVE",
+          updatedAt: new Date("2026-01-01T00:00:00Z"),
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+  it("updates the device from Google and pushes its policy", async () => {
+    const db = seed();
+
+    const { service, calls } = makeAndroid({
+      getDevice: () =>
+        Effect.succeed({
+          name: deviceName,
+          state: "ACTIVE",
+          managementMode: "PROFILE_OWNER",
+          ownership: "PERSONALLY_OWNED",
+          hardwareInfo: { model: "Pixel 9 Pro", manufacturer: "Google" },
+          softwareInfo: { androidVersion: "16", securityPatchLevel: "2026-11-01" },
+          memoryInfo: { totalRam: "8589934592" },
+        }),
+    });
+
+    const result = await provideAndroid(
+      refreshAndroidDevice({
+        db,
+        config,
+        organizationId,
+        device: { id: "device-1", dmIdentifier: deviceName },
+      }),
+      service,
+    );
+
+    expect(result.status).toBe("refreshed");
+    expect(db.store.device![0]).toMatchObject({
+      model: "Pixel 9 Pro",
+      status: "enrolled",
+    });
+    expect(db.store.android_device![0]).toMatchObject({ managementMode: "PROFILE_OWNER" });
+    // The refresh also delivers the freshly compiled policy.
+    expect(calls.devices.length).toBeGreaterThan(0);
+  });
+
+  it("retires a device Google no longer has", async () => {
+    const db = seed();
+
+    const { service } = makeAndroid({
+      getDevice: () => Effect.fail(new GoogleApiError({ message: "not found", status: 404 })),
+    });
+
+    const result = await provideAndroid(
+      refreshAndroidDevice({
+        db,
+        config,
+        organizationId,
+        device: { id: "device-1", dmIdentifier: deviceName },
+      }),
+      service,
+    );
+
+    expect(result.status).toBe("retired");
+    expect(db.store.device![0]).toMatchObject({ status: "unenrolled" });
+    expect(db.store.android_device![0]).toMatchObject({ state: "DELETED", policyId: null });
   });
 });

@@ -374,7 +374,7 @@ export default function EnrollmentSettingsPage() {
             checked={android()}
             onChange={setAndroid}
             title="Android"
-            description="Android enrollment isn't available yet."
+            description="Provision devices with a one-time Google enrollment token or QR code."
           />
         </fieldset>
 

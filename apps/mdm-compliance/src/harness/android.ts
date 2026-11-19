@@ -384,7 +384,19 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
         policyName: `${input.deviceName.split("/devices/")[0]}/policies/${input.policyName}`,
       });
     },
+    getEnterprise: () =>
+      Effect.succeed({ name: "enterprises/compliance", enabledNotificationTypes: [] }),
+    patchEnterprise: (input) =>
+      Effect.succeed({
+        name: "enterprises/compliance",
+        enabledNotificationTypes: [...input.enabledNotificationTypes],
+      }),
+    deleteEnterprise: () => Effect.void,
+    listPolicies: () => Effect.succeed({ policies: [] }),
+    deletePolicy: () => Effect.void,
     listDevices: () => Effect.succeed({ devices: [] }),
+    getDevice: (input) => Effect.succeed({ name: input.deviceName }),
+    getOperation: (input) => Effect.succeed({ name: input.operationName }),
     issueCommand: (input) => {
       calls.commands.push({ deviceName: input.deviceName, type: input.type });
 

@@ -123,11 +123,18 @@ export const androidManagementLayer = (
         AndroidManagement.of({
           createSignupUrl: () => unavailable("createSignupUrl"),
           createEnterprise: () => unavailable("createEnterprise"),
+          getEnterprise: () => unavailable("getEnterprise"),
+          patchEnterprise: () => unavailable("patchEnterprise"),
+          deleteEnterprise: () => unavailable("deleteEnterprise"),
           createEnrollmentToken: () => unavailable("createEnrollmentToken"),
           patchPolicy: () => unavailable("patchPolicy"),
+          listPolicies: () => unavailable("listPolicies"),
+          deletePolicy: () => unavailable("deletePolicy"),
           patchDevice: () => unavailable("patchDevice"),
           listDevices: () => unavailable("listDevices"),
+          getDevice: () => unavailable("getDevice"),
           issueCommand: () => unavailable("issueCommand"),
           deleteDevice: () => unavailable("deleteDevice"),
+          getOperation: () => unavailable("getOperation"),
         }),
       );

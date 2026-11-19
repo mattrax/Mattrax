@@ -337,10 +337,14 @@ import {
   androidEnterpriseInfo,
   createAndroidEnrollmentToken,
   createAndroidSignup,
+  disconnectAndroidEnterprise,
   isAndroidConfigured,
   issueAndroidCommand,
   loadAndroidEnterprise,
+  reconcileAndroidEnterprise,
+  refreshAndroidDevice,
   setAndroidEnabled,
+  setAndroidProvisioningMode,
   syncAndroidPoliciesForTenant,
   unenrollAndroidDevice,
   type AndroidDeliveryConfig,
@@ -5634,6 +5638,39 @@ export const createEnterpriseService = ({
         }
       }
 
+      // The enterprise itself outlives its devices: deleting it removes the
+      // enterprise-wide baseline policy and anything Google still holds, so a
+      // deleted tenant cannot leave a managed Android estate behind.
+      if (androidDevices.length > 0) {
+        const android = yield* Effect.serviceOption(AndroidManagement);
+
+        const enterprise = yield* loadAndroidEnterprise(db, organizationId).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+        );
+
+        if (enterprise?.enterpriseName && isAndroidConfigured(androidConfig)) {
+          const removed = Option.isSome(android)
+            ? yield* disconnectAndroidEnterprise({
+                db,
+                config: androidConfig,
+                organizationId,
+              }).pipe(
+                Effect.provideService(AndroidManagement, android.value),
+                Effect.match({ onFailure: () => false, onSuccess: () => true }),
+              )
+            : false;
+
+          if (!removed)
+            unreachable.push({
+              id: enterprise.enterpriseName,
+              name: "Android enterprise",
+              platform: "android",
+              reason:
+                "The Google enterprise could not be deleted, so its policies and device records remain in Google.",
+            });
+        }
+      }
+
       return {
         total: devices.length,
         contacted,
@@ -10360,6 +10397,7 @@ export const createEnterpriseService = ({
               enrollmentToken: token.value,
               policyName: token.policyName ? token.policyName : undefined,
               expiresAt: token.expiresAt ? token.expiresAt : undefined,
+              provisioningMode: token.provisioningMode,
             })),
             Effect.catch(() =>
               Effect.gen(function* () {
@@ -11986,8 +12024,57 @@ export const createEnterpriseService = ({
       }),
     patchTenantAndroid: (request, tenantId, payload) =>
       Effect.gen(function* () {
+        const body: {
+          enabled?: boolean;
+          provisioningMode?: "work-profile" | "fully-managed" | "dedicated";
+          disconnect?: boolean;
+        } = payload;
+
+        if (body.disconnect) {
+          // Deleting the Google enterprise removes every policy and device
+          // record Google holds, so it needs tenant-delete permission and the
+          // same recent proof of possession as a wipe.
+          const ctx = yield* requireTenant(request, tenantId, "delete");
+          yield* requireStepUp(auth, request, "android-disconnect");
+
+          const result = yield* mapAndroidFailure(
+            disconnectAndroidEnterprise({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+            }),
+          );
+
+          yield* audit(
+            ctx,
+            "android.enterprise_disconnected",
+            "android_enterprise",
+            ctx.organization.id,
+            { enterpriseName: result?.enterpriseName ?? null },
+          );
+
+          return ok;
+        }
+
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body: { enabled?: boolean } = payload;
+
+        if (body.provisioningMode !== undefined) {
+          yield* mapAndroidFailure(
+            setAndroidProvisioningMode({
+              db,
+              config: androidConfig,
+              organizationId: ctx.organization.id,
+              mode: body.provisioningMode,
+            }),
+          );
+          yield* audit(
+            ctx,
+            "android.provisioning_mode_changed",
+            "android_enterprise",
+            ctx.organization.id,
+            { mode: body.provisioningMode },
+          );
+        }
 
         if (body.enabled !== undefined) {
           yield* mapAndroidFailure(
@@ -12041,10 +12128,12 @@ export const createEnterpriseService = ({
           );
 
         const result = yield* mapAndroidFailure(
-          syncAndroidPoliciesForTenant({
+          reconcileAndroidEnterprise({
             db,
             config: androidConfig,
+            authSecret,
             organizationId: ctx.organization.id,
+            planLimits,
           }),
         );
 
@@ -12053,6 +12142,10 @@ export const createEnterpriseService = ({
           updated: result.updated,
           skipped: result.skipped,
           failed: result.failed,
+          reconciled: result.reconciled,
+          removed: result.removed,
+          commands: result.commands,
+          policiesPruned: result.policiesPruned,
         });
 
         return result;
@@ -12240,6 +12333,38 @@ export const createEnterpriseService = ({
                 ),
               )
           : [];
+
+        // An Android row is a pointer at a Google-side device. Deleting the row
+        // without deleting that device leaves Google applying the last policy
+        // forever, to a machine the dashboard no longer knows about. Retire
+        // them first and refuse the request if Google will not let go, so the
+        // operator can retry or unenroll the device individually.
+        const androidDevices = devices.filter((device) => device.proto === "android");
+
+        if (androidDevices.length > 0 && androidConfigured()) {
+          const failures: string[] = [];
+
+          for (const device of androidDevices) {
+            const outcome = yield* Effect.result(
+              unenrollAndroidDevice({
+                db,
+                config: androidConfig,
+                organizationId: ctx.organization.id,
+                device: { id: device.id, dmIdentifier: device.dmIdentifier },
+              }),
+            );
+
+            if (Predicate.isTagged(outcome, "Failure"))
+              failures.push(`${device.name}: ${outcome.failure.message}`);
+          }
+
+          if (failures.length > 0)
+            return yield* Effect.fail(
+              new EnterpriseConflict({
+                message: `These Android devices could not be removed from Google, so nothing was deleted. ${failures.slice(0, 3).join(" ")}`,
+              }),
+            );
+        }
 
         const revoked = yield* revokeDeviceCertificates(ctx.organization.id, devices);
 
@@ -13054,12 +13179,17 @@ export const createEnterpriseService = ({
         let returnToServicePayload: CommandPayload | undefined;
 
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
+          // Read this one device from Google before pushing policy: a status
+          // report can be missed, and the operator pressing Sync expects the
+          // page to reflect Google rather than the last push it received.
+          // A device Google no longer has is retired by the same call.
           yield* mapAndroidFailure(
-            syncAndroidPoliciesForTenant({
+            refreshAndroidDevice({
               db,
               config: androidConfig,
+              authSecret,
               organizationId: ctx.organization.id,
-              deviceIds: [device.id],
+              device: { id: device.id, dmIdentifier: device.dmIdentifier },
             }),
           );
           yield* audit(ctx, "device.action", "device", deviceId, {
@@ -19954,11 +20084,6 @@ export const enterpriseHandlers = (
         service.uploadApns(request, params.tenantId, payload),
       ),
     )
-    .handle("getTenantAndroid", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.getTenantAndroid(request, params.tenantId),
-      ),
-    )
     .handle("patchTenantAndroid", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchTenantAndroid(request, params.tenantId, payload),
@@ -19972,6 +20097,11 @@ export const enterpriseHandlers = (
     .handle("syncTenantAndroid", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.syncTenantAndroid(request, params.tenantId),
+      ),
+    )
+    .handle("getTenantAndroid", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantAndroid(request, params.tenantId),
       ),
     )
     .handle("getAppleFdeEscrowKey", ({ request, params }) =>

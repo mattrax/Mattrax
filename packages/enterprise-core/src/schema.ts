@@ -1754,6 +1754,21 @@ export const androidEnterprise = mysqlTable(
     /** `projects/{project}/subscriptions/{subscription}` used for pushes. */
     pubsubSubscription: shortText("pubsub_subscription"),
     serviceAccountEmail: varchar("service_account_email", { length: 320 }),
+    /**
+     * How a device provisioned with this tenant's enrollment token may be used.
+     *
+     * `work-profile` allows personal usage, so a personally owned phone gets a
+     * managed work profile; `fully-managed` requires a company-owned device
+     * with no personal profile; `dedicated` is a userless kiosk device. Google
+     * decides the real mode at provisioning time, which is recorded per device
+     * as `android_device.management_mode`.
+     */
+    provisioningMode: varchar("provisioning_mode", {
+      length: 16,
+      enum: ["work-profile", "fully-managed", "dedicated"],
+    })
+      .notNull()
+      .default("work-profile"),
     status: varchar("status", {
       length: 16,
       enum: ["pending", "active", "error", "disabled"],
@@ -2962,9 +2977,13 @@ export const groupPolicy = mysqlTable(
 );
 
 /**
- * A tenant application catalogue entry. Apple can deliver manifest/store
- * installs today; Windows and Android entries are catalogued and assigned but
- * delivery is not implemented by their management backends yet.
+ * A tenant application catalogue entry.
+ *
+ * Apple delivers manifest, store and uploaded-package installs directly. Android
+ * entries are delivered through the device's AMAPI policy (`applications`), so
+ * the package must be approved for the enterprise in Managed Google Play.
+ * Windows entries are catalogued and assigned, but the Windows management
+ * backend has no install command for them yet.
  */
 export const application = mysqlTable(
   "application",

@@ -1,0 +1,1 @@
+ALTER TABLE `android_enterprise` ADD `provisioning_mode` varchar(16) DEFAULT 'work-profile' NOT NULL;

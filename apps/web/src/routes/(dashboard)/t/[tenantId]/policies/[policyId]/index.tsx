@@ -325,13 +325,7 @@ export default function PolicyDetailPage() {
   /** Patch the policy's header and its row in the list in one snapshot. */
   const patchPolicy = async (patch: Partial<PolicyRow>) => {
     const restores = await Promise.all([
-      optimisticallyPatchItem(
-        qc,
-        params.tenantId!,
-        "policy",
-        params.policyId!,
-        patch,
-      ),
+      optimisticallyPatchItem(qc, params.tenantId!, "policy", params.policyId!, patch),
       optimisticallyUpdateList(qc, params.tenantId!, "policy", (rows) =>
         rows.map((row) => (row.id === params.policyId ? { ...row, ...patch } : row)),
       ),
@@ -417,6 +411,17 @@ export default function PolicyDetailPage() {
       });
     },
   }));
+
+  /**
+   * Whether Android delivery can actually reach this policy's devices. The
+   * banner is informational only, so it waits for the tenant's Android status
+   * instead of claiming delivery is broken on a connected tenant.
+   */
+  const android = useQuery(() => enterpriseQueries.android(params.tenantId));
+
+  const androidDeliveryUnavailable = () =>
+    configurations().some(([kind]) => kind.startsWith("mttx.android.policy")) &&
+    (!android.data?.configured || !android.data?.available);
 
   const deployments = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "policy", params.policyId), "deployments"],
@@ -604,14 +609,16 @@ export default function PolicyDetailPage() {
             }
           >
             <div class="space-y-2">
-              <Show
-                when={configurations().some(([kind]) => kind.startsWith("mttx.android.policy"))}
-              >
+              <Show when={androidDeliveryUnavailable()}>
                 <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
                   <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                   <span>
-                    Android delivery is not configured. This policy is saved, but no Android device
-                    will receive it until the tenant is connected to Android Enterprise.
+                    Android delivery is not available for this tenant. This policy is saved, but no
+                    Android device will receive it until Android Enterprise is connected in{" "}
+                    <a class="underline" href={`/t/${params.tenantId}/settings/management`}>
+                      Settings → Management
+                    </a>
+                    .
                   </span>
                 </div>
               </Show>

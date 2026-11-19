@@ -32,9 +32,6 @@ import { AbmDevicesResponse } from "../Apple.js";
 import { AbmProfileUrlResponse } from "../Apple.js";
 import { AcceptInvitationRequest } from "../Account.js";
 import { AcceptInvitationResponse } from "../Account.js";
-import { AndroidEnterpriseInfo } from "../Android.js";
-import { AndroidSignupResponse } from "../Android.js";
-import { AndroidSyncResponse } from "../Android.js";
 import { ApnsCsrResponse } from "../Credential.js";
 import { ApnsInfo } from "../Credential.js";
 import { AppleBusinessManagerInfo } from "../Apple.js";
@@ -108,9 +105,14 @@ import { EffectivePolicyResponse } from "../Policy.js";
 import { EnrollmentAttemptsResponse } from "../Enrollment.js";
 import { EnrollmentQuery } from "../Enrollment.js";
 import { EnrollmentResponse } from "../Enrollment.js";
+import { AndroidEnterpriseInfo } from "../Android.js";
+import { AndroidSignupResponse } from "../Android.js";
+import { AndroidSyncResponse } from "../Android.js";
 import { EnterpriseAndroidErrors } from "../Errors.js";
 import { EnterpriseAndroidReadErrors } from "../Errors.js";
 import { EnterpriseApnsErrors } from "../Errors.js";
+import { EnterpriseStepUpRequired } from "../Errors.js";
+import { PatchTenantAndroidRequest } from "../Android.js";
 import { EnterpriseAppleReadErrors } from "../Errors.js";
 import { EnterpriseAppleWriteErrors } from "../Errors.js";
 import { EnterpriseApplicationDownloadErrors } from "../Policy.js";
@@ -135,7 +137,6 @@ import { EnterprisePublicAdeProfileErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterprisePublicNotFoundErrors } from "../Errors.js";
 import { EnterpriseSsoErrors } from "../Errors.js";
-import { EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantBackupDownloadErrors } from "../Errors.js";
 import { EnterpriseTenantDeleteErrors } from "../Errors.js";
 import { EnterpriseTenantExportErrors } from "../Errors.js";
@@ -225,7 +226,6 @@ import { IdResponse } from "../Common.js";
 import { IdsRequest } from "../Common.js";
 import { PatchApplicationAssignmentsRequest } from "../Application.js";
 import { PatchPolicyAssignmentsRequest } from "../Policy.js";
-import { PatchTenantAndroidRequest } from "../Android.js";
 import { PatchTenantEnrollmentRequest } from "../Enrollment.js";
 import { PatchTenantRequest } from "../Tenant.js";
 import { PatchTenantAccountRequest } from "../Tenant.js";
@@ -233,6 +233,15 @@ import { PolicyAssignmentsResponse } from "../Policy.js";
 import { TenantListResponse } from "../Tenant.js";
 import { TenantAccountsResponse } from "../Tenant.js";
 import { VppAssignmentsResponse } from "../Apple.js";
+
+/**
+ * The response every mutating endpoint returns when there is nothing to say.
+ *
+ * Declared once so the generated client type references one schema instead of
+ * one per endpoint: this group is large enough that individual copies push
+ * declaration emit past the compiler's size limit.
+ */
+export const OkResponse = Schema.Struct({ status: Schema.Literal("ok") });
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
@@ -318,7 +327,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteTenantBackup", "/v1/tenants/:tenantId/backups/:id", {
       error: [...EnterpriseBackupWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -340,7 +349,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: PatchTenantRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -370,7 +379,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: ApproveAccountRecoveryRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -400,7 +409,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: PatchEntraDirectorySyncRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -460,7 +469,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseAutopilotWriteErrors,
         params: TenantAutopilotDeviceParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -522,7 +531,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("revokeScimToken", "/v1/tenants/:tenantId/scim-tokens/:tokenId", {
       error: EnterpriseTenantWriteErrors,
       params: { tenantId: Schema.String, tokenId: Schema.String },
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -577,7 +586,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteWebhookEndpoint", "/v1/tenants/:tenantId/webhooks/:webhookId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantWebhookParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -661,14 +670,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantRoleParam,
       payload: PatchTenantRoleRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
     HttpApiEndpoint.delete("deleteTenantRole", "/v1/tenants/:tenantId/roles/:roleId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantRoleParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -733,7 +742,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseTenantWriteErrors,
         params: TenantInvitationParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -763,7 +772,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseTenantWriteErrors,
         params: TenantParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -793,14 +802,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantAccountParam,
       payload: PatchTenantAccountRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
     HttpApiEndpoint.delete("removeTenantAccount", "/v1/tenants/:tenantId/accounts/:accountId", {
       error: EnterpriseTenantAccountRemoveErrors,
       params: TenantAccountParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -868,7 +877,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: PatchTenantEnrollmentRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -897,7 +906,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseApnsErrors,
       params: TenantParam,
       payload: UploadApnsRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -909,10 +918,16 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchTenantAndroid", "/v1/tenants/:tenantId/android", {
-      error: EnterpriseAndroidErrors,
+      /**
+       * `enabled` flips delivery, `provisioningMode` decides how devices
+       * enrolled from now on are provisioned, and `disconnect` deletes the
+       * Google enterprise. Disconnecting is destructive, so it requires a
+       * step-up grant in addition to tenant-delete permission.
+       */
+      error: [...EnterpriseAndroidErrors, ...EnterpriseStepUpRequired],
       params: TenantParam,
       payload: PatchTenantAndroidRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -948,7 +963,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteAppleBusinessManagerToken", "/v1/tenants/:tenantId/abm/token", {
       error: EnterpriseAppleWriteErrors,
       params: TenantParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1047,7 +1062,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteVppToken", "/v1/tenants/:tenantId/vpp/token", {
       error: EnterpriseAppleWriteErrors,
       params: TenantParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1140,14 +1155,14 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantDashboardParam,
       payload: PatchDashboardRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
     HttpApiEndpoint.delete("deleteDashboard", "/v1/tenants/:tenantId/dashboards/:dashboardId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantDashboardParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1181,7 +1196,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseTenantWriteErrors,
         params: TenantDashboardWidgetParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1193,7 +1208,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantWriteErrors,
         params: TenantDashboardParam,
         payload: DashboardLayoutRequest,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1276,7 +1291,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: IdsRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1309,7 +1324,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseTenantWriteErrors,
         params: TenantPreRegistrationParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1321,7 +1336,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantWriteErrors,
         params: TenantParam,
         payload: IdsRequest,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1330,7 +1345,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       payload: PatchDeviceRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1400,7 +1415,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantWriteErrors,
         params: TenantDeviceUserParam,
         payload: BindAppleUserIdentityRequest,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1411,7 +1426,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       {
         error: EnterpriseTenantWriteErrors,
         params: TenantDeviceUserParam,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1421,7 +1436,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       // grant and can fail because the integration is unavailable.
       error: [...EnterpriseAndroidErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1525,7 +1540,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       payload: PatchGroupRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1533,7 +1548,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       payload: PatchGroupMembersRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1541,7 +1556,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: IdsRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1616,7 +1631,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       payload: PatchPolicyRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1677,7 +1692,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseApplicationErrors,
       params: TenantIdParam,
       payload: PatchApplicationRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(
@@ -1696,7 +1711,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantWriteErrors,
         params: TenantIdParam,
         payload: PatchApplicationAssignmentsRequest,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1770,7 +1785,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterpriseTenantWriteErrors,
         params: TenantIdParam,
         payload: PatchPolicyAssignmentsRequest,
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1792,7 +1807,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
           id: Schema.String,
           deploymentId: Schema.String,
         },
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: OkResponse,
       },
     ),
   )
@@ -1801,7 +1816,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: IdsRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: OkResponse,
     }),
   )
   .add(

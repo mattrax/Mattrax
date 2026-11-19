@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -83,9 +84,49 @@ export default function ManagementSettingsPage() {
     },
   }));
 
+  /** Result of the last manual reconcile, shown inline under the panel. */
+  const [androidSyncMessage, setAndroidSyncMessage] = createSignal<string | null>(null);
+
   const syncAndroid = useMutation(() => ({
     mutationFn: () => enterprise.syncTenantAndroid(params.tenantId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
+    onSuccess: async (result) => {
+      // A reconcile also retires devices Google no longer lists and resolves
+      // command results a dropped notification would have hidden, so the
+      // summary reports more than just policy delivery.
+      const details = [
+        `${result.reconciled} reconciled from Google`,
+        result.removed > 0 ? `${result.removed} retired` : null,
+        result.commands > 0
+          ? `${result.commands} command result${result.commands === 1 ? "" : "s"}`
+          : null,
+        result.policiesPruned > 0 ? `${result.policiesPruned} old policies deleted` : null,
+      ].filter((value): value is string => value !== null);
+
+      setAndroidSyncMessage(
+        `Policies: ${result.updated} updated, ${result.skipped} unchanged, ${result.failed} failed. ${details.join(" · ")}.`,
+      );
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) });
+    },
+    onError: () => setAndroidSyncMessage(null),
+  }));
+
+  const [confirmAndroidDisconnect, setConfirmAndroidDisconnect] = createSignal(false);
+
+  const disconnectAndroid = useMutation(() => ({
+    mutationFn: () => enterprise.disconnectTenantAndroid(params.tenantId),
+    onSuccess: async () => {
+      setConfirmAndroidDisconnect(false);
+      setAndroidSyncMessage(null);
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) });
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "device") });
+    },
+  }));
+
+  const setAndroidProvisioning = useMutation(() => ({
+    mutationFn: (provisioningMode: "work-profile" | "fully-managed" | "dedicated") =>
+      enterprise.patchTenantAndroid(params.tenantId, { provisioningMode }),
+    onSettled: () =>
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.android(params.tenantId) }),
   }));
 
   const toggleAndroid = useMutation(() => ({
@@ -677,6 +718,35 @@ export default function ManagementSettingsPage() {
                       <p class="break-all font-mono text-[11px] text-foreground">
                         {data().enterpriseName}
                       </p>
+                      <label class="flex flex-wrap items-center gap-2">
+                        <span class="font-medium text-foreground">New devices enroll as</span>
+                        <select
+                          class="h-8 rounded-md border border-input bg-card px-2 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:opacity-50"
+                          aria-label="Android provisioning mode"
+                          value={data().provisioningMode}
+                          disabled={!writable() || setAndroidProvisioning.isPending}
+                          onChange={(event) => {
+                            const mode = event.currentTarget.value;
+
+                            if (
+                              mode === "work-profile" ||
+                              mode === "fully-managed" ||
+                              mode === "dedicated"
+                            )
+                              setAndroidProvisioning.mutate(mode);
+                          }}
+                        >
+                          <option value="work-profile">
+                            Work profile (personal devices allowed)
+                          </option>
+                          <option value="fully-managed">Fully managed (company owned)</option>
+                          <option value="dedicated">Dedicated device (no user)</option>
+                        </select>
+                      </label>
+                      <p class="text-[11px] leading-relaxed text-subtle-foreground">
+                        Applies to enrollment tokens issued from now on. Each device page shows the
+                        mode Google actually provisioned.
+                      </p>
                       <Show when={data().pubsubTopic}>
                         <p class="break-all">Topic: {data().pubsubTopic}</p>
                       </Show>
@@ -708,7 +778,7 @@ export default function ManagementSettingsPage() {
                           disabled={!writable() || syncAndroid.isPending}
                         >
                           <RotateCcw class="size-4" />
-                          {syncAndroid.isPending ? "Syncing…" : "Sync policies"}
+                          {syncAndroid.isPending ? "Syncing…" : "Sync devices & policies"}
                         </Button>
                         <Button
                           variant="outline"
@@ -717,18 +787,49 @@ export default function ManagementSettingsPage() {
                         >
                           Disable
                         </Button>
+                        <Button
+                          variant="ghost"
+                          class="text-destructive hover:bg-destructive/10"
+                          onClick={() => setConfirmAndroidDisconnect(true)}
+                          disabled={!writable() || disconnectAndroid.isPending}
+                        >
+                          Disconnect
+                        </Button>
                       </Show>
                     </div>
+                  </Show>
+                  <Show when={androidSyncMessage()}>
+                    <p class="rounded-lg border border-success/25 bg-success/[0.06] p-3 text-xs leading-relaxed text-success-foreground">
+                      {androidSyncMessage()}
+                    </p>
                   </Show>
                   <Show when={data().lastError}>
                     <p class="rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs leading-relaxed text-warning-foreground">
                       {data().lastError}
                     </p>
                   </Show>
+                  <ConfirmDialog
+                    open={confirmAndroidDisconnect()}
+                    onOpenChange={setConfirmAndroidDisconnect}
+                    title="Disconnect Android Enterprise?"
+                    description="This deletes the Google enterprise, including its policies and every device record in Google. Android Device Policy is removed from managed devices and they stop being managed. Device rows in Mattrax stay, marked unenrolled."
+                    confirmLabel="Disconnect"
+                    destructive
+                    pending={disconnectAndroid.isPending}
+                    onConfirm={() => disconnectAndroid.mutate()}
+                  />
                 </>
               )}
             </Show>
-            <ErrorText error={connectAndroid.error ?? syncAndroid.error ?? toggleAndroid.error} />
+            <ErrorText
+              error={
+                connectAndroid.error ??
+                syncAndroid.error ??
+                toggleAndroid.error ??
+                setAndroidProvisioning.error ??
+                disconnectAndroid.error
+              }
+            />
           </div>
         </div>
       </Panel>
@@ -1506,9 +1607,7 @@ function Step(props: { index: number; active: boolean; title: string; body: stri
       <span
         class={cn(
           "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
-          props.active
-            ? "bg-primary text-primary-foreground"
-            : "bg-hover text-muted-foreground",
+          props.active ? "bg-primary text-primary-foreground" : "bg-hover text-muted-foreground",
         )}
       >
         {props.index}

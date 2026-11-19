@@ -255,3 +255,35 @@ describe("mergeAssignedAndroidApplications", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("applications canonicalisation", () => {
+  it("keeps one entry per package with the later definition winning", () => {
+    const merged = mergeAndroidPolicies([
+      {
+        applications: [
+          { packageName: "com.example.app", installType: "AVAILABLE" },
+          { packageName: "com.example.other", installType: "FORCE_INSTALLED" },
+        ],
+      },
+      {
+        applications: [{ packageName: "com.example.app", installType: "BLOCKED" }],
+      },
+    ]);
+
+    // Google rejects a policy that lists a package twice, so the deep merge
+    // must collapse it. Later policies win, as they do for scalars.
+    expect(merged["applications"]).toEqual([
+      { installType: "BLOCKED", packageName: "com.example.app" },
+      { installType: "FORCE_INSTALLED", packageName: "com.example.other" },
+    ]);
+  });
+
+  it("preserves entries that carry no package name", () => {
+    const merged = mergeAndroidPolicies([
+      { applications: [{ installType: "KIOSK" }] },
+      { applications: [{ packageName: "com.example.app" }] },
+    ]);
+
+    expect(merged["applications"]).toHaveLength(2);
+  });
+});

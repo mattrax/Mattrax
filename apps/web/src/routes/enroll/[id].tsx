@@ -41,6 +41,7 @@ const AndroidReady = Schema.Struct({
   enrollmentToken: Schema.String,
   policyName: Schema.optional(Schema.NullOr(Schema.String)),
   expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
+  provisioningMode: Schema.Literals(["work-profile", "fully-managed", "dedicated"]),
 });
 
 const ErrorEnrollment = Schema.Struct({ error: Schema.String });
@@ -902,11 +903,22 @@ function AndroidPane(props: { id: string | undefined; android: AndroidEnrollment
           )}
         </Show>
       </div>
+      <p class="rounded-lg border border-border bg-stone-50 px-3 py-2 text-xs leading-relaxed text-stone-600">
+        {android.provisioningMode === "fully-managed"
+          ? "This enrollment creates a fully managed device. Use a company-owned device: Android removes personal accounts and the personal profile, and the device must be factory reset to enroll."
+          : android.provisioningMode === "dedicated"
+            ? "This enrollment creates a dedicated device with no user account, for a kiosk or shared device."
+            : "This enrollment creates a work profile, so the person keeps their personal apps and data while Mattrax manages a separate work profile."}
+      </p>
       <ol class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
         <li>Turn on a new or factory-reset Android device and connect it to Wi-Fi.</li>
-        <li>
-          On the welcome screen, tap six times to open the QR scanner and scan the code above.
-        </li>
+        {android.provisioningMode === "fully-managed" ? (
+          <li>Choose to set the device up as a company-owned device when the wizard asks.</li>
+        ) : (
+          <li>
+            On the welcome screen, tap six times to open the QR scanner and scan the code above.
+          </li>
+        )}
         <li>
           If you cannot scan, choose to sign in with a Google account, enter{" "}
           <span class="font-mono">afw#setup</span>, then enter the enrollment token.

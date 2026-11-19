@@ -24,6 +24,7 @@ export const STEP_UP_ACTIONS = [
   "backup-delete",
   "backup-restore",
   "device-command",
+  "android-disconnect",
   "script-change",
   "script-run",
   "billing-portal",
@@ -179,6 +180,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "restore this tenant from a backup";
     case "device-command":
       return "run this device action";
+    case "android-disconnect":
+      return "disconnect Android Enterprise";
     case "script-change":
       return "change this script";
     case "script-run":

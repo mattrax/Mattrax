@@ -22,6 +22,7 @@ export const STEP_UP_ACTIONS = [
   "backup-delete",
   "backup-restore",
   "device-command",
+  "android-disconnect",
   "script-change",
   "script-run",
   "billing-portal",

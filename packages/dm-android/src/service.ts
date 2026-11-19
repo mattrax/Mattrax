@@ -7,6 +7,7 @@ import {
   Enterprise,
   Operation,
   Policy,
+  PolicyList,
   SignupUrl,
 } from "./schema.js";
 import { GoogleAuth, GoogleAuthLive, type GoogleError } from "./google.js";
@@ -61,6 +62,10 @@ export type CreateEnrollmentTokenInput = {
   readonly policyName: string;
   readonly additionalData?: string;
   readonly oneTimeOnly?: boolean;
+  /** How the provisioned device may be used (work profile vs fully managed). */
+  readonly allowPersonalUsage?: string;
+  /** Token lifetime as an AMAPI duration string (for example `"3600s"`). */
+  readonly duration?: string;
 };
 
 export type PatchPolicyInput = {
@@ -82,6 +87,18 @@ export type ListDevicesInput = {
   readonly pageToken?: string;
   /** Defaults to 100 (the API maximum). */
   readonly pageSize?: number;
+};
+
+export type ListPoliciesInput = {
+  readonly enterpriseName: string;
+  readonly pageToken?: string;
+  /** Defaults to 100 (the API maximum). */
+  readonly pageSize?: number;
+};
+
+export type ListPoliciesResult = {
+  readonly policies: ReadonlyArray<Policy>;
+  readonly nextPageToken?: string;
 };
 
 /** Fields accepted by `enterprises.devices.issueCommand`. */
@@ -131,25 +148,56 @@ export interface AndroidManagementService {
   readonly createEnterprise: (
     input: CreateEnterpriseInput,
   ) => Effect.Effect<{ readonly name: string }, AndroidManagementError>;
+  /** Reads the Google-side enterprise, including its notification settings. */
+  readonly getEnterprise: (input: {
+    readonly enterpriseName: string;
+  }) => Effect.Effect<Enterprise, AndroidManagementError>;
+  /**
+   * Update the enterprise itself. Only the notification types are mutable here:
+   * they decide which Pub/Sub messages Google sends.
+   */
+  readonly patchEnterprise: (input: {
+    readonly enterpriseName: string;
+    readonly enabledNotificationTypes: ReadonlyArray<string>;
+  }) => Effect.Effect<Enterprise, AndroidManagementError>;
+  /** Deletes the enterprise, its policies and its devices. */
+  readonly deleteEnterprise: (input: {
+    readonly enterpriseName: string;
+  }) => Effect.Effect<void, AndroidManagementError>;
   readonly createEnrollmentToken: (
     input: CreateEnrollmentTokenInput,
   ) => Effect.Effect<EnrollmentToken, AndroidManagementError>;
   readonly patchPolicy: (input: PatchPolicyInput) => Effect.Effect<Policy, AndroidManagementError>;
+  readonly listPolicies: (
+    input: ListPoliciesInput,
+  ) => Effect.Effect<ListPoliciesResult, AndroidManagementError>;
+  readonly deletePolicy: (input: {
+    readonly enterpriseName: string;
+    readonly policyId: string;
+  }) => Effect.Effect<void, AndroidManagementError>;
   readonly patchDevice: (input: PatchDeviceInput) => Effect.Effect<Device, AndroidManagementError>;
   readonly listDevices: (
     input: ListDevicesInput,
   ) => Effect.Effect<ListDevicesResult, AndroidManagementError>;
+  readonly getDevice: (input: {
+    readonly deviceName: string;
+  }) => Effect.Effect<Device, AndroidManagementError>;
   readonly issueCommand: (
     input: IssueCommandInput,
   ) => Effect.Effect<IssueCommandResult, AndroidManagementError>;
   readonly deleteDevice: (input: {
     readonly deviceName: string;
   }) => Effect.Effect<void, AndroidManagementError>;
+  /** Polls a long-running command operation to learn its terminal state. */
+  readonly getOperation: (input: {
+    readonly operationName: string;
+  }) => Effect.Effect<Operation, AndroidManagementError>;
 }
 
-export class AndroidManagement extends Context.Service<AndroidManagement, AndroidManagementService>()(
-  "AndroidManagement",
-) {}
+export class AndroidManagement extends Context.Service<
+  AndroidManagement,
+  AndroidManagementService
+>()("AndroidManagement") {}
 
 const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 
@@ -209,6 +257,29 @@ function deviceResourceName(
               "deviceName",
               "deviceName must be a full resource name (enterprises/{enterpriseId}/devices/{deviceId})",
             ),
+          ),
+    ),
+  );
+}
+
+/**
+ * Accept a long-running operation resource name only.
+ *
+ * Command operations live under the device
+ * (`enterprises/{id}/devices/{id}/operations/{id}`); enterprise-level
+ * operations use `enterprises/{id}/operations/{id}`. Both are accepted, and
+ * anything else is rejected so a caller cannot point the request at a
+ * different Google resource.
+ */
+function operationResourceName(
+  value: string,
+): Effect.Effect<string, AndroidManagementValidationError> {
+  return resourceName(value, "operationName").pipe(
+    Effect.flatMap((name) =>
+      /^enterprises\/[^/]+(\/devices\/[^/]+)?\/operations\/[^/]+$/.test(name)
+        ? Effect.succeed(name)
+        : Effect.fail(
+            invalid("operationName", "operationName must be a full operations resource name"),
           ),
     ),
   );
@@ -320,6 +391,51 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           return { name: enterprise.name };
         });
 
+      const getEnterprise: AndroidManagementService["getEnterprise"] = (input) =>
+        Effect.gen(function* () {
+          const enterpriseName = yield* enterpriseResourceName(
+            input.enterpriseName,
+            "enterpriseName",
+          );
+
+          return yield* auth.authorizedFetch({
+            method: "GET",
+            url: apiUrl(enterpriseName),
+            schema: Enterprise,
+            label: "getEnterprise",
+          });
+        });
+
+      const patchEnterprise: AndroidManagementService["patchEnterprise"] = (input) =>
+        Effect.gen(function* () {
+          const enterpriseName = yield* enterpriseResourceName(
+            input.enterpriseName,
+            "enterpriseName",
+          );
+
+          return yield* auth.authorizedFetch({
+            method: "PATCH",
+            url: apiUrl(enterpriseName, { updateMask: "enabledNotificationTypes" }),
+            body: { enabledNotificationTypes: [...input.enabledNotificationTypes] },
+            schema: Enterprise,
+            label: "patchEnterprise",
+          });
+        });
+
+      const deleteEnterprise: AndroidManagementService["deleteEnterprise"] = (input) =>
+        Effect.gen(function* () {
+          const enterpriseName = yield* enterpriseResourceName(
+            input.enterpriseName,
+            "enterpriseName",
+          );
+
+          yield* auth.authorizedFetchVoid({
+            method: "DELETE",
+            url: apiUrl(enterpriseName),
+            label: "deleteEnterprise",
+          });
+        });
+
       const createEnrollmentToken: AndroidManagementService["createEnrollmentToken"] = (input) =>
         Effect.gen(function* () {
           const enterpriseName = yield* enterpriseResourceName(
@@ -336,6 +452,8 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
               policyName,
               additionalData: input.additionalData,
               oneTimeOnly: input.oneTimeOnly,
+              allowPersonalUsage: input.allowPersonalUsage,
+              duration: input.duration,
             },
             schema: EnrollmentToken,
             label: "createEnrollmentToken",
@@ -345,7 +463,9 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             name: token.name,
             value: token.value,
             qrCode: token.qrCode,
+            duration: token.duration,
             expirationTimestamp: token.expirationTimestamp,
+            allowPersonalUsage: token.allowPersonalUsage,
           };
         });
 
@@ -376,6 +496,51 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             body,
             schema: Policy,
             label: "patchPolicy",
+          });
+        });
+
+      const listPolicies: AndroidManagementService["listPolicies"] = (input) =>
+        Effect.gen(function* () {
+          const enterpriseName = yield* enterpriseResourceName(
+            input.enterpriseName,
+            "enterpriseName",
+          );
+
+          const list = yield* auth.authorizedFetch({
+            method: "GET",
+            url: apiUrl(`${enterpriseName}/policies`, {
+              pageSize: input.pageSize ?? 100,
+              pageToken: input.pageToken,
+            }),
+            schema: PolicyList,
+            label: "listPolicies",
+          });
+
+          return {
+            policies: list.policies ?? [],
+            nextPageToken: list.nextPageToken,
+          };
+        });
+
+      const deletePolicy: AndroidManagementService["deletePolicy"] = (input) =>
+        Effect.gen(function* () {
+          const enterpriseName = yield* enterpriseResourceName(
+            input.enterpriseName,
+            "enterpriseName",
+          );
+
+          const policyId = yield* resourceName(input.policyId, "policyId");
+
+          if (policyId.includes("/")) {
+            return yield* Effect.fail(
+              invalid("policyId", "policyId must be a single path segment"),
+            );
+          }
+
+          yield* auth.authorizedFetchVoid({
+            method: "DELETE",
+            url: apiUrl(`${enterpriseName}/policies/${policyId}`),
+            label: "deletePolicy",
           });
         });
 
@@ -415,6 +580,18 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
             devices: list.devices ?? [],
             nextPageToken: list.nextPageToken,
           };
+        });
+
+      const getDevice: AndroidManagementService["getDevice"] = (input) =>
+        Effect.gen(function* () {
+          const deviceName = yield* deviceResourceName(input.deviceName);
+
+          return yield* auth.authorizedFetch({
+            method: "GET",
+            url: apiUrl(deviceName),
+            schema: Device,
+            label: "getDevice",
+          });
         });
 
       const issueCommand: AndroidManagementService["issueCommand"] = (input) =>
@@ -458,15 +635,34 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
           });
         });
 
+      const getOperation: AndroidManagementService["getOperation"] = (input) =>
+        Effect.gen(function* () {
+          const operationName = yield* operationResourceName(input.operationName);
+
+          return yield* auth.authorizedFetch({
+            method: "GET",
+            url: apiUrl(operationName),
+            schema: Operation,
+            label: "getOperation",
+          });
+        });
+
       return AndroidManagement.of({
         createSignupUrl,
         createEnterprise,
+        getEnterprise,
+        patchEnterprise,
+        deleteEnterprise,
         createEnrollmentToken,
         patchPolicy,
+        listPolicies,
+        deletePolicy,
         patchDevice,
         listDevices,
+        getDevice,
         issueCommand,
         deleteDevice,
+        getOperation,
       });
     }),
   ).pipe(Layer.provide(GoogleAuthLive(config.serviceAccount)));

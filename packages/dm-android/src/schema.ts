@@ -38,18 +38,37 @@ export const Enterprise = Schema.StructWithRest(
 
 export type Enterprise = typeof Enterprise.Type;
 
+/**
+ * How a device provisioned with a token may be used.
+ *
+ * `PERSONAL_USAGE_ALLOWED` permits a work profile on a personally owned device
+ * (or a company-owned device with a work profile), `PERSONAL_USAGE_DISALLOWED`
+ * requires a fully managed company-owned device, and
+ * `PERSONAL_USAGE_DISALLOWED_USERLESS` is a dedicated/kiosk device with no user
+ * account.
+ */
+export const AllowPersonalUsage = Schema.Literals([
+  "PERSONAL_USAGE_ALLOWED",
+  "PERSONAL_USAGE_DISALLOWED",
+  "PERSONAL_USAGE_DISALLOWED_USERLESS",
+]);
+
+export type AllowPersonalUsage = typeof AllowPersonalUsage.Type;
+
 /** An enrollment token (and its QR code payload) for a single device. */
 export const EnrollmentToken = Schema.StructWithRest(
   Schema.Struct({
     name: Schema.String,
     value: Schema.String,
     qrCode: Schema.optional(Schema.String),
+    /** Lifetime of the token, in seconds, as an AMAPI duration string. */
+    duration: Schema.optional(Schema.String),
     expirationTimestamp: Schema.optional(Schema.String),
     policyName: Schema.optional(Schema.String),
     additionalData: Schema.optional(Schema.String),
     oneTimeOnly: Schema.optional(Schema.Boolean),
-    enrollmentTokenType: Schema.optional(Schema.String),
     allowPersonalUsage: Schema.optional(Schema.String),
+    googleAuthenticationOptions: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   }),
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
@@ -95,6 +114,14 @@ export type DeviceList = typeof DeviceList.Type;
 export const Policy = Schema.Record(Schema.String, Schema.Unknown);
 
 export type Policy = typeof Policy.Type;
+
+/** A page of policies returned by `enterprises.policies.list`. */
+export const PolicyList = Schema.Struct({
+  policies: Schema.optional(Schema.Array(Policy)),
+  nextPageToken: Schema.optional(Schema.String),
+});
+
+export type PolicyList = typeof PolicyList.Type;
 
 /** Google API `Status` attached to a failed long-running operation. */
 export const OperationStatus = Schema.Struct({

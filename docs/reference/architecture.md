@@ -5,16 +5,16 @@ boundary keeps protocol handling independent from product state.
 
 ## Layers
 
-| Layer               | Packages / apps                                                                 | Responsibility                                 |
-| ------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`                 | Wire protocols and payloads                    |
-| Management contract | `management-backend`, `management-backend-http`                                 | Interface and HMAC webhook binding             |
-| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`                                          | Shared policy/command engine and platform backends |
-| Product contracts   | `enterprise-domain`                                                             | Effect entity modules and HTTP contracts       |
-| Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-identity`, `enterprise-tokens`, `enterprise-billing`, `entra-id`, `apple-business-manager`, `email` | API composition, domain services and integrations |
-| Data                | `enterprise-core`                                                               | Drizzle/MySQL schema, R2, secrets, plan limits |
-| Hosted services     | `cloud-services`                                                                | Mail, SSO, analytics, rate limits, readiness   |
-| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                     | Dashboard, API and push relay                  |
+| Layer               | Packages / apps                                                                                                                                         | Responsibility                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`                                                                                         | Wire protocols and payloads                        |
+| Management contract | `management-backend`, `management-backend-http`                                                                                                         | Interface and HMAC webhook binding                 |
+| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`                                                                                                                  | Shared policy/command engine and platform backends |
+| Product contracts   | `enterprise-domain`                                                                                                                                     | Effect entity modules and HTTP contracts           |
+| Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-identity`, `enterprise-tokens`, `enterprise-billing`, `entra-id`, `apple-business-manager`, `email` | API composition, domain services and integrations  |
+| Data                | `enterprise-core`                                                                                                                                       | Drizzle/MySQL schema, R2, secrets, plan limits     |
+| Hosted services     | `cloud-services`                                                                                                                                        | Mail, SSO, analytics, rate limits, readiness       |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                                                                                             | Dashboard, API and push relay                      |
 
 ## Module conventions
 
@@ -175,7 +175,7 @@ Core tables:
   probe with expiry, subject/issuer, chain length, validation result and probe error).
 - `apple_fde_escrow_key` (one per tenant: escrow certificate plus the AES-GCM-sealed
   private key used to unwrap CMS recovery keys).
-- `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device` (AMAPI
+- `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device`, `android_pubsub_message` (AMAPI
   resource name, policy hash and the Android-only inventory columns).
 - `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
   and `email_outbox` (one row per transactional message, claimed and retried by the
@@ -241,7 +241,7 @@ so Android devices are skipped with a reason.
 | `apps/cloud/src/index.ts`                               | Worker composition and request pipeline |
 | `packages/enterprise-domain/src/enterprise.ts`          | REST contract                           |
 | `packages/enterprise-backend/src/enterpriseHandlers.ts` | Enterprise handlers                     |
-| `packages/mdm-apple/src/index.ts`   | Apple/Windows management                |
+| `packages/mdm-apple/src/index.ts`                       | Apple/Windows management                |
 | `packages/enterprise-core/src/schema.ts`                | Database schema                         |
 | `packages/management-backend-http/src/layer.ts`         | Webhook signing                         |
 | `packages/scep/src/pkcs7.ts`                            | SCEP CA and certificate issuance        |

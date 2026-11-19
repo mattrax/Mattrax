@@ -11,6 +11,15 @@ export const PlatformEnrollment = Schema.Union([
 
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
+/** How devices enrolled from this tenant are provisioned. */
+export const AndroidProvisioningMode = Schema.Literals([
+  "work-profile",
+  "fully-managed",
+  "dedicated",
+]);
+
+export type AndroidProvisioningMode = typeof AndroidProvisioningMode.Type;
+
 /** Android Enterprise signup/delivery state exposed to administrators. */
 export const AndroidEnterpriseStatus = Schema.Literals(["pending", "active", "error", "disabled"]);
 
@@ -31,6 +40,8 @@ export const AndroidEnterpriseInfo = Schema.Struct({
   pubsubTopic: Schema.optional(NullableString),
   pubsubSubscription: Schema.optional(NullableString),
   serviceAccountEmail: Schema.optional(NullableString),
+  /** How devices enrolled from now on will be provisioned. */
+  provisioningMode: AndroidProvisioningMode,
   lastError: Schema.optional(NullableString),
   lastSyncedAt: Schema.optional(NullableString),
   /** Android devices known to this tenant and linked to the enterprise. */
@@ -55,6 +66,18 @@ export const PatchTenantAndroidRequest = Schema.Struct({
    * pending if signup never completed.
    */
   enabled: Schema.optional(Schema.Boolean),
+  /**
+   * How devices enrolled from now on should be provisioned. Existing devices
+   * keep the mode they enrolled with; the device page shows the mode Google
+   * reported for each one.
+   */
+  provisioningMode: Schema.optional(AndroidProvisioningMode),
+  /**
+   * Delete the Google enterprise, including its policies and every device
+   * record. Devices lose Android Device Policy and stop being managed, so this
+   * is destructive and requires a step-up grant.
+   */
+  disconnect: Schema.optional(Schema.Boolean),
 });
 
 export type PatchTenantAndroidRequest = typeof PatchTenantAndroidRequest.Type;
@@ -75,6 +98,8 @@ export const AndroidEnrollment = Schema.Union([
     enrollmentToken: Schema.String,
     policyName: Schema.optional(NullableString),
     expiresAt: Schema.optional(NullableString),
+    /** Provisioning the token allows, so the page can show the right steps. */
+    provisioningMode: AndroidProvisioningMode,
   }),
   /** No enterprise is connected; the page shows setup instructions. */
   Schema.Literal("unavailable"),
@@ -82,12 +107,26 @@ export const AndroidEnrollment = Schema.Union([
 
 export type AndroidEnrollment = typeof AndroidEnrollment.Type;
 
-/** Result of an explicit Android policy sync. */
+/**
+ * Result of an explicit Android sync.
+ *
+ * `devices`/`updated`/`skipped`/`failed` describe policy delivery; the rest
+ * describe the Google-side reconcile that runs first, which recovers state that
+ * Pub/Sub has not delivered.
+ */
 export const AndroidSyncResponse = Schema.Struct({
   devices: Schema.Number,
   updated: Schema.Number,
   skipped: Schema.Number,
   failed: Schema.Number,
+  /** Devices Google reported for the enterprise. */
+  reconciled: Schema.Number,
+  /** Local devices marked unenrolled because Google no longer lists them. */
+  removed: Schema.Number,
+  /** In-flight commands resolved by polling their operation. */
+  commands: Schema.Number,
+  /** Superseded policies deleted from Google. */
+  policiesPruned: Schema.Number,
 });
 
 export type AndroidSyncResponse = typeof AndroidSyncResponse.Type;

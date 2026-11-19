@@ -27,6 +27,7 @@ import {
   formatDeviceQueryText,
   parseDeviceQueryText,
   type AndroidEnterpriseInfo,
+  type AndroidProvisioningMode,
   type AndroidSignupResponse,
   type AndroidSyncResponse,
   type AbmAssignDeviceResponse,
@@ -1769,7 +1770,14 @@ export const enterprise = {
     endpoint((api) =>
       api.getTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
-  patchTenantAndroid: (tenantId: RouteParam, payload: { enabled?: boolean }) =>
+  patchTenantAndroid: (
+    tenantId: RouteParam,
+    payload: {
+      enabled?: boolean;
+      provisioningMode?: AndroidProvisioningMode;
+      disconnect?: boolean;
+    },
+  ) =>
     endpoint((api) =>
       api.patchTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
@@ -1780,6 +1788,15 @@ export const enterprise = {
   syncTenantAndroid: (tenantId: RouteParam): EndpointPromise<AndroidSyncResponse, unknown> =>
     endpoint((api) =>
       api.syncTenantAndroid({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  disconnectTenantAndroid: (tenantId: RouteParam) =>
+    endpoint(
+      (api) =>
+        api.patchTenantAndroid({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload: { disconnect: true },
+        }),
+      { stepUp: "android-disconnect" },
     ),
   getTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
