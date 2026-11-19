@@ -5185,3 +5185,10 @@ export {
   type DynamicGroupSyncOptions,
   type DynamicGroupSyncResult,
 } from "@mattrax/mdm-core";
+
+export {
+  syncDirectoryGroup,
+  syncDirectoryGroupsForTenant,
+  type DirectoryGroupSyncOptions,
+  type DirectoryGroupSyncResult,
+} from "@mattrax/mdm-core";

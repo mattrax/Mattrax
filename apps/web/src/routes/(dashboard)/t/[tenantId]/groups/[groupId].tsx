@@ -52,8 +52,6 @@ import { enterpriseQueries } from "~/lib/enterprise";
 
 const decodeGroupNode = Schema.decodeUnknownOption(GroupNode);
 
-const decodeGroupKind = Schema.decodeUnknownOption(Schema.Literals(["manual", "dynamic"]));
-
 const decodeAssignmentMode = Schema.decodeUnknownOption(Schema.Literals(["include", "exclude"]));
 
 const GROUP_DEVICE_PAGE_SIZE = 50;
@@ -74,6 +72,7 @@ export const route = {
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "group", groupId)),
       () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "policy")),
+      () => queryClient.ensureQueryData(enterpriseQueries.directory(tenantId)),
       () =>
         queryClient.ensureQueryData({
           queryKey: [...enterpriseKeys.item(tenantId, "group", groupId), "preview"],
@@ -151,6 +150,8 @@ export default function GroupDetailPage() {
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
 
+  const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
+
   const preview = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "group", params.groupId), "preview"],
     queryFn: () => enterprise.previewGroup(params.tenantId, params.groupId),
@@ -189,6 +190,7 @@ export default function GroupDetailPage() {
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
   const [kind, setKind] = createSignal<DynamicGroupKind>("manual");
+  const [directoryGroupId, setDirectoryGroupId] = createSignal<string | null>(null);
   const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [policyModes, setPolicyModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
@@ -201,6 +203,7 @@ export default function GroupDetailPage() {
         setName(row.name);
         setNotes(row.notes ?? "");
         setKind(row.kind ?? "manual");
+        setDirectoryGroupId(row.directoryGroupId ?? null);
         setRules(row.rules ?? { version: 1 });
         setDeviceIds(new Set(row.devices?.map((d) => d.id) ?? []));
         setPolicyModes(
@@ -227,6 +230,10 @@ export default function GroupDetailPage() {
 
   const kindChanged = () => kind() !== (row()?.kind ?? "manual");
 
+  const membershipMode = () => (directoryGroupId() ? "directory" : kind());
+
+  const directoryChanged = () => (directoryGroupId() ?? null) !== (row()?.directoryGroupId ?? null);
+
   const rulesChanged = () =>
     JSON.stringify(rules()) !== JSON.stringify(row()?.rules ?? { version: 1 });
 
@@ -237,8 +244,9 @@ export default function GroupDetailPage() {
       (name() !== row()!.name ||
         notes() !== (row()!.notes ?? "") ||
         kindChanged() ||
+        directoryChanged() ||
         rulesChanged() ||
-        (kind() === "manual" &&
+        (membershipMode() === "manual" &&
           [...deviceIds()].sort().join(",") !==
             (row()!
               .devices?.map((d) => d.id)
@@ -284,13 +292,14 @@ export default function GroupDetailPage() {
         (row()?.policies ?? []).map((policy) => [policy.id, policy.mode ?? "include"]),
       );
 
-      const nextDevices = kind() === "dynamic" ? oldDevices : [...deviceIds()];
+      const nextDevices = membershipMode() === "manual" ? [...deviceIds()] : oldDevices;
       const nextPolicies = policyModes();
 
       if (
         name() !== row()?.name ||
         notes() !== (row()?.notes ?? "") ||
         kindChanged() ||
+        directoryChanged() ||
         rulesChanged()
       )
         await enterprise.patchGroup(params.tenantId, params.groupId, {
@@ -298,6 +307,7 @@ export default function GroupDetailPage() {
           notes: notes() || null,
           kind: kind(),
           rules: kind() === "dynamic" ? rules() : null,
+          directoryGroupId: directoryGroupId(),
         });
       await enterprise.patchGroupMembers(params.tenantId, params.groupId, {
         assign: {
@@ -313,14 +323,23 @@ export default function GroupDetailPage() {
       });
     },
     onMutate: async () => {
-      const nextDevices = kind() === "dynamic" ? undefined : deviceIds();
+      const nextDevices = membershipMode() === "manual" ? deviceIds() : undefined;
+
       const nextPolicies = policyModes();
+
+      const linkedDirectory = directoryGroupId()
+        ? (directory.data?.groups.find((group) => group.id === directoryGroupId()) ?? null)
+        : null;
 
       const restore = await patchGroup({
         name: name(),
         notes: notes() || null,
         kind: kind(),
         rules: kind() === "dynamic" ? rules() : null,
+        directoryGroupId: directoryGroupId(),
+        directoryGroup: linkedDirectory
+          ? { id: linkedDirectory.id, name: linkedDirectory.name }
+          : null,
         ...(nextDevices
           ? {
               devicesCount: nextDevices.size,
@@ -498,7 +517,10 @@ export default function GroupDetailPage() {
             <Show when={row()!.kind === "dynamic"}>
               <Badge>Dynamic</Badge>
             </Show>
-            <Show when={row()!.kind === "manual"}>
+            <Show when={row()!.directoryGroupId}>
+              <Badge>Directory</Badge>
+            </Show>
+            <Show when={row()!.kind === "manual" && !row()!.directoryGroupId}>
               <Badge variant="secondary">Manual</Badge>
             </Show>
             <span class="flex items-baseline gap-1.5">
@@ -565,21 +587,66 @@ export default function GroupDetailPage() {
                   <select
                     disabled={!edit()}
                     class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
-                    value={kind()}
+                    value={membershipMode()}
                     onChange={(e) => {
-                      const value = Option.getOrUndefined(decodeGroupKind(e.currentTarget.value));
+                      const value = Option.getOrUndefined(
+                        Schema.decodeUnknownOption(
+                          Schema.Literals(["manual", "dynamic", "directory"]),
+                        )(e.currentTarget.value),
+                      );
 
-                      if (value !== undefined) {
-                        if (value === "dynamic" && kind() !== "dynamic") setRevealRules(true);
-                        setKind(value);
+                      if (value === "dynamic") {
+                        setDirectoryGroupId(null);
+
+                        if (kind() !== "dynamic") setRevealRules(true);
+                        setKind("dynamic");
+                      } else if (value === "directory") {
+                        setKind("manual");
+
+                        setDirectoryGroupId(
+                          directoryGroupId() ?? (directory.data?.groups ?? [])[0]?.id ?? "",
+                        );
+
+                      } else if (value === "manual") {
+                        setDirectoryGroupId(null);
+                        setKind("manual");
                       }
                     }}
                   >
                     <option value="manual">Manual — choose devices</option>
                     <option value="dynamic">Dynamic — match device rules</option>
+                    <option value="directory">Linked directory group — follow IdP membership</option>
                   </select>
                 </Field>
               </div>
+              <Show when={membershipMode() === "directory"}>
+                <Field
+                  label="Directory group"
+                  hint="Membership follows the group's active people and their linked devices."
+                >
+                  <select
+                    disabled={!edit()}
+                    class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
+                    value={directoryGroupId() ?? ""}
+                    onChange={(e) => setDirectoryGroupId(e.currentTarget.value || null)}
+                  >
+                    <option value="">Choose a directory group</option>
+                    <For each={directory.data?.groups ?? []}>
+                      {(group) => (
+                        <option value={group.id}>
+                          {group.name} ({group.memberCount} member
+                          {group.memberCount === 1 ? "" : "s"})
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </Field>
+                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                  Device membership is read-only: each active member contributes the devices linked
+                  to them. Recomputes run after directory sync, a device-user change, or an explicit
+                  group sync. Policies and applications assigned to this group apply as usual.
+                </p>
+              </Show>
               <Field label="Notes">
                 <textarea
                   disabled={!edit()}
@@ -614,7 +681,9 @@ export default function GroupDetailPage() {
                     <div class="min-w-0">
                       <p class="font-medium text-foreground">Devices</p>
                       <p class="mt-0.5 text-[12px] text-muted-foreground">
-                        {row()?.devices?.length ?? 0} assigned manually
+                        {membershipMode() === "directory"
+                          ? `${row()?.devices?.length ?? 0} derived from directory membership`
+                          : `${row()?.devices?.length ?? 0} assigned manually`}
                       </p>
                     </div>
                     <Button size="sm" variant="outline" onClick={() => setTab("devices")}>
@@ -744,16 +813,18 @@ export default function GroupDetailPage() {
               flush
               title="Devices in this group"
               description={
-                edit()
-                  ? "Tick a device to add it to this group, untick to remove it. Remember to save your changes."
-                  : "Manual membership for this group. Use Edit to change the assigned devices."
+                membershipMode() === "directory"
+                  ? "Derived from the linked directory group. Link devices to directory users on each device to change membership."
+                  : edit()
+                    ? "Tick a device to add it to this group, untick to remove it. Remember to save your changes."
+                    : "Manual membership for this group. Use Edit to change the assigned devices."
               }
             >
               <div class="p-3">
                 <MdmTable<DeviceRow>
                   mode="server"
                   rows={deviceRows()}
-                  selectable={editable() && edit()}
+                  selectable={membershipMode() === "manual" && editable() && edit()}
                   selectedIds={deviceIds}
                   onSelectedChange={setDeviceSelection}
                   loading={groupDevices.isPending}
@@ -768,7 +839,7 @@ export default function GroupDetailPage() {
                   onSearchChange={setDeviceSearch}
                   searchPlaceholder="Search name, serial, asset tag…"
                   toolbar={
-                    <Show when={edit()}>
+                    <Show when={membershipMode() === "manual" && edit()}>
                       <div class="flex flex-wrap items-center justify-between gap-2">
                         <p class="text-[11.5px] text-muted-foreground">
                           {deviceIds().size} device{deviceIds().size === 1 ? "" : "s"} selected in

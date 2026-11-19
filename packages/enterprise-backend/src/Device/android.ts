@@ -1434,10 +1434,62 @@ const assignedAndroidApplications = (
           )
       : [];
 
+    // Directory user groups assigned this application reach the device through
+    // its linked, active directory users, mirroring user-group policies.
+    const linkedUsers = yield* db
+      .select({ userId: schema.deviceUser.userId })
+      .from(schema.deviceUser)
+      .where(
+        and(
+          eq(schema.deviceUser.organizationId, input.organizationId),
+          eq(schema.deviceUser.deviceId, input.deviceId),
+        ),
+      );
+
+    const linkedUserIds = linkedUsers.map((row) => row.userId);
+
+    const activeUsers = linkedUserIds.length
+      ? yield* db
+          .select({ id: schema.user.id })
+          .from(schema.user)
+          .where(
+            and(
+              eq(schema.user.organizationId, input.organizationId),
+              eq(schema.user.disabled, false),
+              inArray(schema.user.id, linkedUserIds),
+            ),
+          )
+      : [];
+
+    const activeUserIds = activeUsers.map((row) => row.id);
+
+    const userGroupMembers = activeUserIds.length
+      ? yield* db
+          .select({ groupId: schema.userGroupMember.groupId })
+          .from(schema.userGroupMember)
+          .where(inArray(schema.userGroupMember.userId, activeUserIds))
+      : [];
+
+    const userGroupApplications = userGroupMembers.length
+      ? yield* db
+          .select({ applicationId: schema.userGroupApplication.applicationId })
+          .from(schema.userGroupApplication)
+          .where(
+            and(
+              eq(schema.userGroupApplication.organizationId, input.organizationId),
+              inArray(
+                schema.userGroupApplication.groupId,
+                [...new Set(userGroupMembers.map((row) => row.groupId))],
+              ),
+            ),
+          )
+      : [];
+
     const ids = [
       ...new Set([
         ...direct.map((row) => row.applicationId),
         ...groupApplications.map((row) => row.applicationId),
+        ...userGroupApplications.map((row) => row.applicationId),
       ]),
     ];
 

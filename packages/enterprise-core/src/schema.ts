@@ -2854,12 +2854,30 @@ export const enterpriseGroup = mysqlTable(
       .default("manual"),
     /** Versioned membership rules. Required for `dynamic`, null for `manual`. */
     rules: json("rules").$type<DynamicGroupRules>(),
-    /** Last time a dynamic group's materialised membership was recomputed. */
+    /**
+     * The directory group whose membership this group mirrors. When set, the
+     * group is device-targeting but membership is derived: every active
+     * directory user in the group contributes their linked devices, stored as
+     * `group_device.source = 'directory'` rows. Administrators cannot edit the
+     * membership directly.
+     */
+    directoryGroupId: id("directory_group_id").references(() => userGroup.id, {
+      onDelete: "set null",
+    }),
+    /** Last time a dynamic or directory group's membership was recomputed. */
     lastEvaluatedAt: timestamp("last_evaluated_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [index("enterprise_group_organization_id_idx").on(table.organizationId)],
+  (table) => [
+    index("enterprise_group_organization_id_idx").on(table.organizationId),
+    // One directory group can drive at most one device group. MySQL unique
+    // indexes admit multiple NULLs, so unlinked groups are unaffected.
+    uniqueIndex("enterprise_group_directory_unique").on(
+      table.organizationId,
+      table.directoryGroupId,
+    ),
+  ],
 );
 
 /**
@@ -3040,8 +3058,10 @@ export const groupDevice = mysqlTable(
      * `manual` rows are created by an administrator. `dynamic` rows are
      * materialised from `enterprise_group.rules` and may be replaced on every
      * recompute; manual rows survive recomputes as explicit exceptions.
+     * `directory` rows are derived from the group's linked directory group and
+     * are replaced whenever directory membership or a device-user link changes.
      */
-    source: varchar("source", { length: 16, enum: ["manual", "dynamic"] })
+    source: varchar("source", { length: 16, enum: ["manual", "dynamic", "directory"] })
       .notNull()
       .default("manual"),
   },
@@ -3292,6 +3312,34 @@ export const userGroupPolicy = mysqlTable(
     index("user_group_policy_group_idx").on(table.groupId),
     index("user_group_policy_policy_idx").on(table.policyId),
     index("user_group_policy_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * Application assignment to a directory user group.
+ *
+ * Members' linked devices receive the application, mirroring how
+ * `user_group_policy` reaches the device through `device_user`.
+ */
+export const userGroupApplication = mysqlTable(
+  "user_group_application",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    groupId: id("group_id")
+      .notNull()
+      .references(() => userGroup.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.applicationId] }),
+    index("user_group_application_group_idx").on(table.groupId),
+    index("user_group_application_application_idx").on(table.applicationId),
+    index("user_group_application_organization_idx").on(table.organizationId),
   ],
 );
 
@@ -3645,6 +3693,7 @@ export const relations = defineRelations(
     deviceUser,
     userPolicy,
     userGroupPolicy,
+    userGroupApplication,
     enterpriseEnrollment,
     androidEnterprise,
     androidDevice,
@@ -4023,6 +4072,10 @@ export const relations = defineRelations(
         from: r.enterpriseGroup.organizationId,
         to: r.organization.id,
       }),
+      directoryGroup: r.one.userGroup({
+        from: r.enterpriseGroup.directoryGroupId,
+        to: r.userGroup.id,
+      }),
       devices: r.many.groupDevice({ from: r.enterpriseGroup.id, to: r.groupDevice.groupId }),
       policies: r.many.groupPolicy({ from: r.enterpriseGroup.id, to: r.groupPolicy.groupId }),
       applications: r.many.applicationGroup({
@@ -4053,6 +4106,10 @@ export const relations = defineRelations(
       organization: r.one.organization({
         from: r.application.organizationId,
         to: r.organization.id,
+      }),
+      userGroups: r.many.userGroupApplication({
+        from: r.application.id,
+        to: r.userGroupApplication.applicationId,
       }),
     },
     applicationGroup: {
@@ -4091,6 +4148,26 @@ export const relations = defineRelations(
     userGroupPolicy: {
       group: r.one.userGroup({ from: r.userGroupPolicy.groupId, to: r.userGroup.id }),
       policy: r.one.policy({ from: r.userGroupPolicy.policyId, to: r.policy.id }),
+    },
+    userGroupApplication: {
+      group: r.one.userGroup({ from: r.userGroupApplication.groupId, to: r.userGroup.id }),
+      application: r.one.application({
+        from: r.userGroupApplication.applicationId,
+        to: r.application.id,
+      }),
+    },
+    userGroup: {
+      organization: r.one.organization({ from: r.userGroup.organizationId, to: r.organization.id }),
+      members: r.many.userGroupMember({ from: r.userGroup.id, to: r.userGroupMember.groupId }),
+      policies: r.many.userGroupPolicy({ from: r.userGroup.id, to: r.userGroupPolicy.groupId }),
+      applications: r.many.userGroupApplication({
+        from: r.userGroup.id,
+        to: r.userGroupApplication.groupId,
+      }),
+      deviceGroups: r.many.enterpriseGroup({
+        from: r.userGroup.id,
+        to: r.enterpriseGroup.directoryGroupId,
+      }),
     },
     organizationDeviceUsage: {
       organization: r.one.organization({

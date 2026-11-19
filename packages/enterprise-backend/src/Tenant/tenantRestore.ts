@@ -11,7 +11,7 @@ import {
   validateTenantBranding,
   type TenantExportGroup,
 } from "@mattrax/enterprise-domain";
-import { validateConfiguration } from "@mattrax/mdm-apple";
+import { syncDirectoryGroupsForTenant, validateConfiguration } from "@mattrax/mdm-apple";
 import { schema } from "@mattrax/enterprise-core";
 import { loadTenantEscrowKey } from "../Device/fdeEscrow.ts";
 import {
@@ -116,6 +116,7 @@ type ParsedBundle = {
       priority: number;
     }>;
     groupKeys: ReadonlyArray<string>;
+    userGroupIds: ReadonlyArray<string>;
   }>;
   deviceAssignments: ReadonlyArray<{
     deviceKey: string;
@@ -597,6 +598,9 @@ export const parseTenantRestoreBundle = (
           priority: installer.priority ?? 0,
         })),
         groupKeys: application.groupKeys ?? [],
+        userGroupIds: Array.isArray(application.userGroupIds)
+          ? application.userGroupIds.filter((id): id is string => typeof id === "string")
+          : [],
       })),
       preRegistrations: preRegistrations.map((row) => ({
         // SAFETY: the validation loop above rejected pre-registrations without
@@ -715,6 +719,13 @@ const applyBundle = (
       .from(schema.enterpriseGroup)
       .where(eq(schema.enterpriseGroup.organizationId, organization.id));
 
+    const existingDirectoryGroups = yield* db
+      .select({ id: schema.userGroup.id })
+      .from(schema.userGroup)
+      .where(eq(schema.userGroup.organizationId, organization.id));
+
+    const existingDirectoryGroupIds = new Set(existingDirectoryGroups.map((row) => row.id));
+
     const existingApplications = yield* db
       .select({ id: schema.application.id })
       .from(schema.application)
@@ -724,7 +735,7 @@ const applyBundle = (
     const groupIds = existingGroups.map((row) => row.id);
     const applicationIds = existingApplications.map((row) => row.id);
 
-    return yield* db.transaction((tx) =>
+    const applied = yield* db.transaction((tx) =>
       Effect.gen(function* () {
         // Children first. Production cascades these from the parent rows, but
         // deleting explicitly keeps the order visible and measurable in tests.
@@ -739,6 +750,9 @@ const applyBundle = (
           yield* tx
             .delete(schema.applicationDevice)
             .where(inArray(schema.applicationDevice.applicationId, applicationIds));
+          yield* tx
+            .delete(schema.userGroupApplication)
+            .where(inArray(schema.userGroupApplication.applicationId, applicationIds));
         }
 
         if (groupIds.length > 0) {
@@ -826,6 +840,13 @@ const applyBundle = (
             notes: text(group.notes, 10_000),
             kind: group.kind === "dynamic" ? "dynamic" : "manual",
             rules: group.kind === "dynamic" ? (group.rules ?? null) : null,
+            // Restore is in-place: directory groups survive it, so re-link only
+            // when the exported directory group still exists. An older bundle
+            // has no link and restores an unlinked group.
+            directoryGroupId:
+              group.directoryGroupId && existingDirectoryGroupIds.has(group.directoryGroupId)
+                ? group.directoryGroupId
+                : null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -989,7 +1010,7 @@ const applyBundle = (
         const groupDeviceValues: Array<{
           groupId: string;
           deviceId: string;
-          source: "manual" | "dynamic";
+          source: "manual" | "dynamic" | "directory";
         }> = [];
 
         const seenMemberships = new Set<string>();
@@ -1019,6 +1040,14 @@ const applyBundle = (
 
         if (groupDeviceValues.length > 0)
           yield* tx.insert(schema.groupDevice).ignore().values(groupDeviceValues);
+
+        // Directory-linked groups are restored from live directory membership,
+        // not from the exported device list: an in-place restore keeps directory
+        // groups and their memberships. This also sweeps derived rows whose link
+        // disappeared while the bundle was taken.
+        yield* syncDirectoryGroupsForTenant(tx, organization.id, {
+          now: timestamp,
+        });
 
         const applicationIdByKey = new Map<string, string>();
         let applicationsWithoutFiles = 0;
@@ -1111,6 +1140,37 @@ const applyBundle = (
 
         if (applicationGroupValues.length > 0)
           yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
+
+        const applicationUserGroupValues: Array<{
+          organizationId: string;
+          groupId: string;
+          applicationId: string;
+          createdAt: Date;
+        }> = [];
+
+        for (const application of bundle.applications) {
+          const applicationId = applicationIdByKey.get(application.key)!;
+
+          for (const groupId of application.userGroupIds ?? []) {
+            // Directory groups are not part of a bundle. Re-link only when the
+            // restore target already has that group; otherwise drop the
+            // assignment rather than pointing at an id the tenant does not own.
+            if (!existingDirectoryGroupIds.has(groupId)) continue;
+
+            applicationUserGroupValues.push({
+              organizationId: organization.id,
+              groupId,
+              applicationId,
+              createdAt: timestamp,
+            });
+          }
+        }
+
+        if (applicationUserGroupValues.length > 0)
+          yield* tx
+            .insert(schema.userGroupApplication)
+            .ignore()
+            .values(applicationUserGroupValues);
 
         // Device-level assignments are part of the configuration, not the
         // device: the device itself survives a restore. A bundle entry whose
@@ -1240,6 +1300,8 @@ const applyBundle = (
         };
       }),
     );
+
+    return applied;
   });
 
 /**

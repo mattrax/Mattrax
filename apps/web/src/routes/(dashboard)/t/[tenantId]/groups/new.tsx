@@ -26,6 +26,7 @@ export const route = {
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "policy")),
+      () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
     ]);
   },
 };
@@ -38,6 +39,7 @@ export default function NewGroupPage() {
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
   const [kind, setKind] = createSignal<DynamicGroupKind>("manual");
+  const [directoryGroupId, setDirectoryGroupId] = createSignal<string | null>(null);
   const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [devices, setDevices] = createSignal<Set<string>>(new Set());
   const [policies, setPolicies] = createSignal<Set<string>>(new Set());
@@ -46,6 +48,10 @@ export default function NewGroupPage() {
 
   const policyList = useQuery(() => enterpriseQueries.list(params.tenantId, "policy"));
 
+  const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
+
+  const membershipMode = () => (directoryGroupId() ? "directory" : kind());
+
   const create = useMutation(() => ({
     mutationFn: () =>
       enterprise.createGroup(params.tenantId, {
@@ -53,7 +59,8 @@ export default function NewGroupPage() {
         notes: notes() || null,
         kind: kind(),
         rules: kind() === "dynamic" ? rules() : null,
-        devices: kind() === "manual" ? [...devices()] : [],
+        directoryGroupId: directoryGroupId(),
+        devices: membershipMode() === "manual" ? [...devices()] : [],
         policies: [...policies()],
       }),
     onSuccess: async ({ id }) => {
@@ -68,6 +75,15 @@ export default function NewGroupPage() {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     update(next);
+  };
+
+  const devicesDescription = () => {
+    if (membershipMode() === "dynamic") return "Membership is computed from the rules.";
+
+    if (membershipMode() === "directory")
+      return "Membership is derived from the directory group.";
+
+    return "Pick devices to include now.";
   };
 
   return (
@@ -104,21 +120,65 @@ export default function NewGroupPage() {
               <Field label="Membership">
                 <select
                   class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
-                  value={kind()}
+                  value={membershipMode()}
                   onChange={(e) => {
                     const value = Option.getOrUndefined(
-                      Schema.decodeUnknownOption(Schema.Literals(["manual", "dynamic"]))(
-                        e.currentTarget.value,
-                      ),
+                      Schema.decodeUnknownOption(
+                        Schema.Literals(["manual", "dynamic", "directory"]),
+                      )(e.currentTarget.value),
                     );
 
-                    if (value !== undefined) setKind(value);
+                    if (value === "dynamic") {
+                      setDirectoryGroupId(null);
+                      setKind("dynamic");
+                    } else if (value === "directory") {
+                      setKind("manual");
+                      setDirectoryGroupId(
+                        (directory.data?.groups ?? [])[0]?.id ?? "",
+                      );
+                    } else if (value === "manual") {
+                      setDirectoryGroupId(null);
+                      setKind("manual");
+                    }
                   }}
                 >
                   <option value="manual">Manual — choose devices</option>
                   <option value="dynamic">Dynamic — match device rules</option>
+                  <option value="directory">Linked directory group — follow IdP membership</option>
                 </select>
               </Field>
+              <Show when={membershipMode() === "directory"}>
+                <Field
+                  label="Directory group"
+                  hint="Devices are derived from each member's linked devices."
+                >
+                  <select
+                    class="h-8 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={directoryGroupId() ?? ""}
+                    onChange={(e) => setDirectoryGroupId(e.currentTarget.value || null)}
+                  >
+                    <option value="">Choose a directory group</option>
+                    <For each={directory.data?.groups ?? []}>
+                      {(group) => (
+                        <option value={group.id}>
+                          {group.name} ({group.memberCount} member
+                          {group.memberCount === 1 ? "" : "s"})
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                </Field>
+                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                  Membership is recomputed whenever the directory group's members or a member's
+                  linked devices change. Add devices by linking them to directory users on the
+                  device page; the group's device list is read-only.
+                </p>
+                <Show when={(directory.data?.groups.length ?? 0) === 0}>
+                  <p class="text-[11.5px] text-muted-foreground">
+                    No directory groups are synced yet. Connect Entra ID or SCIM in Settings first.
+                  </p>
+                </Show>
+              </Show>
               <Show when={kind() === "dynamic"}>
                 <div class="animate-in rounded-lg border border-border bg-surface p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
                   <GroupRuleBuilder rules={rules()} onChange={setRules} />
@@ -126,7 +186,13 @@ export default function NewGroupPage() {
               </Show>
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-                <Button type="submit" disabled={create.isPending}>
+                <Button
+                  type="submit"
+                  disabled={
+                    create.isPending ||
+                    (membershipMode() === "directory" && !directoryGroupId())
+                  }
+                >
                   {create.isPending ? "Creating…" : "Create group"}
                 </Button>
                 <Button
@@ -144,23 +210,20 @@ export default function NewGroupPage() {
             <Panel
               flush
               title="Devices"
-              description={
-                kind() === "dynamic"
-                  ? "Membership is computed from the rules."
-                  : "Pick devices to include now."
-              }
+              description={devicesDescription()}
               actions={
                 <Badge variant="secondary" class="tabular-nums">
-                  {kind() === "dynamic" ? "rule-based" : devices().size}
+                  {membershipMode() === "manual" ? devices().size : "derived"}
                 </Badge>
               }
             >
               <Show
-                when={kind() === "manual"}
+                when={membershipMode() === "manual"}
                 fallback={
                   <p class="px-4 py-4 text-[12.5px] leading-relaxed text-muted-foreground sm:px-5">
-                    Membership is computed from the rules above. You can preview matches after the
-                    group is created.
+                    {membershipMode() === "directory"
+                      ? "Devices are added automatically from the linked directory group's members and their linked devices. You can review the derived membership after the group is created."
+                      : "Membership is computed from the rules above. You can preview matches after the group is created."}
                   </p>
                 }
               >

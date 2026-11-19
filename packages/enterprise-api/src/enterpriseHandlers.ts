@@ -146,6 +146,8 @@ import {
   replayWebhookDelivery as redeliverWebhook,
   resolveEffectivePolicyForDevice,
   sendTestWebhook,
+  syncDirectoryGroup,
+  syncDirectoryGroupsForTenant,
   syncDynamicGroup,
   syncDynamicGroupsForDevice,
   toWebhookEndpointInfo,
@@ -2571,6 +2573,11 @@ export const createEnterpriseService = ({
 
       if (ids.length === 0) return;
 
+      // Re-derive every linked device group before waking devices: a membership
+      // change can add or remove a device from a group whose policies are
+      // device-targeted, not only the user's own user-scoped policies.
+      yield* syncDirectoryGroupsForTenant(db, organizationId);
+
       const links = yield* db
         .select({ deviceId: schema.deviceUser.deviceId })
         .from(schema.deviceUser)
@@ -2795,6 +2802,16 @@ export const createEnterpriseService = ({
         .from(schema.applicationDevice)
         .where(eq(schema.applicationDevice.applicationId, applicationId));
 
+      const userGroups = yield* db
+        .select({ groupId: schema.userGroupApplication.groupId })
+        .from(schema.userGroupApplication)
+        .where(
+          and(
+            eq(schema.userGroupApplication.organizationId, organizationId),
+            eq(schema.userGroupApplication.applicationId, applicationId),
+          ),
+        );
+
       const groupDevices = groups.length
         ? yield* db
             .select()
@@ -2807,9 +2824,50 @@ export const createEnterpriseService = ({
             )
         : [];
 
+      // A directory user group reaches devices through its active members and
+      // their explicit device links, exactly like a user-group policy.
+      const directoryUserGroupIds = [...new Set(userGroups.map((row) => row.groupId))];
+
+      const userGroupMembers = directoryUserGroupIds.length
+        ? yield* db
+            .select({ userId: schema.userGroupMember.userId })
+            .from(schema.userGroupMember)
+            .where(inArray(schema.userGroupMember.groupId, directoryUserGroupIds))
+        : [];
+
+      const memberIds = [...new Set(userGroupMembers.map((row) => row.userId))];
+
+      const activeUsers = memberIds.length
+        ? yield* db
+            .select({ id: schema.user.id })
+            .from(schema.user)
+            .where(
+              and(
+                eq(schema.user.organizationId, organizationId),
+                eq(schema.user.disabled, false),
+                inArray(schema.user.id, memberIds),
+              ),
+            )
+        : [];
+
+      const activeIds = activeUsers.map((row) => row.id);
+
+      const userDevices = activeIds.length
+        ? yield* db
+            .select({ deviceId: schema.deviceUser.deviceId })
+            .from(schema.deviceUser)
+            .where(
+              and(
+                eq(schema.deviceUser.organizationId, organizationId),
+                inArray(schema.deviceUser.userId, activeIds),
+              ),
+            )
+        : [];
+
       const ids = new Set<string>([
         ...direct.map((row) => row.deviceId),
         ...groupDevices.map((row) => row.deviceId),
+        ...userDevices.map((row) => row.deviceId),
       ]);
 
       if (ids.size === 0) return [];
@@ -3057,6 +3115,29 @@ export const createEnterpriseService = ({
       if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
 
       return group;
+    });
+
+  /**
+   * One directory group drives at most one device group. The database enforces
+   * it with a unique index; checking first turns the race into a readable error
+   * instead of a driver failure.
+   */
+  const assertDirectoryLinkAvailable = (
+    tenantId: string,
+    directoryGroupId: string,
+    groupId?: string,
+  ) =>
+    Effect.gen(function* () {
+      const existing = yield* db.query.enterpriseGroup.findFirst({
+        where: { organizationId: tenantId, directoryGroupId },
+      });
+
+      if (existing && existing.id !== groupId)
+        return yield* Effect.fail(
+          new EnterpriseConflict({
+            message: "That directory group already drives another device group.",
+          }),
+        );
     });
 
   /**
@@ -3764,6 +3845,7 @@ export const createEnterpriseService = ({
       Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.NullOr(DynamicGroupRules))(row.rules),
       ) ?? null,
+    directoryGroupId: row.directoryGroupId ?? null,
     lastEvaluatedAt: row.lastEvaluatedAt ? iso(row.lastEvaluatedAt) : null,
     devicesCount,
     policiesCount,
@@ -4008,6 +4090,7 @@ export const createEnterpriseService = ({
     groupsCount = 0,
     devicesCount = 0,
     installers: ReadonlyArray<ReturnType<typeof rowInstaller>> = [],
+    userGroupsCount = 0,
   ) => ({
     id: row.id,
     name: row.name,
@@ -4024,6 +4107,7 @@ export const createEnterpriseService = ({
     notes: row.notes,
     installers,
     groupsCount,
+    userGroupsCount,
     devicesCount,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
@@ -4628,7 +4712,7 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const groups = new Map<
         string,
-        Array<{ id: string; name: string; source: "manual" | "dynamic" }>
+        Array<{ id: string; name: string; source: "manual" | "dynamic" | "directory" }>
       >();
 
       if (deviceIds.length === 0) return groups;
@@ -14614,12 +14698,14 @@ export const createEnterpriseService = ({
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
+          directoryGroupId?: string | null;
           devices?: Array<string>;
           policies?: Array<string>;
         } = payload;
 
         const kind = body.kind ?? "manual";
         const rules = kind === "dynamic" ? (body.rules ?? null) : null;
+        const directoryGroupId = body.directoryGroupId?.trim() || null;
 
         if (kind === "dynamic") {
           const problem = dynamicGroupRulesProblem(rules);
@@ -14638,6 +14724,25 @@ export const createEnterpriseService = ({
           );
         }
 
+        if (directoryGroupId) {
+          if (kind === "dynamic")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "A linked directory group cannot also use dynamic rules",
+              }),
+            );
+
+          if (body.devices?.length)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "A linked directory group derives its device membership",
+              }),
+            );
+
+          yield* assertTenantUserGroups(ctx.organization.id, [directoryGroupId]);
+          yield* assertDirectoryLinkAvailable(ctx.organization.id, directoryGroupId);
+        }
+
         yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
         yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
         const groupId = id();
@@ -14648,6 +14753,7 @@ export const createEnterpriseService = ({
           notes: body.notes ?? null,
           kind,
           rules,
+          directoryGroupId,
           lastEvaluatedAt: null,
           createdAt: now(),
           updatedAt: now(),
@@ -14670,7 +14776,10 @@ export const createEnterpriseService = ({
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
 
-        if (body.devices?.length || body.policies?.length)
+        if (directoryGroupId)
+          yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
+
+        if (body.devices?.length || body.policies?.length || directoryGroupId)
           yield* syncAndroidDevices(ctx.organization.id, [
             ...(body.devices ?? []),
             ...(yield* applePush.deviceIdsInGroups([groupId])),
@@ -14678,6 +14787,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "group.created", "group", groupId, {
           name: body.name,
           kind,
+          directoryGroupId,
           devices: body.devices?.length ?? 0,
           policies: body.policies?.length ?? 0,
         });
@@ -14738,6 +14848,7 @@ export const createEnterpriseService = ({
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
+          directoryGroupId?: string | null;
         } = payload;
 
         const kind = body.kind ?? existing.kind ?? "manual";
@@ -14761,10 +14872,39 @@ export const createEnterpriseService = ({
           );
         }
 
+        const directoryGroupId =
+          body.directoryGroupId === undefined
+            ? (existing.directoryGroupId ?? null)
+            : body.directoryGroupId?.trim() || null;
+
+        if (body.directoryGroupId !== undefined && directoryGroupId) {
+          if (kind === "dynamic")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "A linked directory group cannot also use dynamic rules",
+              }),
+            );
+
+          yield* assertTenantUserGroups(ctx.organization.id, [directoryGroupId]);
+          yield* assertDirectoryLinkAvailable(ctx.organization.id, directoryGroupId, groupId);
+        }
+
+        // Switching a linked group to dynamic rules must unlink it first; a
+        // dynamic group cannot also derive membership from a directory group.
+        const nextDirectoryGroupId = kind === "dynamic" ? null : directoryGroupId;
+
         const wasDynamic = existing.kind === "dynamic";
+        const wasLinked = Boolean(existing.directoryGroupId);
         yield* db
           .update(schema.enterpriseGroup)
-          .set({ name: body.name, notes: body.notes, kind, rules, updatedAt: now() })
+          .set({
+            name: body.name,
+            notes: body.notes,
+            kind,
+            rules,
+            directoryGroupId: nextDirectoryGroupId,
+            updatedAt: now(),
+          })
           .where(
             and(
               eq(schema.enterpriseGroup.id, groupId),
@@ -14773,15 +14913,29 @@ export const createEnterpriseService = ({
           );
 
         if (kind === "dynamic") {
+          // A group that was linked kept derived rows; dynamic recomputes must
+          // start from an explicit/manual baseline only.
+          if (wasLinked)
+            yield* db
+              .delete(schema.groupDevice)
+              .where(
+                and(
+                  eq(schema.groupDevice.groupId, groupId),
+                  eq(schema.groupDevice.source, "directory"),
+                ),
+              );
+
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
-        } else if (wasDynamic) {
-          // Switching to manual keeps administrator rows but drops rule rows.
+        } else if (nextDirectoryGroupId) {
+          yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
+        } else if (wasDynamic || wasLinked) {
+          // Switching to manual keeps administrator rows but drops derived ones.
           yield* db
             .delete(schema.groupDevice)
             .where(
               and(
                 eq(schema.groupDevice.groupId, groupId),
-                eq(schema.groupDevice.source, "dynamic"),
+                inArray(schema.groupDevice.source, ["dynamic", "directory"]),
               ),
             );
           yield* db
@@ -14811,12 +14965,14 @@ export const createEnterpriseService = ({
         } = payload;
 
         if (
-          group.kind === "dynamic" &&
+          (group.kind === "dynamic" || group.directoryGroupId) &&
           ((body.assign?.devices?.length ?? 0) > 0 || (body.unassign?.devices?.length ?? 0) > 0)
         )
           return yield* Effect.fail(
             new EnterpriseBadRequest({
-              message: "Dynamic group device membership is controlled by its rules",
+              message: group.directoryGroupId
+                ? "Linked directory group device membership is derived from directory membership"
+                : "Dynamic group device membership is controlled by its rules",
             }),
           );
         const assignPolicies = assignmentRefs(body.assign?.policies);
@@ -14925,12 +15081,16 @@ export const createEnterpriseService = ({
               if (group.kind === "dynamic")
                 yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
 
+              if (group.directoryGroupId)
+                yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
+
               return yield* applePush.deviceIdsInGroups([groupId]);
             }),
           { concurrency: 10 },
         );
 
         yield* applePush.pushAppleDevices(affected.flat());
+        yield* syncAndroidDevices(ctx.organization.id, affected.flat());
 
         return ok;
       }),
@@ -14976,7 +15136,9 @@ export const createEnterpriseService = ({
             devices.map((d: EnterpriseGroupDevice) => ({
               groupId: newId,
               deviceId: d.deviceId,
-              source: d.source ?? ("manual" as const),
+              // A duplicate is always its own manual group: a derived row would
+              // imply a directory link the copy does not have.
+              source: d.source === "dynamic" ? ("dynamic" as const) : ("manual" as const),
             })),
           );
 
@@ -15905,6 +16067,9 @@ export const createEnterpriseService = ({
           }),
         );
 
+        // Device links feed directory-linked device groups, so re-derive them
+        // before recomputing this device's policy.
+        yield* syncDirectoryGroupsForTenant(db, ctx.organization.id);
         yield* refreshDevicePolicies(ctx.organization.id, [deviceId]);
         yield* audit(ctx, "device.users_changed", "device", deviceId, {
           users: userIds.length,
@@ -15938,7 +16103,7 @@ export const createEnterpriseService = ({
         if (apps.length === 0) return { applications: [] };
         const ids = apps.map((app) => app.id);
 
-        const [groupLinks, deviceLinks, installerRows] = yield* Effect.all(
+        const [groupLinks, deviceLinks, installerRows, userGroupLinks] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -15958,6 +16123,17 @@ export const createEnterpriseService = ({
                 .from(schema.applicationInstaller)
                 .where(inArray(schema.applicationInstaller.applicationId, ids)),
             ),
+            queryEffect(
+              db
+                .select({ applicationId: schema.userGroupApplication.applicationId })
+                .from(schema.userGroupApplication)
+                .where(
+                  and(
+                    eq(schema.userGroupApplication.organizationId, ctx.organization.id),
+                    inArray(schema.userGroupApplication.applicationId, ids),
+                  ),
+                ),
+            ),
           ],
           { concurrency: "unbounded" },
         );
@@ -15975,6 +16151,9 @@ export const createEnterpriseService = ({
               sortedInstallers
                 .filter((installer) => installer.applicationId === app.id)
                 .map(rowInstaller),
+              userGroupLinks.filter(
+                (link: { applicationId: string }) => link.applicationId === app.id,
+              ).length,
             ),
           ),
         };
@@ -15990,7 +16169,7 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        const [groupLinks, deviceLinks, installers] = yield* Effect.all(
+        const [groupLinks, deviceLinks, installers, userGroupLinks] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -16005,14 +16184,26 @@ export const createEnterpriseService = ({
                 .where(eq(schema.applicationDevice.applicationId, applicationId)),
             ),
             queryEffect(applicationInstallers(ctx.organization.id, applicationId)),
+            queryEffect(
+              db
+                .select({ groupId: schema.userGroupApplication.groupId })
+                .from(schema.userGroupApplication)
+                .where(
+                  and(
+                    eq(schema.userGroupApplication.organizationId, ctx.organization.id),
+                    eq(schema.userGroupApplication.applicationId, applicationId),
+                  ),
+                ),
+            ),
           ],
           { concurrency: "unbounded" },
         );
 
         const groupIds = groupLinks.map((link: { groupId: string }) => link.groupId);
         const deviceIds = deviceLinks.map((link: { deviceId: string }) => link.deviceId);
+        const userGroupIds = userGroupLinks.map((link: { groupId: string }) => link.groupId);
 
-        const [groups, devices] = yield* Effect.all(
+        const [groups, devices, userGroups, resolvedDevices] = yield* Effect.all(
           [
             queryEffect(
               groupIds.length
@@ -16030,6 +16221,20 @@ export const createEnterpriseService = ({
                     .where(inArray(schema.device.id, deviceIds))
                 : emptyRows<{ id: string; name: string }>(),
             ),
+            queryEffect(
+              userGroupIds.length
+                ? db
+                    .select({ id: schema.userGroup.id, name: schema.userGroup.name })
+                    .from(schema.userGroup)
+                    .where(
+                      and(
+                        eq(schema.userGroup.organizationId, ctx.organization.id),
+                        inArray(schema.userGroup.id, userGroupIds),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(applicationAssignedDeviceIds(ctx.organization.id, applicationId)),
           ],
           { concurrency: "unbounded" },
         );
@@ -16038,6 +16243,8 @@ export const createEnterpriseService = ({
           ...rowApplication(app, groups.length, devices.length, installers.map(rowInstaller)),
           groups,
           devices,
+          userGroups,
+          resolvedDevicesCount: resolvedDevices.length,
         };
       }),
     createApplication: (request, tenantId, payload) =>
@@ -16282,13 +16489,17 @@ export const createEnterpriseService = ({
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
         const body: {
-          assign?: { groups?: Array<string>; devices?: Array<string> };
-          unassign?: { groups?: Array<string>; devices?: Array<string> };
+          assign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
+          unassign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
         } = payload;
 
         const groupIds = [...(body.assign?.groups ?? []), ...(body.unassign?.groups ?? [])];
 
         for (const groupId of groupIds) yield* assertTenantGroup(ctx.organization.id, groupId);
+        yield* assertTenantUserGroups(ctx.organization.id, [
+          ...(body.assign?.userGroups ?? []),
+          ...(body.unassign?.userGroups ?? []),
+        ]);
         yield* assertTenantDevices(ctx.organization.id, [
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
@@ -16299,6 +16510,19 @@ export const createEnterpriseService = ({
             .insert(schema.applicationGroup)
             .ignore()
             .values(body.assign.groups.map((groupId) => ({ groupId, applicationId })));
+
+        if (body.assign?.userGroups?.length)
+          yield* db
+            .insert(schema.userGroupApplication)
+            .ignore()
+            .values(
+              body.assign.userGroups.map((groupId) => ({
+                organizationId: ctx.organization.id,
+                groupId,
+                applicationId,
+                createdAt: now(),
+              })),
+            );
 
         if (body.assign?.devices?.length)
           yield* db
@@ -16313,6 +16537,17 @@ export const createEnterpriseService = ({
               and(
                 eq(schema.applicationGroup.applicationId, applicationId),
                 inArray(schema.applicationGroup.groupId, body.unassign.groups),
+              ),
+            );
+
+        if (body.unassign?.userGroups?.length)
+          yield* db
+            .delete(schema.userGroupApplication)
+            .where(
+              and(
+                eq(schema.userGroupApplication.organizationId, ctx.organization.id),
+                eq(schema.userGroupApplication.applicationId, applicationId),
+                inArray(schema.userGroupApplication.groupId, body.unassign.userGroups),
               ),
             );
 
@@ -16333,8 +16568,10 @@ export const createEnterpriseService = ({
         );
         yield* audit(ctx, "application.assignments_changed", "application", applicationId, {
           assignGroups: body.assign?.groups?.length ?? 0,
+          assignUserGroups: body.assign?.userGroups?.length ?? 0,
           assignDevices: body.assign?.devices?.length ?? 0,
           unassignGroups: body.unassign?.groups?.length ?? 0,
+          unassignUserGroups: body.unassign?.userGroups?.length ?? 0,
           unassignDevices: body.unassign?.devices?.length ?? 0,
         });
 
@@ -18641,7 +18878,11 @@ export const createEnterpriseService = ({
 
         const ids = rows.map((row) => row.id);
 
-        const [deviceCounts, policyCounts] = ids.length
+        const directoryGroupIds = [
+          ...new Set(rows.flatMap((row) => (row.directoryGroupId ? [row.directoryGroupId] : []))),
+        ];
+
+        const [deviceCounts, policyCounts, directoryGroups] = ids.length
           ? yield* Effect.all([
               db
                 .select({ groupId: schema.groupDevice.groupId, value: count() })
@@ -18653,20 +18894,42 @@ export const createEnterpriseService = ({
                 .from(schema.groupPolicy)
                 .where(inArray(schema.groupPolicy.groupId, ids))
                 .groupBy(schema.groupPolicy.groupId),
+              directoryGroupIds.length
+                ? db
+                    .select({ id: schema.userGroup.id, name: schema.userGroup.name })
+                    .from(schema.userGroup)
+                    .where(
+                      and(
+                        eq(schema.userGroup.organizationId, ctx.organization.id),
+                        inArray(schema.userGroup.id, directoryGroupIds),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
             ])
-          : [[], []];
+          : [[], [], []];
 
         const deviceMap = new Map(deviceCounts.map((row) => [row.groupId, row.value]));
         const policyMap = new Map(policyCounts.map((row) => [row.groupId, row.value]));
+        const directoryGroupMap = new Map(directoryGroups.map((group) => [group.id, group.name]));
 
         return {
-          rows: rows.map((row: EnterpriseGroup) =>
-            rowGroup(
-              row,
-              (row.kind ?? "manual") === "dynamic" ? -1 : (deviceMap.get(row.id) ?? 0),
-              policyMap.get(row.id) ?? 0,
-            ),
-          ),
+          rows: rows.map((row: EnterpriseGroup) => {
+            const directoryGroupId = row.directoryGroupId ?? null;
+
+            return {
+              ...rowGroup(
+                row,
+                (row.kind ?? "manual") === "dynamic" ? -1 : (deviceMap.get(row.id) ?? 0),
+                policyMap.get(row.id) ?? 0,
+              ),
+              directoryGroup: directoryGroupId
+                ? {
+                    id: directoryGroupId,
+                    name: directoryGroupMap.get(directoryGroupId) ?? directoryGroupId,
+                  }
+                : null,
+            };
+          }),
         };
       }),
     getGroup: (request, tenantId, groupId) =>
@@ -18679,7 +18942,7 @@ export const createEnterpriseService = ({
 
         if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
 
-        const [deviceLinks, policyLinks] = yield* Effect.all(
+        const [deviceLinks, policyLinks, directoryGroup] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -18692,6 +18955,20 @@ export const createEnterpriseService = ({
                 .select({ policyId: schema.groupPolicy.policyId, mode: schema.groupPolicy.mode })
                 .from(schema.groupPolicy)
                 .where(eq(schema.groupPolicy.groupId, groupId)),
+            ),
+            queryEffect(
+              row.directoryGroupId
+                ? db
+                    .select({ id: schema.userGroup.id, name: schema.userGroup.name })
+                    .from(schema.userGroup)
+                    .where(
+                      and(
+                        eq(schema.userGroup.organizationId, ctx.organization.id),
+                        eq(schema.userGroup.id, row.directoryGroupId),
+                      ),
+                    )
+                    .limit(1)
+                : emptyRows<{ id: string; name: string }>(),
             ),
           ],
           { concurrency: "unbounded" },
@@ -18745,6 +19022,9 @@ export const createEnterpriseService = ({
 
         return {
           ...rowGroup(row, devices.length, policies.length),
+          directoryGroup: directoryGroup[0]
+            ? { id: directoryGroup[0].id, name: directoryGroup[0].name }
+            : null,
           devices: [...devices].sort((left, right) => left.name.localeCompare(right.name)),
           policies: policies
             .map((policy) => ({

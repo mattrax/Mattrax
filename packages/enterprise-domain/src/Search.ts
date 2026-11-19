@@ -1,4 +1,3 @@
-import { DynamicGroupKind } from "./dynamicGroups.js";
 import { Schema } from "effect";
 import { DeviceHealth } from "./Device.js";
 import { DeviceProtocol } from "./Device.js";
@@ -6,6 +5,7 @@ import { DeviceRelation } from "./Group.js";
 import { DeviceRow } from "./Device.js";
 import { DeviceStatus } from "./Device.js";
 import { GroupNode } from "./Group.js";
+import { GroupMembershipKind } from "./Group.js";
 import { GroupRelation } from "./Group.js";
 import { GroupRow } from "./Group.js";
 import { NullableString } from "./Errors.js";
@@ -81,7 +81,7 @@ export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) })
  */
 export const GroupPreviewResponse = Schema.Struct({
   groupId: Schema.String,
-  kind: DynamicGroupKind,
+  kind: GroupMembershipKind,
   count: Schema.Number,
   devices: Schema.Array(GroupRelation),
   evaluatedAt: Schema.String,

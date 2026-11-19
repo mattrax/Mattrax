@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
+import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -840,10 +841,20 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
     });
 
     if (ctx.changedUserIds.size > 0) {
+      // Directory membership drives linked device groups. Re-materialise before
+      // waking devices so group-targeted policies are already correct when they
+      // check in; a failure is logged rather than failing the IdP's request.
+      const db = yield* Db;
+
+      yield* syncDirectoryGroupsForTenant(db, ctx.organizationId).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("SCIM directory group refresh failed", cause),
+        ),
+      );
+
       const notifier = yield* Effect.serviceOption(ScimMembershipNotifier);
 
       if (Option.isSome(notifier)) {
-        const db = yield* Db;
         yield* notifier
           .value(db, ctx.organizationId, [...ctx.changedUserIds], [...ctx.changedDeviceIds])
           .pipe(

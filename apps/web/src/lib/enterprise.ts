@@ -1176,6 +1176,7 @@ export const enterprise = {
       notes?: string | null;
       kind?: DynamicGroupKind;
       rules?: DynamicGroupRules | null;
+      directoryGroupId?: string | null;
       devices?: string[];
       policies?: string[];
     },
@@ -1186,7 +1187,7 @@ export const enterprise = {
   patchGroup: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<GroupRow, "name" | "notes" | "kind" | "rules">>,
+    payload: Partial<Pick<GroupRow, "name" | "notes" | "kind" | "rules" | "directoryGroupId">>,
   ) =>
     endpoint((api) =>
       api.patchGroup({
@@ -1497,8 +1498,8 @@ export const enterprise = {
     tenantId: RouteParam,
     id: RouteParam,
     payload: {
-      assign?: { groups?: string[]; devices?: string[] };
-      unassign?: { groups?: string[]; devices?: string[] };
+      assign?: { groups?: string[]; userGroups?: string[]; devices?: string[] };
+      unassign?: { groups?: string[]; userGroups?: string[]; devices?: string[] };
     },
   ) =>
     endpoint((api) =>

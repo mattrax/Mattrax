@@ -505,6 +505,16 @@ export type {
 } from "@mattrax/entra-id";
 
 export {
+  syncDirectoryGroup,
+  syncDirectoryGroupsForTenant,
+} from "@mattrax/mdm-apple";
+
+export type {
+  DirectoryGroupSyncOptions,
+  DirectoryGroupSyncResult,
+} from "@mattrax/mdm-apple";
+
+export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
   WEBHOOK_DELIVERY_TIMEOUT_MS,
   WEBHOOK_MAX_RETRY_ATTEMPTS,

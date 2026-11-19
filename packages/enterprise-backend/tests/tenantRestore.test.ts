@@ -193,6 +193,7 @@ describe("in-place tenant restore", () => {
     ]);
     expect(db.store.group_policy).toHaveLength(1);
     expect(db.store.group_device).toMatchObject([{ deviceId: "device-1" }]);
+    expect(db.store.enterprise_group[0].directoryGroupId ?? null).toBeNull();
     expect(db.store.organization[0]).toMatchObject({
       name: "Acme Restored",
       displayName: "Acme",
@@ -389,6 +390,142 @@ describe("in-place tenant restore", () => {
     });
     expect(db.store.user_policy).toMatchObject([
       { userId: restoredUser!.id, policyId: db.store.policy[0]!.id, mode: "include" },
+    ]);
+  });
+
+  it("round-trips a directory link and directory-group application assignments", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    const timestamp = new Date("2026-11-01T00:00:00Z");
+
+    db.store.user_group.push({
+      id: "directory-1",
+      organizationId: "org-1",
+      name: "Engineering",
+      externalId: "entra-group-1",
+      description: null,
+      source: "graph",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.store.user.push({
+      id: "directory-user-1",
+      organizationId: "org-1",
+      name: "Ada",
+      email: "ada@acme.test",
+      externalId: "entra-user-1",
+      source: "entra",
+      disabled: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.store.user_group_member.push({ groupId: "directory-1", userId: "directory-user-1" });
+    db.store.device_user.push({
+      organizationId: "org-1",
+      deviceId: "device-1",
+      userId: "directory-user-1",
+      source: "manual",
+      createdAt: timestamp,
+    });
+    db.store.enterprise_group.push({
+      id: "group-linked",
+      organizationId: "org-1",
+      name: "Engineering devices",
+      notes: null,
+      kind: "manual",
+      rules: null,
+      directoryGroupId: "directory-1",
+      lastEvaluatedAt: timestamp,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.store.group_device.push({
+      groupId: "group-linked",
+      deviceId: "device-1",
+      source: "directory",
+    });
+    db.store.application.push({
+      id: "app-1",
+      organizationId: "org-1",
+      name: "Slack",
+      platform: "apple",
+      bundleId: null,
+      version: null,
+      source: "store",
+      manifestUrl: null,
+      storeId: "803453959",
+      fileName: null,
+      contentType: null,
+      size: null,
+      sha256: null,
+      r2Key: null,
+      notes: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.store.user_group_application.push({
+      organizationId: "org-1",
+      groupId: "directory-1",
+      applicationId: "app-1",
+      createdAt: timestamp,
+    });
+
+    const exported = await runEffect(
+      buildTenantExport(db, organization, { now: new Date("2026-10-02T00:00:00Z") }),
+    );
+
+    expect(exported.bundle.groups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "group-linked", directoryGroupId: "directory-1" }),
+      ]),
+    );
+    expect(exported.bundle.applications).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "app-1", userGroupIds: ["directory-1"] })]),
+    );
+
+    objects.set("backups/org-1/run-2.json", exported.body);
+    db.store.backup_run.push({
+      id: "run-2",
+      organizationId: "org-1",
+      status: "succeeded",
+      r2Key: "backups/org-1/run-2.json",
+      sizeBytes: exported.body.length,
+      startedAt,
+      completedAt: startedAt,
+      error: null,
+      trigger: "manual",
+      retention: "default",
+    });
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-2",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-02T00:00:00Z"),
+      }),
+    );
+
+    const restoredGroup = db.store.enterprise_group.find(
+      (row: { name: string }) => row.name === "Engineering devices",
+    )!;
+
+    expect(restoredGroup).toMatchObject({ name: "Engineering devices" });
+    expect(restoredGroup.directoryGroupId).toBe("directory-1");
+    expect(db.store.group_device).toMatchObject([
+      { groupId: restoredGroup.id, deviceId: "device-1", source: "directory" },
+    ]);
+
+    const restoredApplication = db.store.application.find(
+      (row: { organizationId: string }) => row.organizationId === "org-1",
+    )!;
+
+    expect(db.store.user_group_application).toMatchObject([
+      {
+        organizationId: "org-1",
+        groupId: "directory-1",
+        applicationId: restoredApplication.id,
+      },
     ]);
   });
 

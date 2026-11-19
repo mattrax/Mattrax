@@ -105,7 +105,9 @@ export default function ApplicationsPage() {
     (apps.data?.applications ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
 
   const assignedCount = () =>
-    rows().filter((row) => (row.groupsCount ?? 0) + (row.devicesCount ?? 0) > 0).length;
+    rows().filter(
+      (row) => (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0) + (row.devicesCount ?? 0) > 0,
+    ).length;
 
   return (
     <Page>
@@ -216,9 +218,10 @@ export default function ApplicationsPage() {
           {
             id: "assignments",
             header: "Assignments",
-            sort: (row) => (row.groupsCount ?? 0) + (row.devicesCount ?? 0),
+            sort: (row) =>
+              (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0) + (row.devicesCount ?? 0),
             cell: (row) => {
-              const groups = row.groupsCount ?? 0;
+              const groups = (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0);
               const devices = row.devicesCount ?? 0;
 
               return (

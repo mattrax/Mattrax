@@ -21,19 +21,21 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";
 
-function MembershipBadge(props: { kind: GroupRow["kind"] }) {
+function MembershipBadge(props: { kind: GroupRow["kind"]; directoryGroupId?: string | null }) {
+  const directory = () => Boolean(props.directoryGroupId);
   const dynamic = () => props.kind === "dynamic";
 
   return (
     <span
       class={
-        dynamic()
+        dynamic() || directory()
           ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-hover px-2 py-0.5 text-[11px] font-medium text-foreground/85"
           : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
       }
+      title={directory() ? "Membership follows a linked directory group" : undefined}
     >
       <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {dynamic() ? "Dynamic" : "Manual"}
+      {directory() ? "Directory" : dynamic() ? "Dynamic" : "Manual"}
     </span>
   );
 }
@@ -47,8 +49,9 @@ const fields: ReadonlyArray<EntityField<GroupRow>> = [
     options: [
       { value: "manual", label: "Manual" },
       { value: "dynamic", label: "Dynamic" },
+      { value: "directory", label: "Directory" },
     ],
-    get: (row) => row.kind ?? "manual",
+    get: (row) => (row.directoryGroupId ? "directory" : (row.kind ?? "manual")),
   },
   { id: "devices", label: "Devices", kind: "number", get: (row) => row.devicesCount ?? 0 },
   { id: "policies", label: "Policies", kind: "number", get: (row) => row.policiesCount ?? 0 },
@@ -178,7 +181,7 @@ export default function GroupsPage() {
             header: "Membership",
             sort: (row) => row.kind ?? "manual",
             search: (row) => row.kind ?? "manual",
-            cell: (row) => <MembershipBadge kind={row.kind} />,
+            cell: (row) => <MembershipBadge kind={row.kind} directoryGroupId={row.directoryGroupId} />,
           },
           {
             id: "devices",

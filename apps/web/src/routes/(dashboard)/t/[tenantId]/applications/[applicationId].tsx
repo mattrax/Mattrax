@@ -48,6 +48,7 @@ export const route = {
           enterpriseQueries.application(params.tenantId, params.applicationId),
         ),
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "group")),
+      () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
     ]);
   },
@@ -178,6 +179,8 @@ export default function ApplicationDetailPage() {
 
   const groups = useQuery(() => enterpriseQueries.list(params.tenantId, "group"));
 
+  const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
+
   const devices = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
@@ -191,6 +194,7 @@ export default function ApplicationDetailPage() {
   const [installers, setInstallers] = createSignal<InstallerDraft[]>([]);
   const [notes, setNotes] = createSignal("");
   const [groupIds, setGroupIds] = createSignal<Set<string>>(new Set());
+  const [userGroupIds, setUserGroupIds] = createSignal<Set<string>>(new Set());
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [message, setMessage] = createSignal<string | null>(null);
 
@@ -208,6 +212,7 @@ export default function ApplicationDetailPage() {
       setInstallers(value.installers.map(installerDraft));
       setNotes(value.notes ?? "");
       setGroupIds(new Set(value.groups.map((group) => group.id)));
+      setUserGroupIds(new Set(value.userGroups.map((group) => group.id)));
       setDeviceIds(new Set(value.devices.map((device) => device.id)));
     },
   );
@@ -229,6 +234,18 @@ export default function ApplicationDetailPage() {
       if (!names.has(group.id)) names.set(group.id, group.name);
 
     return [...groupIds()].map((id) => ({ id, name: names.get(id) ?? id }));
+  };
+
+  /** Directory group relations for the checkboxes, named from the directory. */
+  const optimisticUserGroups = () => {
+    const names = new Map(
+      (directory.data?.groups ?? []).map((group) => [group.id, group.name] as const),
+    );
+
+    for (const group of row()?.userGroups ?? [])
+      if (!names.has(group.id)) names.set(group.id, group.name);
+
+    return [...userGroupIds()].map((id) => ({ id, name: names.get(id) ?? id }));
   };
 
   /** Device relations for the checkboxes, named from the cached device list. */
@@ -262,22 +279,35 @@ export default function ApplicationDetailPage() {
         })),
       });
       const oldGroups = row()?.groups.map((group) => group.id) ?? [];
+      const oldUserGroups = row()?.userGroups.map((group) => group.id) ?? [];
       const oldDevices = row()?.devices.map((device) => device.id) ?? [];
       const assignGroups = [...groupIds()].filter((id) => !oldGroups.includes(id));
+      const assignUserGroups = [...userGroupIds()].filter((id) => !oldUserGroups.includes(id));
       const assignDevices = [...deviceIds()].filter((id) => !oldDevices.includes(id));
       const unassignGroups = oldGroups.filter((id) => !groupIds().has(id));
+      const unassignUserGroups = oldUserGroups.filter((id) => !userGroupIds().has(id));
       const unassignDevices = oldDevices.filter((id) => !deviceIds().has(id));
 
       if (
         assignGroups.length +
+          assignUserGroups.length +
           assignDevices.length +
           unassignGroups.length +
+          unassignUserGroups.length +
           unassignDevices.length >
         0
       )
         await enterprise.patchApplicationAssignments(params.tenantId, params.applicationId, {
-          assign: { groups: assignGroups, devices: assignDevices },
-          unassign: { groups: unassignGroups, devices: unassignDevices },
+          assign: {
+            groups: assignGroups,
+            userGroups: assignUserGroups,
+            devices: assignDevices,
+          },
+          unassign: {
+            groups: unassignGroups,
+            userGroups: unassignUserGroups,
+            devices: unassignDevices,
+          },
         });
     },
     onMutate: async () => {
@@ -297,6 +327,7 @@ export default function ApplicationDetailPage() {
               ),
             ),
             groups: optimisticGroups(),
+            userGroups: optimisticUserGroups(),
             devices: optimisticDevices(),
             groupsCount: groupIds().size,
             devicesCount: deviceIds().size,
@@ -419,7 +450,7 @@ export default function ApplicationDetailPage() {
 
   const platform = () => row()?.platform;
   const canInstall = createMemo(() => installers().length > 0);
-  const assignedCount = () => groupIds().size + deviceIds().size;
+  const assignedCount = () => groupIds().size + userGroupIds().size + deviceIds().size;
 
   /** Why the install button is disabled, or undefined when it can be pressed. */
   const installDisabledReason = () => {
@@ -961,6 +992,44 @@ export default function ApplicationDetailPage() {
                   </div>
                   <div>
                     <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      <span>Directory groups</span>
+                      <span class="tabular-nums">{userGroupIds().size}</span>
+                    </p>
+                    <Show
+                      when={(directory.data?.groups.length ?? 0) > 0}
+                      fallback={
+                        <p class="text-[12px] text-muted-foreground">
+                          No directory groups synced yet.
+                        </p>
+                      }
+                    >
+                      <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
+                        <For each={directory.data?.groups ?? []}>
+                          {(group) => (
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
+                              <input
+                                type="checkbox"
+                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                                checked={userGroupIds().has(group.id)}
+                                disabled={!writable()}
+                                onChange={() => toggle(userGroupIds, setUserGroupIds, group.id)}
+                              />
+                              <span class="min-w-0 flex-1 truncate">{group.name}</span>
+                              <span class="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+                                {group.memberCount}
+                              </span>
+                            </label>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                    <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                      Members' linked devices receive the application. Directory group membership
+                      follows the IdP.
+                    </p>
+                  </div>
+                  <div>
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                       <span>Devices</span>
                       <span class="tabular-nums">{deviceIds().size}</span>
                     </p>
@@ -1001,6 +1070,12 @@ export default function ApplicationDetailPage() {
 
               <Panel title="Delivery" description="Where this installer resolves from.">
                 <dl class="space-y-2 text-[12px]">
+                  <div class="flex items-center justify-between gap-3">
+                    <dt class="text-muted-foreground">Resolved devices</dt>
+                    <dd class="tabular-nums text-foreground">
+                      {application().resolvedDevicesCount ?? 0}
+                    </dd>
+                  </div>
                   <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted-foreground">Platform</dt>
                     <dd>

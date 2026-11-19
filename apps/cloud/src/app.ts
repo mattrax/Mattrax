@@ -45,6 +45,7 @@ import {
   runWelcomeEmailSweep,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
+  syncDirectoryGroupsForTenant,
   makeApplePush,
   makeAppAuth,
   makeAuthLive,
@@ -505,6 +506,11 @@ const entraSyncJob = (env: Env) =>
     // Wake the linked devices so they converge without waiting for a poll.
     const refreshMemberships = (organizationId: string, userIds: ReadonlyArray<string>) =>
       Effect.gen(function* () {
+        // Device groups linked to directory groups must be recomputed before
+        // the linked devices are woken, or a newly derived group policy would
+        // not be part of their next check-in.
+        yield* syncDirectoryGroupsForTenant(db, organizationId);
+
         const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
 
         if (deviceIds.length === 0) return;
