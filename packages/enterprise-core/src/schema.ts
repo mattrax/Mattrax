@@ -718,8 +718,10 @@ export const tenantRole = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    // The unique index leads with the tenant, so it also serves the
+    // organisation-scoped role list; a separate organisation index would be a
+    // redundant prefix.
     uniqueIndex("tenant_role_organization_name_unique").on(table.organizationId, table.name),
-    index("tenant_role_organization_idx").on(table.organizationId),
   ],
 );
 
@@ -778,6 +780,8 @@ export const accountAuditLog = mysqlTable(
     index("account_audit_log_subject_action_idx").on(table.subjectAccountId, table.action),
     // Break-glass rate limiting counts recent attempts per action window.
     index("account_audit_log_action_created_idx").on(table.action, table.createdAt),
+    // Retention deletes by age across every account in one pass.
+    index("account_audit_log_created_idx").on(table.createdAt),
   ],
 );
 
@@ -849,10 +853,10 @@ export const accountSessionContext = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
     lastUsedAt: timestamp("last_used_at").notNull(),
   },
-  (table) => [
-    index("account_session_context_account_idx").on(table.accountId, table.lastUsedAt),
-    index("account_session_context_last_used_idx").on(table.lastUsedAt),
-  ],
+  // Sessions are only ever read for one account (the session list), so the
+  // account is the leading column. There is no deployment-wide `last_used_at`
+  // sweep: expired rows are removed by session id after the auth sweep.
+  (table) => [index("account_session_context_account_idx").on(table.accountId, table.lastUsedAt)],
 );
 
 /**
@@ -950,8 +954,9 @@ export const accountRecovery = mysqlTable(
     uniqueIndex("account_recovery_proof_unique").on(table.proofTokenHash),
     uniqueIndex("account_recovery_approval_unique").on(table.approvalTokenHash),
     uniqueIndex("account_recovery_completion_unique").on(table.completionTokenHash),
+    // Every read is scoped to one account (its live ceremonies) or keyed by a
+    // token digest. There is no status-only query, so no status index.
     index("account_recovery_account_idx").on(table.accountId, table.createdAt),
-    index("account_recovery_status_idx").on(table.status, table.createdAt),
   ],
 );
 
@@ -981,10 +986,12 @@ export const invitation = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("invitation_organization_id_idx").on(table.organizationId),
     index("invitation_organization_email_idx").on(table.organizationId, table.email),
     index("invitation_organization_status_idx").on(table.organizationId, table.status),
     uniqueIndex("invitation_token_hash_unique").on(table.tokenHash),
+    // Daily maintenance expires every pending invitation past its window in
+    // one cross-tenant pass.
+    index("invitation_status_expires_idx").on(table.status, table.expiresAt),
   ],
 );
 
@@ -1027,6 +1034,8 @@ export const tenantOwnershipTransfer = mysqlTable(
     // permits multiple NULLs in a unique index.
     uniqueIndex("tenant_ownership_transfer_token_unique").on(table.tokenHash),
     index("tenant_ownership_transfer_organization_idx").on(table.organizationId, table.status),
+    // Foreign-key support: deleting an account cascades here and needs an
+    // index. The target is displayed, never filtered on.
     index("tenant_ownership_transfer_target_idx").on(table.targetAccountId, table.status),
   ],
 );
@@ -1083,7 +1092,6 @@ export const deploymentLicense = mysqlTable(
   (table) => [
     uniqueIndex("deployment_license_key_unique").on(table.licenseKeyHash),
     uniqueIndex("deployment_license_customer_unique").on(table.stripeCustomerId),
-    index("deployment_license_last_seen_idx").on(table.lastSeenAt),
   ],
 );
 
@@ -1097,21 +1105,18 @@ export const deploymentLicense = mysqlTable(
  * and a committed marker means the event was fully applied. There is
  * deliberately no foreign key to `organization` so the ledger survives a
  * tenant teardown; it contains no tenant data beyond the id.
+ *
+ * The ledger is only ever read by id (the dedupe probe), so there are no
+ * secondary indexes. It also has no retention sweep; when one is added, it
+ * should prune by `received_at` and carry an index on that column.
  */
-export const stripeEvent = mysqlTable(
-  "stripe_event",
-  {
-    /** Stripe's `event.id` (`evt_…`). */
-    id: id().primaryKey(),
-    type: shortText("type").notNull(),
-    organizationId: id("organization_id"),
-    receivedAt: timestamp("received_at").notNull(),
-  },
-  (table) => [
-    index("stripe_event_organization_received_idx").on(table.organizationId, table.receivedAt),
-    index("stripe_event_received_idx").on(table.receivedAt),
-  ],
-);
+export const stripeEvent = mysqlTable("stripe_event", {
+  /** Stripe's `event.id` (`evt_…`). */
+  id: id().primaryKey(),
+  type: shortText("type").notNull(),
+  organizationId: id("organization_id"),
+  receivedAt: timestamp("received_at").notNull(),
+});
 
 export const accountApiToken = mysqlTable(
   "account_api_token",
@@ -1150,17 +1155,13 @@ export const accountApiToken = mysqlTable(
  * An OAuth client registered for an MCP server (usually through dynamic client
  * registration). Public clients have no secret; PKCE binds the code exchange.
  */
-export const mcpOAuthClient = mysqlTable(
-  "mcp_oauth_client",
-  {
-    id: varchar("id", { length: 255 }).primaryKey(),
-    name: shortText("name").notNull(),
-    redirectUris: json("redirect_uris").$type<string[]>().notNull(),
-    createdAt: timestamp("created_at").notNull(),
-    lastUsedAt: timestamp("last_used_at"),
-  },
-  (table) => [index("mcp_oauth_client_created_idx").on(table.createdAt)],
-);
+export const mcpOAuthClient = mysqlTable("mcp_oauth_client", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  name: shortText("name").notNull(),
+  redirectUris: json("redirect_uris").$type<string[]>().notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+});
 
 /**
  * A user's authorisation of one MCP client. Revoking this row ends every access
@@ -1370,7 +1371,9 @@ export const userGroup = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("user_group_organization_idx").on(table.organizationId),
+    // The external-id unique index leads with the tenant, so it also serves
+    // the organisation-scoped group list. MySQL admits multiple NULL external
+    // ids, so manually created groups never collide.
     uniqueIndex("user_group_external_unique").on(table.organizationId, table.externalId),
   ],
 );
@@ -1495,8 +1498,9 @@ export const scimToken = mysqlTable(
   },
   (table) => [
     uniqueIndex("scim_token_hash_unique").on(table.tokenHash),
-    index("scim_token_organization_idx").on(table.organizationId),
-    // Listing and the rotation reminder read active tokens ordered by expiry.
+    // Listing and the rotation reminder read active tokens ordered by expiry;
+    // the tenant-leading index also covers the organisation scope, so no
+    // single-column organisation index is declared.
     index("scim_token_organization_expires_idx").on(table.organizationId, table.expiresAt),
   ],
 );
@@ -1527,8 +1531,16 @@ export const auditLog = mysqlTable(
       table.targetId,
       table.createdAt,
     ),
-    // Cross-tenant onboarding cooldown: action + actor within a date window.
+    // Foreign-key support: deleting an account nulls the actor on the rows it
+    // wrote, which needs a child-side index. No read filters by actor alone
+    // (the audit search matches it with a leading-wildcard LIKE, which cannot
+    // use an index).
     index("audit_log_actor_action_idx").on(table.actorAccountId, table.action, table.createdAt),
+    // Audit retention deletes by age across every tenant. The cross-tenant
+    // onboarding cooldown (`action = ? AND created_at >= ?`) can use this to
+    // bound its scan to the cooldown window, but `(action, created_at)` would
+    // be the exact shape for it; the prune is what this index exists for.
+    index("audit_log_created_idx").on(table.createdAt),
   ],
 );
 
@@ -1595,6 +1607,9 @@ export const webhookDelivery = mysqlTable(
     index("webhook_delivery_endpoint_created_idx").on(table.endpointId, table.createdAt),
     index("webhook_delivery_organization_created_idx").on(table.organizationId, table.createdAt),
     index("webhook_delivery_status_attempt_idx").on(table.status, table.attempt),
+    // Retention deletes by age across every endpoint; the endpoint- and
+    // organisation-leading indexes cannot serve that prune.
+    index("webhook_delivery_created_idx").on(table.createdAt),
   ],
 );
 
@@ -1644,6 +1659,8 @@ export const emailOutbox = mysqlTable(
     uniqueIndex("email_outbox_dedupe_key_unique").on(table.dedupeKey),
     index("email_outbox_status_next_attempt_idx").on(table.status, table.nextAttemptAt),
     index("email_outbox_organization_created_idx").on(table.organizationId, table.createdAt),
+    // Retention purges sent and failed rows by age, filtered by status.
+    index("email_outbox_status_created_idx").on(table.status, table.createdAt),
   ],
 );
 
@@ -1756,6 +1773,8 @@ export const enrollmentAttempt = mysqlTable(
   },
   (table) => [
     index("enrollment_attempt_organization_created_idx").on(table.organizationId, table.createdAt),
+    // Retention prunes by age across every tenant.
+    index("enrollment_attempt_created_idx").on(table.createdAt),
   ],
 );
 
@@ -1846,6 +1865,8 @@ export const androidPubSubMessage = mysqlTable(
   },
   (table) => [
     index("android_pubsub_message_organization_idx").on(table.organizationId, table.receivedAt),
+    // Pub/Sub idempotency rows are pruned by receipt age across every tenant.
+    index("android_pubsub_message_received_idx").on(table.receivedAt),
   ],
 );
 
@@ -1999,15 +2020,26 @@ export const device = mysqlTable(
     windowsPolicyRevertedAt: timestamp("windows_policy_reverted_at"),
   },
   (table) => [
-    index("device_organization_id_idx").on(table.organizationId),
     uniqueIndex("device_organization_serial_unique").on(table.organizationId, table.serial),
-    // Fleet lists sort and paginate inside one tenant. Without a composite
-    // index every page is a filesort over the tenant's whole fleet, which is
-    // the hottest query in the product.
+    // Fleet lists, CSV export and global search page inside one tenant, ordered
+    // by name. The composite bounds the page to the tenant and supplies the
+    // name order; the `id` tiebreaker is served by InnoDB's implicit
+    // primary-key suffix, so no separate `(organization_id, name, id)` index is
+    // needed.
     index("device_organization_name_idx").on(table.organizationId, table.name),
     index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
     index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
+    // `sort=enrolledAt` (ascending by default) pages by `enrolled_at, id`; the
+    // composite supplies that order through the implicit primary-key suffix.
+    // Without it the fleet list and CSV export sort the tenant's whole fleet.
     index("device_organization_enrolled_idx").on(table.organizationId, table.enrolledAt),
+    // Every Apple and Windows check-in resolves the device by its protocol
+    // identifier. The per-tenant indexes cannot serve that lookup, so this is
+    // the single most important index on the table.
+    index("device_dm_identifier_idx").on(table.dmIdentifier),
+    // Enrollment proves a departing device by protocol and serial across
+    // tenants (a serial is only unique inside one tenant).
+    index("device_proto_serial_idx").on(table.proto, table.serial),
   ],
 );
 
@@ -2098,7 +2130,6 @@ export const attributeDefinition = mysqlTable(
   },
   (table) => [
     uniqueIndex("attribute_definition_organization_key_unique").on(table.organizationId, table.key),
-    index("attribute_definition_organization_sort_idx").on(table.organizationId, table.sortOrder),
   ],
 );
 
@@ -2202,7 +2233,6 @@ export const enrollmentAnswer = mysqlTable(
       table.serial,
       table.attributeId,
     ),
-    index("enrollment_answer_organization_serial_idx").on(table.organizationId, table.serial),
   ],
 );
 
@@ -2258,8 +2288,9 @@ export const androidDevice = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    // The device resource name is unique per tenant; the same index is the
+    // organisation scope every read uses.
     uniqueIndex("android_device_name_unique").on(table.organizationId, table.deviceName),
-    index("android_device_organization_idx").on(table.organizationId),
   ],
 );
 
@@ -2312,6 +2343,9 @@ export const deviceCommand = mysqlTable(
     index("device_command_device_status_idx").on(table.deviceId, table.status, table.expiresAt),
     // The device activity page reads one device's commands newest-first.
     index("device_command_device_updated_idx").on(table.deviceId, table.updatedAt),
+    // Command history (device detail, Apple/Windows check-in) reads one
+    // device's commands oldest- or newest-first by creation.
+    index("device_command_device_created_idx").on(table.deviceId, table.createdAt),
     uniqueIndex("device_command_device_dedupe_unique").on(table.deviceId, table.dedupeKey),
     index("device_command_organization_idx").on(table.organizationId, table.createdAt),
     // Deployment-wide maintenance: expiry scans by deadline and retention
@@ -2508,8 +2542,11 @@ export const deviceApplication = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.deviceId, table.bundleId] }),
+    // Software inventory groups a tenant's rows in application code, and the
+    // tenant-wide read only filters the organisation. No query filters
+    // `bundle_id` without a `device_id`, so the primary key serves those and
+    // there is no `(organization_id, bundle_id)` index.
     index("device_application_organization_idx").on(table.organizationId),
-    index("device_application_bundle_idx").on(table.organizationId, table.bundleId),
   ],
 );
 
@@ -2581,7 +2618,8 @@ export const appleBusinessManager = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [uniqueIndex("apple_business_manager_organization_unique").on(table.organizationId)],
+  // One ABM credential per tenant: `organization_id` is the primary key, so no
+  // separate unique index is needed.
 );
 
 /**
@@ -2626,8 +2664,9 @@ export const abmDevice = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    // The serial is the tenant-scoped key; the primary key also serves the
+    // organisation scope.
     primaryKey({ columns: [table.organizationId, table.serial] }),
-    index("abm_device_organization_idx").on(table.organizationId),
     index("abm_device_device_idx").on(table.deviceId),
   ],
 );
@@ -2678,7 +2717,6 @@ export const autopilotProfile = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("autopilot_profile_organization_idx").on(table.organizationId),
     uniqueIndex("autopilot_profile_graph_unique").on(table.organizationId, table.graphProfileId),
   ],
 );
@@ -2735,8 +2773,9 @@ export const autopilotDevice = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    // The serial is the tenant-scoped key; the primary key also serves the
+    // organisation scope.
     primaryKey({ columns: [table.organizationId, table.serial] }),
-    index("autopilot_device_organization_idx").on(table.organizationId),
     index("autopilot_device_device_idx").on(table.deviceId),
     index("autopilot_device_graph_idx").on(table.organizationId, table.graphId),
     index("autopilot_device_azure_ad_idx").on(table.organizationId, table.azureAdDeviceId),
@@ -2766,7 +2805,8 @@ export const vppToken = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [uniqueIndex("vpp_token_organization_unique").on(table.organizationId)],
+  // One licence pool per tenant: `organization_id` is the primary key, so no
+  // separate unique index is needed.
 );
 
 /** An app/book licence pool reported by the VPP assets endpoint. */
@@ -2793,10 +2833,7 @@ export const vppAsset = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [
-    primaryKey({ columns: [table.organizationId, table.adamId] }),
-    index("vpp_asset_organization_idx").on(table.organizationId),
-  ],
+  (table) => [primaryKey({ columns: [table.organizationId, table.adamId] })],
 );
 
 /**
@@ -2828,9 +2865,11 @@ export const deviceVppAssignment = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
+    // One licence assignment per tenant/device/asset, used for every
+    // assignment read. The tenant-leading primary key also covers the
+    // organisation scope; no asset-leading index is needed because no query
+    // filters by asset alone.
     primaryKey({ columns: [table.organizationId, table.deviceId, table.adamId] }),
-    index("device_vpp_assignment_organization_idx").on(table.organizationId),
-    index("device_vpp_assignment_asset_idx").on(table.organizationId, table.adamId),
   ],
 );
 
@@ -2870,9 +2909,10 @@ export const enterpriseGroup = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("enterprise_group_organization_id_idx").on(table.organizationId),
     // One directory group can drive at most one device group. MySQL unique
-    // indexes admit multiple NULLs, so unlinked groups are unaffected.
+    // indexes admit multiple NULLs, so unlinked groups are unaffected. The
+    // tenant-leading index also serves the organisation-scoped group list, so
+    // no single-column organisation index is declared.
     uniqueIndex("enterprise_group_directory_unique").on(
       table.organizationId,
       table.directoryGroupId,
@@ -2903,7 +2943,6 @@ export const dashboard = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
-    index("dashboard_organization_id_idx").on(table.organizationId),
     index("dashboard_organization_default_idx").on(table.organizationId, table.isDefault),
   ],
 );
@@ -3008,8 +3047,9 @@ export const policyDeployment = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
+    // History reads one policy's versions newest-first; the unique index
+    // already provides that order, so no duplicate index is declared.
     uniqueIndex("policy_deployment_version_unique").on(table.policyId, table.version),
-    index("policy_deployment_policy_idx").on(table.policyId, table.version),
   ],
 );
 
@@ -3256,7 +3296,8 @@ export const deviceUser = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.deviceId, table.userId] }),
-    index("device_user_device_idx").on(table.deviceId),
+    // The primary key leads with the device, so it serves both the per-device
+    // and the per-link reads; only the user-leading lookup needs its own index.
     index("device_user_user_idx").on(table.userId),
     index("device_user_organization_idx").on(table.organizationId),
   ],
@@ -3283,7 +3324,6 @@ export const userPolicy = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.policyId] }),
-    index("user_policy_user_idx").on(table.userId),
     index("user_policy_policy_idx").on(table.policyId),
     index("user_policy_organization_idx").on(table.organizationId),
   ],
@@ -3309,7 +3349,6 @@ export const userGroupPolicy = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.groupId, table.policyId] }),
-    index("user_group_policy_group_idx").on(table.groupId),
     index("user_group_policy_policy_idx").on(table.policyId),
     index("user_group_policy_organization_idx").on(table.organizationId),
   ],
@@ -3337,7 +3376,6 @@ export const userGroupApplication = mysqlTable(
   },
   (table) => [
     primaryKey({ columns: [table.groupId, table.applicationId] }),
-    index("user_group_application_group_idx").on(table.groupId),
     index("user_group_application_application_idx").on(table.applicationId),
     index("user_group_application_organization_idx").on(table.organizationId),
   ],
@@ -3381,8 +3419,9 @@ export const scepIssuedCertificate = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
-    index("scep_issued_certificate_org_idx").on(table.organizationId),
     index("scep_issued_certificate_device_idx").on(table.deviceId),
+    // Tenant-scoped reads (device certificates, CA overlap) lead with the
+    // organisation, which also covers the organisation foreign key.
     index("scep_issued_certificate_ca_idx").on(table.organizationId, table.caFingerprintSha256),
   ],
 );
@@ -3405,8 +3444,10 @@ export const scepChallenge = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
+    // Challenges are consumed by their digest (the primary key), listed per
+    // tenant while unconsumed, and pruned by expiry. No query reads a whole
+    // enrollment's challenge history.
     index("scep_challenge_org_idx").on(table.organizationId),
-    index("scep_challenge_enrollment_idx").on(table.enrollmentId),
     index("scep_challenge_expires_at_idx").on(table.expiresAt),
   ],
 );
@@ -3478,7 +3519,6 @@ export const scepCaTrust = mysqlTable(
       table.organizationId,
       table.fingerprintSha256,
     ),
-    index("scep_ca_trust_org_idx").on(table.organizationId),
     index("scep_ca_trust_trust_until_idx").on(table.trustUntil),
   ],
 );

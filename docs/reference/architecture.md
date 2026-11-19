@@ -192,6 +192,30 @@ Core tables:
 
 Migrations live in `apps/cloud/migrations` and are applied with Drizzle Kit.
 
+Indexes are declared for the queries that exist, not for columns in general:
+
+- A device check-in resolves its row by `dm_identifier` (`device_dm_identifier_idx`);
+  enrollment proves a departing device by `(proto, serial)`. The per-tenant indexes
+  cannot serve either lookup.
+- Fleet lists, CSV export, dashboards, group resolution and policy resolution read
+  through an `organization_id`-leading index; a separate single-column organisation
+  index is never declared when another index already leads with it. The fleet's
+  `sort=name` and `sort=enrolledAt` (ascending by default) paths are ordered by
+  `(organization_id, name)` / `(organization_id, enrolled_at)`; InnoDB's implicit
+  primary-key suffix makes `ORDER BY name, id` and `ORDER BY enrolled_at, id`
+  index-ordered, so neither composite may be dropped.
+- Per-device command history reads `(device_id, created_at)`; the activity page's
+  keyset pagination reads `(device_id, updated_at)`. Queue maintenance reads the
+  deployment-wide `(status, expires_at)` / `(status, updated_at)` shapes.
+- Retention sweeps delete by `created_at` (or the table's equivalent clock), so
+  append-only tables carry a time index for the prune even when every read is
+  tenant-scoped: `created_at` alone, or a status-leading composite such as
+  `(status, created_at)` when the sweep also filters status.
+- The `device` table keeps per-platform columns rather than splitting Windows state
+  into a `device_windows` table: the fleet list selects the row for every device, so a
+  split would add a join to the hottest read to save columns that are only written on
+  Windows check-in.
+
 ## Script execution
 
 Scripts are a product feature with a device-facing edge:

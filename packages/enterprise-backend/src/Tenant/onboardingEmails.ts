@@ -511,9 +511,8 @@ export const runOnboardingEmails = (
      * reservation so a later tenant in the same run can still reach the user.
      *
      * This preload reads `audit_log` for the cooldown window; the
-     * `audit_log_actor_action_idx` index covers `(actor_user_id, action,
-     * created_at)` and the cooldown depends on those rows surviving audit
-     * retention.
+     * `audit_log_created_idx` index bounds the scan to that window, and the
+     * cooldown depends on those rows surviving audit retention.
      */
     const cooldownCutoff = cooldownDays > 0 ? new Date(now.getTime() - cooldownDays * DAY) : null;
 

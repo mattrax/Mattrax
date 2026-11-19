@@ -2942,9 +2942,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
                 const serialProof = Boolean(preRegistration || abmAssignment);
 
-                // Follow-up: a `(proto, serial)` composite index would keep
-                // this cross-tenant lookup index-only instead of scanning
-                // matching serials across tenants.
+                // `device_proto_serial_idx` keeps this cross-tenant lookup
+                // index-only instead of scanning matching serials across
+                // tenants.
                 const serialMatches =
                   serialNumber && serialProof
                     ? yield* db
