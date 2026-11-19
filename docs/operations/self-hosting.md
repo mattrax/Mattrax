@@ -206,9 +206,9 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 - **MySQL 26.10.** The bundled compose file now runs MySQL 26.10. A 26.10 server
   refuses to start on an 8.4 data directory (`Invalid MySQL server upgrade`), so
   an existing stack must dump and restore rather than swap the image under the
-  `mattrax-mysql` volume: dump from the old container (`mysqldump --databases
-  mattrax`), start 26.10 with an empty volume, and load the dump before starting
-  the app. A development stack can simply recreate the volume.
+  `mattrax-mysql` volume: dump from the old container with
+  `mysqldump --databases mattrax`, start 26.10 with an empty volume, and load the
+  dump before starting the app. A development stack can simply recreate the volume.
 - **Backups.** Back up MySQL and the `mattrax-data` volume. The volume holds
   tenant file uploads, configuration profiles, app packages and backups created
   by the scheduled job.
