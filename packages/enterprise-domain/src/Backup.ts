@@ -42,7 +42,7 @@ export const TenantExportDeviceRef = Schema.Struct({
   name: Schema.optional(NullableString),
   serial: Schema.optional(NullableString),
   /** How the device joined: manual rows survive a dynamic recompute. */
-  source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
+  source: Schema.optional(Schema.Literals(["manual", "dynamic", "directory"])),
 });
 
 export type TenantExportDeviceRef = typeof TenantExportDeviceRef.Type;
@@ -54,6 +54,12 @@ export const TenantExportGroup = Schema.Struct({
   /** A dynamic group keeps its rules and is no longer restored as manual. */
   kind: Schema.optional(DynamicGroupKind),
   rules: Schema.optional(Schema.NullOr(DynamicGroupRules)),
+  /**
+   * Directory group whose membership drives this group. Restore re-links it
+   * only when that directory group still exists in the tenant; older bundles
+   * omit it and restore an unlinked group.
+   */
+  directoryGroupId: Schema.optional(NullableString),
   /** Device members are metadata only; devices themselves are never imported. */
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
   policyKeys: Schema.Array(Schema.String),
@@ -130,6 +136,11 @@ export const TenantExportApplication = Schema.Struct({
   /** Multi-installer catalogues; older bundles omit this and use the flat fields. */
   installers: Schema.optional(Schema.Array(TenantExportInstaller)),
   groupKeys: Schema.Array(Schema.String),
+  /**
+   * Directory user groups assigned this application. Directory groups are not
+   * exported, so these are ids that restore only re-links when they still exist.
+   */
+  userGroupIds: Schema.optional(Schema.Array(Schema.String)),
 });
 
 export type TenantExportApplication = typeof TenantExportApplication.Type;
@@ -288,6 +299,8 @@ export const BackupRestoreResponse = Schema.Struct({
     devices: Schema.Number,
     /** Device-level links whose device no longer exists in the tenant. */
     deviceAssignments: Schema.Number,
+    /** Directory links dropped because the directory group is gone or the group is dynamic. */
+    directoryLinks: Schema.optional(Schema.Number),
     certificates: Schema.Number,
     auditLog: Schema.Number,
   }),

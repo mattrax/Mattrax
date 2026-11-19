@@ -8,6 +8,7 @@ import {
   refreshAppleSecurityInfo,
   sweepDeviceCommands,
   sweepWindowsStateCommands,
+  syncDirectoryGroupsForTenant,
   syncDynamicGroupsForTenant,
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
 } from "@mattrax/mdm-apple";
@@ -120,6 +121,11 @@ export type MaintenanceOptions = {
   readonly notifyCredentialExpiry?: CredentialExpiryNotifier;
   /** Recompute dynamic group membership. Defaults to true. */
   readonly dynamicGroups?: boolean;
+  /**
+   * Recompute device groups linked to a directory group. Defaults to true; the
+   * daily run is the backstop for a missed SCIM/Entra/device-link event.
+   */
+  readonly directoryGroups?: boolean;
   /**
    * Webhook delivery rows older than this many days are deleted. Defaults to
    * 30. Set to `0` to keep delivery history indefinitely.
@@ -238,6 +244,8 @@ export type MaintenanceResult = {
   readonly serverCertificateChecked: number;
   /** Dynamic groups whose materialised membership was recomputed. */
   readonly dynamicGroupsEvaluated: number;
+  /** Directory-linked device groups whose derived membership was recomputed. */
+  readonly directoryGroupsEvaluated: number;
   /** Webhook delivery rows deleted by retention. */
   readonly purgedWebhookDeliveries: number;
   /** Failed webhook deliveries retried this run. */
@@ -490,6 +498,7 @@ export const runMaintenance = (
       purgedScepCaTrust: 0,
       serverCertificateChecked: 0,
       dynamicGroupsEvaluated: 0,
+      directoryGroupsEvaluated: 0,
       purgedWebhookDeliveries: 0,
       webhookRetries: 0,
       webhookRetrySucceeded: 0,
@@ -937,15 +946,23 @@ export const runMaintenance = (
       result.webhookRetryFailed = retried.failed;
     }
 
-    // 8. Recompute dynamic group membership. Rules can depend on last-seen age
+    // 8. Recompute group membership. Dynamic rules can depend on last-seen age
     //    and inventory health, so daily maintenance is the backstop even when a
-    //    device never checks in again. Tenant-scoped: one pass per tenant.
-    if (options.dynamicGroups !== false) {
-      const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
+    //    device never checks in again. Directory-linked groups are recomputed
+    //    for the same reason: a dropped SCIM/Entra notification or device-user
+    //    edit must not leave a leaver's devices in a group forever. Both are
+    //    tenant-scoped: one pass per tenant.
+    const organizations = yield* db.select({ id: s.organization.id }).from(s.organization);
 
-      for (const organization of organizations) {
+    for (const organization of organizations) {
+      if (options.dynamicGroups !== false) {
         const evaluated = yield* syncDynamicGroupsForTenant(db, organization.id, { now });
         result.dynamicGroupsEvaluated += evaluated.length;
+      }
+
+      if (options.directoryGroups !== false) {
+        const evaluated = yield* syncDirectoryGroupsForTenant(db, organization.id, { now });
+        result.directoryGroupsEvaluated += evaluated.length;
       }
     }
 

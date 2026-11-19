@@ -47,6 +47,7 @@ import {
   type ManagementManifest,
 } from "@mattrax/management-backend";
 import { certificateDeviceIdsFor, createWindowsBackend } from "@mattrax/mdm-windows";
+import { assignedApplicationIdsForDevice } from "@mattrax/mdm-core";
 import { normalizeIssuedCertificateSerial } from "@mattrax/mdm-core";
 import { isPlistObject, type PlistInput, type PlistObject } from "@mattrax/mdm-core";
 import { parseDeviceInventory } from "@mattrax/mdm-core";
@@ -2252,44 +2253,15 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       );
 
     /** Whether an application is still assigned to the device, directly or by group. */
-    const applicationAssignedToDevice = (deviceId: string, applicationId: string) =>
-      Effect.gen(function* () {
-        const [direct] = yield* db
-          .select({ deviceId: s.applicationDevice.deviceId })
-          .from(s.applicationDevice)
-          .where(
-            and(
-              eq(s.applicationDevice.deviceId, deviceId),
-              eq(s.applicationDevice.applicationId, applicationId),
-            ),
-          )
-          .limit(1);
-
-        if (direct) return true;
-
-        const groups = yield* db
-          .select({ groupId: s.applicationGroup.groupId })
-          .from(s.applicationGroup)
-          .where(eq(s.applicationGroup.applicationId, applicationId));
-
-        if (groups.length === 0) return false;
-
-        const [member] = yield* db
-          .select({ deviceId: s.groupDevice.deviceId })
-          .from(s.groupDevice)
-          .where(
-            and(
-              eq(s.groupDevice.deviceId, deviceId),
-              inArray(
-                s.groupDevice.groupId,
-                groups.map((group) => group.groupId),
-              ),
-            ),
-          )
-          .limit(1);
-
-        return Boolean(member);
-      });
+    const applicationAssignedToDevice = (
+      organizationId: string,
+      deviceId: string,
+      applicationId: string,
+    ) =>
+      Effect.map(
+        assignedApplicationIdsForDevice(db, { organizationId, deviceId }),
+        (ids) => ids.includes(applicationId),
+      );
 
     type CatalogueApplication = typeof s.application.$inferSelect;
 
@@ -2730,7 +2702,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           // A policy-owned install may target a catalogue app that is not
           // assigned through the catalogue. The policy check-in re-queues that
           // install, so only catalogue-assigned work is retried here.
-          if (!(yield* applicationAssignedToDevice(device.id, application.id))) continue;
+          if (!(yield* applicationAssignedToDevice(device.organizationId, device.id, application.id)))
+            continue;
 
           if (!shouldRetryInstall(history, { ...install, now: at })) continue;
 
@@ -5184,4 +5157,16 @@ export {
   type DynamicGroupPreview,
   type DynamicGroupSyncOptions,
   type DynamicGroupSyncResult,
+} from "@mattrax/mdm-core";
+
+export {
+  syncDirectoryGroup,
+  syncDirectoryGroupsForTenant,
+  type DirectoryGroupSyncOptions,
+  type DirectoryGroupSyncResult,
+} from "@mattrax/mdm-core";
+
+export {
+  assignedApplicationIdsForDevice,
+  assignedDeviceIdsForApplication,
 } from "@mattrax/mdm-core";

@@ -186,6 +186,137 @@ describe("maintenance dynamic groups", () => {
   });
 });
 
+describe("maintenance directory-linked groups", () => {
+  it("repairs stale derived membership when an event was missed", async () => {
+    const db = makeDb();
+    db.store.organization.push({
+      id: "org-1",
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.user_group.push({
+      id: "directory-1",
+      organizationId: "org-1",
+      name: "Engineering",
+      externalId: "entra-group-1",
+      description: null,
+      source: "graph",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.user.push({
+      id: "user-1",
+      organizationId: "org-1",
+      name: "Ada",
+      email: "ada@acme.test",
+      externalId: "entra-user-1",
+      source: "entra",
+      disabled: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.user_group_member.push({ groupId: "directory-1", userId: "user-1" });
+    db.store.device.push({
+      id: "device-1",
+      organizationId: "org-1",
+      proto: "apple",
+      status: "enrolled",
+      name: "Ada's Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device.push({
+      id: "device-2",
+      organizationId: "org-1",
+      proto: "apple",
+      status: "enrolled",
+      name: "Old Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device_user.push({
+      organizationId: "org-1",
+      deviceId: "device-1",
+      userId: "user-1",
+      source: "manual",
+      createdAt: now,
+    });
+    db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Engineering devices",
+      notes: null,
+      kind: "manual",
+      rules: null,
+      directoryGroupId: "directory-1",
+      lastEvaluatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // A missed event left a derived row for a device no longer linked to any
+    // member of the directory group.
+    db.store.group_device.push({
+      groupId: "group-1",
+      deviceId: "device-2",
+      source: "directory",
+    });
+
+    const result = await run(db);
+
+    expect(result.directoryGroupsEvaluated).toBe(1);
+    expect(db.store.group_device).toEqual([
+      { groupId: "group-1", deviceId: "device-1", source: "directory" },
+    ]);
+  });
+
+  it("can be disabled for tests and constrained hosts", async () => {
+    const db = makeDb();
+    db.store.organization.push({
+      id: "org-1",
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.user_group.push({
+      id: "directory-1",
+      organizationId: "org-1",
+      name: "Engineering",
+      externalId: "entra-group-1",
+      description: null,
+      source: "graph",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.enterprise_group.push({
+      id: "group-1",
+      organizationId: "org-1",
+      name: "Engineering devices",
+      notes: null,
+      kind: "manual",
+      rules: null,
+      directoryGroupId: "directory-1",
+      lastEvaluatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        directoryGroups: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.directoryGroupsEvaluated).toBe(0);
+  });
+});
+
 describe("maintenance webhook deliveries", () => {
   const endpoint = async () => ({
     id: "wh-1",

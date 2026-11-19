@@ -45,6 +45,7 @@ import {
   runWelcomeEmailSweep,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
+  syncDirectoryGroupsForTenant,
   makeApplePush,
   makeAppAuth,
   makeAuthLive,
@@ -478,48 +479,65 @@ const serverCertificateJob = (env: Env) =>
     return yield* runServerCertificateCheck(db, { origin: apiEnv.ORIGIN });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
+/**
+ * Wake the devices affected by a directory membership change.
+ *
+ * Shared by the hourly sweep and the daily job: both write directory
+ * memberships and must re-derive linked device groups before pushing, or a
+ * change written during that tick is never seen by a later run (there are no
+ * changed users to report).
+ */
+const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
+  const apns = makeApnsService(
+    env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
+      ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
+      : NoopPushTransport(
+          "APNs push relay is not configured; devices will poll for changes instead",
+        ),
+  );
+
+  const androidConfig = androidDeliveryConfig(apiEnv);
+
+  const applePush = makeApplePush({
+    db,
+    schema,
+    apns,
+    authSecret: env.AUTH_SECRET,
+    webhookFetch: fetch,
+  });
+
+  return (organizationId: string, userIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      // Device groups linked to directory groups must be recomputed before the
+      // linked devices are woken, or a newly derived group policy would not be
+      // part of their next check-in.
+      yield* syncDirectoryGroupsForTenant(db, organizationId);
+
+      const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
+
+      if (deviceIds.length === 0) return;
+
+      yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
+      yield* syncAndroidPoliciesForTenant({
+        db,
+        config: androidConfig,
+        organizationId,
+        deviceIds,
+      }).pipe(
+        Effect.catch(() => Effect.void),
+        Effect.provide(androidManagementLayer(androidConfig)),
+      );
+    });
+};
+
 /** Standalone scheduled Entra sweep used by the hourly trigger. */
 const entraSyncJob = (env: Env) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
-    const apns = makeApnsService(
-      env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
-        ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
-        : NoopPushTransport(
-            "APNs push relay is not configured; devices will poll for changes instead",
-          ),
-    );
-
-    const androidConfig = androidDeliveryConfig(apiEnv);
-
-    const applePush = makeApplePush({
-      db,
-      schema,
-      apns,
-      authSecret: env.AUTH_SECRET,
-      webhookFetch: fetch,
-    });
-
     // Directory membership changes can add or remove user-assigned policies.
     // Wake the linked devices so they converge without waiting for a poll.
-    const refreshMemberships = (organizationId: string, userIds: ReadonlyArray<string>) =>
-      Effect.gen(function* () {
-        const deviceIds = yield* linkedDeviceIdsForUsers(db, organizationId, userIds);
-
-        if (deviceIds.length === 0) return;
-
-        yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
-        yield* syncAndroidPoliciesForTenant({
-          db,
-          config: androidConfig,
-          organizationId,
-          deviceIds,
-        }).pipe(
-          Effect.catch(() => Effect.void),
-          Effect.provide(androidManagementLayer(androidConfig)),
-        );
-      });
+    const refreshMemberships = makeMembershipRefresher(db, env);
 
     return yield* entraSyncEffect(
       db,
@@ -1494,9 +1512,18 @@ export const createApiRuntime = (
         );
 
         // Entra directory sync runs last, also bounded and failure-isolated per
-        // tenant. Without Graph credentials the sweep is a no-op.
+        // tenant. Without Graph credentials the sweep is a no-op. The same
+        // callback as the hourly sweep re-derives linked groups and wakes their
+        // devices, so memberships written by this tick converge immediately.
+        const refreshMemberships = makeMembershipRefresher(db, env);
+
         const entra = yield* Effect.exit(
-          entraSyncEffect(db, env, parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY)),
+          entraSyncEffect(
+            db,
+            env,
+            parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
+            refreshMemberships,
+          ),
         );
 
         return { maintenance, onboarding, backups, entra };

@@ -115,7 +115,11 @@ import { queryClient } from "~/lib/query-client";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 
-type GroupMembership = { id: string; name: string };
+type GroupMembership = {
+  id: string;
+  name: string;
+  source?: "manual" | "dynamic" | "directory";
+};
 
 const ACTIVITY_PAGE_SIZE = 50;
 
@@ -918,15 +922,40 @@ export default function DeviceDetailPage() {
   const membershipRows = () =>
     (groupMemberships.data?.groups ?? []).map((group) => ({
       ...group,
-      kind: knownGroup(group.id)?.kind,
+      kind:
+        group.source === "directory"
+          ? ("directory" as const)
+          : knownGroup(group.id)?.kind,
     }));
 
   const assignedGroupIds = () => new Set((groupMemberships.data?.groups ?? []).map((g) => g.id));
 
   const joinableGroups = () =>
     (groupDirectory.data?.rows ?? []).filter(
-      (group) => group.kind !== "dynamic" && !assignedGroupIds().has(group.id),
+      (group) =>
+        group.kind !== "dynamic" &&
+        !group.directoryGroupId &&
+        !assignedGroupIds().has(group.id),
     );
+
+  const membershipTone = (kind: "manual" | "dynamic" | "directory" | undefined) =>
+    kind === "dynamic" || kind === "directory" ? "brand" : "muted";
+
+  const membershipLabel = (kind: "manual" | "dynamic" | "directory" | undefined) => {
+    if (kind === "dynamic") return "Dynamic match";
+
+    if (kind === "directory") return "Directory";
+
+    return "Manual";
+  };
+
+  const membershipDescription = (kind: "manual" | "dynamic" | "directory" | undefined) => {
+    if (kind === "dynamic") return "Included by the group's current rules.";
+
+    if (kind === "directory") return "Derived from the linked directory group.";
+
+    return "Assigned directly on this device.";
+  };
 
   const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
 
@@ -3084,19 +3113,23 @@ export default function DeviceDetailPage() {
                                           fallback={<Chip tone="muted">Group</Chip>}
                                         >
                                           {(kind) => (
-                                            <Chip tone={kind() === "dynamic" ? "brand" : "muted"}>
-                                              {kind() === "dynamic" ? "Dynamic match" : "Manual"}
+                                            <Chip tone={membershipTone(kind())}>
+                                              {membershipLabel(kind())}
                                             </Chip>
                                           )}
                                         </Show>
                                         <span class="text-[11px] text-muted-foreground">
-                                          {group.kind === "dynamic"
-                                            ? "Included by the group's current rules."
-                                            : "Assigned directly on this device."}
+                                          {membershipDescription(group.kind)}
                                         </span>
                                       </div>
                                     </div>
-                                    <Show when={writable() && group.kind === "manual"}>
+                                    <Show
+                                      when={
+                                        writable() &&
+                                        group.kind === "manual" &&
+                                        group.source !== "directory"
+                                      }
+                                    >
                                       <Button
                                         variant="ghost"
                                         size="xs"

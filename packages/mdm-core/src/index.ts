@@ -1,5 +1,7 @@
 export * from "./appleUsers.js";
 
+export * from "./applicationAssignments.js";
+
 export * from "./applications.js";
 
 export * from "./audit.js";
@@ -11,6 +13,8 @@ export * from "./commands.js";
 export * from "./deliveryMode.js";
 
 export * from "./deviceLifecycle.js";
+
+export * from "./directoryGroups.js";
 
 export * from "./dynamicGroups.js";
 

@@ -635,8 +635,20 @@ export const syncEntraDirectory = (options: {
         .filter((group) => group.externalId && !seenGroupIds.has(group.externalId))
         .map((group) => group.id);
 
-      if (staleGroups.length)
+      if (staleGroups.length) {
+        // Removing a directory group cascades its memberships and unlinks any
+        // device group it drove. Those members are the people whose devices
+        // must be recomputed and woken, even though their own rows did not
+        // change.
+        const removedMembers = yield* db
+          .select({ userId: schema.userGroupMember.userId })
+          .from(schema.userGroupMember)
+          .where(inArray(schema.userGroupMember.groupId, staleGroups));
+
+        for (const member of removedMembers) changedUserIds.add(member.userId);
+
         yield* db.delete(schema.userGroup).where(inArray(schema.userGroup.id, staleGroups));
+      }
     }
 
     return { ...counts, usersDelta, groupsDelta, changedUserIds: [...changedUserIds] };

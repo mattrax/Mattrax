@@ -34,6 +34,7 @@ const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed
 
 import {
   ACTIVE_COMMAND_STATUSES,
+  assignedApplicationIdsForDevice,
   commandDedupeKey,
   commandIsExpired,
   deviceCommandExpiresAt,
@@ -1412,34 +1413,7 @@ const assignedAndroidApplications = (
   unknown
 > =>
   Effect.gen(function* () {
-    const direct = yield* db
-      .select({ applicationId: schema.applicationDevice.applicationId })
-      .from(schema.applicationDevice)
-      .where(eq(schema.applicationDevice.deviceId, input.deviceId));
-
-    const groups = yield* db
-      .select({ groupId: schema.groupDevice.groupId })
-      .from(schema.groupDevice)
-      .where(eq(schema.groupDevice.deviceId, input.deviceId));
-
-    const groupApplications = groups.length
-      ? yield* db
-          .select({ applicationId: schema.applicationGroup.applicationId })
-          .from(schema.applicationGroup)
-          .where(
-            inArray(
-              schema.applicationGroup.groupId,
-              groups.map((group) => group.groupId),
-            ),
-          )
-      : [];
-
-    const ids = [
-      ...new Set([
-        ...direct.map((row) => row.applicationId),
-        ...groupApplications.map((row) => row.applicationId),
-      ]),
-    ];
+    const ids = yield* assignedApplicationIdsForDevice(db, input);
 
     if (ids.length === 0) return [];
 

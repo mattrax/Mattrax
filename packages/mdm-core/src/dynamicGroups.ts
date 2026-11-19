@@ -448,7 +448,7 @@ export const syncDynamicGroupsForDevice = (
 
 export type DynamicGroupPreview = {
   readonly groupId: string;
-  readonly kind: "manual" | "dynamic";
+  readonly kind: "manual" | "dynamic" | "directory";
   readonly count: number;
   readonly devices: ReadonlyArray<{ id: string; name: string }>;
   readonly evaluatedAt: Date;
@@ -483,7 +483,7 @@ export const previewDynamicGroup = (
 
     const devices = yield* loadTenantDevices(db, organizationId);
 
-    if (group.kind !== "dynamic") {
+    if (group.kind !== "dynamic" || group.directoryGroupId) {
       const links = yield* db
         .select()
         .from(s.groupDevice)
@@ -496,7 +496,15 @@ export const previewDynamicGroup = (
         .map((device) => ({ id: device.id, name: device.name }))
         .sort((left, right) => left.name.localeCompare(right.name));
 
-      return { groupId, kind: "manual", count: members.length, devices: members, evaluatedAt: now };
+      // A linked group's members are materialised from directory membership;
+      // the UI treats this as read-only rather than as an empty manual group.
+      return {
+        groupId,
+        kind: group.directoryGroupId ? ("directory" as const) : ("manual" as const),
+        count: members.length,
+        devices: members,
+        evaluatedAt: now,
+      };
     }
 
     const rules = group.rules;

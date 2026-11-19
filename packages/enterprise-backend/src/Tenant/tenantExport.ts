@@ -209,6 +209,21 @@ export const buildTenantExport = (
           .where(inArray(schema.applicationDevice.applicationId, applicationIds))
       : [];
 
+    const applicationUserGroups = applicationIds.length
+      ? yield* db
+          .select({
+            applicationId: schema.userGroupApplication.applicationId,
+            groupId: schema.userGroupApplication.groupId,
+          })
+          .from(schema.userGroupApplication)
+          .where(
+            and(
+              eq(schema.userGroupApplication.organizationId, organizationId),
+              inArray(schema.userGroupApplication.applicationId, applicationIds),
+            ),
+          )
+      : [];
+
     const deviceIds = [
       ...new Set([
         ...groupDevices.map((link) => link.deviceId),
@@ -293,6 +308,15 @@ export const buildTenantExport = (
       ]);
     }
 
+    const applicationUserGroupIds = new Map<string, string[]>();
+
+    for (const link of applicationUserGroups) {
+      applicationUserGroupIds.set(link.applicationId, [
+        ...(applicationUserGroupIds.get(link.applicationId) ?? []),
+        link.groupId,
+      ]);
+    }
+
     const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
       where: { organizationId },
     });
@@ -360,6 +384,7 @@ export const buildTenantExport = (
       notes: group.notes,
       kind: group.kind,
       rules: group.rules ?? null,
+      directoryGroupId: group.directoryGroupId ?? null,
       devices: groupDevices.flatMap((link) => {
         if (link.groupId !== group.id) return [];
         const device = devicesById.get(link.deviceId);
@@ -469,6 +494,7 @@ export const buildTenantExport = (
         priority: installer.priority,
       })),
       groupKeys: applicationGroupKeys.get(application.id) ?? [],
+      userGroupIds: applicationUserGroupIds.get(application.id) ?? [],
     }));
 
     const assignments = new Map<

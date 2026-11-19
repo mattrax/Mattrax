@@ -327,7 +327,7 @@ export const DeviceRow = Schema.Struct({
       Schema.Struct({
         id: Schema.String,
         name: Schema.String,
-        source: Schema.optional(Schema.Literals(["manual", "dynamic"])),
+        source: Schema.optional(Schema.Literals(["manual", "dynamic", "directory"])),
       }),
     ),
   ),

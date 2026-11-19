@@ -66,6 +66,8 @@ export const ApplicationRow = Schema.Struct({
   notes: Schema.optional(NullableString),
   installers: Schema.Array(ApplicationInstallerRow),
   groupsCount: Schema.optional(Schema.Number),
+  /** Directory user groups assigned this application. */
+  userGroupsCount: Schema.optional(Schema.Number),
   devicesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
   updatedAt: Schema.String,
@@ -98,6 +100,10 @@ export const ApplicationNode = Schema.Struct({
   ...ApplicationRow.fields,
   groups: Schema.Array(GroupRelation),
   devices: Schema.Array(DeviceRelation),
+  /** Directory user groups assigned this application. */
+  userGroups: Schema.Array(GroupRelation),
+  /** Devices reached directly or through any assignment (group, directory group). */
+  resolvedDevicesCount: Schema.optional(Schema.Number),
 });
 
 export type ApplicationNode = typeof ApplicationNode.Type;
@@ -141,12 +147,15 @@ export const PatchApplicationAssignmentsRequest = Schema.Struct({
   assign: Schema.optional(
     Schema.Struct({
       groups: Schema.optional(Schema.Array(Schema.String)),
+      /** Directory (Entra/SCIM) user groups; members' devices receive the app. */
+      userGroups: Schema.optional(Schema.Array(Schema.String)),
       devices: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
   unassign: Schema.optional(
     Schema.Struct({
       groups: Schema.optional(Schema.Array(Schema.String)),
+      userGroups: Schema.optional(Schema.Array(Schema.String)),
       devices: Schema.optional(Schema.Array(Schema.String)),
     }),
   ),
