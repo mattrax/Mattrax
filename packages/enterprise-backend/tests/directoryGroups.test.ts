@@ -221,6 +221,50 @@ describe("directory-linked device groups", () => {
     expect(memberships(db)).toEqual([]);
   });
 
+  it("runs each recompute in a transaction that locks the group row", async () => {
+    const db = makeDb();
+
+    seedDirectoryGroup(db, {
+      userIds: ["user-1"],
+      deviceIds: ["device-1"],
+      links: [{ userId: "user-1", deviceId: "device-1" }],
+    });
+
+    const originalTransaction = db.transaction.bind(db);
+    const originalSelect = db.select.bind(db);
+    let transactions = 0;
+    let locks = 0;
+
+    // SAFETY: the fake implements the same transaction signature; the wrapper
+    // only counts calls and forwards the original effect.
+    db.transaction = ((work: any) => {
+      transactions++;
+
+      return originalTransaction(work);
+    }) as typeof db.transaction;
+
+    // SAFETY: the fake select builder exposes `for`; wrapping it lets the test
+    // observe that the recompute takes a row lock before reading memberships.
+    (db as any).select = (...args: any[]) => {
+      const builder = originalSelect(...args);
+      const originalFor = builder.for.bind(builder);
+
+      builder.for = (strength: string) => {
+        if (strength === "update") locks++;
+
+        return originalFor(strength);
+      };
+
+      return builder;
+    };
+
+    await runEffect(syncDirectoryGroup(db, organizationId, "group-1", { now }));
+
+    expect(transactions).toBe(1);
+    expect(locks).toBe(1);
+    expect(memberships(db)).toEqual(["group-1:device-1:directory"]);
+  });
+
   it("isolates tenants and ignores cross-tenant users", async () => {
     const db = makeDb();
 

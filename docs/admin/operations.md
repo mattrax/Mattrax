@@ -456,6 +456,14 @@ assignments are not exported, so recreated groups are manual groups and direct
 assignments are dropped. Uploaded app bytes are re-linked only when the bundle carries
 the tenant's R2 key; otherwise the application is listed as needing a re-upload.
 
+Directory-linked groups restore their membership from the tenant's **live** directory:
+the link is re-established only when the referenced directory group still exists in
+this tenant, and a dynamic group never keeps a link. Dropped links are reported in
+`skipped.directoryLinks`. Application assignments to directory user groups are re-linked
+the same way (`userGroupIds`), because directory groups themselves are not part of a
+bundle. Run a directory sync after a restore if the directory group or its members
+changed since the backup was taken.
+
 ### Bundle contents
 
 Included:
@@ -488,6 +496,12 @@ place (see above).
 Limits: version 1, 8 MB, 10,000 rows per class, one transaction. Slugs are sanitised and
 suffixed (`-2`, `-3`). Uploaded app files must be re-uploaded after an import (not after
 an in-place restore).
+
+A **new-tenant import drops** directory links on device groups and application
+assignments to directory user groups. The bundle carries the source tenant's directory
+group ids, but directory groups are not exported, so there is nothing in the new tenant
+to link them to. Re-link groups and application assignments after the first directory
+sync, or use an in-place restore when the goal is to recover the same tenant.
 
 ### Tenant deletion
 

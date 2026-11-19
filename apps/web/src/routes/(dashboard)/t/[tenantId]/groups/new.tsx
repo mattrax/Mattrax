@@ -130,9 +130,11 @@ export default function NewGroupPage() {
 
                     if (value === "dynamic") {
                       setDirectoryGroupId(null);
+                      setDevices(new Set<string>());
                       setKind("dynamic");
                     } else if (value === "directory") {
                       setKind("manual");
+                      setDevices(new Set<string>());
                       setDirectoryGroupId(
                         (directory.data?.groups ?? [])[0]?.id ?? "",
                       );

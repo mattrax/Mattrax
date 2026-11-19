@@ -196,6 +196,15 @@ export default function GroupDetailPage() {
   const [policyModes, setPolicyModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
   const [policySearch, setPolicySearch] = createSignal("");
   const [seeded, setSeeded] = createSignal(false);
+
+  /** Only explicit manual rows are the editable selection; derived rows are not. */
+  const savedManualDeviceIds = () =>
+    new Set(
+      (row()?.devices ?? [])
+        .filter((device) => (device.source ?? "manual") === "manual")
+        .map((device) => device.id),
+    );
+
   createEffect(
     () => ({ row: row(), edit: edit() }),
     ({ row, edit }) => {
@@ -205,7 +214,7 @@ export default function GroupDetailPage() {
         setKind(row.kind ?? "manual");
         setDirectoryGroupId(row.directoryGroupId ?? null);
         setRules(row.rules ?? { version: 1 });
-        setDeviceIds(new Set(row.devices?.map((d) => d.id) ?? []));
+        setDeviceIds(savedManualDeviceIds());
         setPolicyModes(
           new Map(
             (row.policies ?? []).map((policy) => [policy.id, policy.mode ?? ("include" as const)]),
@@ -231,6 +240,14 @@ export default function GroupDetailPage() {
   const kindChanged = () => kind() !== (row()?.kind ?? "manual");
 
   const membershipMode = () => (directoryGroupId() ? "directory" : kind());
+
+  /**
+   * A mode switch changes which rows the server keeps. Re-seed the editable
+   * selection so stale manual ticks are not shown as if they survived.
+   */
+  const resetDeviceSelection = (next: "manual" | "dynamic" | "directory") => {
+    setDeviceIds(next === "manual" ? savedManualDeviceIds() : new Set<string>());
+  };
 
   const directoryChanged = () => (directoryGroupId() ?? null) !== (row()?.directoryGroupId ?? null);
 
@@ -597,11 +614,13 @@ export default function GroupDetailPage() {
 
                       if (value === "dynamic") {
                         setDirectoryGroupId(null);
+                        resetDeviceSelection("dynamic");
 
                         if (kind() !== "dynamic") setRevealRules(true);
                         setKind("dynamic");
                       } else if (value === "directory") {
                         setKind("manual");
+                        resetDeviceSelection("directory");
 
                         setDirectoryGroupId(
                           directoryGroupId() ?? (directory.data?.groups ?? [])[0]?.id ?? "",
@@ -609,6 +628,7 @@ export default function GroupDetailPage() {
 
                       } else if (value === "manual") {
                         setDirectoryGroupId(null);
+                        resetDeviceSelection("manual");
                         setKind("manual");
                       }
                     }}
@@ -645,6 +665,7 @@ export default function GroupDetailPage() {
                   Device membership is read-only: each active member contributes the devices linked
                   to them. Recomputes run after directory sync, a device-user change, or an explicit
                   group sync. Policies and applications assigned to this group apply as usual.
+                  Linking replaces any manual membership this group had; unlinking leaves it empty.
                 </p>
               </Show>
               <Field label="Notes">

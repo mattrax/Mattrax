@@ -299,6 +299,8 @@ export const BackupRestoreResponse = Schema.Struct({
     devices: Schema.Number,
     /** Device-level links whose device no longer exists in the tenant. */
     deviceAssignments: Schema.Number,
+    /** Directory links dropped because the directory group is gone or the group is dynamic. */
+    directoryLinks: Schema.optional(Schema.Number),
     certificates: Schema.Number,
     auditLog: Schema.Number,
   }),

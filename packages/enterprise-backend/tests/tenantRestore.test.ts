@@ -497,7 +497,7 @@ describe("in-place tenant restore", () => {
       retention: "default",
     });
 
-    await runEffect(
+    const restored = await runEffect(
       restoreTenantFromBackup(db, storage, organization, {
         backupId: "run-2",
         actor: { accountId: "user-1", email: "owner@example.com" },
@@ -505,6 +505,8 @@ describe("in-place tenant restore", () => {
         now: new Date("2026-11-02T00:00:00Z"),
       }),
     );
+
+    expect(restored.skipped.directoryLinks).toBe(0);
 
     const restoredGroup = db.store.enterprise_group.find(
       (row: { name: string }) => row.name === "Engineering devices",
@@ -591,6 +593,33 @@ describe("in-place tenant restore", () => {
 });
 
 describe("restore bundle validation", () => {
+  it("rejects a dynamic group that is also directory-linked", async () => {
+    const failure = await runEffect(
+      Effect.match(
+        parseTenantRestoreBundle(
+          JSON.stringify({
+            ...bundle,
+            groups: [
+              {
+                key: "g",
+                name: "G",
+                kind: "dynamic",
+                rules: { version: 1 },
+                directoryGroupId: "directory-1",
+                policyKeys: [],
+                devices: [],
+              },
+            ],
+          }),
+        ),
+        { onFailure: (error) => error, onSuccess: () => null },
+      ),
+    );
+
+    expect(failureReason(failure)).toBe("invalid_bundle");
+    expect(failure?.message).toContain("cannot also be linked");
+  });
+
   it("rejects a group that references a missing policy", async () => {
     const failure = await runEffect(
       Effect.match(

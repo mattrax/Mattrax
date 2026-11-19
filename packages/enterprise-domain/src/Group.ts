@@ -76,7 +76,7 @@ export const GroupNode = Schema.Struct({
   policiesCount: Schema.optional(Schema.Number),
   createdAt: Schema.String,
   updatedAt: Schema.String,
-  devices: Schema.optional(Schema.Array(GroupRelation)),
+  devices: Schema.optional(Schema.Array(DeviceRelation)),
   policies: Schema.optional(Schema.Array(GroupPolicyRelation)),
 });
 

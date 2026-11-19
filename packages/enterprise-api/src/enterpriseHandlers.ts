@@ -150,6 +150,7 @@ import {
   syncDirectoryGroupsForTenant,
   syncDynamicGroup,
   syncDynamicGroupsForDevice,
+  assignedDeviceIdsForApplication,
   toWebhookEndpointInfo,
   webhookEventForAuditAction,
   webhookSecretPrefix,
@@ -2792,85 +2793,9 @@ export const createEnterpriseService = ({
 
   const applicationAssignedDeviceIds = (organizationId: string, applicationId: string) =>
     Effect.gen(function* () {
-      const groups = yield* db
-        .select()
-        .from(schema.applicationGroup)
-        .where(eq(schema.applicationGroup.applicationId, applicationId));
+      const ids = yield* assignedDeviceIdsForApplication(db, { organizationId, applicationId });
 
-      const direct = yield* db
-        .select()
-        .from(schema.applicationDevice)
-        .where(eq(schema.applicationDevice.applicationId, applicationId));
-
-      const userGroups = yield* db
-        .select({ groupId: schema.userGroupApplication.groupId })
-        .from(schema.userGroupApplication)
-        .where(
-          and(
-            eq(schema.userGroupApplication.organizationId, organizationId),
-            eq(schema.userGroupApplication.applicationId, applicationId),
-          ),
-        );
-
-      const groupDevices = groups.length
-        ? yield* db
-            .select()
-            .from(schema.groupDevice)
-            .where(
-              inArray(
-                schema.groupDevice.groupId,
-                groups.map((group) => group.groupId),
-              ),
-            )
-        : [];
-
-      // A directory user group reaches devices through its active members and
-      // their explicit device links, exactly like a user-group policy.
-      const directoryUserGroupIds = [...new Set(userGroups.map((row) => row.groupId))];
-
-      const userGroupMembers = directoryUserGroupIds.length
-        ? yield* db
-            .select({ userId: schema.userGroupMember.userId })
-            .from(schema.userGroupMember)
-            .where(inArray(schema.userGroupMember.groupId, directoryUserGroupIds))
-        : [];
-
-      const memberIds = [...new Set(userGroupMembers.map((row) => row.userId))];
-
-      const activeUsers = memberIds.length
-        ? yield* db
-            .select({ id: schema.user.id })
-            .from(schema.user)
-            .where(
-              and(
-                eq(schema.user.organizationId, organizationId),
-                eq(schema.user.disabled, false),
-                inArray(schema.user.id, memberIds),
-              ),
-            )
-        : [];
-
-      const activeIds = activeUsers.map((row) => row.id);
-
-      const userDevices = activeIds.length
-        ? yield* db
-            .select({ deviceId: schema.deviceUser.deviceId })
-            .from(schema.deviceUser)
-            .where(
-              and(
-                eq(schema.deviceUser.organizationId, organizationId),
-                inArray(schema.deviceUser.userId, activeIds),
-              ),
-            )
-        : [];
-
-      const ids = new Set<string>([
-        ...direct.map((row) => row.deviceId),
-        ...groupDevices.map((row) => row.deviceId),
-        ...userDevices.map((row) => row.deviceId),
-      ]);
-
-      if (ids.size === 0) return [];
+      if (ids.length === 0) return [];
 
       const devices = yield* db
         .select()
@@ -6663,6 +6588,13 @@ export const createEnterpriseService = ({
             return yield* Effect.fail(
               new EnterpriseBadRequest({
                 message: `Group "${groupName}" must list its policy assignments`,
+              }),
+            );
+
+          if (group.kind === "dynamic" && group.directoryGroupId)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Dynamic group "${groupName}" cannot also be linked to a directory group`,
               }),
             );
         }
@@ -12677,6 +12609,18 @@ export const createEnterpriseService = ({
               }
             }
 
+            // A derived group's membership is recomputed from directory/users
+            // (or rules), so a pre-registration linked to it would be dropped
+            // by the next sync. Only manual groups accept explicit devices.
+            const assignedGroup = groupId ? groupsById.get(groupId) : undefined;
+
+            if (assignedGroup && (assignedGroup.kind !== "manual" || assignedGroup.directoryGroupId))
+              return {
+                serial,
+                status: "error" as const,
+                error: `Group "${assignedGroup.name}" derives its device membership; choose a manual group.`,
+              };
+
             const timestamp = now();
 
             if (existing) {
@@ -14895,6 +14839,12 @@ export const createEnterpriseService = ({
 
         const wasDynamic = existing.kind === "dynamic";
         const wasLinked = Boolean(existing.directoryGroupId);
+
+        // Capture the old membership so devices that lose the group are woken
+        // too. A linked group can gain or lose every member here without any
+        // device check-in.
+        const beforeDevices = yield* applePush.deviceIdsInGroups([groupId]);
+
         yield* db
           .update(schema.enterpriseGroup)
           .set({
@@ -14945,6 +14895,21 @@ export const createEnterpriseService = ({
         }
 
         yield* audit(ctx, "group.updated", "group", groupId, { fields: Object.keys(body) });
+
+        // Membership-affecting edits (link, unlink, mode or rule change) can
+        // change which devices the group reaches. Wake the union of the old and
+        // new members so policies are delivered and withdrawn immediately.
+        if (
+          body.kind !== undefined ||
+          body.directoryGroupId !== undefined ||
+          body.rules !== undefined
+        ) {
+          const afterDevices = yield* applePush.deviceIdsInGroups([groupId]);
+          const affected = [...new Set([...beforeDevices, ...afterDevices])];
+
+          yield* applePush.pushAppleDevices(affected);
+          yield* syncAndroidDevices(ctx.organization.id, affected);
+        }
 
         return ok;
       }),
@@ -16505,6 +16470,14 @@ export const createEnterpriseService = ({
           ...(body.unassign?.devices ?? []),
         ]);
 
+        // Devices that currently receive the app must be woken after an
+        // unassign too, or the app is only withdrawn on their next unrelated
+        // check-in. Read before the assignment rows are rewritten.
+        const beforeAssigned = yield* applicationAssignedDeviceIds(
+          ctx.organization.id,
+          applicationId,
+        );
+
         if (body.assign?.groups?.length)
           yield* db
             .insert(schema.applicationGroup)
@@ -16560,11 +16533,18 @@ export const createEnterpriseService = ({
                 inArray(schema.applicationDevice.deviceId, body.unassign.devices),
               ),
             );
+
         const affected = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
-        yield* applePush.pushAppleDevices(affected.map((device) => device.id));
+
+        const allAffected = new Map(
+          [...beforeAssigned, ...affected].map((device) => [device.id, device]),
+        );
+
+        const affectedDevices = [...allAffected.values()];
+        yield* applePush.pushAppleDevices(affectedDevices.map((device) => device.id));
         yield* syncAndroidDevices(
           ctx.organization.id,
-          affected.filter((device) => device.proto === "android").map((device) => device.id),
+          affectedDevices.flatMap((device) => (device.proto === "android" ? [device.id] : [])),
         );
         yield* audit(ctx, "application.assignments_changed", "application", applicationId, {
           assignGroups: body.assign?.groups?.length ?? 0,
@@ -18946,7 +18926,10 @@ export const createEnterpriseService = ({
           [
             queryEffect(
               db
-                .select({ deviceId: schema.groupDevice.deviceId })
+                .select({
+                  deviceId: schema.groupDevice.deviceId,
+                  source: schema.groupDevice.source,
+                })
                 .from(schema.groupDevice)
                 .where(eq(schema.groupDevice.groupId, groupId)),
             ),
@@ -19020,12 +19003,21 @@ export const createEnterpriseService = ({
           policyLinks.map((link) => [link.policyId, link.mode ?? ("include" as const)]),
         );
 
+        const sourceByDevice = new Map(
+          deviceLinks.map((link) => [link.deviceId, link.source ?? ("manual" as const)]),
+        );
+
         return {
           ...rowGroup(row, devices.length, policies.length),
           directoryGroup: directoryGroup[0]
             ? { id: directoryGroup[0].id, name: directoryGroup[0].name }
             : null,
-          devices: [...devices].sort((left, right) => left.name.localeCompare(right.name)),
+          devices: [...devices]
+            .map((device) => ({
+              ...device,
+              source: sourceByDevice.get(device.id) ?? ("manual" as const),
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
           policies: policies
             .map((policy) => ({
               ...policy,

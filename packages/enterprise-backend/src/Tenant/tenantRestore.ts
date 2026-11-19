@@ -50,6 +50,8 @@ export type TenantRestoreResult = {
     readonly devices: number;
     /** Device-level links whose device no longer exists in the tenant. */
     readonly deviceAssignments: number;
+    /** Directory links that could not be re-established (missing group or dynamic). */
+    readonly directoryLinks?: number;
     readonly certificates: number;
     readonly auditLog: number;
   };
@@ -256,6 +258,11 @@ export const parseTenantRestoreBundle = (
         );
 
       if (group.kind === "dynamic") {
+        if (group.directoryGroupId)
+          return yield* Effect.fail(
+            invalid(`Dynamic group "${group.name}" cannot also be linked to a directory group`),
+          );
+
         if (!group.rules)
           return yield* Effect.fail(
             invalid(`Dynamic group "${group.name}" has no membership rules`),
@@ -677,6 +684,8 @@ const applyBundle = (
     skippedDevices: number;
     /** Device-level assignment rows whose device no longer exists. */
     skippedDeviceAssignments: number;
+    /** Directory links dropped because the directory group is gone or the group is dynamic. */
+    skippedDirectoryLinks: number;
     applicationsWithoutFiles: number;
   },
   unknown,
@@ -829,24 +838,33 @@ const applyBundle = (
         }
 
         const groupIdByKey = new Map<string, string>();
+        let skippedDirectoryLinks = 0;
 
         for (const group of bundle.groups) {
           const groupId = newId();
           groupIdByKey.set(group.key, groupId);
+
+          const dynamic = group.kind === "dynamic";
+
+          const directoryGroupId =
+            !dynamic && group.directoryGroupId && existingDirectoryGroupIds.has(group.directoryGroupId)
+              ? group.directoryGroupId
+              : null;
+
+          if (group.directoryGroupId && !directoryGroupId) skippedDirectoryLinks++;
+
           yield* tx.insert(schema.enterpriseGroup).values({
             id: groupId,
             organizationId: organization.id,
             name: text(group.name, 255)!,
             notes: text(group.notes, 10_000),
-            kind: group.kind === "dynamic" ? "dynamic" : "manual",
-            rules: group.kind === "dynamic" ? (group.rules ?? null) : null,
+            kind: dynamic ? "dynamic" : "manual",
+            rules: dynamic ? (group.rules ?? null) : null,
             // Restore is in-place: directory groups survive it, so re-link only
             // when the exported directory group still exists. An older bundle
-            // has no link and restores an unlinked group.
-            directoryGroupId:
-              group.directoryGroupId && existingDirectoryGroupIds.has(group.directoryGroupId)
-                ? group.directoryGroupId
-                : null,
+            // has no link and restores an unlinked group; a dynamic group can
+            // never carry one.
+            directoryGroupId,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -1296,6 +1314,7 @@ const applyBundle = (
           },
           skippedDevices,
           skippedDeviceAssignments,
+          skippedDirectoryLinks,
           applicationsWithoutFiles,
         };
       }),
@@ -1410,6 +1429,7 @@ export const restoreTenantFromBackup = (
             members: bundle.members,
             devices: applied.skippedDevices,
             deviceAssignments: applied.skippedDeviceAssignments,
+            directoryLinks: applied.skippedDirectoryLinks,
             certificates: bundle.certificates,
             auditLog: bundle.auditLog,
           },
@@ -1437,6 +1457,7 @@ export const restoreTenantFromBackup = (
         members: bundle.members,
         devices: applied.skippedDevices,
         deviceAssignments: applied.skippedDeviceAssignments,
+        directoryLinks: applied.skippedDirectoryLinks,
         certificates: bundle.certificates,
         auditLog: bundle.auditLog,
       },

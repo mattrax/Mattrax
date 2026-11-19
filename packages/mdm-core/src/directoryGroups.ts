@@ -11,7 +11,9 @@ export type DirectoryGroupSyncOptions = {
  * The builders this module uses. A drizzle transaction exposes the same query
  * surface, so a restore can derive membership inside its own atomic write.
  */
-export type DirectoryGroupDb = Pick<EnterpriseDb, "select" | "insert" | "delete" | "update">;
+export type DirectoryGroupDb = Pick<EnterpriseDb, "select" | "insert" | "delete" | "update"> & {
+  readonly transaction: EnterpriseDb["transaction"];
+};
 
 export type DirectoryGroupSyncResult = {
   readonly groupId: string;
@@ -49,8 +51,20 @@ const emptyResult = (
  *
  * Unlinking (or turning the group dynamic) deletes the derived rows, leaving
  * the group empty until an administrator adds members again.
+ *
+ * The read-modify-write runs in a transaction that locks the device group row
+ * `FOR UPDATE`. Callers are concurrent (SCIM requests, scheduled sync, group
+ * patch, device-user edits), and without the lock two interleavings could both
+ * observe the same membership and resurrect a row the other just removed.
  */
 export const syncDirectoryGroup = (
+  db: DirectoryGroupDb,
+  organizationId: string,
+  groupId: string,
+  options: DirectoryGroupSyncOptions = {},
+) => db.transaction((tx) => syncDirectoryGroupLocked(tx, organizationId, groupId, options));
+
+const syncDirectoryGroupLocked = (
   db: DirectoryGroupDb,
   organizationId: string,
   groupId: string,
@@ -68,7 +82,8 @@ export const syncDirectoryGroup = (
           eq(s.enterpriseGroup.organizationId, organizationId),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (!group) return emptyResult(groupId, null, 0, now);
 

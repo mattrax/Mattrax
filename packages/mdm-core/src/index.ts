@@ -1,5 +1,7 @@
 export * from "./appleUsers.js";
 
+export * from "./applicationAssignments.js";
+
 export * from "./applications.js";
 
 export * from "./audit.js";
