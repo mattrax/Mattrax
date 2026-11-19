@@ -256,7 +256,12 @@ const failureCode = (response: Response) => {
   return { url, location: location!, code: url.searchParams.get("error") };
 };
 
-const expectFailure = (response: Response, code: string, forbidden: ReadonlyArray<string> = []) => {
+const expectFailure = (
+  response: Response,
+  code: string,
+  forbidden: ReadonlyArray<string> = [],
+  options: { clearsCookie?: boolean } = {},
+) => {
   const { url, location, code: actual } = failureCode(response);
 
   expect(actual).toBe(code);
@@ -268,6 +273,14 @@ const expectFailure = (response: Response, code: string, forbidden: ReadonlyArra
   expect([...url.searchParams.keys()].every((key) => key === "error" || key === "returnTo")).toBe(
     true,
   );
+
+  if (options.clearsCookie === false) {
+    // A callback that did not present this browser's state must leave the
+    // cookie for the tab that did.
+    expect(response.headers.get("set-cookie")).toBeNull();
+
+    return;
+  }
 
   // The browser must not keep a state token that a replay could reuse.
   expect(response.headers.get("set-cookie")).toContain("__Host-sso_state=;");
@@ -301,7 +314,7 @@ describe("Entra SSO callback failures", () => {
       request: callbackRequest(""),
     });
 
-    expectFailure(response, "invalid_request");
+    expectFailure(response, "invalid_request", [], { clearsCookie: false });
   });
 
   it("maps an IdP error to a stable code without the provider description", async () => {
@@ -312,7 +325,9 @@ describe("Entra SSO callback failures", () => {
       ),
     });
 
-    expectFailure(response, "idp_rejected", ["denied", "secret-detail", "access_denied"]);
+    expectFailure(response, "idp_rejected", ["denied", "secret-detail", "access_denied"], {
+      clearsCookie: false,
+    });
   });
 
   it("redirects a state that belongs to another browser", async () => {
@@ -323,7 +338,7 @@ describe("Entra SSO callback failures", () => {
       request: callbackRequest(`code=code&state=${state}`, cookie("other-state")),
     });
 
-    expectFailure(response, "state_mismatch", [state]);
+    expectFailure(response, "state_mismatch", [state], { clearsCookie: false });
   });
 
   it("redirects a forged state without trusting its payload", async () => {
@@ -658,6 +673,24 @@ describe("Entra SSO callback failures", () => {
 
     expectFailure(response, "idp_unavailable", ["socket secret-detail"]);
   });
+
+  it("redirects a real defect after state verification to sign_in_failed", async () => {
+    const { state, cookie: stateCookie } = await signedState();
+
+    const db = makeDb({ ssoConfig: [config()] });
+
+    // The state verified, so this is not a rejected sign-in: something in the
+    // deployment died. The styled page gets the catch-all code, the cause stays
+    // in the server log, and the browser still drops its state token.
+    db.query.ssoConfig.findFirst = () => Effect.die(new Error("database offline secret-detail"));
+
+    const response = await serve({
+      db,
+      request: callbackRequest(`code=code&state=${state}`, stateCookie),
+    });
+
+    expectFailure(response, "sign_in_failed", ["database offline", "secret-detail"]);
+  });
 });
 
 describe("Entra SSO callback success and replay", () => {
@@ -764,6 +797,43 @@ describe("Entra SSO callback success and replay", () => {
       request: callbackRequest(`code=code&state=${state}`),
     });
 
-    expectFailure(replay, "state_mismatch", [state]);
+    expectFailure(replay, "state_mismatch", [state], { clearsCookie: false });
+  });
+
+  it("keeps another tab's state cookie when this tab presents a different state", async () => {
+    const db = makeDb({
+      account: [account()],
+      ssoConfig: [config()],
+      ssoIdentity: [identity()],
+      member: [{ id: "member-1", organizationId: tenantId, accountId: "account-1" }],
+    });
+
+    // Tab A is mid sign-in and owns the cookie. Tab B's callback presents its
+    // own signed state, which does not match the cookie. Rejecting B must not
+    // expire A's state.
+    const { state: tabA } = await signedState();
+    const { state: tabB } = await signedState({ nonce: "nonce-2" });
+
+    const response = await serve({
+      db,
+      request: callbackRequest(`code=code&state=${tabB}`, cookie(tabA)),
+    });
+
+    expectFailure(response, "state_mismatch", [tabA, tabB], { clearsCookie: false });
+
+    // Tab A can still complete with the cookie it started with.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
+    );
+
+    const completed = await serve({
+      db,
+      request: callbackRequest(`code=code&state=${tabA}`, cookie(tabA)),
+    });
+
+    expect(completed.status).toBe(302);
+    expect(new URL(completed.headers.get("location")!).searchParams.get("error")).toBeNull();
+    expect(completed.headers.get("set-cookie")).toContain("__Host-sso_state=;");
   });
 });

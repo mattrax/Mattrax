@@ -66,7 +66,12 @@ const SSO_STATE_COOKIE_CLEAR =
   "__Host-sso_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
 
 /** The completion page owns the user-facing copy for a failure code. */
-const completionFailure = (origin: string, code: SsoFailureCode, returnTo?: string | null) => {
+const completionFailure = (
+  origin: string,
+  code: SsoFailureCode,
+  returnTo?: string | null,
+  clearState = true,
+) => {
   const params = new URLSearchParams({ error: code });
   const afterSignIn = safeReturnTo(returnTo);
 
@@ -77,7 +82,10 @@ const completionFailure = (origin: string, code: SsoFailureCode, returnTo?: stri
     headers: {
       location: `${origin}/sso/complete?${params}`,
       "cache-control": "no-store",
-      "set-cookie": SSO_STATE_COOKIE_CLEAR,
+      // Only the flow that owns the cookie may expire it. A callback from a
+      // second tab that presents a different state must leave the first tab's
+      // in-flight sign-in intact.
+      ...(clearState ? { "set-cookie": SSO_STATE_COOKIE_CLEAR } : {}),
     },
   });
 };
@@ -225,9 +233,19 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         accountId?: string | null;
         email?: string | null;
         returnTo?: string | null;
+        /**
+         * False when the presented state did not come from this browser: that
+         * cookie belongs to another tab's flow and must not be expired.
+         */
+        clearState?: boolean;
       }) =>
         Effect.gen(function* () {
-          const response = completionFailure(options.origin, input.code, input.returnTo);
+          const response = completionFailure(
+            options.origin,
+            input.code,
+            input.returnTo,
+            input.clearState ?? true,
+          );
 
           if (input.accountId == null) return response;
 
@@ -252,6 +270,10 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       // Entra answers a denied consent or a failed policy with `error` instead
       // of a code. Log the provider codes, never their description.
       const providerError = url.searchParams.get("error");
+      // The cookie identifies the browser flow that started this sign-in. Only
+      // a callback presenting that same state may expire it; otherwise a second
+      // tab would wipe the state the first tab still needs.
+      const stateMatches = Boolean(state && request.cookies["__Host-sso_state"] === state);
 
       if (providerError)
         yield* Effect.logWarning(
@@ -262,12 +284,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         return yield* reject({
           code: providerError ? "idp_rejected" : "invalid_request",
           reason: "sso_rejected",
+          clearState: stateMatches,
         });
 
-      if (request.cookies["__Host-sso_state"] !== state)
+      if (!stateMatches)
         return yield* reject({
           code: "state_mismatch",
           reason: "sso_rejected",
+          clearState: false,
         });
 
       const verified = yield* verifyToken(options.authSecret!, state).pipe(
