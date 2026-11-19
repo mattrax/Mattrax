@@ -67,6 +67,27 @@ const windowsNodeMinimumBuild = (node: Schema.Json | null | undefined): string |
 };
 
 /**
+ * The highest minimum Windows build any node in a designer configuration
+ * declares. Used by the scope summary to describe a policy's supported range
+ * without re-parsing the payload differently from delivery.
+ */
+export const windowsConfigurationMinimumBuild = (data: Schema.Json | undefined): string | null => {
+  if (data === undefined) return null;
+  const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(WindowsPolicy)(data));
+  const nodes = decoded?.nodes ?? [data];
+  let minimum: string | null = null;
+
+  for (const node of nodes) {
+    const candidate = windowsNodeMinimumBuild(node);
+
+    if (candidate && (minimum === null || compareOsVersion(candidate, minimum) > 0))
+      minimum = candidate;
+  }
+
+  return minimum;
+};
+
+/**
  * Windows metadata records `minimumSupportedVersion` as a full version
  * (`10.0.22000`). Compare against the reported OS version, falling back to the
  * build number when that is all the device sent.

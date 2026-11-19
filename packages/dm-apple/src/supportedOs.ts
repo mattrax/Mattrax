@@ -103,6 +103,21 @@ export const applePayloadOsVersions = (identifier: string): ReadonlyArray<string
 };
 
 /**
+ * The OS version that removed a payload/declaration type for one family, if
+ * Apple published a `removed` bound. A family with a removal is only supported
+ * before that version, so a derived range must not advertise it as `min+`.
+ */
+export const applePayloadRemovedIn = (identifier: string, family: AppleOsFamily): string | null => {
+  const supported = APPLE_SUPPORTED_OS[identifier];
+
+  if (!supported) return null;
+
+  const entry = supported[family] ?? (family === "iOS" ? supported.iPadOS : undefined);
+
+  return entry?.removed ?? null;
+};
+
+/**
  * Minimum OS version that supports the Declarative Management engine itself.
  * A device below this version cannot apply a declaration, whatever else it
  * reports.

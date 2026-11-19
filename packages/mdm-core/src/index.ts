@@ -24,6 +24,10 @@ export * from "./policyResolution.js";
 
 export * from "./policyResolutionStore.js";
 
+export * from "./policyScope.js";
+
+export * from "./policyScopeStore.js";
+
 export * from "./policySupport.js";
 
 export * from "./scep.js";

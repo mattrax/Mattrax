@@ -18,6 +18,8 @@ export * from "./Group.js";
 
 export * from "./Policy.js";
 
+export * from "./PolicyScope.js";
+
 export * from "./Application.js";
 
 export * from "./Backup.js";
