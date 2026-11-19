@@ -871,9 +871,12 @@ export default function DeviceDetailPage() {
     queryFn: () => enterprise.getDeviceHealth(params.tenantId, params.deviceId),
   }));
 
-  const windowsFailures = useQuery(() =>
-    enterpriseQueries.deviceWindowsFailures(params.tenantId, params.deviceId),
-  );
+  const windowsFailures = useQuery(() => ({
+    ...enterpriseQueries.deviceWindowsFailures(params.tenantId, params.deviceId),
+    // Never fetch the history for a non-Windows device: the section does not
+    // render and the endpoint would return nothing useful.
+    enabled: row()?.proto === "win",
+  }));
 
   const effectivePolicy = useQuery(() =>
     enterpriseQueries.deviceEffectivePolicy(params.tenantId, params.deviceId),

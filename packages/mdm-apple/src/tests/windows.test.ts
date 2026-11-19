@@ -1959,6 +1959,69 @@ describe("Windows failure history", () => {
     ]);
   });
 
+  it("records a device event failure that the check-in did not cover", async () => {
+    const { backend, db } = await setup();
+
+    await expect(
+      run(
+        backend.windowsDeviceEvent(
+          { deviceId: "missing-device", mdmOrigin },
+          { _tag: "CommandResult" as const, deviceId: "missing-device", status: "200" },
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "command",
+        code: "unknown_device",
+        deviceIdentifier: "missing-device",
+      }),
+    ]);
+  });
+
+  it("coalesces identical faults recorded within the window", async () => {
+    const { db } = await setup();
+
+    const input = {
+      organizationId: "org-early",
+      phase: "enrollment" as const,
+      code: "windows_disabled",
+      message: "Windows enrollment is disabled for this tenant.",
+      deviceIdentifier: "device-1",
+    };
+
+    // SAFETY: the fake store implements the select/insert chains the recorder uses.
+    const enterpriseDb = db as any;
+
+    await run(recordWindowsFailure(enterpriseDb, input));
+    await run(recordWindowsFailure(enterpriseDb, input));
+
+    expect(failures(db)).toHaveLength(1);
+
+    // A different code (or device) is a different fault and is kept.
+    await run(
+      recordWindowsFailure(enterpriseDb, {
+        ...input,
+        code: "device_limit_reached",
+      }),
+    );
+    expect(
+      failures(db)
+        .map((row) => row.code)
+        .sort(),
+    ).toEqual(["device_limit_reached", "windows_disabled"]);
+
+    // A fault outside the coalescing window appends a new row.
+    await run(
+      recordWindowsFailure(enterpriseDb, input, {
+        now: new Date(Date.now() + 5 * 60 * 1_000),
+      }),
+    );
+    expect(failures(db)).toHaveLength(3);
+  });
+
   it("does not attribute a failure when no tenant can be resolved", async () => {
     const { backend, db } = await setup({ windowsOrganizationId: null });
 

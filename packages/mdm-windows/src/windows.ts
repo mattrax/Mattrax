@@ -829,7 +829,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     readonly code: string;
     readonly message: string;
     readonly detail?: string | null;
-  }): Effect.Effect<void> =>
+  }): Effect.Effect<boolean> =>
     input.organizationId
       ? recordWindowsFailure(db, {
           organizationId: input.organizationId,
@@ -841,8 +841,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           code: input.code,
           message: input.message,
           detail: input.detail == null ? null : describeWindowsFailure(input.detail),
-        })
-      : Effect.void;
+        }).pipe(Effect.as(true))
+      : Effect.succeed(false);
 
   /** Low-cardinality code for an error that reached the method boundary. */
   const failureCode = (cause: unknown): string => {
@@ -853,12 +853,25 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     return "request_failed";
   };
 
-  const failureCause = (cause: Cause.Cause<unknown>): string => {
+  /**
+   * Code and bounded detail for a failed request, or `null` when the request
+   * was only interrupted (shutdown, client abort) and there is nothing useful
+   * to record.
+   */
+  const failureDetails = (
+    cause: Cause.Cause<unknown>,
+  ): { readonly code: string; readonly detail: string } | null => {
+    if (Cause.hasInterruptsOnly(cause)) return null;
+
+    let error: unknown;
+
     try {
-      return describeWindowsFailure(Cause.squash(cause));
+      error = Cause.squash(cause);
     } catch {
-      return describeWindowsFailure(cause);
+      error = cause;
     }
+
+    return { code: failureCode(error), detail: describeWindowsFailure(error) };
   };
 
   /** Best-effort tenant attribution for a failure that happened early. */
@@ -869,6 +882,42 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     current
       ? Effect.succeed(current)
       : resolveOrganization({ tenantToken }).pipe(Effect.catch(() => Effect.succeed(null)));
+
+  /**
+   * Record a failure that escaped a method boundary. Tenant attribution is
+   * retried from the signed tenant token so a federated enrollment that fails
+   * before the organization is assigned is still visible.
+   */
+  const reportCause = (input: {
+    readonly tenantToken: string | undefined;
+    readonly organizationId: string | null;
+    readonly deviceId?: string | null;
+    readonly deviceIdentifier?: string | null;
+    readonly serial?: string | null;
+    readonly hostname?: string | null;
+    readonly phase: WindowsFailurePhase;
+    readonly message: string;
+    readonly cause: Cause.Cause<unknown>;
+  }): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      const details = failureDetails(input.cause);
+
+      if (!details) return false;
+
+      const organizationId = yield* organizationForFailure(input.tenantToken, input.organizationId);
+
+      return yield* reportFailure({
+        organizationId,
+        deviceId: input.deviceId,
+        deviceIdentifier: input.deviceIdentifier,
+        serial: input.serial,
+        hostname: input.hostname,
+        phase: input.phase,
+        code: details.code,
+        message: input.message,
+        detail: details.detail,
+      });
+    });
 
   const newDeviceId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
@@ -1033,6 +1082,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     ): Effect.Effect<WindowsDiscoveryResponse, UnknownDevice | InternalServerError> => {
       let attributableOrganizationId: string | null = null;
 
+      let boundaryRecorded = false;
+
       return Effect.gen(function* () {
         const organizationId = yield* resolveOrganization({ tenantToken: request.tenantToken });
         attributableOrganizationId = organizationId;
@@ -1083,14 +1134,21 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         };
       }).pipe(
         Effect.tapCause((cause) =>
-          reportFailure({
-            organizationId: attributableOrganizationId,
-            phase: "discovery",
-            code: failureCode(failureCause(cause)),
-            message:
-              "Windows discovery failed. The tenant's enrollment link may be invalid or expired, so the device cannot start enrollment.",
-            detail: failureCause(cause),
+          Effect.gen(function* () {
+            boundaryRecorded = yield* reportCause({
+              tenantToken: request.tenantToken,
+              organizationId: attributableOrganizationId,
+              phase: "discovery",
+              message:
+                "Windows discovery failed. The tenant's enrollment link may be invalid or expired, so the device cannot start enrollment.",
+              cause,
+            });
           }),
+        ),
+        Effect.mapError((cause) =>
+          cause instanceof UnknownDevice
+            ? new UnknownDevice({ recorded: boundaryRecorded })
+            : new InternalServerError({ recorded: boundaryRecorded }),
         ),
       );
     },
@@ -1102,6 +1160,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       let attributableOrganizationId: string | null = null;
       let reported = false;
 
+      let boundaryRecorded = false;
+
       const report = (code: string, message: string, detail?: string) =>
         Effect.gen(function* () {
           reported = true;
@@ -1110,13 +1170,14 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             attributableOrganizationId,
           );
 
-          yield* reportFailure({
-            organizationId: attributableOrganizationId,
-            phase: "policy",
-            code,
-            message,
-            detail,
-          });
+          boundaryRecorded =
+            (yield* reportFailure({
+              organizationId: attributableOrganizationId,
+              phase: "policy",
+              code,
+              message,
+              detail,
+            })) || boundaryRecorded;
         });
 
       return Effect.gen(function* () {
@@ -1223,18 +1284,24 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         };
       }).pipe(
         Effect.tapCause((cause) =>
-          reported
-            ? Effect.void
-            : reportFailure({
-                organizationId: attributableOrganizationId,
-                phase: "policy",
-                code: failureCode(failureCause(cause)),
-                message:
-                  "Windows policy request failed. The device cannot fetch its certificate policy.",
-                detail: failureCause(cause),
-              }),
+          Effect.gen(function* () {
+            if (reported) return;
+
+            boundaryRecorded = yield* reportCause({
+              tenantToken: context.tenantToken,
+              organizationId: attributableOrganizationId,
+              phase: "policy",
+              message:
+                "Windows policy request failed. The device cannot fetch its certificate policy.",
+              cause,
+            });
+          }),
         ),
-        Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
+        Effect.mapError((cause) =>
+          cause instanceof UnknownDevice
+            ? new UnknownDevice({ recorded: boundaryRecorded })
+            : new InternalServerError({ recorded: boundaryRecorded }),
+        ),
       );
     },
 
@@ -1243,6 +1310,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     ): Effect.Effect<WindowsEnrollmentResult, UnknownDevice | InternalServerError> => {
       let attributableOrganizationId: string | null = null;
       let reported = false;
+
+      let boundaryRecorded = false;
 
       let attributableDevice: {
         readonly id: string;
@@ -1261,17 +1330,18 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             attributableOrganizationId,
           );
 
-          yield* reportFailure({
-            organizationId: attributableOrganizationId,
-            deviceId: attributableDevice?.id,
-            deviceIdentifier,
-            serial: attributableDevice?.serial,
-            hostname: attributableDevice?.name ?? hostname,
-            phase,
-            code,
-            message,
-            detail,
-          });
+          boundaryRecorded =
+            (yield* reportFailure({
+              organizationId: attributableOrganizationId,
+              deviceId: attributableDevice?.id,
+              deviceIdentifier,
+              serial: attributableDevice?.serial,
+              hostname: attributableDevice?.name ?? hostname,
+              phase,
+              code,
+              message,
+              detail,
+            })) || boundaryRecorded;
         });
 
       return Effect.gen(function* () {
@@ -1566,6 +1636,15 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           });
         }
 
+        // The device row is durable from here on, so a later failure (a serial
+        // collision, for example) belongs to it rather than to the pre-enrolment
+        // DeviceID the client asserted.
+        attributableDevice = {
+          id: deviceRowId,
+          serial: existing?.serial ?? null,
+          name: existing ? request.deviceName?.trim() || existing.name : name,
+        };
+
         const serial = certificateSerialHex(signed.certificate);
 
         const [recorded] = yield* db
@@ -1670,22 +1749,28 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         };
       }).pipe(
         Effect.tapCause((cause) =>
-          reported
-            ? Effect.void
-            : reportFailure({
-                organizationId: attributableOrganizationId,
-                deviceId: attributableDevice?.id,
-                deviceIdentifier,
-                serial: attributableDevice?.serial,
-                hostname: attributableDevice?.name ?? hostname,
-                phase: "enrollment",
-                code: failureCode(failureCause(cause)),
-                message:
-                  "Windows enrollment failed before the device could be registered. Check the tenant's Windows enrollment settings and identity CA.",
-                detail: failureCause(cause),
-              }),
+          Effect.gen(function* () {
+            if (reported) return;
+
+            boundaryRecorded = yield* reportCause({
+              tenantToken: request.tenantToken,
+              organizationId: attributableOrganizationId,
+              deviceId: attributableDevice?.id,
+              deviceIdentifier,
+              serial: attributableDevice?.serial,
+              hostname: attributableDevice?.name ?? hostname,
+              phase: "enrollment",
+              message:
+                "Windows enrollment failed before the device could be registered. Check the tenant's Windows enrollment settings and identity CA.",
+              cause,
+            });
+          }),
         ),
-        Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
+        Effect.mapError((cause) =>
+          cause instanceof UnknownDevice
+            ? new UnknownDevice({ recorded: boundaryRecorded })
+            : new InternalServerError({ recorded: boundaryRecorded }),
+        ),
       );
     },
 
@@ -1696,6 +1781,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       let attributableOrganizationId: string | null = null;
       let reported = false;
 
+      let boundaryRecorded = false;
+
       const report = (code: string, message: string, detail?: string) =>
         Effect.gen(function* () {
           reported = true;
@@ -1704,14 +1791,15 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             attributableOrganizationId,
           );
 
-          yield* reportFailure({
-            organizationId: attributableOrganizationId,
-            deviceIdentifier: scope.deviceId,
-            phase: "command",
-            code,
-            message,
-            detail,
-          });
+          boundaryRecorded =
+            (yield* reportFailure({
+              organizationId: attributableOrganizationId,
+              deviceIdentifier: scope.deviceId,
+              phase: "command",
+              code,
+              message,
+              detail,
+            })) || boundaryRecorded;
         });
 
       return Effect.gen(function* () {
@@ -1759,17 +1847,18 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           ))
         ) {
           reported = true;
-          yield* reportFailure({
-            organizationId,
-            deviceId: device.id,
-            deviceIdentifier: scope.deviceId,
-            serial: device.serial,
-            hostname: device.name,
-            phase: "command",
-            code: "certificate_revoked",
-            message:
-              "Windows check-in was rejected: this device's identity certificate has been revoked. Enroll the device again.",
-          });
+          boundaryRecorded =
+            (yield* reportFailure({
+              organizationId,
+              deviceId: device.id,
+              deviceIdentifier: scope.deviceId,
+              serial: device.serial,
+              hostname: device.name,
+              phase: "command",
+              code: "certificate_revoked",
+              message:
+                "Windows check-in was rejected: this device's identity certificate has been revoked. Enroll the device again.",
+            })) || boundaryRecorded;
 
           return yield* Effect.fail(new UnknownDevice());
         }
@@ -2502,33 +2591,51 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message: failure.detail,
               detail: failure.uri,
             }),
-          { discard: true },
+          { concurrency: 2, discard: true },
         );
 
         return { commands };
       }).pipe(
         Effect.tapCause((cause) =>
-          reported
-            ? Effect.void
-            : reportFailure({
-                organizationId: attributableOrganizationId,
-                deviceIdentifier: scope.deviceId,
-                phase: "command",
-                code: failureCode(failureCause(cause)),
-                message:
-                  "Windows management check-in failed, so the device did not receive its policy or commands.",
-                detail: failureCause(cause),
-              }),
+          Effect.gen(function* () {
+            if (reported) return;
+
+            boundaryRecorded = yield* reportCause({
+              tenantToken: scope.tenantToken,
+              organizationId: attributableOrganizationId,
+              deviceIdentifier: scope.deviceId,
+              phase: "command",
+              message:
+                "Windows management check-in failed, so the device did not receive its policy or commands.",
+              cause,
+            });
+          }),
         ),
-        Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
+        Effect.mapError((cause) =>
+          cause instanceof UnknownDevice
+            ? new UnknownDevice({ recorded: boundaryRecorded })
+            : new InternalServerError({ recorded: boundaryRecorded }),
+        ),
       );
     },
 
     windowsDeviceEvent: (
       scope: WindowsManagementScope,
       event: WindowsDeviceEvent,
-    ): Effect.Effect<void, UnknownDevice | InternalServerError> =>
-      Effect.gen(function* () {
+    ): Effect.Effect<void, UnknownDevice | InternalServerError> => {
+      let attributableOrganizationId: string | null = null;
+
+      let boundaryRecorded = false;
+
+      let attributableDevice: {
+        readonly id: string;
+        readonly serial: string | null;
+        readonly name: string;
+      } | null = null;
+
+      const deviceIdentifier = event.deviceId || scope.deviceId;
+
+      return Effect.gen(function* () {
         const deviceId = event.deviceId || scope.deviceId;
         // An `Enrolled` event is the tail of the enrollment flow, which may not
         // have a client certificate yet; it is allowed to authenticate with the
@@ -2545,6 +2652,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           rejectInvalidToken: isEnrollmentEvent,
         });
 
+        attributableOrganizationId = organizationId;
+
         if (requireDeviceIdentity && !isEnrollmentEvent) {
           const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
 
@@ -2552,6 +2661,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         const device = yield* findDevice(organizationId, deviceId);
+        attributableDevice = device ?? null;
         const timestamp = new Date();
 
         if (requireDeviceIdentity && !isEnrollmentEvent && device) {
@@ -2665,7 +2775,30 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         yield* touchDevice(device.id, organizationId, timestamp);
-      }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
+      }).pipe(
+        Effect.tapCause((cause) =>
+          Effect.gen(function* () {
+            boundaryRecorded = yield* reportCause({
+              tenantToken: scope.tenantToken,
+              organizationId: attributableOrganizationId,
+              deviceId: attributableDevice?.id,
+              deviceIdentifier,
+              serial: attributableDevice?.serial,
+              hostname: attributableDevice?.name,
+              phase: "command",
+              message:
+                "Windows device event failed, so a command result or enrollment acknowledgement was not recorded.",
+              cause,
+            });
+          }),
+        ),
+        Effect.mapError((cause) =>
+          cause instanceof UnknownDevice
+            ? new UnknownDevice({ recorded: boundaryRecorded })
+            : new InternalServerError({ recorded: boundaryRecorded }),
+        ),
+      );
+    },
 
     /**
      * Persist a fault the SOAP/SyncML layer detected before reaching a backend

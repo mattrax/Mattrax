@@ -43,7 +43,7 @@ export class WindowsMdmError extends Data.TaggedError("WindowsMdmError")<{
   phase?: WindowsFailurePhase;
   /** Stable code for the recorded failure history. */
   code?: string;
-  /** The management backend already recorded this failure durably. */
+  /** The backend wrote this failure to its durable history. */
   recorded?: boolean;
 }> {}
 
@@ -185,23 +185,36 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
        * unknown device. Give the operator a concrete recovery step instead of
        * leaking the generic backend error into the SOAP fault.
        *
-       * The backend records its own failures, so the HTTP layer must not add a
-       * second row for the same fault.
+       * A backend failure carries whether it was written to the durable
+       * history, so an unattributable failure is still recorded here.
        */
+      const backendRecorded = (cause: unknown): boolean =>
+        Schema.is(Schema.Struct({ recorded: Schema.optional(Schema.Boolean) }))(cause)
+          ? cause.recorded === true
+          : false;
+
       const backendError = (message: string, cause: unknown) => {
+        const recorded = backendRecorded(cause);
+
         if (Predicate.isTagged(cause, "UnknownDevice"))
           return new WindowsMdmError({
             message:
               "This Windows enrollment link is invalid or has expired. Open a fresh enrollment link from the tenant's enrollment page.",
             cause,
-            recorded: true,
+            code: "unknown_device",
+            recorded,
           });
 
-        return new WindowsMdmError({ message, cause, recorded: true });
+        return new WindowsMdmError({
+          message,
+          cause,
+          code: Predicate.isTagged(cause, "InternalServerError") ? "internal_error" : undefined,
+          recorded,
+        });
       };
 
       /**
-       * Persist a fault the backend never saw. Never affects the response and
+       * Persist a fault the backend never wrote. Never affects the response and
        * never throws: the fault the device receives is already decided.
        */
       const recordFault = (
@@ -209,11 +222,13 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
         context: WindowsMdmRequestContext,
         cause: Cause.Cause<unknown>,
         fallbackMessage: string,
+        deviceId?: string,
       ) =>
         Effect.suspend(() => {
           const record = backend.windowsRecordFailure;
 
-          if (!record) return Effect.void;
+          // A shutdown or client abort is not a Windows failure.
+          if (!record || Cause.hasInterruptsOnly(cause)) return Effect.void;
 
           let error: unknown;
 
@@ -227,14 +242,23 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
 
           if (mdmError?.recorded) return Effect.void;
 
+          const code =
+            mdmError?.code ??
+            (Predicate.isTagged(error, "UnknownDevice")
+              ? "unknown_device"
+              : Predicate.isTagged(error, "InternalServerError")
+                ? "internal_error"
+                : "soap_fault");
+
           return record({
             phase: mdmError?.phase ?? phase,
-            code: mdmError?.code ?? "soap_fault",
+            code,
             message: mdmError?.message.trim() || fallbackMessage,
             detail: mdmError?.cause === undefined ? undefined : String(mdmError.cause),
             tenantToken: context.tenantToken,
             identityCertificate: context.identityCertificate,
             identityCertificateSerial: context.identityCertificateSerial,
+            deviceId,
           }).pipe(Effect.catchCause(() => Effect.void));
         });
 
@@ -370,8 +394,10 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               recordFault("policy", context, cause, "Invalid SOAP request"),
             ),
           ),
-        enroll: (xml, context = {}) =>
-          Effect.gen(function* () {
+        enroll: (xml, context = {}) => {
+          let requestDeviceId: string | undefined;
+
+          return Effect.gen(function* () {
             const header = extractSoapHeader(xml);
             const token = extractBinarySecurityToken(header.securityXml ?? "");
 
@@ -400,6 +426,7 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             );
 
             const ctx = contextMap(req);
+            requestDeviceId = ctx.DeviceID ?? ctx.DeviceId;
 
             const result = yield* backend
               .windowsEnroll({
@@ -469,11 +496,14 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             return envelope(responseBody, header.messageId, action.enroll);
           }).pipe(
             Effect.tapCause((cause) =>
-              recordFault("enrollment", context, cause, "Invalid SOAP request"),
+              recordFault("enrollment", context, cause, "Invalid SOAP request", requestDeviceId),
             ),
-          ),
-        management: (xml, context = {}) =>
-          Effect.gen(function* () {
+          );
+        },
+        management: (xml, context = {}) => {
+          let requestDeviceId: string | undefined;
+
+          return Effect.gen(function* () {
             const sync = yield* parseSyncML(xml).pipe(
               Effect.mapError(
                 (cause) =>
@@ -485,6 +515,8 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
                   }),
               ),
             );
+
+            requestDeviceId = sync.syncHdr.source.locURI;
 
             const scope: WindowsManagementScope = {
               deviceId: sync.syncHdr.source.locURI,
@@ -498,9 +530,19 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               .windowsManagementCheckin(scope, toManagementRequest(sync))
               .pipe(Effect.mapError((cause) => backendError("Management backend failed", cause)));
 
+            // The event is an acknowledgement (a command result or the tail of
+            // enrollment). The backend records its own failure, but it must be
+            // logged instead of disappearing: the device already has its
+            // response, so this never changes the SyncML status.
             yield* backend
               .windowsDeviceEvent(scope, ManagementCheckinEvent.make({ deviceId: scope.deviceId }))
-              .pipe(Effect.match({ onFailure: () => undefined, onSuccess: () => undefined }));
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning(
+                    `Windows device event failed for ${scope.deviceId}: ${String(cause)}`,
+                  ),
+                ),
+              );
             const response: SyncMLType = fromManagementResponse(sync, backendResponse);
 
             return yield* serializeSyncML(response).pipe(
@@ -516,9 +558,10 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             );
           }).pipe(
             Effect.tapCause((cause) =>
-              recordFault("command", context, cause, "Invalid SyncML request"),
+              recordFault("command", context, cause, "Invalid SyncML request", requestDeviceId),
             ),
-          ),
+          );
+        },
       });
     }),
   );

@@ -172,6 +172,8 @@ export const WindowsFailureQuery = Schema.Struct({
 export type WindowsFailureQuery = typeof WindowsFailureQuery.Type;
 
 export const WindowsFailureListResponse = Schema.Struct({
+  /** Retained window in days; `0` means history is kept forever. */
+  retentionDays: Schema.Number,
   /** Failures inside the retention window, using the same scope as `failures`. */
   count: Schema.Number,
   /** Newest first. */

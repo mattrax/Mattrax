@@ -9,7 +9,7 @@
  * tenant delivery diagnostics.
  */
 
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 import type { EnterpriseDb } from "./db.ts";
 import { windowsFailure } from "./schema.ts";
@@ -19,6 +19,17 @@ export type WindowsFailurePhase = "discovery" | "wstep" | "enrollment" | "policy
 
 /** Failure history older than this is deleted by daily maintenance. */
 export const WINDOWS_FAILURE_RETENTION_DAYS = 30;
+
+/**
+ * A device retrying the same fault (a polling device with a broken policy, or
+ * someone holding an enrollment link) writes the same
+ * `(organization, phase, code, deviceIdentifier)` over and over. Within this
+ * window the newest matching row is reused instead of appending.
+ */
+export const WINDOWS_FAILURE_COALESCE_SECONDS = 60;
+
+/** Diagnostic writes must never hold up the device's protocol response. */
+const WRITE_TIMEOUT = "2 seconds";
 
 /** Bounds applied before anything is stored, so a broken client cannot bloat the table. */
 export const WINDOWS_FAILURE_MESSAGE_LIMIT = 500;
@@ -100,8 +111,13 @@ export type WindowsFailureInput = {
 
 /**
  * Append one failure record. Never fails: a diagnostic write must not turn a
- * device's protocol response into a server error, so a broken insert is logged
- * and swallowed.
+ * device's protocol response into a server error, so a broken (or slow) insert
+ * is logged and swallowed.
+ *
+ * Repeated identical faults are coalesced: a row with the same organization,
+ * phase, code and device identifier written inside
+ * {@link WINDOWS_FAILURE_COALESCE_SECONDS} is reused rather than appended, so a
+ * client stuck retrying cannot grow the table.
  */
 export const recordWindowsFailure = (
   db: EnterpriseDb,
@@ -109,23 +125,48 @@ export const recordWindowsFailure = (
   options: { readonly now?: Date } = {},
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
+    const now = options.now ?? new Date();
+    const code = boundCode(input.code);
+    const deviceIdentifier = bound(input.deviceIdentifier, COLUMN_LIMIT);
+    const cutoff = new Date(now.getTime() - WINDOWS_FAILURE_COALESCE_SECONDS * 1_000);
+
+    const [recent] = yield* db
+      .select({ id: windowsFailure.id })
+      .from(windowsFailure)
+      .where(
+        and(
+          eq(windowsFailure.organizationId, input.organizationId),
+          eq(windowsFailure.phase, input.phase),
+          eq(windowsFailure.code, code),
+          deviceIdentifier
+            ? eq(windowsFailure.deviceIdentifier, deviceIdentifier)
+            : isNull(windowsFailure.deviceIdentifier),
+          gte(windowsFailure.createdAt, cutoff),
+        ),
+      )
+      .orderBy(desc(windowsFailure.createdAt))
+      .limit(1);
+
+    if (recent) return;
+
     yield* db.insert(windowsFailure).values({
       id: crypto.randomUUID(),
       organizationId: input.organizationId,
       deviceId: input.deviceId ?? null,
-      deviceIdentifier: bound(input.deviceIdentifier, COLUMN_LIMIT),
+      deviceIdentifier,
       serial: bound(input.serial, COLUMN_LIMIT),
       hostname: bound(input.hostname, COLUMN_LIMIT),
       phase: input.phase,
-      code: boundCode(input.code),
+      code,
       message: bound(input.message, WINDOWS_FAILURE_MESSAGE_LIMIT) ?? "Windows request failed",
       detail: bound(
         input.detail && describeWindowsFailure(input.detail),
         WINDOWS_FAILURE_DETAIL_LIMIT,
       ),
-      createdAt: options.now ?? new Date(),
+      createdAt: now,
     });
   }).pipe(
+    Effect.timeout(WRITE_TIMEOUT),
     Effect.catchCause((cause) =>
       Effect.logWarning(`Could not record Windows failure: ${String(cause)}`),
     ),
@@ -188,27 +229,36 @@ export const listWindowsFailuresForDevice = (
 /**
  * Failures inside the retention window. The window is used instead of an
  * all-time count so the number an operator sees matches the history beside it.
+ * `retentionDays <= 0` means history is kept forever, so every row counts.
  */
 export const countWindowsFailures = (
   db: EnterpriseDb,
-  input: { readonly organizationId: string; readonly deviceId?: string; readonly since?: Date },
+  input: {
+    readonly organizationId: string;
+    readonly deviceId?: string;
+    readonly retentionDays?: number;
+    readonly since?: Date;
+  },
 ): Effect.Effect<number, unknown> =>
   Effect.gen(function* () {
-    const since =
-      input.since ?? new Date(Date.now() - WINDOWS_FAILURE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const retentionDays = input.retentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
 
-    const rows = yield* db
-      .select({ id: windowsFailure.id })
+    const since =
+      input.since ??
+      (retentionDays > 0 ? new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000) : undefined);
+
+    const [row] = yield* db
+      .select({ value: count() })
       .from(windowsFailure)
       .where(
         and(
           eq(windowsFailure.organizationId, input.organizationId),
           input.deviceId ? eq(windowsFailure.deviceId, input.deviceId) : undefined,
-          gte(windowsFailure.createdAt, since),
+          since ? gte(windowsFailure.createdAt, since) : undefined,
         ),
       );
 
-    return rows.length;
+    return row?.value ?? 0;
   });
 
 /** Delete records older than the retention window. Returns the count removed. */

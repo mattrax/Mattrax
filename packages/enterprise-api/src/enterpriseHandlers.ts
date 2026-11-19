@@ -106,6 +106,7 @@ import {
   listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
   tenantLimitForAccount,
+  WINDOWS_FAILURE_RETENTION_DAYS,
   type PlanLimitsConfig,
   type WindowsFailureRow,
 } from "@mattrax/enterprise-core";
@@ -543,6 +544,12 @@ export type EnterpriseHandlersConfig = {
    * leave it unconfigured) to keep every plan unlimited.
    */
   readonly planLimits?: PlanLimitsConfig;
+  /**
+   * Windows failure-history retention window used by the delivery panel.
+   * Defaults to `WINDOWS_FAILURE_RETENTION_DAYS`; `0` keeps history forever.
+   * Maintenance must be configured with the same value.
+   */
+  readonly windowsFailureRetentionDays?: number;
   /**
    * Deployment identity used to CMS-sign Apple enrollment profile downloads.
    * This is an explicit self-hosted override. When it is omitted, each tenant's
@@ -1387,11 +1394,15 @@ export const createEnterpriseService = ({
   webhookFetch,
   webhookTimeoutMs,
   planLimits,
+  windowsFailureRetentionDays: configuredWindowsFailureRetentionDays,
   appleProfileSigning,
   analytics,
   enrollmentProfileTtlSeconds: configuredEnrollmentProfileTtlSeconds,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
+  const windowsFailureRetentionDays =
+    configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
 
   const enrollmentProfileTtlSeconds = normalizeEnrollmentProfileTtlSeconds(
     configuredEnrollmentProfileTtlSeconds,
@@ -14516,6 +14527,7 @@ export const createEnterpriseService = ({
             countWindowsFailures(db, {
               organizationId: ctx.organization.id,
               deviceId: query.deviceId,
+              retentionDays: windowsFailureRetentionDays,
             }),
             query.deviceId
               ? listWindowsFailuresForDevice(db, {
@@ -14528,7 +14540,11 @@ export const createEnterpriseService = ({
           { concurrency: "unbounded" },
         );
 
-        return { count, failures: failures.map(windowsFailureInfo) };
+        return {
+          retentionDays: windowsFailureRetentionDays,
+          count,
+          failures: failures.map(windowsFailureInfo),
+        };
       }),
     getCredentialHealth: (request, tenantId) =>
       Effect.gen(function* () {

@@ -8,7 +8,7 @@ const origin = "https://enterprise.test";
 
 const authSecret = "enterprise-test-secret";
 
-const makeContext = async () => {
+const makeContext = async (options: { readonly windowsFailureRetentionDays?: number } = {}) => {
   const db = makeDb();
   const now = new Date();
 
@@ -48,6 +48,7 @@ const makeContext = async () => {
     // SAFETY: the fake implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
+    windowsFailureRetentionDays: options.windowsFailureRetentionDays,
   });
 
   const headers = { cookie: "mattrax_session=test" };
@@ -191,6 +192,7 @@ describe("Windows failure history API", () => {
 
     // The count only covers the retention window, matching the "in 30 days"
     // label; the list itself is append-only history until maintenance prunes it.
+    expect(health.retentionDays).toBe(30);
     expect(health.count).toBe(1);
     expect(health.failures.map((failure) => failure.id)).toEqual(["recent", "stale"]);
     expect(health.failures[0]).toEqual(
@@ -221,5 +223,31 @@ describe("Windows failure history API", () => {
         service.listWindowsFailures(request(headers), tenant.id, { deviceId: "other-device" }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("counts everything when the retention window is disabled", async () => {
+    const { db, service, headers } = await makeContext({ windowsFailureRetentionDays: 0 });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedFailure(db, {
+      id: "recent",
+      organizationId: tenant.id,
+      createdAt: new Date(),
+    });
+    seedFailure(db, {
+      id: "ancient",
+      organizationId: tenant.id,
+      createdAt: new Date("2020-01-01T00:00:00Z"),
+    });
+
+    const history = await runEffect(
+      service.listWindowsFailures(request(headers), tenant.id, { limit: 5 }),
+    );
+
+    expect(history.retentionDays).toBe(0);
+    expect(history.count).toBe(2);
   });
 });

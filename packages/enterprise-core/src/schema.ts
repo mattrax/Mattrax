@@ -1972,10 +1972,10 @@ export const device = mysqlTable(
  * These are the faults the WSTEP, policy and management endpoints return to the
  * device. They are recorded here because a device that never enrols (or stops
  * checking in) has no row to hang the reason on; an operator otherwise sees
- * only a device that never appears. `organizationId` is only set when the
- * failure could be attributed to a tenant (a valid signed enrollment token or a
- * verified identity certificate), so an unauthenticated caller cannot write
- * into another tenant's history. Rows are retained for 30 days by daily
+ * only a device that never appears. `organizationId` is required because a row
+ * is only written once attribution succeeds (a valid signed enrollment token
+ * or a verified identity certificate); an unauthenticated caller can never
+ * write into another tenant's history. Rows are retained for 30 days by daily
  * maintenance.
  */
 export const windowsFailure = mysqlTable(
@@ -2011,6 +2011,8 @@ export const windowsFailure = mysqlTable(
   (table) => [
     index("windows_failure_organization_created_idx").on(table.organizationId, table.createdAt),
     index("windows_failure_device_created_idx").on(table.deviceId, table.createdAt),
+    // Daily maintenance prunes by age across every tenant.
+    index("windows_failure_created_idx").on(table.createdAt),
   ],
 );
 

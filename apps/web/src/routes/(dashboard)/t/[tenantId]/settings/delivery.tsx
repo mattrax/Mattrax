@@ -207,7 +207,10 @@ export default function DeliverySettingsPage() {
         actions={
           <Badge variant="outline" class="gap-1.5">
             <MonitorSmartphone class="size-3.5" />
-            {windowsFailures.data?.count ?? 0} in 30 days
+            {windowsFailures.data?.count ?? 0}{" "}
+            {windowsFailures.data?.retentionDays
+              ? `in ${windowsFailures.data.retentionDays} days`
+              : "all time"}
           </Badge>
         }
       >

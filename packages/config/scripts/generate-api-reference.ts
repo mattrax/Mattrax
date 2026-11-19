@@ -6,6 +6,7 @@ import {
   enterpriseAdeApi,
   enterpriseApi,
   enterpriseAttributeApi,
+  enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
 } from "../../enterprise-domain/src/enterprise.ts";
@@ -46,6 +47,7 @@ const restDocument = OpenApi.fromApi(
     .add(enterpriseApi)
     .add(enterpriseAdeApi)
     .add(enterpriseAttributeApi)
+    .add(enterpriseWindowsApi)
     .add(scriptApi)
     .add(scriptAgentApi),
 );
@@ -240,7 +242,7 @@ const index = [
   "",
   "This section is generated from the Effect `HttpApi` contracts at build time, so it cannot drift from the code.",
   "",
-  "- [REST API reference](/api/reference/rest) — every route in the `MattraxEnterprise`, account, ADE, attribute and script groups.",
+  "- [REST API reference](/api/reference/rest) — every route in the `MattraxEnterprise`, account, ADE, attribute, Windows and script groups.",
   "- [Management webhook reference](/api/reference/management) — the contract a customer management backend implements.",
   "- [OpenAPI document](/api/openapi) — the served, machine-readable specification.",
   "",

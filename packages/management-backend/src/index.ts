@@ -5,16 +5,28 @@ export class ManagementNotSupported extends Schema.TaggedError<ManagementNotSupp
   {},
 ) {}
 
-export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {}) {}
+/**
+ * The device, tenant or certificate could not be resolved.
+ *
+ * `recorded` is set by the Windows backend when the same fault has already been
+ * written to the durable failure history, so the protocol layer does not append
+ * a duplicate row for an unattributable failure it knows nothing about.
+ */
+export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {
+  recorded: Schema.optional(Schema.Boolean),
+}) {}
 
 export class ServerInitiatedUnenrollment extends Schema.TaggedError<ServerInitiatedUnenrollment>()(
   "ServerInitiatedUnenrollment",
   {},
 ) {}
 
+/** A backend-side failure; `recorded` has the same meaning as on `UnknownDevice`. */
 export class InternalServerError extends Schema.TaggedError<InternalServerError>()(
   "InternalServerError",
-  {},
+  {
+    recorded: Schema.optional(Schema.Boolean),
+  },
 ) {}
 
 export class MdmOrigin extends Schema.Class<MdmOrigin>("MdmOrigin")({
