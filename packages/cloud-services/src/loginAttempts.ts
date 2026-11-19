@@ -33,11 +33,14 @@ export const loginAttemptObserver = HttpRouter.middleware(
 
       if (Option.isNone(db)) return response;
 
+      const web = HttpServerResponse.toWeb(response);
+
       const body = yield* Effect.promise(async () => {
         try {
-          // The action envelope is small JSON. Cloning tees the body so the
-          // caller still receives the original response untouched.
-          return await HttpServerResponse.toWeb(response).clone().text();
+          // The action envelope is small JSON. The auth library's response body
+          // wraps a one-shot stream, so read a tee of the web response rather
+          // than the response itself: the original branch stays sendable.
+          return await web.clone().text();
         } catch {
           return null;
         }
@@ -53,7 +56,7 @@ export const loginAttemptObserver = HttpRouter.middleware(
         body,
       }).pipe(Effect.forkDetach({ uninterruptible: true }));
 
-      return response;
+      return HttpServerResponse.fromWeb(web);
     }),
   { global: true },
 );

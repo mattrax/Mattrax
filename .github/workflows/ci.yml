@@ -1,8 +1,13 @@
 name: CI
 
+# Only `main` and pull requests run CI. Feature branches used to push as well,
+# which meant every push to an `oscar/o/**` branch with an open PR started two
+# complete runs of the same commit (one `push`, one `pull_request`); measured
+# runs were 25 minutes each because of the browser suite. The PR event already
+# checks the branch head, so the push trigger was pure duplicate work.
 on:
   push:
-    branches: [main, "oscar/o/**"]
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -15,24 +20,90 @@ permissions:
   contents: read
 
 jobs:
+  # The browser and Lighthouse suites are the two expensive jobs (the browser
+  # suite was ~85% of a run's wall clock). They cannot be affected by a
+  # Markdown, docs-site, workflow or licence-only change, so this job decides
+  # whether they are worth starting. It always runs (a skipped workflow would
+  # leave required checks pending); the suites themselves are skipped, which
+  # GitHub reports as success.
+  #
+  # The filter is deliberately fail-safe: `**` matches everything and only
+  # paths that cannot affect the suites are subtracted, so a path added to the
+  # repository later runs the suites instead of silently skipping them.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # dorny/paths-filter lists a pull request's files through the API.
+      pull-requests: read
+    outputs:
+      suites: ${{ steps.suites.outputs.suites }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: filter
+        # A filter that cannot run must not silently skip the suites; the step
+        # below turns a missing answer into `true` (run them).
+        continue-on-error: true
+        with:
+          # `some` (the default) treats `!pattern` as just another alternative,
+          # which would match almost everything; `some-with-excludes` is the
+          # "include `**`, then subtract these paths" semantics this filter
+          # needs.
+          predicate-quantifier: some-with-excludes
+          filters: |
+            suites:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+      - id: suites
+        if: always()
+        env:
+          FILTER_OUTCOME: ${{ steps.filter.outcome }}
+          MATCHED: ${{ steps.filter.outputs.suites }}
+        run: |
+          # Only a filter that actually ran may say "nothing to run". A failed,
+          # cancelled or skipped filter falls back to running the suites, as
+          # does an empty answer.
+          if [ "$FILTER_OUTCOME" = "success" ] && [ -n "$MATCHED" ]; then
+            echo "suites=$MATCHED" >> "$GITHUB_OUTPUT"
+          else
+            echo "suites=true" >> "$GITHUB_OUTPUT"
+          fi
+
   check:
     name: Unit tests, typecheck and docs
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Rspress `lastUpdated` reads per-file Git history.
+          # Rspress `lastUpdated` reads per-file Git history. Blob-less history
+          # is all it needs, so the commit graph is fetched without file
+          # contents.
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
+          filter: blob:none
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
+      # One `tsc -b` over the root project references. `pnpm typecheck` first
+      # generates the two Workers' `cf` types (cloud and web, ~0.5s total) and
+      # then builds once; the per-app `typecheck` scripts it does not call would
+      # each start `tsc` again over the same projects.
       - run: pnpm typecheck
       - run: pnpm doc:build
       # Production Workers must actually build. Typechecking alone did not
@@ -46,13 +117,25 @@ jobs:
   lighthouse:
     name: Lighthouse budgets
     runs-on: ubuntu-latest
-    needs: check
+    timeout-minutes: 15
+    # Lighthouse needs no output from `check`: it installs, builds the
+    # self-host bundle and serves it itself. Waiting for `check` serialised
+    # ~3 minutes in front of a ~3 minute job for no benefit; a broken PR still
+    # fails `check` and this job on its own.
+    #
+    # `needs:` alone would skip this job when `changes` fails or times out, and
+    # a skipped job reports success, so run unless the gate positively decided
+    # the change cannot affect the suite.
+    needs: changes
+    if: >-
+      always() &&
+      (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -70,23 +153,54 @@ jobs:
           cp apps/cloud/.dev.vars apps/web/.dev.vars
           cp apps/cloud/.dev.vars .dev.vars
       - run: pnpm lighthouse
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
           name: lighthouse-report
           path: .lighthouseci/
           retention-days: 7
 
+  # One runner per shard. Playwright's `--shard` splits the spec files by test
+  # count, and each shard gets its own MySQL service and dev server on the same
+  # port. The suite runs with a single Playwright worker because its tests share
+  # dev-mailbox state and rate-limit buckets through one server; sharding keeps
+  # that isolation intact while the suite as a whole runs in parallel. The suite
+  # took 18-22 minutes serially; four shards bring it to roughly a quarter plus
+  # the per-runner setup (checkout, install, browser, migrations, dev server).
   e2e:
-    name: Browser tests (CDP)
+    # The denominator comes from the matrix itself, so adding or removing a
+    # shard cannot leave a shard running a stale slice of the suite.
+    name: Browser tests (CDP, shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: changes
+    # A failed or timed-out gate must not turn into a skipped (successful)
+    # browser suite; see the `suites` step in the `changes` job.
+    if: >-
+      always() &&
+      (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Every shard's failure report is useful; do not cancel the rest.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     services:
       mysql:
-        # MySQL 8.0 supports mysql_native_password, which the Worker's mysql2
-        # client can negotiate without TLS. MySQL 8.4 defaults to
-        # caching_sha2_password and the Workerd client hangs on first auth.
+        # MySQL 8.0, the version the Worker's mysql2 client is exercised
+        # against over plain TCP.
+        #
+        # `services.options` only accepts `docker create` flags, so a server
+        # argument such as `--default-authentication-plugin` cannot go there
+        # (docker rejects it as an unknown flag). GitHub does support
+        # `services.mysql.command`, but the released actionlint (v1.7.12)
+        # predates that key, so the application user's auth plugin is pinned
+        # explicitly with SQL below instead.
+        #
+        # 8.0 defaults to caching_sha2_password. The Worker connects without TLS
+        # and does not set `allowPublicKeyRetrieval`, so the suite's user must
+        # use mysql_native_password. MySQL 8.4 removes the old server flag and
+        # needs `--mysql-native-password=ON`; revisit this on an image bump.
         image: mysql:8.0
-        command: --default-authentication-plugin=mysql_native_password
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: mattraxe
@@ -100,22 +214,25 @@ jobs:
           --health-retries=20
     env:
       E2E_CHANNEL: bundled
+      E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
       DATABASE_HOST: 127.0.0.1
       DATABASE_PORT: 3306
       DATABASE_USER: mattrax
       DATABASE_PASSWORD: mattrax
       DATABASE_NAME: mattraxe
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx playwright install --with-deps chromium
+      # `pnpm exec` uses the version the lockfile installed; `npx` resolves it
+      # through npm first.
+      - run: pnpm exec playwright install --with-deps chromium
       - name: Write local dev environment
         run: |
           cat > apps/cloud/.dev.vars <<'VARS'
@@ -128,11 +245,20 @@ jobs:
           VARS
           cp apps/cloud/.dev.vars apps/web/.dev.vars
           cp apps/cloud/.dev.vars .dev.vars
+      # See the note on the MySQL service: the container cannot be started with
+      # the old `--default-authentication-plugin` flag, so pin the application
+      # user's plugin before anything (migrations included) connects.
+      - name: Pin the application user to mysql_native_password
+        env:
+          MYSQL_CONTAINER_ID: ${{ job.services.mysql.id }}
+        run: |
+          docker exec "$MYSQL_CONTAINER_ID" mysql -uroot -proot \
+            -e "ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';"
       - run: pnpm cloud db:migrate
-      - run: pnpm test:e2e
-      - uses: actions/upload-artifact@v7
+      - run: pnpm test:e2e --shard="$E2E_SHARD"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: test-results/
           retention-days: 7

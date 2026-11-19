@@ -31,6 +31,26 @@ name: Deploy
 # Apple/Android credentials, and DEV_MAILBOX_SECRET). Set DEV_MAILBOX_SECRET on
 # both Workers once; previews opt into the guarded remote mailbox so sign-up
 # codes are readable without sending real mail.
+#
+# Trust model — this is what the current configuration actually enforces:
+#
+# - Fork pull requests never receive secrets. The `deploy` job is skipped for
+#   them, so neither the Cloudflare token nor any Worker secret is exposed.
+# - Same-repository pull requests are trusted code. A branch pushed by anyone
+#   with write access is deployed as a Worker Preview using the account-scoped
+#   `CLOUDFLARE_API_TOKEN` (`Workers Scripts:Edit`), and previews run against
+#   the shared preview database while reading the *production* Worker secrets
+#   listed above. PR code therefore executes with those credentials and can
+#   read them; write access to this repository is effectively access to the
+#   production Cloudflare account and those secrets. There is no sandbox
+#   beyond that boundary.
+# - Dependabot pull requests are skipped.
+#
+# TODO(security): issue a dedicated Cloudflare token restricted to preview
+# Workers (no production deploy/R2 access) and a separate preview secret set
+# (AUTH_SECRET, Stripe, Apple/Android, DEV_MAILBOX_SECRET), then point the
+# preview steps at them. Until that split exists, do not grant write access to
+# anyone who is not trusted with production.
 on:
   push:
     branches: [main]
@@ -47,12 +67,13 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   CF_SEND_TELEMETRY: "false"
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  # The Cloudflare credentials are attached per step (only the steps that run
+  # `cf` or validate them), never to the whole workflow, so `pnpm install` and
+  # third-party actions never see them. The migration steps deliberately do not
+  # receive them: they only need the database URL. See the steps below.
   PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
 
 jobs:
@@ -66,17 +87,28 @@ jobs:
          github.actor != 'dependabot[bot]'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Only the Preview comment needs write access to the pull request; the
+    # `cleanup` job below keeps the workflow default of `contents: read`.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Rspress `lastUpdated` reads per-file Git history.
+          # Rspress `lastUpdated` reads per-file Git history; the blob-less
+          # commit graph is all it needs.
           fetch-depth: 0
+          filter: blob:none
+          # Nothing here pushes back to the repository, and the Preview comment
+          # receives its token explicitly, so keep the token out of `.git/config`
+          # where build scripts could read it.
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -98,6 +130,9 @@ jobs:
           PREVIEW_STORAGE_BUCKET: ${{ vars.PREVIEW_STORAGE_BUCKET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Read through the environment rather than interpolating the event
+          # payload into the script.
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           missing=()
 
@@ -105,7 +140,7 @@ jobs:
             [ -n "${!name}" ] || missing+=("$name")
           done
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
             preview="true"
             for name in PREVIEW_DATABASE_URL PREVIEW_HYPERDRIVE_ID PREVIEW_STORAGE_BUCKET; do
               if [ -z "${!name}" ]; then
@@ -140,6 +175,8 @@ jobs:
       - name: Deploy API Worker
         if: github.event_name == 'push'
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ORIGIN: ${{ vars.PRODUCTION_ORIGIN || 'https://e.mattrax.app' }}
           STRIPE_LICENSE_PRICE_ID: ${{ vars.STRIPE_LICENSE_PRICE_ID }}
           MATTRAX_PRODUCTION: "true"
@@ -148,6 +185,8 @@ jobs:
       - name: Deploy dashboard Worker
         if: github.event_name == 'push'
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # Optional GitHub copy of the dashboard's SSR signing secret. When it
           # is absent, fall back to the secret already stored on the Worker.
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
@@ -165,6 +204,9 @@ jobs:
         id: web-bootstrap
         if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
           output="$(pnpm exec cf previews deploy "$PREVIEW_NAME" 2>&1)" || true
@@ -182,6 +224,8 @@ jobs:
         if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/cloud
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ORIGIN: ${{ steps.web-bootstrap.outputs.url }}
           MATTRAX_HYPERDRIVE_ID: ${{ vars.PREVIEW_HYPERDRIVE_ID }}
           MATTRAX_STORAGE_BUCKET: ${{ vars.PREVIEW_STORAGE_BUCKET }}
@@ -204,6 +248,8 @@ jobs:
         if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
         working-directory: apps/web
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           API_URL: ${{ steps.api-preview.outputs.url }}
         run: |
           set -o pipefail
@@ -219,8 +265,12 @@ jobs:
 
       - name: Comment the Preview
         if: github.event_name == 'pull_request' && steps.config.outputs.preview == 'true'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
+          # The checkout does not persist credentials, so give the comment
+          # action the workflow token explicitly. It only needs the
+          # `pull-requests: write` scope granted to this job.
+          GITHUB_TOKEN: ${{ github.token }}
           header: preview
           message: |
             **Preview:** ${{ steps.web-preview.outputs.url }}
@@ -229,17 +279,24 @@ jobs:
             Built from ${{ github.event.pull_request.head.sha }} against the shared preview database.
 
   cleanup:
-    if: github.event.action == 'closed'
+    # Previews only exist for same-repository pull requests (the deploy job
+    # skips forks and Dependabot). Closing a fork PR would otherwise start a
+    # runner just to install dependencies and delete nothing.
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: pnpm
@@ -251,6 +308,9 @@ jobs:
       # already be gone, or the token may have expired since the PR opened.
       - name: Delete the Preview Workers
         continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           pnpm exec cf previews delete "$PREVIEW_NAME" --worker mattrax --force || true
           pnpm exec cf previews delete "$PREVIEW_NAME" --worker mattrax-api --force || true

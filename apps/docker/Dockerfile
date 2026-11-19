@@ -9,7 +9,7 @@
 # SMTP, and the dashboard is the Solid SSR Node server. One Node process owns
 # both behind a single port, with `/api`, `/mdm` and `/scim` routed to the API.
 
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 
 # Node validates the system trust store when it starts, even for a build.
 # binutils strips debug symbols from the Node binary that reaches the runtime;
@@ -79,11 +79,18 @@ ENV NODE_ENV=production \
     PORT=8080 \
     HOST=0.0.0.0 \
     DATA_DIR=/data \
-    HOME=/home/node
+    HOME=/home/node \
+    LD_LIBRARY_PATH=/usr/lib/node-libs
 
 COPY --from=build /out/etc/passwd /etc/passwd
 COPY --from=build /out/etc/group /etc/group
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
+
+# Node 26 is linked against libatomic on both amd64 and arm64; distroless's
+# `cc` image carries libstdc++ and libgcc but not it. Ship it beside the
+# binary. The multiarch directory name differs per architecture, so copy the
+# match into one fixed directory and point the loader at it.
+COPY --from=build /usr/lib/*-linux-gnu/libatomic.so.1* /usr/lib/node-libs/
 
 WORKDIR /app
 

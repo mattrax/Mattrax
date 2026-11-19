@@ -15637,8 +15637,8 @@ export const createEnterpriseService = ({
             new EnterpriseNotFound({ message: "Policy deployment not found" }),
           );
 
-        // SAFETY: An empty object is a valid Record<string, Schema.Json>; this
-        // fallback only runs when the stored snapshot failed to decode.
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // `Record<string, Schema.Json>` when the stored snapshot does not decode.
         const snapshot = Option.getOrElse(
           Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
             deployment.snapshot,
@@ -15646,8 +15646,8 @@ export const createEnterpriseService = ({
           () => ({}) as Record<string, Schema.Json>,
         );
 
-        // SAFETY: An empty object is a valid Record<string, "device" | "user">;
-        // this fallback only runs when the stored scopes failed to decode.
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // `Record<string, "device" | "user">`; lookups below fall back to `"device"`.
         const snapshotScopes = Option.getOrElse(
           Schema.decodeUnknownOption(
             Schema.Record(Schema.String, Schema.Literals(["device", "user"])),
