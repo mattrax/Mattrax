@@ -9,6 +9,8 @@ import {
   GraphAutopilotProfilesResponse,
   GraphDomainsResponse,
   GraphGroupDeltaResponse,
+  GraphOAuth2PermissionGrantsResponse,
+  GraphServicePrincipalsResponse,
   GraphUserDeltaResponse,
   graphAutopilotDeviceFromWire,
   graphAutopilotProfileFromWire,
@@ -67,6 +69,19 @@ export class AzureGraphInvalidResponse extends Data.TaggedError("InvalidResponse
   cause?: unknown;
 }> {}
 
+/**
+ * A delegated grant delete failed after earlier grants were already removed.
+ * `grantsRemoved` lets the caller report the partial result instead of a bare
+ * failure.
+ */
+export class AzureGraphConsentRevocationFailed extends Data.TaggedError("ConsentRevocationFailed")<{
+  message: string;
+  servicePrincipalId: string;
+  grantsRemoved: number;
+  status?: number;
+  cause?: unknown;
+}> {}
+
 export type AzureGraphError =
   | AzureGraphUnauthorized
   | AzureGraphConsentRequired
@@ -74,6 +89,10 @@ export type AzureGraphError =
   | AzureGraphNotFound
   | AzureGraphRequestFailed
   | AzureGraphInvalidResponse;
+
+export type AzureGraphConsentRevocationError =
+  | AzureGraphError
+  | AzureGraphConsentRevocationFailed;
 
 export type AzureGraphConfig = {
   readonly clientId: string;
@@ -124,6 +143,16 @@ export type AutopilotDeploymentProfileInput = {
   readonly enableDevicePreparation?: boolean;
 };
 
+/**
+ * Outcome of removing the tenant's delegated consent for this application.
+ * `servicePrincipalId` is null when the app was never consented to in the
+ * tenant, which is treated as already revoked.
+ */
+export type DelegatedConsentRevocation = {
+  readonly servicePrincipalId: string | null;
+  readonly grantsRemoved: number;
+};
+
 export type AzureGraphService = {
   readonly get: <T>(
     tenantId: string,
@@ -141,6 +170,15 @@ export type AzureGraphService = {
   readonly domains: (
     tenantId: string,
   ) => Effect.Effect<ReadonlyArray<GraphDomain>, AzureGraphError>;
+  /**
+   * Delete every delegated permission grant this application holds in the
+   * tenant. The application's service principal is found by its client id, so
+   * grants made to other applications are never touched. A missing service
+   * principal or grant is treated as already revoked.
+   */
+  readonly revokeDelegatedConsent: (
+    tenantId: string,
+  ) => Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError>;
   readonly consentUrl: (tenantId: string) => string;
 
   /** List `windowsAutopilotDeviceIdentities`, one page at a time. */
@@ -690,6 +728,133 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           return result;
         });
 
+      const servicePrincipalBase = `${graphBaseUrl}/servicePrincipals`;
+      const permissionGrantBase = `${graphBaseUrl}/oauth2PermissionGrants`;
+
+      const odataString = (value: string) => value.replaceAll("'", "''");
+
+      const servicePrincipalsForApp = (
+        tenantId: string,
+      ): Effect.Effect<ReadonlyArray<{ id: string }>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const result: Array<{ id: string }> = [];
+
+          let link: string | undefined =
+            `${servicePrincipalBase}?$select=id&$filter=${encodeURIComponent(
+              `appId eq '${odataString(config.clientId)}'`,
+            )}`;
+
+          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
+            const page: GraphServicePrincipalsResponse = yield* get(
+              tenantId,
+              link,
+              GraphServicePrincipalsResponse,
+            );
+
+            result.push(...page.value);
+            link = page["@odata.nextLink"] ?? undefined;
+          }
+
+          return result;
+        });
+
+      const delegatedGrantsFor = (
+        tenantId: string,
+        servicePrincipalId: string,
+      ): Effect.Effect<ReadonlyArray<{ id: string; clientId?: string | null }>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const result: Array<{ id: string; clientId?: string | null }> = [];
+
+          let link: string | undefined =
+            `${permissionGrantBase}?$select=id,clientId&$filter=${encodeURIComponent(
+              `clientId eq '${odataString(servicePrincipalId)}'`,
+            )}`;
+
+          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
+            const page: GraphOAuth2PermissionGrantsResponse = yield* get(
+              tenantId,
+              link,
+              GraphOAuth2PermissionGrantsResponse,
+            );
+
+            result.push(...page.value);
+            link = page["@odata.nextLink"] ?? undefined;
+          }
+
+          return result;
+        });
+
+      /**
+       * The token endpoint answers 400 with one of these codes when the
+       * application registration or the customer tenant no longer exists
+       * (for example after an admin deleted the enterprise application). That
+       * is indistinguishable from an already-revoked consent for our purpose.
+       */
+      const tenantGone = (body: string | undefined) =>
+        body !== undefined &&
+        (body.includes("AADSTS700016") || body.includes("AADSTS90002"));
+
+      const revokeDelegatedConsent = (
+        tenantId: string,
+      ): Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError> =>
+        Effect.gen(function* () {
+          const principal = (yield* servicePrincipalsForApp(tenantId))[0];
+
+          // No service principal means the app was never consented to (or the
+          // consent was already removed); there is nothing left to revoke.
+          if (!principal) return { servicePrincipalId: null, grantsRemoved: 0 };
+
+          const grants = yield* delegatedGrantsFor(tenantId, principal.id);
+          let grantsRemoved = 0;
+
+          for (const grant of grants) {
+            // Re-check locally as well as in the filter: a mock or a future
+            // Graph change must never make us delete another app's grant.
+            if (grant.clientId !== principal.id) continue;
+
+            const removed = yield* request(
+              tenantId,
+              "DELETE",
+              `${permissionGrantBase}/${encodeURIComponent(grant.id)}`,
+              null,
+            ).pipe(
+              Effect.as(true as const),
+              Effect.catchTag("NotFound", () => Effect.succeed(true as const)),
+              Effect.catch((error) => Effect.succeed(error)),
+            );
+
+            if (removed !== true) {
+              const status = Schema.is(Schema.Struct({ status: Schema.Number }))(removed)
+                ? removed.status
+                : undefined;
+
+              return yield* Effect.fail(
+                new AzureGraphConsentRevocationFailed({
+                  message: `Failed to remove delegated consent after ${grantsRemoved} grant${
+                    grantsRemoved === 1 ? "" : "s"
+                  }: ${removed.message}`,
+                  servicePrincipalId: principal.id,
+                  grantsRemoved,
+                  status,
+                  cause: removed,
+                }),
+              );
+            }
+
+            grantsRemoved++;
+          }
+
+          return { servicePrincipalId: principal.id, grantsRemoved };
+        }).pipe(
+          Effect.catchIf(
+            // The token endpoint reports a deleted app/tenant through several
+            // status codes, so match the AADSTS code in whichever error carries
+            // the response body rather than only a 400 RequestFailed.
+            (error) => "body" in error && tenantGone(error.body),
+            () => Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }),
+          ),
+        );
+
       const consentUrl = (tenantId: string): string => {
         const url = new URL(
           `${loginBaseUrl}/${encodeURIComponent(normalizeTenantId(tenantId))}/v2.0/adminconsent`,
@@ -841,6 +1006,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         usersDelta,
         groupsDelta,
         domains,
+        revokeDelegatedConsent,
         consentUrl,
         listAutopilotDevices,
         getAutopilotDevice,

@@ -432,12 +432,27 @@ export const AcceptTenantOwnershipTransferResponse = Schema.Struct({
 export type AcceptTenantOwnershipTransferResponse =
   typeof AcceptTenantOwnershipTransferResponse.Type;
 
+/**
+ * Best-effort outcome of revoking this app's delegated Entra consent when a
+ * tenant unlinks its directory. The local unlink always succeeds; a failed
+ * revocation is reported here and is safe to retry by an Entra administrator.
+ */
+export const SsoConsentRevocation = Schema.Struct({
+  status: Schema.Literals(["revoked", "skipped", "failed"]),
+  grantsRemoved: Schema.optional(Schema.Number),
+  reason: Schema.optional(NullableString),
+});
+
+export type SsoConsentRevocation = typeof SsoConsentRevocation.Type;
+
 export const SsoConfigResponse = Schema.Struct({
   enabled: Schema.Boolean,
   azureTenantId: Schema.optional(NullableString),
   autoProvision: Schema.Boolean,
   /** Require owners and admins to enroll an authenticator before tenant access. */
   requireMfa: Schema.Boolean,
+  /** Present only when an update removed or replaced the linked Entra tenant. */
+  consentRevocation: Schema.optional(SsoConsentRevocation),
 });
 
 export const PatchSsoConfigRequest = Schema.Struct({

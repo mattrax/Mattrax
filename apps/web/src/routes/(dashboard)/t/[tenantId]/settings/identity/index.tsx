@@ -161,6 +161,11 @@ export default function IdentitySettingsPage() {
 
   const [ssoSaved, setSsoSaved] = createSignal(false);
 
+  const [consentNotice, setConsentNotice] = createSignal<{
+    tone: "success" | "warning";
+    text: string;
+  } | null>(null);
+
   const ssoDirty = () => {
     const current = sso.data;
 
@@ -180,8 +185,10 @@ export default function IdentitySettingsPage() {
         azureTenantId: azureTenantId().trim() || null,
         autoProvision: autoProvision(),
       }),
-    onMutate: async () =>
-      optimisticUpdate<Awaited<ReturnType<typeof enterprise.getSsoConfig>>>(
+    onMutate: async () => {
+      setConsentNotice(null);
+
+      return optimisticUpdate<Awaited<ReturnType<typeof enterprise.getSsoConfig>>>(
         qc,
         enterpriseKeys.sso(params.tenantId),
         (current) => ({
@@ -190,10 +197,48 @@ export default function IdentitySettingsPage() {
           azureTenantId: azureTenantId().trim() || null,
           autoProvision: autoProvision(),
         }),
-      ),
-    onSuccess: () => {
+      );
+    },
+    onSuccess: (result) => {
       setSsoSaved(true);
       setTimeout(() => setSsoSaved(false), 3000);
+
+      const revocation = result.consentRevocation;
+
+      if (!revocation) return;
+
+      if (revocation.status === "revoked") {
+        const count = revocation.grantsRemoved ?? 0;
+
+        setConsentNotice({
+          tone: "success",
+          text:
+            count === 0
+              ? "Microsoft Entra tenant unlinked. No delegated consent remained to revoke."
+              : `Microsoft Entra tenant unlinked. Admin consent was revoked (${count} delegated permission grant${count === 1 ? "" : "s"} removed).`,
+        });
+
+        return;
+      }
+
+      if (revocation.status === "skipped")
+        setConsentNotice({
+          tone: "warning",
+          text: `Microsoft Entra tenant unlinked. Admin consent was not revoked: ${revocation.reason ?? "Microsoft Graph credentials are not configured."}`,
+        });
+      else {
+        const removed = revocation.grantsRemoved ?? 0;
+
+        const partial =
+          removed > 0
+            ? ` ${removed} delegated permission grant${removed === 1 ? "" : "s"} were removed before the failure.`
+            : "";
+
+        setConsentNotice({
+          tone: "warning",
+          text: `Microsoft Entra tenant unlinked, but admin consent could not be revoked: ${revocation.reason ?? "Microsoft Graph rejected the request."}${partial} Remove the app's enterprise application in Entra to finish.`,
+        });
+      }
     },
     onError: (_error, _variables, restore) => restore?.(),
     onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) }),
@@ -572,6 +617,20 @@ export default function IdentitySettingsPage() {
               Test sign-in
             </Button>
           </div>
+          <Show when={consentNotice()}>
+            {(notice) => (
+              <p
+                role="status"
+                class={`pt-3 text-[13px] ${
+                  notice().tone === "success"
+                    ? "text-success-foreground"
+                    : "text-warning-foreground"
+                }`}
+              >
+                {notice().text}
+              </p>
+            )}
+          </Show>
           <Show when={ssoError()}>
             {(message) => (
               <p role="alert" class="pt-3 text-[13px] text-destructive">

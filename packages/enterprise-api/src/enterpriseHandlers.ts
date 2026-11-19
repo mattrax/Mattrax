@@ -530,6 +530,11 @@ export type EnterpriseHandlersConfig = {
   readonly azureGraph?: AzureGraphService;
   /** Public Entra app client id, exposed only to build the admin consent URL. */
   readonly azureClientId?: string;
+  /**
+   * Overall deadline for revoking Entra consent during an unlink. Defaults to
+   * 20s so a throttled Graph cannot hold the committed unlink response open.
+   */
+  readonly entraConsentRevocationTimeoutMs?: number;
   /** Federated WSTEP state shown in Settings → Management. */
   readonly windowsFederated?: {
     readonly audience?: string;
@@ -1399,6 +1404,7 @@ export const createEnterpriseService = ({
   invitationFromEmail,
   azureGraph,
   azureClientId,
+  entraConsentRevocationTimeoutMs: configuredEntraConsentRevocationTimeoutMs,
   windowsFederated,
   webhookFetch,
   webhookTimeoutMs,
@@ -1412,6 +1418,9 @@ export const createEnterpriseService = ({
 
   const windowsFailureRetentionDays =
     configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
+
+  const entraConsentRevocationTimeoutMs =
+    configuredEntraConsentRevocationTimeoutMs ?? 20_000;
 
   const enrollmentProfileTtlSeconds = normalizeEnrollmentProfileTtlSeconds(
     configuredEnrollmentProfileTtlSeconds,
@@ -2125,6 +2134,149 @@ export const createEnterpriseService = ({
         },
         webhookOptions,
       );
+    });
+
+  /**
+   * Whether this tenant ever proved the linked Entra directory works, either
+   * with a successful directory/domain sync or a completed SSO sign-in. An
+   * unverified tenant id is only a string an owner typed, so it must not be
+   * used as permission to delete anything in that remote directory.
+   */
+  const entraLinkWasVerified = (organizationId: string) =>
+    Effect.gen(function* () {
+      const sync = yield* db.query.entraDirectorySync.findFirst({ where: { organizationId } });
+
+      if (sync?.lastSyncedAt != null || sync?.domainsSyncedAt != null) return true;
+
+      const identity = yield* db.query.ssoIdentity.findFirst({ where: { organizationId } });
+
+      if (identity) return true;
+
+      const directoryUser = yield* db.query.user.findFirst({
+        where: { organizationId, source: "entra" },
+      });
+
+      return directoryUser !== undefined;
+    });
+
+  /**
+   * Best-effort removal of this app's delegated Entra consent. Unlinking must
+   * never fail because Graph is unavailable, so every failure (including an
+   * audit write) is recorded and swallowed. The returned outcome is surfaced
+   * on the SSO response so the dashboard can tell the operator what happened.
+   */
+  const revokeEntraConsent = (
+    ctx: Parameters<typeof audit>[0],
+    azureTenantId: string,
+    linkVerified: boolean,
+  ) =>
+    Effect.gen(function* () {
+      const record = (action: string, metadata: Schema.Json) =>
+        audit(ctx, action, "sso", ctx.organization.id, metadata).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(`Entra consent audit write failed: ${String(cause)}`),
+          ),
+        );
+
+      if (!azureGraph) {
+        const reason = "Microsoft Graph credentials are not configured.";
+
+        yield* record("sso.consent_revocation_skipped", {
+          azureTenantId,
+          result: "skipped",
+          reason,
+        });
+
+        return { status: "skipped" as const, reason };
+      }
+
+      if (!linkVerified) {
+        const reason = "The Entra link was never verified by a successful sync or sign-in.";
+
+        yield* record("sso.consent_revocation_skipped", {
+          azureTenantId,
+          result: "skipped",
+          reason,
+        });
+
+        return { status: "skipped" as const, reason };
+      }
+
+      // One overall deadline, because each Graph call has its own 15s timeout
+      // and a throttled tenant could otherwise hold the committed unlink open
+      // until the HTTP request is aborted. `catchCause` also absorbs defects,
+      // which must never turn a successful unlink into an error.
+      // `suspend` also captures a synchronous throw (for example from a mock or
+      // a future client refactor) as a defect for `catchCause` below.
+      const revoke = Effect.suspend(() => azureGraph.revokeDelegatedConsent(azureTenantId));
+
+      const outcome = yield* revoke.pipe(
+        Effect.map((revocation) => ({
+          status: "revoked" as const,
+          grantsRemoved: revocation.grantsRemoved,
+          servicePrincipalId: revocation.servicePrincipalId,
+        })),
+        Effect.catchCause((cause) => {
+          const error = Cause.squash(cause);
+
+          // Graph error messages name the endpoint, never a token or secret.
+          const reason = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+
+          const httpStatus = Schema.is(Schema.Struct({ status: Schema.Number }))(error)
+            ? error.status
+            : null;
+
+          const grantsRemoved = Schema.is(Schema.Struct({ grantsRemoved: Schema.Number }))(error)
+            ? error.grantsRemoved
+            : 0;
+
+          return Effect.succeed({
+            status: "failed" as const,
+            reason,
+            grantsRemoved,
+            httpStatus,
+          });
+        }),
+        Effect.timeoutOrElse({
+          duration: entraConsentRevocationTimeoutMs,
+          orElse: () =>
+            Effect.succeed({
+              status: "failed" as const,
+              reason: "Microsoft Graph did not respond in time.",
+              grantsRemoved: 0,
+              httpStatus: null,
+            }),
+        }),
+      );
+
+      if (outcome.status === "revoked") {
+        yield* record("sso.consent_revoked", {
+          azureTenantId,
+          result: "revoked",
+          grantsRemoved: outcome.grantsRemoved,
+          servicePrincipalFound: outcome.servicePrincipalId !== null,
+        });
+
+        return { status: "revoked" as const, grantsRemoved: outcome.grantsRemoved };
+      }
+
+      yield* Effect.logWarning(
+        `Entra consent revocation failed for ${azureTenantId}: ${outcome.reason}`,
+      );
+
+      yield* record("sso.consent_revocation_failed", {
+        azureTenantId,
+        result: "failed",
+        message: outcome.reason,
+        httpStatus: outcome.httpStatus,
+        grantsRemoved: outcome.grantsRemoved,
+      });
+
+      return {
+        status: "failed" as const,
+        reason: outcome.reason,
+        grantsRemoved: outcome.grantsRemoved,
+      };
     });
 
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
@@ -7862,8 +8014,19 @@ export const createEnterpriseService = ({
           where: { organizationId: ctx.organization.id },
         });
 
+        // GUIDs are case-insensitive, so store and compare one canonical form.
+        // Re-saving the same id with different casing is not a link change.
+        const normalizeAzureTenantId = (value: string | null | undefined) =>
+          value?.trim().toLowerCase() || null;
+
+        const previousAzureTenantId = normalizeAzureTenantId(existing?.azureTenantId);
+
         const nextAzureTenantId =
-          body.azureTenantId === undefined ? (existing?.azureTenantId ?? null) : body.azureTenantId;
+          body.azureTenantId === undefined
+            ? previousAzureTenantId
+            : normalizeAzureTenantId(body.azureTenantId);
+
+        const tenantChanged = previousAzureTenantId !== nextAzureTenantId;
 
         if (nextAzureTenantId) {
           if (
@@ -7885,10 +8048,7 @@ export const createEnterpriseService = ({
 
         // Linking a different Entra tenant changes which identities can claim
         // member accounts, so only a built-in owner may change it.
-        if (
-          nextAzureTenantId !== (existing?.azureTenantId ?? null) &&
-          !isBuiltInOwnerMember(ctx.member)
-        )
+        if (tenantChanged && !isBuiltInOwnerMember(ctx.member))
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Only an owner can change the linked Entra tenant",
@@ -7915,14 +8075,26 @@ export const createEnterpriseService = ({
 
         const timestamp = now();
 
-        if ((existing?.azureTenantId ?? null) !== nextAzureTenantId) {
+        // Evidence is evaluated before the rows below are cleared so a real
+        // successful sync still authorises revocation of the old link.
+        const previousLinkVerified =
+          previousAzureTenantId && tenantChanged
+            ? yield* entraLinkWasVerified(ctx.organization.id).pipe(
+                Effect.catchCause(() => Effect.succeed(false)),
+              )
+            : false;
+
+        if (tenantChanged) {
           // Delta cursors and imported domains belong to the previous Entra
-          // tenant and cannot be reused after a change.
+          // tenant and cannot be reused after a change. The sync timestamps
+          // are evidence for that previous link, so clear them too.
           yield* db
             .update(schema.entraDirectorySync)
             .set({
               usersDeltaLink: null,
               groupsDeltaLink: null,
+              lastSyncedAt: null,
+              domainsSyncedAt: null,
               status: "idle",
               lastError: null,
               updatedAt: timestamp,
@@ -7943,7 +8115,7 @@ export const createEnterpriseService = ({
             .update(schema.ssoConfig)
             .set({
               enabled: body.enabled !== undefined ? body.enabled : undefined,
-              azureTenantId: body.azureTenantId !== undefined ? body.azureTenantId : undefined,
+              azureTenantId: body.azureTenantId !== undefined ? nextAzureTenantId : undefined,
               autoProvision: body.autoProvision !== undefined ? body.autoProvision : undefined,
               updatedAt: timestamp,
             })
@@ -7952,7 +8124,7 @@ export const createEnterpriseService = ({
           yield* db.insert(schema.ssoConfig).values({
             organizationId: ctx.organization.id,
             enabled: body.enabled ?? false,
-            azureTenantId: body.azureTenantId ?? null,
+            azureTenantId: nextAzureTenantId,
             autoProvision: body.autoProvision ?? true,
             createdAt: timestamp,
             updatedAt: timestamp,
@@ -7963,6 +8135,13 @@ export const createEnterpriseService = ({
           fields: Object.keys(body),
         });
 
+        // The local unlink is already committed. Anything below is best-effort
+        // so a Graph outage cannot trap the tenant in a link it wants removed.
+        const consentRevocation =
+          previousAzureTenantId && tenantChanged
+            ? yield* revokeEntraConsent(ctx, previousAzureTenantId, previousLinkVerified)
+            : undefined;
+
         const config = yield* db.query.ssoConfig.findFirst({
           where: { organizationId: ctx.organization.id },
         });
@@ -7972,6 +8151,7 @@ export const createEnterpriseService = ({
           azureTenantId: config?.azureTenantId ?? null,
           autoProvision: config?.autoProvision ?? true,
           requireMfa,
+          consentRevocation,
         };
       }),
     listScimTokens: (request, tenantId) =>
