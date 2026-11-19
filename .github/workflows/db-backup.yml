@@ -17,8 +17,12 @@ name: Database backup
 #   buckets is a job that can lose the backups. Creation commands live in
 #   docs/operations/backups.md.
 #
-# Required repository secrets (already present for deploy.yml):
-#   DATABASE_URL, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
+# Required repository secrets:
+#   DATABASE_URL            production MySQL connection string
+#   CLOUDFLARE_ACCOUNT_ID   account that owns the bucket
+#   CLOUDFLARE_API_TOKEN    token with Workers R2 Storage Bucket Item Read &
+#                           Write on mattrax-backups; the deploy token already
+#                           carries this bucket-scoped policy
 #
 # Restore procedure: docs/operations/backups.md
 
@@ -42,7 +46,6 @@ env:
   BACKUP_BUCKET: mattrax-backups
   BACKUP_PREFIX: daily/
   ZSTD_LEVEL: "19"
-  WRANGLER_VERSION: "4.164.0"
 
 jobs:
   backup:
@@ -65,21 +68,40 @@ jobs:
             [ -n "${!name}" ] || missing+=("$name")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::Missing repository secrets: ${missing[*]}. See docs/operations/deployment.md."
+            echo "::error::Missing repository secrets: ${missing[*]}. See docs/operations/backups.md."
             exit 1
           fi
+
+      # R2's S3 API accepts a Cloudflare API token directly: the token id is the
+      # access key ID and the SHA-256 of its value is the secret access key.
+      # Deriving them here keeps the repository to the secrets it already has,
+      # and means a bucket-scoped token is the only provisioning step.
+      - name: Configure R2 credentials
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify")"
+          token_id="$(jq -er '.result.id' <<<"$response")"
+          secret="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$secret"
+          {
+            echo "AWS_ACCESS_KEY_ID=$token_id"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+            echo "AWS_DEFAULT_REGION=auto"
+            echo "R2_ENDPOINT=https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          } >>"$GITHUB_ENV"
 
       - name: Install client tooling
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends mysql-client zstd
-          npm install --global "wrangler@$WRANGLER_VERSION"
 
           mysql --version
           mysqldump --version
           zstd --version
-          wrangler --version
+          aws --version
 
           # Ubuntu can resolve mysql-client to MariaDB, whose mysqldump emits
           # syntax MySQL 8.4 rejects. Fail loudly instead of producing a dump
@@ -101,38 +123,24 @@ jobs:
           ls -l "$OUT_DIR"
 
       - name: Upload to R2
-        # A 403 here means CLOUDFLARE_API_TOKEN lacks R2 object write on the
-        # bucket; the token does not need to be able to list or create buckets.
+        # A 403 here means CLOUDFLARE_API_TOKEN is missing Workers R2 Storage
+        # Bucket Item Write for mattrax-backups. It does not need bucket admin
+        # permissions: the workflow never creates, configures or deletes a
+        # bucket.
         run: |
           set -euo pipefail
           export OUT_DIR="$RUNNER_TEMP/db-backup"
           stamp="${{ steps.dump.outputs.stamp }}"
-          key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
+          base="s3://$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
 
-          upload() {
-            local output status
-            # `set -e` would abort on a failed substitution before the output is
-            # printed, which hides the API error exactly when it matters.
-            set +e
-            output="$(wrangler r2 object put "$1" --file "$2" --content-type "$3" --remote 2>&1)"
-            status=$?
-            set -e
-            printf '%s\n' "$output"
-
-            if [ "$status" -ne 0 ]; then
-              echo "::error::wrangler could not upload $1 (exit $status)"
-              return 1
-            fi
-            # Without --remote wrangler writes to a local simulation and still
-            # says "Upload complete", leaving the job green with nothing in R2.
-            if grep -q "Resource location: local" <<<"$output"; then
-              echo "::error::wrangler wrote $1 to local storage instead of R2"
-              return 1
-            fi
-          }
-
-          upload "$key.sql.zst" "$OUT_DIR/$stamp.sql.zst" application/zstd
-          upload "$key.json" "$OUT_DIR/$stamp.json" application/json
+          aws s3 cp "$OUT_DIR/$stamp.sql.zst" "$base.sql.zst" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/zstd \
+            --only-show-errors
+          aws s3 cp "$OUT_DIR/$stamp.json" "$base.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/json \
+            --only-show-errors
 
       # An upload that reports success is not the same as a restorable object.
       # Pull it back, compare the checksum and decompress it before calling the
@@ -142,19 +150,20 @@ jobs:
           set -euo pipefail
           export OUT_DIR="$RUNNER_TEMP/db-backup"
           stamp="${{ steps.dump.outputs.stamp }}"
-          key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
+          base="s3://$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
           expected="$(jq -r .sha256 "$OUT_DIR/$stamp.json")"
 
-          wrangler r2 object get "$key.sql.zst" --file "$OUT_DIR/roundtrip.sql.zst" --remote
+          aws s3 cp "$base.sql.zst" "$OUT_DIR/roundtrip.sql.zst" \
+            --endpoint-url "$R2_ENDPOINT" --only-show-errors
           actual="$(sha256sum "$OUT_DIR/roundtrip.sql.zst" | cut -d' ' -f1)"
           if [ "$expected" != "$actual" ]; then
-            echo "::error::Checksum mismatch for $key.sql.zst: expected $expected, downloaded $actual"
+            echo "::error::Checksum mismatch for $base.sql.zst: expected $expected, downloaded $actual"
             exit 1
           fi
 
           zstd --test --long=27 -q "$OUT_DIR/roundtrip.sql.zst"
           rm -f "$OUT_DIR/roundtrip.sql.zst"
-          echo "verified $key.sql.zst"
+          echo "verified $base.sql.zst"
 
       - name: Summarise
         if: always() && steps.dump.outputs.stamp != ''

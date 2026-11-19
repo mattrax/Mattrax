@@ -8,9 +8,13 @@ production MySQL database into R2.
   America, beside the GitHub-hosted runners).
 - **How long.** 90 days. Objects move to Infrequent Access after 30 days and are
   deleted by an R2 lifecycle rule, not by the workflow.
-- **Credentials.** The workflow reuses `DATABASE_URL`, `CLOUDFLARE_ACCOUNT_ID`
-  and `CLOUDFLARE_API_TOKEN`; the token only needs object write on this bucket.
-  There is nothing extra to configure.
+- **Credentials.** `DATABASE_URL` plus `CLOUDFLARE_API_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID`. The token carries Workers R2 Storage Bucket Item
+  Read & Write scoped to `mattrax-backups`; the workflow derives the S3 access
+  key ID (the token id) and secret (SHA-256 of the token value) at run time, so
+  there is no separate long-lived S3 key to rotate. Uploads go through the S3
+  API; the REST object endpoint does not accept these bucket-scoped token
+  permissions.
 
 This is a logical backup of one database at one instant. It is not
 point-in-time recovery: the worst case is losing up to a day of writes. For
@@ -19,7 +23,7 @@ which this workflow does not configure.
 
 ## Provisioning
 
-The bucket is created once by hand. The workflow only writes objects: a CI
+The bucket is created once with `cf`. The workflow only writes objects: a CI
 token that can create buckets can also delete them, and a backup job that can
 lose the backups is worse than one that fails.
 
@@ -52,8 +56,36 @@ cf r2 buckets lifecycle update mattrax-backups --rules '[
 `cf r2 buckets lifecycle update` replaces every rule, so keep both in the same
 call. Verify with `cf r2 buckets lifecycle get mattrax-backups`.
 
-If the nightly run fails with `403` on upload, the repository token is missing
-`Workers R2 Storage:Edit` on this bucket; nothing else needs to change.
+### Upload token
+
+The workflow uses `CLOUDFLARE_API_TOKEN`, the same repository secret as the
+deploy workflow. Its R2 policy must grant **Workers R2 Storage Bucket Item Read
+& Write** on `mattrax-backups`. Bucket item permissions cover objects; they
+cannot create, list or delete buckets, so the backup job cannot remove the
+backups.
+
+The S3 API does not accept a token as a bearer value. It uses the token itself
+as a credential pair: the token id is the access key ID and SHA-256 of the
+token value is the secret access key. The workflow asks
+`/accounts/:id/tokens/verify` for the id and derives the secret locally, so
+there are no `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets to create or
+rotate.
+
+These credentials are the token, so they inherit every R2 permission on it. The
+shared deploy token also carries the account-level **Workers R2 Storage
+Write** permission group, which is broader than the bucket item policy. A
+dedicated token with only the bucket item permissions closes that gap without
+changing the workflow.
+
+`CLOUDFLARE_ACCOUNT_ID` forms the S3 endpoint:
+
+```
+https://<account-id>.r2.cloudflarestorage.com
+```
+
+The REST object endpoint (`/r2/buckets/:bucket/objects/:key`) does not accept
+bucket item permissions. A `PUT` there with this token answers
+`401 Authentication error 10000`; that is why uploads use the S3 API.
 
 ## Object layout
 
@@ -112,8 +144,8 @@ sha256 against the manifest and decompressed it.
 There is no separate alerting: a failed run is a red run in Actions, and GitHub
 emails the repository owner, which is also how the rest of this repository
 reports failures. A run that fails before uploading leaves yesterday's backup in
-place, so a single failure is not data loss — a failure that repeats for
-`RETENTION_DAYS` is, which is why the retention rule is on the bucket and not in
+place, so a single failure is not data loss — a failure that repeats for the
+whole retention window is, which is why the rule lives on the bucket and not in
 the workflow.
 
 ## Restore
@@ -122,10 +154,22 @@ Rehearse into a scratch database first. Half-written dumps and partially
 applied restores both look plausible, so the rehearsal is not optional.
 
 ```bash
-# 1. Fetch the backup and its manifest.
+# 1. Fetch the backup and its manifest. Prefer short-lived, read-only
+#    credentials derived from the token; they cannot overwrite a backup.
+token_id=… # `cf accounts tokens list`, or the id in the token verify response
+creds="$(cf r2 temporary-credentials create \
+  --bucket mattrax-backups \
+  --parent-access-key-id "$token_id" \
+  --permission object-read-only \
+  --ttl-seconds 3600)"
+export AWS_ACCESS_KEY_ID="$(jq -r .accessKeyId <<<"$creds")"
+export AWS_SECRET_ACCESS_KEY="$(jq -r .secretAccessKey <<<"$creds")"
+export AWS_SESSION_TOKEN="$(jq -r .sessionToken <<<"$creds")"
+export AWS_DEFAULT_REGION=auto
+endpoint="https://<account-id>.r2.cloudflarestorage.com"
 stamp=2026-11-18T03-17-04Z
-wrangler r2 object get "mattrax-backups/daily/$stamp.sql.zst" --file "$stamp.sql.zst" --remote
-wrangler r2 object get "mattrax-backups/daily/$stamp.json"   --file "$stamp.json"   --remote
+aws s3 cp "s3://mattrax-backups/daily/$stamp.sql.zst" "$stamp.sql.zst" --endpoint-url "$endpoint"
+aws s3 cp "s3://mattrax-backups/daily/$stamp.json"   "$stamp.json"   --endpoint-url "$endpoint"
 
 # 2. Check it is the object the backup wrote.
 sha256sum "$stamp.sql.zst"
