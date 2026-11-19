@@ -8,9 +8,11 @@ production MySQL database into R2.
   America, beside the GitHub-hosted runners).
 - **How long.** 90 days. Objects move to Infrequent Access after 30 days and are
   deleted by an R2 lifecycle rule, not by the workflow.
-- **Credentials.** The workflow reuses `DATABASE_URL`, `CLOUDFLARE_ACCOUNT_ID`
-  and `CLOUDFLARE_API_TOKEN`; the token only needs object write on this bucket.
-  There is nothing extra to configure.
+- **Credentials.** `DATABASE_URL` plus an R2 token scoped to this bucket's
+  objects (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`). The Workers API token
+  is deliberately not used: its R2 permissions stop at bucket metadata, and the
+  REST object endpoint refuses it with `401 Authentication error 10000`.
+  Uploads go through the S3 API.
 
 This is a logical backup of one database at one instant. It is not
 point-in-time recovery: the worst case is losing up to a day of writes. For
@@ -52,8 +54,25 @@ cf r2 buckets lifecycle update mattrax-backups --rules '[
 `cf r2 buckets lifecycle update` replaces every rule, so keep both in the same
 call. Verify with `cf r2 buckets lifecycle get mattrax-backups`.
 
-If the nightly run fails with `403` on upload, the repository token is missing
-`Workers R2 Storage:Edit` on this bucket; nothing else needs to change.
+### Upload token
+
+R2 object access needs an R2 token, not a Workers API token. In the dashboard,
+**R2 → Manage R2 API tokens → Create API token**, with **Object Read & Write**
+scoped to `mattrax-backups`. That permission can read and write objects and
+nothing else — it cannot list, create or delete buckets.
+
+The created token shows an Access Key ID and Secret Access Key. Store them as
+the repository secrets `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, plus the
+existing `CLOUDFLARE_ACCOUNT_ID`, which forms the S3 endpoint:
+
+```
+https://<account-id>.r2.cloudflarestorage.com
+```
+
+The Workers token (`CLOUDFLARE_API_TOKEN`) deliberately stays out of this
+workflow. Its R2 permission groups cover bucket metadata only, so a `PUT` to
+the REST object endpoint answers `401 Authentication error 10000` — the failure
+that sent us to the S3 API in the first place.
 
 ## Object layout
 
@@ -112,8 +131,8 @@ sha256 against the manifest and decompressed it.
 There is no separate alerting: a failed run is a red run in Actions, and GitHub
 emails the repository owner, which is also how the rest of this repository
 reports failures. A run that fails before uploading leaves yesterday's backup in
-place, so a single failure is not data loss — a failure that repeats for
-`RETENTION_DAYS` is, which is why the retention rule is on the bucket and not in
+place, so a single failure is not data loss — a failure that repeats for the
+whole retention window is, which is why the rule lives on the bucket and not in
 the workflow.
 
 ## Restore
@@ -122,10 +141,13 @@ Rehearse into a scratch database first. Half-written dumps and partially
 applied restores both look plausible, so the rehearsal is not optional.
 
 ```bash
-# 1. Fetch the backup and its manifest.
+# 1. Fetch the backup and its manifest. Same endpoint and credentials as the
+#    workflow: the R2 token from R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY.
+export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=auto
+endpoint="https://<account-id>.r2.cloudflarestorage.com"
 stamp=2026-11-18T03-17-04Z
-wrangler r2 object get "mattrax-backups/daily/$stamp.sql.zst" --file "$stamp.sql.zst" --remote
-wrangler r2 object get "mattrax-backups/daily/$stamp.json"   --file "$stamp.json"   --remote
+aws s3 cp "s3://mattrax-backups/daily/$stamp.sql.zst" "$stamp.sql.zst" --endpoint-url "$endpoint"
+aws s3 cp "s3://mattrax-backups/daily/$stamp.json"   "$stamp.json"   --endpoint-url "$endpoint"
 
 # 2. Check it is the object the backup wrote.
 sha256sum "$stamp.sql.zst"
