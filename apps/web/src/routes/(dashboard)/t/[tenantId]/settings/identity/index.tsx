@@ -226,11 +226,19 @@ export default function IdentitySettingsPage() {
           tone: "warning",
           text: `Microsoft Entra tenant unlinked. Admin consent was not revoked: ${revocation.reason ?? "Microsoft Graph credentials are not configured."}`,
         });
-      else
+      else {
+        const removed = revocation.grantsRemoved ?? 0;
+
+        const partial =
+          removed > 0
+            ? ` ${removed} delegated permission grant${removed === 1 ? "" : "s"} were removed before the failure.`
+            : "";
+
         setConsentNotice({
           tone: "warning",
-          text: `Microsoft Entra tenant unlinked, but admin consent could not be revoked: ${revocation.reason ?? "Microsoft Graph rejected the request."} Remove the app's enterprise application in Entra to finish.`,
+          text: `Microsoft Entra tenant unlinked, but admin consent could not be revoked: ${revocation.reason ?? "Microsoft Graph rejected the request."}${partial} Remove the app's enterprise application in Entra to finish.`,
         });
+      }
     },
     onError: (_error, _variables, restore) => restore?.(),
     onSettled: () => void qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) }),

@@ -25,10 +25,12 @@ and, best-effort, revokes this app's delegated admin consent in the old director
 finds its own service principal by app id and deletes only the OAuth2 permission grants
 whose client is that service principal; a missing service principal or grant counts as
 already revoked. The local unlink succeeds even if Graph rejects the cleanup, and the
-dashboard reports whether consent was revoked, skipped (no Graph credentials) or failed.
-Removing grants needs the `DelegatedPermissionGrant.ReadWrite.All` application permission.
-Consent granted to a different application, application role assignments and tenant-wide
-policies cannot be revoked this way and must be removed by an Entra administrator.
+dashboard reports whether consent was revoked, skipped (no Graph credentials, or the link
+was never verified by a sync or sign-in) or failed. The service-principal lookup uses
+`Directory.Read.All` (already required for directory sync) or `Application.Read.All`; the
+deletion uses `DelegatedPermissionGrant.ReadWrite.All`. Consent granted to a different
+application, application role assignments and tenant-wide policies cannot be revoked this
+way and must be removed by an Entra administrator.
 
 The MFA requirement is not part of this form any more: it is a tenant property under
 **Settings → Identity → Multi-factor authentication**, so a tenant that signs in with

@@ -69,6 +69,19 @@ export class AzureGraphInvalidResponse extends Data.TaggedError("InvalidResponse
   cause?: unknown;
 }> {}
 
+/**
+ * A delegated grant delete failed after earlier grants were already removed.
+ * `grantsRemoved` lets the caller report the partial result instead of a bare
+ * failure.
+ */
+export class AzureGraphConsentRevocationFailed extends Data.TaggedError("ConsentRevocationFailed")<{
+  message: string;
+  servicePrincipalId: string;
+  grantsRemoved: number;
+  status?: number;
+  cause?: unknown;
+}> {}
+
 export type AzureGraphError =
   | AzureGraphUnauthorized
   | AzureGraphConsentRequired
@@ -76,6 +89,10 @@ export type AzureGraphError =
   | AzureGraphNotFound
   | AzureGraphRequestFailed
   | AzureGraphInvalidResponse;
+
+export type AzureGraphConsentRevocationError =
+  | AzureGraphError
+  | AzureGraphConsentRevocationFailed;
 
 export type AzureGraphConfig = {
   readonly clientId: string;
@@ -161,7 +178,7 @@ export type AzureGraphService = {
    */
   readonly revokeDelegatedConsent: (
     tenantId: string,
-  ) => Effect.Effect<DelegatedConsentRevocation, AzureGraphError>;
+  ) => Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError>;
   readonly consentUrl: (tenantId: string) => string;
 
   /** List `windowsAutopilotDeviceIdentities`, one page at a time. */
@@ -767,9 +784,19 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           return result;
         });
 
+      /**
+       * The token endpoint answers 400 with one of these codes when the
+       * application registration or the customer tenant no longer exists
+       * (for example after an admin deleted the enterprise application). That
+       * is indistinguishable from an already-revoked consent for our purpose.
+       */
+      const tenantGone = (body: string | undefined) =>
+        body !== undefined &&
+        (body.includes("AADSTS700016") || body.includes("AADSTS90002"));
+
       const revokeDelegatedConsent = (
         tenantId: string,
-      ): Effect.Effect<DelegatedConsentRevocation, AzureGraphError> =>
+      ): Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError> =>
         Effect.gen(function* () {
           const principal = (yield* servicePrincipalsForApp(tenantId))[0];
 
@@ -785,18 +812,48 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
             // Graph change must never make us delete another app's grant.
             if (grant.clientId !== principal.id) continue;
 
-            yield* request(
+            const removed = yield* request(
               tenantId,
               "DELETE",
               `${permissionGrantBase}/${encodeURIComponent(grant.id)}`,
               null,
-            ).pipe(Effect.catchTag("NotFound", () => Effect.void));
+            ).pipe(
+              Effect.as(true as const),
+              Effect.catchTag("NotFound", () => Effect.succeed(true as const)),
+              Effect.catch((error) => Effect.succeed(error)),
+            );
+
+            if (removed !== true) {
+              const status = Schema.is(Schema.Struct({ status: Schema.Number }))(removed)
+                ? removed.status
+                : undefined;
+
+              return yield* Effect.fail(
+                new AzureGraphConsentRevocationFailed({
+                  message: `Failed to remove delegated consent after ${grantsRemoved} grant${
+                    grantsRemoved === 1 ? "" : "s"
+                  }: ${removed.message}`,
+                  servicePrincipalId: principal.id,
+                  grantsRemoved,
+                  status,
+                  cause: removed,
+                }),
+              );
+            }
 
             grantsRemoved++;
           }
 
           return { servicePrincipalId: principal.id, grantsRemoved };
-        });
+        }).pipe(
+          Effect.catchIf(
+            // The token endpoint reports a deleted app/tenant through several
+            // status codes, so match the AADSTS code in whichever error carries
+            // the response body rather than only a 400 RequestFailed.
+            (error) => "body" in error && tenantGone(error.body),
+            () => Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }),
+          ),
+        );
 
       const consentUrl = (tenantId: string): string => {
         const url = new URL(

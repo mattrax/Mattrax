@@ -4,6 +4,7 @@ import { FetchHttpClient } from "effect/http";
 import {
   AzureGraph,
   AzureGraphConsentRequired,
+  AzureGraphConsentRevocationFailed,
   AzureGraphInvalidResponse,
   AzureGraphLive,
   AzureGraphNotFound,
@@ -834,5 +835,113 @@ describe("AzureGraph delegated consent revocation", () => {
         },
       ),
     ).rejects.toBeInstanceOf(AzureGraphConsentRequired);
+  });
+
+  it("treats a deleted enterprise application as already revoked", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url) => {
+        if (isTokenRequest(url))
+          return json(
+            {
+              error: "invalid_client",
+              error_description:
+                "AADSTS700016: Application with identifier 'client-id' was not found in the directory.",
+            },
+            400,
+          );
+
+        throw new Error("Graph must not be called when the token endpoint says the app is gone");
+      },
+    );
+
+    expect(result).toEqual({ servicePrincipalId: null, grantsRemoved: 0 });
+  });
+
+  it("treats a deleted tenant as already revoked", async () => {
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url) => {
+        if (isTokenRequest(url))
+          return json(
+            {
+              error: "invalid_request",
+              error_description: "AADSTS90002: Tenant not found.",
+            },
+            400,
+          );
+
+        throw new Error("Graph must not be called when the token endpoint says the tenant is gone");
+      },
+    );
+
+    expect(result).toEqual({ servicePrincipalId: null, grantsRemoved: 0 });
+  });
+
+  it("still fails when the token endpoint rejects the client secret", async () => {
+    await expect(
+      run(
+        Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.revokeDelegatedConsent(tenantId);
+        }),
+        (url) =>
+          isTokenRequest(url)
+            ? json(
+                {
+                  error: "invalid_client",
+                  error_description: "AADSTS7000215: Invalid client secret provided.",
+                },
+                400,
+              )
+            : new Response(null, { status: 204 }),
+      ),
+    ).rejects.toBeInstanceOf(AzureGraphRequestFailed);
+  });
+
+  it("reports how many grants were removed before a delete failed", async () => {
+    let deletes = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.revokeDelegatedConsent(tenantId);
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+
+        const decoded = decodeURIComponent(url);
+
+        if (decoded.includes("/servicePrincipals?"))
+          return json({ value: [{ id: servicePrincipalId }] });
+
+        if (decoded.includes("/oauth2PermissionGrants?") && init?.method !== "DELETE")
+          return json({
+            value: [
+              { id: "grant-1", clientId: servicePrincipalId },
+              { id: "grant-2", clientId: servicePrincipalId },
+            ],
+          });
+
+        deletes++;
+
+        return deletes === 1
+          ? new Response(null, { status: 204 })
+          : json({ error: "server error" }, 500);
+      },
+    ).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(AzureGraphConsentRevocationFailed);
+    expect(error).toMatchObject({ grantsRemoved: 1, status: 500 });
   });
 });

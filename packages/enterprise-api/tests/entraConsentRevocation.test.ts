@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
-import { AzureGraphConsentRequired } from "@mattrax/azure-graph";
+import {
+  AzureGraphConsentRequired,
+  AzureGraphConsentRevocationFailed,
+} from "@mattrax/azure-graph";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -18,10 +21,16 @@ const makeContext = (
     azureGraph?: {
       revokeDelegatedConsent: (
         tenantId: string,
-      ) => Effect.Effect<Revocation, AzureGraphConsentRequired>;
+      ) => Effect.Effect<
+        Revocation,
+        AzureGraphConsentRequired | AzureGraphConsentRevocationFailed
+      >;
     };
     /** Omit the SSO row to exercise the "never linked" path. */
     linkedTenantId?: string | null;
+    /** Skip the sync row that proves the link worked. */
+    verified?: boolean;
+    timeoutMs?: number;
   } = {},
 ) => {
   const db = makeDb();
@@ -68,6 +77,18 @@ const makeContext = (
       updatedAt: now,
     });
 
+  if (linkedTenantId && options.verified !== false)
+    db.store.entra_directory_sync.push({
+      organizationId: "org-1",
+      enabled: true,
+      status: "idle",
+      lastSyncedAt: now,
+      domainsSyncedAt: null,
+      syncIntervalMinutes: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+
   const auth = {
     requireUser: () => Effect.succeed({ user: db.store.account[0] }),
     requireStepUp: () => Effect.void,
@@ -85,6 +106,7 @@ const makeContext = (
     // SAFETY: the fake only implements the Graph method this test exercises.
     azureGraph: options.azureGraph as any,
     azureClientId: "client-id",
+    entraConsentRevocationTimeoutMs: options.timeoutMs,
   });
 
   return { db, service, headers: { cookie: "mattrax_session=test" } };
@@ -250,5 +272,128 @@ describe("Entra consent revocation on unlink", () => {
 
     expect(revokeDelegatedConsent).not.toHaveBeenCalled();
     expect(result.consentRevocation).toBeUndefined();
+  });
+
+  it("skips revocation when the link was never verified", async () => {
+    const revokeDelegatedConsent = vi.fn(() =>
+      Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 1 }),
+    );
+
+    const { db, service, headers } = makeContext({
+      // SAFETY: this test only asserts the fake is never called; it omits the
+      // rest of the Graph surface, which the handler never reaches.
+      azureGraph: { revokeDelegatedConsent } as any,
+      verified: false,
+    });
+
+    const result = await runEffect(
+      service.patchSsoConfig(request(headers), "org-1", {
+        enabled: false,
+        azureTenantId: null,
+      }),
+    );
+
+    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(db.store.sso_config[0]).toMatchObject({ enabled: false, azureTenantId: null });
+    expect(result.consentRevocation).toEqual({
+      status: "skipped",
+      reason: "The Entra link was never verified by a successful sync or sign-in.",
+    });
+
+    const audit = db.store.audit_log.find(
+      (entry) => entry.action === "sso.consent_revocation_skipped",
+    );
+
+    expect(audit?.metadata).toMatchObject({
+      azureTenantId: previousTenantId,
+      result: "skipped",
+      reason: "The Entra link was never verified by a successful sync or sign-in.",
+    });
+  });
+
+  it("does not revoke consent when only the tenant-id casing changes", async () => {
+    const revokeDelegatedConsent = vi.fn(() =>
+      Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 1 }),
+    );
+
+    const { db, service, headers } = makeContext({
+      // SAFETY: this test only asserts the fake is never called; it omits the
+      // rest of the Graph surface, which the handler never reaches.
+      azureGraph: { revokeDelegatedConsent } as any,
+    });
+
+    const result = await runEffect(
+      service.patchSsoConfig(request(headers), "org-1", {
+        azureTenantId: previousTenantId.toUpperCase(),
+      }),
+    );
+
+    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(result.consentRevocation).toBeUndefined();
+    expect(result.azureTenantId).toBe(previousTenantId);
+    expect(db.store.sso_config[0].azureTenantId).toBe(previousTenantId);
+  });
+
+  it("times out Graph and still returns the committed unlink", async () => {
+    const { db, service, headers } = makeContext({
+      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
+      // the rest of the Graph surface the service never calls here.
+      azureGraph: { revokeDelegatedConsent: () => Effect.never } as any,
+      timeoutMs: 20,
+    });
+
+    const result = await runEffect(
+      service.patchSsoConfig(request(headers), "org-1", {
+        enabled: false,
+        azureTenantId: null,
+      }),
+    );
+
+    expect(db.store.sso_config[0]).toMatchObject({ enabled: false, azureTenantId: null });
+    expect(result.consentRevocation).toEqual({
+      status: "failed",
+      reason: "Microsoft Graph did not respond in time.",
+      grantsRemoved: 0,
+    });
+  });
+
+  it("reports grants already removed when a later delete fails", async () => {
+    const { db, service, headers } = makeContext({
+      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
+      // the rest of the Graph surface the service never calls here.
+      azureGraph: {
+        revokeDelegatedConsent: () =>
+          Effect.fail(
+            new AzureGraphConsentRevocationFailed({
+              message: "Failed to remove delegated consent after 3 grants: HTTP 500",
+              servicePrincipalId: "sp-1",
+              grantsRemoved: 3,
+              status: 500,
+            }),
+          ),
+      } as any,
+    });
+
+    const result = await runEffect(
+      service.patchSsoConfig(request(headers), "org-1", {
+        enabled: false,
+        azureTenantId: null,
+      }),
+    );
+
+    expect(result.consentRevocation).toMatchObject({
+      status: "failed",
+      grantsRemoved: 3,
+    });
+
+    const audit = db.store.audit_log.find(
+      (entry) => entry.action === "sso.consent_revocation_failed",
+    );
+
+    expect(audit?.metadata).toMatchObject({
+      result: "failed",
+      httpStatus: 500,
+      grantsRemoved: 3,
+    });
   });
 });

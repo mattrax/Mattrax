@@ -30,14 +30,17 @@ cf workers secrets update AZURE_CLIENT_SECRET --worker mattrax-api --type secret
 
 Grant application permissions and admin consent for the features you use:
 
-| Permission                                    | Used for                            |
-| --------------------------------------------- | ----------------------------------- |
-| `Directory.Read.All`                          | Users, groups and verified domains  |
-| `Group.Read.All`                              | Group assignment and directory sync |
-| `DeviceManagementServiceConfig.ReadWrite.All` | Autopilot profiles and imports      |
-| `DeviceManagementManagedDevices.Read.All`     | Autopilot device sync               |
+| Permission                                    | Used for                                                     |
+| --------------------------------------------- | ------------------------------------------------------------ |
+| `Directory.Read.All`                          | Users, groups, verified domains and service-principal lookup |
+| `Group.Read.All`                              | Group assignment and directory sync                          |
+| `DeviceManagementServiceConfig.ReadWrite.All` | Autopilot profiles and imports                               |
+| `DeviceManagementManagedDevices.Read.All`     | Autopilot device sync                                        |
+| `DelegatedPermissionGrant.ReadWrite.All`      | Revoking admin consent when a tenant unlinks                 |
 
-A missing permission surfaces as `ConsentRequired` with the Graph error.
+A missing permission surfaces as `ConsentRequired` with the Graph error. An app that does
+not use directory sync can grant `Application.Read.All` instead of `Directory.Read.All`;
+either one is enough for the service-principal lookup used by consent revocation.
 
 ## Dashboard SSO
 
