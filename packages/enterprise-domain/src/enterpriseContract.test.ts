@@ -8,6 +8,7 @@ import {
   enterpriseAccountApi,
   enterpriseApi,
   enterpriseAttributeApi,
+  enterpriseIdentityApi,
 } from "./enterprise.ts";
 import { EnterpriseNotConfigured, EnterpriseUpstreamError } from "./Errors.js";
 import { Registration } from "./auth.js";
@@ -17,6 +18,7 @@ const endpoints = {
   ...enterpriseAccountApi.endpoints,
   ...enterpriseApi.endpoints,
   ...enterpriseAttributeApi.endpoints,
+  ...enterpriseIdentityApi.endpoints,
 };
 
 describe("enterprise API error contract", () => {
