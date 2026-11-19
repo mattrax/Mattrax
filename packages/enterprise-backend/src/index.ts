@@ -321,6 +321,13 @@ export type {
 
 export { makeSsoStrategy } from "./Identity/sso.ts";
 
+export { linkDirectoryUserSso } from "./Identity/linkSsoIdentity.ts";
+
+export type {
+  LinkDirectoryUserSsoInput,
+  LinkDirectoryUserSsoResult,
+} from "./Identity/linkSsoIdentity.ts";
+
 export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
