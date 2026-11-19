@@ -8,6 +8,7 @@ import { StepUpPasskeyStarted } from "../stepUp.js";
 import { AccountAuditSearchResponse } from "../Account.js";
 import { AccountRecoveryResponse } from "../Account.js";
 import { AccountSessionsResponse } from "../Account.js";
+import { LoginAttemptsResponse } from "../Account.js";
 import { ApiTokenParam } from "./Params.js";
 import { ApiTokensResponse } from "../Account.js";
 import { AuditExportQuery } from "../Audit.js";
@@ -181,6 +182,12 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     HttpApiEndpoint.get("listAccountSessions", "/v1/account/sessions", {
       error: EnterpriseAccountErrors,
       success: AccountSessionsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listLoginAttempts", "/v1/account/login-attempts", {
+      error: EnterpriseAccountErrors,
+      success: LoginAttemptsResponse,
     }),
   )
   .add(

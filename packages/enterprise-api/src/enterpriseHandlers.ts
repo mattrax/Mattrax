@@ -164,6 +164,11 @@ import {
   type CommandPayload,
 } from "@mattrax/mdm-apple";
 import {
+  LOGIN_ATTEMPT_LIST_LIMIT,
+  listLoginAttempts,
+  loginAttemptEntry,
+} from "@mattrax/enterprise-backend";
+import {
   AUTOPILOT_IMPORT_MAX_BYTES,
   AUTOPILOT_IMPORT_MAX_ROWS,
   AutopilotError,
@@ -6009,6 +6014,15 @@ export const createEnterpriseService = ({
         return {
           sessions: yield* listUserSessions(db, resolved.user.id, resolved.session?.sessionId),
         };
+      }),
+    listLoginAttempts: (request) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+
+        const rows = yield* listLoginAttempts(db, user.id, LOGIN_ATTEMPT_LIST_LIMIT);
+
+        return { attempts: rows.map(loginAttemptEntry) };
       }),
     revokeAccountSession: (request, sessionId) =>
       Effect.gen(function* () {
@@ -19545,6 +19559,9 @@ export const enterpriseAccountHandlers = (
     )
     .handle("listAccountSessions", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listAccountSessions(request)),
+    )
+    .handle("listLoginAttempts", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listLoginAttempts(request)),
     )
     .handle("revokeAccountSession", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>

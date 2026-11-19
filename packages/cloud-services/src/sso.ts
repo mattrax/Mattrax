@@ -5,6 +5,11 @@ import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import {
+  loginAttemptClient,
+  recordLoginAttempt,
+  type LoginAttemptFailure,
+} from "@mattrax/enterprise-backend";
 
 const TokenResponse = Schema.Struct({ id_token: Schema.optional(Schema.String) });
 
@@ -179,11 +184,53 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       const url = new URL(request.url, "http://localhost");
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
+      const db = yield* Db;
 
-      if (!code || !state) return json({ error: "Missing OIDC code or state" }, 400);
+      /**
+       * The identity provider is outside Mattrax, so every rejection here is a
+       * failed sign-in that the account may need to see. The row is attributed
+       * only once the callback has resolved the account; before that it records
+       * the attempt without an owner. Writing the log never changes the error
+       * the browser receives.
+       */
+      const reject = (input: {
+        status: number;
+        error: string;
+        reason: LoginAttemptFailure;
+        accountId?: string | null;
+        email?: string | null;
+      }) =>
+        Effect.gen(function* () {
+          const client = loginAttemptClient(
+            request.headers,
+            Option.getOrUndefined(request.remoteAddress) ?? null,
+          );
+
+          yield* recordLoginAttempt(db, {
+            accountId: input.accountId ?? null,
+            email: input.email ?? null,
+            success: false,
+            method: "sso",
+            failureReason: input.reason,
+            ...client,
+          });
+
+          return json({ error: input.error }, input.status);
+        });
+
+      if (!code || !state)
+        return yield* reject({
+          status: 400,
+          error: "Missing OIDC code or state",
+          reason: "sso_rejected",
+        });
 
       if (request.cookies["__Host-sso_state"] !== state)
-        return json({ error: "SSO state does not match this browser" }, 400);
+        return yield* reject({
+          status: 400,
+          error: "SSO state does not match this browser",
+          reason: "sso_rejected",
+        });
 
       const verified = yield* verifyToken(options.authSecret!, state).pipe(
         Effect.map((payload) => ({ ok: true as const, payload })),
@@ -194,21 +241,32 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         ),
       );
 
-      if (!verified.ok) return json({ error: "SSO state is invalid" }, 400);
+      if (!verified.ok)
+        return yield* reject({
+          status: 400,
+          error: "SSO state is invalid",
+          reason: "sso_rejected",
+        });
       const payload = verified.payload;
 
       if (payload.exp <= Date.now() || payload.purpose !== "sso-state")
-        return json({ error: "SSO state expired" }, 400);
+        return yield* reject({
+          status: 400,
+          error: "SSO state expired",
+          reason: "expired",
+        });
       const tenantId = payload.sub;
-
-      const db = yield* Db;
 
       const config = yield* db.query.ssoConfig.findFirst({
         where: { organizationId: tenantId },
       });
 
       if (!config?.enabled || !config.azureTenantId)
-        return json({ error: "SSO is not enabled for this tenant" }, 404);
+        return yield* reject({
+          status: 404,
+          error: "SSO is not enabled for this tenant",
+          reason: "sso_rejected",
+        });
 
       const oidc = yield* AzureOidc;
 
@@ -220,10 +278,19 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           ),
         );
 
-      if (!discovery) return json({ error: "Could not contact the identity provider" }, 502);
+      if (!discovery)
+        return yield* reject({
+          status: 502,
+          error: "Could not contact the identity provider",
+          reason: "sso_rejected",
+        });
 
       if (!discovery.token_endpoint)
-        return json({ error: "Identity provider has no token endpoint" }, 502);
+        return yield* reject({
+          status: 502,
+          error: "Identity provider has no token endpoint",
+          reason: "sso_rejected",
+        });
 
       const tokenResponse = yield* Effect.tryPromise({
         try: () =>
@@ -246,10 +313,19 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         ),
       );
 
-      if (!tokenResponse) return json({ error: "Could not contact the identity provider" }, 502);
+      if (!tokenResponse)
+        return yield* reject({
+          status: 502,
+          error: "Could not contact the identity provider",
+          reason: "sso_rejected",
+        });
 
       if (!tokenResponse.ok)
-        return json({ error: "Identity provider rejected the token exchange" }, 502);
+        return yield* reject({
+          status: 502,
+          error: "Identity provider rejected the token exchange",
+          reason: "sso_rejected",
+        });
 
       const rawTokens = yield* Effect.tryPromise({
         try: () => tokenResponse.json(),
@@ -258,7 +334,12 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(rawTokens));
 
-      if (!tokens?.id_token) return json({ error: "Identity provider returned no ID token" }, 502);
+      if (!tokens?.id_token)
+        return yield* reject({
+          status: 502,
+          error: "Identity provider returned no ID token",
+          reason: "sso_rejected",
+        });
 
       const claims = yield* oidc
         .validateJwt(tokens.id_token, {
@@ -271,16 +352,36 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           ),
         );
 
-      if (!claims) return json({ error: "Identity provider token was rejected" }, 400);
+      if (!claims)
+        return yield* reject({
+          status: 400,
+          error: "Identity provider token was rejected",
+          reason: "sso_rejected",
+        });
 
       if (claims.nonce !== payload.nonce)
-        return json({ error: "Identity provider nonce did not match" }, 400);
+        return yield* reject({
+          status: 400,
+          error: "Identity provider nonce did not match",
+          reason: "sso_rejected",
+        });
       const email = safeEmail(claims);
 
-      if (!email) return json({ error: "Identity provider did not return an email" }, 400);
+      if (!email)
+        return yield* reject({
+          status: 400,
+          error: "Identity provider did not return an email",
+          reason: "unknown_account",
+        });
       const objectId = claims.oid ?? claims.sub;
 
-      if (!objectId) return json({ error: "Identity provider did not return an object id" }, 400);
+      if (!objectId)
+        return yield* reject({
+          status: 400,
+          error: "Identity provider did not return an object id",
+          reason: "sso_rejected",
+          email,
+        });
 
       const identity = yield* db.query.ssoIdentity.findFirst({
         where: { organizationId: tenantId!, objectId: objectId! },
@@ -291,13 +392,27 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         : yield* db.query.account.findFirst({ where: { email } });
 
       if (identity) {
-        if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
+        if (!user || user.disabled)
+          return yield* reject({
+            status: 403,
+            error: "This account is disabled",
+            reason: "disabled",
+            accountId: user?.id ?? null,
+            email,
+          });
 
         const member = yield* db.query.member.findFirst({
           where: { accountId: user.id, organizationId: tenantId },
         });
 
-        if (!member) return json({ error: "You are not a member of this tenant" }, 403);
+        if (!member)
+          return yield* reject({
+            status: 403,
+            error: "You are not a member of this tenant",
+            reason: "not_member",
+            accountId: user.id,
+            email,
+          });
       } else if (user) {
         // Do not auto-link an existing account by email when it belongs to
         // another tenant; that would let a tenant administrator impersonate a
@@ -305,13 +420,23 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         const memberships = yield* db.query.member.findMany({ where: { accountId: user.id } });
         const member = memberships.find((item) => item.organizationId === tenantId);
 
-        if (!member) return json({ error: "You are not a member of this tenant" }, 403);
+        if (!member)
+          return yield* reject({
+            status: 403,
+            error: "You are not a member of this tenant",
+            reason: "not_member",
+            accountId: user.id,
+            email,
+          });
 
         if (memberships.length > 1)
-          return json(
-            { error: "This account belongs to multiple tenants; ask an administrator to link SSO" },
-            403,
-          );
+          return yield* reject({
+            status: 403,
+            error: "This account belongs to multiple tenants; ask an administrator to link SSO",
+            reason: "sso_rejected",
+            accountId: user.id,
+            email,
+          });
 
         // Only a domain the tenant has proven it controls may claim an
         // existing account by email. Otherwise an administrator could link an
@@ -328,13 +453,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
 
         if (!verifiedDomain)
-          return json(
-            {
-              error:
-                "This email domain is not verified for this tenant yet; ask an administrator to finish directory sync",
-            },
-            403,
-          );
+          return yield* reject({
+            status: 403,
+            error:
+              "This email domain is not verified for this tenant yet; ask an administrator to finish directory sync",
+            reason: "sso_rejected",
+            accountId: user.id,
+            email,
+          });
 
         yield* db.insert(schema.ssoIdentity).ignore().values({
           organizationId: tenantId,
@@ -344,7 +470,12 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
       } else {
         if (!config.autoProvision)
-          return json({ error: "No Mattrax account exists for this email" }, 403);
+          return yield* reject({
+            status: 403,
+            error: "No Mattrax account exists for this email",
+            reason: "unknown_account",
+            email,
+          });
         const accountId = id();
         const timestamp = now();
         yield* db.insert(schema.account).values({
@@ -379,7 +510,14 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         user = yield* db.query.account.findFirst({ where: { id: accountId } });
       }
 
-      if (!user || user.disabled) return json({ error: "This account is disabled" }, 403);
+      if (!user || user.disabled)
+        return yield* reject({
+          status: 403,
+          error: "This account is disabled",
+          reason: user ? "disabled" : "unknown_account",
+          accountId: user?.id ?? null,
+          email,
+        });
       yield* ensureCredential(db, user.id);
 
       const assertion = yield* signToken(options.authSecret!, {

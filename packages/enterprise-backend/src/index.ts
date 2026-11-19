@@ -106,6 +106,32 @@ export type {
 } from "./Account/accountAudit.ts";
 
 export {
+  LOGIN_ATTEMPT_FAILURES,
+  LOGIN_ATTEMPT_LIST_LIMIT,
+  LOGIN_ATTEMPT_METHODS,
+  LOGIN_ATTEMPT_USER_AGENT_LIMIT,
+  approximateNetwork,
+  decodeLoginAttemptOutcome,
+  isObservedSignInPath,
+  listLoginAttempts,
+  loginAttemptClient,
+  loginAttemptEntry,
+  loginAttemptFailureFromTag,
+  loginAttemptMethodFromAssurance,
+  pruneLoginAttempts,
+  recordLoginAttempt,
+  recordObservedLoginAttempt,
+  signInMethodForPath,
+} from "./Account/loginAttempts.ts";
+
+export type {
+  LoginAttemptFailure,
+  LoginAttemptInput,
+  LoginAttemptMethod,
+  LoginAttemptOutcome,
+} from "./Account/loginAttempts.ts";
+
+export {
   RECOVERY_COMPLETION_TTL_MILLIS,
   RECOVERY_PROOF_TTL_MILLIS,
   RECOVERY_REQUEST_LIMIT,

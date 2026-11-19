@@ -62,6 +62,7 @@ foreign key and the email snapshot stays until retention prunes the row.
 | ---------------------- | ------------------------- | ----------------------------------------------------------------------- |
 | Audit entries (tenant) | `audit_log`               | `MAINTENANCE_AUDIT_RETENTION_DAYS`                                      |
 | Account activity       | `account_audit_log`       | Same setting                                                            |
+| Login attempts         | `login_attempt`           | Same setting                                                            |
 | Session descriptor     | `account_session_context` | Deleted with its session (revocation) or when the session expires       |
 | Email-change tokens    | `account_email_change`    | One hour; rows stay for reference until the account is deleted          |
 | Recovery ceremony      | `account_recovery`        | 30 minutes to prove, 15 minutes to complete; rows stay with the account |
@@ -73,6 +74,13 @@ browser/platform family is taken from the `User-Agent` — no version, locale or
 header. The descriptor is captured on the session's first authenticated request, because
 the auth library owns session creation and its row has no request context. A deployment
 without `AUTH_SECRET` stores no address-derived value at all.
+
+The login log keeps a still-broader view: it stores the approximate client network
+(IPv4 `/24` or IPv6 `/64`) and the bounded `User-Agent`, never a host address, and only
+shows the bounded row to the account that owns it. A discoverable passkey rejection
+carries no identity, so only attempts the auth boundary could attribute appear in the
+account's history; unattributed failures are still counted by edge rate limits and
+request analytics.
 
 Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
 IP address.

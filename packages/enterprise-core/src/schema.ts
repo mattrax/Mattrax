@@ -780,6 +780,50 @@ export const accountAuditLog = mysqlTable(
 );
 
 /**
+ * One sign-in attempt, successful or rejected, owned by the account it belongs
+ * to. It backs the self-service login log: an account holder can spot a session
+ * they did not start or a burst of failures against their credentials.
+ *
+ * A failed discoverable-passkey assertion carries no identity, so `account_id`
+ * and `email` are nullable: an attempt is only attributed when the auth boundary
+ * already knows the subject (a completed sign-in, MFA completion, or an SSO
+ * callback that resolved the account). Only the client's approximate network is
+ * stored — an IPv4 `/24` or IPv6 `/64` prefix — never a raw address. The
+ * `user_agent` column is bounded to the same prefix used for session
+ * descriptors and is never rendered verbatim. Codes, tokens, passkey material
+ * and session credentials are never written here.
+ *
+ * Retention follows the audit streams (`MAINTENANCE_AUDIT_RETENTION_DAYS`).
+ */
+export const loginAttempt = mysqlTable(
+  "login_attempt",
+  {
+    id: id().primaryKey(),
+    accountId: id("account_id").references(() => account.id, { onDelete: "set null" }),
+    /** Lowercased address snapshot when the attempt could be attributed. */
+    email: varchar("email", { length: 320 }),
+    success: boolean("success").notNull(),
+    /** Primary factor that was attempted: `passkey`, `totp`, `sso` or `recovery`. */
+    method: varchar("method", {
+      length: 16,
+      enum: ["passkey", "totp", "sso", "recovery", "api-token"],
+    }).notNull(),
+    /** Short machine-readable reason for a rejected attempt. */
+    failureReason: varchar("failure_reason", { length: 40 }),
+    /** Approximate client network: IPv4 `/24` or IPv6 `/64`, never a host address. */
+    ip: varchar("ip", { length: 64 }),
+    /** Bounded `User-Agent`; the read path reduces it to browser and platform. */
+    userAgent: varchar("user_agent", { length: 512 }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("login_attempt_account_created_idx").on(table.accountId, table.createdAt),
+    // Retention and suspicious-activity sweeps scan by time alone.
+    index("login_attempt_created_idx").on(table.createdAt),
+  ],
+);
+
+/**
  * Privacy-preserving client descriptor for a browser session. Written on the
  * first authenticated request for the session, because the auth library owns
  * session creation and its row carries no request context.
@@ -3514,6 +3558,7 @@ export const relations = defineRelations(
     tenantRole,
     member,
     accountAuditLog,
+    loginAttempt,
     accountSessionContext,
     accountEmailChange,
     accountRecovery,

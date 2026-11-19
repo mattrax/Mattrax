@@ -181,6 +181,39 @@ export const AccountSessionsResponse = Schema.Struct({
   sessions: Schema.Array(AccountSessionInfo),
 });
 
+/** The factors a sign-in attempt can prove. */
+export const LoginAttemptMethod = Schema.Literals([
+  "passkey",
+  "totp",
+  "sso",
+  "recovery",
+  "api-token",
+]);
+
+/** One row of the account's own login history. */
+export const LoginAttemptInfo = Schema.Struct({
+  id: Schema.String,
+  createdAt: Schema.String,
+  success: Schema.Boolean,
+  method: LoginAttemptMethod,
+  /** Short machine-readable rejection code; null for a successful sign-in. */
+  failureReason: Schema.optional(NullableString),
+  /** Approximate network (IPv4 `/24` or IPv6 `/64`), never a host address. */
+  ip: Schema.optional(NullableString),
+  /** Parsed `User-Agent` family; the header itself is never returned. */
+  browser: Schema.optional(NullableString),
+  platform: Schema.optional(NullableString),
+  deviceType: Schema.optional(NullableString),
+});
+
+export type LoginAttemptInfo = typeof LoginAttemptInfo.Type;
+
+export const LoginAttemptsResponse = Schema.Struct({
+  attempts: Schema.Array(LoginAttemptInfo),
+});
+
+export type LoginAttemptsResponse = typeof LoginAttemptsResponse.Type;
+
 /**
  * Account-scoped audit entry. It carries no tenant reference: these events
  * happen before a tenant is chosen (sign-in, credential changes) or exist
