@@ -63,6 +63,12 @@ The browser suite drives a real Chrome via CDP by default. Set
 to use Playwright's bundled Chromium (as CI does). The suite creates its own
 users and tenants, so it is safe to point at a disposable database.
 
+The suite runs with a single Playwright worker because its tests share the dev
+mailbox and rate-limit buckets through one server. CI shards it across four
+runners instead — each gets its own database and dev server — with
+`pnpm test:e2e --shard=1/4`; use the same flag to reproduce a single shard
+locally.
+
 ## Architecture
 
 The repository is split into protocol, management and product layers so each
