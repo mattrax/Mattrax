@@ -430,6 +430,7 @@ export const buildTenantExport = (
       key: policy.id,
       name: policy.name,
       notes: policy.notes,
+      ...(policy.enabled === false ? { enabled: false } : {}),
       configurations: policyConfigurations.get(policy.id) ?? {},
       ...(policyConfigurationScopes.has(policy.id)
         ? { configurationScopes: policyConfigurationScopes.get(policy.id)! }

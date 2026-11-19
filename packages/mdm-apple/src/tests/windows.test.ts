@@ -1515,6 +1515,7 @@ describe("Windows command history and desired-state policy", () => {
         name: "Windows security",
         notes: null,
         priority: 0,
+        enabled: true,
         createdAt,
         updatedAt: createdAt,
         __table: table(schema.policy),
@@ -1660,6 +1661,68 @@ describe("Windows command history and desired-state policy", () => {
     expect(reverted.windowsPolicyDelivered).toEqual([]);
     expect(reverted.windowsPolicyReverting).toEqual([]);
     expect(dateValue(reverted.windowsPolicyRevertedAt)).toBeInstanceOf(Date);
+  });
+
+  it("deletes every setting when the policy is disabled, and repeats safely", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    seedPolicy(db, String(device.id), [
+      {
+        omaUri: "./Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring",
+        value: 1,
+      },
+      {
+        omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/EnforceLockScreenAndLogonImage",
+        value: 1,
+        format: "int",
+      },
+    ]);
+
+    const first = await checkin(backend);
+    const replaces = first.commands.filter((command) => command.kind === "Replace");
+
+    expect(replaces).toHaveLength(2);
+    await checkin(backend, {
+      statuses: replaces.map((command) => ({ cmdRef: command.cmdID, data: "200" })),
+    });
+
+    // Disabling keeps the assignment and configuration but removes the
+    // policy from resolution, so every delivered OMA-URI must be deleted.
+    db.store[table(schema.policy)][0]!.enabled = false;
+
+    const removed = await checkin(backend);
+    const deletes = removed.commands.filter((command) => command.kind === "Delete");
+
+    expect(deletes.map((command) => command.locURI).sort()).toEqual(
+      replaces.map((command) => command.locURI).sort(),
+    );
+    expect(deletes.every((command) => command.cmdID.startsWith("winp-d-"))).toBe(true);
+    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyReverting).toHaveLength(2);
+
+    // Until the device acknowledges a delete, a check-in re-issues the same
+    // command rather than creating a second delete row for the URI.
+    const before = dbRows(db, table(schema.deviceCommand)).length;
+    const repeated = await checkin(backend);
+    const repeatedDeletes = repeated.commands.filter((command) => command.kind === "Delete");
+
+    expect(repeatedDeletes.map((command) => command.cmdID).sort()).toEqual(
+      deletes.map((command) => command.cmdID).sort(),
+    );
+    expect(dbRows(db, table(schema.deviceCommand))).toHaveLength(before);
+
+    await checkin(backend, {
+      statuses: repeatedDeletes.map((command) => ({ cmdRef: command.cmdID, data: "200" })),
+    });
+
+    const reverted = dbRows(db, table(schema.device))[0]!;
+
+    expect(reverted.windowsPolicyApplied).toEqual([]);
+    expect(reverted.windowsPolicyDelivered).toEqual([]);
+    expect(reverted.windowsPolicyReverting).toEqual([]);
+
+    // A later check-in has nothing left to delete.
+    expect((await checkin(backend)).commands).toEqual([]);
   });
 
   it("creates a row for each inventory Get and marks answered nodes", async () => {

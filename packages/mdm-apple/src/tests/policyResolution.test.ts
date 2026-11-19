@@ -54,6 +54,90 @@ describe("policy resolution", () => {
     expect(result.overridden).toEqual([]);
   });
 
+  it("treats a disabled policy as if it were not assigned", () => {
+    const result = resolve({
+      groups: [{ id: "group-1", name: "Engineering" }],
+      groupAssignments: [{ groupId: "group-1", policyId: "policy-a" }],
+      deviceAssignments: [{ policyId: "policy-a", mode: "include" }],
+      policies: [{ ...policy("policy-a"), enabled: false }],
+      configurations: [configuration("policy-a")],
+    });
+
+    expect(result.configurations).toEqual([]);
+    expect(result.policies).toEqual([]);
+    expect(result.exclusions).toEqual([]);
+  });
+
+  it("does not let a disabled higher-priority policy override an enabled one", () => {
+    const result = resolve({
+      groups: [{ id: "group-1", name: "Engineering" }],
+      groupAssignments: [
+        { groupId: "group-1", policyId: "disabled" },
+        { groupId: "group-1", policyId: "enabled" },
+      ],
+      policies: [
+        { ...policy("disabled", 100), enabled: false },
+        policy("enabled", 0),
+      ],
+      configurations: [configuration("disabled"), configuration("enabled")],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({ policyId: "enabled" }),
+    ]);
+    expect(result.overridden).toEqual([]);
+    expect(result.policies).toEqual([
+      expect.objectContaining({ policyId: "enabled", kinds: ["mttx.apple.device"] }),
+    ]);
+  });
+
+  it("drops a disabled policy's include and exclude assignments", () => {
+    const result = resolve({
+      groups: [
+        { id: "group-1", name: "Engineering" },
+        { id: "group-2", name: "All staff" },
+      ],
+      groupAssignments: [
+        { groupId: "group-1", policyId: "disabled", mode: "include" },
+        { groupId: "group-2", policyId: "disabled", mode: "exclude" },
+        { groupId: "group-1", policyId: "enabled" },
+      ],
+      deviceAssignments: [{ policyId: "disabled", mode: "exclude" }],
+      policies: [
+        { ...policy("disabled"), enabled: false },
+        policy("enabled"),
+      ],
+      configurations: [configuration("disabled"), configuration("enabled")],
+    });
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        policyId: "enabled",
+        groupIds: ["group-1"],
+      }),
+    ]);
+    // Neither the disabled policy's device exclude nor its group exclude is
+    // reported: there is nothing for them to veto.
+    expect(result.exclusions).toEqual([]);
+  });
+
+  it("keeps disabled user-assigned policies out of every channel", () => {
+    const result = resolve({
+      channel: "user",
+      forUserId: "user-1",
+      users: [{ id: "user-1", name: "Ada" }],
+      userAssignments: [{ userId: "user-1", policyId: "disabled" }],
+      policies: [{ ...policy("disabled"), enabled: false }],
+      configurations: [
+        { ...configuration("disabled", "mttx.apple.declaration.usersettings"), scope: "user" },
+      ],
+    });
+
+    expect(result.configurations).toEqual([]);
+    expect(result.policies).toEqual([]);
+    expect(result.exclusions).toEqual([]);
+  });
+
   it("makes a direct include beat a higher-priority group include", () => {
     const result = resolve({
       groups: [{ id: "group-1", name: "Engineering" }],

@@ -43,6 +43,7 @@ import {
   optimisticallyRemoveRows,
   optimisticallyUpdateList,
 } from "~/lib/optimistic";
+import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
 import { useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
@@ -938,12 +939,23 @@ export default function GroupDetailPage() {
                     header: "Name",
                     search: (policy) => policy.name,
                     cell: (policy) => (
-                      <a
-                        class="font-medium text-foreground hover:underline"
-                        href={`/t/${params.tenantId}/policies/${policy.id}`}
-                      >
-                        {policy.name}
-                      </a>
+                      <span class="inline-flex min-w-0 items-center gap-1.5">
+                        <a
+                          class="min-w-0 truncate font-medium text-foreground hover:underline"
+                          href={`/t/${params.tenantId}/policies/${policy.id}`}
+                        >
+                          {policy.name}
+                        </a>
+                        <Show when={!isPolicyEnabled(policy)}>
+                          <Badge
+                            variant={policyStatePresentation(policy).tone}
+                            dot="warning"
+                            title={policyStatePresentation(policy).description}
+                          >
+                            Disabled
+                          </Badge>
+                        </Show>
+                      </span>
                     ),
                   },
                   {

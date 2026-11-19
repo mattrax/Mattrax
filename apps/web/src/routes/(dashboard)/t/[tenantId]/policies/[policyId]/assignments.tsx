@@ -16,6 +16,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Search } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries, type DeviceRow } from "~/lib/enterprise";
+import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
@@ -225,6 +226,11 @@ export default function PolicyAssignmentsPage() {
         description="Direct device assignments beat group assignments. Excludes veto a policy; group excludes can only be overridden by a direct include of that same policy."
         meta={
           <Show when={row()}>
+            <Show when={!isPolicyEnabled(row()!)}>
+              <Badge variant={policyStatePresentation(row()!).tone} dot="warning">
+                Disabled
+              </Badge>
+            </Show>
             <span class="tabular-nums">
               Priority <span class="text-foreground">{row()?.priority ?? 0}</span>
             </span>

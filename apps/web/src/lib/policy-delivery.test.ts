@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  isPolicyEnabled,
   policyDeliveryPresentation,
   policyDeliverySortRank,
+  policyRowDeliveryPresentation,
   policyScopePresentation,
+  policyStatePresentation,
 } from "./policy-delivery";
 
 const delivery = (
@@ -120,6 +123,43 @@ describe("policyDeliverySortRank", () => {
     expect(policyDeliverySortRank("failed")).toBeLessThan(policyDeliverySortRank("partial"));
     expect(policyDeliverySortRank("partial")).toBeLessThan(policyDeliverySortRank("delivered"));
     expect(policyDeliverySortRank(undefined)).toBeGreaterThan(policyDeliverySortRank("delivered"));
+  });
+});
+
+describe("policyStatePresentation", () => {
+  it("treats an omitted state as enabled for older responses", () => {
+    expect(isPolicyEnabled({})).toBe(true);
+    expect(isPolicyEnabled({ enabled: undefined })).toBe(true);
+    expect(policyStatePresentation({}).label).toBe("Enabled");
+  });
+
+  it("labels a disabled policy and explains that its settings are kept", () => {
+    const state = policyStatePresentation({ enabled: false });
+
+    expect(state).toMatchObject({ label: "Disabled", tone: "warning" });
+    expect(state.description).toContain("withdrawn");
+    expect(state.description).toContain("assignments are kept");
+  });
+});
+
+describe("policyRowDeliveryPresentation", () => {
+  it("shows Disabled instead of a stale delivered rollup", () => {
+    const stale = policyRowDeliveryPresentation({
+      enabled: false,
+      delivery: delivery("delivered"),
+    });
+
+    expect(stale).toMatchObject({ label: "Disabled", tone: "warning", dot: "warning" });
+    expect(stale?.description).toContain("withdrawn");
+  });
+
+  it("keeps the derived delivery state for an enabled policy", () => {
+    expect(
+      policyRowDeliveryPresentation({ enabled: true, delivery: delivery("delivered") }),
+    ).toMatchObject({ label: "Delivered", tone: "success" });
+    expect(policyRowDeliveryPresentation({ delivery: delivery("pending") })).toMatchObject({
+      label: "Pending",
+    });
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
 import {
@@ -44,6 +45,7 @@ import {
   optimisticallyRemoveRows,
   optimisticallyUpdateList,
 } from "~/lib/optimistic";
+import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
@@ -283,6 +285,10 @@ export default function PolicyDetailPage() {
   const [notes, setNotes] = createSignal("");
   const [priority, setPriority] = createSignal("0");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
+  const [enabledOpen, setEnabledOpen] = createSignal(false);
+  // Snapshot the requested state when the dialog opens so optimistic updates
+  // and a pending request cannot flip the wording underneath the user.
+  const [enabledTarget, setEnabledTarget] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [addOpen, setAddOpen] = createSignal(false);
   const [seeded, setSeeded] = createSignal(false);
@@ -357,6 +363,39 @@ export default function PolicyDetailPage() {
     onError: (error, _payload, context) => {
       context?.restore();
       toast.error("Could not save the policy", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
+
+  const enabled = () => isPolicyEnabled(row() ?? {});
+
+  /**
+   * Enabling and disabling both re-deliver: waking Apple devices and syncing
+   * Android withdraws the settings when disabled and restores them when
+   * enabled. Windows converges on its next check-in, where the desired-state
+   * diff emits a Delete for every OMA-URI that disappeared.
+   */
+  const setEnabled = useMutation(() => ({
+    mutationFn: (next: boolean) =>
+      enterprise.patchPolicy(params.tenantId, params.policyId, { enabled: next }),
+    onMutate: async (next) => {
+      const restore = await patchPolicy({ enabled: next });
+
+      return { restore };
+    },
+    onSuccess: (_result, next) => {
+      setEnabledOpen(false);
+      toast.success(next ? "Policy enabled" : "Policy disabled", {
+        description: next
+          ? "Its settings are being delivered to scoped devices again."
+          : "Its settings are being withdrawn from scoped devices. The configuration and assignments are kept.",
+      });
+      void invalidate();
+    },
+    onError: (error, _next, context) => {
+      context?.restore();
+      toast.error("Could not change the policy state", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
     },
@@ -466,6 +505,11 @@ export default function PolicyDetailPage() {
         description="Configure what this policy deploys to its device scope."
         meta={
           <Show when={row()}>
+            <Show when={!enabled()}>
+              <Badge variant={policyStatePresentation(row()!).tone} dot="warning">
+                Disabled
+              </Badge>
+            </Show>
             <Badge variant="outline" class="gap-1.5 text-muted-foreground">
               <SlidersHorizontal class="size-3" />
               {configurations().length} configuration{configurations().length === 1 ? "" : "s"}
@@ -542,6 +586,37 @@ export default function PolicyDetailPage() {
                 recently updated policy, then the smallest id.
               </p>
             </Field>
+            <Show when={row()}>
+              <div class="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/15 p-3">
+                <div class="min-w-0">
+                  <p class="flex items-center gap-2 text-[12.5px] font-medium text-foreground">
+                    <Badge
+                      variant={policyStatePresentation(row()!).tone}
+                      dot={enabled() ? "success" : "warning"}
+                    >
+                      {enabled() ? "Enabled" : "Disabled"}
+                    </Badge>
+                  </p>
+                  <p class="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                    {enabled()
+                      ? "Disabling withdraws this policy's settings from its scoped devices. The configuration and assignments are kept, and enabling it deploys them again."
+                      : "This policy is disabled, so its settings are withdrawn from devices. The configuration and assignments are kept; enabling it deploys them again."}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!writable()}
+                  onClick={() => {
+                    setEnabledTarget(!enabled());
+                    setEnabledOpen(true);
+                  }}
+                >
+                  {enabled() ? "Disable" : "Enable"}
+                </Button>
+              </div>
+            </Show>
             <ErrorText error={save.error} />
             <Show
               when={writable()}
@@ -694,6 +769,20 @@ export default function PolicyDetailPage() {
         saving={addConfigurations.isPending}
         existing={configurations()}
         onAdd={(configurations) => addConfigurations.mutate(configurations)}
+      />
+
+      <ConfirmDialog
+        open={enabledOpen()}
+        onOpenChange={setEnabledOpen}
+        title={`${enabledTarget() ? "Enable" : "Disable"} ${row()?.name ?? "policy"}?`}
+        description={
+          enabledTarget()
+            ? "Its saved configuration is delivered to every scoped device again. Apple devices are woken immediately, Android is synced, and Windows applies it on its next check-in."
+            : "Its settings are withdrawn from every scoped device on the next delivery. The configuration and assignments are kept, so you can enable it again later."
+        }
+        confirmLabel={enabledTarget() ? "Enable policy" : "Disable policy"}
+        pending={setEnabled.isPending}
+        onConfirm={() => setEnabled.mutate(enabledTarget())}
       />
 
       <Dialog

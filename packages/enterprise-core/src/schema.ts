@@ -2838,6 +2838,12 @@ export const policy = mysqlTable(
      * policy, then the lexicographically smallest id.
      */
     priority: int("priority").notNull().default(0),
+    /**
+     * Disabled policies keep their configuration and assignments but
+     * contribute nothing to resolution, so their settings are withdrawn from
+     * devices. Enabling one deploys it again exactly like an edit.
+     */
+    enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },

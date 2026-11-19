@@ -25,9 +25,11 @@ import { ShieldCheck } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import {
-  policyDeliveryPresentation,
+  isPolicyEnabled,
   policyDeliverySortRank,
+  policyRowDeliveryPresentation,
   policyScopePresentation,
+  policyStatePresentation,
 } from "~/lib/policy-delivery";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
@@ -57,39 +59,38 @@ function PolicyCountCell(props: { count: number | undefined; label: string; desc
 }
 
 function PolicyDeliveryCell(props: { row: PolicyRow }) {
-  const delivery = () => props.row.delivery;
+  // A disabled policy keeps its last declaration rows, so the derived state
+  // would read "Delivered" long after delivery stopped. The enable/disable
+  // state wins over the stale delivery rollup.
+  const presentation = () => policyRowDeliveryPresentation(props.row);
 
   return (
     <Show
-      when={delivery()}
+      when={presentation()}
       fallback={
         <span class="text-muted-foreground" aria-label="Delivery not reported">
           —
         </span>
       }
     >
-      {(info) => {
-        const presentation = () => policyDeliveryPresentation(info());
-
-        return (
-          <Tooltip>
-            <TooltipTrigger
-              as="span"
-              tabindex={0}
-              aria-label={`${presentation().label}. ${presentation().description}`}
-              class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <Badge variant={presentation().tone} dot={presentation().dot}>
-                {presentation().label}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent class="max-w-[280px]">
-              <p class="text-[11px] font-medium">{presentation().label}</p>
-              <p class="mt-1 text-[11.5px] leading-relaxed">{presentation().description}</p>
-            </TooltipContent>
-          </Tooltip>
-        );
-      }}
+      {(info) => (
+        <Tooltip>
+          <TooltipTrigger
+            as="span"
+            tabindex={0}
+            aria-label={`${info().label}. ${info().description}`}
+            class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          >
+            <Badge variant={info().tone} dot={info().dot}>
+              {info().label}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent class="max-w-[280px]">
+            <p class="text-[11px] font-medium">{info().label}</p>
+            <p class="mt-1 text-[11.5px] leading-relaxed">{info().description}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
     </Show>
   );
 }
@@ -221,13 +222,24 @@ export default function PoliciesPage() {
             search: (row) => `${row.name} ${row.notes ?? ""}`,
             cell: (row) => (
               <span class="block min-w-0">
-                <EntityHoverCard
-                  preview={{ kind: "policy", policy: row }}
-                  href={routes.tenant(params.tenantId).policy(row.id)}
-                  class="block truncate font-medium hover:underline"
-                >
-                  {row.name}
-                </EntityHoverCard>
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <EntityHoverCard
+                    preview={{ kind: "policy", policy: row }}
+                    href={routes.tenant(params.tenantId).policy(row.id)}
+                    class="block min-w-0 truncate font-medium hover:underline"
+                  >
+                    {row.name}
+                  </EntityHoverCard>
+                  <Show when={!isPolicyEnabled(row)}>
+                    <Badge
+                      variant={policyStatePresentation(row).tone}
+                      dot="warning"
+                      title={policyStatePresentation(row).description}
+                    >
+                      Disabled
+                    </Badge>
+                  </Show>
+                </span>
                 <Show when={row.notes}>
                   <span class="mt-0.5 block max-w-[38ch] truncate text-[11px] text-muted-foreground">
                     {row.notes}

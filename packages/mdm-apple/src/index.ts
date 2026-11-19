@@ -4843,7 +4843,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .limit(1)
               .pipe(Effect.mapError(internal));
 
-            if (!row) return null;
+            // A disabled policy keeps its stored configuration but must not
+            // keep serving signed asset URLs; the token only proves the device
+            // is in scope, not that the policy still delivers.
+            if (!row || row.policy.enabled === false) return null;
+
             const configKind = row.configuration.kind;
             const certificate = isCertificateKind(configKind);
             const application = isApplicationKind(configKind);
@@ -4926,29 +4930,33 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const [row] = yield* db
-              .select({
-                configuration: s.configuration,
-                organizationId: s.policy.organizationId,
-                deviceOrganizationId: s.device.organizationId,
-                deviceStatus: s.device.status,
-              })
+              .select()
               .from(s.configuration)
               .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
-              .innerJoin(s.device, eq(s.device.id, deviceId))
               .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            // A disabled policy keeps its configuration but must not keep
+            // serving signed profile URLs.
+            if (!row || row.policy.enabled === false) return null;
+
+            const [device] = yield* db
+              .select({ organizationId: s.device.organizationId, status: s.device.status })
+              .from(s.device)
+              .where(eq(s.device.id, deviceId))
               .limit(1)
               .pipe(Effect.mapError(internal));
 
             // The signed link is device-bound; a leaked URL for a device that
             // was removed, unenrolled or belongs to another tenant must fail.
             if (
-              !row ||
-              row.deviceStatus !== "enrolled" ||
-              row.deviceOrganizationId !== row.organizationId
+              !device ||
+              device.status !== "enrolled" ||
+              device.organizationId !== row.policy.organizationId
             )
               return null;
 
-            if (!row) return null;
             const parsed = parseConfigurationKind(row.configuration.kind);
 
             if (parsed.type !== "device" && parsed.type !== "custom") return null;
@@ -4973,9 +4981,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             // A profile that escrows FileVault keys must carry the tenant's
             // certificate, otherwise the returned CMS payload is ciphertext the
             // product cannot decrypt.
-            const escrowCertificatePem = yield* tenantEscrowCertificate(row.organizationId).pipe(
-              Effect.mapError(internal),
-            );
+            const escrowCertificatePem = yield* tenantEscrowCertificate(
+              row.policy.organizationId,
+            ).pipe(Effect.mapError(internal));
 
             if (!escrowCertificatePem) return profile;
 

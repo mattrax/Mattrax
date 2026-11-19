@@ -11,7 +11,13 @@ import {
 } from "~/components/ui/icons";
 import { healthLabel } from "~/lib/device-health";
 import type { DeviceRow, GroupRow, PolicyRow, TenantAccount } from "~/lib/enterprise";
-import { policyDeliveryPresentation, policyScopePresentation } from "~/lib/policy-delivery";
+import {
+  isPolicyEnabled,
+  policyDeliveryPresentation,
+  policyRowDeliveryPresentation,
+  policyScopePresentation,
+  policyStatePresentation,
+} from "~/lib/policy-delivery";
 import { initials } from "~/lib/names";
 import { cn } from "~/lib/utils";
 
@@ -263,7 +269,12 @@ function DeliveryBar(props: { delivery: NonNullable<PolicyRow["delivery"]> | und
 function PolicyCard(props: { policy: PolicyRow }) {
   const policy = () => props.policy;
   const delivery = () => policy().delivery;
-  const presentation = () => policyDeliveryPresentation(delivery() ?? neverDeployed);
+  const enabled = () => isPolicyEnabled(policy());
+  const presentation = () =>
+    policyRowDeliveryPresentation({
+      ...policy(),
+      delivery: delivery() ?? neverDeployed,
+    }) ?? policyDeliveryPresentation(neverDeployed);
 
   const scope = () =>
     policyScopePresentation({
@@ -306,15 +317,24 @@ function PolicyCard(props: { policy: PolicyRow }) {
         </Fact>
       </Facts>
       <Footer class="gap-3">
-        <DeliveryBar delivery={delivery()} />
-        <span
-          class="min-w-0 shrink-0 text-[11px] text-muted-foreground"
-          title={scope().devices.description}
+        <Show
+          when={enabled()}
+          fallback={
+            <span class="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
+              {policyStatePresentation(policy()).description}
+            </span>
+          }
         >
-          {delivery() && delivery()!.trackedDevices > 0
-            ? `${delivery()!.deliveredDevices}/${delivery()!.trackedDevices} delivered`
-            : scope().devices.label}
-        </span>
+          <DeliveryBar delivery={delivery()} />
+          <span
+            class="min-w-0 shrink-0 text-[11px] text-muted-foreground"
+            title={scope().devices.description}
+          >
+            {delivery() && delivery()!.trackedDevices > 0
+              ? `${delivery()!.deliveredDevices}/${delivery()!.trackedDevices} delivered`
+              : scope().devices.label}
+          </span>
+        </Show>
       </Footer>
     </>
   );

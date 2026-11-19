@@ -482,6 +482,33 @@ describe("tenant import", () => {
     ).toHaveLength(1);
   });
 
+  it("round-trips a disabled policy", async () => {
+    const context = makeContext();
+    const source = await seedTenant(context);
+
+    await runEffect(
+      context.service.patchPolicy(request(headers), source.tenant.id, source.policy.id, {
+        enabled: false,
+      }),
+    );
+
+    const { bundle } = await exportBundle(context, source.tenant.id);
+
+    expect(bundle.policies[0]).toMatchObject({ enabled: false });
+
+    const result = await runEffect(context.service.importTenant(request(headers), bundle));
+    const importedPolicy = context.db.store.policy.find(
+      (row: any) => row.organizationId === result.tenantId,
+    )!;
+
+    expect(importedPolicy).toMatchObject({ enabled: false });
+    expect(
+      context.db.store.policy_deployment.find(
+        (row: any) => row.policyId === importedPolicy.id && row.version === 1,
+      )?.snapshot,
+    ).toMatchObject({ "@@enabled": false });
+  });
+
   it("derives further slugs when the same bundle is imported again", async () => {
     const context = makeContext();
     const source = await seedTenant(context);

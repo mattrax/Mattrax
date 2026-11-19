@@ -9,7 +9,10 @@ import { QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
+import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { errorMessage, raisedFailure } from "~/lib/errors";
+import { isPolicyEnabled } from "~/lib/policy-delivery";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import {
   emptyPolicyDraft,
@@ -73,6 +76,11 @@ export default function PolicyDesignerPage() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+
+  // A disabled policy delivers nothing, so saving the designer into one would
+  // look successful while changing nothing on devices. Block the save and
+  // offer the explicit enable action instead.
+  const enabled = () => isPolicyEnabled(row() ?? {});
 
   const configurations = () =>
     Option.getOrUndefined(decodeConfigurations(row()?.configurations)) ?? {};
@@ -160,6 +168,23 @@ export default function PolicyDesignerPage() {
     },
   }));
 
+  const enable = useMutation(() => ({
+    mutationFn: () => enterprise.patchPolicy(params.tenantId, params.policyId, { enabled: true }),
+    onSuccess: () => {
+      toast.success("Policy enabled", {
+        description: "Its saved configuration is being delivered to scoped devices again.",
+      });
+      void qc.invalidateQueries({
+        queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+      });
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+    },
+    onError: (error) =>
+      toast.error("Could not enable the policy", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      }),
+  }));
+
   const pageActions = () => (
     <Button
       as="a"
@@ -207,6 +232,26 @@ export default function PolicyDesignerPage() {
             </Show>
           }
         >
+          <Show when={row() && !enabled()}>
+            <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] text-foreground sm:px-4">
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold">This policy is disabled</p>
+                <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  Saving here is blocked because a disabled policy delivers nothing. Its
+                  configuration and assignments are kept; enable it to deploy designer changes.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!writable() || enable.isPending}
+                onClick={() => enable.mutate()}
+              >
+                {enable.isPending ? "Enabling…" : "Enable policy"}
+              </Button>
+            </div>
+          </Show>
+
           <Show when={foreignConfigurations().length > 0}>
             <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-3 py-2 text-[12px] text-foreground sm:px-4">
               <div class="min-w-0 flex-1">
@@ -250,11 +295,18 @@ export default function PolicyDesignerPage() {
                 }
                 storageKey={storageKey()}
                 saving={save.isPending}
-                saveDisabled={!writable()}
-                canDeploy={writable()}
+                saveDisabled={!writable() || !enabled()}
+                disabledHint={
+                  !enabled()
+                    ? "Enable the policy to save designer changes."
+                    : !writable()
+                      ? "Your role cannot save policies."
+                      : undefined
+                }
+                canDeploy={writable() && enabled()}
                 error={save.error}
                 onSave={
-                  writable()
+                  writable() && enabled()
                     ? (draft) => {
                         void save.mutate(draft);
                       }

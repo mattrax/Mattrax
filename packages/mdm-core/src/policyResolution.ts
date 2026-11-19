@@ -42,6 +42,11 @@ import { Schema } from "effect";
  * Exclusions are policy-level and therefore remove every configuration kind
  * that policy provides. A policy only participates in a kind it actually
  * has a configuration for.
+ *
+ * A disabled policy is treated as if it were not assigned at all. It
+ * contributes no configurations and its includes and exclusions are ignored,
+ * which is what withdraws its settings from devices without deleting the
+ * policy.
  */
 
 export type PolicyAssignmentMode = "include" | "exclude";
@@ -73,6 +78,11 @@ export type PolicyResolutionPolicy = {
   readonly name: string;
   /** Higher wins. Missing values are treated as 0. */
   readonly priority?: number;
+  /**
+   * A disabled policy contributes nothing: no configurations, includes or
+   * exclusions. Missing values are enabled, so older callers keep working.
+   */
+  readonly enabled?: boolean;
   readonly updatedAt: Date | string;
 };
 
@@ -325,7 +335,15 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     return null;
   };
 
-  const policies = new Map(input.policies.map((policy) => [policy.id, policy]));
+  // A disabled policy is absent from resolution entirely. Filtering here
+  // (rather than only skipping its configurations) also drops its includes and
+  // exclusions, so a disabled policy cannot veto another policy's delivery.
+  const policies = new Map(
+    input.policies
+      .filter((policy) => policy.enabled !== false)
+      .map((policy) => [policy.id, policy]),
+  );
+
   const configurations = new Map<string, Array<PolicyResolutionConfiguration>>();
 
   for (const configuration of input.configurations) {

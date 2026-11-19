@@ -74,6 +74,31 @@ describe("planWindowsPolicyDelivery", () => {
     expect(plan).toEqual({ replace: [], remove: ["urn:a"] });
   });
 
+  it("deletes every delivered node when a disabled policy leaves the desired set", () => {
+    const plan = planWindowsPolicyDelivery({
+      desired: new Map(),
+      delivered: [node("urn:a", "h1"), node("urn:b", "h2")],
+      applied: ["urn:a", "urn:b"],
+      failures: [],
+      now,
+    });
+
+    expect(plan.replace).toEqual([]);
+    expect(plan.remove).toEqual(["urn:a", "urn:b"]);
+
+    // Once the device acknowledges the deletes, `delivered` is empty, so a
+    // later plan for the same disabled policy emits nothing.
+    const after = planWindowsPolicyDelivery({
+      desired: new Map(),
+      delivered: [],
+      applied: [],
+      failures: [],
+      now,
+    });
+
+    expect(after).toEqual({ replace: [], remove: [] });
+  });
+
   it("keeps a recent rejection visible but retries after the window", () => {
     const failure = {
       uri: "urn:a",

@@ -252,6 +252,8 @@ export type PolicyDesignerProps = {
   readonly persistedDraft?: PolicyDraft;
   readonly saving?: boolean;
   readonly saveDisabled?: boolean;
+  /** Why saving is blocked, when the parent knows a more specific reason. */
+  readonly disabledHint?: string;
   /** Dashboard viewers without `policies.write` cannot create a policy either. */
   readonly canDeploy?: boolean;
   readonly error?: unknown;
@@ -1294,6 +1296,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     blockingIssues().length === 0;
 
   const disabledHint = () => {
+    if (props.disabledHint) return props.disabledHint;
+
     if (props.saveDisabled) return "Confirm the replacement option above before saving.";
 
     if (policySelectionCount(policyDraft()) === 0)
@@ -1856,11 +1860,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       blockingIssues().length > 0
                     }
                     title={
-                      props.canDeploy === false
+                      props.disabledHint ??
+                      (props.canDeploy === false
                         ? "Your role cannot save policies"
                         : blockingIssues().length > 0
                           ? `Fix ${blockingIssues().length} validation error${blockingIssues().length === 1 ? "" : "s"} before deploying`
-                          : undefined
+                          : undefined)
                     }
                   >
                     Deploy in Mattrax →
