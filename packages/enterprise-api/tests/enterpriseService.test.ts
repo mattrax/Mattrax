@@ -1850,9 +1850,7 @@ describe("enterprise service policy flow", () => {
     // The configuration survives a disable; only delivery stops.
     expect(db.store.configuration).toHaveLength(1);
 
-    const disabled = await runEffect(
-      service.getPolicy(request(headers), tenant.id, policy.id),
-    );
+    const disabled = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
 
     expect(disabled).toMatchObject({
       enabled: false,
@@ -1870,15 +1868,11 @@ describe("enterprise service policy flow", () => {
 
     expect(list.rows[0]).toMatchObject({ enabled: false, configurationCount: 1 });
 
-    await runEffect(
-      service.patchPolicy(request(headers), tenant.id, policy.id, { enabled: true }),
-    );
+    await runEffect(service.patchPolicy(request(headers), tenant.id, policy.id, { enabled: true }));
 
     expect(db.store.policy[0]).toMatchObject({ enabled: true });
 
-    const enabled = await runEffect(
-      service.getPolicy(request(headers), tenant.id, policy.id),
-    );
+    const enabled = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
 
     expect(enabled).toMatchObject({ enabled: true });
     expect(db.store.policy_deployment.at(-1)?.snapshot).not.toHaveProperty("@@enabled");
@@ -1922,9 +1916,7 @@ describe("enterprise service policy flow", () => {
     );
 
     expect(db.store.policy[0]).toMatchObject({ enabled: true });
-    expect(
-      db.store.configuration.some((row: any) => row.kind === "@@enabled"),
-    ).toBe(false);
+    expect(db.store.configuration.some((row: any) => row.kind === "@@enabled")).toBe(false);
     expect(db.store.audit_log.at(-1)).toMatchObject({
       action: "policy.rolled_back",
       metadata: { deploymentId: enabledDeployment.id, enabled: true },
@@ -2964,6 +2956,7 @@ describe("enterprise service effective policy", () => {
     const first = await runEffect(
       service.createTenant(request(headers), { name: "First", slug: "first" }),
     );
+
     const second = await runEffect(
       service.createTenant(request(headers), { name: "Second", slug: "second" }),
     );
