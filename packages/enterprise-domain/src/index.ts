@@ -61,6 +61,8 @@ export * from "./stepUpServer.ts";
 
 export * from "./ssr.ts";
 
+export * from "./paths.ts";
+
 export {
   compareInstallerPreference,
   compareVersions,

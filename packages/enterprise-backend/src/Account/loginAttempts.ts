@@ -1,40 +1,36 @@
 import { Effect, Option, Predicate, Schema } from "effect";
-import { desc, eq, lt } from "drizzle-orm";
+import { desc, eq, inArray, lt } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import {
+  LOGIN_ATTEMPT_FAILURES,
+  LOGIN_ATTEMPT_FACTORS,
+  LOGIN_ATTEMPT_METHODS,
+  normalisePath,
+  type LoginAttemptFactor,
+  type LoginAttemptFailure,
+  type LoginAttemptMethod,
+} from "@mattrax/enterprise-domain";
 import { schema } from "../schema.ts";
 import { clientAddress, parseUserAgent } from "./accountAudit.ts";
+
+export { LOGIN_ATTEMPT_FAILURES, LOGIN_ATTEMPT_FACTORS, LOGIN_ATTEMPT_METHODS };
+
+export type { LoginAttemptFactor, LoginAttemptFailure, LoginAttemptMethod };
 
 /**
  * Sign-in attempt log.
  *
- * Every interactive sign-in that completes through the shared auth boundary
- * writes one row, as does every rejected attempt the boundary can attribute to
- * an account. The table is the account's own history: reads are always scoped
- * by `accountId`, so one account can never page another's attempts.
+ * Every completed sign-in writes one row, as does a rejected attempt that the
+ * boundary can attribute to an account (a pending-MFA failure identified by
+ * its pending credential, or an SSO callback rejection after the account was
+ * resolved). Rejections with no owner are not stored: the table is readable
+ * only through an account-scoped API, so an unattributable row would be dead
+ * data. Reads are always scoped by `accountId`, so one account can never page
+ * another's attempts.
  *
  * Writes are best effort. A failed insert is metadata loss, never a failed
  * login, so `recordLoginAttempt` swallows and logs its own errors.
  */
-
-export const LOGIN_ATTEMPT_METHODS = ["passkey", "totp", "sso", "recovery", "api-token"] as const;
-
-export type LoginAttemptMethod = (typeof LOGIN_ATTEMPT_METHODS)[number];
-
-export const LOGIN_ATTEMPT_FAILURES = [
-  "invalid_code",
-  "unknown_account",
-  "expired",
-  "disabled",
-  "mfa_failed",
-  "passkey_rejected",
-  "sso_rejected",
-  "recovery_rejected",
-  "rate_limited",
-  "not_member",
-  "failed",
-] as const;
-
-export type LoginAttemptFailure = (typeof LOGIN_ATTEMPT_FAILURES)[number];
 
 /** Newest page returned by the account settings endpoint. */
 export const LOGIN_ATTEMPT_LIST_LIMIT = 50;
@@ -64,9 +60,12 @@ export type LoginAttemptInput = {
   readonly accountId?: string | null;
   readonly email?: string | null;
   readonly success: boolean;
+  /** Primary proof that signed the session in. */
   readonly method: LoginAttemptMethod;
+  /** Step that completed the sign-in; omitted for failures. */
+  readonly factor?: LoginAttemptFactor | null;
   readonly failureReason?: LoginAttemptFailure | null;
-  /** Approximate network; callers should pass `approximateNetwork`, not a host address. */
+  /** Client address; `recordLoginAttempt` always reduces it to a network prefix. */
   readonly ip?: string | null;
   readonly userAgent?: string | null;
   readonly at?: Date;
@@ -78,12 +77,24 @@ export type LoginAttemptInput = {
  * host address. Malformed input yields null rather than an unbounded string.
  */
 export const approximateNetwork = (address: string | null | undefined): string | null => {
-  const value = address?.trim();
+  // Accept an address that is already a prefix so the function is idempotent.
+  const value = address?.trim().replace(/\/\d{1,3}$/, "");
 
   if (!value) return null;
 
   // `::ffff:203.0.113.7` is an IPv4 client reported over an IPv6 socket.
   const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(value);
+  // The same mapping in hexadecimal, e.g. `::ffff:cb00:7107`.
+  const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(value);
+
+  if (mappedHex) {
+    const high = Number.parseInt(mappedHex[1]!, 16);
+    const low = Number.parseInt(mappedHex[2]!, 16);
+    const octets = [high >> 8, high & 0xff, low >> 8, low & 0xff].map((part) => part & 0xff);
+
+    return `${octets[0]}.${octets[1]}.${octets[2]}.0/24`;
+  }
+
   const ipv4 = mapped?.[1] ?? value;
 
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ipv4)) {
@@ -141,6 +152,85 @@ export const loginAttemptClient = (
 };
 
 /**
+ * The library-owned pending-authentication proof cookie. A completed primary
+ * factor issues it; the MFA/pending actions present it while the login is not
+ * yet a session. Reading the pending row is the only way to attribute a failed
+ * second factor, because the failure response deliberately carries no identity.
+ */
+export const PENDING_PROOF_COOKIE = "__Host-effect-auth-pending-proof";
+
+/**
+ * `Sessions.stateful()` creates the module from the default namespace, so the
+ * pending digest is the library's stable SHA-256 domain separation for
+ * `effect-auth/sessions`. The library version is pinned in `pnpm-workspace.yaml`;
+ * if a future upgrade changes the namespace, update this constant with it.
+ */
+const SESSION_MODULE_ID = "effect-auth/sessions";
+
+const cookieFrom = (
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+  name: string,
+): string | null => {
+  const raw = headers["cookie"];
+
+  if (raw === undefined) return null;
+
+  for (const part of (Array.isArray(raw) ? raw.join(";") : raw).split(";")) {
+    const separator = part.indexOf("=");
+
+    if (separator === -1) continue;
+
+    if (part.slice(0, separator).trim() === name) return part.slice(separator + 1).trim();
+  }
+
+  return null;
+};
+
+/** The opaque pending credential's at-rest digest, matching `Sessions` persistence. */
+export const pendingCredentialDigest = (credential: string): Effect.Effect<string> =>
+  Effect.promise(async () => {
+    const message = new TextEncoder().encode(
+      JSON.stringify({
+        namespace: "effect-auth/session",
+        moduleId: SESSION_MODULE_ID,
+        purpose: "pending",
+        secret: credential,
+      }),
+    );
+
+    const digest = await crypto.subtle.digest("SHA-256", message);
+
+    return btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/, "");
+  });
+
+/**
+ * Resolve the account that owns this request's pending login. Null when the
+ * cookie is absent, malformed or no longer maps to a live pending row.
+ */
+export const pendingAttemptSubject = (
+  db: EnterpriseDb,
+  headers: Readonly<Record<string, string | string[] | undefined>>,
+): Effect.Effect<string | null> =>
+  Effect.gen(function* () {
+    const credential = cookieFrom(headers, PENDING_PROOF_COOKIE);
+
+    if (credential === null || !/^[A-Za-z0-9_-]{43}$/.test(credential)) return null;
+
+    const digest = yield* pendingCredentialDigest(credential);
+
+    const rows = yield* db
+      .select({ subjectId: schema.authPending.subjectId })
+      .from(schema.authPending)
+      .where(eq(schema.authPending.digest, digest))
+      .limit(1);
+
+    return rows[0]?.subjectId ?? null;
+  }).pipe(Effect.catchCause(() => Effect.succeed(null)));
+
+/**
  * Append one attempt. Errors are logged and swallowed: bookkeeping must never
  * fail the sign-in it describes.
  */
@@ -155,8 +245,10 @@ export const recordLoginAttempt = (
       email: bounded(input.email?.toLowerCase() ?? null, LOGIN_ATTEMPT_EMAIL_LIMIT),
       success: input.success,
       method: input.method,
+      factor: input.factor ?? null,
       failureReason: input.failureReason ?? null,
-      ip: bounded(input.ip ?? null, LOGIN_ATTEMPT_IP_LIMIT),
+      // The recorder owns this reduction so no caller can store a host address.
+      ip: bounded(approximateNetwork(input.ip), LOGIN_ATTEMPT_IP_LIMIT),
       userAgent: bounded(input.userAgent ?? null, LOGIN_ATTEMPT_USER_AGENT_LIMIT),
       createdAt: input.at ?? new Date(),
     });
@@ -179,7 +271,10 @@ export const listLoginAttempts = (
       .limit(Math.max(1, Math.min(limit, LOGIN_ATTEMPT_LIST_LIMIT)));
   });
 
-/** Delete attempts older than `before`; returns the number removed. */
+/** One maintenance run removes at most this many rows. */
+export const LOGIN_ATTEMPT_PRUNE_BATCH = 1_000;
+
+/** Delete a bounded batch of attempts older than `before`; returns the removed count. */
 export const pruneLoginAttempts = (
   db: EnterpriseDb,
   before: Date,
@@ -188,11 +283,17 @@ export const pruneLoginAttempts = (
     const stale = yield* db
       .select({ id: schema.loginAttempt.id })
       .from(schema.loginAttempt)
-      .where(lt(schema.loginAttempt.createdAt, before));
+      .where(lt(schema.loginAttempt.createdAt, before))
+      .limit(LOGIN_ATTEMPT_PRUNE_BATCH);
 
     if (stale.length === 0) return 0;
 
-    yield* db.delete(schema.loginAttempt).where(lt(schema.loginAttempt.createdAt, before));
+    yield* db.delete(schema.loginAttempt).where(
+      inArray(
+        schema.loginAttempt.id,
+        stale.map((row) => row.id),
+      ),
+    );
 
     return stale.length;
   });
@@ -206,6 +307,7 @@ export const loginAttemptEntry = (row: typeof schema.loginAttempt.$inferSelect) 
     createdAt: row.createdAt.toISOString(),
     success: row.success,
     method: row.method,
+    factor: row.factor,
     failureReason: row.failureReason,
     ip: row.ip,
     browser: parsed.browser,
@@ -215,20 +317,23 @@ export const loginAttemptEntry = (row: typeof schema.loginAttempt.$inferSelect) 
 };
 
 /**
- * One auth-action path the library exposes, mapped to the factor it proves.
- * `begin*` actions only issue a challenge; they are not attempts.
+ * One auth-action path the library exposes, mapped to the factor that completes
+ * the login. The path is normalised first, so case, duplicate slashes and a
+ * trailing slash cannot evade the log. `begin*` actions only issue a challenge;
+ * they are not attempts.
  */
-export const signInMethodForPath = (path: string): LoginAttemptMethod | undefined => {
-  switch (path) {
-    case "/api/v1/completePasskeySignIn":
-    case "/api/v1/completePasskeyPending":
+export const signInFactorForPath = (path: string): LoginAttemptFactor | undefined => {
+  switch (normalisePath(path)) {
+    case "/api/v1/completepasskeysignin":
+    case "/api/v1/completepasskeypending":
       return "passkey";
-    case "/api/v1/verifyTotpPending":
-    case "/api/v1/recoverTotpPending":
+    case "/api/v1/verifytotppending":
       return "totp";
-    case "/api/v1/ssoSignIn":
+    case "/api/v1/recovertotppending":
+      return "recovery";
+    case "/api/v1/ssosignin":
       return "sso";
-    case "/api/v1/recoverySignIn":
+    case "/api/v1/recoverysignin":
       return "recovery";
     default:
       return undefined;
@@ -368,9 +473,9 @@ export const recordObservedLoginAttempt = (
   },
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const routeMethod = signInMethodForPath(input.path);
+    const factor = signInFactorForPath(input.path);
 
-    if (routeMethod === undefined) return;
+    if (factor === undefined) return;
 
     const outcome = decodeLoginAttemptOutcome(input.body);
     const client = loginAttemptClient(input.headers, input.remoteAddress);
@@ -379,22 +484,41 @@ export const recordObservedLoginAttempt = (
     // writes the row that represents the login.
     if (outcome.status === "ignored") return;
 
-    const success = outcome.status === "success";
+    if (outcome.status === "success") {
+      // A completed session always names its subject. Without one the row would
+      // be unreadable by any account, so it is dropped.
+      if (outcome.subjectId === null) return;
 
-    const method = success
-      ? (loginAttemptMethodFromAssurance(outcome.assuranceMethod) ?? routeMethod)
-      : routeMethod;
+      yield* recordLoginAttempt(db, {
+        accountId: outcome.subjectId,
+        email: outcome.email,
+        success: true,
+        method: loginAttemptMethodFromAssurance(outcome.assuranceMethod) ?? factor,
+        factor,
+        ip: client.ip,
+        userAgent: client.userAgent,
+      });
+
+      return;
+    }
+
+    // The response carries no identity by design. The pending credential does:
+    // it was issued to the account whose primary factor already succeeded, so
+    // a rejected second factor can be attributed for that account's own log.
+    const subjectId = yield* pendingAttemptSubject(db, input.headers);
+
+    if (subjectId === null) return;
 
     yield* recordLoginAttempt(db, {
-      accountId: success ? outcome.subjectId : null,
-      email: success ? outcome.email : null,
-      success,
-      method,
-      failureReason: success ? null : outcome.failureReason,
+      accountId: subjectId,
+      success: false,
+      method: factor,
+      factor,
+      failureReason: outcome.failureReason,
       ip: client.ip,
       userAgent: client.userAgent,
     });
   });
 
 /** True when this path is one the HTTP observer should record. */
-export const isObservedSignInPath = (path: string) => signInMethodForPath(path) !== undefined;
+export const isObservedSignInPath = (path: string) => signInFactorForPath(path) !== undefined;

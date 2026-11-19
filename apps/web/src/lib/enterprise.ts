@@ -341,6 +341,8 @@ export const enterpriseKeys = {
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", keyTenant(tenantId)] as const,
   accountActivity: (query: AuditSearchQuery = {}) =>
     ["enterprise", "account-activity", query] as const,
+  loginAttempts: (accountId: string | undefined) =>
+    ["enterprise", "login-attempts", accountId ?? ""] as const,
   tenantSecurity: (tenantId: RouteParam) =>
     ["enterprise", "tenant-security", keyTenant(tenantId)] as const,
   auditSearch: (tenantId: RouteParam, query: AuditSearchQuery = {}) =>
@@ -1882,6 +1884,7 @@ export const enterprise = {
     accountEndpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
   revokeAllAccountSessions: () =>
     accountEndpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
+  listLoginAttempts: () => accountEndpoint((api) => api.listLoginAttempts()),
   searchAccountAuditLog: (query: AuditSearchQuery = {}) =>
     accountEndpoint((api) => api.searchAccountAuditLog({ query })),
   exportAccountAuditLog: (query: AuditSearchQuery = {}) =>

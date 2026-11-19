@@ -20,6 +20,9 @@
       "path": "../enterprise-core"
     },
     {
+      "path": "../enterprise-domain"
+    },
+    {
       "path": "../email"
     },
     {

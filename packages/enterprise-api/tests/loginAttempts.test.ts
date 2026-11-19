@@ -59,6 +59,7 @@ const attempt = (input: {
   email: "owner@example.com",
   success: input.success,
   method: input.method ?? "passkey",
+  factor: input.success ? (input.method ?? "passkey") : null,
   failureReason: input.failureReason ?? null,
   ip: "203.0.113.0/24",
   userAgent:
@@ -99,6 +100,7 @@ describe("account login attempts endpoint", () => {
     expect(result.attempts[0]).toMatchObject({
       success: false,
       method: "passkey",
+      factor: null,
       failureReason: "mfa_failed",
       ip: "203.0.113.0/24",
       browser: "Chrome",

@@ -14,6 +14,7 @@
     "@mattrax/email": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
     "drizzle-orm": "catalog:",

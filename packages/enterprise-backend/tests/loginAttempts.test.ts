@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   LOGIN_ATTEMPT_USER_AGENT_LIMIT,
+  PENDING_PROOF_COOKIE,
   approximateNetwork,
   decodeLoginAttemptOutcome,
   listLoginAttempts,
   loginAttemptClient,
   loginAttemptEntry,
+  pendingCredentialDigest,
   pruneLoginAttempts,
   recordLoginAttempt,
   recordObservedLoginAttempt,
+  signInFactorForPath,
 } from "../src/Account/loginAttempts.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -49,6 +52,7 @@ describe("login attempt recording", () => {
         email: "owner@example.com",
         success: true,
         method: "passkey",
+        factor: "passkey",
         failureReason: null,
         ip: "203.0.113.0/24",
         userAgent: chrome,
@@ -56,7 +60,7 @@ describe("login attempt recording", () => {
     ]);
   });
 
-  it("records a rejection with its short reason and no account", async () => {
+  it("drops a rejection that no account can read", async () => {
     const db = makeDb();
 
     await runEffect(
@@ -67,16 +71,72 @@ describe("login attempt recording", () => {
       }),
     );
 
+    expect(db.store.login_attempt).toEqual([]);
+  });
+
+  it("attributes a rejected TOTP step to the pending account only", async () => {
+    const db = makeDb();
+    const credential = "a".repeat(43);
+    const digest = await runEffect(pendingCredentialDigest(credential));
+
+    db.store.auth_pending.push({
+      digest,
+      subjectId: "account-1",
+      moduleId: "effect-auth/sessions",
+      consumed: false,
+    });
+
+    await runEffect(
+      recordObservedLoginAttempt(db, {
+        path: "/api/v1/verifytotppending",
+        headers: {
+          cookie: `${PENDING_PROOF_COOKIE}=${credential}`,
+          "cf-connecting-ip": "198.51.100.4",
+          "user-agent": chrome,
+        },
+        body: JSON.stringify({ _tag: "Failure", error: { _tag: "TotpRejected" } }),
+      }),
+    );
+
     expect(db.store.login_attempt).toMatchObject([
       {
-        accountId: null,
-        email: null,
+        accountId: "account-1",
         success: false,
-        method: "passkey",
-        failureReason: "passkey_rejected",
+        method: "totp",
+        factor: "totp",
+        failureReason: "mfa_failed",
         ip: "198.51.100.0/24",
       },
     ]);
+
+    const own = await runEffect(listLoginAttempts(db, "account-1"));
+    const other = await runEffect(listLoginAttempts(db, "account-2"));
+
+    expect(own).toHaveLength(1);
+    expect(other).toEqual([]);
+  });
+
+  it("records a passkey sign-in completed with a recovery code", async () => {
+    const db = makeDb();
+
+    await runEffect(
+      recordObservedLoginAttempt(db, {
+        path: "/api/v1/recovertotppending",
+        headers: {},
+        body: authenticated({ method: "passkey" }),
+      }),
+    );
+
+    expect(db.store.login_attempt[0]).toMatchObject({
+      success: true,
+      method: "passkey",
+      factor: "recovery",
+    });
+    // SAFETY: `recordLoginAttempt` inserted the row through the same schema.
+    expect(loginAttemptEntry(db.store.login_attempt[0] as never)).toMatchObject({
+      method: "passkey",
+      factor: "recovery",
+    });
   });
 
   it("does not treat a pending MFA step as a completed login", async () => {
@@ -115,6 +175,8 @@ describe("login attempt recording", () => {
 
     expect(row.email).toBe("owner@example.com");
     expect(row.userAgent).toHaveLength(LOGIN_ATTEMPT_USER_AGENT_LIMIT);
+    // A caller cannot smuggle a host address past the recorder.
+    expect(row.ip).toBe("2001:db8:abcd:1234::/64");
     // The row is exactly the documented columns: no code, token or credential.
     expect(JSON.stringify(row)).not.toContain("123456");
     expect(Object.keys(row).sort()).toEqual(
@@ -122,6 +184,7 @@ describe("login attempt recording", () => {
         "accountId",
         "createdAt",
         "email",
+        "factor",
         "failureReason",
         "id",
         "ip",
@@ -279,11 +342,22 @@ describe("login attempt presentation", () => {
 
   it("stores an approximate network rather than a host address", () => {
     expect(approximateNetwork("203.0.113.77")).toBe("203.0.113.0/24");
+    expect(approximateNetwork("203.0.113.0/24")).toBe("203.0.113.0/24");
     expect(approximateNetwork("::ffff:203.0.113.77")).toBe("203.0.113.0/24");
+    expect(approximateNetwork("::ffff:cb00:7107")).toBe("203.0.113.0/24");
     expect(approximateNetwork("2001:db8:abcd:1234::1")).toBe("2001:db8:abcd:1234::/64");
     expect(approximateNetwork("fe80::1%en0")).toBe("fe80:0:0:0::/64");
     expect(approximateNetwork("not-an-address")).toBeNull();
     expect(approximateNetwork(null)).toBeNull();
+  });
+
+  it("maps normalised completion paths to the completing factor", () => {
+    expect(signInFactorForPath("/api/v1/completepasskeysignin")).toBe("passkey");
+    expect(signInFactorForPath("/api/v1/verifytotppending")).toBe("totp");
+    expect(signInFactorForPath("/api/v1/recovertotppending")).toBe("recovery");
+    expect(signInFactorForPath("/api/v1/ssosignin")).toBe("sso");
+    expect(signInFactorForPath("/api/v1/recoverysignin")).toBe("recovery");
+    expect(signInFactorForPath("/api/v1/beginpasskeysignin")).toBeUndefined();
   });
 
   it("prefers the assurance method over the completing endpoint", async () => {

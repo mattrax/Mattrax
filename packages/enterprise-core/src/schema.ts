@@ -3,6 +3,8 @@ import { requiredPasskeyPersistenceConstraints } from "@yielded/auth-persistence
 import { Schema as AuthSchema, Sessions } from "@yielded/auth";
 import {
   AuthDefinition,
+  LOGIN_ATTEMPT_FACTORS,
+  LOGIN_ATTEMPT_METHODS,
   PASSKEY_MANAGEMENT_POLICY,
   PASSKEY_MODULE_ID,
   Registration,
@@ -803,11 +805,10 @@ export const loginAttempt = mysqlTable(
     /** Lowercased address snapshot when the attempt could be attributed. */
     email: varchar("email", { length: 320 }),
     success: boolean("success").notNull(),
-    /** Primary factor that was attempted: `passkey`, `totp`, `sso` or `recovery`. */
-    method: varchar("method", {
-      length: 16,
-      enum: ["passkey", "totp", "sso", "recovery", "api-token"],
-    }).notNull(),
+    /** Primary proof that signed the session in. */
+    method: varchar("method", { length: 16, enum: [...LOGIN_ATTEMPT_METHODS] }).notNull(),
+    /** Step that completed the sign-in, distinct from the primary proof. */
+    factor: varchar("factor", { length: 16, enum: [...LOGIN_ATTEMPT_FACTORS] }),
     /** Short machine-readable reason for a rejected attempt. */
     failureReason: varchar("failure_reason", { length: 40 }),
     /** Approximate client network: IPv4 `/24` or IPv6 `/64`, never a host address. */

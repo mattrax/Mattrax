@@ -2,6 +2,7 @@ import { Effect, Option } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { isObservedSignInPath, recordObservedLoginAttempt } from "@mattrax/enterprise-backend";
+import { normalisePath } from "./rateLimit.js";
 
 /**
  * Observe the shared auth library's sign-in actions.
@@ -20,7 +21,9 @@ export const loginAttemptObserver = HttpRouter.middleware(
   (handler) =>
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const path = new URL(request.url, "http://localhost").pathname;
+      // Match the same normalised form the rate limiter and router use:
+      // `/API/V1//completePasskeySignIn/` is a sign-in completion too.
+      const path = normalisePath(new URL(request.url, "http://localhost").pathname);
 
       const response = yield* handler;
 
@@ -40,12 +43,15 @@ export const loginAttemptObserver = HttpRouter.middleware(
         }
       });
 
+      // The write is bookkeeping: start it detached and uninterruptible so a
+      // slow or unavailable database never delays the response, and losing the
+      // row never fails the sign-in.
       yield* recordObservedLoginAttempt(db.value, {
         path,
         headers: request.headers,
         remoteAddress: Option.getOrUndefined(request.remoteAddress) ?? null,
         body,
-      }).pipe(Effect.catchCause(() => Effect.void));
+      }).pipe(Effect.forkDetach({ uninterruptible: true }));
 
       return response;
     }),

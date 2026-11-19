@@ -35,3 +35,5 @@ export * from "./storage.ts";
 export * from "./stepUp.ts";
 
 export * from "./ssr.ts";
+
+export * from "./paths.ts";

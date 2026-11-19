@@ -187,11 +187,12 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       const db = yield* Db;
 
       /**
-       * The identity provider is outside Mattrax, so every rejection here is a
-       * failed sign-in that the account may need to see. The row is attributed
-       * only once the callback has resolved the account; before that it records
-       * the attempt without an owner. Writing the log never changes the error
-       * the browser receives.
+       * The identity provider is outside Mattrax, so a rejection after the
+       * callback resolved the account is a failed sign-in that account should
+       * see. Rejections before that point (missing code/state, cookie mismatch,
+       * invalid assertion) have no owner and are not stored: the log is only
+       * readable through an account-scoped API. Writing the log never changes
+       * the error the browser receives.
        */
       const reject = (input: {
         status: number;
@@ -201,16 +202,19 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         email?: string | null;
       }) =>
         Effect.gen(function* () {
+          if (input.accountId == null) return json({ error: input.error }, input.status);
+
           const client = loginAttemptClient(
             request.headers,
             Option.getOrUndefined(request.remoteAddress) ?? null,
           );
 
           yield* recordLoginAttempt(db, {
-            accountId: input.accountId ?? null,
+            accountId: input.accountId,
             email: input.email ?? null,
             success: false,
             method: "sso",
+            factor: "sso",
             failureReason: input.reason,
             ...client,
           });

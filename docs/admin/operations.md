@@ -77,10 +77,10 @@ without `AUTH_SECRET` stores no address-derived value at all.
 
 The login log keeps a still-broader view: it stores the approximate client network
 (IPv4 `/24` or IPv6 `/64`) and the bounded `User-Agent`, never a host address, and only
-shows the bounded row to the account that owns it. A discoverable passkey rejection
-carries no identity, so only attempts the auth boundary could attribute appear in the
-account's history; unattributed failures are still counted by edge rate limits and
-request analytics.
+shows the bounded row to the account that owns it. A rejection is written only when the
+auth boundary can attribute it: a completed session, a pending-MFA failure resolved
+through the pending credential, or an SSO callback that already resolved the account.
+Unattributable failures are not stored, so no row is invisible to every reader.
 
 Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
 IP address.
