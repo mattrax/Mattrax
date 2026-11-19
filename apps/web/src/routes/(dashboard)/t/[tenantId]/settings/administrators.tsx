@@ -1,10 +1,12 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { PERMISSION_GROUPS, type Permission } from "@mattrax/enterprise-domain/client";
+import { PERMISSION_GROUPS, BULK_MEMBER_LIMIT, type Permission } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError, formatDate, relativeTime } from "~/components/mdm/common";
+import { toast } from "~/components/toast";
 import { errorMessage } from "~/lib/errors";
+import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure, rolePatch } from "~/lib/bulk-members";
 import { Button } from "~/components/ui/button";
 import { FilterBar, type FilterField } from "@mattrax/ui";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -237,6 +239,11 @@ export default function AdministratorsSettingsPage() {
       .map((role) => role.trim())
       .includes("owner");
 
+  const canChangeAccountRole = (account: TenantAccount) =>
+    can("members.write") &&
+    account.accountId !== session().data?.user?.id &&
+    (!isBuiltInOwnerUser(account) || isOwner());
+
   const accounts = useQuery(() => ({
     queryKey: enterpriseKeys.accounts(params.tenantId),
     queryFn: () => enterprise.listAccounts(params.tenantId),
@@ -309,6 +316,8 @@ export default function AdministratorsSettingsPage() {
   const [resendTarget, setResendTarget] = createSignal<TenantInvitation | null>(null);
   const [cancelTarget, setCancelTarget] = createSignal<TenantInvitation | null>(null);
   const [filter, setFilter] = createSignal<InvitationFilter>("active");
+  const [selectedAccountIds, setSelectedAccountIds] = createSignal<ReadonlySet<string>>(new Set());
+  const [bulkRole, setBulkRole] = createSignal("builtin:member");
 
   const [transferTarget, setTransferTarget] = createSignal("");
   const [transferConfirm, setTransferConfirm] = createSignal(false);
@@ -367,6 +376,23 @@ export default function AdministratorsSettingsPage() {
     },
     (next) => {
       if (next) setRole(next);
+    },
+  );
+
+  // The bulk picker follows the same ceiling as the invite form.
+  createEffect(
+    () => {
+      const choices = roleChoices();
+
+      if (choices.length === 0) return null;
+      const current = choices.find((choice) => choice.value === bulkRole());
+
+      if (current?.assignable) return null;
+
+      return choices.find((choice) => choice.assignable)?.value ?? null;
+    },
+    (next) => {
+      if (next) setBulkRole(next);
     },
   );
 
@@ -604,13 +630,7 @@ export default function AdministratorsSettingsPage() {
   const changeRole = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: ({ accountId, role }: { accountId: string; role: string }) =>
-      enterprise.patchAccount(
-        params.tenantId,
-        accountId,
-        role.startsWith("role:")
-          ? { roleId: role.slice(5), role: "member" }
-          : { role: role.slice(8), roleId: null },
-      ),
+      enterprise.patchAccount(params.tenantId, accountId, rolePatch(role)),
     onMutate: async ({ accountId, role }) => {
       const choice = accountRoleChoices().find((option) => option.value === role);
 
@@ -631,6 +651,121 @@ export default function AdministratorsSettingsPage() {
               : row,
           ),
       );
+    },
+    onError: (_error, _variables, restore) => restore?.(),
+    onSettled: () => void refreshAccess(),
+  }));
+
+  const selectableAccounts = createMemo(() =>
+    (accounts.data?.accounts ?? []).filter(canChangeAccountRole),
+  );
+
+  const selectedAccounts = createMemo(() =>
+    (accounts.data?.accounts ?? []).filter((account) => selectedAccountIds().has(account.accountId)),
+  );
+
+  const allSelectableSelected = () =>
+    selectableAccounts().length > 0 &&
+    selectedAccounts().length === selectableAccounts().length;
+
+  const someSelectableSelected = () =>
+    selectedAccounts().length > 0 && !allSelectableSelected();
+
+  const toggleAccount = (accountId: string, selected: boolean) =>
+    setSelectedAccountIds((current) => {
+      const next = new Set(current);
+
+      if (selected) next.add(accountId);
+      else next.delete(accountId);
+
+      return next;
+    });
+
+  const toggleAllAccounts = (selected: boolean) =>
+    setSelectedAccountIds(
+      selected
+        ? new Set(selectableAccounts().map((account) => account.accountId))
+        : new Set<string>(),
+    );
+
+  let selectAllAccountsRef: HTMLInputElement | undefined;
+
+  createEffect(
+    () => someSelectableSelected(),
+    (selected) => {
+      if (selectAllAccountsRef) selectAllAccountsRef.indeterminate = selected;
+    },
+  );
+
+  const changeRoles = useMutation(() => ({
+    meta: { inlineError: true },
+    mutationFn: async () => {
+      const choice = roleChoices().find((option) => option.value === bulkRole());
+
+      if (!choice) throw new Error("Choose a role for the selected administrators");
+
+      if (!choice.assignable)
+        throw new Error(choice.blockedReason ?? "Your role can't assign that role");
+
+      const accountIds = selectedAccounts().map((account) => account.accountId);
+
+      if (accountIds.length === 0) throw new Error("Select at least one administrator");
+
+      return runBulkBatches(accountIds, BULK_MEMBER_LIMIT, (batch) =>
+        enterprise.patchAccountRoles(params.tenantId, {
+          accountIds: batch,
+          ...rolePatch(choice.value),
+        }),
+      );
+    },
+    onMutate: async () => {
+      const choice = roleChoices().find((option) => option.value === bulkRole());
+      const accountIds = new Set(selectedAccounts().map((account) => account.accountId));
+
+      if (!choice || accountIds.size === 0) return;
+
+      return optimisticallyUpdateCollection(
+        qc,
+        enterpriseKeys.accounts(params.tenantId),
+        "accounts",
+        (rows: TenantAccount[]) =>
+          rows.map((row): TenantAccount =>
+            accountIds.has(row.accountId)
+              ? {
+                  ...row,
+                  role: choice.roleId ? "member" : (choice.role ?? row.role),
+                  roleId: choice.roleId ?? null,
+                  roleName: choice.label,
+                  roleKind: choice.roleId ? "custom" : "built-in",
+                }
+              : row,
+          ),
+      );
+    },
+    onSuccess: (result) => {
+      const names = new Map(
+        selectedAccounts().map((account) => [account.accountId, account.name]),
+      );
+
+      const failures: BulkFailure[] = result.failed.map((row) => ({
+        id: row.id,
+        name: names.get(row.id) ?? row.id,
+        reason: bulkFailureReason(row.reason),
+      }));
+
+      const report = bulkReport(
+        { one: "administrator", many: "administrators" },
+        { ok: "changed the role for", fail: "could not change the role for" },
+        { succeeded: result.updated.length, failed: failures },
+      );
+
+      toast[report.tone](report.title, {
+        description: report.description,
+        details: report.details,
+      });
+
+      // Keep only the rows that still need attention selected.
+      setSelectedAccountIds(new Set(failures.map((row) => row.id)));
     },
     onError: (_error, _variables, restore) => restore?.(),
     onSettled: () => void refreshAccess(),
@@ -1130,6 +1265,27 @@ export default function AdministratorsSettingsPage() {
             </p>
           }
         >
+          <Show when={can("members.write") && selectableAccounts().length > 0}>
+            <div class="flex items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
+              <input
+                ref={(element) => {
+                  selectAllAccountsRef = element;
+                }}
+                id="select-all-administrators"
+                type="checkbox"
+                class="size-3.5 accent-[var(--primary)]"
+                checked={allSelectableSelected()}
+                onChange={(event) => toggleAllAccounts(event.currentTarget.checked)}
+                aria-label="Select all administrators whose role you can change"
+              />
+              <label
+                for="select-all-administrators"
+                class="cursor-pointer text-[11.5px] text-muted-foreground"
+              >
+                Select all changeable administrators
+              </label>
+            </div>
+          </Show>
           <ul class="divide-y divide-border">
             <For each={accounts.data?.accounts ?? []}>
               {(account) => {
@@ -1144,8 +1300,33 @@ export default function AdministratorsSettingsPage() {
 
                 const ownerLocked = () => targetIsOwner() && !isOwner();
 
+                const selectionTitle = () =>
+                  isSelf()
+                    ? "You can't change your own role here"
+                    : ownerLocked()
+                      ? "Only a tenant owner can change the owner role"
+                      : undefined;
+
                 return (
-                  <li class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <li
+                    class={cn(
+                      "flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5",
+                      selectedAccountIds().has(account.accountId) && "bg-surface",
+                    )}
+                  >
+                    <Show when={can("members.write")}>
+                      <input
+                        type="checkbox"
+                        class="size-3.5 shrink-0 accent-[var(--primary)]"
+                        checked={selectedAccountIds().has(account.accountId)}
+                        onChange={(event) =>
+                          toggleAccount(account.accountId, event.currentTarget.checked)
+                        }
+                        disabled={!canChangeAccountRole(account)}
+                        title={selectionTitle()}
+                        aria-label={`Select ${account.name} (${account.email})`}
+                      />
+                    </Show>
                     <EntityHoverCard
                       preview={{ kind: "user", account }}
                       class="flex min-w-0 items-center gap-3"
@@ -1229,8 +1410,62 @@ export default function AdministratorsSettingsPage() {
             </For>
           </ul>
         </Show>
+        <Show when={selectedAccounts().length > 0}>
+          <div
+            role="group"
+            aria-label="Bulk administrator actions"
+            class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
+          >
+            <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+              <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+              {selectedAccounts().length} selected
+            </span>
+            <span class="h-4 w-px bg-border" aria-hidden="true" />
+            <select
+              class={selectClass}
+              value={bulkRole()}
+              onChange={(event) => setBulkRole(event.currentTarget.value)}
+              aria-label="Role for selected administrators"
+              disabled={changeRoles.isPending || roleChoices().length === 0}
+            >
+              <For each={accountRoleChoices()}>
+                {(option) => (
+                  <option
+                    value={option.value}
+                    disabled={!option.assignable}
+                    selected={option.value === bulkRole()}
+                  >
+                    {option.assignable
+                      ? option.label
+                      : `${option.label} — ${option.blockedReason ?? "Not available"}`}
+                  </option>
+                )}
+              </For>
+            </select>
+            <Button
+              size="sm"
+              class="min-h-11 sm:min-h-0"
+              onClick={() => changeRoles.mutate()}
+              disabled={
+                changeRoles.isPending ||
+                selectedAccounts().length === 0 ||
+                !roleChoices().find((option) => option.value === bulkRole())?.assignable
+              }
+            >
+              {changeRoles.isPending ? "Changing…" : "Change role"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setSelectedAccountIds(new Set<string>())}
+              disabled={changeRoles.isPending}
+            >
+              Clear
+            </Button>
+          </div>
+        </Show>
         <div class="px-4 pb-4 sm:px-5">
-          <ErrorText error={removeAccount.error || changeRole.error} />
+          <ErrorText error={removeAccount.error || changeRole.error || changeRoles.error} />
         </div>
       </Panel>
 

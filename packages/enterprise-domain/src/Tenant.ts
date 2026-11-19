@@ -2,6 +2,7 @@ import { Permission } from "./rbac.js";
 import { Schema } from "effect";
 import { JsonRecord } from "./Errors.js";
 import { NullableString } from "./Errors.js";
+import { BULK_MEMBER_LIMIT } from "./Common.js";
 
 export const AccountInfo = Schema.Struct({
   id: Schema.String,
@@ -329,6 +330,16 @@ export const ResendTenantInvitationResponse = Schema.Struct({
 export type ResendTenantInvitationResponse = typeof ResendTenantInvitationResponse.Type;
 
 export const PatchTenantAccountRequest = Schema.Struct({
+  role: Schema.optional(Schema.String),
+  roleId: Schema.optional(NullableString),
+});
+
+/** Change several members to the same built-in or custom role in one request. */
+export const PatchTenantAccountRolesRequest = Schema.Struct({
+  accountIds: Schema.Array(Schema.String).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(BULK_MEMBER_LIMIT),
+  ),
   role: Schema.optional(Schema.String),
   roleId: Schema.optional(NullableString),
 });

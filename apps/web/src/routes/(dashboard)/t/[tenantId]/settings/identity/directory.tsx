@@ -1,12 +1,15 @@
 import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match, Option, Schema } from "effect";
+import { BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
+import { toast } from "~/components/toast";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure } from "~/lib/bulk-members";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
 import { preloadPage } from "~/lib/page-data";
@@ -64,6 +67,99 @@ export default function DirectorySyncPage() {
   }));
 
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
+
+  const [selectedUserIds, setSelectedUserIds] = createSignal<ReadonlySet<string>>(new Set());
+  const [targetGroupId, setTargetGroupId] = createSignal("");
+
+  const directoryUsers = () => directory.data?.users ?? [];
+  const userGroups = () => directory.data?.groups ?? [];
+  const membersWritable = () => can("members.write");
+  const usersSelectable = () => membersWritable() && userGroups().length > 0;
+
+  const selectedUsers = createMemo(() =>
+    directoryUsers().filter((user) => selectedUserIds().has(user.id)),
+  );
+
+  const allUsersSelected = () =>
+    directoryUsers().length > 0 && selectedUsers().length === directoryUsers().length;
+
+  const someUsersSelected = () =>
+    selectedUsers().length > 0 && !allUsersSelected();
+
+  let selectAllUsersRef: HTMLInputElement | undefined;
+
+  createEffect(
+    () => someUsersSelected(),
+    (selected) => {
+      if (selectAllUsersRef) selectAllUsersRef.indeterminate = selected;
+    },
+  );
+
+  // Keep the picker on a group that still exists as the directory reloads.
+  createEffect(
+    () => userGroups().map((group) => group.id).join(","),
+    () => {
+      const groups = userGroups();
+
+      if (!groups.some((group) => group.id === targetGroupId()))
+        setTargetGroupId(groups[0]?.id ?? "");
+    },
+  );
+
+  const toggleUser = (userId: string, selected: boolean) =>
+    setSelectedUserIds((current) => {
+      const next = new Set(current);
+
+      if (selected) next.add(userId);
+      else next.delete(userId);
+
+      return next;
+    });
+
+  const toggleAllUsers = (selected: boolean) =>
+    setSelectedUserIds(
+      selected ? new Set(directoryUsers().map((user) => user.id)) : new Set<string>(),
+    );
+
+  const addToGroup = useMutation(() => ({
+    meta: { inlineError: true },
+    mutationFn: async () => {
+      const groupId = targetGroupId();
+
+      if (!groupId) throw new Error("Choose a directory group");
+
+      const userIds = selectedUsers().map((user) => user.id);
+
+      if (userIds.length === 0) throw new Error("Select at least one directory user");
+
+      return runBulkBatches(userIds, BULK_MEMBER_LIMIT, (batch) =>
+        enterprise.addUserGroupMembers(params.tenantId, groupId, batch),
+      );
+    },
+    onSuccess: async (result) => {
+      const names = new Map(directoryUsers().map((user) => [user.id, user.name]));
+
+      const failures: BulkFailure[] = result.failed.map((row) => ({
+        id: row.id,
+        name: names.get(row.id) ?? row.id,
+        reason: bulkFailureReason(row.reason),
+      }));
+
+      const report = bulkReport(
+        { one: "directory user", many: "directory users" },
+        { ok: "added or kept in", fail: "could not add" },
+        { succeeded: result.updated.length, failed: failures },
+      );
+
+      toast[report.tone](report.title, {
+        description: report.description,
+        details: report.details,
+      });
+
+      setSelectedUserIds(new Set(failures.map((row) => row.id)));
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.directory(params.tenantId) });
+    },
+  }));
 
   type DirectorySyncStatus = Awaited<ReturnType<typeof enterprise.getEntraDirectorySync>>;
 
@@ -354,7 +450,7 @@ export default function DirectorySyncPage() {
 
       <Panel
         title="Synced users and groups"
-        description="Directory users are available for per-user policy assignment. Groups can be assigned policies as user groups."
+        description="Directory users are available for per-user policy assignment. Groups can be assigned policies as user groups. Adding users to a group is a manual change; a synced group is refreshed from its directory, so the provider may replace it."
       >
         <Show
           when={directory.data}
@@ -370,10 +466,27 @@ export default function DirectorySyncPage() {
           {(value) => (
             <div class="grid gap-5 md:grid-cols-2">
               <div>
-                <p class="mb-2 text-[12px] font-medium text-foreground">
-                  Users{" "}
-                  <span class="tabular-nums text-muted-foreground">({value().users.length})</span>
-                </p>
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <p class="text-[12px] font-medium text-foreground">
+                    Users{" "}
+                    <span class="tabular-nums text-muted-foreground">({value().users.length})</span>
+                  </p>
+                  <Show when={usersSelectable()}>
+                    <label class="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <input
+                        ref={(element) => {
+                          selectAllUsersRef = element;
+                        }}
+                        type="checkbox"
+                        class="size-3.5 accent-[var(--primary)]"
+                        checked={allUsersSelected()}
+                        onChange={(event) => toggleAllUsers(event.currentTarget.checked)}
+                        aria-label="Select all directory users"
+                      />
+                      Select all
+                    </label>
+                  </Show>
+                </div>
                 <Show
                   when={value().users.length > 0}
                   fallback={
@@ -386,6 +499,17 @@ export default function DirectorySyncPage() {
                     <For each={value().users}>
                       {(user) => (
                         <div class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
+                          <Show when={usersSelectable()}>
+                            <input
+                              type="checkbox"
+                              class="size-3.5 shrink-0 accent-[var(--primary)]"
+                              checked={selectedUserIds().has(user.id)}
+                              onChange={(event) =>
+                                toggleUser(user.id, event.currentTarget.checked)
+                              }
+                              aria-label={`Select ${user.name} (${user.email})`}
+                            />
+                          </Show>
                           <span class="min-w-0 flex-1">
                             <span class="flex items-center gap-1.5">
                               <span class="block truncate text-foreground">{user.name}</span>
@@ -448,6 +572,51 @@ export default function DirectorySyncPage() {
             </div>
           )}
         </Show>
+        <Show when={selectedUsers().length > 0}>
+          <div
+            role="group"
+            aria-label="Bulk directory user actions"
+            class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
+          >
+            <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+              <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+              {selectedUsers().length} selected
+            </span>
+            <span class="h-4 w-px bg-border" aria-hidden="true" />
+            <select
+              class={cn(selectClass, "sm:w-auto")}
+              value={targetGroupId()}
+              onChange={(event) => setTargetGroupId(event.currentTarget.value)}
+              aria-label="Directory group to add the selected users to"
+              disabled={addToGroup.isPending || userGroups().length === 0}
+            >
+              <For each={userGroups()}>
+                {(group) => (
+                  <option value={group.id}>
+                    {group.name} · {group.source}
+                  </option>
+                )}
+              </For>
+            </select>
+            <Button
+              size="sm"
+              class="min-h-11 sm:min-h-0"
+              onClick={() => addToGroup.mutate()}
+              disabled={addToGroup.isPending || !targetGroupId() || selectedUsers().length === 0}
+            >
+              {addToGroup.isPending ? "Adding…" : "Add to group"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setSelectedUserIds(new Set<string>())}
+              disabled={addToGroup.isPending}
+            >
+              Clear
+            </Button>
+          </div>
+        </Show>
+        <ErrorText error={addToGroup.error} />
       </Panel>
     </div>
   );
