@@ -128,6 +128,11 @@ type AuditRow = {
   readonly id: string;
   readonly action: string;
   readonly actorEmail?: string | null;
+  readonly protocol?: string | null;
+  readonly ip?: string | null;
+  readonly principalId?: string | null;
+  readonly deviceCertificateSerial?: string | null;
+  readonly deviceCertificateFingerprint?: string | null;
   readonly metadata?: Schema.Json;
   readonly createdAt: Date | string;
 };
@@ -175,9 +180,25 @@ export type DeviceActivityInputs = {
 const AUDIT_TITLES = {
   "device.updated": "Device details updated",
   "device.action": "Remote action requested",
+  "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",
+  "device.awaiting_setup": "Waiting in Setup Assistant",
+  "device.setup_complete": "Setup complete",
+  "device.checked_out": "Device checked out",
+  "device.command_failed": "Command failed",
+  "device.command_not_now": "Command deferred",
+  "device.declaration_invalid": "Declaration invalid",
+  "device.compliance_changed": "Compliance changed",
+  "device.push_invalid_token": "Push token rejected",
+  "device.return_to_service_requested": "Return to service requested",
+  "device.return_to_service_completed": "Return to service completed",
   "device.identity_revoked": "Identity certificates revoked",
   "device.deleted": "Device deleted",
+  "mdm.checkin": "Device check-in",
+  "mdm.policy_delivered": "Policy delivered",
+  "mdm.status_report": "Status report received",
+  "mdm.command_result": "Command result received",
+  "mdm.failure": "MDM request failed",
   "device_pre_registration.imported": "Enrollment pre-registration imported",
   "device_pre_registration.updated": "Enrollment pre-registration updated",
 } satisfies Record<string, string>;
@@ -207,6 +228,10 @@ const auditDetail = (row: AuditRow) => {
   );
 
   const parts: string[] = [];
+  const platform = trimmed(metadata.platform, 16);
+
+  if (platform) parts.push(platform);
+
   const action = trimmed(metadata.action, 40);
 
   if (action) parts.push(`Action: ${action}`);
@@ -229,9 +254,53 @@ const auditDetail = (row: AuditRow) => {
 
   if (revokedCertificates !== undefined)
     parts.push(`${revokedCertificates} certificate(s) revoked`);
+
+  // Failure rows carry a stable code and a bounded reason. This is exactly
+  // what an operator needs for a failed check-in without exposing a payload.
+  const code = trimmed(metadata.code, 40);
+
+  if (code) parts.push(code);
+
+  const reason = trimmed(metadata.reason, 160);
+
+  if (reason) parts.push(reason);
+
+  const phase = trimmed(metadata.phase, 40);
+
+  if (phase) parts.push(`phase ${phase}`);
+
+  const checkIns = Schema.is(Schema.Number)(metadata.checkIns)
+    ? Math.trunc(metadata.checkIns)
+    : undefined;
+
+  if (checkIns !== undefined && checkIns > 1) parts.push(`${checkIns} check-ins`);
+
+  const channels = Array.isArray(metadata.channels)
+    ? metadata.channels
+        .flatMap((channel) =>
+          Schema.is(Schema.String)(channel) ? [channel.slice(0, 16)] : [],
+        )
+        .slice(0, 4)
+    : [];
+
+  if (channels.length > 0) parts.push(`channels: ${channels.join(", ")}`);
+
+  const protocol = trimmed(row.protocol, 16);
+  const ip = trimmed(row.ip, 64);
+
+  if (protocol || ip) parts.push([protocol, ip].filter(Boolean).join(" · "));
+
+  const principal = trimmed(row.principalId, 120);
+
+  if (principal) parts.push(`user ${principal}`);
+
+  const certificate = trimmed(row.deviceCertificateSerial, 128);
+
+  if (certificate) parts.push(`cert ${certificate}`);
+
   const actor = trimmed(row.actorEmail, 120);
 
-  if (actor) parts.push(`by ${actor}`);
+  if (actor && actor !== "system") parts.push(`by ${actor}`);
 
   return parts.length > 0 ? parts.join(" · ") : null;
 };

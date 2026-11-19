@@ -5,6 +5,12 @@ import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import {
+  SYSTEM_AUDIT_ACTIONS,
+  describeAuditFailure,
+  writeSystemAudit,
+  type SystemAuditOptions,
+} from "@mattrax/mdm-core";
+import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   DEVICE_COMMAND_ACTIVE_LIMIT,
@@ -550,6 +556,11 @@ export type WindowsBackendOptions = {
   /** Deployment plan catalogue; omitted means unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
   /**
+   * How long repeated check-ins fold into one `mdm.checkin` audit row, in
+   * milliseconds. Defaults to 15 minutes; `0` records every check-in.
+   */
+  readonly auditCheckinCoalesceWindowMs?: number;
+  /**
    * Federated Entra WSTEP support. Disabled unless an audience is supplied.
    * Discovery advertises `Federated` only for tenants with an Entra tenant id
    * and when the client offered it; policy/enroll then validate the Entra JWT
@@ -647,6 +658,11 @@ type OrganizationResolution = Effect.Effect<string, UnknownDevice | InternalServ
 export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
   const { db, origin, authSecret, windowsOrganizationId, requireDeviceIdentity } = options;
   const ttlSeconds = options.enrollmentTokenTtlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
+
+  const auditOptions: SystemAuditOptions = {
+    authSecret,
+    coalesceWindowMs: options.auditCheckinCoalesceWindowMs,
+  };
 
   const tenantTokenTtlSeconds =
     options.tenantTokenTtlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS;
@@ -814,6 +830,64 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     });
 
   /**
+   * Resolve a device by the identity certificate it presented. The issued
+   * certificate is bound to an internal device id at enrollment, so it is
+   * stronger proof than the `DeviceID` a request asserts. Serial formats vary
+   * by forwarder, so every candidate form is tried.
+   */
+  const findDeviceByIssuedCertificate = (
+    organizationId: string,
+    serial: string | undefined,
+  ): Effect.Effect<typeof s.device.$inferSelect | null, unknown> =>
+    Effect.gen(function* () {
+      const candidates = serial ? certificateSerialCandidates(serial) : [];
+
+      if (candidates.length === 0) return null;
+
+      const certificates = yield* db
+        .select()
+        .from(s.scepIssuedCertificate)
+        .where(
+          and(
+            eq(s.scepIssuedCertificate.organizationId, organizationId),
+            inArray(s.scepIssuedCertificate.serial, candidates),
+          ),
+        );
+
+      for (const certificate of certificates) {
+        if (!certificate.deviceId) continue;
+
+        const [byId] = yield* db
+          .select()
+          .from(s.device)
+          .where(
+            and(
+              eq(s.device.organizationId, organizationId),
+              eq(s.device.id, certificate.deviceId),
+            ),
+          )
+          .limit(1);
+
+        if (byId) return byId;
+
+        const [byIdentifier] = yield* db
+          .select()
+          .from(s.device)
+          .where(
+            and(
+              eq(s.device.organizationId, organizationId),
+              eq(s.device.dmIdentifier, certificate.deviceId),
+            ),
+          )
+          .limit(1);
+
+        if (byIdentifier) return byIdentifier;
+      }
+
+      return null;
+    });
+
+  /**
    * Record one failed Windows request. Never fails: a diagnostic write must not
    * change the SOAP fault or SyncML status the device receives. Failures with
    * no attributable tenant (an unsigned or forged enrollment link) are skipped,
@@ -829,6 +903,10 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     readonly code: string;
     readonly message: string;
     readonly detail?: string | null;
+    readonly clientIp?: string | null;
+    readonly userAgent?: string | null;
+    /** How the device was identified: a bound certificate or an asserted id. */
+    readonly attribution?: "bound" | "asserted";
   }): Effect.Effect<boolean> =>
     input.organizationId
       ? recordWindowsFailure(db, {
@@ -841,7 +919,39 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           code: input.code,
           message: input.message,
           detail: input.detail == null ? null : describeWindowsFailure(input.detail),
-        }).pipe(Effect.as(true))
+        }).pipe(
+          // The durable failure history is the operator view; the audit row is
+          // the organisation event. Both are best effort so a diagnostic write
+          // can never change the SOAP fault the device receives.
+          Effect.andThen(
+            writeSystemAudit(
+              db,
+              {
+                organizationId: input.organizationId,
+                action: SYSTEM_AUDIT_ACTIONS.mdmFailure,
+                targetType: "device",
+                // Prefer the internal device row so the device page's activity
+                // feed (targetId = device.id) includes the failure. A first
+                // enrollment that failed has no row, so the asserted Windows
+                // DeviceID is the best attribution available.
+                targetId: input.deviceId ?? input.deviceIdentifier ?? null,
+                deviceId: input.deviceId ?? null,
+                protocol: "win",
+                ip: input.clientIp ?? null,
+                userAgent: input.userAgent ?? null,
+                metadata: {
+                  phase: input.phase,
+                  code: input.code,
+                  reason: describeAuditFailure(input.message),
+                  ...(input.attribution ? { attribution: input.attribution } : {}),
+                  ...(input.deviceIdentifier ? { deviceIdentifier: input.deviceIdentifier } : {}),
+                },
+              },
+              auditOptions,
+            ),
+          ),
+          Effect.as(true),
+        )
       : Effect.succeed(false);
 
   /** Low-cardinality code for an error that reached the method boundary. */
@@ -898,6 +1008,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     readonly phase: WindowsFailurePhase;
     readonly message: string;
     readonly cause: Cause.Cause<unknown>;
+    readonly clientIp?: string | null;
+    readonly userAgent?: string | null;
   }): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       const details = failureDetails(input.cause);
@@ -916,6 +1028,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         code: details.code,
         message: input.message,
         detail: details.detail,
+        clientIp: input.clientIp,
+        userAgent: input.userAgent,
       });
     });
 
@@ -1110,6 +1224,20 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
           const query = tenantQuery(federatedToken);
 
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.mdmCheckin,
+              targetType: "enrollment",
+              protocol: "win",
+              ip: request.clientIp ?? null,
+              userAgent: request.userAgent ?? null,
+              metadata: { platform: "win", phase: "discovery", authPolicy: "Federated" },
+            },
+            auditOptions,
+          );
+
           return {
             authPolicy: "Federated",
             // MS-MDE2 enrollment version supported by the WSTEP implementation.
@@ -1124,6 +1252,20 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               ),
           };
         }
+
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.mdmCheckin,
+            targetType: "enrollment",
+            protocol: "win",
+            ip: request.clientIp ?? null,
+            userAgent: request.userAgent ?? null,
+            metadata: { platform: "win", phase: "discovery", authPolicy: "OnPremise" },
+          },
+          auditOptions,
+        );
 
         return {
           authPolicy: "OnPremise",
@@ -1142,6 +1284,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message:
                 "Windows discovery failed. The tenant's enrollment link may be invalid or expired, so the device cannot start enrollment.",
               cause,
+              clientIp: request.clientIp,
+              userAgent: request.userAgent,
             });
           }),
         ),
@@ -1177,6 +1321,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               code,
               message,
               detail,
+              clientIp: context.clientIp,
+              userAgent: context.userAgent,
             })) || boundaryRecorded;
         });
 
@@ -1294,6 +1440,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message:
                 "Windows policy request failed. The device cannot fetch its certificate policy.",
               cause,
+              clientIp: context.clientIp,
+              userAgent: context.userAgent,
             });
           }),
         ),
@@ -1341,6 +1489,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               code,
               message,
               detail,
+              clientIp: request.clientIp,
+              userAgent: request.userAgent,
             })) || boundaryRecorded;
         });
 
@@ -1735,6 +1885,29 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             { concurrency: 1, discard: true },
           );
 
+        // A certificate renewal re-enters this flow for an already-enrolled
+        // device; only the transition is a lifecycle event.
+        if (existing?.status !== "enrolled")
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
+              targetType: "device",
+              targetId: deviceRowId,
+              deviceId: deviceRowId,
+              protocol: "win",
+              ip: request.clientIp ?? null,
+              userAgent: request.userAgent ?? null,
+              metadata: {
+                platform: "win",
+                deviceIdentifier,
+                serial,
+              },
+            },
+            auditOptions,
+          );
+
         return {
           deviceId: deviceIdentifier,
           signedCertificate: signed.certificatePem,
@@ -1762,6 +1935,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message:
                 "Windows enrollment failed before the device could be registered. Check the tenant's Windows enrollment settings and identity CA.",
               cause,
+              clientIp: request.clientIp,
+              userAgent: request.userAgent,
             });
           }),
         ),
@@ -1798,6 +1973,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               code,
               message,
               detail,
+              clientIp: scope.clientIp,
+              userAgent: scope.userAgent,
             })) || boundaryRecorded;
         });
 
@@ -1857,12 +2034,35 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               code: "certificate_revoked",
               message:
                 "Windows check-in was rejected: this device's identity certificate has been revoked. Enroll the device again.",
+              clientIp: scope.clientIp,
+              userAgent: scope.userAgent,
             })) || boundaryRecorded;
 
           return yield* Effect.fail(new UnknownDevice());
         }
 
         const timestamp = new Date();
+
+        // One row per device per coalescing window. The identity certificate
+        // serial and verified address describe the session; the device page
+        // reads this row from the organisation event log.
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.mdmCheckin,
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "win",
+            ip: scope.clientIp ?? null,
+            userAgent: scope.userAgent ?? null,
+            certificateSerial: scope.identityCertificateSerial ?? null,
+            metadata: { platform: "win", channel: "device", channels: ["win"] },
+            coalesce: true,
+          },
+          auditOptions,
+        );
 
         // Command rows for policy, inventory and imperative actions. Policy and
         // inventory rows are generated from device state, so they are loaded
@@ -1931,6 +2131,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const policyHistory: Array<{ uri: string; resultStatus: string; detail: string }> = [];
 
         let policyStateChanged = false;
+        // Only a real success/plan change is a delivery; a rejection is
+        // recorded separately as `mdm.failure` + `device.command_failed`.
+        let policyDelivered = false;
         let revertedAt = device.windowsPolicyRevertedAt;
         let unenrolled = false;
 
@@ -1939,36 +2142,53 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const reportedInventoryCommandIds = new Set<string>();
 
         const recordPolicySuccess = (row: CommandRow, uri: string) => {
-          applied.add(uri);
-          failures.delete(uri);
-          policyStateChanged = true;
+          const isDelete = row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE;
+          const wasApplied = applied.has(uri);
+          const hadFailure = failures.delete(uri);
 
-          if (row.requestType === WINDOWS_POLICY_DELETE_REQUEST_TYPE) {
+          const removed =
+            isDelete && (wasApplied || delivered.has(uri) || reverting.has(uri));
+
+          if (isDelete) {
             applied.delete(uri);
             delivered.delete(uri);
             reverting.delete(uri);
             revertedAt = timestamp;
+          } else {
+            applied.add(uri);
+          }
+
+          // A device re-acks an unchanged policy on every poll; that is not a
+          // new delivery. A delete only counts when it actually removed state.
+          if ((isDelete && removed) || (!isDelete && (!wasApplied || hadFailure))) {
+            policyStateChanged = true;
+            policyDelivered = true;
           }
         };
 
         const recordPolicyFailure = (row: CommandRow, uri: string, resultStatus: string) => {
           const detail = windowsPolicyRejectionDetail(uri, resultStatus);
           const previous = failures.get(uri);
+          const hash = payloadString(commandPayload(row.payload), "hash") ?? "";
+
+          const unchanged =
+            previous?.resultStatus === resultStatus && previous?.hash === hash;
 
           // Append to the failure history once per distinct rejection. A device
           // re-reports the same status on every poll while a setting is stuck;
-          // repeating that in the history would bury everything else.
-          if (!previous || previous.detail !== detail || previous.resultStatus !== resultStatus)
+          // repeating that in the history would bury everything else (and would
+          // make the policy look like it changed on every poll).
+          if (!unchanged) {
             policyHistory.push({ uri, resultStatus, detail });
-
-          failures.set(uri, {
-            uri,
-            hash: payloadString(commandPayload(row.payload), "hash") ?? "",
-            resultStatus,
-            detail,
-            at: timestamp.toISOString(),
-          });
-          policyStateChanged = true;
+            failures.set(uri, {
+              uri,
+              hash,
+              resultStatus,
+              detail,
+              at: timestamp.toISOString(),
+            });
+            policyStateChanged = true;
+          }
 
           return detail;
         };
@@ -2036,6 +2256,56 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             .update(s.deviceCommand)
             .set(commandPatch)
             .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+
+          // One row per result transition. Inventory `Get`s are omitted: their
+          // outcome is already represented by `mdm.status_report` when the
+          // values changed, and recording every daily poll result would drown
+          // the signal.
+          if (!isInventory && row.status !== outcome.status) {
+            if (outcome.status === "succeeded")
+              yield* writeSystemAudit(
+                db,
+                {
+                  organizationId,
+                  action: SYSTEM_AUDIT_ACTIONS.mdmCommandResult,
+                  targetType: "device_command",
+                  targetId: row.id,
+                  deviceId: device.id,
+                  protocol: "win",
+                  ip: scope.clientIp ?? null,
+                  userAgent: scope.userAgent ?? null,
+                  certificateSerial: scope.identityCertificateSerial ?? null,
+                  metadata: {
+                    platform: "win",
+                    requestType: row.requestType,
+                    resultStatus: outcome.resultStatus,
+                  },
+                },
+                auditOptions,
+              );
+            else if (outcome.status === "failed")
+              yield* writeSystemAudit(
+                db,
+                {
+                  organizationId,
+                  action: SYSTEM_AUDIT_ACTIONS.commandFailed,
+                  targetType: "device_command",
+                  targetId: row.id,
+                  deviceId: device.id,
+                  protocol: "win",
+                  ip: scope.clientIp ?? null,
+                  userAgent: scope.userAgent ?? null,
+                  certificateSerial: scope.identityCertificateSerial ?? null,
+                  metadata: {
+                    platform: "win",
+                    requestType: row.requestType,
+                    resultStatus: outcome.resultStatus,
+                    ...(uri ? { uri } : {}),
+                  },
+                },
+                auditOptions,
+              );
+          }
 
           // A `Get` status is a response too; keep the row terminal like any
           // other command rather than leaving it `sent`.
@@ -2114,6 +2384,27 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         const hasInventoryUpdate = hasWindowsInventory(inventoryUpdate);
+
+        // A SyncML `<Results>` block that carried at least one inventory value
+        // is a status report; a session with no results is just another poll
+        // (already represented by the coalesced check-in row).
+        if (hasInventoryUpdate)
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.mdmStatusReport,
+              targetType: "device",
+              targetId: device.id,
+              deviceId: device.id,
+              protocol: "win",
+              ip: scope.clientIp ?? null,
+              userAgent: scope.userAgent ?? null,
+              certificateSerial: scope.identityCertificateSerial ?? null,
+              metadata: { platform: "win", inventory: true },
+            },
+            auditOptions,
+          );
 
         const inventoryDue = windowsInventoryDue({
           lastUpdatedAt: hasInventoryUpdate ? timestamp : device.inventoryUpdatedAt,
@@ -2448,6 +2739,31 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         if (Object.keys(policyColumns).length > 0)
           yield* db.update(s.device).set(policyColumns).where(eq(s.device.id, device.id));
 
+        // A management response that changed what the device must apply is a
+        // delivered policy, not just another poll. Record the count rather than
+        // the OMA-URI payloads (which can contain tenant configuration).
+        if (policyDelivered)
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
+              targetType: "device",
+              targetId: device.id,
+              deviceId: device.id,
+              protocol: "win",
+              ip: scope.clientIp ?? null,
+              userAgent: scope.userAgent ?? null,
+              metadata: {
+                platform: "win",
+                commands: commands.filter(
+                  (command) => command.kind === "Replace" || command.kind === "Delete",
+                ).length,
+              },
+            },
+            auditOptions,
+          );
+
         // Inventory `Get`s use stable command ids so a later `<Results>` entry
         // can be matched back to its OMA-URI even when the device omits
         // `Item/Source`. They are only emitted when the cadence guard says the
@@ -2589,6 +2905,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               code: `policy_${failure.resultStatus}`,
               message: failure.detail,
               detail: failure.uri,
+              clientIp: scope.clientIp,
+              userAgent: scope.userAgent,
             }),
           { concurrency: 2, discard: true },
         );
@@ -2607,6 +2925,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message:
                 "Windows management check-in failed, so the device did not receive its policy or commands.",
               cause,
+              clientIp: scope.clientIp,
+              userAgent: scope.userAgent,
             });
           }),
         ),
@@ -2675,6 +2995,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         if (Predicate.isTagged("Enrolled")(event)) {
+          const previousStatus = device?.status;
+          const deviceRowId = device?.id ?? newDeviceId();
+
           if (device) {
             yield* db
               .update(s.device)
@@ -2685,13 +3008,33 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             }).pipe(Effect.catch(() => Effect.void));
           } else {
             yield* insertDevice({
-              id: newDeviceId(),
+              id: deviceRowId,
               organizationId,
               deviceId,
               name: deviceId,
               timestamp,
             });
           }
+
+          // Enrollment is a state change and is recorded once, even if the
+          // client repeats its acknowledgement.
+          if (previousStatus !== "enrolled")
+            yield* writeSystemAudit(
+              db,
+              {
+                organizationId,
+                action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
+                targetType: "device",
+                targetId: deviceRowId,
+                deviceId: deviceRowId,
+                protocol: "win",
+                ip: scope.clientIp ?? null,
+                userAgent: scope.userAgent ?? null,
+                certificateSerial: scope.identityCertificateSerial ?? null,
+                metadata: { platform: "win", deviceIdentifier },
+              },
+              auditOptions,
+            );
 
           return;
         }
@@ -2762,6 +3105,58 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
                 ),
               );
 
+            // One row per result transition. Successes are `mdm.command_result`;
+            // failures and deferrals keep the actions webhooks already map.
+            if (row && row.status !== outcome.status) {
+              if (outcome.status === "succeeded")
+                yield* writeSystemAudit(
+                  db,
+                  {
+                    organizationId,
+                    action: SYSTEM_AUDIT_ACTIONS.mdmCommandResult,
+                    targetType: "device_command",
+                    targetId: row.id,
+                    deviceId: device.id,
+                    protocol: "win",
+                    ip: scope.clientIp ?? null,
+                    userAgent: scope.userAgent ?? null,
+                    metadata: {
+                      platform: "win",
+                      requestType: row.requestType,
+                      resultStatus: outcome.resultStatus,
+                    },
+                  },
+                  auditOptions,
+                );
+              else if (outcome.status === "failed")
+                yield* writeSystemAudit(
+                  db,
+                  {
+                    organizationId,
+                    action:
+                      outcome.status === "failed"
+                        ? SYSTEM_AUDIT_ACTIONS.commandFailed
+                        : SYSTEM_AUDIT_ACTIONS.commandNotNow,
+                    targetType: "device_command",
+                    targetId: row.id,
+                    deviceId: device.id,
+                    protocol: "win",
+                    ip: scope.clientIp ?? null,
+                    userAgent: scope.userAgent ?? null,
+                    metadata: {
+                      platform: "win",
+                      requestType: row.requestType,
+                      resultStatus: outcome.resultStatus,
+                      // The OMA-URI states which setting was rejected; the
+                      // payload itself (which can hold tenant configuration)
+                      // is never stored.
+                      ...(uri ? { uri } : {}),
+                    },
+                  },
+                  auditOptions,
+                );
+            }
+
             if (
               row?.requestType === WINDOWS_UNENROLL_REQUEST_TYPE &&
               outcome.status === "succeeded"
@@ -2788,6 +3183,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               message:
                 "Windows device event failed, so a command result or enrollment acknowledgement was not recorded.",
               cause,
+              clientIp: scope.clientIp,
+              userAgent: scope.userAgent,
             });
           }),
         ),
@@ -2821,20 +3218,30 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const deviceIdentifier =
           report.deviceId?.trim() || certificateAttribute(report.identityCertificate, "CN") || null;
 
-        const device = deviceIdentifier
-          ? yield* findDevice(organizationId, deviceIdentifier)
-          : null;
+        // A bound certificate wins over the asserted `DeviceID`: otherwise a
+        // caller presenting another device's certificate could write a failure
+        // against the device it names.
+        const bound = yield* findDeviceByIssuedCertificate(
+          organizationId,
+          report.identityCertificateSerial,
+        ).pipe(Effect.catch(() => Effect.succeed(null)));
+
+        const device =
+          bound ?? (deviceIdentifier ? yield* findDevice(organizationId, deviceIdentifier) : null);
 
         yield* reportFailure({
           organizationId,
           deviceId: device?.id,
-          deviceIdentifier,
+          deviceIdentifier: bound?.dmIdentifier ?? deviceIdentifier,
           serial: device?.serial,
           hostname: device?.name,
           phase: report.phase,
           code: report.code,
           message: report.message,
           detail: report.detail,
+          clientIp: report.clientIp,
+          userAgent: report.userAgent,
+          attribution: bound ? "bound" : device ? "asserted" : undefined,
         });
       }).pipe(
         Effect.catchCause((cause) =>

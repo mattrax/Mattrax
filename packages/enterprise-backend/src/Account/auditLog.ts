@@ -1,5 +1,11 @@
 import { Option, Schema } from "effect";
-import { EnterpriseBadRequest, type AuditSearchQuery } from "@mattrax/enterprise-domain";
+import {
+  AUDIT_ACTOR_TYPES,
+  AUDIT_CATEGORIES,
+  AUDIT_PROTOCOLS,
+  EnterpriseBadRequest,
+  type AuditSearchQuery,
+} from "@mattrax/enterprise-domain";
 import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
 import type { EnterpriseSchema } from "../schema.ts";
 import { toCsv } from "../Device/deviceSearch.ts";
@@ -26,8 +32,14 @@ export type DecodedAuditCursor =
 export type AuditSearchFilters = {
   readonly action?: string;
   readonly actor?: string;
+  readonly actorType?: (typeof AUDIT_ACTOR_TYPES)[number];
+  readonly category?: (typeof AUDIT_CATEGORIES)[number];
   readonly targetType?: string;
   readonly targetId?: string;
+  readonly deviceId?: string;
+  readonly protocol?: (typeof AUDIT_PROTOCOLS)[number];
+  /** Free-text match across the identifying columns. */
+  readonly q?: string;
   readonly from?: Date;
   readonly to?: Date;
   readonly limit: number;
@@ -68,6 +80,32 @@ const parseTimestamp = (value: string | undefined, field: string) => {
     throw new EnterpriseBadRequest({ message: `${field} must be an ISO timestamp` });
 
   return parsed;
+};
+
+/**
+ * Validate a low-cardinality filter against the published enum. An unknown
+ * value is a client error rather than an empty result: it usually means a typo
+ * or a dashboard sending a stale value.
+ */
+const optionalEnum = <const Values extends ReadonlyArray<string>>(
+  value: string | undefined,
+  field: string,
+  values: Values,
+): Values[number] | undefined => {
+  const text = value?.trim();
+
+  if (!text) return undefined;
+
+  // SAFETY: `values` is a readonly tuple of string literals; widening it only
+  // lets `includes` accept the arbitrary client string before membership is
+  // checked below.
+  if (!(values as ReadonlyArray<string>).includes(text))
+    throw new EnterpriseBadRequest({
+      message: `${field} must be one of ${values.join(", ")}`,
+    });
+
+  // SAFETY: the membership check above proved `text` is one of `values`.
+  return text as Values[number];
 };
 
 /** Escape `%`, `_` and `\` so a LIKE pattern is matched literally. */
@@ -154,8 +192,13 @@ export const normalizeAuditSearchQuery = (query: AuditSearchQuery): AuditSearchF
   return {
     action: optionalText(query.action, "action"),
     actor: optionalText(query.actor, "actor"),
+    actorType: optionalEnum(query.actorType, "actorType", AUDIT_ACTOR_TYPES),
+    category: optionalEnum(query.category, "category", AUDIT_CATEGORIES),
     targetType: optionalText(query.targetType, "targetType"),
     targetId: optionalText(query.targetId, "targetId"),
+    deviceId: optionalText(query.deviceId, "deviceId"),
+    protocol: optionalEnum(query.protocol, "protocol", AUDIT_PROTOCOLS),
+    q: optionalText(query.q, "q"),
     from,
     to,
     limit: clamp(integer(query.limit, AUDIT_SEARCH_DEFAULT_LIMIT), 1, AUDIT_SEARCH_MAX_LIMIT),
@@ -169,6 +212,10 @@ export const normalizeAuditSearchQuery = (query: AuditSearchQuery): AuditSearchF
  * Tenant-scoped WHERE clause. Action and target columns compare exactly so the
  * `(organizationId, action)` index can be used; actor and free-text target ids
  * use an escaped LIKE on indexed-prefix columns.
+ *
+ * Category, actor type, protocol and device are equality filters. Free text is
+ * the only operator that fans out across columns; it stays inside the tenant
+ * and time window, so the scan is bounded by the active filters.
  */
 export const auditWhere = (
   schema: EnterpriseSchema,
@@ -178,6 +225,14 @@ export const auditWhere = (
   const conditions: [SQL, ...Array<SQL>] = [eq(schema.auditLog.organizationId, organizationId)];
 
   if (filters.action) conditions.push(eq(schema.auditLog.action, filters.action));
+
+  if (filters.category) conditions.push(eq(schema.auditLog.category, filters.category));
+
+  if (filters.actorType) conditions.push(eq(schema.auditLog.actorType, filters.actorType));
+
+  if (filters.protocol) conditions.push(eq(schema.auditLog.protocol, filters.protocol));
+
+  if (filters.deviceId) conditions.push(eq(schema.auditLog.deviceId, filters.deviceId));
 
   if (filters.actor) {
     const pattern = `%${escapeLike(filters.actor)}%`;
@@ -194,6 +249,22 @@ export const auditWhere = (
 
   if (filters.targetId) {
     conditions.push(like(schema.auditLog.targetId, `%${escapeLike(filters.targetId)}%`));
+  }
+
+  if (filters.q) {
+    const pattern = `%${escapeLike(filters.q)}%`;
+
+    const condition = or(
+      like(schema.auditLog.action, pattern),
+      like(schema.auditLog.actorEmail, pattern),
+      like(schema.auditLog.targetId, pattern),
+      like(schema.auditLog.deviceId, pattern),
+      like(schema.auditLog.ip, pattern),
+      like(schema.auditLog.deviceCertificateFingerprint, pattern),
+      like(schema.auditLog.deviceCertificateSerial, pattern),
+    );
+
+    if (condition) conditions.push(condition);
   }
 
   if (filters.from) conditions.push(gte(schema.auditLog.createdAt, filters.from));
@@ -226,10 +297,19 @@ export const auditOrder = (schema: EnterpriseSchema) => [
 export type AuditExportEntry = {
   readonly id: string;
   readonly action: string;
+  readonly category: string;
   readonly targetType: string;
   readonly targetId: string | null;
   readonly actorAccountId: string | null;
   readonly actorEmail: string | null;
+  readonly actorType: string;
+  readonly ip: string | null;
+  readonly userAgent: string | null;
+  readonly deviceId: string | null;
+  readonly deviceCertificateFingerprint: string | null;
+  readonly deviceCertificateSerial: string | null;
+  readonly principalId: string | null;
+  readonly protocol: string | null;
   readonly metadata: Schema.Json;
   readonly createdAt: string;
 };
@@ -237,16 +317,49 @@ export type AuditExportEntry = {
 const metadataCell = (metadata: Schema.Json | null | undefined) =>
   metadata === null || metadata === undefined ? "" : JSON.stringify(metadata);
 
-/** RFC 4180 CSV with spreadsheet-formula neutralisation applied by `toCsv`. */
+const cell = (value: string | null | undefined) => value ?? "";
+
+/**
+ * RFC 4180 CSV with spreadsheet-formula neutralisation applied by `toCsv`.
+ *
+ * Actor type and category make the system actor explicit (`system` is not an
+ * email anyone can own). The certificate columns are a hash and serial, never
+ * PEM material, and the IP is the verified client address.
+ */
 export const auditCsv = (entries: ReadonlyArray<AuditExportEntry>) =>
   toCsv(
-    ["Time", "Actor", "Action", "Target type", "Target id", "Metadata"],
+    [
+      "Time",
+      "Actor",
+      "Actor type",
+      "Category",
+      "Action",
+      "Target type",
+      "Target id",
+      "Protocol",
+      "Device",
+      "IP",
+      "Certificate fingerprint",
+      "Certificate serial",
+      "Principal",
+      "User agent",
+      "Metadata",
+    ],
     entries.map((entry) => [
       entry.createdAt,
       entry.actorEmail ?? SYSTEM_AUDIT_ACTOR,
+      entry.actorType,
+      entry.category,
       entry.action,
       entry.targetType,
       entry.targetId,
+      cell(entry.protocol),
+      cell(entry.deviceId),
+      cell(entry.ip),
+      cell(entry.deviceCertificateFingerprint),
+      cell(entry.deviceCertificateSerial),
+      cell(entry.principalId),
+      cell(entry.userAgent),
       metadataCell(entry.metadata),
     ]),
   );

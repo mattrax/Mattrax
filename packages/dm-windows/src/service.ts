@@ -56,6 +56,10 @@ export type WindowsMdmRequestContext = {
   readonly tenantToken?: string;
   readonly identityCertificate?: string;
   readonly identityCertificateSerial?: string;
+  /** Verified client address, set by the deployment boundary for the audit log. */
+  readonly clientIp?: string;
+  /** Bounded request `User-Agent`; audit only. */
+  readonly userAgent?: string;
 };
 
 export interface WindowsMdmServiceContract {
@@ -259,6 +263,8 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             identityCertificate: context.identityCertificate,
             identityCertificateSerial: context.identityCertificateSerial,
             deviceId,
+            clientIp: context.clientIp,
+            userAgent: context.userAgent,
           }).pipe(Effect.catchCause(() => Effect.void));
         });
 
@@ -312,6 +318,8 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
                 mdmOrigin,
                 emailAddress: req.request.emailAddress,
                 tenantToken: context.tenantToken,
+                clientIp: context.clientIp,
+                userAgent: context.userAgent,
               })
               .pipe(Effect.mapError((cause) => backendError("Discovery backend failed", cause)));
 
@@ -370,7 +378,11 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             );
 
             const policy = yield* backend
-              .getWindowsEnrollmentPolicy(token, { tenantToken: context.tenantToken })
+              .getWindowsEnrollmentPolicy(token, {
+                tenantToken: context.tenantToken,
+                clientIp: context.clientIp,
+                userAgent: context.userAgent,
+              })
               .pipe(Effect.mapError((cause) => backendError("Policy backend failed", cause)));
 
             const responseBody = yield* serializeSoapElement(
@@ -438,6 +450,8 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
                 context: ctx,
                 mdmOrigin,
                 tenantToken: context.tenantToken,
+                clientIp: context.clientIp,
+                userAgent: context.userAgent,
               })
               .pipe(Effect.mapError((cause) => backendError("Enrollment backend failed", cause)));
 
@@ -523,6 +537,8 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               identityCertificate: context.identityCertificate,
               identityCertificateSerial: context.identityCertificateSerial,
               tenantToken: context.tenantToken,
+              clientIp: context.clientIp,
+              userAgent: context.userAgent,
               mdmOrigin,
             };
 

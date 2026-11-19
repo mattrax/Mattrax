@@ -53,6 +53,14 @@ export const CheckinScope = Schema.Union([
      * enrollment to this device, enabling per-device revocation and health.
      */
     identityCertificateSerial: Schema.optional(Schema.String),
+    /**
+     * Verified client address for the audit log, computed by the HTTP layer
+     * with the deployment's trusted-proxy policy. Never taken from a device
+     * payload and never echoed back to the device.
+     */
+    clientIp: Schema.optional(Schema.String),
+    /** Bounded request `User-Agent` (audit only; not part of MDM protocol). */
+    userAgent: Schema.optional(Schema.String),
     mdmOrigin: MdmOrigin,
   }),
   Schema.TaggedStruct("user", {
@@ -60,6 +68,8 @@ export const CheckinScope = Schema.Union([
     identityCertificate: Schema.optional(Schema.String),
     identityCertificateFingerprintSha256: Schema.optional(Schema.String),
     identityCertificateSerial: Schema.optional(Schema.String),
+    clientIp: Schema.optional(Schema.String),
+    userAgent: Schema.optional(Schema.String),
     userId: Schema.String,
     userShortName: Schema.optional(Schema.String),
     /**
@@ -231,6 +241,10 @@ export const WindowsDiscoveryRequest = Schema.Struct({
    * identity, so this is how a request is routed to the right organization.
    */
   tenantToken: Schema.optional(Schema.String),
+  /** Verified client address for the audit log (never sent to the device). */
+  clientIp: Schema.optional(Schema.String),
+  /** Bounded request `User-Agent` (audit only). */
+  userAgent: Schema.optional(Schema.String),
 });
 
 export type WindowsDiscoveryRequest = typeof WindowsDiscoveryRequest.Type;
@@ -252,6 +266,10 @@ export const WindowsManagementScope = Schema.Struct({
   identityCertificateSerial: Schema.optional(Schema.String),
   /** Tenant token preserved on the management URL, if the device kept it. */
   tenantToken: Schema.optional(Schema.String),
+  /** Verified client address for the audit log (never sent to the device). */
+  clientIp: Schema.optional(Schema.String),
+  /** Bounded request `User-Agent` (audit only). */
+  userAgent: Schema.optional(Schema.String),
   mdmOrigin: MdmOrigin,
 });
 
@@ -269,6 +287,10 @@ export type WindowsEnrollmentPolicy = typeof WindowsEnrollmentPolicy.Type;
 /** Request-scoped tenant identity for the WSTEP policy endpoint. */
 export type WindowsEnrollmentContext = {
   readonly tenantToken?: string;
+  /** Verified client address for the audit log (never sent to the device). */
+  readonly clientIp?: string;
+  /** Bounded request `User-Agent` (audit only). */
+  readonly userAgent?: string;
 };
 
 export const WindowsEnrollmentRequest = Schema.Struct({
@@ -281,6 +303,10 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   mdmOrigin: MdmOrigin,
   /** Tenant token from the enrollment URL (or provisioning context). */
   tenantToken: Schema.optional(Schema.String),
+  /** Verified client address for the audit log (never sent to the device). */
+  clientIp: Schema.optional(Schema.String),
+  /** Bounded request `User-Agent` (audit only). */
+  userAgent: Schema.optional(Schema.String),
 });
 
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;
@@ -372,9 +398,41 @@ export const WindowsFailureReport = Schema.Struct({
   identityCertificateSerial: Schema.optional(Schema.String),
   /** Windows `DeviceID` the request asserted, when it got that far. */
   deviceId: Schema.optional(Schema.String),
+  /** Verified client address for the audit log. */
+  clientIp: Schema.optional(Schema.String),
+  /** Bounded request `User-Agent` (audit only). */
+  userAgent: Schema.optional(Schema.String),
 });
 
 export type WindowsFailureReport = typeof WindowsFailureReport.Type;
+
+/**
+ * A failed Apple check-in reported by the protocol layer.
+ *
+ * Apple has no SOAP-style fault envelope: an unparseable plist, an invalid
+ * DDM status report or a signature failure is answered with an empty 400. The
+ * handler hands the request context back so the backend can attribute the
+ * failure to a tenant (from the identity certificate OU) and record a bounded
+ * reason. Attribution is best effort; an unattributable failure is dropped
+ * rather than guessed.
+ */
+export const AppleFailureReport = Schema.Struct({
+  /** Stable machine-readable cause, e.g. `invalid_plist`. */
+  code: Schema.String,
+  /** Bounded, already-redacted reason. */
+  message: Schema.String,
+  /** Which check-in step failed (`checkin`, `authenticate`, `declaration`…). */
+  phase: Schema.optional(Schema.String),
+  udid: Schema.optional(Schema.String),
+  userId: Schema.optional(Schema.String),
+  identityCertificate: Schema.optional(Schema.String),
+  identityCertificateFingerprintSha256: Schema.optional(Schema.String),
+  identityCertificateSerial: Schema.optional(Schema.String),
+  clientIp: Schema.optional(Schema.String),
+  userAgent: Schema.optional(Schema.String),
+});
+
+export type AppleFailureReport = typeof AppleFailureReport.Type;
 
 export declare namespace ManagementBackend {
   export type Service = {
@@ -480,6 +538,13 @@ export declare namespace ManagementBackend {
       scope: WindowsManagementScope,
       event: WindowsDeviceEvent,
     ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    /**
+     * Persist an Apple check-in failure the protocol layer detected (an
+     * unparseable payload, a bad signature or an invalid DDM report). Optional
+     * so protocol adapters without a database (the compliance harness) keep
+     * working; the 400 the device receives is never affected.
+     */
+    readonly appleRecordFailure?: (report: AppleFailureReport) => Effect.Effect<void>;
     /**
      * Persist a fault that never reached the Windows backend (bad SOAP/SyncML).
      * Optional so protocol adapters without a database (the compliance harness)

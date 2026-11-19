@@ -170,6 +170,13 @@ const ApiEnvSchema = Schema.Struct({
   TRUST_DEVICE_IDENTITY_HEADERS: Schema.optional(nonEmptyString),
   /** Trust `x-forwarded-for`/`x-real-ip`; set only behind a stripping proxy. */
   TRUST_PROXY_HEADERS: Schema.optional(nonEmptyString),
+  /**
+   * How long repeated device check-ins fold into one `mdm.checkin` audit row,
+   * in seconds. Defaults to 900 (15 minutes); `0` records every check-in.
+   * State changes (enrollment, policy delivery, command results, failures) are
+   * never coalesced.
+   */
+  MDM_AUDIT_CHECKIN_COALESCE_SECONDS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
@@ -248,6 +255,7 @@ const RawApiEnvSchema = Schema.Struct({
   WINDOWS_FEDERATED_AUDIENCE: optionalString,
   TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
   TRUST_PROXY_HEADERS: optionalString,
+  MDM_AUDIT_CHECKIN_COALESCE_SECONDS: optionalString,
   MAINTENANCE_STALE_DEVICE_DAYS: optionalString,
   MAINTENANCE_AUDIT_RETENTION_DAYS: optionalString,
   MAINTENANCE_BACKUP_RETENTION_DAYS: optionalString,
@@ -339,6 +347,9 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined(rawEnv.WINDOWS_FEDERATED_AUDIENCE),
   TRUST_DEVICE_IDENTITY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_DEVICE_IDENTITY_HEADERS),
   TRUST_PROXY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_PROXY_HEADERS),
+  MDM_AUDIT_CHECKIN_COALESCE_SECONDS: emptyStringAsUndefined(
+    rawEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS,
+  ),
   MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_STALE_DEVICE_DAYS),
   MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
   MAINTENANCE_BACKUP_RETENTION_DAYS: emptyStringAsUndefined(

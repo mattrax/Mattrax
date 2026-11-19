@@ -1073,3 +1073,44 @@ describe("maintenance credential issuance", () => {
     expect(request).not.toHaveBeenCalled();
   });
 });
+
+describe("maintenance organisation event retention", () => {
+  it("prunes old MDM rows with the same window as account actions", async () => {
+    const db = makeDb();
+
+    const row = (id: string, ageDays: number, category: "account" | "mdm") => ({
+      id,
+      organizationId: "org-1",
+      actorAccountId: category === "account" ? "account-1" : null,
+      actorEmail: category === "account" ? "owner@example.com" : "system",
+      actorType: category === "account" ? "account" : "system",
+      category,
+      action: category === "account" ? "policy.updated" : "mdm.checkin",
+      targetType: "device",
+      targetId: "device-1",
+      metadata: null,
+      ip: "203.0.113.9",
+      userAgent: null,
+      deviceId: "device-1",
+      deviceCertificateFingerprint: null,
+      deviceCertificateSerial: "0a1b",
+      protocol: category === "account" ? null : "apple",
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.audit_log.push(
+      row("old-mdm", 400, "mdm"),
+      row("old-account", 400, "account"),
+      row("fresh-mdm", 10, "mdm"),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 365, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedAuditEntries).toBe(2);
+    expect(db.store.audit_log.map((row: { id: string }) => row.id)).toEqual(["fresh-mdm"]);
+  });
+});

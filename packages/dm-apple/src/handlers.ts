@@ -82,348 +82,448 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
     ),
   );
 
+/**
+ * Request metadata for the audit log. The address is computed once by the
+ * deployment boundary (`apps/cloud` applies the rate limiter's trusted-proxy
+ * policy) and arrives as a header the caller cannot set.
+ */
+const headerString = (value: string | string[] | undefined): string | undefined =>
+  Schema.is(Schema.String)(value) ? value.trim() || undefined : value?.[0]?.trim() || undefined;
+
+/** A failed check-in must be attributable without trusting device input. */
+type CheckinFailure = {
+  phase: string;
+  code: string;
+  udid?: string;
+  userId?: string;
+};
+
 // Raw MDM checkin/command handler — registered outside HttpApiBuilder so that
 // Apple's "application/x-apple-aspen-mdm-checkin" / "application/x-apple-aspen-mdm"
 // content types pass through without a 415 from the framework.
 function handleMdm(request: HttpServerRequest.HttpServerRequest) {
+  const clientIp = headerString(request.headers["x-mattrax-client-address"]);
+
+  const userAgent = headerString(request.headers["user-agent"])?.slice(0, 512);
+
+  const identityCertificate = headerString(request.headers["x-device-identity-certificate"]);
+
+  const identityCertificateSerial = headerString(
+    request.headers["x-device-identity-certificate-serial"],
+  );
+
+  const failure: CheckinFailure = { phase: "signature", code: "request_failed" };
+
+  // The verified signature is authoritative when trust is wired; the forwarded
+  // header is the fallback. Both are captured so the failure recorder can name
+  // the identity certificate even when the payload never parsed.
+  let identityFingerprint = headerString(
+    request.headers["x-device-identity-certificate-sha256"],
+  );
+
+  let identitySerial = identityCertificateSerial;
+
+  const fail = (phase: string, code: string) => {
+    failure.phase = phase;
+    failure.code = code;
+  };
+
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
-    const buf = yield* request.arrayBuffer;
 
-    const identityCertificate = request.headers["x-device-identity-certificate"];
-    const identityCertificateSerial = request.headers["x-device-identity-certificate-serial"];
+    const handle = Effect.gen(function* () {
+      const buf = yield* request.arrayBuffer;
 
-    const verifiedSignature = yield* service.verifyDeviceSignature({
-      signature: request.headers["mdm-signature"],
-      body: buf,
-      identityCertificateSubject: identityCertificate,
-      identityCertificateSerial,
-      identityCertificateFingerprintSha256: request.headers["x-device-identity-certificate-sha256"],
-    });
+      const verifiedSignature = yield* service.verifyDeviceSignature({
+        signature: request.headers["mdm-signature"],
+        body: buf,
+        identityCertificateSubject: identityCertificate,
+        identityCertificateSerial,
+        identityCertificateFingerprintSha256:
+          request.headers["x-device-identity-certificate-sha256"],
+      });
 
-    const identityFingerprint = verifiedSignature?.fingerprintSha256;
-    // Prefer the serial from the verified CMS signer (canonical lowercase hex)
-    // over the forwarded header, which is only checked when trust is wired.
-    const identitySerial = verifiedSignature?.serial ?? identityCertificateSerial;
-    const text = new TextDecoder().decode(buf);
-    const plist = yield* parsePlist(text);
+      identityFingerprint = verifiedSignature?.fingerprintSha256 ?? identityFingerprint;
+      // Prefer the serial from the verified CMS signer (canonical lowercase hex)
+      // over the forwarded header, which is only checked when trust is wired.
+      identitySerial = verifiedSignature?.serial ?? identityCertificateSerial;
+      fail("checkin", "invalid_plist");
+      const text = new TextDecoder().decode(buf);
+      const plist = yield* parsePlist(text);
 
-    const messageType = plistString(plist, "MessageType");
-    const status = plistField(plist, "Status");
+      const messageType = plistString(plist, "MessageType");
+      const status = plistField(plist, "Status");
 
-    // Device enrollments report UDID; Apple User Enrollment reports the
-    // per-enrollment identifier instead, and the user channel adds UserID (or
-    // EnrollmentUserID for a user enrollment).
-    const channel = resolveCheckinChannel({
-      UDID: plistString(plist, "UDID"),
-      EnrollmentID: plistString(plist, "EnrollmentID"),
-      UserID: plistString(plist, "UserID"),
-      EnrollmentUserID: plistString(plist, "EnrollmentUserID"),
-      UserShortName: plistString(plist, "UserShortName"),
-      UserLongName: plistString(plist, "UserLongName"),
-    });
+      // Device enrollments report UDID; Apple User Enrollment reports the
+      // per-enrollment identifier instead, and the user channel adds UserID (or
+      // EnrollmentUserID for a user enrollment).
+      const channel = resolveCheckinChannel({
+        UDID: plistString(plist, "UDID"),
+        EnrollmentID: plistString(plist, "EnrollmentID"),
+        UserID: plistString(plist, "UserID"),
+        EnrollmentUserID: plistString(plist, "EnrollmentUserID"),
+        UserShortName: plistString(plist, "UserShortName"),
+        UserLongName: plistString(plist, "UserLongName"),
+      });
 
-    const scope = (): CheckinScope | null =>
-      channel
-        ? appleCheckinScope(
-            service.mdmOrigin,
-            channel,
-            identityCertificate,
-            identityFingerprint,
-            identitySerial,
-          )
-        : null;
+      // Attribution for a later failure: the identity certificate proves the
+      // tenant, and the channel (when the payload parsed) names the device.
+      failure.udid = channel?.deviceIdentifier;
+      failure.userId = channel?.kind === "user" ? channel.userId : undefined;
 
-    if (messageType) {
-      switch (messageType) {
-        case "Authenticate": {
-          const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
+      const scope = (): CheckinScope | null =>
+        channel
+          ? appleCheckinScope(
+              service.mdmOrigin,
+              channel,
+              identityCertificate,
+              identityFingerprint,
+              identitySerial,
+              { clientIp, userAgent },
+            )
+          : null;
 
-          // An ADE device can receive its tenant's signed enrollment profile
-          // directly from the check-in response, which removes the manual
-          // profile install from the Setup Assistant flow. The signed URL
-          // remains the canonical fallback, so no payload is valid here.
-          const result = yield* service.handleAuthenticate(
-            auth,
-            identityCertificate,
-            identityFingerprint,
-            identitySerial,
-          );
+      const context = { clientIp, userAgent };
 
-          if (!result?.enrollmentProfile) return HttpServerResponse.empty({ status: 200 });
+      if (messageType) {
+        switch (messageType) {
+          case "Authenticate": {
+            fail("authenticate", "invalid_authenticate");
 
-          return HttpServerResponse.text(
-            yield* serializePlist({
-              EnrollmentProfile: decodeBase64(result.enrollmentProfile),
-            } satisfies PlistValue),
-            { contentType: "application/xml" },
-          );
-        }
-
-        case "TokenUpdate": {
-          const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
-
-          yield* service.handleTokenUpdate(
-            update,
-            identityCertificate,
-            identityFingerprint,
-            identitySerial,
-          );
-
-          return HttpServerResponse.empty({ status: 200 });
-        }
-
-        case "CheckOut": {
-          const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
-
-          yield* service.handleCheckOut(
-            checkout,
-            identityCertificate,
-            identityFingerprint,
-            identitySerial,
-          );
-
-          return HttpServerResponse.empty({ status: 200 });
-        }
-
-        case "DeclarativeManagement": {
-          const endpoint = plistString(plist, "Endpoint");
-          const checkinScope = scope();
-
-          if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
-
-          if (endpoint === "tokens") {
-            const tokens = yield* service.handleDeclarativeTokens(checkinScope);
-
-            return json(tokens);
-          }
-
-          if (endpoint === "declaration-items") {
-            const items = yield* service.handleDeclarationItems(checkinScope);
-
-            return json(items);
-          }
-
-          if (endpoint === "status") {
-            const data = plistString(plist, "Data");
-
-            if (data === undefined) return HttpServerResponse.empty({ status: 400 });
-
-            const parsed = yield* Effect.try({
-              try: () =>
-                Schema.decodeUnknownSync(Schema.Json)(
-                  JSON.parse(new TextDecoder().decode(decodeBase64(data))),
-                ),
-              catch: (cause) => new Error(`Invalid DDM status report: ${String(cause)}`),
-            });
-
-            const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(parsed).pipe(
+            const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
               Effect.mapError((err) => new Error(String(err))),
             );
 
-            yield* service.handleStatusReport(checkinScope, decoded);
+            // An ADE device can receive its tenant's signed enrollment profile
+            // directly from the check-in response, which removes the manual
+            // profile install from the Setup Assistant flow. The signed URL
+            // remains the canonical fallback, so no payload is valid here.
+            const result = yield* service.handleAuthenticate(
+              auth,
+              identityCertificate,
+              identityFingerprint,
+              identitySerial,
+              context,
+            );
+
+            if (!result?.enrollmentProfile) return HttpServerResponse.empty({ status: 200 });
+
+            return HttpServerResponse.text(
+              yield* serializePlist({
+                EnrollmentProfile: decodeBase64(result.enrollmentProfile),
+              } satisfies PlistValue),
+              { contentType: "application/xml" },
+            );
+          }
+
+          case "TokenUpdate": {
+            fail("token_update", "invalid_token_update");
+
+            const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+
+            yield* service.handleTokenUpdate(
+              update,
+              identityCertificate,
+              identityFingerprint,
+              identitySerial,
+              context,
+            );
 
             return HttpServerResponse.empty({ status: 200 });
           }
 
-          if (endpoint !== undefined && endpoint.startsWith("declaration/")) {
-            const parts = endpoint.split("/");
+          case "CheckOut": {
+            fail("checkout", "invalid_checkout");
 
-            if (parts.length !== 3) return HttpServerResponse.empty({ status: 400 });
-            const [, type, identifier] = parts;
+            const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
 
-            if (type === undefined || identifier === undefined)
-              return HttpServerResponse.empty({ status: 400 });
+            yield* service.handleCheckOut(
+              checkout,
+              identityCertificate,
+              identityFingerprint,
+              identitySerial,
+              context,
+            );
 
-            if (!["activation", "configuration", "asset", "management"].includes(type))
-              return HttpServerResponse.empty({ status: 404 });
-            const decl = yield* service.handleDeclaration(checkinScope, type, identifier);
-
-            return json(decl);
+            return HttpServerResponse.empty({ status: 200 });
           }
 
-          return HttpServerResponse.empty({ status: 404 });
-        }
+          case "DeclarativeManagement": {
+            fail("declaration", "invalid_declaration");
 
-        case "SetBootstrapToken": {
-          const token = yield* Schema.decodeUnknownEffect(SetBootstrapTokenPlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
+            const endpoint = plistString(plist, "Endpoint");
+            const checkinScope = scope();
 
-          // Bootstrap token escrow is a device-level secret; Apple never sends
-          // it on a user channel and a user connection must not write one.
-          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+            if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
 
-          yield* service.handleSetBootstrapToken(
-            token.BootstrapToken ?? "",
-            identityCertificate,
-            token.UDID ?? token.EnrollmentID,
-            identitySerial,
-            identityFingerprint,
-          );
+            if (endpoint === "tokens") {
+              const tokens = yield* service.handleDeclarativeTokens(checkinScope);
 
-          return HttpServerResponse.empty({ status: 200 });
-        }
+              return json(tokens);
+            }
 
-        case "GetBootstrapToken": {
-          const request = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
+            if (endpoint === "declaration-items") {
+              const items = yield* service.handleDeclarationItems(checkinScope);
 
-          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+              return json(items);
+            }
 
-          const value = yield* service.handleGetBootstrapToken(
-            identityCertificate,
-            request.UDID ?? request.EnrollmentID,
-            identitySerial,
-            identityFingerprint,
-          );
+            if (endpoint === "status") {
+              fail("declaration_status", "invalid_ddm_status");
 
-          if (!value) return HttpServerResponse.empty({ status: 200 });
-          const binary = Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+              const data = plistString(plist, "Data");
 
-          return HttpServerResponse.text(yield* serializePlist({ BootstrapToken: binary }), {
-            contentType: "application/xml",
-          });
-        }
+              if (data === undefined) return HttpServerResponse.empty({ status: 400 });
 
-        case "GetToken": {
-          // `GetToken` is Apple's token-service check-in (Managed Apple Account
-          // access management via `com.apple.maid`, and Apple Watch pairing) —
-          // not the user channel's `AuthToken`, which `UserAuthenticate`
-          // negotiates. Mattrax issues neither token: the MAID token must be
-          // signed with the ABM-assigned server UUID, and watches are not
-          // managed. Apple requires a 400 for a service type the server does
-          // not support, and the enrollment profile no longer advertises the
-          // `com.apple.mdm.token` capability, so a conforming device will not
-          // ask.
-          yield* Schema.decodeUnknownEffect(GetTokenPlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
+              const parsed = yield* Effect.try({
+                try: () =>
+                  Schema.decodeUnknownSync(Schema.Json)(
+                    JSON.parse(new TextDecoder().decode(decodeBase64(data))),
+                  ),
+                catch: (cause) => new Error(`Invalid DDM status report: ${String(cause)}`),
+              });
 
-          return HttpServerResponse.empty({ status: 400 });
-        }
+              const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(parsed).pipe(
+                Effect.mapError((err) => new Error(String(err))),
+              );
 
-        case "ReturnToService": {
-          yield* Schema.decodeUnknownEffect(ReturnToServicePlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
+              yield* service.handleStatusReport(checkinScope, decoded);
 
-          // Setup Assistant runs on the device channel only.
-          if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+              return HttpServerResponse.empty({ status: 200 });
+            }
 
-          const checkinScope = scope();
+            if (endpoint !== undefined && endpoint.startsWith("declaration/")) {
+              const parts = endpoint.split("/");
 
-          if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
+              if (parts.length !== 3) return HttpServerResponse.empty({ status: 400 });
+              const [, type, identifier] = parts;
 
-          const configuration = yield* service.handleReturnToService(checkinScope);
+              if (type === undefined || identifier === undefined)
+                return HttpServerResponse.empty({ status: 400 });
 
-          const response: ReturnToServiceResponse = { Enabled: configuration.enabled };
+              if (!["activation", "configuration", "asset", "management"].includes(type))
+                return HttpServerResponse.empty({ status: 404 });
+              const decl = yield* service.handleDeclaration(checkinScope, type, identifier);
 
-          if (configuration.enabled) {
-            if (configuration.wifiProfileData)
-              response["WiFiProfileData"] = configuration.wifiProfileData;
+              return json(decl);
+            }
 
-            if (configuration.bootstrapToken)
-              response["BootstrapToken"] = configuration.bootstrapToken;
+            return HttpServerResponse.empty({ status: 404 });
           }
 
-          return HttpServerResponse.text(yield* serializePlist({ ReturnToService: response }), {
-            contentType: "application/xml",
-          });
+          case "SetBootstrapToken": {
+            fail("bootstrap_token", "invalid_bootstrap_token");
+
+            const token = yield* Schema.decodeUnknownEffect(SetBootstrapTokenPlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+
+            // Bootstrap token escrow is a device-level secret; Apple never sends
+            // it on a user channel and a user connection must not write one.
+            if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
+            yield* service.handleSetBootstrapToken(
+              token.BootstrapToken ?? "",
+              identityCertificate,
+              token.UDID ?? token.EnrollmentID,
+              identitySerial,
+              identityFingerprint,
+            );
+
+            return HttpServerResponse.empty({ status: 200 });
+          }
+
+          case "GetBootstrapToken": {
+            fail("bootstrap_token", "invalid_bootstrap_token");
+
+            const bootstrap = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(
+              plist,
+            ).pipe(Effect.mapError((err) => new Error(String(err))));
+
+            if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
+            const value = yield* service.handleGetBootstrapToken(
+              identityCertificate,
+              bootstrap.UDID ?? bootstrap.EnrollmentID,
+              identitySerial,
+              identityFingerprint,
+            );
+
+            if (!value) return HttpServerResponse.empty({ status: 200 });
+            const binary = Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+
+            return HttpServerResponse.text(yield* serializePlist({ BootstrapToken: binary }), {
+              contentType: "application/xml",
+            });
+          }
+
+          case "GetToken": {
+            // `GetToken` is Apple's token-service check-in (Managed Apple Account
+            // access management via `com.apple.maid`, and Apple Watch pairing) —
+            // not the user channel's `AuthToken`, which `UserAuthenticate`
+            // negotiates. Mattrax issues neither token: the MAID token must be
+            // signed with the ABM-assigned server UUID, and watches are not
+            // managed. Apple requires a 400 for a service type the server does
+            // not support, and the enrollment profile no longer advertises the
+            // `com.apple.mdm.token` capability, so a conforming device will not
+            // ask.
+            yield* Schema.decodeUnknownEffect(GetTokenPlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+
+            return HttpServerResponse.empty({ status: 400 });
+          }
+
+          case "ReturnToService": {
+            fail("return_to_service", "invalid_return_to_service");
+
+            yield* Schema.decodeUnknownEffect(ReturnToServicePlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+
+            // Setup Assistant runs on the device channel only.
+            if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
+
+            const checkinScope = scope();
+
+            if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
+
+            const configuration = yield* service.handleReturnToService(checkinScope);
+
+            const response: ReturnToServiceResponse = { Enabled: configuration.enabled };
+
+            if (configuration.enabled) {
+              if (configuration.wifiProfileData)
+                response["WiFiProfileData"] = configuration.wifiProfileData;
+
+              if (configuration.bootstrapToken)
+                response["BootstrapToken"] = configuration.bootstrapToken;
+            }
+
+            return HttpServerResponse.text(yield* serializePlist({ ReturnToService: response }), {
+              contentType: "application/xml",
+            });
+          }
+
+          case "UserAuthenticate": {
+            fail("user_authenticate", "invalid_user_authenticate");
+
+            const auth = yield* Schema.decodeUnknownEffect(UserAuthenticatePlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+
+            const result = yield* service.handleUserAuthenticate(
+              auth,
+              identityCertificate,
+              identityFingerprint,
+              identitySerial,
+              context,
+            );
+
+            // 410 tells the client not to manage this user for the rest of the
+            // login session.
+            if (!result) return HttpServerResponse.empty({ status: 410 });
+
+            // SAFETY: the branch builds one of two string-keyed dictionaries, both
+            // of which are valid plist dictionaries.
+            const body = (
+              result.digestChallenge !== undefined
+                ? { DigestChallenge: result.digestChallenge }
+                : { AuthToken: result.authToken ?? "" }
+            ) as PlistValue;
+
+            return HttpServerResponse.text(yield* serializePlist(body), {
+              contentType: "application/xml",
+            });
+          }
+
+          default:
+            return HttpServerResponse.empty({ status: 400 });
         }
-
-        case "UserAuthenticate": {
-          const auth = yield* Schema.decodeUnknownEffect(UserAuthenticatePlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
-
-          const result = yield* service.handleUserAuthenticate(
-            auth,
-            identityCertificate,
-            identityFingerprint,
-            identitySerial,
-          );
-
-          // 410 tells the client not to manage this user for the rest of the
-          // login session.
-          if (!result) return HttpServerResponse.empty({ status: 410 });
-
-          // SAFETY: the branch builds one of two string-keyed dictionaries, both
-          // of which are valid plist dictionaries.
-          const body = (
-            result.digestChallenge !== undefined
-              ? { DigestChallenge: result.digestChallenge }
-              : { AuthToken: result.authToken ?? "" }
-          ) as PlistValue;
-
-          return HttpServerResponse.text(yield* serializePlist(body), {
-            contentType: "application/xml",
-          });
-        }
-
-        default:
-          return HttpServerResponse.empty({ status: 400 });
       }
-    }
 
-    if (status !== undefined) {
-      const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
-        Effect.mapError((err) => new Error(String(err))),
-      );
+      if (status !== undefined) {
+        fail("command_result", "invalid_command_result");
 
-      if (result.CommandUUID) {
-        yield* service.handleCommandResult(
-          result,
-          identityCertificate,
-          identityFingerprint,
-          identitySerial,
+        const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
+          Effect.mapError((err) => new Error(String(err))),
         );
+
+        if (result.CommandUUID) {
+          yield* service.handleCommandResult(
+            result,
+            identityCertificate,
+            identityFingerprint,
+            identitySerial,
+            context,
+          );
+        }
+
+        const checkinScope = scope();
+
+        if (!checkinScope) return HttpServerResponse.empty({ status: 200 });
+        const command = yield* service.handleCheckin(checkinScope);
+
+        if (!command) return HttpServerResponse.empty({ status: 200 });
+
+        return HttpServerResponse.text(yield* commandBytes(command), {
+          contentType: "application/xml",
+        });
       }
 
       const checkinScope = scope();
 
-      if (!checkinScope) return HttpServerResponse.empty({ status: 200 });
+      if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
       const command = yield* service.handleCheckin(checkinScope);
 
-      if (!command) return HttpServerResponse.empty({ status: 200 });
+      if (!command) {
+        const empty = yield* serializePlist({});
+
+        return HttpServerResponse.text(empty, { contentType: "application/xml" });
+      }
 
       return HttpServerResponse.text(yield* commandBytes(command), {
         contentType: "application/xml",
       });
-    }
-
-    const checkinScope = scope();
-
-    if (!checkinScope) return HttpServerResponse.empty({ status: 400 });
-    const command = yield* service.handleCheckin(checkinScope);
-
-    if (!command) {
-      const empty = yield* serializePlist({});
-
-      return HttpServerResponse.text(empty, { contentType: "application/xml" });
-    }
-
-    return HttpServerResponse.text(yield* commandBytes(command), {
-      contentType: "application/xml",
     });
-  }).pipe(
-    Effect.match({
-      onSuccess: (val) => val,
-      onFailure: (err) => {
-        if (err instanceof DeviceUnenrolled) return HttpServerResponse.empty({ status: 410 });
-        console.error("mdm error:", err);
 
-        return HttpServerResponse.empty({ status: 400 });
-      },
-    }),
-  );
+    return yield* handle.pipe(
+      Effect.matchEffect({
+        onSuccess: (value) => Effect.succeed(value),
+        onFailure: (err) =>
+          Effect.gen(function* () {
+            if (err instanceof DeviceUnenrolled)
+              return HttpServerResponse.empty({ status: 410 });
+
+            // A rejected check-in is a security event: record which device,
+            // which protocol step and why. The write is best effort and never
+            // changes the empty 400 Apple expects.
+            yield* service
+              .recordFailure({
+                code: failure.code,
+                phase: failure.phase,
+                message: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+                udid: failure.udid,
+                userId: failure.userId,
+                identityCertificate,
+                identityCertificateFingerprintSha256: identityFingerprint,
+                identityCertificateSerial: identitySerial,
+                clientIp,
+                userAgent,
+              })
+              .pipe(Effect.catchCause(() => Effect.void));
+
+            console.error("mdm error:", err);
+
+            return HttpServerResponse.empty({ status: 400 });
+          }),
+      }),
+    );
+  });
 }
 
 function handleAsset(request: HttpServerRequest.HttpServerRequest) {

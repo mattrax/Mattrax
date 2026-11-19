@@ -558,6 +558,69 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies).toHaveLength(1);
   });
 
+  it("records Android notifications and policy delivery in the organisation event log", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+
+    const device = {
+      name: deviceName,
+      state: "ACTIVE",
+      hardwareInfo: { model: "Pixel 9", manufacturer: "Google", serialNumber: "SER-1" },
+      softwareInfo: { androidVersion: "15" },
+      enrollmentTime: "2026-11-11T00:00:00Z",
+      lastStatusReportTime: "2026-11-11T00:05:00Z",
+    };
+
+    const push = (type: string, messageId: string) =>
+      provideAndroid(
+        handleAndroidPubSub({
+          db,
+          config,
+          authSecret: "test-secret",
+          origin: "https://mattrax.test",
+          authorization: `Bearer ${token}`,
+          body: pushBody(device, type, messageId),
+          fetch: jwksFetch,
+        }),
+        service,
+      );
+
+    await push("ENROLLMENT", "message-1");
+    await push("STATUS_REPORT", "message-2");
+    // A second status notification in the same bucket folds into the first.
+    await push("STATUS_REPORT", "message-3");
+
+    const audit = db.store.audit_log ?? [];
+    const rowsFor = (action: string) => audit.filter((row) => row.action === action);
+
+    expect(rowsFor("device.enrolled")).toHaveLength(1);
+    expect(rowsFor("mdm.policy_delivered").length).toBeGreaterThan(0);
+    expect(rowsFor("mdm.status_report")).toHaveLength(1);
+
+    const checkIns = rowsFor("mdm.checkin");
+    expect(checkIns).toHaveLength(1);
+    expect(checkIns[0]).toMatchObject({
+      organizationId,
+      actorAccountId: null,
+      actorType: "system",
+      category: "mdm",
+      action: "mdm.checkin",
+      targetType: "device",
+      targetId: db.store.device![0]!.id,
+      deviceId: db.store.device![0]!.id,
+      protocol: "android",
+      // Google Pub/Sub is the caller, not the device; there is no device
+      // address to record and the column stays null.
+      ip: null,
+      metadata: { checkIns: 3, channels: ["android"] },
+    });
+  });
+
   it("rejects Pub/Sub requests without a valid Google OIDC token", async () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],

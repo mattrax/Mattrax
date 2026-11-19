@@ -72,7 +72,9 @@ import {
   SYSTEM_AUDIT_ACTIONS,
   commandFailureTransition,
   declarationFailedTransition,
+  describeAuditFailure,
   writeSystemAudit,
+  type SystemAuditOptions,
 } from "@mattrax/mdm-core";
 import { DEVICE_INFORMATION_BASE_STATUS_ITEMS, appleStatusItemsForDevice } from "@mattrax/mdm-core";
 import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core";
@@ -709,17 +711,28 @@ const updateUserDeclarationsFromStatus = (
   userId: string,
   statusItems: PlistInput,
   at: Date,
-): Effect.Effect<void, unknown, Db> =>
+): Effect.Effect<{ readonly changed: boolean }, unknown, Db> =>
   Effect.gen(function* () {
     const root = record(statusItems);
 
-    if (!root) return;
+    if (!root) return { changed: false };
 
     const declarations =
       record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
 
-    if (!declarations) return;
+    if (!declarations) return { changed: false };
     const db = yield* Db;
+
+    const previousRows = yield* db
+      .select()
+      .from(s.deviceUserDeclaration)
+      .where(
+        and(eq(s.deviceUserDeclaration.deviceId, deviceId), eq(s.deviceUserDeclaration.userId, userId)),
+      );
+
+    const previous = new Map(previousRows.map((row) => [row.identifier, row]));
+
+    let changed = false;
 
     for (const declarationType of ["activations", "configurations", "assets", "management"]) {
       const values = declarations[declarationType];
@@ -736,6 +749,17 @@ const updateUserDeclarationsFromStatus = (
 
         const serverToken =
           stringField(entry, "ServerToken") ?? stringField(entry, "server-token") ?? null;
+
+        const before = previous.get(identifier);
+
+        if (
+          !before ||
+          before.valid !== valid ||
+          before.active !== active ||
+          before.serverToken !== serverToken ||
+          before.declarationType !== declarationType
+        )
+          changed = true;
 
         yield* db
           .insert(s.deviceUserDeclaration)
@@ -762,18 +786,32 @@ const updateUserDeclarationsFromStatus = (
           });
       }
     }
+
+    return { changed };
   });
+
+type AppleStatusReportOutcome = {
+  readonly inventoryChanged: boolean;
+  readonly declarationsChanged: boolean;
+  readonly healthChanged: boolean;
+};
+
+const emptyStatusOutcome = (): AppleStatusReportOutcome => ({
+  inventoryChanged: false,
+  declarationsChanged: false,
+  healthChanged: false,
+});
 
 const updateInventoryFromStatus = (
   deviceId: string,
   organizationId: string,
   statusItems: PlistInput,
   options: { readonly authSecret?: string } = {},
-): Effect.Effect<void, unknown, Db> =>
+): Effect.Effect<AppleStatusReportOutcome, unknown, Db> =>
   Effect.gen(function* () {
     const root = record(statusItems);
 
-    if (!root) return;
+    if (!root) return emptyStatusOutcome();
     const db = yield* Db;
     const inventory = parseDeviceInventory(root);
 
@@ -822,7 +860,7 @@ const updateInventoryFromStatus = (
 
     const auditComplianceChange = (
       next: ReturnType<typeof deriveDeviceHealth>,
-    ): Effect.Effect<void, unknown, never> =>
+    ): Effect.Effect<boolean, unknown, never> =>
       previousHealth && previousHealth.level !== next.level
         ? writeSystemAudit(
             db,
@@ -831,6 +869,8 @@ const updateInventoryFromStatus = (
               action: SYSTEM_AUDIT_ACTIONS.complianceChanged,
               targetType: "device",
               targetId: deviceId,
+              deviceId,
+              protocol: "apple",
               metadata: {
                 from: previousHealth.level,
                 to: next.level,
@@ -838,8 +878,8 @@ const updateInventoryFromStatus = (
               },
             },
             { authSecret: options.authSecret },
-          )
-        : Effect.void;
+          ).pipe(Effect.as(true))
+        : Effect.succeed(false);
 
     const update: Partial<typeof s.device.$inferInsert> = { lastSeenAt: now() };
 
@@ -938,23 +978,41 @@ const updateInventoryFromStatus = (
     const declarations =
       record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
 
+    // `Object.fromEntries` keeps this readable without asserting the device
+    // row to an index-signature type: the key came from `update`, which is a
+    // partial device patch.
+    // Timestamps move on every report even when the device's inventory is
+    // identical, so they are not part of the comparison.
+    const NON_INVENTORY_COLUMNS = new Set(["lastSeenAt", "inventoryUpdatedAt"]);
+    const beforeValues = Object.fromEntries(Object.entries(deviceBefore ?? {}));
+
+    const inventoryChanged = Object.entries(update).some(
+      ([key, value]) =>
+        !NON_INVENTORY_COLUMNS.has(key) &&
+        JSON.stringify(value ?? null) !== JSON.stringify(beforeValues[key] ?? null),
+    );
+
     if (!declarations) {
       // Inventory-only report: the compliance rollup may still have moved
       // (storage, battery, FileVault), so compare it before returning.
-      if (deviceBefore)
-        yield* auditComplianceChange(
-          deriveDeviceHealth(healthInput({ ...deviceBefore, ...update }, declarationsBefore)),
-        );
+      const healthChanged = deviceBefore
+        ? yield* auditComplianceChange(
+            deriveDeviceHealth(healthInput({ ...deviceBefore, ...update }, declarationsBefore)),
+          )
+        : false;
 
-      return;
+      return { inventoryChanged, declarationsChanged: false, healthChanged };
     }
 
     const timestamp = now();
     // Status reports arrive on every check-in. The previous declaration states
     // were read before the write so audit events fire only on a transition.
     const previousValid = new Map<string, string>();
+    const previousRows = new Map(declarationsBefore.map((row) => [row.identifier, row]));
 
     for (const row of declarationsBefore) previousValid.set(row.identifier, row.valid);
+
+    let declarationsChanged = false;
 
     const transitions: Array<{
       identifier: string;
@@ -978,6 +1036,17 @@ const updateInventoryFromStatus = (
 
         const serverToken =
           stringField(entry, "ServerToken") ?? stringField(entry, "server-token") ?? null;
+
+        const before = previousRows.get(identifier);
+
+        if (
+          !before ||
+          before.valid !== valid ||
+          before.active !== active ||
+          before.serverToken !== serverToken ||
+          before.declarationType !== declarationType
+        )
+          declarationsChanged = true;
 
         if (declarationFailedTransition(previousValid.get(identifier), valid))
           transitions.push({
@@ -1035,10 +1104,14 @@ const updateInventoryFromStatus = (
         .from(s.deviceDeclaration)
         .where(eq(s.deviceDeclaration.deviceId, deviceId));
 
-      yield* auditComplianceChange(
+      const healthChanged = yield* auditComplianceChange(
         deriveDeviceHealth(healthInput({ ...deviceBefore, ...update }, declarationsAfter)),
       );
+
+      return { inventoryChanged, declarationsChanged, healthChanged };
     }
+
+    return { inventoryChanged, declarationsChanged, healthChanged: false };
   });
 
 /**
@@ -1690,8 +1763,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
     /** Lifetime of the one-time SCEP challenge in an ADE profile. */
     readonly enrollmentProfileTtlSeconds?: number;
+    /**
+     * How long repeated check-ins fold into one `mdm.checkin` audit row, in
+     * milliseconds. Defaults to 15 minutes; `0` records every check-in.
+     */
+    readonly auditCheckinCoalesceWindowMs?: number;
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret, readApplicationObject } = options;
+
+    const auditOptions: SystemAuditOptions = {
+      authSecret,
+      coalesceWindowMs: options.auditCheckinCoalesceWindowMs,
+    };
 
     const appleProfileSigner = options.appleProfileSigning
       ? createAppleProfileSigner(options.appleProfileSigning)
@@ -1873,7 +1956,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       device: DeviceRow,
       configurations: ReadonlyArray<ScopedConfiguration>,
       at: Date,
-    ): Effect.Effect<void, unknown, Db> =>
+    ): Effect.Effect<{ readonly installed: number; readonly removed: number }, unknown, Db> =>
       Effect.gen(function* () {
         const [active] = yield* db
           .select({ id: s.deviceCommand.id })
@@ -1888,7 +1971,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           .limit(1);
 
         // Let the in-flight profile finish before recomputing the diff.
-        if (active) return;
+        if (active) return { installed: 0, removed: 0 };
 
         const escrowCertificatePem = yield* tenantEscrowCertificate(device.organizationId);
 
@@ -1912,6 +1995,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         for (const identifier of changes.remove)
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+
+        return { installed: changes.install.length, removed: changes.remove.length };
       });
 
     /**
@@ -2125,6 +2210,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         for (const identifier of changes.remove)
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+
+        return { installed: changes.install.length, removed: changes.remove.length };
       });
 
     const requireDevice = (scope: CheckinScope) =>
@@ -2408,6 +2495,40 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     };
 
     const serverOrigin = origin.replace(/\/+$/, "");
+
+    /**
+     * Record one device check-in, folded into the current window.
+     *
+     * A check-in is the highest-volume MDM event, so identical repeats update
+     * the existing row instead of appending. The row still carries the latest
+     * verified address, identity certificate and `checkIns` count; state
+     * changes below (enrollment, delivery, results, failures) always append a
+     * separate row and are never folded.
+     */
+    const auditCheckin = (
+      device: DeviceRow,
+      scope: CheckinScope,
+      channel: "device" | "user",
+    ): Effect.Effect<void, never, never> =>
+      writeSystemAudit(
+        db,
+        {
+          organizationId: device.organizationId,
+          action: SYSTEM_AUDIT_ACTIONS.mdmCheckin,
+          targetType: "device",
+          targetId: device.id,
+          deviceId: device.id,
+          protocol: "apple",
+          ip: scope.clientIp ?? null,
+          userAgent: scope.userAgent ?? null,
+          certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+          certificateSerial: scope.identityCertificateSerial ?? null,
+          principalId: Predicate.isTagged(scope, "user") ? scope.userId : null,
+          metadata: { platform: "apple", channel, channels: [channel] },
+          coalesce: true,
+        },
+        auditOptions,
+      );
 
     /**
      * Queue installs for `mttx.apple.application.<id>` policy configurations.
@@ -2870,9 +2991,156 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       requireDeviceIdentity: options.requireWindowsDeviceIdentity,
       planLimits: options.planLimits,
       federated: options.windowsFederated,
+      auditCheckinCoalesceWindowMs: options.auditCheckinCoalesceWindowMs,
     };
 
+    /**
+     * Record an Apple check-in the protocol layer rejected (an unparseable
+     * plist, a bad signature, an invalid DDM report). Tenant attribution comes
+     * from the identity certificate's OU; the UDID, when the payload parsed
+     * far enough to carry one, binds the row to the device. Best effort: the
+     * empty 400 the device receives is already decided.
+     */
+    const appleRecordFailure = (
+      report: Parameters<NonNullable<ManagementBackend.Service["appleRecordFailure"]>>[0],
+    ): Effect.Effect<void> =>
+      provideDb(
+        Effect.gen(function* () {
+          const organizationId = certificateOu(report.identityCertificate);
+
+          // No verified tenant: drop it rather than guess. The identity is
+          // still visible in the request log, and writing into a tenant would
+          // let an anonymous caller pollute its audit history.
+          if (!organizationId) return;
+
+          // A failure is attributed by the identity the device presented, not
+          // by what its payload asserts. A certificate bound to device B must
+          // never let a caller that presents it write against device A.
+          let device: DeviceRow | undefined;
+          let attribution: "bound" | "asserted" | undefined;
+
+          const serial = normalizeIssuedCertificateSerial(
+            report.identityCertificateSerial ?? "",
+          );
+
+          if (serial) {
+            const [certificate] = yield* db
+              .select()
+              .from(s.scepIssuedCertificate)
+              .where(eq(s.scepIssuedCertificate.serial, serial))
+              .limit(1);
+
+            // The serial is global; reject a certificate issued to another
+            // tenant before using its device binding.
+            if (certificate?.organizationId === organizationId && certificate.deviceId) {
+              const [byId] = yield* db
+                .select()
+                .from(s.device)
+                .where(
+                  and(
+                    eq(s.device.organizationId, organizationId),
+                    eq(s.device.id, certificate.deviceId),
+                  ),
+                )
+                .limit(1);
+
+              // Legacy rows were bound by `device.dmIdentifier`; try that only
+              // when the internal id did not resolve.
+              const [bound] =
+                byId !== undefined
+                  ? [byId]
+                  : yield* db
+                      .select()
+                      .from(s.device)
+                      .where(
+                        and(
+                          eq(s.device.organizationId, organizationId),
+                          eq(s.device.dmIdentifier, certificate.deviceId),
+                        ),
+                      )
+                      .limit(1);
+
+              if (bound) {
+                device = bound;
+                attribution = "bound";
+              }
+            }
+          }
+
+          if (!device && report.identityCertificateFingerprintSha256) {
+            const [bound] = yield* db
+              .select()
+              .from(s.device)
+              .where(
+                and(
+                  eq(s.device.organizationId, organizationId),
+                  eq(s.device.proto, "apple"),
+                  eq(s.device.dmIdentityFingerprint, report.identityCertificateFingerprintSha256),
+                ),
+              )
+              .limit(1);
+
+            if (bound) {
+              device = bound;
+              attribution = "bound";
+            }
+          }
+
+          if (!device && report.udid) {
+            const [asserted] = yield* db
+              .select()
+              .from(s.device)
+              .where(
+                and(
+                  eq(s.device.organizationId, organizationId),
+                  eq(s.device.proto, "apple"),
+                  eq(s.device.dmIdentifier, report.udid),
+                ),
+              )
+              .limit(1);
+
+            if (asserted) {
+              device = asserted;
+              attribution = "asserted";
+            }
+          }
+
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.mdmFailure,
+              targetType: device ? "device" : "enrollment",
+              targetId: device?.id ?? null,
+              deviceId: device?.id ?? null,
+              protocol: "apple",
+              ip: report.clientIp ?? null,
+              userAgent: report.userAgent ?? null,
+              certificateFingerprint: report.identityCertificateFingerprintSha256 ?? null,
+              certificateSerial: report.identityCertificateSerial ?? null,
+              principalId: report.userId ?? null,
+              metadata: {
+                platform: "apple",
+                phase: report.phase ?? "checkin",
+                code: report.code,
+                reason: describeAuditFailure(report.message),
+                ...(attribution ? { attribution } : {}),
+                ...(report.udid ? { udid: report.udid } : {}),
+                ...(report.userId ? { userId: report.userId } : {}),
+              },
+            },
+            auditOptions,
+          );
+        }),
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning(`Could not record the Apple check-in failure: ${String(cause)}`),
+        ),
+      );
+
     return ManagementBackend.of({
+      appleRecordFailure,
+
       appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
         provideDb(
           Effect.gen(function* () {
@@ -3392,6 +3660,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .set({ enrollmentMode: "user" })
                       .where(eq(s.deviceApple.deviceId, device.id));
 
+                  yield* auditCheckin(device, scope, "user");
+
                   return;
                 } else {
                   const [previousApple] = yield* db
@@ -3428,6 +3698,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .set(appleUpdate)
                     .where(eq(s.deviceApple.deviceId, device.id));
 
+                  yield* auditCheckin(device, scope, "device");
+
                   const timestamp = now();
 
                   if (awaitingConfiguration) {
@@ -3448,6 +3720,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                           action: SYSTEM_AUDIT_ACTIONS.deviceAwaitingSetup,
                           targetType: "device",
                           targetId: device.id,
+                          deviceId: device.id,
+                          protocol: "apple",
                           metadata: {
                             platform: "apple",
                             serial: device.serial ?? null,
@@ -3477,6 +3751,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
                         targetType: "device",
                         targetId: device.id,
+                        deviceId: device.id,
+                        protocol: "apple",
                         metadata: {
                           platform: "apple",
                           serial: device.serial ?? null,
@@ -3512,6 +3788,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         action: SYSTEM_AUDIT_ACTIONS.deviceReturnToServiceCompleted,
                         targetType: "device",
                         targetId: device.id,
+                        deviceId: device.id,
+                        protocol: "apple",
                         metadata: { platform: "apple", serial: device.serial ?? null },
                       },
                       { authSecret },
@@ -3626,6 +3904,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       action: SYSTEM_AUDIT_ACTIONS.deviceCheckedOut,
                       targetType: "device",
                       targetId: device.id,
+                      deviceId: device.id,
+                      protocol: "apple",
                       metadata: { platform: "apple", previousStatus: device.status },
                     },
                     { authSecret },
@@ -3717,8 +3997,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   );
 
                 // A device can repeat the same result on retries. Only the
-                // first transition into failed/deferred is audited, and the
-                // detail text (which may echo device data) is not stored.
+                // first transition is audited, and the detail text (which may
+                // echo device data) is not stored.
                 if (command && commandFailureTransition(command.status, nextStatus))
                   yield* writeSystemAudit(
                     db,
@@ -3730,13 +4010,44 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                           : SYSTEM_AUDIT_ACTIONS.commandNotNow,
                       targetType: "device_command",
                       targetId: event.commandUUID,
+                      deviceId: device.id,
+                      protocol: "apple",
+                      ip: scope.clientIp ?? null,
+                      userAgent: scope.userAgent ?? null,
+                      certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                      certificateSerial: scope.identityCertificateSerial ?? null,
                       metadata: {
                         deviceId: device.id,
                         requestType: command.requestType,
                         resultStatus: event.status,
                       },
                     },
-                    { authSecret },
+                    auditOptions,
+                  );
+                else if (command && command.status !== nextStatus && nextStatus === "succeeded")
+                  // Successes have no dedicated lifecycle action; this is the
+                  // one row that records the result was received.
+                  yield* writeSystemAudit(
+                    db,
+                    {
+                      organizationId: device.organizationId,
+                      action: SYSTEM_AUDIT_ACTIONS.mdmCommandResult,
+                      targetType: "device_command",
+                      targetId: event.commandUUID,
+                      deviceId: device.id,
+                      protocol: "apple",
+                      ip: scope.clientIp ?? null,
+                      userAgent: scope.userAgent ?? null,
+                      certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                      certificateSerial: scope.identityCertificateSerial ?? null,
+                      metadata: {
+                        deviceId: device.id,
+                        requestType: command.requestType,
+                        resultStatus: event.status,
+                        channel: commandUser ? "user" : "device",
+                      },
+                    },
+                    auditOptions,
                   );
 
                 // A user channel has its own inventory. Persist only the
@@ -3789,6 +4100,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       action: SYSTEM_AUDIT_ACTIONS.deviceSetupComplete,
                       targetType: "device",
                       targetId: device.id,
+                      deviceId: device.id,
+                      protocol: "apple",
                       metadata: { platform: "apple", serial: device.serial ?? null },
                     },
                     { authSecret },
@@ -3800,6 +4113,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       action: SYSTEM_AUDIT_ACTIONS.deviceEnrolled,
                       targetType: "device",
                       targetId: device.id,
+                      deviceId: device.id,
+                      protocol: "apple",
                       metadata: {
                         platform: "apple",
                         serial: device.serial ?? null,
@@ -3978,23 +4293,77 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     Schema.decodeUnknownOption(PlistValue)(event.statusItems),
                   );
 
-                  if (statusItems !== undefined)
-                    yield* updateUserDeclarationsFromStatus(
+                  if (statusItems !== undefined) {
+                    const changed = yield* updateUserDeclarationsFromStatus(
                       device.id,
                       scope.userId,
                       statusItems,
                       now(),
                     ).pipe(Effect.mapError(internal));
 
+                    if (changed.changed)
+                      yield* writeSystemAudit(
+                        db,
+                        {
+                          organizationId: device.organizationId,
+                          action: SYSTEM_AUDIT_ACTIONS.mdmStatusReport,
+                          targetType: "device",
+                          targetId: device.id,
+                          deviceId: device.id,
+                          protocol: "apple",
+                                                    ip: scope.clientIp ?? null,
+                          userAgent: scope.userAgent ?? null,
+                          certificateFingerprint:
+                            scope.identityCertificateFingerprintSha256 ?? null,
+                          certificateSerial: scope.identityCertificateSerial ?? null,
+                          metadata: { platform: "apple", channel: "user", declarations: true },
+                        },
+                        auditOptions,
+                      );
+                  }
+
                   return;
                 }
 
-                yield* updateInventoryFromStatus(
+                const outcome = yield* updateInventoryFromStatus(
                   device.id,
                   device.organizationId,
                   Option.getOrUndefined(Schema.decodeUnknownOption(PlistValue)(event.statusItems)),
                   { authSecret },
                 );
+
+                // A report is only an event when it changed something. Polls
+                // that repeat the same inventory stay invisible; the check-in
+                // row already proves the device is alive.
+                if (
+                  outcome.inventoryChanged ||
+                  outcome.declarationsChanged ||
+                  outcome.healthChanged
+                )
+                  yield* writeSystemAudit(
+                    db,
+                    {
+                      organizationId: device.organizationId,
+                      action: SYSTEM_AUDIT_ACTIONS.mdmStatusReport,
+                      targetType: "device",
+                      targetId: device.id,
+                      deviceId: device.id,
+                      protocol: "apple",
+                                            ip: scope.clientIp ?? null,
+                      userAgent: scope.userAgent ?? null,
+                      certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                      certificateSerial: scope.identityCertificateSerial ?? null,
+                      metadata: {
+                        platform: "apple",
+                        channel: "device",
+                        inventoryChanged: outcome.inventoryChanged,
+                        declarationsChanged: outcome.declarationsChanged,
+                        healthChanged: outcome.healthChanged,
+                      },
+                    },
+                    auditOptions,
+                  );
+
                 // The DDM report is the last gate for an ADE device held in
                 // Setup Assistant: release it once every declaration is valid.
                 yield* releaseAwaitingConfiguration(device).pipe(
@@ -4033,6 +4402,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
+
+            yield* auditCheckin(
+              device,
+              scope,
+              Predicate.isTagged(scope, "user") ? "user" : "device",
+            );
 
             const at = now();
 
@@ -4088,7 +4463,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return { _tag: "Idle" as const };
 
               // The token is persisted when the channel fetches the items, not
-              // here: a device that never syncs must be asked again.
+              // here: a device that never syncs must be asked again. The
+              // delivery event is written by `getAppleDeclarationItems`, so a
+              // sync looks like one delivery, not two.
               return { _tag: "DdmSync" as const, serverToken: declarations.token };
             }
 
@@ -4172,13 +4549,40 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .set({ ddmDeclarationsToken: null })
                   .where(eq(s.device.id, device.id));
 
-              yield* syncLegacyPolicy(
+              const legacy = yield* syncLegacyPolicy(
                 device,
                 scoped.configurations.filter(
                   (configuration) => !isApplicationKind(configuration.kind),
                 ),
                 at,
               ).pipe(Effect.mapError(internal));
+
+              // Only a real diff is a delivery: a device that is already in
+              // sync polls without producing a policy event.
+              if (legacy.installed + legacy.removed > 0)
+                yield* writeSystemAudit(
+                  db,
+                  {
+                    organizationId: device.organizationId,
+                    action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
+                    targetType: "device",
+                    targetId: device.id,
+                    deviceId: device.id,
+                    protocol: "apple",
+                                        ip: scope.clientIp ?? null,
+                    userAgent: scope.userAgent ?? null,
+                    certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                    certificateSerial: scope.identityCertificateSerial ?? null,
+                    metadata: {
+                      platform: "apple",
+                      channel: "device",
+                      mode: "legacy",
+                      installed: legacy.installed,
+                      removed: legacy.removed,
+                    },
+                  },
+                  auditOptions,
+                );
             } else if (appleState?.declarationMode === "legacy") {
               // Back on declarative management: retire the legacy profiles so a
               // setting is not applied by both channels, and force a sync.
@@ -4260,8 +4664,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (device.ddmDeclarationsToken === token) return { _tag: "Idle" as const };
 
             // Do not persist the token here: that would mark the sync complete
-            // before the device has fetched anything. The declaration
-            // endpoints record it once the device actually asks for content.
+            // before the device has fetched anything. The declaration items
+            // handler records it (and the policy-delivery event) once the
+            // device actually asks for content.
             return { _tag: "DdmSync" as const, serverToken: token };
           }).pipe(
             Effect.mapError((cause) =>
@@ -4469,6 +4874,37 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 bound.directoryUserId,
               ).pipe(Effect.mapError(internal));
 
+              // The token moving means the device actually received a new set
+              // of declarations; a repeat fetch of the same set is not a
+              // delivery event.
+              if (bound.ddmDeclarationsToken !== token)
+                yield* writeSystemAudit(
+                  db,
+                  {
+                    organizationId: device.organizationId,
+                    action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
+                    targetType: "device",
+                    targetId: device.id,
+                    deviceId: device.id,
+                    protocol: "apple",
+                                        ip: scope.clientIp ?? null,
+                    userAgent: scope.userAgent ?? null,
+                    certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                    certificateSerial: scope.identityCertificateSerial ?? null,
+                    metadata: {
+                      platform: "apple",
+                      channel: "user",
+                      mode: "declarations",
+                      declarations:
+                        items.activations.length +
+                        items.configurations.length +
+                        items.assets.length +
+                        items.management.length,
+                    },
+                  },
+                  auditOptions,
+                );
+
               yield* db
                 .update(s.deviceAppleUser)
                 .set({ ddmDeclarationsToken: token })
@@ -4504,6 +4940,34 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ),
               catch: internal,
             });
+
+            if (device.ddmDeclarationsToken !== token)
+              yield* writeSystemAudit(
+                db,
+                {
+                  organizationId: device.organizationId,
+                  action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
+                  targetType: "device",
+                  targetId: device.id,
+                  deviceId: device.id,
+                  protocol: "apple",
+                                    ip: scope.clientIp ?? null,
+                  userAgent: scope.userAgent ?? null,
+                  certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
+                  certificateSerial: scope.identityCertificateSerial ?? null,
+                  metadata: {
+                    platform: "apple",
+                    channel: "device",
+                    mode: "declarations",
+                    declarations:
+                      items.activations.length +
+                      items.configurations.length +
+                      items.assets.length +
+                      items.management.length,
+                  },
+                },
+                auditOptions,
+              );
 
             yield* db
               .update(s.device)
@@ -4993,6 +5457,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
       readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
       readonly enrollmentProfileTtlSeconds?: number;
+      readonly auditCheckinCoalesceWindowMs?: number;
     },
   ) =>
     Layer.effect(

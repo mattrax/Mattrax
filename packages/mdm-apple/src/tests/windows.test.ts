@@ -2249,3 +2249,204 @@ describe("Windows failure history", () => {
     expect(failures(db).map((row) => row.id)).toEqual(["new"]);
   });
 });
+
+describe("Windows MDM activity in the organisation event log", () => {
+  const auditRows = (db: ReturnType<typeof makeDb>) =>
+    dbRows(db, tableName(schema.auditLog));
+
+  const rowsFor = (db: ReturnType<typeof makeDb>, action: string) =>
+    auditRows(db).filter((row) => row.action === action);
+
+  const managementScope = {
+    deviceId: "device-1",
+    identityCertificate: "CN=device-1,OU=org-early",
+    identityCertificateSerial: "0a1b2c",
+    clientIp: "203.0.113.9",
+    userAgent: "Windows MDM/1.0",
+    mdmOrigin,
+  };
+
+  const managementRequest = {
+    sessionID: "1",
+    msgID: "1",
+    source: "device-1",
+    target: origin,
+    statuses: [],
+    alerts: [],
+  };
+
+  it("records enrollment as a system event with the Windows protocol", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+
+    const result = await run(
+      backend.windowsEnroll({
+        ...enrollmentRequest(policy.authToken, await makeCsr()),
+        clientIp: "203.0.113.9",
+        userAgent: "Windows MDM/1.0",
+      }),
+    );
+
+    const enrolled = rowsFor(db, "device.enrolled");
+    expect(enrolled).toHaveLength(1);
+    expect(enrolled[0]).toMatchObject({
+      organizationId: "org-early",
+      actorAccountId: null,
+      actorType: "system",
+      category: "mdm",
+      action: "device.enrolled",
+      targetType: "device",
+      protocol: "win",
+      ip: "203.0.113.9",
+      userAgent: "Windows MDM/1.0",
+      metadata: { platform: "win", deviceIdentifier: result.deviceId },
+    });
+  });
+
+  it("coalesces management check-ins per device and keeps the identity", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
+
+    await run(backend.windowsManagementCheckin(managementScope, managementRequest));
+    await run(backend.windowsManagementCheckin(managementScope, managementRequest));
+
+    const checkIns = rowsFor(db, "mdm.checkin");
+    expect(checkIns).toHaveLength(1);
+    expect(checkIns[0]).toMatchObject({
+      organizationId: "org-early",
+      actorAccountId: null,
+      actorType: "system",
+      category: "mdm",
+      action: "mdm.checkin",
+      targetType: "device",
+      protocol: "win",
+      ip: "203.0.113.9",
+      userAgent: "Windows MDM/1.0",
+      deviceCertificateSerial: "0a1b2c",
+      metadata: { checkIns: 2, channels: ["win"] },
+    });
+  });
+
+  it("records a protocol fault with a bounded reason and the client address", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    await run(
+      backend.windowsRecordFailure!({
+        phase: "command",
+        code: "invalid_syncml",
+        message: "Invalid SyncML request: unexpected element",
+        tenantToken: undefined,
+        identityCertificate: "CN=device-1,OU=org-early",
+        deviceId: "device-1",
+        clientIp: "198.51.100.7",
+        userAgent: "Windows MDM/1.0",
+      }),
+    );
+
+    const failures = rowsFor(db, "mdm.failure");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      organizationId: "org-early",
+      actorAccountId: null,
+      actorType: "system",
+      action: "mdm.failure",
+      protocol: "win",
+      ip: "198.51.100.7",
+      metadata: { phase: "command", code: "invalid_syncml" },
+    });
+    // SAFETY: the failure recorder stores a JSON object with a string reason.
+    expect((failures[0]!.metadata as Row & { reason?: string }).reason).toContain(
+      "Invalid SyncML request",
+    );
+  });
+
+  it("records a repeated policy rejection once and never calls it a delivery", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
+
+    const deviceRow = db.store[tableName(schema.device)]![0]!;
+    const commandTable = tableName(schema.deviceCommand);
+
+    (db.store[commandTable] ??= []).push({
+      __table: commandTable,
+      id: "policy-1",
+      organizationId: "org-early",
+      deviceId: deviceRow.id,
+      requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
+      payload: {
+        kind: "Replace",
+        locURI: "./Vendor/MSFT/Policy/Config/Test",
+        hash: "hash-1",
+      },
+      status: "sent",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const rejection = {
+      ...managementRequest,
+      statuses: [{ cmdRef: "policy-1", data: "500" }],
+    };
+
+    await run(backend.windowsManagementCheckin(managementScope, rejection));
+    await run(backend.windowsManagementCheckin(managementScope, rejection));
+
+    expect(rowsFor(db, "mdm.failure")).toHaveLength(1);
+    expect(rowsFor(db, "mdm.policy_delivered")).toHaveLength(0);
+    expect(rowsFor(db, "device.command_failed")).toHaveLength(1);
+  });
+
+  it("records a successful command result once", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    suppressInventory(db);
+
+    const deviceRow = db.store[tableName(schema.device)]![0]!;
+    const commandTable = tableName(schema.deviceCommand);
+
+    (db.store[commandTable] ??= []).push({
+      __table: commandTable,
+      id: "win-command-1",
+      organizationId: "org-early",
+      deviceId: deviceRow.id,
+      requestType: "WindowsSyncML",
+      payload: { kind: "Exec", locURI: "./Vendor/MSFT/Test" },
+      status: "sent",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // Windows reports command outcomes as SyncML statuses in the next
+    // management session; that is the real ingress path.
+    const status = { cmdRef: "win-command-1", data: "200" };
+
+    await run(
+      backend.windowsManagementCheckin(managementScope, {
+        ...managementRequest,
+        statuses: [status],
+      }),
+    );
+    await run(
+      backend.windowsManagementCheckin(managementScope, {
+        ...managementRequest,
+        statuses: [status],
+      }),
+    );
+
+    const results = rowsFor(db, "mdm.command_result");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      action: "mdm.command_result",
+      targetType: "device_command",
+      targetId: "win-command-1",
+      protocol: "win",
+    });
+  });
+});

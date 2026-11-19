@@ -41,13 +41,37 @@ describe("normalizeAuditSearchQuery", () => {
         actor: " ",
         targetType: "device",
         targetId: "",
+        q: "  203.0.113.9  ",
       }),
     ).toMatchObject({
       action: "device.enrolled",
       actor: undefined,
       targetType: "device",
       targetId: undefined,
+      q: "203.0.113.9",
     });
+  });
+
+  it("accepts the MDM filters", () => {
+    expect(
+      normalizeAuditSearchQuery({
+        category: "mdm",
+        actorType: "system",
+        protocol: "apple",
+        deviceId: "dev-1",
+      }),
+    ).toMatchObject({
+      category: "mdm",
+      actorType: "system",
+      protocol: "apple",
+      deviceId: "dev-1",
+    });
+  });
+
+  it("rejects unknown enum filters", () => {
+    expect(() => normalizeAuditSearchQuery({ category: "everything" })).toThrow(/category/);
+    expect(() => normalizeAuditSearchQuery({ protocol: "ios" })).toThrow(/protocol/);
+    expect(() => normalizeAuditSearchQuery({ actorType: "robot" })).toThrow(/actorType/);
   });
 
   it("rejects over-long filters", () => {
@@ -129,10 +153,19 @@ describe("audit export", () => {
   const entry = (overrides: Partial<AuditExportEntry> = {}): AuditExportEntry => ({
     id: "audit-1",
     action: "device.enrolled",
+    category: "mdm",
     targetType: "device",
     targetId: "device-1",
     actorAccountId: null,
     actorEmail: "owner@example.com",
+    actorType: "account",
+    ip: null,
+    userAgent: null,
+    deviceId: null,
+    deviceCertificateFingerprint: null,
+    deviceCertificateSerial: null,
+    principalId: null,
+    protocol: null,
     metadata: { serial: "C02A" },
     createdAt: "2026-11-11T10:00:00.000Z",
     ...overrides,
@@ -141,10 +174,34 @@ describe("audit export", () => {
   it("writes RFC 4180 CSV with a header", () => {
     const csv = auditCsv([entry({ actorEmail: "Acme, Inc.", action: 'say "hi"' })]);
     const [header, row] = csv.split("\r\n");
-    expect(header).toBe("Time,Actor,Action,Target type,Target id,Metadata");
-    expect(row).toBe(
-      '2026-11-11T10:00:00.000Z,"Acme, Inc.","say ""hi""",device,device-1,"{""serial"":""C02A""}"',
+    expect(header).toBe(
+      "Time,Actor,Actor type,Category,Action,Target type,Target id,Protocol,Device,IP,Certificate fingerprint,Certificate serial,Principal,User agent,Metadata",
     );
+    expect(row).toBe(
+      '2026-11-11T10:00:00.000Z,"Acme, Inc.",account,mdm,"say ""hi""",device,device-1,,,,,,,,"{""serial"":""C02A""}"',
+    );
+  });
+
+  it("exports the MDM enrichment columns", () => {
+    const csv = auditCsv([
+      entry({
+        action: "mdm.checkin",
+        category: "mdm",
+        actorType: "system",
+        actorEmail: "system",
+        protocol: "apple",
+        deviceId: "dev-9",
+        ip: "203.0.113.9",
+        deviceCertificateFingerprint: "ab".repeat(32),
+        deviceCertificateSerial: "0a1b",
+        userAgent: "MDM/1.0",
+      }),
+    ]);
+
+    const [, row] = csv.split("\r\n");
+
+    expect(row).toContain(",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,");
+    expect(row).toContain(",0a1b,,MDM/1.0,");
   });
 
   it("neutralises spreadsheet formula prefixes", () => {

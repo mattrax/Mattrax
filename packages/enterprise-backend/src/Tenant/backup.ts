@@ -144,6 +144,9 @@ const recordAudit = (
       organizationId,
       actorAccountId: actor?.accountId ?? null,
       actorEmail: actor?.email ?? null,
+      // A background run has no account; an operator-triggered one does.
+      actorType: actor ? "account" : "system",
+      category: actor ? "account" : "system",
       action,
       targetType: "organization",
       targetId: organizationId,

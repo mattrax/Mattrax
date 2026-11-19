@@ -1130,6 +1130,8 @@ export const recordScriptAgentResult = (
           organizationId: device.organizationId,
           actorAccountId: null,
           actorEmail: "system",
+          actorType: "system",
+          category: "system",
           action: failed ? "script.run_failed" : "script.run_completed",
           targetType: "device",
           targetId: device.id,

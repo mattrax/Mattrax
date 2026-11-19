@@ -177,7 +177,18 @@ Core tables:
   private key used to unwrap CMS recovery keys).
 - `autopilot_profile`, `autopilot_device`, `android_enterprise`, `android_device`, `android_pubsub_message` (AMAPI
   resource name, policy hash and the Android-only inventory columns).
-- `audit_log`, `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
+- `audit_log`: the organisation event log. One row per action with `actorType`
+  (`account`/`api-token`/`system`), `category` (`account`/`mdm`/`system`), target,
+  `metadata`, verified `ip`, bounded `userAgent`, optional `deviceId`
+  (`onDelete: set null`), identity certificate SHA-256 fingerprint and serial, and
+  `principalId` (Apple user channel), and `protocol` (`apple`/`win`/`android`). Device
+  check-ins are coalesced per device, fixed time bucket, principal and presenting
+  identity (`mdm.checkin`); lifecycle, delivery, status, command-result and failure events
+  always append. The same table backs the settings audit page and the device activity
+  feed; there is no second device-event table. `category` is assigned by
+  `defaultAuditCategory`: `device.*`/`mdm.*`/`enrollment.*` are `mdm`, everything else
+  written by the system actor is `system`.
+- `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
   and `email_outbox` (one row per transactional message, claimed and retried by the
   cron with exponential backoff and a permanent-failure audit entry).
 - `account_audit_log` (account-scoped audit, nullable `subject_account_id` so the deletion
@@ -207,6 +218,11 @@ Indexes are declared for the queries that exist, not for columns in general:
 - Per-device command history reads `(device_id, created_at)`; the activity page's
   keyset pagination reads `(device_id, updated_at)`. Queue maintenance reads the
   deployment-wide `(status, expires_at)` / `(status, updated_at)` shapes.
+- Device activity and the audit device filter read `audit_log` by
+  `(device_id, organization_id, created_at)`; the device column leads so the same index
+  also supports the `onDelete: set null` foreign key on device deletion. The activity
+  feed also matches the legacy `(target_type = 'device', target_id = device.id)` pair, so
+  rows written before `device_id` existed keep appearing.
 - Retention sweeps delete by `created_at` (or the table's equivalent clock), so
   append-only tables carry a time index for the prune even when every read is
   tenant-scoped: `created_at` alone, or a status-leading composite such as

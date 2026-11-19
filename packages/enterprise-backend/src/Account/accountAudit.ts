@@ -282,10 +282,21 @@ export const accountAuditEntry = (entry: {
 }): AccountAuditEntry => ({
   id: entry.id,
   action: entry.action,
+  // The account stream is account actions by definition; it predates the
+  // category column and can never contain device protocol traffic.
+  category: "account",
   targetType: entry.targetType,
   targetId: entry.targetId,
   actorAccountId: entry.actorAccountId ?? null,
   actorEmail: entry.actorEmail ?? null,
+  actorType: entry.actorAccountId ? "account" : "system",
+  ip: null,
+  userAgent: null,
+  deviceId: null,
+  deviceCertificateFingerprint: null,
+  deviceCertificateSerial: null,
+  principalId: null,
+  protocol: null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
   createdAt: entry.createdAt.toISOString(),

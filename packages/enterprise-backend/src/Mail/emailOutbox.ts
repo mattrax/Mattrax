@@ -293,6 +293,8 @@ const recordPermanentFailure = (
         organizationId: row.organizationId,
         actorAccountId: null,
         actorEmail: null,
+        actorType: "system",
+        category: "system",
         action: EMAIL_DELIVERY_FAILED_ACTION,
         targetType: "email_outbox",
         targetId: row.id,

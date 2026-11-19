@@ -134,8 +134,18 @@ const matchesQuery = (condition: any, row: Row) => {
       const expected = query.params[index++];
 
       if (operator === "=") {
-        if (actual !== expected) return false;
-        continue;
+        if (actual === expected) continue;
+
+        // Drizzle serialises datetime parameters, so a bucket lookup compares
+        // the stored Date with the formatted string for the same instant.
+        const dateLike = (value: RowValue) =>
+          value instanceof Date ||
+          (Schema.is(Schema.String)(value) && /^\d{4}-\d{2}-\d{2}/.test(value));
+
+        if (dateLike(actual) && dateLike(expected) && comparable(actual) === comparable(expected))
+          continue;
+
+        return false;
       }
 
       const left = comparable(actual);

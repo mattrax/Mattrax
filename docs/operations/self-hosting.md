@@ -109,7 +109,9 @@ the serial number.
 The container serves plain HTTP because TLS is the proxy's job. Set
 `TRUSTED_ORIGINS` when the dashboard and API are served from different origins.
 Set `TRUST_PROXY_HEADERS=1` when the proxy overwrites `X-Forwarded-For` as shown:
-rate limits then key on the client address instead of sharing one global bucket.
+rate limits then key on the client address, and the device/MDM audit events store
+the same verified address. Without the opt-in neither trusts a forwarded header,
+so the audit `ip` column stays null rather than recording a caller-chosen value.
 
 ## Configuration
 
@@ -119,7 +121,7 @@ rate limits then key on the client address instead of sharing one global bucket.
 | `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.   |
 | `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.         |
 | `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.            |
-| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits. |
+| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs. |
 | `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                           |
 | `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                        |
 | `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                          |

@@ -117,6 +117,7 @@ import {
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
+import { boundedClientAddress } from "@mattrax/net";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
 
@@ -125,6 +126,9 @@ const rateLimiter = createRateLimiter({
   // forwarded headers are trusted; Cloudflare is detected from `request.cf`.
   trustForwarded: apiEnv.TRUST_PROXY_HEADERS === "1",
 });
+
+/** One trusted-proxy decision for the limiter, the audit log and MDM scopes. */
+const TRUST_PROXY_HEADERS = apiEnv.TRUST_PROXY_HEADERS === "1";
 
 /**
  * Plan limits are deployment configuration, not product pricing. A malformed
@@ -152,6 +156,25 @@ const enrollmentProfileTtlSeconds = (() => {
     );
 
   return parsed;
+})();
+
+/**
+ * Device check-ins are the highest-volume MDM event. Repeated check-ins from
+ * the same device fold into one audit row inside this window. `0` records
+ * every request, which is only sensible for a small fleet or debugging.
+ */
+const auditCheckinCoalesceWindowMs = (() => {
+  const raw = apiEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS;
+
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 86_400)
+    throw new Error(
+      "MDM_AUDIT_CHECKIN_COALESCE_SECONDS must be a whole number of seconds between 0 and 86400",
+    );
+
+  return parsed * 1_000;
 })();
 
 /**
@@ -739,6 +762,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
           }
         : undefined,
     enrollmentProfileTtlSeconds,
+    auditCheckinCoalesceWindowMs,
   }).pipe(Layer.provide(Db.layer));
 
   const azureGraphLayer =
@@ -1089,6 +1113,21 @@ const TRUST_DEVICE_IDENTITY_HEADERS = apiEnv.TRUST_DEVICE_IDENTITY_HEADERS === "
 
 const deviceIdentityHeaders = (request: Request) => {
   const headers = new Headers(request.headers);
+
+  // The client address is computed once, with the rate limiter's trust policy,
+  // and handed to the inner handlers as a header they can trust. A caller can
+  // never set it: the value is stripped first and only the verified address is
+  // written back. Handlers store null when the deployment cannot prove one.
+  headers.delete("x-mattrax-client-address");
+  // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
+  const cloudflare = (request as { cf?: unknown }).cf !== undefined;
+
+  const address = boundedClientAddress(request.headers, {
+    trustForwarded: TRUST_PROXY_HEADERS,
+    cloudflare,
+  });
+
+  if (address) headers.set("x-mattrax-client-address", address);
 
   if (TRUST_DEVICE_IDENTITY_HEADERS) return headers;
 
