@@ -79,11 +79,18 @@ ENV NODE_ENV=production \
     PORT=8080 \
     HOST=0.0.0.0 \
     DATA_DIR=/data \
-    HOME=/home/node
+    HOME=/home/node \
+    LD_LIBRARY_PATH=/usr/lib/node-libs
 
 COPY --from=build /out/etc/passwd /etc/passwd
 COPY --from=build /out/etc/group /etc/group
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
+
+# Node 26 is linked against libatomic on both amd64 and arm64; distroless's
+# `cc` image carries libstdc++ and libgcc but not it. Ship it beside the
+# binary. The multiarch directory name differs per architecture, so copy the
+# match into one fixed directory and point the loader at it.
+COPY --from=build /usr/lib/*-linux-gnu/libatomic.so.1* /usr/lib/node-libs/
 
 WORKDIR /app
 
