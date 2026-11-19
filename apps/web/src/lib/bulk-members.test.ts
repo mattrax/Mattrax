@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { bulkFailureReason, bulkReport, rolePatch } from "./bulk-members";
+import {
+  bulkFailureReason,
+  bulkReport,
+  chunkIds,
+  mergeBulkResults,
+  rolePatch,
+  runBulkBatches,
+} from "./bulk-members";
 
 describe("rolePatch", () => {
   it("maps a built-in role token to the API shape", () => {
@@ -16,8 +23,58 @@ describe("bulkFailureReason", () => {
     expect(bulkFailureReason("notFound")).toBe("No longer exists");
   });
 
+  it("labels the other tagged reasons instead of camel-casing them", () => {
+    expect(bulkFailureReason("forbidden")).toBe("Not allowed");
+    expect(bulkFailureReason("lastOwner")).toBe("Cannot remove the last owner");
+  });
+
   it("humanises other tags instead of hiding them", () => {
     expect(bulkFailureReason("last_owner")).toBe("Last owner");
+  });
+});
+
+describe("bulk batching", () => {
+  it("splits ids into endpoint-sized batches", () => {
+    expect(chunkIds(["a", "b", "c", "d", "e"], 2)).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+      ["e"],
+    ]);
+  });
+
+  it("merges updated and failed rows from every batch", async () => {
+    const batches: string[][] = [];
+
+    const result = await runBulkBatches(["a", "b", "c", "d", "e"], 2, async (batch) => {
+      batches.push(batch);
+
+      return {
+        updated: batch.slice(0, 1),
+        failed: batch.slice(1).map((id) => ({ id, reason: "notFound" })),
+      };
+    });
+
+    expect(batches).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+    expect(result).toEqual({
+      updated: ["a", "c", "e"],
+      failed: [
+        { id: "b", reason: "notFound" },
+        { id: "d", reason: "notFound" },
+      ],
+    });
+  });
+
+  it("keeps the merge order when batches are combined directly", () => {
+    expect(
+      mergeBulkResults([
+        { updated: ["a"], failed: [] },
+        { updated: [], failed: [{ id: "b", reason: "forbidden" }] },
+        { updated: ["c"], failed: [] },
+      ]),
+    ).toEqual({
+      updated: ["a", "c"],
+      failed: [{ id: "b", reason: "forbidden" }],
+    });
   });
 });
 

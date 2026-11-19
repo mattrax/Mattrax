@@ -1,12 +1,12 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { PERMISSION_GROUPS, type Permission } from "@mattrax/enterprise-domain/client";
+import { PERMISSION_GROUPS, BULK_MEMBER_LIMIT, type Permission } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError, formatDate, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { errorMessage } from "~/lib/errors";
-import { bulkFailureReason, bulkReport, type BulkFailure, rolePatch } from "~/lib/bulk-members";
+import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure, rolePatch } from "~/lib/bulk-members";
 import { Button } from "~/components/ui/button";
 import { FilterBar, type FilterField } from "@mattrax/ui";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -711,10 +711,12 @@ export default function AdministratorsSettingsPage() {
 
       if (accountIds.length === 0) throw new Error("Select at least one administrator");
 
-      return enterprise.patchAccountRoles(params.tenantId, {
-        accountIds,
-        ...rolePatch(choice.value),
-      });
+      return runBulkBatches(accountIds, BULK_MEMBER_LIMIT, (batch) =>
+        enterprise.patchAccountRoles(params.tenantId, {
+          accountIds: batch,
+          ...rolePatch(choice.value),
+        }),
+      );
     },
     onMutate: async () => {
       const choice = roleChoices().find((option) => option.value === bulkRole());

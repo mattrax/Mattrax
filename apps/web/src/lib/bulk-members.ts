@@ -4,6 +4,47 @@ export type BulkFailure = { id: string; name: string; reason: string };
 /** Per-row outcome returned by the member bulk endpoints. */
 export type BulkOutcome = { succeeded: number; failed: BulkFailure[] };
 
+/** Raw per-row response from a member bulk endpoint. */
+export type BulkResult = {
+  readonly updated: ReadonlyArray<string>;
+  readonly failed: ReadonlyArray<{ id: string; reason: string }>;
+};
+
+/** Split an id list into requests the endpoint accepts in one call. */
+export function chunkIds(ids: ReadonlyArray<string>, limit: number): string[][] {
+  const chunks: string[][] = [];
+
+  for (let offset = 0; offset < ids.length; offset += limit)
+    chunks.push(ids.slice(offset, offset + limit));
+
+  return chunks;
+}
+
+/** Combine per-batch responses without losing any succeeded or failed row. */
+export function mergeBulkResults(results: ReadonlyArray<BulkResult>): BulkResult {
+  return {
+    updated: results.flatMap((result) => result.updated),
+    failed: results.flatMap((result) => result.failed),
+  };
+}
+
+/**
+ * Run a bulk member action across the endpoint's per-request cap. Selections
+ * larger than one page must not fail as a whole, so batches run in order and
+ * their outcomes are merged for the caller's single report.
+ */
+export async function runBulkBatches(
+  ids: ReadonlyArray<string>,
+  limit: number,
+  request: (batch: string[]) => Promise<BulkResult>,
+): Promise<BulkResult> {
+  const results: BulkResult[] = [];
+
+  for (const batch of chunkIds(ids, limit)) results.push(await request(batch));
+
+  return mergeBulkResults(results);
+}
+
 /** Copy for the toast that reports a bulk outcome. */
 export type BulkReport = {
   tone: "success" | "warning" | "error";
@@ -21,10 +62,14 @@ const entityNoun = (noun: { one: string; many: string }, count: number) =>
  * The API uses short tagged reasons so clients can translate them. Anything
  * unrecognised is still shown, never hidden.
  */
+const failureLabels = new Map<string, string>([
+  ["notFound", "No longer exists"],
+  ["forbidden", "Not allowed"],
+  ["lastOwner", "Cannot remove the last owner"],
+]);
+
 export const bulkFailureReason = (reason: string) =>
-  reason === "notFound"
-    ? "No longer exists"
-    : capitalise(reason.replace(/[_-]+/g, " "));
+  failureLabels.get(reason) ?? capitalise(reason.replace(/[_-]+/g, " "));
 
 /**
  * The single-member endpoint and the bulk one share a role picker value shape.

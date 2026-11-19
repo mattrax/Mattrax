@@ -1,5 +1,6 @@
 import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
 import { Match, Option, Schema } from "effect";
+import { BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
@@ -8,7 +9,7 @@ import { toast } from "~/components/toast";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import { bulkFailureReason, bulkReport, type BulkFailure } from "~/lib/bulk-members";
+import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure } from "~/lib/bulk-members";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
 import { preloadPage } from "~/lib/page-data";
@@ -131,7 +132,9 @@ export default function DirectorySyncPage() {
 
       if (userIds.length === 0) throw new Error("Select at least one directory user");
 
-      return enterprise.addUserGroupMembers(params.tenantId, groupId, userIds);
+      return runBulkBatches(userIds, BULK_MEMBER_LIMIT, (batch) =>
+        enterprise.addUserGroupMembers(params.tenantId, groupId, batch),
+      );
     },
     onSuccess: async (result) => {
       const names = new Map(directoryUsers().map((user) => [user.id, user.name]));

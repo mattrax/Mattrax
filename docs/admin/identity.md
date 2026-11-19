@@ -107,9 +107,14 @@ once at least one directory group exists. Select users, choose a group and use
 successful. Rows the server cannot resolve stay selected and the toast names each
 failure.
 
-A synced group is owned by its provider. Manual additions are kept until the
-next Graph or SCIM sync replaces that group's membership, so use a provider-side
-group change when the membership must persist. Each bulk change wakes the
+A synced group is refreshed from provider-reported changes. Graph sync applies
+deltas rather than replacing the whole membership, so a manual addition normally
+stays until the provider reports a change for that user; SCIM may replace a
+group's membership when the IdP sends a full membership replacement. Use a
+provider-side group change when the membership must be durable.
+
+The bulk action requires `members.write`, because directory-group membership also
+drives user-scoped policy and application reach. Each bulk change wakes the
 affected users' linked devices and writes one audit entry with the requested,
 updated and failed counts and a bounded list of user ids.
 

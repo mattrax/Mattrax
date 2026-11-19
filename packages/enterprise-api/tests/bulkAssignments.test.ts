@@ -222,6 +222,93 @@ describe("bulk member role changes", () => {
     expect(context.db.store.member[0].role).toBe("owner");
   });
 
+  it("demotes one of two owners and leaves the other in place", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedMember(context, tenant.id, "user-2", "owner");
+
+    const result = await runEffect(
+      context.service.patchTenantAccountRoles(request(headers), tenant.id, {
+        accountIds: ["user-1", "user-2"],
+        role: "admin",
+      }),
+    );
+
+    expect(result).toEqual({
+      updated: ["user-1"],
+      failed: [{ id: "user-2", reason: "lastOwner" }],
+    });
+    expect(context.db.store.member[0].role).toBe("admin");
+    expect(context.db.store.member[1].role).toBe("owner");
+  });
+
+  it("refuses a non-owner assigning the owner role", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedMember(context, tenant.id, "user-2");
+
+    context.db.store.member[0].role = "admin";
+
+    await expect(
+      runEffect(
+        context.service.patchTenantAccountRoles(request(headers), tenant.id, {
+          accountIds: ["user-2"],
+          role: "owner",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    expect(context.db.store.member[1].role).toBe("member");
+  });
+
+  it("protects an owner fallback row that also carries a custom role", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedMember(context, tenant.id, "user-2", "owner");
+    context.db.store.member[1].customRoleId = "legacy-custom-role";
+
+    context.db.store.member[0].role = "admin";
+
+    const result = await runEffect(
+      context.service.patchTenantAccountRoles(request(headers), tenant.id, {
+        accountIds: ["user-2"],
+        role: "member",
+      }),
+    );
+
+    expect(result).toEqual({
+      updated: [],
+      failed: [{ id: "user-2", reason: "forbidden" }],
+    });
+    expect(context.db.store.member[1].role).toBe("owner");
+    expect(context.db.store.member[1].customRoleId).toBe("legacy-custom-role");
+  });
+
+  it("refuses a custom-role actor assigning a built-in role above its ceiling", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedMember(context, tenant.id, "user-2");
+
+    const actorRole = await runEffect(
+      context.service.createTenantRole(request(headers), tenant.id, {
+        name: "Helpdesk",
+        permissions: ["tenant.read", "tenant.write", "members.write"],
+      }),
+    );
+
+    context.db.store.member[0].customRoleId = actorRole.id;
+    context.db.store.member[0].role = "member";
+
+    await expect(
+      runEffect(
+        context.service.patchTenantAccountRoles(request(headers), tenant.id, {
+          accountIds: ["user-2"],
+          role: "admin",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    expect(context.db.store.member[1].role).toBe("member");
+  });
+
   it("rejects a custom role above the actor's permission ceiling", async () => {
     const context = makeContext();
     const tenant = await makeTenant(context);
@@ -382,5 +469,53 @@ describe("bulk directory group membership", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
     expect(context.db.store.user_group_member).toEqual([]);
+  });
+
+  it("re-derives a linked device group through device_user", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedGroup(context, tenant.id, "group-1");
+    seedUser(context, tenant.id, "user-2");
+
+    context.db.store.enterprise_group.push({
+      id: "device-group-1",
+      organizationId: tenant.id,
+      name: "Linked devices",
+      notes: null,
+      kind: "manual",
+      rules: null,
+      directoryGroupId: "group-1",
+      lastEvaluatedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    context.db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      name: "Ada's Mac",
+      proto: "apple",
+      status: "enrolled",
+      enrolledAt: timestamp,
+      lastSeenAt: timestamp,
+    });
+    context.db.store.device_user.push({
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      userId: "user-2",
+      source: "manual",
+      createdAt: timestamp,
+    });
+
+    await runEffect(
+      context.service.addUserGroupMembers(request(headers), tenant.id, "group-1", {
+        userIds: ["user-2"],
+      }),
+    );
+
+    expect(context.db.store.group_device).toContainEqual({
+      groupId: "device-group-1",
+      deviceId: "device-1",
+      source: "directory",
+    });
   });
 });

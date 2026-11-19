@@ -10350,47 +10350,62 @@ export const createEnterpriseService = ({
         const actorIsOwner = isBuiltInOwnerMember(ctx.member);
         const assignsOwner = !customRole && hasOwnerRole(role);
         const owners = assignsOwner ? 0 : yield* ownerCount(tenantId);
-        let removedOwners = 0;
-        const updated: string[] = [];
-        const failed: Array<{ id: string; reason: string }> = [];
 
-        for (const accountId of accountIds) {
-          const member = membersByAccount.get(accountId);
+        // One failed write must not leave a bulk selection half-applied. Row
+        // refusals are recorded as per-item results; a database failure rolls
+        // the whole batch back.
+        const outcome = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            let removedOwners = 0;
+            const updated: string[] = [];
+            const failed: Array<{ id: string; reason: string }> = [];
 
-          if (!member) {
-            failed.push({ id: accountId, reason: "notFound" });
-            continue;
-          }
+            for (const accountId of accountIds) {
+              const member = membersByAccount.get(accountId);
 
-          const targetIsOwner = isBuiltInOwnerMember(member);
+              if (!member) {
+                failed.push({ id: accountId, reason: "notFound" });
+                continue;
+              }
 
-          // Assigning or changing an owner is reserved for built-in owners,
-          // exactly like the single-member endpoint.
-          if ((targetIsOwner || assignsOwner) && !actorIsOwner) {
-            failed.push({ id: accountId, reason: "forbidden" });
-            continue;
-          }
+              const targetIsOwner = isBuiltInOwnerMember(member);
+              // A member whose built-in fallback is owner stays protected even
+              // when a custom role is currently assigned.
+              const targetHasOwnerRole = hasOwnerRole(member.role);
 
-          const removingOwner = targetIsOwner && !assignsOwner;
+              // Assigning or changing an owner is reserved for built-in owners,
+              // exactly like the single-member endpoint.
+              if ((targetHasOwnerRole || assignsOwner) && !actorIsOwner) {
+                failed.push({ id: accountId, reason: "forbidden" });
+                continue;
+              }
 
-          if (removingOwner && owners - removedOwners <= 1) {
-            failed.push({ id: accountId, reason: "lastOwner" });
-            continue;
-          }
+              const removingOwner = targetIsOwner && !assignsOwner;
 
-          const nextRoleId = customRole?.id ?? null;
+              if (removingOwner && owners - removedOwners <= 1) {
+                failed.push({ id: accountId, reason: "lastOwner" });
+                continue;
+              }
 
-          if (member.role !== role || (member.customRoleId ?? null) !== nextRoleId) {
-            yield* db
-              .update(schema.member)
-              .set({ role, customRoleId: nextRoleId, updatedAt: now() })
-              .where(eq(schema.member.id, member.id));
+              const nextRoleId = customRole?.id ?? null;
 
-            if (removingOwner) removedOwners++;
-          }
+              if (member.role !== role || (member.customRoleId ?? null) !== nextRoleId) {
+                yield* tx
+                  .update(schema.member)
+                  .set({ role, customRoleId: nextRoleId, updatedAt: now() })
+                  .where(eq(schema.member.id, member.id));
 
-          updated.push(accountId);
-        }
+                if (removingOwner) removedOwners++;
+              }
+
+              updated.push(accountId);
+            }
+
+            return { updated, failed };
+          }),
+        );
+
+        const { updated, failed } = outcome;
 
         const auditMetadata = {
           role,
@@ -16401,8 +16416,16 @@ export const createEnterpriseService = ({
 
         // Membership changes reach user-scoped policies and directory-linked
         // device groups, so wake the linked devices rather than waiting for the
-        // next scheduled check-in.
-        yield* refreshDevicesForDirectoryUsers(ctx.organization.id, updated);
+        // next scheduled check-in. A push failure is logged, like SCIM/Entra
+        // sync, and must not swallow the audit for the membership write.
+        if (toInsert.length)
+          yield* refreshDevicesForDirectoryUsers(ctx.organization.id, toInsert).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                `Directory group ${groupId} membership refresh failed: ${String(cause)}`,
+              ),
+            ),
+          );
 
         const failed = userIds.flatMap((userId) =>
           knownUsers.has(userId) ? [] : [{ id: userId, reason: "notFound" }],
