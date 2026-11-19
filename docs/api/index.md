@@ -147,4 +147,7 @@ const tenants = await response.json();
 - [CLI](/api/cli)
 - [API reference](/api/reference/)
 - [OpenAPI](/api/openapi)
+- [Build a management backend](/api/management-backend) — the JS SDK for running your
+  own MDM server behind the Mattrax gateway.
+- [SDK reference](/api/sdk/)
 - [Webhooks](/admin/operations)

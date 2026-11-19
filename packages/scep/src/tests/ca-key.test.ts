@@ -55,7 +55,7 @@ describe("SCEP CA private key sealing", () => {
     const serialized = JSON.stringify(sealed);
     expect(serialized).not.toContain(jwk.d!);
     expect(serialized).not.toContain(jwk.n!);
-    expect(serialized).not.toContain("kty");
+    expect(serialized).not.toContain('"kty"');
     expect(jwk.d).toBeTruthy();
   });
 

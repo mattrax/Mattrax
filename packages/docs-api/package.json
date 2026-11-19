@@ -1,0 +1,17 @@
+{
+  "name": "@mattrax/docs-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TypeDoc runner for the management backend SDK reference",
+  "type": "module",
+  "scripts": {
+    "build": "node ./generate.mjs"
+  },
+  "devDependencies": {
+    "@mattrax/management-backend": "workspace:*",
+    "@mattrax/management-backend-http": "workspace:*",
+    "typedoc": "catalog:",
+    "typedoc-plugin-markdown": "catalog:",
+    "typescript": "5.9.3"
+  }
+}
