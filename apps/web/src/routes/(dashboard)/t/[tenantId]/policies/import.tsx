@@ -97,6 +97,10 @@ export default function ImportPolicyPage() {
   const row = (): PolicyImportTarget | undefined =>
     Option.getOrUndefined(decodeTarget(target.data));
 
+  /** A `?policy=` that has not loaded is not an invitation to create a policy. */
+  const targetPending = () => Boolean(targetId()) && target.isPending;
+  const targetUnavailable = () => Boolean(targetId()) && !target.isPending && row() === undefined;
+
   const [sourceText, setSourceText] = createSignal("");
   const [fileName, setFileName] = createSignal<string | undefined>();
   const [parsed, setParsed] = createSignal<ParsedSource | null>(null);
@@ -228,11 +232,25 @@ export default function ImportPolicyPage() {
 
   const writableConfigurations = () => Object.keys(plan()?.payload.configurations ?? {}).length;
 
+  const clearTarget = () => {
+    setSearchParams({ policy: undefined }, { replace: true });
+    setParsed(null);
+    setSourceText("");
+    setFileName(undefined);
+    setError(null);
+  };
+
   const save = useMutation(() => ({
     mutationFn: async () => {
       const next = plan();
 
       if (!next) throw new Error("Preview a policy before importing it.");
+
+      if (targetId() && !row())
+        throw new Error("The target policy has not loaded. Reload the page and try again.");
+
+      if (next.blocked)
+        throw new Error("This import cannot be saved. Fix the highlighted problem.");
 
       if (writableConfigurations() === 0) throw new Error("There is nothing to import.");
 
@@ -304,14 +322,7 @@ export default function ImportPolicyPage() {
           }
           actions={
             <Show when={row()}>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setSearchParams({ policy: undefined }, { replace: true });
-                  setParsed(null);
-                  setSourceText("");
-                }}
-              >
+              <Button variant="outline" onClick={clearTarget}>
                 Import into a new policy
               </Button>
             </Show>
@@ -320,263 +331,307 @@ export default function ImportPolicyPage() {
 
         <QueryError error={target.error} onRetry={() => void target.refetch()} />
 
-        <div class="grid max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-          <div class="space-y-5">
+        <Show
+          when={!targetPending() && !targetUnavailable()}
+          fallback={
             <Panel
-              title="Source"
-              description="Upload a file or paste a policy document. A .mobileconfig creates one Apple profile configuration."
+              title={targetPending() ? "Loading policy" : "Policy unavailable"}
+              description={
+                targetPending()
+                  ? "Loading the policy this import adds configurations to."
+                  : "The policy in this link could not be loaded, so the import stays in merge mode instead of creating a new policy."
+              }
             >
-              <div class="space-y-4">
-                <Field label="File" hint="Accepts .mobileconfig, .plist, .json, .yaml and .yml.">
-                  <input
-                    type="file"
-                    accept=".mobileconfig,.plist,.json,.yaml,.yml,application/json"
-                    class="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[12.5px] text-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-[12px] file:text-foreground"
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0];
-
-                      if (file) void readFile(file);
-                    }}
-                  />
-                </Field>
-
-                <Field
-                  label="Or paste"
-                  hint="A policy document exported with `mattrax policies export`, or a mobileconfig saved as text."
-                >
-                  <textarea
-                    class={textareaClass}
-                    value={sourceText()}
-                    onInput={(event) => setSourceText(event.currentTarget.value)}
-                    placeholder={'{ "version": 1, "policies": [ … ] }'}
-                  />
-                </Field>
-
-                <div class="flex flex-wrap items-center gap-2">
-                  <Button
-                    onClick={() => void readText(sourceText(), fileName() ?? "The pasted document")}
-                    disabled={busy() || sourceText().trim().length === 0}
-                  >
-                    {busy() ? "Reading…" : "Preview"}
-                  </Button>
-                  <Show when={parsed()}>
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setParsed(null);
-                        setSourceText("");
-                        setFileName(undefined);
-                        setError(null);
-                      }}
-                    >
-                      Clear
+              <Show
+                when={targetPending()}
+                fallback={
+                  <div class="space-y-3">
+                    <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                      Nothing has been created. Reload the page to retry, or start a new policy
+                      explicitly.
+                    </p>
+                    <Button variant="outline" onClick={clearTarget}>
+                      Import into a new policy
                     </Button>
+                  </div>
+                }
+              >
+                <SkeletonRows rows={3} />
+              </Show>
+            </Panel>
+          }
+        >
+          <div class="grid max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+            <div class="space-y-5">
+              <Panel
+                title="Source"
+                description="Upload a file or paste a policy document. A .mobileconfig creates one Apple profile configuration."
+              >
+                <div class="space-y-4">
+                  <Field label="File" hint="Accepts .mobileconfig, .plist, .json, .yaml and .yml.">
+                    <input
+                      type="file"
+                      accept=".mobileconfig,.plist,.json,.yaml,.yml,application/json"
+                      class="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[12.5px] text-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-[12px] file:text-foreground"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+
+                        if (file) void readFile(file);
+                      }}
+                    />
+                  </Field>
+
+                  <Field
+                    label="Or paste"
+                    hint="A policy document exported with `mattrax policies export`, or a mobileconfig saved as text."
+                  >
+                    <textarea
+                      class={textareaClass}
+                      value={sourceText()}
+                      onInput={(event) => setSourceText(event.currentTarget.value)}
+                      placeholder={'{ "version": 1, "policies": [ … ] }'}
+                    />
+                  </Field>
+
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() =>
+                        void readText(sourceText(), fileName() ?? "The pasted document")
+                      }
+                      disabled={busy() || sourceText().trim().length === 0}
+                    >
+                      {busy() ? "Reading…" : "Preview"}
+                    </Button>
+                    <Show when={parsed()}>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setParsed(null);
+                          setSourceText("");
+                          setFileName(undefined);
+                          setError(null);
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </Show>
+                  </div>
+
+                  <Show when={error()}>
+                    {(message) => (
+                      <p role="alert" class="text-[12.5px] leading-relaxed text-destructive">
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+
+                  <Show when={row()}>
+                    <div class="space-y-2 rounded-lg border border-border bg-muted/15 px-3 py-2.5">
+                      <p class="label-caps">Existing configurations</p>
+                      <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                        A kind the policy already has is kept unless you choose to replace it.
+                      </p>
+                      <div class="flex flex-col gap-1.5 text-[12px] text-muted-foreground">
+                        <label class="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="conflict"
+                            class="accent-[var(--brand-solid)]"
+                            checked={conflict() === "skip"}
+                            onChange={() => setConflict("skip")}
+                          />
+                          Skip existing kinds
+                        </label>
+                        <label class="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="conflict"
+                            class="accent-[var(--brand-solid)]"
+                            checked={conflict() === "overwrite"}
+                            onChange={() => setConflict("overwrite")}
+                          />
+                          Replace existing kinds
+                        </label>
+                      </div>
+                    </div>
                   </Show>
                 </div>
+              </Panel>
 
-                <Show when={error()}>
-                  {(message) => (
-                    <p role="alert" class="text-[12.5px] leading-relaxed text-destructive">
-                      {message()}
-                    </p>
-                  )}
-                </Show>
-
-                <Show when={row()}>
-                  <div class="space-y-2 rounded-lg border border-border bg-muted/15 px-3 py-2.5">
-                    <p class="label-caps">Existing configurations</p>
-                    <p class="text-[11.5px] leading-relaxed text-muted-foreground">
-                      A kind the policy already has is kept unless you choose to replace it.
-                    </p>
-                    <div class="flex flex-col gap-1.5 text-[12px] text-muted-foreground">
-                      <label class="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="conflict"
-                          class="accent-[var(--brand-solid)]"
-                          checked={conflict() === "skip"}
-                          onChange={() => setConflict("skip")}
-                        />
-                        Skip existing kinds
-                      </label>
-                      <label class="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="conflict"
-                          class="accent-[var(--brand-solid)]"
-                          checked={conflict() === "overwrite"}
-                          onChange={() => setConflict("overwrite")}
-                        />
-                        Replace existing kinds
-                      </label>
-                    </div>
-                  </div>
-                </Show>
-              </div>
-            </Panel>
-
-            <Show when={plan()}>
-              {(value) => (
-                <Panel
-                  title="Preview"
-                  description="Nothing is saved until you import, and the server validates every configuration before writing."
-                  actions={
-                    <Badge variant="outline" class="gap-1.5 text-muted-foreground">
-                      <Info class="size-3" />
-                      {value().source === "mobileconfig" ? "mobileconfig" : "policy document"}
-                    </Badge>
-                  }
-                >
-                  <div class="space-y-4">
-                    <Show when={!row()}>
-                      <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
-                        <Field label="Policy name">
-                          <Input
-                            value={name()}
-                            onInput={(event) => setName(event.currentTarget.value)}
+              <Show when={plan()}>
+                {(value) => (
+                  <Panel
+                    title="Preview"
+                    description="Nothing is saved until you import, and the server validates every configuration before writing."
+                    actions={
+                      <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+                        <Info class="size-3" />
+                        {value().source === "mobileconfig" ? "mobileconfig" : "policy document"}
+                      </Badge>
+                    }
+                  >
+                    <div class="space-y-4">
+                      <Show when={!row()}>
+                        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+                          <Field label="Policy name">
+                            <Input
+                              value={name()}
+                              onInput={(event) => setName(event.currentTarget.value)}
+                            />
+                          </Field>
+                          <Field label="Priority">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={priority()}
+                              onInput={(event) => setPriority(event.currentTarget.value)}
+                            />
+                          </Field>
+                        </div>
+                        <Field label="Notes" hint="Optional.">
+                          <textarea
+                            class={`${textareaClass} min-h-20 font-sans text-[13px]`}
+                            value={notes()}
+                            onInput={(event) => setNotes(event.currentTarget.value)}
                           />
                         </Field>
-                        <Field label="Priority">
-                          <Input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={priority()}
-                            onInput={(event) => setPriority(event.currentTarget.value)}
-                          />
-                        </Field>
+                      </Show>
+
+                      <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
+                        <Show when={counts().added > 0}>
+                          <Badge variant="success" class="tabular-nums">
+                            {counts().added} added
+                          </Badge>
+                        </Show>
+                        <Show when={counts().replaced > 0}>
+                          <Badge variant="warning" class="tabular-nums">
+                            {counts().replaced} replaced
+                          </Badge>
+                        </Show>
+                        <Show when={counts().unchanged > 0}>
+                          <Badge variant="outline" class="tabular-nums">
+                            {counts().unchanged} unchanged
+                          </Badge>
+                        </Show>
+                        <Show when={counts().skipped > 0}>
+                          <Badge variant="outline" class="tabular-nums">
+                            {counts().skipped} skipped
+                          </Badge>
+                        </Show>
                       </div>
-                      <Field label="Notes" hint="Optional.">
-                        <textarea
-                          class={`${textareaClass} min-h-20 font-sans text-[13px]`}
-                          value={notes()}
-                          onInput={(event) => setNotes(event.currentTarget.value)}
-                        />
-                      </Field>
-                    </Show>
 
-                    <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
-                      <Show when={counts().added > 0}>
-                        <Badge variant="success" class="tabular-nums">
-                          {counts().added} added
-                        </Badge>
-                      </Show>
-                      <Show when={counts().replaced > 0}>
-                        <Badge variant="warning" class="tabular-nums">
-                          {counts().replaced} replaced
-                        </Badge>
-                      </Show>
-                      <Show when={counts().unchanged > 0}>
-                        <Badge variant="outline" class="tabular-nums">
-                          {counts().unchanged} unchanged
-                        </Badge>
-                      </Show>
-                      <Show when={counts().skipped > 0}>
-                        <Badge variant="outline" class="tabular-nums">
-                          {counts().skipped} skipped
-                        </Badge>
-                      </Show>
-                    </div>
-
-                    <Show
-                      when={value().configurations.length > 0}
-                      fallback={
-                        <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
-                          The document does not contain configurations. Use the editor to add them
-                          manually.
-                        </p>
-                      }
-                    >
-                      <div class="divide-y divide-border overflow-hidden rounded-lg border border-border">
-                        <For each={value().configurations}>
-                          {(entry) => (
-                            <div class="flex flex-wrap items-center gap-2 bg-muted/10 px-3 py-2.5">
-                              <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-                                {entry.kind}
-                              </span>
-                              <Badge variant="outline" class="text-[10px]">
-                                {entry.scope === "user" ? "User channel" : "Device channel"}
-                              </Badge>
-                              <Badge
-                                variant={importActionVariant(entry.action)}
-                                class="text-[10px]"
-                              >
-                                {policyImportActionLabel(entry.action)}
-                              </Badge>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-
-                    <Show when={value().warnings.length > 0}>
-                      <ul class="space-y-1.5">
-                        <For each={value().warnings}>
-                          {(warning) => (
-                            <li class="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                              <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
-                              <span>{warning}</span>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </Show>
-
-                    <div class="flex flex-wrap items-center gap-2">
-                      <Button
-                        onClick={() => save.mutate()}
-                        disabled={
-                          save.isPending ||
-                          writableConfigurations() === 0 ||
-                          (!row() && name().trim().length === 0)
+                      <Show
+                        when={value().configurations.length > 0}
+                        fallback={
+                          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                            The document does not contain configurations. Use the editor to add them
+                            manually.
+                          </p>
                         }
                       >
-                        {save.isPending
-                          ? "Importing…"
-                          : row()
-                            ? "Import configurations"
-                            : "Create policy"}
-                      </Button>
-                      <Button variant="ghost" onClick={() => navigate(backHref())}>
-                        Cancel
-                      </Button>
-                    </div>
-                    <ErrorText error={save.error} />
-                  </div>
-                </Panel>
-              )}
-            </Show>
-          </div>
+                        <div class="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                          <For each={value().configurations}>
+                            {(entry) => (
+                              <div class="flex flex-wrap items-center gap-2 bg-muted/10 px-3 py-2.5">
+                                <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                                  {entry.kind}
+                                </span>
+                                <Badge variant="outline" class="text-[10px]">
+                                  {entry.scope === "user" ? "User channel" : "Device channel"}
+                                </Badge>
+                                <Badge
+                                  variant={importActionVariant(entry.action)}
+                                  class="text-[10px]"
+                                >
+                                  {policyImportActionLabel(entry.action)}
+                                </Badge>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
 
-          <Panel class="lg:sticky lg:top-20">
-            <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
-              <CheckCircle2 class="size-4" />
+                      <Show when={value().warnings.length > 0}>
+                        <ul class="space-y-1.5">
+                          <For each={value().warnings}>
+                            {(warning) => (
+                              <li class="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                                <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
+                                <span>{warning}</span>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+
+                      <Show when={value().blocked}>
+                        <p
+                          role="alert"
+                          class="rounded-lg border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-[12px] leading-relaxed text-destructive"
+                        >
+                          This import cannot be saved. Use an unsigned profile if it must be
+                          delivered on the user channel.
+                        </p>
+                      </Show>
+
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Button
+                          onClick={() => save.mutate()}
+                          disabled={
+                            save.isPending ||
+                            value().blocked ||
+                            writableConfigurations() === 0 ||
+                            (!row() && name().trim().length === 0)
+                          }
+                        >
+                          {save.isPending
+                            ? "Importing…"
+                            : row()
+                              ? "Import configurations"
+                              : "Create policy"}
+                        </Button>
+                        <Button variant="ghost" onClick={() => navigate(backHref())}>
+                          Cancel
+                        </Button>
+                      </div>
+                      <ErrorText error={save.error} />
+                    </div>
+                  </Panel>
+                )}
+              </Show>
             </div>
-            <h2 class="mt-3 text-[13px] font-semibold text-foreground">What is imported</h2>
-            <ul class="mt-2 space-y-2 text-[12px] leading-relaxed text-muted-foreground">
-              <li>
-                <span class="font-medium text-foreground">Policy document</span> — the format
-                written by <code class="font-mono text-[11px]">mattrax policies export</code>. It is
-                versioned, accepts YAML or JSON, and holds one policy per import.
-              </li>
-              <li>
-                <span class="font-medium text-foreground">.mobileconfig</span> — stored as
-                <code class="ml-1 font-mono text-[11px]">mttx.apple.custom.imported</code>. A signed
-                profile is kept byte-for-byte.
-              </li>
-              <li>
-                <span class="font-medium text-foreground">Existing policy</span> — only its
-                configurations change; metadata, assignments and the delivery scope of kinds the
-                document does not name are kept.
-              </li>
-            </ul>
-            <Show when={target.isPending && targetId()}>
-              <div class="mt-4">
-                <SkeletonRows rows={2} />
+
+            <Panel class="lg:sticky lg:top-20">
+              <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
+                <CheckCircle2 class="size-4" />
               </div>
-            </Show>
-          </Panel>
-        </div>
+              <h2 class="mt-3 text-[13px] font-semibold text-foreground">What is imported</h2>
+              <ul class="mt-2 space-y-2 text-[12px] leading-relaxed text-muted-foreground">
+                <li>
+                  <span class="font-medium text-foreground">Policy document</span> — the format
+                  written by <code class="font-mono text-[11px]">mattrax policies export</code>. It
+                  is versioned, accepts YAML or JSON, and holds one policy per import.
+                </li>
+                <li>
+                  <span class="font-medium text-foreground">.mobileconfig</span> — stored as
+                  <code class="ml-1 font-mono text-[11px]">mttx.apple.custom.imported</code>. A
+                  signed profile is kept byte-for-byte.
+                </li>
+                <li>
+                  <span class="font-medium text-foreground">Existing policy</span> — only its
+                  configurations change; metadata, assignments and the delivery scope of kinds the
+                  document does not name are kept.
+                </li>
+              </ul>
+              <Show when={target.isPending && targetId()}>
+                <div class="mt-4">
+                  <SkeletonRows rows={2} />
+                </div>
+              </Show>
+            </Panel>
+          </div>
+        </Show>
       </Page>
     </Show>
   );

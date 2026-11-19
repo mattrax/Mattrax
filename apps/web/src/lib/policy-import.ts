@@ -64,6 +64,12 @@ export type PolicyImportPlan = {
   readonly configurations: ReadonlyArray<PolicyImportConfiguration>;
   readonly warnings: ReadonlyArray<string>;
   /**
+   * A source the server will refuse, such as a signed user-scoped profile.
+   * The dashboard disables the save and shows the reason instead of letting the
+   * operator submit a request that cannot succeed.
+   */
+  readonly blocked: boolean;
+  /**
    * Exactly what the save sends. Kinds reported as `skip` or `unchanged` are
    * absent, so a save cannot silently overwrite what the preview said it would
    * leave alone.
@@ -214,6 +220,13 @@ const looksLikeProfileText = (text: string) =>
 const looksLikePem = (text: string) => /-----BEGIN (?:PKCS7|CMS)-----/.test(text);
 
 /**
+ * A PEM wrapper is signed data inside text, which the profile validator cannot
+ * read: it would store a profile that fails on save. Ask for the file itself.
+ */
+const PEM_SIGNED_ERROR =
+  "A PEM-wrapped signed profile cannot be imported. Upload the .mobileconfig file itself (DER/PKCS#7), or remove the signature first.";
+
+/**
  * Normalise a pasted `.mobileconfig` or uploaded profile bytes to the stored
  * representation (base64 `content` plus a `signed` hint).
  *
@@ -236,9 +249,8 @@ export const normalizeMobileconfig = (input: {
   if (looksLikeProfileText(raw))
     return { content: bytesToBase64(new TextEncoder().encode(raw)), signed: false };
 
-  // A PEM-wrapped CMS signature is signed content; keep the PEM bytes.
-  if (looksLikePem(raw))
-    return { content: bytesToBase64(new TextEncoder().encode(raw)), signed: true };
+  // A PEM-wrapped CMS signature is signed content the validator cannot read.
+  if (looksLikePem(raw)) throw new Error(PEM_SIGNED_ERROR);
 
   const content = raw.replace(base64Prefix, "").replace(/\s/g, "");
 
@@ -260,7 +272,7 @@ export const normalizeMobileconfig = (input: {
 
   if (looksLikeProfileText(text)) return { content, signed: false };
 
-  if (looksLikePem(text)) return { content, signed: true };
+  if (looksLikePem(text)) throw new Error(PEM_SIGNED_ERROR);
 
   throw new Error("This file is not a .mobileconfig profile.");
 };
@@ -277,6 +289,7 @@ const planConfigurations = (input: {
   readonly conflict: PolicyImportConflict;
 }) => {
   const existingConfigurations = input.existing?.configurations ?? {};
+  const storedScopes = input.existing?.configurationScopes ?? {};
   const written: Record<string, Schema.Json> = {};
   const scopes: Record<string, PolicyImportScope> = {};
   const configurations: PolicyImportConfiguration[] = [];
@@ -295,7 +308,12 @@ const planConfigurations = (input: {
       continue;
     }
 
-    if (stableJson(stored) === stableJson(entry.data)) {
+    // An identical payload on a different channel is still a change: treating
+    // it as unchanged would show the document's channel and write nothing.
+    if (
+      stableJson(stored) === stableJson(entry.data) &&
+      scope === (storedScopes[entry.kind] ?? "device")
+    ) {
       configurations.push({ ...entry, scope, action: "unchanged" });
       continue;
     }
@@ -378,6 +396,7 @@ export const planPolicyImport = (input: {
     enabled: input.policy.enabled,
     configurations,
     warnings,
+    blocked: false,
     payload,
   };
 };
@@ -401,6 +420,10 @@ export const planMobileconfigImport = (input: {
 }): PolicyImportPlan => {
   const conflict = input.conflict ?? "skip";
   const warnings: string[] = [];
+  const scope = input.scope ?? "device";
+  // The server refuses a signed profile on the user channel because it cannot
+  // inspect a signature-protected PayloadScope, so do not offer to save it.
+  const blocked = input.signed && scope === "user";
 
   const matchingKind = [...existingCustomContent(input.existing)].find(
     ([, content]) => content === input.content,
@@ -413,12 +436,16 @@ export const planMobileconfigImport = (input: {
   if (matchingKind)
     warnings.push("This profile is already on the policy; nothing will be imported.");
 
-  if (input.signed)
+  if (blocked)
+    warnings.push(
+      "A signed profile cannot be imported on the user channel: Mattrax cannot inspect its PayloadScope. Use an unsigned profile, or keep the device channel.",
+    );
+  else if (input.signed)
     warnings.push(
       "Signed profile: it is deployed byte-for-byte and its signature is verified by the device, not by Mattrax.",
     );
 
-  if ((input.scope ?? "device") === "user")
+  if (scope === "user")
     warnings.push("This profile is user-scoped; it is delivered on the Apple user channel.");
 
   const data: Schema.Json = input.fileName
@@ -426,7 +453,7 @@ export const planMobileconfigImport = (input: {
     : { content: input.content, signed: input.signed };
 
   const { configurations, payload } = planConfigurations({
-    configurations: [{ kind, data, scope: input.scope ?? "device" }],
+    configurations: [{ kind, data, scope }],
     existing: matchingKind ? input.existing : undefined,
     conflict,
   });
@@ -444,6 +471,7 @@ export const planMobileconfigImport = (input: {
     enabled: undefined,
     configurations,
     warnings,
+    blocked,
     payload,
   };
 };

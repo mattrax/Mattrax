@@ -333,46 +333,46 @@ const buildPatch = (desired: PortablePolicy, existing: PolicyRow): PolicyPatch =
     for (const kind of Object.keys(existingConfigurations))
       if (!(kind in desired.configurations)) changes[kind] = null;
 
-    if (Object.keys(changes).length > 0) {
-      fields.push("configurations");
-      payload.configurations = changes;
+    // A supplied scope map is authoritative for the kinds it carries, so every
+    // written kind needs an entry. An omitted scope keeps the stored channel,
+    // which preserves user-scoped settings across a document that predates
+    // scope.
+    const storedScopes = existing.configurationScopes ?? {};
+    const scopes: Record<string, "device" | "user"> = {};
+    const written = { ...changes };
+    let scopeChanged = false;
 
-      // A supplied scope map is authoritative for the kinds it carries, so
-      // every written kind needs an entry. An omitted scope keeps the stored
-      // channel, which preserves user-scoped settings across a document that
-      // predates scope.
-      const storedScopes = existing.configurationScopes ?? {};
-      const scopes: Record<string, "device" | "user"> = {};
-      let scopeChanged = false;
+    for (const kind of Object.keys(changes)) {
+      if (changes[kind] === null) continue;
 
-      for (const kind of Object.keys(changes)) {
-        if (changes[kind] === null) continue;
+      const scope = desired.configurationScopes?.[kind] ?? storedScopes[kind] ?? "device";
 
-        const scope = desired.configurationScopes?.[kind] ?? storedScopes[kind] ?? "device";
+      scopes[kind] = scope;
 
-        scopes[kind] = scope;
-
-        if (scope !== (storedScopes[kind] ?? "device")) scopeChanged = true;
-      }
-
-      // A scope-only change still re-sends the stored payload so the patch
-      // validates the new channel.
-      for (const [kind, scope] of Object.entries(desired.configurationScopes ?? {})) {
-        if (kind in scopes || kind in changes) continue;
-
-        const stored = existing.configurations?.[kind];
-
-        if (stored === undefined) continue;
-        changes[kind] = Schema.decodeUnknownSync(Schema.Json)(stored);
-        scopes[kind] = scope;
-
-        if (scope !== (storedScopes[kind] ?? "device")) scopeChanged = true;
-      }
-
-      if (Object.keys(scopes).length > 0) payload.configurationScopes = scopes;
-
-      if (scopeChanged) fields.push("configurationScopes");
+      if (scope !== (storedScopes[kind] ?? "device")) scopeChanged = true;
     }
+
+    // A scope-only change must be detected even when no payload differs, and
+    // the patch re-sends the stored payload so the server validates the new
+    // channel instead of ignoring the scope map.
+    for (const [kind, scope] of Object.entries(desired.configurationScopes ?? {})) {
+      if (kind in written || scope === (storedScopes[kind] ?? "device")) continue;
+
+      const stored = existing.configurations?.[kind];
+
+      if (stored === undefined) continue;
+      written[kind] = Schema.decodeUnknownSync(Schema.Json)(stored);
+      scopes[kind] = scope;
+      scopeChanged = true;
+    }
+
+    if (Object.keys(changes).length > 0) fields.push("configurations");
+
+    if (Object.keys(written).length > 0) payload.configurations = written;
+
+    if (Object.keys(scopes).length > 0) payload.configurationScopes = scopes;
+
+    if (scopeChanged) fields.push("configurationScopes");
   }
 
   return { payload, fields };

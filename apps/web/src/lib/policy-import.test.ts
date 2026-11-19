@@ -238,6 +238,66 @@ describe("planPolicyImport", () => {
     expect(plan.payload.configurationScopes).toEqual({ "mttx.apple.custom.wifi": "user" });
   });
 
+  it("treats an identical payload on a different channel as a conflict, not unchanged", async () => {
+    const policy = await parse(
+      JSON.stringify({
+        version: 1,
+        policies: [
+          {
+            name: "Baseline",
+            configurations: { "mttx.apple.custom.wifi": { ssid: "same" } },
+            configurationScopes: { "mttx.apple.custom.wifi": "user" },
+          },
+        ],
+      }),
+    );
+
+    const existing = row({
+      configurations: { "mttx.apple.custom.wifi": { ssid: "same" } },
+      configurationScopes: {},
+    });
+
+    const skipped = planPolicyImport({ policy, existing });
+
+    expect(skipped.configurations[0]?.action).toBe("skip");
+    expect(skipped.payload.configurations).toEqual({});
+
+    const replaced = planPolicyImport({ policy, existing, conflict: "overwrite" });
+
+    expect(replaced.configurations[0]?.action).toBe("overwrite");
+    expect(replaced.payload.configurations).toEqual({
+      "mttx.apple.custom.wifi": { ssid: "same" },
+    });
+    expect(replaced.payload.configurationScopes).toEqual({ "mttx.apple.custom.wifi": "user" });
+  });
+
+  it("keeps an unchanged kind unchanged when the stored channel matches", async () => {
+    const policy = await parse(
+      JSON.stringify({
+        version: 1,
+        policies: [
+          {
+            name: "Baseline",
+            configurations: { "mttx.apple.custom.wifi": { ssid: "same" } },
+            configurationScopes: { "mttx.apple.custom.wifi": "user" },
+          },
+        ],
+      }),
+    );
+
+    const plan = planPolicyImport({
+      policy,
+      existing: row({
+        configurations: { "mttx.apple.custom.wifi": { ssid: "same" } },
+        configurationScopes: { "mttx.apple.custom.wifi": "user" },
+      }),
+      conflict: "overwrite",
+    });
+
+    expect(plan.configurations[0]?.action).toBe("unchanged");
+    expect(plan.payload.configurations).toEqual({});
+  });
+
   it("uses the document scope for a new kind", async () => {
     const policy = await parse(
       JSON.stringify({
@@ -353,6 +413,35 @@ describe("mobileconfig import", () => {
     });
 
     expect(plan.payload.configurationScopes).toEqual({ "mttx.apple.custom.imported": "user" });
+  });
+
+  it("rejects a PEM-wrapped signed profile instead of storing one that fails to save", () => {
+    expect(() =>
+      normalizeMobileconfig({
+        content: "-----BEGIN PKCS7-----\nMIIB\n-----END PKCS7-----",
+      }),
+    ).toThrow("PEM-wrapped signed profile");
+  });
+
+  it("blocks a signed user-scoped profile because the server refuses it", () => {
+    const profile = normalizeMobileconfig({ content: unsignedProfile });
+
+    const blocked = planMobileconfigImport({
+      content: profile.content,
+      signed: true,
+      scope: "user",
+    });
+
+    expect(blocked.blocked).toBe(true);
+    expect(blocked.warnings.join(" ")).toContain("signed profile cannot be imported");
+
+    const unsigned = planMobileconfigImport({
+      content: profile.content,
+      signed: false,
+      scope: "user",
+    });
+
+    expect(unsigned.blocked).toBe(false);
   });
 
   it("rejects a file that is not a profile", () => {
