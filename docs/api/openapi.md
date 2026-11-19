@@ -38,7 +38,9 @@ It has no Scalar UI. Import the document into your own tooling.
 
 ## Management webhook contract
 
-A customer management backend implements the routes under `/webhook/`. The contract is
+A customer management backend implements the routes under `/webhook/`; see
+[Build a management backend](/api/management-backend) for the SDK and a working handler.
+The contract is
 published as its own document because the Mattrax Cloud API never serves those routes:
 
 ```text
