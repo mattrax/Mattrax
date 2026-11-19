@@ -14,6 +14,8 @@ export * from "./observability.js";
 
 export * from "./apiSecurity.js";
 
+export * from "./loginAttempts.js";
+
 export * from "./probeCache.js";
 
 export * from "./rateLimit.js";

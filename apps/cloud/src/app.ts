@@ -108,6 +108,7 @@ import {
   withApiSecurityHeaders,
   withClearedSsrShell,
   withSessionPresence,
+  loginAttemptObserver,
   credentialExpiryEmail,
   type AnalyticsProperties,
   type SendEmail,
@@ -791,6 +792,8 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   );
 
   const appWithDevRoutes = Layer.mergeAll(
+    // Registered first so every route added below is wrapped by it.
+    loginAttemptObserver,
     appLayer,
     windowsMdmRoutes,
     ssoRoutes({

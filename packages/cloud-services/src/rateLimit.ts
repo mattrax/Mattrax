@@ -18,6 +18,9 @@
  */
 
 import { Option, Schema } from "effect";
+import { normalisePath } from "@mattrax/enterprise-domain";
+
+export { normalisePath };
 
 export type RateLimitBucket = "auth" | "enrollment" | "mdm" | "scep" | "scim" | "billing";
 
@@ -58,7 +61,9 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/completepasskeysignin",
   "/api/v1/beginpasskeyregistration",
   "/api/v1/completepasskeyregistration",
+  "/api/v1/completepasskeypending",
   "/api/v1/ssosignin",
+  "/api/v1/recoverysignin",
   "/api/v1/verify-email",
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
@@ -79,30 +84,6 @@ export const SENSITIVE_AUTH_PATHS = new Set([
  * egress IP, so the limiter is a blunt backstop for credential stuffing and
  * accidental hot loops, not a per-user quota.
  */
-/**
- * Normalise a path the way the Effect router matches it before applying a
- * rule: decode escapes, drop matrix parameters, collapse duplicate slashes,
- * strip a trailing slash and fold case. Without this, `/API/V1//completePasskeySignIn/`
- * would bypass the credential bucket while still reaching the handler.
- */
-const normalisePath = (pathname: string): string => {
-  let decoded = pathname;
-
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    // A malformed escape cannot match a route; leave it as-is.
-  }
-
-  return (
-    decoded
-      .replaceAll(/;.*?(?=\/|$)/g, "")
-      .replaceAll(/\/+/g, "/")
-      .replace(/\/$/, "")
-      .toLowerCase() || "/"
-  );
-};
-
 export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined => {
   const pathname = normalisePath(new URL(request.url).pathname);
 
@@ -114,8 +95,14 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname)) return authRule();
 
   // SSO discovery is public and reveals whether an address belongs to a
-  // tenant; keep it in the credential bucket so it cannot be enumerated.
-  if (request.method === "GET" && pathname === "/api/v1/sso/azure/start") return authRule();
+  // tenant; keep it in the credential bucket so it cannot be enumerated. The
+  // callback exchanges a public authorization code for an identity and is a
+  // credential endpoint in its own right.
+  if (
+    request.method === "GET" &&
+    (pathname === "/api/v1/sso/azure/start" || pathname === "/api/v1/sso/azure/callback")
+  )
+    return authRule();
 
   // Invitation links are bearer credentials: preview and accept are public, so
   // they share the auth bucket's credential-stuffing ceiling.

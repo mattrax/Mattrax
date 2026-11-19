@@ -6,6 +6,7 @@ import { isServer } from "@solidjs/web";
 import { Option, Schema } from "effect";
 import { PERMISSIONS, type Permission } from "@mattrax/enterprise-domain/client";
 import { AccountActivity } from "~/components/account-activity";
+import { AccountLoginAttempts } from "~/components/account-login-attempts";
 import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { ThemeSwitcher } from "~/components/theme-switcher";
@@ -783,6 +784,8 @@ export default function AccountPage() {
         mfaRequired={me.data?.account.mfaRequired ?? false}
         email={email() ?? ""}
       />
+
+      <AccountLoginAttempts userId={user()?.id} />
 
       <AccountActivity userId={user()?.id} />
 

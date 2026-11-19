@@ -28,6 +28,15 @@ describe("rate limit rule selection", () => {
     expect(
       rateLimitRuleFor(request("/api/v1/completePasskeySignIn", { method: "GET" })),
     ).toBeUndefined();
+    expect(
+      rateLimitRuleFor(request("/api/v1/completePasskeyPending", { method: "POST" }))?.bucket,
+    ).toBe("auth");
+    expect(rateLimitRuleFor(request("/api/v1/recoverySignIn", { method: "POST" }))?.bucket).toBe(
+      "auth",
+    );
+    expect(rateLimitRuleFor(request("/api/v1/sso/azure/callback", { method: "GET" }))?.bucket).toBe(
+      "auth",
+    );
     expect(rateLimitRuleFor(request("/api/v1/enrollment/abc"))?.bucket).toBe("enrollment");
     expect(rateLimitRuleFor(request("/api/v1/billing/webhook", { method: "POST" }))?.bucket).toBe(
       "billing",

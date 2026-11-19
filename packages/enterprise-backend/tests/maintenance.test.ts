@@ -78,6 +78,35 @@ describe("maintenance enrollment-attempt retention", () => {
   });
 });
 
+describe("maintenance login-attempt retention", () => {
+  it("prunes login attempts with the audit window", async () => {
+    const db = makeDb();
+
+    const attempt = (id: string, ageDays: number) => ({
+      id,
+      accountId: "account-1",
+      email: "owner@example.com",
+      success: true,
+      method: "passkey",
+      failureReason: null,
+      ip: "203.0.113.0/24",
+      userAgent: null,
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.login_attempt.push(attempt("old", 400), attempt("fresh", 10));
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 365, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedLoginAttempts).toBe(1);
+    expect(db.store.login_attempt.map((row: { id: string }) => row.id)).toEqual(["fresh"]);
+  });
+});
+
 describe("maintenance dynamic groups", () => {
   it("reconciles dynamic membership as devices become stale or check in", async () => {
     const db = makeDb();

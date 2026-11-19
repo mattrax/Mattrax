@@ -34,6 +34,7 @@ import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
 import type { EnterpriseDb } from "../schema.ts";
 import type { EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";
+import { pruneLoginAttempts } from "../Account/loginAttempts.ts";
 
 /**
  * A tenant owner/admin recipient. Shared by credential-expiry notifications
@@ -219,6 +220,8 @@ export type MaintenanceResult = {
   readonly purgedAuditEntries: number;
   /** Account-scoped audit rows deleted by the same retention window. */
   readonly purgedAccountAuditEntries: number;
+  /** Sign-in attempt rows deleted by the same retention window. */
+  readonly purgedLoginAttempts: number;
   /** Enrollment-attempt diagnostics deleted this run. */
   readonly purgedEnrollmentAttempts: number;
   /** Android Pub/Sub idempotency records deleted this run. */
@@ -478,6 +481,7 @@ export const runMaintenance = (
       expiredAuthSessions: 0,
       purgedAuditEntries: 0,
       purgedAccountAuditEntries: 0,
+      purgedLoginAttempts: 0,
       purgedEnrollmentAttempts: 0,
       purgedAndroidPubSubMessages: 0,
       credentialAlerts: 0,
@@ -647,6 +651,10 @@ export const runMaintenance = (
         yield* db.delete(s.accountAuditLog).where(lt(s.accountAuditLog.createdAt, auditCutoff));
         result.purgedAccountAuditEntries = staleAccountAudit.length;
       }
+
+      // The login log is the same kind of account history and follows the same
+      // window, so an account holder and an operator see one privacy policy.
+      result.purgedLoginAttempts = yield* pruneLoginAttempts(db, auditCutoff);
     }
 
     // 5. Enrollment-attempt diagnostics are only useful for a short window.

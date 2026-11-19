@@ -182,6 +182,71 @@ export const AccountSessionsResponse = Schema.Struct({
 });
 
 /**
+ * The vocabularies of the sign-in log. They live here so the persistence
+ * schema, the recorder and the web panel cannot drift apart.
+ *
+ * `method` is the primary proof that signed the session in; `factor` is the
+ * step that completed it. A passkey sign-in finished with an authenticator
+ * recovery code is therefore `passkey` + `recovery`.
+ */
+export const LOGIN_ATTEMPT_METHODS = ["passkey", "totp", "sso", "recovery", "api-token"] as const;
+
+export const LOGIN_ATTEMPT_FACTORS = ["passkey", "totp", "recovery", "sso"] as const;
+
+export const LOGIN_ATTEMPT_FAILURES = [
+  "invalid_code",
+  "unknown_account",
+  "expired",
+  "disabled",
+  "mfa_failed",
+  "passkey_rejected",
+  "sso_rejected",
+  "recovery_rejected",
+  "rate_limited",
+  "not_member",
+  "failed",
+] as const;
+
+export const LoginAttemptMethod = Schema.Literals(LOGIN_ATTEMPT_METHODS);
+
+export const LoginAttemptFactor = Schema.Literals(LOGIN_ATTEMPT_FACTORS);
+
+export const LoginAttemptFailure = Schema.Literals(LOGIN_ATTEMPT_FAILURES);
+
+export type LoginAttemptMethod = typeof LoginAttemptMethod.Type;
+
+export type LoginAttemptFactor = typeof LoginAttemptFactor.Type;
+
+export type LoginAttemptFailure = typeof LoginAttemptFailure.Type;
+
+/** One row of the account's own login history. */
+export const LoginAttemptInfo = Schema.Struct({
+  id: Schema.String,
+  createdAt: Schema.String,
+  success: Schema.Boolean,
+  /** Primary proof that signed the session in. */
+  method: LoginAttemptMethod,
+  /** Step that completed the sign-in; null for a failure. */
+  factor: Schema.optional(Schema.NullOr(LoginAttemptFactor)),
+  /** Short machine-readable rejection code; null for a successful sign-in. */
+  failureReason: Schema.optional(Schema.NullOr(LoginAttemptFailure)),
+  /** Approximate network (IPv4 `/24` or IPv6 `/64`), never a host address. */
+  ip: Schema.optional(NullableString),
+  /** Parsed `User-Agent` family; the header itself is never returned. */
+  browser: Schema.optional(NullableString),
+  platform: Schema.optional(NullableString),
+  deviceType: Schema.optional(NullableString),
+});
+
+export type LoginAttemptInfo = typeof LoginAttemptInfo.Type;
+
+export const LoginAttemptsResponse = Schema.Struct({
+  attempts: Schema.Array(LoginAttemptInfo),
+});
+
+export type LoginAttemptsResponse = typeof LoginAttemptsResponse.Type;
+
+/**
  * Account-scoped audit entry. It carries no tenant reference: these events
  * happen before a tenant is chosen (sign-in, credential changes) or exist
  * independently of one (API tokens, account deletion).
