@@ -20,8 +20,9 @@ name: Database backup
 # Required repository secrets:
 #   DATABASE_URL            production MySQL connection string
 #   CLOUDFLARE_ACCOUNT_ID   account that owns the bucket
-#   R2_ACCESS_KEY_ID        R2 token with Object Read & Write on the bucket
-#   R2_SECRET_ACCESS_KEY    its secret
+#   CLOUDFLARE_API_TOKEN    token with Workers R2 Storage Bucket Item Read &
+#                           Write on mattrax-backups; the deploy token already
+#                           carries this bucket-scoped policy
 #
 # Restore procedure: docs/operations/backups.md
 
@@ -55,27 +56,41 @@ jobs:
     timeout-minutes: 45
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      # R2 uploads go through the S3 API with a token scoped to this bucket's
-      # objects. The Workers API token cannot write objects: its R2 permission
-      # groups stop at bucket metadata, and the REST object endpoint answers
-      # 401 Authentication error 10000.
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
-      R2_ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Check secrets are present
         run: |
           missing=()
-          for name in DATABASE_URL CLOUDFLARE_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
+          for name in DATABASE_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             [ -n "${!name}" ] || missing+=("$name")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::Missing repository secrets: ${missing[*]}. See docs/operations/backups.md."
             exit 1
           fi
+
+      # R2's S3 API accepts a Cloudflare API token directly: the token id is the
+      # access key ID and the SHA-256 of its value is the secret access key.
+      # Deriving them here keeps the repository to the secrets it already has,
+      # and means a bucket-scoped token is the only provisioning step.
+      - name: Configure R2 credentials
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify")"
+          token_id="$(jq -er '.result.id' <<<"$response")"
+          secret="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d' ' -f1)"
+          echo "::add-mask::$secret"
+          {
+            echo "AWS_ACCESS_KEY_ID=$token_id"
+            echo "AWS_SECRET_ACCESS_KEY=$secret"
+            echo "AWS_DEFAULT_REGION=auto"
+            echo "R2_ENDPOINT=https://$CLOUDFLARE_ACCOUNT_ID.r2.cloudflarestorage.com"
+          } >>"$GITHUB_ENV"
 
       - name: Install client tooling
         run: |
@@ -108,9 +123,10 @@ jobs:
           ls -l "$OUT_DIR"
 
       - name: Upload to R2
-        # A 403 here means the R2 token is not scoped to this bucket's objects;
-        # it needs R2 "Object Read & Write" for mattrax-backups, not the Workers
-        # R2 Storage groups, which stop at bucket metadata.
+        # A 403 here means CLOUDFLARE_API_TOKEN is missing Workers R2 Storage
+        # Bucket Item Write for mattrax-backups. It does not need bucket admin
+        # permissions: the workflow never creates, configures or deletes a
+        # bucket.
         run: |
           set -euo pipefail
           export OUT_DIR="$RUNNER_TEMP/db-backup"
