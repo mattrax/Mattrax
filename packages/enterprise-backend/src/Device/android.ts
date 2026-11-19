@@ -1743,8 +1743,23 @@ export const syncAndroidPoliciesForTenant = (input: {
     );
 
     for (const outcome of outcomes) {
-      if (outcome.status === "updated") updated += 1;
-      else if (outcome.status === "skipped") skipped += 1;
+      if (outcome.status === "updated") {
+        updated += 1;
+
+        yield* writeSystemAudit(
+          input.db,
+          {
+            organizationId: input.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.mdmPolicyDelivered,
+            targetType: "device",
+            targetId: outcome.device.id,
+            deviceId: outcome.device.id,
+            protocol: "android",
+            metadata: { platform: "android", mode: "policy" },
+          },
+          {},
+        ).pipe(Effect.catch(() => Effect.void));
+      } else if (outcome.status === "skipped") skipped += 1;
       else {
         failed += 1;
 
@@ -1765,10 +1780,17 @@ export const syncAndroidPoliciesForTenant = (input: {
           input.db,
           {
             organizationId: input.organizationId,
-            action: "android.policy_sync_failed",
+            action: SYSTEM_AUDIT_ACTIONS.mdmFailure,
             targetType: "device",
             targetId: outcome.device.id,
-            metadata: { message: error.message },
+            deviceId: outcome.device.id,
+            protocol: "android",
+            metadata: {
+              platform: "android",
+              phase: "policy",
+              code: "policy_sync_failed",
+              reason: error.message.slice(0, 300),
+            },
           },
           {},
         ).pipe(Effect.catch(() => Effect.void));
@@ -2396,6 +2418,45 @@ const applyDeviceNotification = (
 
     if (device.limitReached)
       return { status: "ignored" as const, reason: "tenant device limit reached" };
+
+    // Android has no device-initiated connection: a Pub/Sub notification is
+    // the check-in. There is no device address to store (Google is the
+    // caller), so `ip` stays null and the notification type is the context.
+    yield* writeSystemAudit(
+      input.db,
+      {
+        organizationId,
+        action: SYSTEM_AUDIT_ACTIONS.mdmCheckin,
+        targetType: "device",
+        targetId: device.deviceId,
+        deviceId: device.deviceId,
+        protocol: "android",
+        metadata: {
+          platform: "android",
+          channel: "pubsub",
+          channels: ["android"],
+          notificationType: input.notificationType,
+        },
+        coalesce: true,
+      },
+      { authSecret: input.authSecret },
+    ).pipe(Effect.catch(() => Effect.void));
+
+    if (input.notificationType === "STATUS_REPORT")
+      yield* writeSystemAudit(
+        input.db,
+        {
+          organizationId,
+          action: SYSTEM_AUDIT_ACTIONS.mdmStatusReport,
+          targetType: "device",
+          targetId: device.deviceId,
+          deviceId: device.deviceId,
+          protocol: "android",
+          metadata: { platform: "android", inventory: true, state: resource.state ?? null },
+        },
+        { authSecret: input.authSecret },
+      ).pipe(Effect.catch(() => Effect.void));
+
     yield* syncDynamicGroupsForDevice(input.db, organizationId, device.deviceId, {
       now: now(),
     }).pipe(Effect.catch(() => Effect.void));
@@ -2551,7 +2612,33 @@ const applyCommandNotification = (
               action: SYSTEM_AUDIT_ACTIONS.commandFailed,
               targetType: "device_command",
               targetId: command.id,
-              metadata: { deviceId: mapping.deviceId, requestType: command.requestType },
+              deviceId: mapping.deviceId,
+              protocol: "android",
+              metadata: {
+                platform: "android",
+                deviceId: mapping.deviceId,
+                requestType: command.requestType,
+                resultStatus: status ?? null,
+              },
+            },
+            { authSecret: input.authSecret },
+          ).pipe(Effect.catch(() => Effect.void));
+        } else if (nextStatus === "succeeded" && command.status !== "succeeded") {
+          yield* writeSystemAudit(
+            input.db,
+            {
+              organizationId: input.enterprise.organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.mdmCommandResult,
+              targetType: "device_command",
+              targetId: command.id,
+              deviceId: mapping.deviceId,
+              protocol: "android",
+              metadata: {
+                platform: "android",
+                deviceId: mapping.deviceId,
+                requestType: command.requestType,
+                resultStatus: status ?? null,
+              },
             },
             { authSecret: input.authSecret },
           ).pipe(Effect.catch(() => Effect.void));

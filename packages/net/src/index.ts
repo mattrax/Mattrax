@@ -7,6 +7,8 @@
  * rather than tuned for large payloads.
  */
 
+export * from "./clientAddress.js";
+
 /** Default deadline for a single outbound request. */
 export const DEFAULT_OUTBOUND_TIMEOUT_MS = 10_000;
 

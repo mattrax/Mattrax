@@ -51,6 +51,10 @@ function encodeFault(service: WindowsMdmService.Service, message: string) {
  * Tenant identity for Windows protocol requests comes from the enrollment URL
  * (`?tenant=<signed token>`); device identity comes from the edge-verified mTLS
  * headers, which the API Worker only sets after checking the certificate.
+ *
+ * `x-mattrax-client-address` is set by the deployment boundary with the rate
+ * limiter's trusted-proxy policy. A caller cannot set it: the boundary strips
+ * any incoming value first.
  */
 const headerString = (value: string | string[] | undefined): string | undefined =>
   Schema.is(Schema.String)(value) ? value : undefined;
@@ -64,7 +68,13 @@ function requestContext(request: HttpServerRequest.HttpServerRequest): WindowsMd
     request.headers["x-device-identity-certificate-serial"],
   );
 
-  return { tenantToken, identityCertificate, identityCertificateSerial };
+  return {
+    tenantToken,
+    identityCertificate,
+    identityCertificateSerial,
+    clientIp: headerString(request.headers["x-mattrax-client-address"]),
+    userAgent: headerString(request.headers["user-agent"])?.slice(0, 512),
+  };
 }
 
 function soapHandler(

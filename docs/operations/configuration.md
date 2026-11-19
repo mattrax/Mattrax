@@ -135,6 +135,18 @@ Without the service account, Android endpoints return `EnterpriseNotConfigured`.
 | `MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY`  | `4`     | Outbox deliveries in flight                      |
 | `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` | `5`     | Attempts before permanent failure                |
 
+### Device (MDM) event volume
+
+Device check-ins are recorded in the same organisation log as account actions. Repeated
+check-ins from one device are folded into a single `mdm.checkin` row inside a window;
+enrollment, policy delivery, status changes, command results and failures always append a
+separate row. `MDM_AUDIT_CHECKIN_COALESCE_SECONDS` sets the window (default `900`, `0`
+records every check-in); the setting is bounded to one day.
+
+| Variable                             | Default | Purpose                                            |
+| ------------------------------------ | ------- | -------------------------------------------------- |
+| `MDM_AUDIT_CHECKIN_COALESCE_SECONDS` | `900`   | Fold repeated device check-ins into one audit row. |
+
 Device health uses fixed thresholds ahead of the auto-unenrol sweep: stale after 7 days
 (`attention`) and MIA after 14 days (still enrolled). `MAINTENANCE_STALE_DEVICE_DAYS` must
 stay above 14 for MIA to be observable; the default 30 retires the device after both

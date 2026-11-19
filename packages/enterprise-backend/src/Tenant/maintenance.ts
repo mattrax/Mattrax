@@ -858,6 +858,8 @@ export const runMaintenance = (
           organizationId: organization.id,
           actorAccountId: null,
           actorEmail: null,
+          actorType: "system",
+          category: "system",
           action: CREDENTIAL_ALERT_ACTION,
           targetType: "organization",
           targetId: organization.id,

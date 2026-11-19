@@ -212,6 +212,7 @@ import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/ent
 import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 import { cookieValue, signSsrRevision, signSsrToken } from "@mattrax/enterprise-backend";
+import { headerValue } from "@mattrax/net";
 import {
   ApnsService,
   NoopPushTransport,
@@ -1087,19 +1088,35 @@ const capabilityText = (value: Schema.Json | undefined): string => {
 const auditEntry = (entry: {
   id: string;
   action: string;
+  category?: string;
   targetType: string;
   targetId: string | null;
   actorAccountId?: string | null;
   actorEmail?: string | null;
+  actorType?: string;
+  ip?: string | null;
+  userAgent?: string | null;
+  deviceId?: string | null;
+  deviceCertificateFingerprint?: string | null;
+  deviceCertificateSerial?: string | null;
+  protocol?: string | null;
   metadata?: unknown;
   createdAt: Date;
 }): AuditExportEntry => ({
   id: entry.id,
   action: entry.action,
+  category: entry.category ?? "account",
   targetType: entry.targetType,
   targetId: entry.targetId,
   actorAccountId: entry.actorAccountId ?? null,
   actorEmail: entry.actorEmail ?? null,
+  actorType: entry.actorType ?? (entry.actorAccountId ? "account" : "system"),
+  ip: entry.ip ?? null,
+  userAgent: entry.userAgent ?? null,
+  deviceId: entry.deviceId ?? null,
+  deviceCertificateFingerprint: entry.deviceCertificateFingerprint ?? null,
+  deviceCertificateSerial: entry.deviceCertificateSerial ?? null,
+  protocol: entry.protocol ?? null,
   // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
   metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
   createdAt: iso(entry.createdAt),
@@ -1816,6 +1833,10 @@ export const createEnterpriseService = ({
         member,
         role,
         credential,
+        // The address is set by the deployment boundary after applying the
+        // rate limiter's trusted-proxy policy; a caller cannot supply it.
+        ip: headerValue(request.headers, "x-mattrax-client-address")?.slice(0, 64) ?? null,
+        userAgent: headerValue(request.headers, "user-agent")?.slice(0, 512) ?? null,
         rbac: requiredPermission
           ? {
               permission: requiredPermission,
@@ -2061,6 +2082,8 @@ export const createEnterpriseService = ({
     ctx: {
       readonly account: { readonly id: string; readonly email: string };
       readonly organization: { readonly id: string };
+      readonly ip?: string | null;
+      readonly userAgent?: string | null;
       readonly credential?:
         | { readonly type: "api_token"; readonly id: string; readonly name: string }
         | {
@@ -2099,10 +2122,16 @@ export const createEnterpriseService = ({
         organizationId: ctx.organization.id,
         actorAccountId: ctx.account.id,
         actorEmail: ctx.account.email,
+        // A bearer credential (API token or MCP connection) is a distinct
+        // actor type even though it resolves to the owning account.
+        actorType: ctx.credential ? "api-token" : "account",
+        category: "account",
         action,
         targetType,
         targetId,
         metadata: Object.keys(enrichedMetadata).length === 0 ? null : enrichedMetadata,
+        ip: ctx.ip ?? null,
+        userAgent: ctx.userAgent ?? null,
         createdAt: now(),
       });
 

@@ -62,15 +62,22 @@ const setup = () => {
   return { db, backend };
 };
 
-const scope = (udid: string, organizationId = "org-1") => ({
+const scope = (udid: string, organizationId = "org-1", overrides: Row = {}) => ({
   _tag: "device" as const,
   udid,
   identityCertificate: `CN=Device,OU=${organizationId}`,
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "0a1b2c",
+  clientIp: "203.0.113.9",
+  userAgent: "MDM/1.0",
   mdmOrigin,
+  ...overrides,
 });
 
 const auditRows = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schema.auditLog));
+
+const rowsFor = (db: ReturnType<typeof makeDb>, action: string) =>
+  auditRows(db).filter((row) => row.action === action);
 
 const declarationStatus = (valid: string) => ({
   _tag: "DeclarationStatus" as const,
@@ -82,6 +89,14 @@ const declarationStatus = (valid: string) => ({
     },
   },
 });
+
+const tokenUpdate = {
+  _tag: "TokenUpdate" as const,
+  pushToken: "push-token",
+  pushMagic: "push-magic",
+  topic: "com.apple.mgmt.External.acme",
+  channel: "device" as const,
+};
 
 describe("system audit device lifecycle", () => {
   it("records enrollment once, on the enrolling -> enrolled transition", async () => {
@@ -96,17 +111,10 @@ describe("system audit device lifecycle", () => {
     );
     expect(auditRows(db)).toHaveLength(0);
 
-    const tokenUpdate = {
-      _tag: "TokenUpdate" as const,
-      pushToken: "push-token",
-      pushMagic: "push-magic",
-      topic: "com.apple.mgmt.External.acme",
-      channel: "device" as const,
-    };
-
     await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
-    expect(auditRows(db)).toHaveLength(1);
-    expect(auditRows(db)[0]).toMatchObject({
+
+    expect(rowsFor(db, "device.enrolled")).toHaveLength(1);
+    expect(rowsFor(db, "device.enrolled")[0]).toMatchObject({
       organizationId: "org-1",
       actorEmail: "system",
       action: "device.enrolled",
@@ -114,9 +122,46 @@ describe("system audit device lifecycle", () => {
       targetId: "device-1",
     });
 
-    // A later token update must not repeat the enrollment event.
+    const checkIns = rowsFor(db, "mdm.checkin");
+    expect(checkIns).toHaveLength(1);
+    expect(checkIns[0]).toMatchObject({
+      organizationId: "org-1",
+      actorAccountId: null,
+      actorType: "system",
+      category: "mdm",
+      protocol: "apple",
+      targetType: "device",
+      targetId: "device-1",
+      deviceId: "device-1",
+      ip: "203.0.113.9",
+      userAgent: "MDM/1.0",
+      deviceCertificateFingerprint: "fingerprint-1",
+      deviceCertificateSerial: "0a1b2c",
+    });
+
+    // A later token update folds into the check-in row and must not repeat the
+    // enrollment event.
     await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
-    expect(auditRows(db)).toHaveLength(1);
+    expect(rowsFor(db, "device.enrolled")).toHaveLength(1);
+    expect(rowsFor(db, "mdm.checkin")).toHaveLength(1);
+    expect(rowsFor(db, "mdm.checkin")[0]!.metadata).toMatchObject({ checkIns: 2 });
+  });
+
+  it("never coalesces check-ins from two devices", async () => {
+    const { db, backend } = setup();
+
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
+    await run(backend.appleDeviceEvent(scope("udid-device-2", "org-2"), tokenUpdate));
+
+    expect(rowsFor(db, "mdm.checkin")).toHaveLength(2);
+    expect(
+      rowsFor(db, "mdm.checkin")
+        .map((row) => String(row.organizationId))
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual([
+      "org-1",
+      "org-2",
+    ]);
   });
 
   it("records a device check-out once and keeps it tenant scoped", async () => {
@@ -128,12 +173,15 @@ describe("system audit device lifecycle", () => {
       backend.appleDeviceEvent(scope("udid-device-2", "org-2"), { _tag: "CheckOut" as const }),
     );
 
-    expect(auditRows(db)).toHaveLength(1);
-    expect(auditRows(db)[0]).toMatchObject({
+    const rows = rowsFor(db, "device.checked_out");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
       organizationId: "org-2",
       action: "device.checked_out",
       targetId: "device-2",
       actorEmail: "system",
+      deviceId: "device-2",
+      protocol: "apple",
     });
   });
 
@@ -162,13 +210,50 @@ describe("system audit device lifecycle", () => {
     await run(backend.appleDeviceEvent(scope("udid-device-1"), failure));
     await run(backend.appleDeviceEvent(scope("udid-device-1"), failure));
 
-    expect(auditRows(db)).toHaveLength(1);
-    expect(auditRows(db)[0]).toMatchObject({
+    const rows = rowsFor(db, "device.command_failed");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
       action: "device.command_failed",
       targetType: "device_command",
       targetId: "command-1",
+      deviceId: "device-1",
+      ip: "203.0.113.9",
     });
-    expect(JSON.stringify(auditRows(db)[0]!.metadata)).not.toContain("secret-looking");
+    expect(JSON.stringify(rows[0]!.metadata)).not.toContain("secret-looking");
+  });
+
+  it("records a successful command result once", async () => {
+    const { db, backend } = setup();
+    const commandTable = tableName(schema.deviceCommand);
+    (db.store[commandTable] ??= []).push({
+      __table: commandTable,
+      id: "command-2",
+      organizationId: "org-1",
+      deviceId: "device-1",
+      requestType: "DeviceInformation",
+      payload: {},
+      status: "sent",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const success = {
+      _tag: "CommandResult" as const,
+      commandUUID: "command-2",
+      status: "Acknowledged",
+    };
+
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), success));
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), success));
+
+    const rows = rowsFor(db, "mdm.command_result");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "mdm.command_result",
+      targetType: "device_command",
+      targetId: "command-2",
+      protocol: "apple",
+    });
   });
 
   it("records declaration failures only when the state changes", async () => {
@@ -176,8 +261,7 @@ describe("system audit device lifecycle", () => {
 
     // Compliance transitions also produce audit rows, so assertions here stay
     // scoped to declaration failures.
-    const declarationRows = () =>
-      auditRows(db).filter((row) => row.action === "device.declaration_invalid");
+    const declarationRows = () => rowsFor(db, "device.declaration_invalid");
 
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
@@ -197,6 +281,101 @@ describe("system audit device lifecycle", () => {
       previousValid: "valid",
       valid: "invalid",
     });
+  });
+
+  it("records a status report only when the report changed something", async () => {
+    const { db, backend } = setup();
+
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
+    const first = rowsFor(db, "mdm.status_report");
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({
+      action: "mdm.status_report",
+      deviceId: "device-1",
+      protocol: "apple",
+      metadata: { declarationsChanged: true },
+    });
+
+    // The same report again changes nothing: the check-in proves liveness, but
+    // there is no second "status changed" event.
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
+    expect(rowsFor(db, "mdm.status_report")).toHaveLength(1);
+  });
+
+  it("records a rejected check-in as a bounded failure", async () => {
+    const { db, backend } = setup();
+
+    await run(
+      backend.appleRecordFailure!({
+        code: "invalid_ddm_status",
+        phase: "declaration_status",
+        message: "SyntaxError: Invalid DDM status report at position 42 (secret payload ignored)",
+        udid: "udid-device-1",
+        identityCertificate: "CN=Device,OU=org-1",
+        identityCertificateFingerprintSha256: "fingerprint-1",
+        identityCertificateSerial: "0a1b2c",
+        clientIp: "203.0.113.9",
+        userAgent: "MDM/1.0",
+      }),
+    );
+
+    const rows = rowsFor(db, "mdm.failure");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      organizationId: "org-1",
+      actorAccountId: null,
+      actorType: "system",
+      category: "mdm",
+      action: "mdm.failure",
+      targetType: "device",
+      targetId: "device-1",
+      deviceId: "device-1",
+      protocol: "apple",
+      ip: "203.0.113.9",
+      userAgent: "MDM/1.0",
+      deviceCertificateFingerprint: "fingerprint-1",
+      deviceCertificateSerial: "0a1b2c",
+      metadata: {
+        phase: "declaration_status",
+        code: "invalid_ddm_status",
+        reason: "SyntaxError: Invalid DDM status report at position 42 (secret payload ignored)",
+      },
+    });
+  });
+
+  it("drops an unattributable failure instead of guessing a tenant", async () => {
+    const { db, backend } = setup();
+
+    await run(
+      backend.appleRecordFailure!({
+        code: "invalid_signature",
+        message: "Mdm-Signature verification failed",
+        clientIp: "203.0.113.9",
+      }),
+    );
+
+    expect(rowsFor(db, "mdm.failure")).toHaveLength(0);
+  });
+});
+
+describe("system audit actor invariant", () => {
+  it("never attributes an MDM action to an account", async () => {
+    const { db, backend } = setup();
+
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
+    await run(backend.appleDeviceEvent(scope("udid-device-1"), { _tag: "CheckOut" as const }));
+
+    const mdmRows = auditRows(db).filter((row) => row.category === "mdm");
+
+    expect(mdmRows.length).toBeGreaterThan(0);
+
+    for (const row of mdmRows) {
+      expect(row.actorAccountId).toBeNull();
+      expect(row.actorType).toBe("system");
+      expect(row.actorEmail).toBe("system");
+      // Every stored reason is bounded; no payload body is retained.
+      expect(JSON.stringify(row.metadata ?? {})).not.toContain("BEGIN CERTIFICATE");
+    }
   });
 });
 

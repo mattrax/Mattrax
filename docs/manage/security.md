@@ -21,6 +21,15 @@ Open **Account** to manage:
   sessions, tokens, recovery). It pages with a cursor and exports CSV/JSON like
   the tenant audit log.
 
+The tenant log (**Settings → Audit log**) is the place to investigate a device. It keeps
+account actions and MDM traffic together: check-ins, policy deliveries, status reports,
+command results and failures. MDM rows use the system actor and record the protocol, the
+device id, the verified client address and the identity certificate serial/fingerprint —
+never the certificate itself or a payload body. A failed check-in therefore answers who,
+when, which device and why without exposing secrets. Check-ins are folded per device and
+window; the dashboard shows the fold count so a polling device is not confused with a
+delivery.
+
 ### Passkeys
 
 Passkeys are the primary credential. They are phishing-resistant, user-verified

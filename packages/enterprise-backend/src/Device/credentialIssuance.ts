@@ -129,6 +129,8 @@ const recordSystemAudit = (
       organizationId: input.organizationId,
       actorAccountId: null,
       actorEmail: "system",
+      actorType: "system",
+      category: "system",
       action: input.action,
       targetType: "scep_ca",
       targetId: null,

@@ -7,6 +7,12 @@ import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge, FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import { enterpriseQueries, type AuditLogEntry, type AuditSearchQuery } from "~/lib/enterprise";
+import {
+  auditActorKind,
+  auditActorLabel,
+  auditProtocolLabel,
+  formatAuditAction,
+} from "~/lib/audit-log";
 import { errorPresentation } from "~/lib/errors";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -14,8 +20,6 @@ import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
 
 const PAGE_SIZE = 50;
-
-const SYSTEM_ACTOR = "system";
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are
@@ -56,6 +60,11 @@ const KNOWN_ACTIONS = [
   "device.action",
   "device.unenrolled",
   "device.deleted",
+  "mdm.checkin",
+  "mdm.policy_delivered",
+  "mdm.status_report",
+  "mdm.command_result",
+  "mdm.failure",
   "policy.created",
   "policy.updated",
   "policy.deleted",
@@ -72,23 +81,10 @@ const KNOWN_ACTIONS = [
   "scim.token_revoked",
 ];
 
-const formatAction = (action: string) =>
-  action
-    .split(".")
-    .map((part) => part.replaceAll("_", " "))
-    .join(" · ")
-    .replace(/^\w/, (letter) => letter.toUpperCase());
-
 const formatDate = (value: string) => {
   const date = new Date(value);
 
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-};
-
-const actorLabel = (entry: AuditLogEntry) => {
-  if (!entry.actorEmail || entry.actorEmail === SYSTEM_ACTOR) return "System";
-
-  return entry.actorEmail;
 };
 
 const AuditMetadata = Schema.Struct({
@@ -180,8 +176,13 @@ export default function AuditSettingsPage() {
 
   const [action, setAction] = createSignal("");
   const [actor, setActor] = createSignal("");
+  const [actorType, setActorType] = createSignal("");
+  const [category, setCategory] = createSignal("");
+  const [protocol, setProtocol] = createSignal("");
   const [targetType, setTargetType] = createSignal("");
   const [targetId, setTargetId] = createSignal("");
+  const [deviceId, setDeviceId] = createSignal("");
+  const [query, setQuery] = createSignal("");
   const [fromDate, setFromDate] = createSignal("");
   const [toDate, setToDate] = createSignal("");
 
@@ -190,6 +191,8 @@ export default function AuditSettingsPage() {
     actor: "",
     targetType: "",
     targetId: "",
+    deviceId: "",
+    query: "",
   });
 
   const [exporting, setExporting] = createSignal<"csv" | "json" | null>(null);
@@ -206,6 +209,8 @@ export default function AuditSettingsPage() {
       actor: actor(),
       targetType: targetType(),
       targetId: targetId(),
+      deviceId: deviceId(),
+      query: query(),
     }),
     (next) => {
       const current = debounced();
@@ -214,7 +219,9 @@ export default function AuditSettingsPage() {
         current.action === next.action &&
         current.actor === next.actor &&
         current.targetType === next.targetType &&
-        current.targetId === next.targetId
+        current.targetId === next.targetId &&
+        current.deviceId === next.deviceId &&
+        current.query === next.query
       )
         return;
       clearTimeout(settleTimer);
@@ -233,8 +240,17 @@ export default function AuditSettingsPage() {
   const filters = createMemo<AuditSearchQuery>(() => ({
     action: debounced().action.trim() || undefined,
     actor: debounced().actor.trim() || undefined,
+    // SAFETY: the actor-type select only offers the literal values the
+    // contract declares, so a non-empty signal is already one of them.
+    actorType: (actorType() || undefined) as AuditSearchQuery["actorType"],
+    // SAFETY: the category select only offers the contract's literals.
+    category: (category() || undefined) as AuditSearchQuery["category"],
+    // SAFETY: the protocol select only offers the contract's literals.
+    protocol: (protocol() || undefined) as AuditSearchQuery["protocol"],
     targetType: debounced().targetType.trim() || undefined,
     targetId: debounced().targetId.trim() || undefined,
+    deviceId: debounced().deviceId.trim() || undefined,
+    q: debounced().query.trim() || undefined,
     from: dateStart(fromDate()),
     to: dateEnd(toDate()),
     limit: PAGE_SIZE,
@@ -255,11 +271,23 @@ export default function AuditSettingsPage() {
     clearTimeout(settleTimer);
     setAction("");
     setActor("");
+    setActorType("");
+    setCategory("");
+    setProtocol("");
     setTargetType("");
     setTargetId("");
+    setDeviceId("");
+    setQuery("");
     setFromDate("");
     setToDate("");
-    setDebounced({ action: "", actor: "", targetType: "", targetId: "" });
+    setDebounced({
+      action: "",
+      actor: "",
+      targetType: "",
+      targetId: "",
+      deviceId: "",
+      query: "",
+    });
   };
 
   const exportAudit = async (format: "csv" | "json") => {
@@ -300,6 +328,17 @@ export default function AuditSettingsPage() {
 
   const filterFields: FilterField[] = [
     {
+      id: "category",
+      label: "Category",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        { value: "account", label: "Account action" },
+        { value: "mdm", label: "Device activity" },
+        { value: "system", label: "System" },
+      ],
+    },
+    {
       id: "action",
       label: "Action",
       kind: "select",
@@ -312,6 +351,42 @@ export default function AuditSettingsPage() {
       kind: "text",
       operators: [{ value: "is", label: "is" }],
       placeholder: "Email or user id",
+    },
+    {
+      id: "actorType",
+      label: "Actor type",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        { value: "account", label: "Account" },
+        { value: "api-token", label: "API token / MCP" },
+        { value: "system", label: "System" },
+      ],
+    },
+    {
+      id: "protocol",
+      label: "Protocol",
+      kind: "select",
+      operators: [{ value: "is", label: "is" }],
+      options: [
+        { value: "apple", label: "Apple" },
+        { value: "win", label: "Windows" },
+        { value: "android", label: "Android" },
+      ],
+    },
+    {
+      id: "deviceId",
+      label: "Device id",
+      kind: "text",
+      operators: [{ value: "is", label: "is" }],
+      placeholder: "Internal device id",
+    },
+    {
+      id: "q",
+      label: "Search",
+      kind: "text",
+      operators: [{ value: "contains", label: "contains" }],
+      placeholder: "Action, IP, certificate, target…",
     },
     {
       id: "targetType",
@@ -357,11 +432,26 @@ export default function AuditSettingsPage() {
   const filterConditions = createMemo<FilterCondition[]>(() => {
     const conditions: FilterCondition[] = [];
 
+    if (category())
+      conditions.push({ field: "category", operator: "is", values: [category()] });
+
     if (action().trim())
       conditions.push({ field: "action", operator: "is", values: [action().trim()] });
 
     if (actor().trim())
       conditions.push({ field: "actor", operator: "is", values: [actor().trim()] });
+
+    if (actorType())
+      conditions.push({ field: "actorType", operator: "is", values: [actorType()] });
+
+    if (protocol())
+      conditions.push({ field: "protocol", operator: "is", values: [protocol()] });
+
+    if (deviceId().trim())
+      conditions.push({ field: "deviceId", operator: "is", values: [deviceId().trim()] });
+
+    if (query().trim())
+      conditions.push({ field: "q", operator: "contains", values: [query().trim()] });
 
     if (targetType())
       conditions.push({ field: "targetType", operator: "is", values: [targetType()] });
@@ -385,8 +475,13 @@ export default function AuditSettingsPage() {
 
       if (!value) continue;
 
-      if (condition.field === "action") setAction(value);
+      if (condition.field === "category") setCategory(value);
+      else if (condition.field === "action") setAction(value);
       else if (condition.field === "actor") setActor(value);
+      else if (condition.field === "actorType") setActorType(value);
+      else if (condition.field === "protocol") setProtocol(value);
+      else if (condition.field === "deviceId") setDeviceId(value);
+      else if (condition.field === "q") setQuery(value);
       else if (condition.field === "targetType") setTargetType(value);
       else if (condition.field === "targetId") setTargetId(value);
       else if (condition.field === "from") setFromDate(value);
@@ -400,7 +495,7 @@ export default function AuditSettingsPage() {
 
       <Panel
         title="Audit log"
-        description="A chronological record of tenant changes and device lifecycle events. Entries are append-only and retained for the lifetime of the tenant."
+        description="Account changes and device (MDM) activity in one append-only log. Repeated device check-ins fold into a short window; enrollment, policy delivery, command results and failures are always recorded separately."
       >
         <div class="space-y-3">
           <FilterBar
@@ -496,7 +591,13 @@ export default function AuditSettingsPage() {
                     Action
                   </th>
                   <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
-                    Target
+                    Device / target
+                  </th>
+                  <th
+                    scope="col"
+                    class="sticky top-0 z-10 hidden bg-popover px-3 py-2.5 font-medium md:table-cell"
+                  >
+                    IP
                   </th>
                   <th
                     scope="col"
@@ -520,9 +621,21 @@ export default function AuditSettingsPage() {
                           </td>
                           <td
                             class="max-w-[14rem] truncate px-3 py-3 align-top text-muted-foreground"
-                            title={actorLabel(entry)}
+                            title={auditActorLabel(entry)}
                           >
-                            {actorLabel(entry)}
+                            <span class="flex items-center gap-1.5">
+                              <Show when={entry.actorType === "system"}>
+                                <Badge variant="secondary">system</Badge>
+                              </Show>
+                              <span class="truncate">{auditActorLabel(entry)}</span>
+                            </span>
+                            <span class="mt-0.5 block truncate text-[10.5px] text-muted-foreground">
+                              {auditActorKind(entry)}
+                              <Show when={entry.category}>
+                                {" · "}
+                                {entry.category}
+                              </Show>
+                            </span>
                             <Show when={credentialOf(entry)}>
                               {(credential) => (
                                 <span class="mt-1 block truncate text-[10.5px] text-muted-foreground">
@@ -542,7 +655,7 @@ export default function AuditSettingsPage() {
                             </Show>
                           </td>
                           <td class="px-3 py-3 align-top">
-                            <Badge variant="secondary">{formatAction(entry.action)}</Badge>
+                            <Badge variant="secondary">{formatAuditAction(entry.action)}</Badge>
                             <code class="mt-1 block break-all text-[11px] text-muted-foreground">
                               {entry.action}
                             </code>
@@ -551,6 +664,16 @@ export default function AuditSettingsPage() {
                             <span class="block">{entry.targetType}</span>
                             <Show when={entry.targetId}>
                               <code class="break-all text-xs">{entry.targetId}</code>
+                            </Show>
+                            <Show when={entry.deviceId && entry.deviceId !== entry.targetId}>
+                              <span class="mt-1 block break-all text-[11px]">
+                                device {entry.deviceId}
+                              </span>
+                            </Show>
+                            <Show when={auditProtocolLabel(entry.protocol)}>
+                              {(label) => (
+                                <span class="mt-1 block text-[10.5px]">{label()} MDM</span>
+                              )}
                             </Show>
                             {/* Details column is hidden on small screens; keep a
                               compact metadata line visible here instead. */}
@@ -573,6 +696,9 @@ export default function AuditSettingsPage() {
                               {expandedEntry() === entry.id ? "Hide details" : "Details"}
                             </button>
                           </td>
+                          <td class="hidden px-3 py-3 align-top font-mono text-[11px] text-muted-foreground md:table-cell">
+                            {entry.ip ?? "—"}
+                          </td>
                           <td class="hidden max-w-[22rem] px-3 py-3 align-top lg:table-cell">
                             <Show
                               when={summary()}
@@ -589,7 +715,41 @@ export default function AuditSettingsPage() {
                         </tr>
                         <Show when={expandedEntry() === entry.id}>
                           <tr id={`audit-metadata-${entry.id}`}>
-                            <td colspan="5" class="bg-surface px-3 py-3">
+                            <td colspan="6" class="bg-surface px-3 py-3">
+                              <dl class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-[11px] sm:grid-cols-2">
+                                <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">IP</dt>
+                                  <dd class="font-mono">{entry.ip ?? "not recorded"}</dd>
+                                </div>
+                                <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">Device</dt>
+                                  <dd class="break-all font-mono">{entry.deviceId ?? "—"}</dd>
+                                </div>
+                                <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">Protocol</dt>
+                                  <dd>{auditProtocolLabel(entry.protocol) ?? "—"}</dd>
+                                </div>
+                                <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">Certificate</dt>
+                                  <dd class="break-all font-mono">
+                                    {entry.deviceCertificateSerial ?? "—"}
+                                  </dd>
+                                </div>
+                                <div class="col-span-full flex gap-2">
+                                  <dt class="text-muted-foreground">Fingerprint</dt>
+                                  <dd class="break-all font-mono">
+                                    {entry.deviceCertificateFingerprint ?? "—"}
+                                  </dd>
+                                </div>
+                                <Show when={entry.userAgent}>
+                                  <div class="col-span-full flex gap-2">
+                                    <dt class="text-muted-foreground">User agent</dt>
+                                    <dd class="break-words">
+                                      {entry.userAgent}
+                                    </dd>
+                                  </div>
+                                </Show>
+                              </dl>
                               <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
                                 {JSON.stringify(entry.metadata ?? {}, null, 2)}
                               </pre>

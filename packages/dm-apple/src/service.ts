@@ -16,6 +16,7 @@ import {
   ManagementBackend,
   MdmOrigin,
   type AppleDeviceEventResult,
+  type AppleFailureReport,
   type AppleReturnToServiceConfiguration,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
@@ -55,6 +56,16 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
 }
 
 const declarationsTimestamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * Request metadata the protocol layer hands to the backend for the audit log.
+ * It is deliberately separate from the device payload: the MDM protocol never
+ * sees an address, and a device cannot assert one.
+ */
+export type RequestAuditContext = {
+  readonly clientIp?: string;
+  readonly userAgent?: string;
+};
 
 export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmService.Service>()(
   "AppleMdmService",
@@ -104,6 +115,7 @@ export declare namespace AppleMdmService {
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
+      context?: RequestAuditContext,
     ) => Effect.Effect<AppleDeviceEventResult | void, MdmError>;
     /**
      * Handle macOS's two-transaction user-channel authentication.
@@ -117,6 +129,7 @@ export declare namespace AppleMdmService {
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
+      context?: RequestAuditContext,
     ) => Effect.Effect<
       { readonly digestChallenge?: string; readonly authToken?: string } | null,
       MdmError
@@ -126,18 +139,21 @@ export declare namespace AppleMdmService {
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
+      context?: RequestAuditContext,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCheckOut: (
       checkout: CheckOutPlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
+      context?: RequestAuditContext,
     ) => Effect.Effect<void, MdmError>;
     readonly handleCommandResult: (
       result: CommandResultPlist,
       identityCertificate?: string,
       identityFingerprintSha256?: string,
       identityCertificateSerial?: string,
+      context?: RequestAuditContext,
     ) => Effect.Effect<void, MdmError>;
     readonly handleSetBootstrapToken: (
       token: string,
@@ -198,6 +214,11 @@ export declare namespace AppleMdmService {
       deviceId: string | undefined,
       expiresAt: number | undefined,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
+    /**
+     * Record a check-in the protocol layer rejected. Best effort: the backend
+     * swallows write failures so the 400 the device receives is unchanged.
+     */
+    readonly recordFailure: (report: AppleFailureReport) => Effect.Effect<void>;
     readonly generateEnrollmentProfile: (options?: {
       readonly challenge?: string;
       readonly organizationId?: string;
@@ -241,11 +262,14 @@ export const appleCheckinScope = (
   identityCertificate?: string,
   identityCertificateFingerprintSha256?: string,
   identityCertificateSerial?: string,
+  context: { readonly clientIp?: string; readonly userAgent?: string } = {},
 ): CheckinScope => {
   const identity = {
     identityCertificate,
     identityCertificateFingerprintSha256,
     identityCertificateSerial,
+    clientIp: context.clientIp,
+    userAgent: context.userAgent,
     mdmOrigin,
   };
 
@@ -357,6 +381,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): CheckinScope | null =>
     channel
       ? appleCheckinScope(
@@ -365,6 +390,7 @@ const makeAppleMdmService = (
           identityCertificate,
           identityFingerprintSha256,
           identityCertificateSerial,
+          context,
         )
       : null;
 
@@ -373,12 +399,14 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): Effect.Effect<AppleDeviceEventResult | void, MdmError> => {
     const scope = channelScope(
       resolveCheckinChannel(auth),
       identityCertificate,
       identityFingerprintSha256,
       identityCertificateSerial,
+      context,
     );
 
     if (!Predicate.isTagged(scope, "device"))
@@ -409,6 +437,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): Effect.Effect<
     { readonly digestChallenge?: string; readonly authToken?: string } | null,
     MdmError
@@ -426,6 +455,7 @@ const makeAppleMdmService = (
         identityCertificate,
         identityFingerprintSha256,
         identityCertificateSerial,
+        context,
       );
 
       if (!Predicate.isTagged(scope, "user"))
@@ -449,6 +479,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): Effect.Effect<void, MdmError> => {
     const channel = resolveCheckinChannel(update);
 
@@ -460,6 +491,7 @@ const makeAppleMdmService = (
       identityCertificate,
       identityFingerprintSha256,
       identityCertificateSerial,
+      context,
     );
 
     if (!scope) return Effect.fail(new MdmError({ message: "TokenUpdate has no device scope" }));
@@ -503,6 +535,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): Effect.Effect<void, MdmError> => {
     const channel = resolveCheckinChannel(checkout);
 
@@ -514,6 +547,7 @@ const makeAppleMdmService = (
       identityCertificate,
       identityFingerprintSha256,
       identityCertificateSerial,
+      context,
     );
 
     if (!scope) return Effect.fail(new MdmError({ message: "CheckOut has no device scope" }));
@@ -535,6 +569,7 @@ const makeAppleMdmService = (
     identityCertificate?: string,
     identityFingerprintSha256?: string,
     identityCertificateSerial?: string,
+    context: RequestAuditContext = {},
   ): Effect.Effect<void, MdmError> => {
     const channel = resolveCheckinChannel(result);
 
@@ -546,6 +581,7 @@ const makeAppleMdmService = (
       identityCertificate,
       identityFingerprintSha256,
       identityCertificateSerial,
+      context,
     );
 
     if (!scope) return Effect.fail(new MdmError({ message: "Command result has no device scope" }));
@@ -932,6 +968,20 @@ const makeAppleMdmService = (
       ),
     );
 
+  /**
+   * Record a rejected check-in. Best effort: the report is bounded and
+   * written by the backend, and any failure is logged rather than changing the
+   * empty 400 Apple expects.
+   */
+  const recordFailure = (report: AppleFailureReport): Effect.Effect<void> =>
+    backend.appleRecordFailure
+      ? backend.appleRecordFailure(report).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
+          ),
+        )
+      : Effect.void;
+
   return AppleMdmService.of({
     mdmOrigin,
     verifyDeviceSignature,
@@ -951,6 +1001,7 @@ const makeAppleMdmService = (
     handleAsset,
     handleProfile,
     generateEnrollmentProfile,
+    recordFailure,
   });
 };
 

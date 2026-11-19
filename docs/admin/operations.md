@@ -5,6 +5,42 @@ This page covers the tenant-level operational features that sit beside device ma
 ## Audit log
 
 Every meaningful mutation writes an audit event with actor, action, target and metadata.
+The same append-only stream also carries device (MDM) activity, so an operator can explain
+a device's behaviour without reading a second log.
+
+### Who acted
+
+`actorType` says what produced the event:
+
+| Actor type | Meaning                                                                          |
+| ---------- | -------------------------------------------------------------------------------- |
+| `account`  | A signed-in administrator. `actorAccountId`/`actorEmail` identify them.          |
+| `api-token`| An API token or MCP connection, resolved to its owning account.                  |
+| `system`   | The deployment acting on a device or in the background. `actorAccountId` is null.|
+
+`category` splits the stream: `account` (someone changed something), `mdm` (device
+protocol traffic) and `system` (maintenance, scheduled rotation, delivery failures). MDM
+events always have the system actor: a device check-in can never impersonate an account.
+
+### What MDM records
+
+| Action                  | When it is written                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `mdm.checkin`           | A device checked in (Apple device or user channel, Windows discovery/management, Android notification). Repeated check-ins fold into one row per device and window; `metadata.checkIns` and `metadata.firstSeenAt` describe the fold. |
+| `mdm.policy_delivered`  | Declarations, legacy profiles, Windows policy changes or an Android policy actually reached the device. |
+| `mdm.status_report`     | A status/inventory report changed at least one stored value or the health level. Apple reports that repeat the same values stay invisible; an Android status notification is recorded as the report it carries. |
+| `mdm.command_result`    | A command reached a successful terminal state. Failures keep `device.command_failed`, deferrals `device.command_not_now`. |
+| `mdm.failure`           | A check-in failed: an unparseable payload, an invalid identity, a SOAP/SyncML fault, a rejected policy or a failed Android policy sync. `metadata.code` is stable; `metadata.reason` is bounded and redacted. |
+
+Enrollment, checkout, unenrollment, compliance and declaration failures keep their
+`device.*` actions. Each state change is appended once per occurrence and is never folded
+into a check-in row.
+
+`mdm.checkin` is coalesced because a fleet of devices polls continuously. The window is
+`MDM_AUDIT_CHECKIN_COALESCE_SECONDS` (default 15 minutes, `0` records every request); the
+row is keyed by organisation, action and device, so two devices or two tenants can never
+merge. The row carries the latest verified address, identity certificate serial and
+fingerprint. Certificate PEMs, tokens and payload bodies are never stored.
 
 ### Search
 
@@ -13,8 +49,13 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/audit/search?action=device.enrolled
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
-Filters: `action`, `actor`, `targetType`, `targetId`, `from`, `to`, `limit`, `cursor`,
-`offset`.
+Filters: `action`, `actor`, `actorType`, `category`, `protocol`, `deviceId`, `targetType`,
+`targetId`, `q` (free text over action, actor, target, device, IP, certificate serial and
+fingerprint), `from`, `to`, `limit`, `cursor`, `offset`.
+
+The dashboard's **Settings → Audit log** exposes the same filters and shows the system
+actor, the device, the protocol, the verified IP and the identity certificate fields. The
+device page's activity feed shows that device's MDM events with the same details.
 
 ### Export
 
@@ -82,8 +123,13 @@ auth boundary can attribute it: a completed session, a pending-MFA failure resol
 through the pending credential, or an SSO callback that already resolved the account.
 Unattributable failures are not stored, so no row is invisible to every reader.
 
-Same rule as webhook and audit payloads: nothing user-facing or exported contains a raw
-IP address.
+Session descriptors and the login log never contain a raw client address, and webhook
+payloads never do either. The organisation event log is the deliberate exception: a
+security investigation needs the exact address that performed an account action or
+presented a device identity certificate. `audit_log.ip` is therefore the verified address,
+taken from Cloudflare's edge header or the last hop of a trusted proxy
+(`TRUST_PROXY_HEADERS=1`); a deployment that cannot prove an address stores null rather
+than a caller-supplied value. Exports include it, so treat an audit export as sensitive.
 
 ### Credential issuance
 

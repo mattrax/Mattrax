@@ -19,6 +19,7 @@
 
 import { Option, Schema } from "effect";
 import { normalisePath } from "@mattrax/enterprise-domain";
+import { clientAddress as trustedClientAddress } from "@mattrax/net";
 
 export { normalisePath };
 
@@ -177,23 +178,14 @@ export const clientKey = (
   request: Request,
   { trustForwarded = false }: ClientKeyOptions = {},
 ): string => {
-  const header = (name: string) => request.headers.get(name)?.trim() || undefined;
   // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
   const cloudflare = (request as { cf?: unknown }).cf !== undefined;
 
-  if (cloudflare)
-    return (
-      header("cf-connecting-ip") ?? header("x-forwarded-for")?.split(",")[0]?.trim() ?? "local"
-    );
-
-  if (!trustForwarded) return "local";
-
-  const chain = header("x-forwarded-for")
-    ?.split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  return chain?.at(-1) ?? header("x-real-ip") ?? "local";
+  // One trust policy is shared with the audit log (`@mattrax/net`). The
+  // limiter needs a stable key even when the address is unknowable, so every
+  // unverifiable caller collapses into the blunt `local` bucket; the audit log
+  // stores nothing rather than a spoofable value.
+  return trustedClientAddress(request.headers, { trustForwarded, cloudflare }) ?? "local";
 };
 
 export type RateLimitBindingLike = {

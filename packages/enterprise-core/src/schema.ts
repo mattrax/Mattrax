@@ -1505,6 +1505,33 @@ export const scimToken = mysqlTable(
   ],
 );
 
+/**
+ * The organisation event log.
+ *
+ * One append-only stream carries two kinds of activity:
+ *
+ * - `account`: an action taken by a signed-in account, an API token or an MCP
+ *   connection. `actorAccountId`/`actorEmail` identify it and `actorType`
+ *   separates a browser session from a credential.
+ * - `mdm`: device protocol traffic that has no account behind it. The actor is
+ *   the system sentinel, `protocol` says which MDM channel, `deviceId` binds
+ *   the row to the device, and the identity certificate fields describe the
+ *   mTLS credential the device presented.
+ * - `system`: background work with no request (maintenance alerts, scheduled
+ *   SCEP rotation, delivery failures). Recorded so it cannot be mistaken for
+ *   an operator action.
+ *
+ * `ip` stores the verified client address for security audit. It is the value
+ * the rate limiter uses (`@mattrax/net` trust policy), never a caller-supplied
+ * `x-forwarded-for` hop; deployments that cannot prove an address store null.
+ * `userAgent` is bounded to 512 characters. Certificate PEMs, tokens, payload
+ * bodies and device secrets are never written here.
+ *
+ * Repeated device check-ins are folded into one row per device and coalescing
+ * window (`mdm.checkin`); every state change (enrollment, policy delivery,
+ * command result, status change, failure) appends its own row. Retention uses
+ * `audit_log_created_idx` through the daily maintenance sweep.
+ */
 export const auditLog = mysqlTable(
   "audit_log",
   {
@@ -1514,10 +1541,32 @@ export const auditLog = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     actorAccountId: id("actor_account_id").references(() => account.id, { onDelete: "set null" }),
     actorEmail: varchar("actor_email", { length: 320 }),
+    /** `account` (session), `api-token` (bearer/MCP) or `system` (no person). */
+    actorType: varchar("actor_type", {
+      length: 16,
+      enum: ["account", "system", "api-token"],
+    })
+      .notNull()
+      .default("account"),
+    /** Which stream the row belongs to; the dashboard filters on it. */
+    category: varchar("category", { length: 16, enum: ["account", "mdm", "system"] })
+      .notNull()
+      .default("account"),
     action: shortText("action").notNull(),
     targetType: shortText("target_type").notNull(),
     targetId: shortText("target_id"),
     metadata: json("metadata"),
+    /** Verified client address (IPv4/IPv6); null when it cannot be proven. */
+    ip: varchar("ip", { length: 64 }),
+    /** Bounded request `User-Agent`; never rendered verbatim in the list. */
+    userAgent: varchar("user_agent", { length: 512 }),
+    /** Internal device row, nulled rather than deleted when the device goes. */
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    /** SHA-256 hex of the device's mTLS identity certificate (never the PEM). */
+    deviceCertificateFingerprint: varchar("device_certificate_fingerprint", { length: 64 }),
+    /** Serial of the identity certificate, lowercase hex where available. */
+    deviceCertificateSerial: varchar("device_certificate_serial", { length: 128 }),
+    protocol: varchar("protocol", { length: 16, enum: ["apple", "win", "android"] }),
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
@@ -1529,6 +1578,14 @@ export const auditLog = mysqlTable(
       table.organizationId,
       table.targetType,
       table.targetId,
+      table.createdAt,
+    ),
+    // Foreign-key support (a device delete nulls this column) and the tenant
+    // audit's device filter. The FK column leads, so InnoDB does not need to
+    // create its own index.
+    index("audit_log_device_organization_created_idx").on(
+      table.deviceId,
+      table.organizationId,
       table.createdAt,
     ),
     // Foreign-key support: deleting an account nulls the actor on the rows it
