@@ -62,12 +62,15 @@ Worker, so they only need to be set once (for example with `cf secrets put`):
    it at production. Without all three, the workflow skips Preview deployments
    instead of falling back to production.
 2. **Preview R2 bucket.** Create the bucket named by `PREVIEW_STORAGE_BUCKET`.
-3. **Preview URLs.** The deploy expects each Worker Preview to have a generated
+3. **Backup bucket.** Create `mattrax-backups` once — the `cf` commands and its
+   lifecycle rules are in [Backups](/operations/backups). The workflow only
+   uploads to it and fails with a clear message if it is missing.
+4. **Preview URLs.** The deploy expects each Worker Preview to have a generated
    URL. In the Cloudflare dashboard open each Worker → Settings → Domains and
    enable the Worker URL (preview) toggle, or attach a preview-only custom
    domain. The API Preview URL is what the dashboard Preview proxies `/api`,
    `/mdm` and `/scim` to.
-4. **Secrets.** Add the Worker secrets listed above to `mattrax` and
+5. **Secrets.** Add the Worker secrets listed above to `mattrax` and
    `mattrax-api`. `cf` refuses a declared secret with no value.
 
 No production route, cron trigger or queue consumer is created for a Preview:

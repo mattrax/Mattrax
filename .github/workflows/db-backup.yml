@@ -1,0 +1,168 @@
+name: Database backup
+
+# Nightly logical backup of the production MySQL database into R2.
+#
+# Why this shape:
+#
+# - `mysqldump --single-transaction` takes a consistent snapshot without
+#   blocking writers, so a backup never needs a maintenance window.
+# - zstd level 19 with a 128 MiB long-range window beats gzip -9 by roughly 2x
+#   on schema-heavy dumps, and restores are rarer than writes so the marginal
+#   CPU is free.
+# - Retention is an R2 lifecycle rule, not a delete step here. A workflow that
+#   both uploads and prunes will, on the day it breaks halfway, take the old
+#   backups with it.
+# - The bucket is provisioned once by an operator, not by this workflow: the
+#   CI token only needs object write, and a job that can create and delete
+#   buckets is a job that can lose the backups. Creation commands live in
+#   docs/operations/backups.md.
+#
+# Required repository secrets (already present for deploy.yml):
+#   DATABASE_URL, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN
+#
+# Restore procedure: docs/operations/backups.md
+
+on:
+  schedule:
+    # 03:17 UTC, off the hour so it does not queue behind the hourly jobs.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two dumps at once would double the load on the database and race each other
+# onto the same bucket, so queue rather than cancel.
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+
+env:
+  CF_SEND_TELEMETRY: "false"
+  BACKUP_BUCKET: mattrax-backups
+  BACKUP_PREFIX: daily/
+  ZSTD_LEVEL: "19"
+  WRANGLER_VERSION: "4.164.0"
+
+jobs:
+  backup:
+    # A scheduled workflow runs on forks too; they have no secrets, so skip
+    # instead of failing every night.
+    if: github.repository == 'mattrax/Mattrax'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check secrets are present
+        run: |
+          missing=()
+          for name in DATABASE_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]}. See docs/operations/deployment.md."
+            exit 1
+          fi
+
+      - name: Install client tooling
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends mysql-client zstd
+          npm install --global "wrangler@$WRANGLER_VERSION"
+
+          mysql --version
+          mysqldump --version
+          zstd --version
+          wrangler --version
+
+          # Ubuntu can resolve mysql-client to MariaDB, whose mysqldump emits
+          # syntax MySQL 8.4 rejects. Fail loudly instead of producing a dump
+          # that only reveals the problem during a restore.
+          if mysql --version | grep -qi mariadb; then
+            echo "::error::apt installed MariaDB's client; need Oracle MySQL 8.x."
+            exit 1
+          fi
+
+      - name: Ensure the bucket exists
+        run: |
+          set -euo pipefail
+
+          # Read-only precondition. A missing bucket is a provisioning mistake,
+          # not something this job should fix: giving CI the ability to create
+          # buckets also gives it the ability to delete them.
+          if ! wrangler r2 bucket list | grep -qw "$BACKUP_BUCKET"; then
+            echo "::error::Bucket $BACKUP_BUCKET does not exist. Create it once with the commands in docs/operations/backups.md."
+            exit 1
+          fi
+          echo "bucket $BACKUP_BUCKET is present"
+
+      - name: Dump and compress
+        id: dump
+        run: |
+          set -euo pipefail
+          # $RUNNER_TEMP is discarded with the runner, and keeps a multi-megabyte
+          # dump out of the checkout.
+          export OUT_DIR="$RUNNER_TEMP/db-backup"
+          stamp="$(apps/cloud/scripts/db-backup.sh)"
+          echo "stamp=$stamp" >>"$GITHUB_OUTPUT"
+          ls -l "$OUT_DIR"
+
+      - name: Upload to R2
+        run: |
+          set -euo pipefail
+          export OUT_DIR="$RUNNER_TEMP/db-backup"
+          stamp="${{ steps.dump.outputs.stamp }}"
+          key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
+          wrangler r2 object put "$key.sql.zst" \
+            --file "$OUT_DIR/$stamp.sql.zst" \
+            --content-type application/zstd
+          wrangler r2 object put "$key.json" \
+            --file "$OUT_DIR/$stamp.json" \
+            --content-type application/json
+
+      # An upload that reports success is not the same as a restorable object.
+      # Pull it back, compare the checksum and decompress it before calling the
+      # run green.
+      - name: Verify the upload
+        run: |
+          set -euo pipefail
+          export OUT_DIR="$RUNNER_TEMP/db-backup"
+          stamp="${{ steps.dump.outputs.stamp }}"
+          key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
+          expected="$(jq -r .sha256 "$OUT_DIR/$stamp.json")"
+
+          wrangler r2 object get "$key.sql.zst" --file "$OUT_DIR/roundtrip.sql.zst"
+          actual="$(sha256sum "$OUT_DIR/roundtrip.sql.zst" | cut -d' ' -f1)"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::Checksum mismatch for $key.sql.zst: expected $expected, downloaded $actual"
+            exit 1
+          fi
+
+          zstd --test --long=27 -q "$OUT_DIR/roundtrip.sql.zst"
+          rm -f "$OUT_DIR/roundtrip.sql.zst"
+          echo "verified $key.sql.zst"
+
+      - name: Summarise
+        if: always() && steps.dump.outputs.stamp != ''
+        run: |
+          set -euo pipefail
+          export OUT_DIR="$RUNNER_TEMP/db-backup"
+          stamp="${{ steps.dump.outputs.stamp }}"
+          {
+            echo "### Database backup"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Object | \`$BACKUP_BUCKET/$BACKUP_PREFIX$stamp.sql.zst\` |"
+            echo "| Compressed | $(wc -c <"$OUT_DIR/$stamp.sql.zst" | tr -d ' ') bytes |"
+            echo "| Tables | $(jq -r .tables "$OUT_DIR/$stamp.json") |"
+            echo "| Server | $(jq -r .mysql_server "$OUT_DIR/$stamp.json") |"
+            echo "| sha256 | \`$(jq -r .sha256 "$OUT_DIR/$stamp.json")\` |"
+            echo "| Retained | $RETENTION_DAYS days, then deleted by R2 lifecycle |"
+          } >>"$GITHUB_STEP_SUMMARY"
