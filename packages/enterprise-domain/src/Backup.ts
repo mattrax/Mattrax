@@ -5,6 +5,7 @@ import { ApplicationPlatform } from "./Application.js";
 import { ApplicationSource } from "./Application.js";
 import { JsonRecord } from "./Errors.js";
 import { NullableString } from "./Errors.js";
+import { ConfigurationScope } from "./Policy.js";
 
 export const TENANT_EXPORT_VERSION = 1;
 
@@ -83,6 +84,8 @@ export const TenantExportPolicy = Schema.Struct({
   notes: Schema.optional(NullableString),
   /** Configuration kind mapped to its stored JSON payload. */
   configurations: Schema.optional(JsonRecord),
+  /** Non-default delivery scope per configuration kind. */
+  configurationScopes: Schema.optional(Schema.Record(Schema.String, ConfigurationScope)),
 });
 
 export type TenantExportPolicy = typeof TenantExportPolicy.Type;

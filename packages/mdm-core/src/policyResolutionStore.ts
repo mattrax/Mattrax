@@ -25,10 +25,10 @@ const unique = (values: Iterable<string>) => [...new Set(values)];
  * in the result. Tenant scoping is applied to the device by the caller and to
  * groups/policies here, so a malformed cross-tenant row cannot leak a policy.
  */
-export const resolveEffectivePolicyForDevice = (
+export const loadPolicyResolutionInput = (
   db: EnterpriseDb,
   device: { readonly id: string; readonly organizationId: string },
-): Effect.Effect<EffectivePolicy, unknown> =>
+): Effect.Effect<Parameters<typeof resolveEffectivePolicy>[0], unknown> =>
   Effect.gen(function* () {
     const groupLinks = yield* db
       .select()
@@ -220,7 +220,7 @@ export const resolveEffectivePolicyForDevice = (
       );
     });
 
-    return resolveEffectivePolicy({
+    return {
       deviceId: device.id,
       groups,
       groupAssignments: groupAssignments.filter((assignment) =>
@@ -240,5 +240,42 @@ export const resolveEffectivePolicyForDevice = (
       ),
       policies,
       configurations: resolvedConfigurations,
-    });
+    };
   });
+
+/**
+ * The device channel: device-scoped configurations, applied to every user.
+ *
+ * `includeUserScoped` is for platforms with no per-login channel (Windows). It
+ * adds user-scoped configurations to the device check-in, where they apply to
+ * every user. Apple never sets it: user scope belongs on the user channel.
+ */
+export const resolveEffectivePolicyForDevice = (
+  db: EnterpriseDb,
+  device: { readonly id: string; readonly organizationId: string },
+  options: { readonly includeUserScoped?: boolean } = {},
+): Effect.Effect<EffectivePolicy, unknown> =>
+  loadPolicyResolutionInput(db, device).pipe(
+    Effect.map((input) =>
+      resolveEffectivePolicy({
+        ...input,
+        ...(options.includeUserScoped ? { includeUserScoped: true } : {}),
+      }),
+    ),
+  );
+
+/**
+ * One authenticated user channel: user-scoped configurations only.
+ *
+ * Device and group assignments contribute their user-scoped configurations to
+ * every user; `userId` contributes its direct and directory-group assignments.
+ * Device scope still beats user scope when both provide the same kind.
+ */
+export const resolveEffectivePolicyForUser = (
+  db: EnterpriseDb,
+  device: { readonly id: string; readonly organizationId: string },
+  userId: string,
+): Effect.Effect<EffectivePolicy, unknown> =>
+  loadPolicyResolutionInput(db, device).pipe(
+    Effect.map((input) => resolveEffectivePolicy({ ...input, channel: "user", forUserId: userId })),
+  );

@@ -416,3 +416,126 @@ describe("policy configuration validation", () => {
     ).resolves.toContain("exactly one PEM certificate");
   });
 });
+
+describe("configuration scope validation", () => {
+  const validateWithScope = (kind: string, data: Schema.Json, scope: "device" | "user") =>
+    Effect.runPromise(validateConfiguration(kind, data, { scope }).pipe(Effect.flip));
+
+  const scopedMobileconfig = (scope?: "System" | "User") => {
+    const xml = atob(mobileconfig(["com.apple.ManagedClient.preferences"]));
+
+    const scoped =
+      scope === undefined
+        ? xml
+        : xml.replace(
+            "<key>PayloadVersion</key><integer>1</integer>",
+            `<key>PayloadVersion</key><integer>1</integer><key>PayloadScope</key><string>${scope}</string>`,
+          );
+
+    return btoa(scoped);
+  };
+
+  it("accepts a user-scoped Apple profile that declares PayloadScope User", async () => {
+    await expect(
+      validateConfiguration(
+        "mttx.apple.custom.user",
+        { content: scopedMobileconfig("User") },
+        { scope: "user" },
+      ).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects a user-scoped Apple profile without PayloadScope User", async () => {
+    await expect(
+      validateWithScope("mttx.apple.custom.user", { content: scopedMobileconfig() }, "user"),
+    ).resolves.toContain('must declare PayloadScope "User"');
+  });
+
+  it("rejects a device-scoped Apple profile that declares PayloadScope User", async () => {
+    await expect(
+      validateWithScope(
+        "mttx.apple.custom.device",
+        { content: scopedMobileconfig("User") },
+        "device",
+      ),
+    ).resolves.toContain("mark the configuration as user scope");
+  });
+
+  it("accepts Windows user scope only for ./User/ OMA-URIs", async () => {
+    await expect(
+      validateConfiguration(
+        "mttx.windows.custom.user",
+        { omaUri: "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator", value: 1 },
+        { scope: "user" },
+      ).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      validateWithScope(
+        "mttx.windows.custom.user",
+        {
+          omaUri: "./Device/Vendor/MSFT/Policy/Config/DeviceLock/AllowSimpleDevicePassword",
+          value: 1,
+        },
+        "user",
+      ),
+    ).resolves.toContain('must start with "./User/"');
+
+    await expect(
+      validateWithScope(
+        "mttx.windows.custom.device",
+        { omaUri: "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator", value: 1 },
+        "device",
+      ),
+    ).resolves.toContain("is a per-user setting");
+  });
+
+  it("rejects user scope for Android, certificates, applications and device restrictions", async () => {
+    await expect(
+      validateWithScope("mttx.android.policy.user", { policy: {} }, "user"),
+    ).resolves.toContain("assigns a policy to a device, not a user");
+
+    await expect(
+      validateWithScope("mttx.apple.certificate.user", { pem: certificatePem }, "user"),
+    ).resolves.toContain("device credential asset");
+
+    await expect(
+      validateWithScope(
+        "mttx.apple.application.user",
+        {
+          source: "upload",
+          sha256: "a".repeat(64),
+          fileName: "App.pkg",
+          bundleId: "com.example.app",
+          version: "1.0",
+        },
+        "user",
+      ),
+    ).resolves.toContain("device-scoped");
+
+    await expect(
+      validateWithScope("mttx.apple.device", { camera: true }, "user"),
+    ).resolves.toContain("cannot be user-scoped");
+  });
+
+  it("accepts only declaration types Apple documents for the user channel", async () => {
+    await expect(
+      validateConfiguration(
+        "mttx.apple.declaration.appsettings",
+        { kind: "com.apple.configuration.app.settings", configuration: {} },
+        { scope: "user" },
+      ).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      validateWithScope(
+        "mttx.apple.declaration.softwareupdate",
+        {
+          kind: "com.apple.configuration.softwareupdate.enforcement.specific",
+          configuration: {},
+        },
+        "user",
+      ),
+    ).resolves.toContain("has no user scope on macOS");
+  });
+});

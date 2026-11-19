@@ -844,10 +844,7 @@ export const enterprise = {
     endpoint((api) =>
       api.queryDashboard({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
-  queryDashboardBatch: (
-    tenantId: RouteParam,
-    queries: ReadonlyArray<DashboardQueryRequest>,
-  ) =>
+  queryDashboardBatch: (tenantId: RouteParam, queries: ReadonlyArray<DashboardQueryRequest>) =>
     dashboardEndpoint((api) =>
       api.queryDashboardBatch({
         params: { tenantId: required(tenantId, "tenantId") },
@@ -1216,7 +1213,9 @@ export const enterprise = {
   patchPolicy: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations" | "priority">>,
+    payload: Partial<
+      Pick<PolicyRow, "name" | "notes" | "configurations" | "configurationScopes" | "priority">
+    >,
   ) =>
     endpoint((api) =>
       api.patchPolicy({
@@ -1384,6 +1383,32 @@ export const enterprise = {
       api.deviceAppleUserAction({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), userId },
         payload: { action },
+      }),
+    ),
+  bindAppleUserIdentity: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    platformUserId: string,
+    userId: string,
+  ) =>
+    endpoint((api) =>
+      api.bindAppleUserIdentity({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          userId: platformUserId,
+        },
+        payload: { userId },
+      }),
+    ),
+  unbindAppleUserIdentity: (tenantId: RouteParam, id: RouteParam, platformUserId: string) =>
+    endpoint((api) =>
+      api.unbindAppleUserIdentity({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          userId: platformUserId,
+        },
       }),
     ),
   getApplication: (tenantId: RouteParam, id: RouteParam) =>

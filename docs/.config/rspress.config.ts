@@ -186,6 +186,7 @@ export default defineConfig({
           items: [
             { text: "Architecture", link: "/reference/architecture" },
             { text: "Accounts and users", link: "/reference/identity-model" },
+            { text: "User-scoped policies", link: "/reference/user-scoped-policies" },
             { text: "Performance and a11y budgets", link: "/reference/performance" },
             { text: "Threat model", link: "/reference/threat-model" },
             { text: "Production readiness", link: "/reference/production-readiness" },

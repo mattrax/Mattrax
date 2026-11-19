@@ -252,8 +252,13 @@ export type PolicyDeliveryInput = {
   readonly policyId: string;
   /** Latest `policy_deployment.version`, or null when none exists. */
   readonly version: number | null;
-  /** Current configuration kinds and their content hashes. */
+  /** Current device-scoped configuration kinds and their content hashes. */
   readonly configurations: ReadonlyArray<PolicyDeliveryConfiguration>;
+  /**
+   * The policy also has user-scoped configurations, which are delivered per
+   * user channel and never appear in a device's declaration report.
+   */
+  readonly hasUserScopedConfigurations?: boolean;
   /** Devices in the policy's scope. */
   readonly devices: ReadonlyArray<{
     readonly id: string;
@@ -361,7 +366,8 @@ export const derivePolicyDelivery = (input: PolicyDeliveryInput): PolicyDelivery
 
   const configurations = input.configurations.filter((row) => isDeclarableAppleKind(row.kind));
 
-  if (configurations.length === 0) return state("no-configurations");
+  if (configurations.length === 0)
+    return state(input.hasUserScopedConfigurations ? "user-channel" : "no-configurations");
 
   const evidenceByDevice = new Map<string, DeviceEvidence>();
 

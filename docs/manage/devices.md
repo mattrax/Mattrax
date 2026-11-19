@@ -472,13 +472,15 @@ gone.
 Two different things are called "users" on a device page:
 
 - **Linked directory users** are tenant-scoped Entra/SCIM directory people associated with the device
-  (`GET/PUT /devices/:id/users`). Their policies are delivered on the device channel, so a
-  user policy affects every login on the device. The checkbox list on the device page edits
-  these.
+  (`GET/PUT /devices/:id/users`). Their device-scoped settings are delivered on the device
+  channel, so they affect every login on the device. The checkbox list on the device page
+  edits these.
 - **Apple user channels** are the logins Apple itself manages over the MDM user channel.
-  They carry push credentials, profiles and per-user commands, and they exist only for Apple
-  devices. The device page shows them under the same **Users** panel with their binding, last
-  check-in, push health and reported profile count.
+  They carry push credentials, declarations, profiles and per-user commands, and they exist
+  only for Apple devices. Link a channel to a directory person to deliver user-scoped
+  settings to that login. The device page shows each channel's binding, last check-in, push
+  health and reported profile count. See
+  [User-scoped policies](/reference/user-scoped-policies/).
 
 ```text
 GET  /api/v1/tenants/:tenantId/devices/:id/apple-users

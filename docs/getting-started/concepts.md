@@ -96,23 +96,29 @@ catalogue or a direct `install-app` command instead.
 Policies reach devices through device group assignments, direct device assignments, and
 directory users or user groups. Each link can be an **include** or an **exclude**.
 
-User-assigned policies use the device channel: there is no per-user payload isolation
-yet, so a user policy applies to every linked device and affects every user of that device.
-Link users to devices from the device page. Directory sync (Entra or SCIM) keeps user
-groups current and triggers a refresh for linked devices.
+Every configuration is **device-scoped** or **user-scoped**. Device-scoped settings apply to
+every user of a device. User-scoped settings are delivered only on Apple's native user channel
+to a login whose identity is bound to a directory person; see
+[User-scoped policies](/reference/user-scoped-policies/).
+
+User-assigned policies still contribute their device-scoped settings on the device channel,
+so a user policy's device restrictions affect every user of a linked device. Windows and
+Android have no per-login channel; Windows delivers `./User/` settings to every user, and
+Android rejects user scope. Directory sync (Entra or SCIM) keeps user groups current and
+triggers a refresh for linked devices.
 
 Apple devices additionally have a native **user channel** per macOS or Shared iPad login.
-That channel carries its own push token, profile inventory and per-user commands, and is
-visible on the device page. It is not a policy-delivery scope: policies still follow the
-device, so nothing is isolated per login. See [Apple](/platforms/apple/#user-channel).
+That channel carries its own push token, declarations, profile inventory and per-user
+commands, and is visible on the device page. See
+[Apple](/platforms/apple/#user-channel).
 
 Resolution order, from strongest to weakest:
 
 1. Direct device **exclude** removes the policy, even if a group or user includes it.
 2. Direct device **include** wins over every group include or exclude.
 3. A device assignment (direct or group) beats a user assignment for the same
-   configuration kind. A user policy fills kinds the device policies do not provide; it
-   does not replace them.
+   configuration kind. On the user channel, device-assigned user-scoped settings beat
+   user-assigned ones for the same kind.
 4. Group **exclude** vetoes group delivery. Another group cannot re-add it, but a direct
    include can.
 5. Among remaining policies, the highest `priority` wins. Ties go to the most recently

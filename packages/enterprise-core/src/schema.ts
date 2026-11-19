@@ -709,7 +709,9 @@ export const tenantRole = mysqlTable(
     name: shortText("name").notNull(),
     description: text("description"),
     permissions: json("permissions").$type<string[]>().notNull(),
-    createdByAccountId: id("created_by_account_id").references(() => account.id, { onDelete: "set null" }),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -756,7 +758,9 @@ export const accountAuditLog = mysqlTable(
   "account_audit_log",
   {
     id: id().primaryKey(),
-    subjectAccountId: id("subject_account_id").references(() => account.id, { onDelete: "set null" }),
+    subjectAccountId: id("subject_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
     /** Snapshot of the subject's address; kept after deletion. */
     subjectEmail: varchar("subject_email", { length: 320 }),
     actorAccountId: id("actor_account_id").references(() => account.id, { onDelete: "set null" }),
@@ -887,7 +891,9 @@ export const accountRecovery = mysqlTable(
     proofTokenHash: varchar("proof_token_hash", { length: 255 }).notNull(),
     approvalTokenHash: varchar("approval_token_hash", { length: 255 }),
     completionTokenHash: varchar("completion_token_hash", { length: 255 }),
-    approvedByAccountId: id("approved_by_account_id").references(() => account.id, { onDelete: "set null" }),
+    approvedByAccountId: id("approved_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
     approvedAt: timestamp("approved_at"),
     completedAt: timestamp("completed_at"),
     cancelledAt: timestamp("cancelled_at"),
@@ -1195,8 +1201,9 @@ export const deviceAppleUser = mysqlTable(
       .notNull()
       .references(() => device.id, { onDelete: "cascade" }),
     /**
-     * Apple's user identifier: `UserID` for the macOS/Shared iPad user channel
-     * or `EnrollmentUserID` for a user-enrollment user channel.
+     * The channel key: `UserID` for a macOS user channel, `EnrollmentUserID`
+     * for a user-enrollment channel, and the Managed Apple Account identifier
+     * for Shared iPad (whose `UserID` is the same sentinel for every login).
      */
     userId: shortText("user_id").notNull(),
     /** Short (login) name reported by macOS. */
@@ -1215,6 +1222,30 @@ export const deviceAppleUser = mysqlTable(
     pushMagic: shortText("push_magic"),
     topic: shortText("topic"),
     unlockToken: text("unlock_token"),
+    /**
+     * The directory person this channel belongs to, once its identity is
+     * bound. User-scoped policy is only resolved and delivered for a bound
+     * channel; the device channel is independent and always device-scoped.
+     */
+    directoryUserId: id("directory_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * How the binding was established. `certificate` is the strongest: the
+     * user channel installed a Mattrax-issued certificate whose subject was
+     * set from an IdP-authenticated claim. `managed-apple-account` comes from
+     * an Apple Business user record on Shared iPad. `manual` is an operator
+     * decision recorded for audit.
+     */
+    identitySource: varchar("identity_source", {
+      length: 32,
+      enum: ["certificate", "managed-apple-account", "manual"],
+    }),
+    /** The IdP subject (UPN/email) the binding was verified against. */
+    identityUpn: shortText("identity_upn"),
+    identityVerifiedAt: timestamp("identity_verified_at"),
+    /** Last DDM declaration token served to this user channel. */
+    ddmDeclarationsToken: text("ddm_declarations_token"),
     /** Profiles the user channel reported for its login context. */
     profiles: json("profiles").$type<
       Array<{
@@ -1236,6 +1267,26 @@ export const deviceAppleUser = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.deviceId, table.userId] })],
+);
+
+/** Last reported status for each DDM declaration on one user channel. */
+export const deviceUserDeclaration = mysqlTable(
+  "device_user_declaration",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    /** Apple's user identifier; matches `device_apple_user.user_id`. */
+    userId: shortText("user_id").notNull(),
+    identifier: id("identifier").notNull(),
+    declarationType: shortText("declaration_type").notNull(),
+    active: boolean("active").notNull().default(false),
+    valid: shortText("valid").notNull(),
+    serverToken: text("server_token"),
+    reasons: json("reasons"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.deviceId, table.userId, table.identifier] })],
 );
 
 /** Last reported status for each DDM declaration on a device. */
@@ -1520,7 +1571,9 @@ export const emailOutbox = mysqlTable(
     organizationId: id("organization_id").references(() => organization.id, {
       onDelete: "cascade",
     }),
-    subjectAccountId: id("subject_account_id").references(() => account.id, { onDelete: "cascade" }),
+    subjectAccountId: id("subject_account_id").references(() => account.id, {
+      onDelete: "cascade",
+    }),
     /** Envelope recipient; one row per recipient so addresses never leak. */
     recipient: varchar("recipient", { length: 320 }).notNull(),
     /** Template name for operations and audit, e.g. `invitation`. */
@@ -2715,7 +2768,9 @@ export const dashboard = mysqlTable(
     description: text("description"),
     /** Exactly one dashboard per tenant is rendered at `/t/:id`. */
     isDefault: boolean("is_default").notNull().default(false),
-    createdByAccountId: id("created_by_account_id").references(() => account.id, { onDelete: "set null" }),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -2781,6 +2836,16 @@ export const configuration = mysqlTable(
     policyId: id("policy_id")
       .notNull()
       .references(() => policy.id, { onDelete: "cascade" }),
+    /**
+     * Delivery channel. `device` settings go to the device channel (and apply
+     * to every user); `user` settings go only to an authenticated user channel.
+     * Apple validates that the payload is user-scoped, Windows that every
+     * OMA-URI is `./User/...`, and Android rejects user scope (AMAPI has no
+     * per-user policy).
+     */
+    scope: varchar("scope", { length: 16, enum: ["device", "user"] })
+      .notNull()
+      .default("device"),
     data: json("data").notNull(),
     hash: shortText("hash").notNull(),
   },
@@ -3472,6 +3537,7 @@ export const relations = defineRelations(
     deviceDeclaration,
     deviceApple,
     deviceAppleUser,
+    deviceUserDeclaration,
     deviceSecret,
     appleFdeEscrowKey,
     deviceApplication,

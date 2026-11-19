@@ -39,6 +39,8 @@ export const PolicyDeliveryState = Schema.Literals([
   "no-devices",
   "not-tracked",
   "no-configurations",
+  /** Only user-scoped settings: delivered per user channel, not per device. */
+  "user-channel",
   "not-applicable",
   "pending",
   "partial",
@@ -68,6 +70,17 @@ export const PolicyDeliveryInfo = Schema.Struct({
 
 export type PolicyDeliveryInfo = typeof PolicyDeliveryInfo.Type;
 
+/** The MDM channel a configuration is delivered on. */
+export const ConfigurationScope = Schema.Literals(["device", "user"]);
+
+export type ConfigurationScope = typeof ConfigurationScope.Type;
+
+/**
+ * Reserved key in a policy deployment snapshot that records non-default
+ * configuration scopes. Old snapshots omit it and are therefore all `device`.
+ */
+export const POLICY_SNAPSHOT_SCOPES_KEY = "@@scopes";
+
 export const PolicyRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -75,11 +88,15 @@ export const PolicyRow = Schema.Struct({
   /** Higher wins when policies provide the same configuration kind. */
   priority: Schema.Number,
   configurations: Schema.optional(JsonRecord),
+  /** Delivery scope per configuration kind. Missing entries are `device`. */
+  configurationScopes: Schema.optional(Schema.Record(Schema.String, ConfigurationScope)),
   /**
    * Number of configuration kinds saved on the policy. List rows set this
    * without loading every configuration payload.
    */
   configurationCount: Schema.optional(Schema.Number),
+  /** Configuration kinds that are delivered on the user channel. */
+  userConfigurationCount: Schema.optional(Schema.Number),
   /** Devices in the policy's resolved assignment scope. */
   scopedDeviceCount: Schema.optional(Schema.Number),
   /** Directory users assigned directly or through a directory group. */
@@ -111,6 +128,13 @@ export const PatchPolicyRequest = Schema.Struct({
   notes: Schema.optional(NullableString),
   priority: Schema.optional(Schema.Number),
   configurations: Schema.optional(JsonRecord),
+  /**
+   * Delivery scope per configuration kind. Omitting the map leaves the stored
+   * scopes alone, so clients that do not know about scope keep their
+   * device-wide behaviour. Supplying it is authoritative: a kind missing from
+   * the map is device scope.
+   */
+  configurationScopes: Schema.optional(Schema.Record(Schema.String, ConfigurationScope)),
 });
 
 export const UploadPolicyApplicationRequest = Schema.Struct({

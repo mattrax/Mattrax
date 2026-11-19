@@ -62,3 +62,17 @@ export const appleUserPushTone = (
 
 export const appleUserEnrollmentLabel = (mode: "device" | "user" | null | undefined): string =>
   mode === "user" ? "BYOD (User Enrollment)" : "Device enrollment";
+
+/** How a user channel's directory identity was established. */
+export const appleUserIdentitySourceLabel = (
+  source: "certificate" | "managed-apple-account" | "manual",
+): string => {
+  switch (source) {
+    case "certificate":
+      return "Certificate verified";
+    case "managed-apple-account":
+      return "Managed Apple Account";
+    default:
+      return "Linked manually";
+  }
+};

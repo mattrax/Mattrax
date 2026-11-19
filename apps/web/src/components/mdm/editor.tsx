@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
+import { NativeSelect } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ChevronDown } from "~/components/ui/icons";
@@ -114,6 +115,8 @@ export function PolicyConfigurationEditor() {
   const [canEdit, setCanEdit] = createSignal(false);
   const [active, setActive] = createSignal("custom");
   const [config, setConfig] = createSignal<Config>({});
+  const [scopes, setScopes] = createSignal<Record<string, "device" | "user">>({});
+  const [initialScopes, setInitialScopes] = createSignal("{}");
   const [initial, setInitial] = createSignal("{}");
   const [raw, setRaw] = createSignal("{}");
   const [rawError, setRawError] = createSignal<string | null>(null);
@@ -127,31 +130,63 @@ export function PolicyConfigurationEditor() {
 
       const decoded = Option.getOrUndefined(decodeConfig(configurations)) ?? {};
 
+      const nextScopes = { ...row()?.configurationScopes };
+
       setConfig(decoded);
+      setScopes(nextScopes);
       setInitial(JSON.stringify(decoded));
+      setInitialScopes(JSON.stringify(nextScopes));
       setRaw(JSON.stringify(decoded, null, 2));
       setRawError(null);
     },
   );
 
-  const dirty = createMemo(() => JSON.stringify(config()) !== initial() || rawError() !== null);
+  const dirty = createMemo(
+    () =>
+      JSON.stringify(config()) !== initial() ||
+      JSON.stringify(scopes()) !== initialScopes() ||
+      rawError() !== null,
+  );
+
   const configuredKinds = createMemo(() => Object.keys(config()).length);
+
+  /** Kinds that will exist after saving; `null` marks a pending removal. */
+  const scopeableKinds = createMemo(() =>
+    Object.entries(config()).flatMap(([kind, value]) => (value === null ? [] : [kind])),
+  );
 
   const unsaved = useUnsavedChanges(() => canEdit() && dirty());
 
-  const setKey = (key: string, value: Schema.Json) =>
+  const setKey = (key: string, value: Schema.Json) => {
     setConfig((current) => ({ ...current, [key]: value }));
+
+    if (value === null)
+      setScopes((current) => {
+        const next = { ...current };
+        delete next[key];
+
+        return next;
+      });
+  };
+
+  const setScope = (kind: string, scope: "device" | "user") =>
+    setScopes((current) => ({ ...current, [kind]: scope }));
 
   const save = useMutation(() => ({
     mutationFn: () =>
-      enterprise.patchPolicy(params.tenantId, params.policyId, { configurations: config() }),
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        configurations: config(),
+        configurationScopes: scopes(),
+      }),
     onMutate: async () =>
       optimisticallyPatchItem(queryClient, params.tenantId!, "policy", params.policyId!, {
         configurations: config(),
+        configurationScopes: scopes(),
       }),
     onSuccess: () => {
       setCanEdit(false);
       setInitial(JSON.stringify(config()));
+      setInitialScopes(JSON.stringify(scopes()));
       toast.success("Policy configurations saved");
     },
     onError: (error, _variables, restore) => {
@@ -190,6 +225,7 @@ export function PolicyConfigurationEditor() {
 
   const discard = () => {
     setConfig(JSON.parse(initial()));
+    setScopes(JSON.parse(initialScopes()));
     setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
     setRawError(null);
     setCanEdit(false);
@@ -321,13 +357,20 @@ export function PolicyConfigurationEditor() {
                 <DeviceSection config={config()} setKey={setKey} />
               </Match>
               <Match when={active() === "windows"}>
-                <WindowsSection config={config()} setKey={setKey} />
+                <WindowsSection
+                  config={config()}
+                  setKey={setKey}
+                  scopes={scopes()}
+                  setScope={setScope}
+                />
               </Match>
               <Match when={active() === "custom"}>
                 <CustomSection
                   config={config()}
                   setKey={setKey}
                   policyId={params.policyId ?? "policy"}
+                  scopes={scopes()}
+                  setScope={setScope}
                 />
               </Match>
               <Match when={active() === "raw"}>
@@ -335,6 +378,25 @@ export function PolicyConfigurationEditor() {
                   <p class="text-[12.5px] leading-relaxed text-muted-foreground">
                     Edit the raw configuration map. Values use Mattrax configuration kinds.
                   </p>
+                  <Show when={scopeableKinds().length > 0}>
+                    <div class="space-y-1.5 rounded-lg border border-border bg-muted/15 px-3 py-2">
+                      <p class="label-caps">Delivery scope</p>
+                      <p class="text-[11px] leading-relaxed text-muted-foreground">
+                        Device scope reaches every user of the device. User scope is delivered only
+                        on a linked, identity-verified Apple user channel.
+                      </p>
+                      <For each={scopeableKinds()}>
+                        {(kind) => (
+                          <div class="flex items-center justify-between gap-3">
+                            <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                              {kind}
+                            </span>
+                            <ScopeSelect kind={kind} scopes={scopes()} setScope={setScope} />
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                   <textarea
                     class={`${textareaClass} min-h-80 font-mono text-[11px] leading-relaxed`}
                     value={raw()}
@@ -398,7 +460,7 @@ function sectionDescription(active: string) {
 
   if (active === "windows") return "SyncML policy nodes for Windows devices.";
 
-  if (active === "raw") return "The full configuration map, as stored on the policy.";
+  if (active === "raw") return "The full configuration map, with a delivery scope per setting.";
 
   return "Certificates attached to this policy.";
 }
@@ -449,6 +511,34 @@ function EditorNav(props: {
   );
 }
 
+/**
+ * Delivery channel for one configuration. User scope is validated by the API:
+ * Apple profiles need `PayloadScope: User`, Windows needs `./User/` OMA-URIs,
+ * and Android has no per-user policy.
+ */
+function ScopeSelect(props: {
+  kind: string;
+  scopes: Readonly<Record<string, "device" | "user">>;
+  setScope: (kind: string, scope: "device" | "user") => void;
+  class?: string;
+}) {
+  return (
+    <label class={`flex items-center gap-2 text-[11px] text-muted-foreground ${props.class ?? ""}`}>
+      <span>Scope</span>
+      <NativeSelect
+        class="h-7 w-auto text-[11.5px]"
+        value={props.scopes[props.kind] ?? "device"}
+        onChange={(event) =>
+          props.setScope(props.kind, event.currentTarget.value === "user" ? "user" : "device")
+        }
+      >
+        <option value="device">Device channel</option>
+        <option value="user">User channel</option>
+      </NativeSelect>
+    </label>
+  );
+}
+
 function SecuritySection(props: {
   config: Config;
   setKey: (key: string, value: Schema.Json) => void;
@@ -476,6 +566,10 @@ function SecuritySection(props: {
     >
       {(value) => (
         <div class="space-y-3">
+          <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+            Certificates are device-channel credentials. User-scoped certificate delivery is not
+            implemented, so this configuration is always device scope.
+          </p>
           <div class="flex flex-wrap items-center justify-between gap-2">
             <p class="text-[12.5px] text-muted-foreground">A PEM certificate is configured.</p>
             <div class="flex gap-2">
@@ -505,7 +599,8 @@ function DeviceSection(props: {
     <div class="space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-2">
         <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-          Basic restrictions applied to every device in this policy's scope.
+          Basic restrictions applied to the device channel, so every user on a managed device
+          receives them.
         </p>
         <DocumentationLink
           href={APPLE_RESTRICTIONS_DOCS}
@@ -536,6 +631,8 @@ function DeviceSection(props: {
 function WindowsSection(props: {
   config: Config;
   setKey: (key: string, value: Schema.Json) => void;
+  scopes: Readonly<Record<string, "device" | "user">>;
+  setScope: (kind: string, scope: "device" | "user") => void;
 }) {
   const current = () => Option.getOrUndefined(decodeWindowsConfig(props.config[keys.windows]));
 
@@ -544,7 +641,8 @@ function WindowsSection(props: {
       <div class="flex flex-wrap items-start justify-between gap-2">
         <p class="text-[12.5px] leading-relaxed text-muted-foreground">
           Deploy a Windows MDM OMA-URI. The value is delivered on the device's next SyncML check-in.
-          Use Advanced JSON to configure multiple nodes.
+          User scope requires a <code class="font-mono text-[11.5px]">./User/</code> CSP path and is
+          accepted for every user on the device: Windows has no per-login policy channel.
         </p>
         <DocumentationLink
           href={WINDOWS_CSP_DOCS}
@@ -552,6 +650,12 @@ function WindowsSection(props: {
           subject="the Windows Policy CSP"
         />
       </div>
+      <ScopeSelect
+        kind={keys.windows}
+        scopes={props.scopes}
+        setScope={props.setScope}
+        class="justify-between rounded-lg border border-border bg-muted/15 px-3 py-2"
+      />
       <label class="space-y-1.5 text-sm">
         <span class="text-[12.5px] font-medium text-foreground/90">OMA-URI</span>
         <Input
@@ -593,6 +697,8 @@ function CustomSection(props: {
   config: Config;
   setKey: (key: string, value: Schema.Json) => void;
   policyId: string;
+  scopes: Readonly<Record<string, "device" | "user">>;
+  setScope: (kind: string, scope: "device" | "user") => void;
 }) {
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);
@@ -664,8 +770,9 @@ function CustomSection(props: {
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-medium text-foreground">Existing profiles</p>
           <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-            Signed profiles keep their signature and deploy byte-for-byte. Remove the signature only
-            when you need to edit the profile here.
+            Signed profiles keep their signature and deploy byte-for-byte. User-scoped profiles must
+            declare <code class="font-mono text-[11.5px]">PayloadScope User</code> and are delivered
+            on the Apple user channel; device-scoped profiles stay on the device channel.
           </p>
         </div>
         <DocumentationLink
@@ -695,6 +802,7 @@ function CustomSection(props: {
                     <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
                       {kind}
                     </span>
+                    <ScopeSelect kind={kind} scopes={props.scopes} setScope={props.setScope} />
                     <Show when={profile.signed}>
                       <Badge
                         variant="outline"

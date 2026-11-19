@@ -261,11 +261,18 @@ export const buildTenantExport = (
       : [];
 
     const policyConfigurations = new Map<string, Record<string, Schema.Json>>();
+    const policyConfigurationScopes = new Map<string, Record<string, "device" | "user">>();
 
     for (const configuration of configurations) {
       const current = policyConfigurations.get(configuration.policyId) ?? {};
       current[configuration.kind] = Schema.decodeUnknownSync(Schema.Json)(configuration.data);
       policyConfigurations.set(configuration.policyId, current);
+
+      if (configuration.scope === "user") {
+        const scopes = policyConfigurationScopes.get(configuration.policyId) ?? {};
+        scopes[configuration.kind] = "user";
+        policyConfigurationScopes.set(configuration.policyId, scopes);
+      }
     }
 
     const applicationGroups = applicationIds.length
@@ -424,6 +431,9 @@ export const buildTenantExport = (
       name: policy.name,
       notes: policy.notes,
       configurations: policyConfigurations.get(policy.id) ?? {},
+      ...(policyConfigurationScopes.has(policy.id)
+        ? { configurationScopes: policyConfigurationScopes.get(policy.id)! }
+        : {}),
     }));
 
     const exportedApplications: TenantExportApplication[] = applications.map((application) => ({

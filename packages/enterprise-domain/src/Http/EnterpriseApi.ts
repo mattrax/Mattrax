@@ -44,6 +44,7 @@ import { AppleEnrollmentProfileResponse } from "../Enrollment.js";
 import { AppleFdeEscrowKeyInfo } from "../Device.js";
 import { AppleUserActionRequest } from "../Device.js";
 import { AppleUserActionResponse } from "../Device.js";
+import { BindAppleUserIdentityRequest } from "../Device.js";
 import { ApplicationInstallResult } from "../Application.js";
 import { ApplicationInventoryQuery } from "../Device.js";
 import { ApplicationInventoryResponse } from "../Device.js";
@@ -1383,6 +1384,34 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         params: TenantDeviceUserParam,
         payload: AppleUserActionRequest,
         success: AppleUserActionResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "bindAppleUserIdentity",
+      "/v1/tenants/:tenantId/devices/:id/apple-users/:userId/identity",
+      {
+        /**
+         * Binds a macOS/Shared iPad user channel to a directory person. User
+         * scope is only delivered to a bound channel; an operator binding is
+         * audited and recorded as `manual`.
+         */
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDeviceUserParam,
+        payload: BindAppleUserIdentityRequest,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "unbindAppleUserIdentity",
+      "/v1/tenants/:tenantId/devices/:id/apple-users/:userId/identity",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantDeviceUserParam,
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
       },
     ),
   )

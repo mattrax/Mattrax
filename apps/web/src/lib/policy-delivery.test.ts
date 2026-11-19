@@ -11,6 +11,7 @@ const delivery = (
     | "no-devices"
     | "not-tracked"
     | "no-configurations"
+    | "user-channel"
     | "not-applicable"
     | "pending"
     | "partial"
@@ -51,6 +52,7 @@ describe("policyDeliveryPresentation", () => {
     expect(policyDeliveryPresentation(delivery("no-configurations")).label).toBe(
       "No configurations",
     );
+    expect(policyDeliveryPresentation(delivery("user-channel")).label).toBe("User channel");
     expect(policyDeliveryPresentation(delivery("not-applicable")).label).toBe("Not applicable");
   });
 

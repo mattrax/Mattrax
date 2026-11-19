@@ -63,6 +63,46 @@ export type ConfigurationKind =
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9]{1,20}$/;
 
+/**
+ * Declaration types Apple documents with `user` in their macOS allowed scopes.
+ * Derived from the `declarative/declarations` schema in
+ * apple/device-management. Kept explicit: a declaration type is only accepted
+ * for the user channel when Apple says the user channel supports it.
+ */
+const USER_SCOPED_DECLARATIONS = new Set([
+  "com.apple.configuration.accessibility.settings",
+  "com.apple.configuration.account.caldav",
+  "com.apple.configuration.account.carddav",
+  "com.apple.configuration.account.exchange",
+  "com.apple.configuration.account.google",
+  "com.apple.configuration.account.ldap",
+  "com.apple.configuration.account.mail",
+  "com.apple.configuration.account.settings",
+  "com.apple.configuration.account.subscribed-calendar",
+  "com.apple.configuration.app.managed",
+  "com.apple.configuration.app.settings",
+  "com.apple.configuration.extensible-sso",
+  "com.apple.configuration.external-intelligence.settings",
+  "com.apple.configuration.intelligence.settings",
+  "com.apple.configuration.keyboard.settings",
+  "com.apple.configuration.legacy",
+  "com.apple.configuration.legacy.interactive",
+  "com.apple.configuration.management.status-subscriptions",
+  "com.apple.configuration.math.settings",
+  "com.apple.configuration.network.relay",
+  "com.apple.configuration.network.vpn.ikev2",
+  "com.apple.configuration.passcode.settings",
+  "com.apple.configuration.safari.bookmarks",
+  "com.apple.configuration.safari.extensions.settings",
+  "com.apple.configuration.safari.settings",
+  "com.apple.configuration.screensharing.connection",
+  "com.apple.configuration.screensharing.connection.group",
+  "com.apple.configuration.security.certificate",
+  "com.apple.configuration.security.identity",
+  "com.apple.configuration.security.passkey.attestation",
+  "com.apple.configuration.siri.settings",
+]);
+
 const encoder = new TextEncoder();
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
@@ -591,10 +631,16 @@ export const validateConfiguration = (
      * Required to accept an `FDERecoveryKeyEscrow` profile Mattrax can unwrap.
      */
     readonly escrowCertificateFingerprintSha256?: string | null;
+    /**
+     * Delivery channel. Defaults to `device`. User scope is only accepted when
+     * the payload or declaration actually supports it on the user channel.
+     */
+    readonly scope?: "device" | "user";
   } = {},
 ): Effect.Effect<void, string> =>
   Effect.gen(function* () {
     const parsed = parseConfigurationKind(kind);
+    const scope = context.scope ?? "device";
 
     switch (parsed.type) {
       case "unknown":
@@ -602,6 +648,10 @@ export const validateConfiguration = (
           `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id> and mttx.android.policy.<id>.`,
         );
       case "application": {
+        if (scope === "user")
+          return yield* Effect.fail(
+            `"${kind}" can only be device-scoped: Apple user-channel application installs are not implemented.`,
+          );
         const configuration = parseAppleApplicationConfiguration(data);
 
         if (!configuration)
@@ -613,6 +663,8 @@ export const validateConfiguration = (
       }
 
       case "device": {
+        if (scope === "user")
+          return yield* Effect.fail(`"${kind}" is a device restriction and cannot be user-scoped.`);
         const record = asRecord(data);
 
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
@@ -654,7 +706,15 @@ export const validateConfiguration = (
           // A CMS/PKCS#7-wrapped profile keeps its code signature and is
           // deployed verbatim. We only check that it carries an embedded
           // plist; the device is responsible for validating the signer.
-          if (isSignedMobileconfig(bytes, text)) return;
+          if (isSignedMobileconfig(bytes, text)) {
+            if (scope === "user")
+              return yield* Effect.fail(
+                `"${kind}" is user-scoped, but a signed mobileconfig cannot be inspected for PayloadScope "User". Use an unsigned profile or a declaration.`,
+              );
+
+            return;
+          }
+
           const cause = parsed.cause;
 
           return yield* Effect.fail(
@@ -691,6 +751,16 @@ export const validateConfiguration = (
           (payloadScope === undefined || !["System", "User"].includes(payloadScope))
         )
           return yield* Effect.fail(`"${kind}.content" PayloadScope must be System or User`);
+
+        if (scope === "user" && payloadScope !== "User")
+          return yield* Effect.fail(
+            `"${kind}" is user-scoped, so its profile must declare PayloadScope "User" (Apple refuses to install a System profile in a user context).`,
+          );
+
+        if (scope === "device" && payloadScope === "User")
+          return yield* Effect.fail(
+            `"${kind}.content" declares PayloadScope "User"; mark the configuration as user scope so it is delivered on the user channel.`,
+          );
         const payloads = payloadsFromMobileconfig(plist);
 
         if (payloads.length === 0)
@@ -708,6 +778,10 @@ export const validateConfiguration = (
       }
 
       case "android": {
+        if (scope === "user")
+          return yield* Effect.fail(
+            `"${kind}" cannot be user-scoped: the Android Management API assigns a policy to a device, not a user.`,
+          );
         const record = asRecord(data);
 
         if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
@@ -739,6 +813,18 @@ export const validateConfiguration = (
               `"${kind}.omaUri" must be a Windows OMA-URI starting with "./"`,
             );
 
+          const perUserUri = node.omaUri.startsWith("./User/");
+
+          if (scope === "user" && !perUserUri)
+            return yield* Effect.fail(
+              `"${kind}.omaUri" must start with "./User/" for user scope; "${node.omaUri}" is device-scoped.`,
+            );
+
+          if (scope === "device" && perUserUri)
+            return yield* Effect.fail(
+              `"${kind}.omaUri" is a per-user setting ("${node.omaUri}"). Mark the configuration as user scope, or use a device-scoped CSP.`,
+            );
+
           if (node.value === undefined || node.value === null)
             return yield* Effect.fail(`"${kind}.value" is required`);
 
@@ -756,6 +842,10 @@ export const validateConfiguration = (
       }
 
       case "certificate": {
+        if (scope === "user")
+          return yield* Effect.fail(
+            `"${kind}" issues a device credential asset; user-channel certificate assets are not implemented.`,
+          );
         const record = asRecord(data);
 
         if (!record || !Schema.is(Schema.String)(record.pem) || record.pem.length === 0)
@@ -782,6 +872,11 @@ export const validateConfiguration = (
 
         if (!isJsonObject(record.configuration))
           return yield* Effect.fail(`"${kind}" requires a "configuration" object`);
+
+        if (scope === "user" && !USER_SCOPED_DECLARATIONS.has(record.kind))
+          return yield* Effect.fail(
+            `"${record.kind}" has no user scope on macOS according to Apple's declaration schema.`,
+          );
 
         return;
       }

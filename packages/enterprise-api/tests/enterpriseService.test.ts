@@ -499,9 +499,7 @@ describe("enterprise service tenant flow", () => {
     expect(batch.results[1].buckets).toEqual([{ label: "Managed", value: 1 }]);
 
     for (const [index, query] of queries.entries()) {
-      const single = await runEffect(
-        service.queryDashboard(request(headers), tenant.id, query),
-      );
+      const single = await runEffect(service.queryDashboard(request(headers), tenant.id, query));
 
       expect(batch.results[index]).toEqual(single);
     }
@@ -1727,6 +1725,46 @@ describe("enterprise service group flow", () => {
 });
 
 describe("enterprise service policy flow", () => {
+  it("stores the delivery scope of a configuration", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "User settings" }),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: {
+          "mttx.apple.declaration.usersettings": {
+            kind: "com.apple.configuration.app.settings",
+            configuration: {},
+          },
+        },
+        configurationScopes: { "mttx.apple.declaration.usersettings": "user" },
+      }),
+    );
+
+    expect(db.store.configuration[0]).toMatchObject({
+      policyId: policy.id,
+      kind: "mttx.apple.declaration.usersettings",
+      scope: "user",
+    });
+
+    const detail = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
+
+    expect(detail.configurationScopes).toEqual({
+      "mttx.apple.declaration.usersettings": "user",
+    });
+
+    const list = await runEffect(service.listPolicies(request(headers), tenant.id));
+
+    expect(list.rows[0]).toMatchObject({ userConfigurationCount: 1 });
+  });
+
   it("creates, patches, and reads policy configurations", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -2930,6 +2968,86 @@ describe("enterprise service APNs", () => {
     await expect(
       runEffect(service.listDeviceAppleUsers(request(headers), other.id, "device-1")),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("binds an Apple user channel to a directory identity", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await seedDevice(db, tenant.id, "device-1");
+    db.store.user.push({
+      id: "dir-1",
+      organizationId: tenant.id,
+      name: "dir-1",
+      email: "dir-1@example.com",
+      disabled: false,
+      source: "manual",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    seedAppleUser(db, "device-1");
+
+    await runEffect(
+      service.bindAppleUserIdentity(request(headers), tenant.id, "device-1", "user-1", {
+        userId: "dir-1",
+      }),
+    );
+
+    const bound = await runEffect(
+      service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(bound.users[0]!.identity).toMatchObject({
+      userId: "dir-1",
+      name: "dir-1",
+      email: "dir-1@example.com",
+      source: "manual",
+    });
+
+    await runEffect(
+      service.unbindAppleUserIdentity(request(headers), tenant.id, "device-1", "user-1"),
+    );
+
+    const unbound = await runEffect(
+      service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
+    );
+
+    expect(unbound.users[0]!.identity).toBeNull();
+  });
+
+  it("rejects a directory user from another tenant", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const other = await runEffect(
+      service.createTenant(request(headers), { name: "Other", slug: "other" }),
+    );
+
+    await seedDevice(db, tenant.id, "device-1");
+    db.store.user.push({
+      id: "other-user",
+      organizationId: other.id,
+      name: "other-user",
+      email: "other-user@example.com",
+      disabled: false,
+      source: "manual",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    seedAppleUser(db, "device-1");
+
+    await expect(
+      runEffect(
+        service.bindAppleUserIdentity(request(headers), tenant.id, "device-1", "user-1", {
+          userId: "other-user",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("wakes a user channel and queues a per-user profile refresh", async () => {

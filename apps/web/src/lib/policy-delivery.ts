@@ -53,6 +53,7 @@ const label: Record<PolicyDeliveryState, string> = {
   "no-devices": "No devices",
   "not-tracked": "Not tracked",
   "no-configurations": "No configurations",
+  "user-channel": "User channel",
   "not-applicable": "Not applicable",
   pending: "Pending",
   partial: "Partial",
@@ -65,6 +66,7 @@ const tone: Record<PolicyDeliveryState, PolicyDeliveryTone> = {
   "no-devices": "outline",
   "not-tracked": "subtle",
   "no-configurations": "outline",
+  "user-channel": "outline",
   "not-applicable": "subtle",
   pending: "warning",
   partial: "warning",
@@ -77,6 +79,7 @@ const dot: Record<PolicyDeliveryState, PolicyDeliveryPresentation["dot"]> = {
   "no-devices": "neutral",
   "not-tracked": "neutral",
   "no-configurations": "neutral",
+  "user-channel": "neutral",
   "not-applicable": "neutral",
   pending: "warning",
   partial: "warning",
@@ -98,6 +101,8 @@ const describe = (delivery: PolicyDeliveryInfo): string => {
       return `This policy only reaches devices that do not report DDM declaration status (Windows, Android or legacy Apple profiles).${untracked}`;
     case "no-configurations":
       return `The policy has no declarable Apple configurations to deliver. Application installs are imperative and do not publish declarations.${untracked}`;
+    case "user-channel":
+      return `This policy only has user-scoped settings. They are delivered on each linked login's Apple user channel, so they are not part of the device declaration rollup.${untracked}`;
     case "not-applicable":
       return `Every declaration-tracked Apple device in scope is provided by a higher-priority policy, so this policy never wins a configuration kind.${overriddenNote(
         delivery,
@@ -141,10 +146,11 @@ const sortRank: Record<PolicyDeliveryState, number> = {
   pending: 2,
   delivered: 3,
   "no-configurations": 4,
-  "not-applicable": 5,
-  "not-tracked": 6,
-  "no-devices": 7,
-  "never-deployed": 8,
+  "user-channel": 5,
+  "not-applicable": 6,
+  "not-tracked": 7,
+  "no-devices": 8,
+  "never-deployed": 9,
 };
 
 export const policyDeliverySortRank = (state: PolicyDeliveryState | undefined) =>

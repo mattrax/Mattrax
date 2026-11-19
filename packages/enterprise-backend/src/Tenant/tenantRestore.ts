@@ -1,6 +1,7 @@
 import { Data, Effect, Option, Schema } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import {
+  POLICY_SNAPSHOT_SCOPES_KEY,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
@@ -77,6 +78,7 @@ type ParsedBundle = {
     name: string;
     notes: string | null;
     configurations: ReadonlyArray<readonly [string, Schema.Json]>;
+    configurationScopes: Readonly<Record<string, "device" | "user">>;
   }>;
   groups: ReadonlyArray<TenantExportGroup>;
   applications: ReadonlyArray<{
@@ -285,6 +287,7 @@ export const parseTenantRestoreBundle = (
         return yield* Effect.fail(invalid(`Policy "${policyName}" has invalid configuration data`));
 
       const entries: Array<readonly [string, Schema.Json]> = [];
+      const scopes: Record<string, "device" | "user"> = {};
 
       for (const [kind, data] of Object.entries(configurations)) {
         if (data === null || data === undefined)
@@ -299,16 +302,17 @@ export const parseTenantRestoreBundle = (
             invalid(`Policy "${policyName}" has invalid configuration data`),
           );
 
-        yield* validateConfiguration(
-          kind,
-          configuration,
-          options.escrowCertificateFingerprintSha256 === undefined
-            ? undefined
-            : {
-                escrowCertificateFingerprintSha256: options.escrowCertificateFingerprintSha256,
-              },
-        ).pipe(Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)));
+        const scope = policy.configurationScopes?.[kind] ?? "device";
+
+        yield* validateConfiguration(kind, configuration, {
+          ...(options.escrowCertificateFingerprintSha256 === undefined
+            ? {}
+            : { escrowCertificateFingerprintSha256: options.escrowCertificateFingerprintSha256 }),
+          scope,
+        }).pipe(Effect.mapError((message) => invalid(`Policy "${policyName}": ${message}`)));
         entries.push([kind, configuration]);
+
+        if (scope === "user") scopes[kind] = "user";
       }
 
       parsedPolicies.push({
@@ -316,6 +320,7 @@ export const parseTenantRestoreBundle = (
         name: policyName,
         notes: text(policy.notes, 10_000),
         configurations: entries,
+        configurationScopes: scopes,
       });
     }
 
@@ -774,7 +779,13 @@ const applyBundle = (
           if (policy.configurations.length > 0) {
             const values = yield* Effect.all(
               policy.configurations.map(([kind, data]) =>
-                Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
+                Effect.map(hashJson(data), (hash) => ({
+                  policyId,
+                  kind,
+                  scope: policy.configurationScopes[kind] ?? "device",
+                  data,
+                  hash,
+                })),
               ),
             );
 
@@ -786,7 +797,12 @@ const applyBundle = (
             organizationId: organization.id,
             policyId,
             version: 1,
-            snapshot: Object.fromEntries(policy.configurations),
+            snapshot: {
+              ...Object.fromEntries(policy.configurations),
+              ...(Object.keys(policy.configurationScopes).length > 0
+                ? { [POLICY_SNAPSHOT_SCOPES_KEY]: policy.configurationScopes }
+                : {}),
+            },
             createdByAccountId: actor.accountId,
             createdAt: timestamp,
           });
@@ -838,14 +854,10 @@ const applyBundle = (
           existingDirectoryUsers.map((user) => [user.email.toLowerCase(), user.id]),
         );
 
-        const directoryUsersToCreate = new Map<
-          string,
-          ParsedBundle["directoryUsers"][number]
-        >();
+        const directoryUsersToCreate = new Map<string, ParsedBundle["directoryUsers"][number]>();
 
         for (const user of bundle.directoryUsers) {
-          if (!userIdByEmail.has(user.email))
-            directoryUsersToCreate.set(user.email, user);
+          if (!userIdByEmail.has(user.email)) directoryUsersToCreate.set(user.email, user);
         }
 
         for (const assignment of bundle.userAssignments) {

@@ -83,6 +83,7 @@ import {
   appleUserPushLabel,
   appleUserPushTone,
 } from "~/lib/device-apple-users";
+import { appleUserIdentitySourceLabel } from "~/lib/device-apple-users";
 import type { AppleUserActionName } from "@mattrax/enterprise-domain/client";
 import { Markdown } from "~/components/dashboard/markdown";
 import {
@@ -560,6 +561,41 @@ export default function DeviceDetailPage() {
       });
       await queryClient.invalidateQueries({
         queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
+      });
+    },
+  }));
+
+  const bindAppleIdentity = useMutation(() => ({
+    mutationFn: (input: { platformUserId: string; userId: string }) =>
+      enterprise.bindAppleUserIdentity(
+        params.tenantId,
+        params.deviceId,
+        input.platformUserId,
+        input.userId,
+      ),
+    onSuccess: async () => {
+      setAppleUserMessage("Directory identity linked. The user channel will sync its policy.");
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceAppleUsers(params.tenantId, params.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
+      });
+    },
+  }));
+
+  const unbindAppleIdentity = useMutation(() => ({
+    mutationFn: (platformUserId: string) =>
+      enterprise.unbindAppleUserIdentity(params.tenantId, params.deviceId, platformUserId),
+    onSuccess: async () => {
+      setAppleUserMessage(
+        "Directory identity removed. This channel no longer receives user policy.",
+      );
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceAppleUsers(params.tenantId, params.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
       });
     },
   }));
@@ -2386,10 +2422,10 @@ export default function DeviceDetailPage() {
                   >
                     <div class="space-y-3">
                       <p class="rounded-md bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
-                        Policies assigned to a user are delivered on the device channel. They affect
-                        every user on this device, not only the linked account. Windows applies
-                        changes on its next check-in. Apple user channels below carry per-user
-                        commands only.
+                        Device-scoped settings in a user-assigned policy stay on the device channel
+                        and affect every user on this device. User-scoped settings are delivered
+                        only to a linked, verified Apple user channel below. Windows applies device
+                        settings on its next check-in and has no per-login channel.
                       </p>
                       <Show
                         when={directory.data}
@@ -2478,7 +2514,9 @@ export default function DeviceDetailPage() {
                           <p class="text-[11px] leading-relaxed text-muted-foreground">
                             Every macOS or Shared iPad login Apple manages over the user channel. A
                             channel is created when the user signs in and authenticates with the
-                            device's MDM identity; per-user commands are only delivered on it.
+                            device's MDM identity. Link a channel to a directory person to deliver
+                            user-scoped settings to that login; device-scoped settings stay on the
+                            device channel and are never replayed here.
                           </p>
                           <Show
                             when={appleUsers.data}
@@ -2517,6 +2555,60 @@ export default function DeviceDetailPage() {
                                           {appleUserLoginName(user)} · Last check-in{" "}
                                           {user.lastSeenAt ? formatDate(user.lastSeenAt) : "never"}
                                         </span>
+                                        <span class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                          <Show
+                                            when={user.identity}
+                                            fallback={
+                                              <Chip tone="muted">No directory identity</Chip>
+                                            }
+                                          >
+                                            {(identity) => (
+                                              <>
+                                                <Chip tone="success">Linked</Chip>
+                                                <span class="min-w-0 truncate text-muted-foreground">
+                                                  {identity().name} · {identity().email}
+                                                </span>
+                                                <span class="text-subtle-foreground">
+                                                  ·{" "}
+                                                  {appleUserIdentitySourceLabel(identity().source)}
+                                                </span>
+                                              </>
+                                            )}
+                                          </Show>
+                                        </span>
+                                        <NativeSelect
+                                          class="mt-1.5 h-7 max-w-[19rem] text-[11.5px]"
+                                          value={user.identity?.userId ?? ""}
+                                          aria-label={`Directory identity for ${appleUserDisplayName(user)}`}
+                                          disabled={
+                                            !can("devices.write") ||
+                                            bindAppleIdentity.isPending ||
+                                            unbindAppleIdentity.isPending
+                                          }
+                                          onChange={(event) => {
+                                            const userId = event.currentTarget.value;
+
+                                            if (userId)
+                                              bindAppleIdentity.mutate({
+                                                platformUserId: user.platformUserId,
+                                                userId,
+                                              });
+                                            else unbindAppleIdentity.mutate(user.platformUserId);
+                                          }}
+                                        >
+                                          <option value="">No directory identity</option>
+                                          <For
+                                            each={(directory.data?.users ?? []).filter(
+                                              (person) => !person.disabled,
+                                            )}
+                                          >
+                                            {(person) => (
+                                              <option value={person.id}>
+                                                {person.name} — {person.email}
+                                              </option>
+                                            )}
+                                          </For>
+                                        </NativeSelect>
                                         <span class="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                                           <Chip tone={appleUserPushTone(user.push)}>
                                             {appleUserPushLabel(user.push)}

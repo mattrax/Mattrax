@@ -216,17 +216,19 @@ iPad open a second, per-user channel alongside the device channel:
    `AuthToken`, as Apple specifies for an invalid digest.
 2. The user channel sends its own `TokenUpdate` with `UserID`, `UserShortName` and
    `UserLongName`. Mattrax only accepts it after the `UserAuthenticate` binding, so a managed
-   device cannot register an arbitrary user. Shared iPad uses Apple's
-   `FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF` sentinel and is exempt because it never
-   authenticates.
+   device cannot register an arbitrary user. Shared iPad never authenticates and reports
+   Apple's `FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF` sentinel as `UserID` for every login, so its
+   channels are keyed by the Managed Apple Account identifier Apple sends as `UserShortName`.
+   That account is matched to a directory person by exact email and bound as
+   `managed-apple-account`. See [User-scoped policies](/reference/user-scoped-policies/).
 3. Commands queued for a user (`ProfileList` from **Refresh profiles**) are delivered only
    on that user's check-in. A user result is only accepted from the same user, and it never
    writes device inventory. `CheckOut` from a user removes just that channel and cancels its
    queued commands; a device `CheckOut` removes all of them.
 
-The device page shows each channel with its short/long name, binding, last check-in, push
-health and reported profiles, and offers **Wake** (APNs to that user's token) and
-**Refresh profiles** (`ProfileList`). See [Devices](/manage/devices#users).
+The device page shows each channel with its short/long name, directory identity, last
+check-in, push health and reported profiles, and offers **Wake** (APNs to that user's token)
+and **Refresh profiles** (`ProfileList`). See [Devices](/manage/devices#users).
 
 ### Apple User Enrollment (BYOD)
 
@@ -372,8 +374,10 @@ pending actions, and a reported inventory reconciles installs that already lande
 - `GetToken` is not implemented: the Managed Apple Account access token needs the
   ABM-assigned server UUID, and Apple Watch pairing is not managed. The enrollment profile
   does not advertise `com.apple.mdm.token`.
-- There are no user-scoped declarations. A user channel is told it has an empty declaration
-  set, so per-user payload isolation is still a device-channel concern.
+- User-scoped declarations are published only to a user channel that is bound to a
+  directory person; an unbound channel is told it has an empty declaration set. The device
+  channel never receives user-scoped configurations. See
+  [User-scoped policies](/reference/user-scoped-policies/).
 - FileVault and installed-app inventory are fixture-tested but not yet validated on real
   supervised hardware. CMS-wrapped personal recovery keys need an operator decryption step.
 - There is no automatic APNs renewal, CRL/OCSP endpoint or compliance engine.

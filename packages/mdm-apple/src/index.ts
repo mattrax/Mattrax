@@ -61,7 +61,7 @@ import {
   APPLE_DEVICE_INFORMATION_PAYLOAD,
   parseInstalledApplications,
 } from "@mattrax/mdm-core";
-import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
+import { resolveEffectivePolicyForDevice, resolveEffectivePolicyForUser } from "@mattrax/mdm-core";
 import { setupIsReady } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
@@ -109,7 +109,7 @@ import {
   shouldRetryInstallBundle,
   type CommandPayload,
 } from "@mattrax/mdm-core";
-import { SHARED_IPAD_USER_ID, parseAppleUserProfiles } from "@mattrax/mdm-core";
+import { parseAppleUserProfiles } from "@mattrax/mdm-core";
 import {
   applyEscrowCertificate,
   buildAssetContent,
@@ -309,17 +309,19 @@ const bindAppleIdentityCertificate = (
 
     if (certificate.deviceId === device.id) return;
 
-    yield* db
-      .update(s.scepIssuedCertificate)
-      // Legacy rows keyed by `device.dmIdentifier` are migrated to the internal
-      // id as they are seen, matching the Windows path.
-      .set({ deviceId: device.id })
-      .where(
-        and(
-          eq(s.scepIssuedCertificate.serial, certificate.serial),
-          eq(s.scepIssuedCertificate.organizationId, device.organizationId),
-        ),
-      );
+    yield* (
+      db
+        .update(s.scepIssuedCertificate)
+        // Legacy rows keyed by `device.dmIdentifier` are migrated to the internal
+        // id as they are seen, matching the Windows path.
+        .set({ deviceId: device.id })
+        .where(
+          and(
+            eq(s.scepIssuedCertificate.serial, certificate.serial),
+            eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+          ),
+        )
+    );
   });
 
 type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
@@ -476,6 +478,289 @@ const declarationItemsForDevice = (
         { identifier: MANAGEMENT_DECLARATION_ID, serverToken: MANAGEMENT_DECLARATION_SERVER_TOKEN },
       ],
     };
+  });
+
+/**
+ * Bind a Shared iPad channel to the directory person its Managed Apple Account
+ * identifies.
+ *
+ * A Shared iPad login never authenticates, so Apple's only per-user identity is
+ * the Managed Apple Account identifier it sends as `UserShortName`. Directory
+ * people are keyed by their email, and Apple issues these accounts as email
+ * addresses, so an exact match is the correlation. It is the weakest of the
+ * three sources (a certificate proves it cryptographically), which is why the
+ * binding records `managed-apple-account` and never overwrites an existing one.
+ */
+const bindManagedAppleAccountIdentity = (
+  device: DeviceRow,
+  appleUserId: string,
+  managedAppleAccount: string | undefined,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const email = managedAppleAccount?.trim().toLowerCase();
+
+    if (!email || !email.includes("@")) return;
+    const db = yield* Db;
+
+    const [channel] = yield* db
+      .select({ directoryUserId: s.deviceAppleUser.directoryUserId })
+      .from(s.deviceAppleUser)
+      .where(
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      )
+      .limit(1);
+
+    // A manual or certificate binding always wins.
+    if (!channel || channel.directoryUserId) return;
+
+    const [person] = yield* db
+      .select({ id: s.user.id, email: s.user.email })
+      .from(s.user)
+      .where(
+        and(
+          eq(s.user.organizationId, device.organizationId),
+          eq(s.user.email, email),
+          eq(s.user.disabled, false),
+        ),
+      )
+      .limit(1);
+
+    if (!person) return;
+
+    yield* db
+      .update(s.deviceAppleUser)
+      .set({
+        directoryUserId: person.id,
+        identitySource: "managed-apple-account",
+        identityUpn: person.email,
+        identityVerifiedAt: now(),
+        // A late binding changes the declaration set; force a full sync.
+        ddmDeclarationsToken: null,
+        updatedAt: now(),
+      })
+      .where(
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      );
+  }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
+
+/** The Apple user channel row plus its verified directory binding, if any. */
+const boundAppleUser = (
+  device: DeviceRow,
+  appleUserId: string,
+): Effect.Effect<
+  {
+    readonly directoryUserId: string;
+    readonly identitySource: string | null;
+    readonly ddmDeclarationsToken: string | null;
+  } | null,
+  InstanceType<typeof UnknownDevice> | InternalServerError,
+  Db
+> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const [row] = yield* db
+      .select({
+        directoryUserId: s.deviceAppleUser.directoryUserId,
+        identitySource: s.deviceAppleUser.identitySource,
+        identityVerifiedAt: s.deviceAppleUser.identityVerifiedAt,
+        ddmDeclarationsToken: s.deviceAppleUser.ddmDeclarationsToken,
+      })
+      .from(s.deviceAppleUser)
+      .where(
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      )
+      .limit(1);
+
+    if (!row) return yield* Effect.fail(new UnknownDevice());
+
+    // A channel with no verified directory identity receives no user policy.
+    // It can still check in for commands, which is why this is `null` rather
+    // than an UnknownDevice failure.
+    if (!row.directoryUserId || !row.identityVerifiedAt) return null;
+
+    return {
+      directoryUserId: row.directoryUserId,
+      identitySource: row.identitySource,
+      ddmDeclarationsToken: row.ddmDeclarationsToken,
+    };
+  }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
+
+type UserDeclarationSet = {
+  readonly items: DdmDeclarationItems;
+  readonly token: string;
+  readonly rows: ReadonlyArray<ScopedConfiguration>;
+  readonly groups: ReadonlyMap<string, ReadonlyArray<ScopedConfiguration>>;
+};
+
+/**
+ * Build the declarations one bound user channel should sync.
+ *
+ * User-scoped configurations only: the resolver for a user already excludes
+ * device-scoped settings, and this path is never used for the device channel.
+ * Applications are imperative installs, not declarations, so they are skipped
+ * exactly as on the device channel.
+ */
+const userDeclarationItems = (
+  device: DeviceRow,
+  deviceToken: string,
+  context: Pick<DeclarationContext, "origin" | "authSecret">,
+  directoryUserId: string,
+): Effect.Effect<UserDeclarationSet, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const effective = yield* resolveEffectivePolicyForUser(db, device, directoryUserId);
+
+    const rows: Array<ScopedConfiguration> = effective.configurations
+      .filter((configuration) => !isApplicationKind(configuration.kind))
+      .map((configuration) => ({
+        policyId: configuration.policyId,
+        kind: configuration.kind,
+        data: configuration.data,
+        hash: configuration.hash ?? "",
+        organizationId: device.organizationId,
+        groupId:
+          configuration.scope === "group"
+            ? `user:group:${configuration.groupIds[0] ?? configuration.policyId}`
+            : `user:${configuration.policyId}`,
+      }));
+
+    const scoped = yield* Effect.promise(() =>
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, "ddm"),
+    );
+
+    const delivered = scoped.delivered;
+    const groups = new Map<string, Array<ScopedConfiguration>>();
+
+    for (const row of delivered) {
+      const group = groups.get(row.groupId) ?? [];
+      group.push(row);
+      groups.set(row.groupId, group);
+    }
+
+    const activations = yield* Effect.promise(() =>
+      Promise.all(
+        [...groups].map(async ([groupId, configurations]) => ({
+          identifier: groupId,
+          serverToken: await hashToken(
+            configurations.map((row) => configurationDeclarationIdentifier(row.policyId, row.kind)),
+          ),
+        })),
+      ),
+    );
+
+    const unique = new Map<string, ScopedConfiguration>();
+
+    for (const row of delivered)
+      unique.set(configurationDeclarationIdentifier(row.policyId, row.kind), row);
+
+    const configurations = yield* Effect.promise(() =>
+      Promise.all(
+        [...unique].map(async ([identifier, row]) => ({
+          identifier,
+          serverToken: await configurationServerToken(row, {
+            origin: context.origin,
+            deviceToken,
+          }),
+        })),
+      ),
+    );
+
+    const assets = yield* Effect.promise(() =>
+      Promise.all(
+        [...unique.values()].flatMap((row) =>
+          isCertificateKind(row.kind)
+            ? [
+                configurationAssetServerToken(row, {
+                  origin: context.origin,
+                  deviceToken,
+                }).then((serverToken) => ({
+                  identifier: configurationAssetIdentifier(row.policyId, row.kind),
+                  serverToken,
+                })),
+              ]
+            : [],
+        ),
+      ),
+    );
+
+    const items: DdmDeclarationItems = {
+      activations,
+      configurations,
+      assets,
+      management: [],
+    };
+
+    const token = yield* Effect.promise(() =>
+      hashToken(
+        [...items.activations, ...items.configurations, ...items.assets, ...items.management].map(
+          (item) => `${item.identifier}_MTTX_${item.serverToken}`,
+        ),
+      ),
+    );
+
+    return { items, token, rows: delivered, groups };
+  });
+
+/** Persist a user channel's declaration status without touching device inventory. */
+const updateUserDeclarationsFromStatus = (
+  deviceId: string,
+  userId: string,
+  statusItems: PlistInput,
+  at: Date,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const root = record(statusItems);
+
+    if (!root) return;
+
+    const declarations =
+      record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
+
+    if (!declarations) return;
+    const db = yield* Db;
+
+    for (const declarationType of ["activations", "configurations", "assets", "management"]) {
+      const values = declarations[declarationType];
+
+      if (!Array.isArray(values)) continue;
+
+      for (const item of values) {
+        const entry = record(item);
+        const identifier = stringField(entry, "Identifier") ?? stringField(entry, "identifier");
+
+        if (!entry || !identifier) continue;
+        const valid = stringField(entry, "Valid") ?? stringField(entry, "valid") ?? "unknown";
+        const active = entry.Active === true || entry.active === true;
+
+        const serverToken =
+          stringField(entry, "ServerToken") ?? stringField(entry, "server-token") ?? null;
+
+        yield* db
+          .insert(s.deviceUserDeclaration)
+          .values({
+            deviceId,
+            userId,
+            identifier,
+            declarationType,
+            active,
+            valid,
+            serverToken,
+            reasons: entry.Reasons ?? entry.reasons ?? null,
+            updatedAt: at,
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              declarationType,
+              active,
+              valid,
+              serverToken,
+              reasons: entry.Reasons ?? entry.reasons ?? null,
+              updatedAt: at,
+            },
+          });
+      }
+    }
   });
 
 const updateInventoryFromStatus = (
@@ -1066,25 +1351,27 @@ const queueAppleCommand = (
     const id = crypto.randomUUID();
     const dedupeKey = yield* Effect.promise(() => commandDedupeKey(requestType, payload));
 
-    yield* db
-      .insert(s.deviceCommand)
-      .values({
-        id,
-        organizationId: device.organizationId,
-        deviceId: device.id,
-        requestType,
-        payload,
-        status: "queued",
-        dedupeKey,
-        expiresAt: deviceCommandExpiresAt(requestType, at),
-        resultStatus: null,
-        resultDetail: null,
-        createdAt: at,
-        updatedAt: at,
-      })
-      // A concurrent check-in may have queued the same work first. The no-op
-      // update keeps the existing row (and its delivery timer) in place.
-      .onDuplicateKeyUpdate({ set: { requestType } });
+    yield* (
+      db
+        .insert(s.deviceCommand)
+        .values({
+          id,
+          organizationId: device.organizationId,
+          deviceId: device.id,
+          requestType,
+          payload,
+          status: "queued",
+          dedupeKey,
+          expiresAt: deviceCommandExpiresAt(requestType, at),
+          resultStatus: null,
+          resultDetail: null,
+          createdAt: at,
+          updatedAt: at,
+        })
+        // A concurrent check-in may have queued the same work first. The no-op
+        // update keeps the existing row (and its delivery timer) in place.
+        .onDuplicateKeyUpdate({ set: { requestType } })
+    );
 
     return { id };
   });
@@ -2451,25 +2738,27 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             commandDedupeKey(install.requestType, install.payload),
           );
 
-          yield* db
-            .insert(s.deviceCommand)
-            .values({
-              id: crypto.randomUUID(),
-              organizationId: device.organizationId,
-              deviceId: device.id,
-              requestType: install.requestType,
-              payload: install.payload,
-              status: "queued",
-              dedupeKey,
-              expiresAt: deviceCommandExpiresAt(install.requestType, at),
-              resultStatus: null,
-              resultDetail: null,
-              createdAt: at,
-              updatedAt: at,
-            })
-            // A concurrent check-in may have queued the same install first.
-            // The no-op update leaves its retry timer alone.
-            .onDuplicateKeyUpdate({ set: { requestType: install.requestType } });
+          yield* (
+            db
+              .insert(s.deviceCommand)
+              .values({
+                id: crypto.randomUUID(),
+                organizationId: device.organizationId,
+                deviceId: device.id,
+                requestType: install.requestType,
+                payload: install.payload,
+                status: "queued",
+                dedupeKey,
+                expiresAt: deviceCommandExpiresAt(install.requestType, at),
+                resultStatus: null,
+                resultDetail: null,
+                createdAt: at,
+                updatedAt: at,
+              })
+              // A concurrent check-in may have queued the same install first.
+              // The no-op update leaves its retry timer alone.
+              .onDuplicateKeyUpdate({ set: { requestType: install.requestType } })
+          );
 
           requeued = true;
         }
@@ -2824,10 +3113,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       ),
                     );
                   // The user channels belonged to the previous MDM session and
-                  // are re-established by UserAuthenticate/TokenUpdate.
+                  // are re-established by UserAuthenticate/TokenUpdate. Their
+                  // declaration state goes with them.
                   yield* db
                     .delete(s.deviceAppleUser)
                     .where(eq(s.deviceAppleUser.deviceId, deviceId));
+                  yield* db
+                    .delete(s.deviceUserDeclaration)
+                    .where(eq(s.deviceUserDeclaration.deviceId, deviceId));
                 } else {
                   yield* db.insert(s.device).values({ id: deviceId, enrolledAt: now(), ...common });
                 }
@@ -3044,11 +3337,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     return yield* Effect.fail(new UnknownDevice());
 
                   // Shared iPad never authenticates its users, so Apple sends
-                  // the sentinel id and expects no UserAuthenticate. Every other
+                  // the sentinel id and expects no UserAuthenticate. Every macOS
                   // user channel must have completed the handshake first:
                   // otherwise any managed device could register an arbitrary
-                  // user's push channel.
-                  if (scope.source === "user-channel" && event.userId !== SHARED_IPAD_USER_ID) {
+                  // user's push channel. An unknown OS is treated as macOS so
+                  // the check fails closed.
+                  const sharedIpad = appleOsFamily(device.osEdition) === "iOS";
+
+                  if (scope.source === "user-channel" && !sharedIpad) {
                     const [authenticated] = yield* db
                       .select({ authenticatedAt: s.deviceAppleUser.authenticatedAt })
                       .from(s.deviceAppleUser)
@@ -3097,6 +3393,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ lastSeenAt: at })
                     .where(eq(s.device.id, device.id));
+
+                  // A Shared iPad login identifies itself only by its Managed
+                  // Apple Account, so this is where that account is correlated
+                  // with the directory.
+                  if (sharedIpad)
+                    yield* bindManagedAppleAccountIdentity(
+                      device,
+                      event.userId,
+                      event.userShortName ?? scope.userShortName,
+                    ).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to bind the Managed Apple Account for ${event.userId} on ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
 
                   // Keep the enrollment kind correct for devices that enrolled
                   // before the column existed: a user-enrollment user channel
@@ -3293,6 +3605,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         eq(s.deviceAppleUser.userId, event.userId),
                       ),
                     );
+                  // Per-user declaration state belongs to the channel that
+                  // reported it, so it goes with the channel.
+                  yield* db
+                    .delete(s.deviceUserDeclaration)
+                    .where(
+                      and(
+                        eq(s.deviceUserDeclaration.deviceId, device.id),
+                        eq(s.deviceUserDeclaration.userId, event.userId),
+                      ),
+                    );
                   yield* db
                     .update(s.device)
                     .set({ lastSeenAt: at })
@@ -3346,10 +3668,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   })
                   .where(eq(s.deviceApple.deviceId, device.id));
                 // User channels belong to this enrolment; without the device
-                // channel there is nothing left to serve them.
+                // channel there is nothing left to serve them. Their declaration
+                // rows are per channel state and must not outlive it.
                 yield* db
                   .delete(s.deviceAppleUser)
                   .where(eq(s.deviceAppleUser.deviceId, device.id));
+                yield* db
+                  .delete(s.deviceUserDeclaration)
+                  .where(eq(s.deviceUserDeclaration.deviceId, device.id));
                 // A device that checked out must not be able to renew its old
                 // SCEP identity. There is no admin audit context on this
                 // protocol path, so the revokedAt timestamp is the record.
@@ -3675,6 +4001,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       ),
                     );
 
+                  const statusItems = Option.getOrUndefined(
+                    Schema.decodeUnknownOption(PlistValue)(event.statusItems),
+                  );
+
+                  if (statusItems !== undefined)
+                    yield* updateUserDeclarationsFromStatus(
+                      device.id,
+                      scope.userId,
+                      statusItems,
+                      now(),
+                    ).pipe(Effect.mapError(internal));
+
                   return;
                 }
 
@@ -3725,9 +4063,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             const at = now();
 
-            // A user connection only ever sees its own commands. Policies,
-            // declarations, inventory and setup are device-scoped; serving them
-            // here would apply device configuration inside the user's context.
+            // A user connection only ever sees its own commands and the
+            // declarations resolved for its own login. Device-scoped policy,
+            // inventory and setup never reach this branch: serving them here
+            // would apply device configuration inside the user's context.
             if (Predicate.isTagged(scope, "user")) {
               if (device.status !== "enrolled") return { _tag: "Idle" as const };
 
@@ -3745,7 +4084,39 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               const command = yield* deliverQueuedCommand(device, scope.userId, at);
 
-              return command ? { _tag: "Command" as const, ...command } : { _tag: "Idle" as const };
+              if (command) return { _tag: "Command" as const, ...command };
+
+              // The user channel's declarative support follows the device's:
+              // macOS below 13 has no declarative management at all, so there
+              // is nothing to sync into this login.
+              const mode = yield* deliveryModeForDevice(device.id).pipe(Effect.mapError(internal));
+
+              if (mode !== "ddm") return { _tag: "Idle" as const };
+
+              // User policy is only served to a verified directory identity.
+              // An unbound channel still checks in for commands and push.
+              const bound = yield* boundAppleUser(device, scope.userId);
+
+              if (!bound) return { _tag: "Idle" as const };
+
+              const deviceToken = yield* deviceTokenFor(device.id);
+
+              const declarations = yield* userDeclarationItems(
+                device,
+                deviceToken,
+                { origin, authSecret: authSecret ?? "" },
+                bound.directoryUserId,
+              ).pipe(Effect.mapError(internal));
+
+              // Same contract as the device channel: a matching token means the
+              // login already has this exact set. A channel that had declarations
+              // and now has none still differs, so it gets one sync to remove them.
+              if (bound.ddmDeclarationsToken === declarations.token)
+                return { _tag: "Idle" as const };
+
+              // The token is persisted when the channel fetches the items, not
+              // here: a device that never syncs must be asked again.
+              return { _tag: "DdmSync" as const, serverToken: declarations.token };
             }
 
             const [appleState] = yield* db
@@ -3999,9 +4370,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
 
-            // Mattrax publishes no user-scoped declarations. Answer with a
-            // stable empty token set so a user channel does not sync the
-            // device's declarations into the user's context.
+            // User-scoped declarations only. A bound channel gets the tokens
+            // for its own set; an unbound channel gets a stable empty set and
+            // therefore syncs nothing into the user's context.
             if (Predicate.isTagged(scope, "user")) {
               yield* requireDeviceUser(device, scope.userId);
 
@@ -4010,13 +4381,48 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 catch: internal,
               });
 
-              return {
-                activationsToken: emptyToken,
-                configurationsToken: emptyToken,
-                assetsToken: emptyToken,
-                managementToken: emptyToken,
-                declarationsToken: emptyToken,
-              };
+              const bound = yield* boundAppleUser(device, scope.userId);
+
+              if (!bound)
+                return {
+                  activationsToken: emptyToken,
+                  configurationsToken: emptyToken,
+                  assetsToken: emptyToken,
+                  managementToken: emptyToken,
+                  declarationsToken: emptyToken,
+                };
+
+              const deviceToken = yield* deviceTokenFor(device.id);
+
+              const { items } = yield* userDeclarationItems(
+                device,
+                deviceToken,
+                { origin, authSecret: authSecret ?? "" },
+                bound.directoryUserId,
+              ).pipe(Effect.mapError(internal));
+
+              const categoryToken = (category: keyof DdmDeclarationItems) =>
+                hashToken(
+                  items[category].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
+                );
+
+              return yield* Effect.tryPromise({
+                try: async () => ({
+                  activationsToken: await categoryToken("activations"),
+                  configurationsToken: await categoryToken("configurations"),
+                  assetsToken: await categoryToken("assets"),
+                  managementToken: await categoryToken("management"),
+                  declarationsToken: await hashToken(
+                    [
+                      ...items.activations,
+                      ...items.configurations,
+                      ...items.assets,
+                      ...items.management,
+                    ].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
+                  ),
+                }),
+                catch: internal,
+              });
             }
 
             const deviceToken = yield* deviceTokenFor(device.id);
@@ -4071,12 +4477,37 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (Predicate.isTagged(scope, "user")) {
               yield* requireDeviceUser(device, scope.userId);
 
-              return {
-                activations: [],
-                configurations: [],
-                assets: [],
-                management: [],
-              };
+              const bound = yield* boundAppleUser(device, scope.userId);
+
+              if (!bound)
+                return {
+                  activations: [],
+                  configurations: [],
+                  assets: [],
+                  management: [],
+                };
+
+              const deviceToken = yield* deviceTokenFor(device.id);
+
+              const { items, token } = yield* userDeclarationItems(
+                device,
+                deviceToken,
+                { origin, authSecret: authSecret ?? "" },
+                bound.directoryUserId,
+              ).pipe(Effect.mapError(internal));
+
+              yield* db
+                .update(s.deviceAppleUser)
+                .set({ ddmDeclarationsToken: token })
+                .where(
+                  and(
+                    eq(s.deviceAppleUser.deviceId, device.id),
+                    eq(s.deviceAppleUser.userId, scope.userId),
+                  ),
+                )
+                .pipe(Effect.mapError(internal));
+
+              return items;
             }
 
             const deviceToken = yield* deviceTokenFor(device.id);
@@ -4116,12 +4547,84 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
 
-            // No user-scoped declaration is ever published, and serving a
-            // device declaration here would install it in the user's context.
+            // Serve only declarations that belong to this user channel's own
+            // resolved set. A device declaration is never served here.
             if (Predicate.isTagged(scope, "user")) {
-              yield* Effect.logWarning(
-                `Refused a user-channel declaration request for ${type}/${identifier} on ${device.id}`,
-              );
+              yield* requireDeviceUser(device, scope.userId);
+
+              const bound = yield* boundAppleUser(device, scope.userId);
+
+              if (!bound) return null;
+
+              const deviceToken = yield* deviceTokenFor(device.id);
+
+              const { items, groups, rows } = yield* userDeclarationItems(
+                device,
+                deviceToken,
+                { origin, authSecret: authSecret ?? "" },
+                bound.directoryUserId,
+              ).pipe(Effect.mapError(internal));
+
+              if (type === "activation") {
+                const item = items.activations.find((entry) => entry.identifier === identifier);
+
+                if (!item) return null;
+
+                const configurations = (groups.get(identifier) ?? [])
+                  .filter((row) => !isApplicationKind(row.kind))
+                  .map((row) => configurationDeclarationIdentifier(row.policyId, row.kind));
+
+                return {
+                  Type: "com.apple.activation.simple",
+                  Identifier: identifier,
+                  ServerToken: item.serverToken,
+                  Payload: { StandardConfigurations: configurations },
+                };
+              }
+
+              if (type === "configuration") {
+                if (!items.configurations.some((entry) => entry.identifier === identifier))
+                  return null;
+
+                const { policyId, kind } = splitConfigurationDeclarationIdentifier(identifier);
+                const row = rows.find((item) => item.policyId === policyId && item.kind === kind);
+
+                if (!row) return null;
+
+                return yield* Effect.tryPromise({
+                  try: () =>
+                    buildConfigurationDeclaration(row, {
+                      origin,
+                      authSecret: authSecret ?? "",
+                      deviceToken,
+                      deviceId: device.id,
+                    }),
+                  catch: internal,
+                });
+              }
+
+              if (type === "asset") {
+                if (!items.assets.some((entry) => entry.identifier === identifier)) return null;
+
+                const { policyId, kind } = splitConfigurationDeclarationIdentifier(
+                  identifier.replace(/\.asset$/, ""),
+                );
+
+                const row = rows.find((item) => item.policyId === policyId && item.kind === kind);
+
+                if (!row) return null;
+
+                return yield* Effect.tryPromise({
+                  try: () =>
+                    buildAssetDeclaration(row, {
+                      origin,
+                      authSecret: authSecret ?? "",
+                      deviceToken,
+                      deviceId: device.id,
+                    }),
+                  catch: internal,
+                });
+              }
 
               return null;
             }

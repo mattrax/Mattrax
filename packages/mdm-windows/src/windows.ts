@@ -1799,10 +1799,17 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // after the inventory write so group rules see the new values.
         yield* touchDevice(device.id, organizationId, timestamp);
 
-        const effective = yield* resolveEffectivePolicyForDevice(db, {
-          id: device.id,
-          organizationId: device.organizationId,
-        });
+        // Windows has no per-login MDM channel, so a user-scoped `./User/`
+        // setting is delivered by this device check-in and applies to every
+        // user on the machine.
+        const effective = yield* resolveEffectivePolicyForDevice(
+          db,
+          {
+            id: device.id,
+            organizationId: device.organizationId,
+          },
+          { includeUserScoped: true },
+        );
 
         const configurations = effective.configurations.map((configuration) => ({
           policyId: configuration.policyId,

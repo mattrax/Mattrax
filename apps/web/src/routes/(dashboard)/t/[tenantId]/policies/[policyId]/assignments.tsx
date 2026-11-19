@@ -24,9 +24,10 @@ const precedence = [
   "A direct device exclude removes the policy, including group and user assignments.",
   "A direct device include beats any group include or group exclude.",
   "A group exclude vetoes that policy for the device, including user assignments.",
-  "A device assignment beats a user assignment for the same setting, so user policies fill gaps.",
+  "Device-scoped settings are delivered on the device channel to every user of the device.",
+  "User-scoped settings are delivered only on the user channel of a linked, verified login.",
+  "A device assignment beats a user assignment for the same setting.",
   "A direct user assignment beats that user's directory group assignments.",
-  "User policies apply on the device channel to every user of a linked device.",
   "Between included policies providing the same kind, highest priority wins.",
 ];
 
@@ -190,6 +191,22 @@ export default function PolicyAssignmentsPage() {
     [...userModes().values()].filter((mode) => mode === "exclude").length;
 
   const row = () => Option.getOrUndefined(Schema.decodeUnknownOption(PolicyRow)(policy.data));
+
+  const userScopedKinds = () =>
+    Object.entries(row()?.configurationScopes ?? {}).flatMap(([kind, scope]) =>
+      scope === "user" ? [kind] : [],
+    );
+
+  /**
+   * A policy with no user-scoped settings keeps the device-channel warning even
+   * when it is empty: an empty policy will still be filled with device scope.
+   */
+  const hasDeviceScopedSettings = () => {
+    const configurations = Object.keys(row()?.configurations ?? {});
+    const userScoped = new Set(userScopedKinds());
+
+    return userScoped.size === 0 || configurations.some((kind) => !userScoped.has(kind));
+  };
 
   const deviceRows = createMemo(() => {
     const term = filter().trim().toLowerCase();
@@ -421,12 +438,23 @@ export default function PolicyAssignmentsPage() {
               }
             >
               <div class="space-y-3">
-                <p class="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[12px] leading-relaxed text-amber-100">
-                  This policy contains device-scoped settings. Assigning it to a user applies it to
-                  every device linked to that user, and every user of those devices receives it.
-                  Windows devices converge on their next scheduled check-in; Apple and Android are
-                  notified immediately.
-                </p>
+                <Show when={hasDeviceScopedSettings()}>
+                  <p class="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[12px] leading-relaxed text-amber-100">
+                    This policy contains device-scoped settings. Assigning it to a user applies it
+                    to every device linked to that user, and every user of those devices receives
+                    it. Windows devices converge on their next scheduled check-in; Apple and Android
+                    are notified immediately.
+                  </p>
+                </Show>
+                <Show when={userScopedKinds().length > 0}>
+                  <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                    {userScopedKinds().length} user-scoped{" "}
+                    {userScopedKinds().length === 1 ? "setting is" : "settings are"} delivered only
+                    to a linked, identity-verified Apple user channel (macOS 13+ or Shared iPad).
+                    Windows has no per-login channel, so its user scope applies to every user of the
+                    device; Android rejects user scope.
+                  </p>
+                </Show>
                 <Show
                   when={directory.data}
                   fallback={

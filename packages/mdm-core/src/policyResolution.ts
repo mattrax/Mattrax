@@ -25,11 +25,19 @@ import { Schema } from "effect";
  *    wins. Equal priorities break by most recent `updatedAt`, then by
  *    ascending policy id so the result is stable across check-ins.
  *
- * User assignments are device-channel delivery: there is no per-user payload
- * isolation today, so a policy is kept when at least one linked user includes
- * it. User exclusions are applied per user; excluding one linked user never
- * removes a policy that another linked user includes. A direct user include
- * beats that user's directory-group assignments.
+ * A configuration carries a delivery channel. Device-scoped configurations
+ * are resolved for the device channel and apply to every user; user-scoped
+ * configurations are resolved for one authenticated user channel and never
+ * reach the device channel. Device and group assignments contribute their
+ * user-scoped configurations to every user of the device; a user assignment
+ * contributes only to that user. Device scope beats user scope for the same
+ * kind, so a device policy always wins over a user policy on the user channel.
+ *
+ * User assignments on the device channel are legacy device-wide delivery for
+ * device-scoped configurations. User exclusions are applied per user;
+ * excluding one linked user never removes a policy that another linked user
+ * includes. A direct user include beats that user's directory-group
+ * assignments.
  *
  * Exclusions are policy-level and therefore remove every configuration kind
  * that policy provides. A policy only participates in a kind it actually
@@ -37,6 +45,12 @@ import { Schema } from "effect";
  */
 
 export type PolicyAssignmentMode = "include" | "exclude";
+
+/** The MDM channel a resolution is for. */
+export type PolicyChannel = "device" | "user";
+
+/** The delivery channel of one configuration. */
+export type ConfigurationScope = "device" | "user";
 
 export type PolicyResolutionScope = "direct" | "group" | "user" | "user-group";
 
@@ -65,6 +79,8 @@ export type PolicyResolutionPolicy = {
 export type PolicyResolutionConfiguration = {
   readonly policyId: string;
   readonly kind: string;
+  /** Defaults to `device` for rows that predate explicit scoping. */
+  readonly scope?: ConfigurationScope;
   /** Full configuration payload. Delivery needs it to build declarations. */
   readonly data?: Schema.Json;
   readonly hash?: string;
@@ -113,6 +129,22 @@ export type PolicyResolutionUserGroupAssignment = {
 
 export type PolicyResolutionInput = {
   readonly deviceId: string;
+  /** Defaults to the device channel. */
+  readonly channel?: PolicyChannel;
+  /**
+   * The directory user whose user channel is being resolved. Required for
+   * `channel: "user"` and ignored for the device channel.
+   */
+  readonly forUserId?: string;
+  /**
+   * Resolve user-scoped configurations on the device channel too.
+   *
+   * Windows has no per-login MDM channel, so a `./User/` OMA-URI is delivered
+   * by the device check-in and applies to every user of the device. Apple never
+   * sets this: its user scope belongs on the user channel, not the device
+   * channel. Android has no user-scoped policy at all.
+   */
+  readonly includeUserScoped?: boolean;
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
   readonly groupAssignments: ReadonlyArray<PolicyResolutionGroupAssignment>;
   readonly deviceAssignments: ReadonlyArray<PolicyResolutionDeviceAssignment>;
@@ -136,6 +168,10 @@ export type ResolvedConfiguration = {
   readonly policyId: string;
   readonly policyName: string;
   readonly priority: number;
+  /** The channel this configuration was resolved for. */
+  readonly channel: PolicyChannel;
+  /** The configuration's own scope, which can differ on a device-wide platform. */
+  readonly configurationScope: ConfigurationScope;
   readonly scope: PolicyResolutionScope;
   /** Empty for direct assignments; sorted group ids for group assignments. */
   readonly groupIds: ReadonlyArray<string>;
@@ -200,6 +236,8 @@ export type PolicyExclusion = {
 
 export type EffectivePolicy = {
   readonly deviceId: string;
+  readonly channel: PolicyChannel;
+  readonly userId?: string;
   readonly configurations: ReadonlyArray<ResolvedConfiguration>;
   readonly policies: ReadonlyArray<ContributingPolicy>;
   readonly overridden: ReadonlyArray<OverriddenPolicy>;
@@ -265,11 +303,35 @@ const sortedUserGroups = (groups: ReadonlyArray<PolicyResolutionUserGroup>) =>
   );
 
 export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectivePolicy => {
+  const channel = input.channel ?? "device";
+  const forUserId = channel === "user" ? input.forUserId : undefined;
+
+  if (channel === "user" && !forUserId)
+    throw new Error("resolveEffectivePolicy requires forUserId for the user channel");
+
+  const scopeOf = (configuration: PolicyResolutionConfiguration): ConfigurationScope =>
+    configuration.scope ?? "device";
+
+  const accepts = (configuration: PolicyResolutionConfiguration): ConfigurationScope | null => {
+    const configurationScope = scopeOf(configuration);
+
+    if (configurationScope === channel) return configurationScope;
+
+    // A platform without a per-login channel delivers user-scoped settings on
+    // the device channel; they apply to every user on the device.
+    if (channel === "device" && input.includeUserScoped && configurationScope === "user")
+      return configurationScope;
+
+    return null;
+  };
+
   const policies = new Map(input.policies.map((policy) => [policy.id, policy]));
   const configurations = new Map<string, Array<PolicyResolutionConfiguration>>();
 
   for (const configuration of input.configurations) {
     if (!policies.has(configuration.policyId)) continue;
+
+    if (accepts(configuration) === null) continue;
     const list = configurations.get(configuration.policyId) ?? [];
     list.push(configuration);
     configurations.set(configuration.policyId, list);
@@ -313,7 +375,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
   const kinds = [
     ...new Set(
       input.configurations
-        .filter((configuration) => policies.has(configuration.policyId))
+        .filter(
+          (configuration) =>
+            policies.has(configuration.policyId) && accepts(configuration) !== null,
+        )
         .map((configuration) => configuration.kind),
     ),
   ].sort(compareText);
@@ -373,6 +438,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       policyId: winner.policy.id,
       policyName: winner.policy.name,
       priority: winner.policy.priority ?? 0,
+      channel,
+      configurationScope: scopeOf(winner.configuration),
       scope: winner.scope,
       groupIds: winner.groups.map((group) => group.id),
       groupNames: winner.groups.map((group) => group.name),
@@ -503,7 +570,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
   }
 
   const effectiveUsers = (policyId: string) => {
-    const contributions = [...(userContributions.get(policyId)?.values() ?? [])];
+    const contributions = [...(userContributions.get(policyId)?.values() ?? [])].filter(
+      (contribution) => forUserId === undefined || contribution.user.id === forUserId,
+    );
+
     const directExcluded = userExcluded.get(policyId) ?? new Set<string>();
     const groupExcluded = groupExcludedUsers.get(policyId) ?? new Set<string>();
 
@@ -574,6 +644,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
       policyId: winner.policy.id,
       policyName: winner.policy.name,
       priority: winner.policy.priority ?? 0,
+      channel,
+      configurationScope: scopeOf(winner.configuration),
       scope: winner.scope,
       groupIds: [],
       groupNames: [],
@@ -649,6 +721,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     if (!policy) continue;
 
     const excludedUsers = [...excludedUserIds]
+      .filter((userId) => forUserId === undefined || userId === forUserId)
       .flatMap((userId) => {
         const user = linkedUsers.get(userId);
 
@@ -777,6 +850,8 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
 
   return {
     deviceId: input.deviceId,
+    channel,
+    ...(forUserId ? { userId: forUserId } : {}),
     configurations: resolved.sort(
       (left, right) =>
         compareText(left.kind, right.kind) || compareText(left.policyId, right.policyId),

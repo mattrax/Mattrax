@@ -82,6 +82,7 @@ import {
   type WebhookTestResponse,
   type SetDeviceAttributesRequest,
   type PolicyDeliveryInfo,
+  POLICY_SNAPSHOT_SCOPES_KEY,
   POLICY_VARIABLE_NOTES,
   policyConfigurationVariableProblem,
   policyVariableInfo,
@@ -1881,9 +1882,18 @@ export const createEnterpriseService = ({
         .from(schema.configuration)
         .where(eq(schema.configuration.policyId, policyId));
 
-      const snapshot = Object.fromEntries(
-        configurations.map((configuration) => [configuration.kind, configuration.data]),
+      const scopes = Object.fromEntries(
+        configurations
+          .filter((configuration) => configuration.scope === "user")
+          .map((configuration) => [configuration.kind, "user"]),
       );
+
+      const snapshot = {
+        ...Object.fromEntries(
+          configurations.map((configuration) => [configuration.kind, configuration.data]),
+        ),
+        ...(Object.keys(scopes).length > 0 ? { [POLICY_SNAPSHOT_SCOPES_KEY]: scopes } : {}),
+      };
 
       // `max(version)` can come from a stale Hyperdrive replica, so the first
       // INSERT may collide with the unique (policy_id, version) index even
@@ -2441,6 +2451,43 @@ export const createEnterpriseService = ({
         )
       : Effect.void;
 
+  /**
+   * Wake every user channel on these devices.
+   *
+   * User-scoped policy is owned by the user channel, so a policy change that
+   * only pushed the device would leave an open login on stale settings. Push
+   * failures are already recorded per channel by the push service and shown on
+   * the device page, so a dead channel must not fail the whole policy write.
+   */
+  const pushPolicyUserChannels = (deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      const unique = [...new Set(deviceIds)];
+
+      if (unique.length === 0) return;
+
+      const channels = yield* db
+        .select({
+          deviceId: schema.deviceAppleUser.deviceId,
+          userId: schema.deviceAppleUser.userId,
+        })
+        .from(schema.deviceAppleUser)
+        .where(
+          and(
+            inArray(schema.deviceAppleUser.deviceId, unique),
+            isNotNull(schema.deviceAppleUser.token),
+          ),
+        );
+
+      yield* Effect.forEach(
+        channels,
+        (channel) =>
+          applePush
+            .pushAppleUserChannel(channel.deviceId, channel.userId)
+            .pipe(Effect.catch(() => Effect.void)),
+        { concurrency: 4 },
+      );
+    });
+
   const pushPolicyDevices = (
     organizationId: string,
     context: Record<string, Schema.Json>,
@@ -2448,6 +2495,7 @@ export const createEnterpriseService = ({
   ) =>
     Effect.gen(function* () {
       const result = yield* applePush.pushAppleDevices(deviceIds);
+      yield* pushPolicyUserChannels(deviceIds);
       yield* reportPolicyDeliveryFailure(organizationId, context, result);
 
       return result;
@@ -3688,8 +3736,13 @@ export const createEnterpriseService = ({
           .from(schema.configuration)
           .where(eq(schema.configuration.policyId, row.id));
 
+        const scopes = Object.fromEntries(
+          configurations.filter((item) => item.scope === "user").map((item) => [item.kind, "user"]),
+        );
+
         Object.assign(base, {
           configurations: Object.fromEntries(configurations.map((item) => [item.kind, item.data])),
+          ...(Object.keys(scopes).length > 0 ? { configurationScopes: scopes } : {}),
         });
       }
 
@@ -6437,6 +6490,7 @@ export const createEnterpriseService = ({
 
         const policyKeys = new Set<string>();
         const policyConfigurations = new Map<string, Array<[string, Schema.Json]>>();
+        const policyConfigurationScopes = new Map<string, Record<string, "device" | "user">>();
 
         for (const policy of policies) {
           const key = importString(policy.key, 255);
@@ -6473,6 +6527,7 @@ export const createEnterpriseService = ({
               }),
             );
           const entries: Array<[string, Schema.Json]> = [];
+          const scopes: Record<string, "device" | "user"> = {};
 
           for (const [kind, data] of Object.entries(configurations)) {
             if (data === null || data === undefined)
@@ -6494,8 +6549,13 @@ export const createEnterpriseService = ({
               );
             // An imported bundle has no escrow key yet: a FileVault escrow
             // profile is rejected until the operator adds one and re-saves it.
+            const scope = policy.configurationScopes?.[kind] ?? "device";
+
+            if (scope === "user") scopes[kind] = "user";
+
             yield* validateConfiguration(kind, configuration, {
               escrowCertificateFingerprintSha256: null,
+              scope,
             }).pipe(
               Effect.mapError(
                 (message) =>
@@ -6508,6 +6568,7 @@ export const createEnterpriseService = ({
           }
 
           policyConfigurations.set(key, entries);
+          if (Object.keys(scopes).length > 0) policyConfigurationScopes.set(key, scopes);
         }
 
         for (const group of groups) {
@@ -6745,11 +6806,18 @@ export const createEnterpriseService = ({
                 updatedAt: timestamp,
               });
               const configurations = policyConfigurations.get(policy.key) ?? [];
+              const scopes = policyConfigurationScopes.get(policy.key) ?? {};
 
               if (configurations.length > 0) {
                 const values = yield* Effect.all(
                   configurations.map(([kind, data]) =>
-                    Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
+                    Effect.map(hashJson(data), (hash) => ({
+                      policyId,
+                      kind,
+                      scope: scopes[kind] ?? "device",
+                      data,
+                      hash,
+                    })),
                   ),
                 );
 
@@ -6761,7 +6829,12 @@ export const createEnterpriseService = ({
                 organizationId: tenantId,
                 policyId,
                 version: 1,
-                snapshot: Object.fromEntries(configurations),
+                snapshot: {
+                  ...Object.fromEntries(configurations),
+                  ...(Object.keys(scopes).length > 0
+                    ? { [POLICY_SNAPSHOT_SCOPES_KEY]: scopes }
+                    : {}),
+                },
                 createdByAccountId: user.id,
                 createdAt: timestamp,
               });
@@ -13526,10 +13599,35 @@ export const createEnterpriseService = ({
           .where(eq(schema.deviceAppleUser.deviceId, device.id))
           .orderBy(desc(schema.deviceAppleUser.lastSeenAt));
 
+        const boundUserIds = users.flatMap((user) =>
+          user.directoryUserId ? [user.directoryUserId] : [],
+        );
+
+        const boundUsers = boundUserIds.length
+          ? yield* db
+              .select({
+                id: schema.user.id,
+                name: schema.user.name,
+                email: schema.user.email,
+              })
+              .from(schema.user)
+              .where(
+                and(
+                  eq(schema.user.organizationId, ctx.organization.id),
+                  inArray(schema.user.id, [...new Set(boundUserIds)]),
+                ),
+              )
+          : [];
+
+        const boundById = new Map(boundUsers.map((user) => [user.id, user]));
+
         return {
           enrollmentMode: apple?.enrollmentMode ?? null,
           users: users.map((user) => {
             const configured = Boolean(user.token && user.pushMagic);
+            const identityTarget = user.directoryUserId
+              ? boundById.get(user.directoryUserId)
+              : undefined;
 
             const binding =
               user.authenticatedAt !== null
@@ -13556,6 +13654,17 @@ export const createEnterpriseService = ({
                 invalidToken: false,
               },
               profiles: user.profiles ?? [],
+              identity:
+                identityTarget && user.identitySource
+                  ? {
+                      userId: identityTarget.id,
+                      name: identityTarget.name,
+                      email: identityTarget.email,
+                      source: user.identitySource,
+                      upn: user.identityUpn,
+                      verifiedAt: user.identityVerifiedAt ? iso(user.identityVerifiedAt) : null,
+                    }
+                  : null,
               actions: appleUserAvailableActions({ configured }),
             };
           }),
@@ -13649,6 +13758,185 @@ export const createEnterpriseService = ({
           commandId: queued.id,
           deduplicated: queued.deduplicated,
         };
+      }),
+    bindAppleUserIdentity: (request, tenantId, deviceId, platformUserId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Per-user channels are only available for Apple devices.",
+            }),
+          );
+
+        if (device.status !== "enrolled")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Link an identity while the device is enrolled.",
+            }),
+          );
+
+        const [channel] = yield* db
+          .select({ userId: schema.deviceAppleUser.userId })
+          .from(schema.deviceAppleUser)
+          .where(
+            and(
+              eq(schema.deviceAppleUser.deviceId, device.id),
+              eq(schema.deviceAppleUser.userId, platformUserId),
+            ),
+          )
+          .limit(1);
+
+        if (!channel)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "This user channel is not present on the device." }),
+          );
+
+        yield* assertTenantUsers(ctx.organization.id, [payload.userId]);
+
+        const [directoryUser] = yield* db
+          .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+            disabled: schema.user.disabled,
+          })
+          .from(schema.user)
+          .where(
+            and(
+              eq(schema.user.id, payload.userId),
+              eq(schema.user.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!directoryUser)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Directory user not found." }),
+          );
+
+        if (directoryUser.disabled)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "A disabled directory user cannot be bound to a user channel.",
+            }),
+          );
+
+        // A new binding invalidates the old declaration set: the next sync must
+        // recompute the user's policy from scratch.
+        yield* db
+          .update(schema.deviceAppleUser)
+          .set({
+            directoryUserId: directoryUser.id,
+            identitySource: "manual",
+            identityUpn: directoryUser.email,
+            identityVerifiedAt: now(),
+            ddmDeclarationsToken: null,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.deviceAppleUser.deviceId, device.id),
+              eq(schema.deviceAppleUser.userId, platformUserId),
+            ),
+          );
+
+        yield* db
+          .delete(schema.deviceUserDeclaration)
+          .where(
+            and(
+              eq(schema.deviceUserDeclaration.deviceId, device.id),
+              eq(schema.deviceUserDeclaration.userId, platformUserId),
+            ),
+          );
+
+        yield* applePush
+          .pushAppleUserChannel(device.id, platformUserId)
+          .pipe(Effect.catch(() => Effect.void));
+
+        yield* audit(ctx, "device.apple_user_bound", "device", device.id, {
+          platformUserId,
+          directoryUserId: directoryUser.id,
+          source: "manual",
+        });
+
+        return { status: "ok" as const };
+      }),
+    unbindAppleUserIdentity: (request, tenantId, deviceId, platformUserId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Per-user channels are only available for Apple devices.",
+            }),
+          );
+
+        const [channel] = yield* db
+          .select({ userId: schema.deviceAppleUser.userId })
+          .from(schema.deviceAppleUser)
+          .where(
+            and(
+              eq(schema.deviceAppleUser.deviceId, device.id),
+              eq(schema.deviceAppleUser.userId, platformUserId),
+            ),
+          )
+          .limit(1);
+
+        if (!channel)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "This user channel is not present on the device." }),
+          );
+
+        yield* db
+          .update(schema.deviceAppleUser)
+          .set({
+            directoryUserId: null,
+            identitySource: null,
+            identityUpn: null,
+            identityVerifiedAt: null,
+            ddmDeclarationsToken: null,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.deviceAppleUser.deviceId, device.id),
+              eq(schema.deviceAppleUser.userId, platformUserId),
+            ),
+          );
+
+        yield* db
+          .delete(schema.deviceUserDeclaration)
+          .where(
+            and(
+              eq(schema.deviceUserDeclaration.deviceId, device.id),
+              eq(schema.deviceUserDeclaration.userId, platformUserId),
+            ),
+          );
+
+        yield* applePush
+          .pushAppleUserChannel(device.id, platformUserId)
+          .pipe(Effect.catch(() => Effect.void));
+
+        yield* audit(ctx, "device.apple_user_unbound", "device", device.id, { platformUserId });
+
+        return { status: "ok" as const };
       }),
     listDeviceDeclarations: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
@@ -14553,6 +14841,7 @@ export const createEnterpriseService = ({
           notes?: string | null;
           priority?: number;
           configurations?: Record<string, Schema.Json>;
+          configurationScopes?: Record<string, "device" | "user">;
         } = payload;
 
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
@@ -14570,6 +14859,25 @@ export const createEnterpriseService = ({
         const configurations = Object.entries(body.configurations ?? {});
         const escrowFingerprint = yield* tenantEscrowFingerprint(ctx.organization.id);
 
+        // An omitted scope map means "leave scopes alone": the designer and
+        // older clients patch configurations without knowing about scope. A
+        // supplied map is authoritative for every kind it carries, and a kind
+        // missing from it is device scope.
+        const existingScopes = new Map(
+          (yield* db
+            .select({ kind: schema.configuration.kind, scope: schema.configuration.scope })
+            .from(schema.configuration)
+            .where(eq(schema.configuration.policyId, policyId))).map((row) => [
+            row.kind,
+            row.scope,
+          ]),
+        );
+
+        const scopeFor = (kind: string): "device" | "user" =>
+          body.configurationScopes === undefined
+            ? (existingScopes.get(kind) ?? "device")
+            : (body.configurationScopes[kind] ?? "device");
+
         const attributeKeys = (yield* listAttributeDefinitions(db, ctx.organization.id)).map(
           (definition) => definition.key,
         );
@@ -14584,8 +14892,11 @@ export const createEnterpriseService = ({
           );
 
           if (configuration === undefined) continue;
+          const scope = scopeFor(kind);
+
           yield* validateConfiguration(kind, configuration, {
             escrowCertificateFingerprintSha256: escrowFingerprint,
+            scope,
           }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
 
           const variableProblem = policyConfigurationVariableProblem(configuration, attributeKeys);
@@ -14663,10 +14974,12 @@ export const createEnterpriseService = ({
               );
           } else {
             const hash = yield* hashJson(data);
+            const scope = scopeFor(kind);
+
             yield* db
               .insert(schema.configuration)
-              .values({ policyId, kind, data, hash })
-              .onDuplicateKeyUpdate({ set: { data, hash } });
+              .values({ policyId, kind, scope, data, hash })
+              .onDuplicateKeyUpdate({ set: { data, hash, scope } });
           }
         }
 
@@ -14676,6 +14989,9 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body),
           configurations: Object.keys(body.configurations ?? {}),
+          userScopedConfigurations: Object.entries(body.configurationScopes ?? {})
+            .filter(([, scope]) => scope === "user")
+            .map(([kind]) => kind),
         });
         yield* snapshotPolicy(ctx, policyId);
 
@@ -14721,22 +15037,37 @@ export const createEnterpriseService = ({
           );
 
         const snapshot = Option.getOrElse(
-          Schema.decodeUnknownOption(Schema.JsonObject)(deployment.snapshot),
-          () => ({}),
+          Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
+            deployment.snapshot,
+          ),
+          () => ({}) as Record<string, Schema.Json>,
         );
 
-        const entries = Object.entries(snapshot ?? {});
+        const snapshotScopes = Option.getOrElse(
+          Schema.decodeUnknownOption(
+            Schema.Record(Schema.String, Schema.Literals(["device", "user"])),
+          )(snapshot[POLICY_SNAPSHOT_SCOPES_KEY]),
+          () => ({}) as Record<string, "device" | "user">,
+        );
+
+        const entries = Object.entries(snapshot).filter(
+          ([kind]) => kind !== POLICY_SNAPSHOT_SCOPES_KEY,
+        );
 
         if (entries.length > 0)
-          yield* db
-            .insert(schema.configuration)
-            .values(
-              yield* Effect.all(
-                entries.map(([kind, data]) =>
-                  Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
-                ),
+          yield* db.insert(schema.configuration).values(
+            yield* Effect.all(
+              entries.map(([kind, data]) =>
+                Effect.map(hashJson(data), (hash) => ({
+                  policyId,
+                  kind,
+                  scope: snapshotScopes[kind] ?? "device",
+                  data,
+                  hash,
+                })),
               ),
-            );
+            ),
+          );
         yield* snapshotPolicy(ctx, policyId);
         yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
         // Rollback replaces configurations, so both Apple and Android devices
@@ -16453,6 +16784,7 @@ export const createEnterpriseService = ({
             configurations.map((c: EnterpriseConfiguration) => ({
               kind: c.kind,
               policyId: newId,
+              scope: c.scope,
               data: c.data,
               hash: c.hash,
             })),
@@ -18201,6 +18533,7 @@ export const createEnterpriseService = ({
         // rather than six sequential round trips.
         const [
           configurationCounts,
+          userConfigurationCounts,
           deployments,
           groupAssignments,
           deviceAssignments,
@@ -18213,6 +18546,18 @@ export const createEnterpriseService = ({
                 .select({ policyId: schema.configuration.policyId, value: count() })
                 .from(schema.configuration)
                 .where(inArray(schema.configuration.policyId, policyIds))
+                .groupBy(schema.configuration.policyId),
+            ),
+            queryEffect(
+              db
+                .select({ policyId: schema.configuration.policyId, value: count() })
+                .from(schema.configuration)
+                .where(
+                  and(
+                    inArray(schema.configuration.policyId, policyIds),
+                    eq(schema.configuration.scope, "user"),
+                  ),
+                )
                 .groupBy(schema.configuration.policyId),
             ),
             queryEffect(
@@ -18461,12 +18806,19 @@ export const createEnterpriseService = ({
                     .select({
                       policyId: schema.configuration.policyId,
                       kind: schema.configuration.kind,
+                      scope: schema.configuration.scope,
                       hash: schema.configuration.hash,
                       data: schema.configuration.data,
                     })
                     .from(schema.configuration)
                     .where(inArray(schema.configuration.policyId, trackedPolicyIds))
-                : emptyRows<{ policyId: string; kind: string; hash: string; data: unknown }>(),
+                : emptyRows<{
+                    policyId: string;
+                    kind: string;
+                    scope: "device" | "user";
+                    hash: string;
+                    data: unknown;
+                  }>(),
             ),
           ],
           { concurrency: "unbounded" },
@@ -18493,16 +18845,23 @@ export const createEnterpriseService = ({
             Schema.decodeUnknownOption(Schema.Json)(configuration.data),
           );
 
-          list.push({
-            kind: configuration.kind,
-            hash: configuration.hash,
-            hasVariables: data !== undefined && containsPolicyVariables(data),
-          });
+          // Device-channel rollup only: a user-scoped kind is delivered by a
+          // user channel and never appears in the device's declaration set.
+          if (configuration.scope !== "user")
+            list.push({
+              kind: configuration.kind,
+              hash: configuration.hash,
+              hasVariables: data !== undefined && containsPolicyVariables(data),
+            });
           configurationsByPolicy.set(configuration.policyId, list);
         }
 
         const configurationCountsByPolicy = new Map(
           configurationCounts.map((row) => [row.policyId, Number(row.value)]),
+        );
+
+        const userConfigurationCountsByPolicy = new Map(
+          userConfigurationCounts.map((row) => [row.policyId, Number(row.value)]),
         );
 
         const versionsByPolicy = new Map(
@@ -18522,7 +18881,11 @@ export const createEnterpriseService = ({
             derivePolicyDelivery({
               policyId,
               version: versionsByPolicy.get(policyId) ?? null,
+              // Delivery is derived from DDM declaration reports, which only
+              // exist for the device channel. User-scoped kinds are delivered
+              // per user channel and would otherwise look pending forever.
               configurations: configurationsByPolicy.get(policyId) ?? [],
+              hasUserScopedConfigurations: (userConfigurationCountsByPolicy.get(policyId) ?? 0) > 0,
               devices: [...scope.deviceIds].flatMap((deviceId) => {
                 const device = deviceById.get(deviceId);
 
@@ -18542,6 +18905,7 @@ export const createEnterpriseService = ({
           rows: policyIds.map((policyId) => ({
             ...baseById.get(policyId)!,
             configurationCount: configurationCountsByPolicy.get(policyId) ?? 0,
+            userConfigurationCount: userConfigurationCountsByPolicy.get(policyId) ?? 0,
             scopedDeviceCount: scopes.get(policyId)?.deviceIds.size ?? 0,
             scopedUserCount: scopes.get(policyId)?.userIds.size ?? 0,
             delivery: deliveryByPolicy.get(policyId),
@@ -19888,6 +20252,16 @@ export const enterpriseHandlers = (
     .handle("deviceAppleUserAction", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deviceAppleUserAction(request, params.tenantId, params.id, params.userId, payload),
+      ),
+    )
+    .handle("bindAppleUserIdentity", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.bindAppleUserIdentity(request, params.tenantId, params.id, params.userId, payload),
+      ),
+    )
+    .handle("unbindAppleUserIdentity", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.unbindAppleUserIdentity(request, params.tenantId, params.id, params.userId),
       ),
     )
     .handle("deviceUnenroll", ({ request, params }) =>

@@ -212,7 +212,8 @@ export default function PolicyDesignerPage() {
               <div class="min-w-0 flex-1">
                 <p class="font-semibold">This policy also has settings from the policy editor</p>
                 <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Saving here updates the designer configurations and keeps them.
+                  Saving here updates the designer configurations and keeps them. Settings generated
+                  by the designer are device-scoped; add user-scoped settings in the policy editor.
                 </p>
               </div>
               <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">

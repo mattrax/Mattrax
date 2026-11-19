@@ -5,8 +5,11 @@ import { PlistValue } from "@mattrax/plist";
  * Shared iPad reports this sentinel user id because it never authenticates the
  * user. Apple documents the exact value, so it is treated as "no
  * authentication happened" rather than as an account identifier.
+ *
+ * Re-exported from the protocol package, which uses it to key Shared iPad user
+ * channels by their Managed Apple Account identifier instead.
  */
-export const SHARED_IPAD_USER_ID = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF";
+export { SHARED_IPAD_USER_ID } from "@mattrax/dm-apple";
 
 /** One configuration profile reported by a user-channel `ProfileList`. */
 export const AppleUserProfile = Schema.Struct({

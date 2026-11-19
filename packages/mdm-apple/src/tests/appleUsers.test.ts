@@ -265,6 +265,81 @@ describe("Apple user channel", () => {
     ]);
   });
 
+  it("keys a Shared iPad channel by its Managed Apple Account and binds the person", async () => {
+    const account = "student@example.test";
+
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        { ...deviceRow("device-1", "udid-1"), osEdition: "iPadOS 18.4" },
+      ],
+      [tableName(schema.deviceApple)]: [appleState("device-1")],
+      [tableName(schema.user)]: [
+        {
+          id: "dir-1",
+          organizationId: "org-1",
+          name: "Student",
+          email: account,
+          disabled: false,
+          source: "scim",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    // Apple sends the sentinel UserID for every Shared iPad login, so the
+    // protocol layer keys the channel by the Managed Apple Account instead.
+    await run(
+      backend.appleDeviceEvent(userScope({ userId: account, userShortName: account }), {
+        _tag: "TokenUpdate" as const,
+        pushToken: "736861726564",
+        pushMagic: "shared-magic",
+        topic: "com.apple.mgmt.External.org-1",
+        channel: "user" as const,
+        userId: account,
+        userShortName: account,
+      }),
+    );
+
+    expect(dbRows(db, tableName(schema.deviceAppleUser))).toMatchObject([
+      {
+        deviceId: "device-1",
+        userId: account,
+        directoryUserId: "dir-1",
+        identitySource: "managed-apple-account",
+        identityUpn: account,
+      },
+    ]);
+  });
+
+  it("leaves a Shared iPad channel unbound when the account is not in the directory", async () => {
+    const account = "unknown@example.test";
+
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        { ...deviceRow("device-1", "udid-1"), osEdition: "iPadOS 18.4" },
+      ],
+      [tableName(schema.deviceApple)]: [appleState("device-1")],
+    });
+
+    await run(
+      backend.appleDeviceEvent(userScope({ userId: account, userShortName: account }), {
+        _tag: "TokenUpdate" as const,
+        pushToken: "736861726564",
+        pushMagic: "shared-magic",
+        topic: "com.apple.mgmt.External.org-1",
+        channel: "user" as const,
+        userId: account,
+        userShortName: account,
+      }),
+    );
+
+    const [channel] = dbRows(db, tableName(schema.deviceAppleUser));
+
+    expect(channel).toMatchObject({ userId: account });
+    expect(channel?.directoryUserId ?? null).toBeNull();
+  });
+
   it("removes only the checked-out user", async () => {
     const { db, backend } = setup({
       [tableName(schema.device)]: [deviceRow("device-1", "udid-1")],

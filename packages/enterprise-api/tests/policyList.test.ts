@@ -118,6 +118,19 @@ describe("derivePolicyDelivery", () => {
         declarations: [],
       }),
     ).toMatchObject({ state: "no-configurations", trackedDevices: 1 });
+
+    // A policy with only user-scoped settings is delivered per user channel,
+    // so it is not judged by the device declaration rollup.
+    expect(
+      derivePolicyDelivery({
+        policyId: "policy-a",
+        version: 1,
+        configurations: [],
+        hasUserScopedConfigurations: true,
+        devices: [{ id: "device-1", proto: "apple", declarationMode: "ddm" }],
+        declarations: [],
+      }),
+    ).toMatchObject({ state: "user-channel", trackedDevices: 1 });
   });
 
   it("does not wait for declarations for imperative application installs", () => {

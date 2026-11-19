@@ -244,9 +244,20 @@ export default function PoliciesPage() {
               const count = configurationCount(row);
 
               return (
-                <Badge variant={count > 0 ? "secondary" : "outline"} class="tabular-nums">
-                  {count}
-                </Badge>
+                <span class="inline-flex items-center gap-1.5">
+                  <Badge variant={count > 0 ? "secondary" : "outline"} class="tabular-nums">
+                    {count}
+                  </Badge>
+                  <Show when={(row.userConfigurationCount ?? 0) > 0}>
+                    <Badge
+                      variant="outline"
+                      class="tabular-nums"
+                      title="Configurations delivered on the Apple user channel"
+                    >
+                      {row.userConfigurationCount} user
+                    </Badge>
+                  </Show>
+                </span>
               );
             },
           },

@@ -607,6 +607,34 @@ export const AppleDeviceUserProfile = Schema.Struct({
 
 export type AppleDeviceUserProfile = typeof AppleDeviceUserProfile.Type;
 
+/** How an Apple user channel was bound to a directory person. */
+export const AppleUserIdentitySource = Schema.Literals([
+  "certificate",
+  "managed-apple-account",
+  "manual",
+]);
+
+export type AppleUserIdentitySource = typeof AppleUserIdentitySource.Type;
+
+export const AppleUserDirectoryIdentity = Schema.Struct({
+  userId: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  source: AppleUserIdentitySource,
+  /** The IdP subject the binding was verified against, when there is one. */
+  upn: Schema.optional(NullableString),
+  verifiedAt: Schema.optional(NullableString),
+});
+
+export type AppleUserDirectoryIdentity = typeof AppleUserDirectoryIdentity.Type;
+
+export const BindAppleUserIdentityRequest = Schema.Struct({
+  /** Directory user this channel belongs to. */
+  userId: Schema.String,
+});
+
+export type BindAppleUserIdentityRequest = typeof BindAppleUserIdentityRequest.Type;
+
 export const AppleDeviceUser = Schema.Struct({
   platformUserId: Schema.String,
   shortName: Schema.optional(NullableString),
@@ -625,6 +653,11 @@ export const AppleDeviceUser = Schema.Struct({
   push: DevicePushInfo,
   /** Profiles the user channel last reported for its login context. */
   profiles: Schema.Array(AppleDeviceUserProfile),
+  /**
+   * The directory person this channel is bound to. User-scoped policy is only
+   * delivered for a bound channel.
+   */
+  identity: Schema.optional(Schema.NullOr(AppleUserDirectoryIdentity)),
   /** Per-user actions currently available on this channel. */
   actions: Schema.Array(Schema.String),
 });

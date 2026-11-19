@@ -7,6 +7,7 @@ import {
   CommandResultPlist,
   DDMStatusReport,
   resolveCheckinChannel,
+  SHARED_IPAD_USER_ID,
 } from "../schema.js";
 
 describe("schema", () => {
@@ -179,6 +180,25 @@ describe("schema", () => {
         userId: "user-1",
         source: "user-channel",
         userShortName: "oscar",
+      });
+    });
+
+    it("keys a Shared iPad channel by its Managed Apple Account", () => {
+      // Shared iPad sends the sentinel UserID for every login, so the token
+      // would otherwise overwrite one shared row instead of one per person.
+      expect(
+        resolveCheckinChannel({
+          UDID: "udid-1",
+          UserID: SHARED_IPAD_USER_ID,
+          UserShortName: "student@example.test",
+          UserLongName: "Student",
+        }),
+      ).toMatchObject({
+        kind: "user",
+        deviceIdentifier: "udid-1",
+        userId: "student@example.test",
+        source: "user-channel",
+        userShortName: "student@example.test",
       });
     });
 

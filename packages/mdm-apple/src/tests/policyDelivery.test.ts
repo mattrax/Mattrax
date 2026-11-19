@@ -47,11 +47,18 @@ const policy = (id: string, organizationId: string, priority: number) => ({
   updatedAt: new Date(Date.UTC(2026, 0, 1, 0, priority)),
 });
 
-const configuration = (policyId: string, kind: string, data: Schema.Json, hash: string) => ({
+const configuration = (
+  policyId: string,
+  kind: string,
+  data: Schema.Json,
+  hash: string,
+  scope: "device" | "user" = "device",
+) => ({
   policyId,
   kind,
   data,
   hash,
+  scope,
 });
 
 const appleScope = {
@@ -188,5 +195,60 @@ describe("Windows command delivery uses resolved policy", () => {
 
     expect(policyCommands).toHaveLength(1);
     expect(policyCommands[0]).toMatchObject({ kind: "Replace", data: "high" });
+  });
+
+  it("delivers user-scoped OMA-URIs on the device channel", async () => {
+    // Windows has no per-login policy channel: a `./User/` CSP applies to
+    // every user of the device, so the device check-in must carry it.
+    const kind = "mttx.windows.custom.education";
+
+    const db = makeDb({
+      [tableName(schema.organization)]: [organization("org-1")],
+      [tableName(schema.device)]: [{ ...device("device-1", "win-1", "org-1"), proto: "win" }],
+      [tableName(schema.policy)]: [policy("policy-a", "org-1", 0)],
+      [tableName(schema.devicePolicy)]: [
+        { deviceId: "device-1", policyId: "policy-a", mode: "include" },
+      ],
+      [tableName(schema.configuration)]: [
+        configuration(
+          "policy-a",
+          kind,
+          {
+            omaUri: "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+            value: 1,
+          },
+          "hash-user",
+          "user",
+        ),
+      ],
+    });
+
+    // SAFETY: The fake store implements only the query chains these tests exercise.
+    const backend = createWindowsBackend({
+      db: db as any,
+      origin,
+      authSecret,
+      windowsOrganizationId: "org-1",
+    });
+
+    const response = await run(
+      backend.windowsManagementCheckin(
+        { deviceId: "win-1", mdmOrigin },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "win-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+        },
+      ),
+    );
+
+    const userCommand = response.commands.find((command) =>
+      command.locURI?.includes("/Education/AllowGraphingCalculator"),
+    );
+
+    expect(userCommand).toMatchObject({ kind: "Replace", data: "1" });
   });
 });

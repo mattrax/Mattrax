@@ -188,6 +188,13 @@ export type CheckinIdentifiers = {
   readonly UserLongName?: string;
 };
 
+/**
+ * Shared iPad never authenticates the person using it, so Apple sends this
+ * sentinel as `UserID` on every user channel. It carries no per-user meaning;
+ * the Managed Apple Account identifier in `UserShortName` is the real identity.
+ */
+export const SHARED_IPAD_USER_ID = "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF";
+
 /** Which connection a check-in arrived on, and the identifiers that came with it. */
 export type AppleCheckinChannel =
   | {
@@ -214,8 +221,15 @@ export type AppleCheckinChannel =
  * Resolve the device and user identity from a check-in plist.
  *
  * Apple sends `UDID` for a device enrollment and `EnrollmentID` for an Apple
- * User Enrollment (BYOD). The user channel is identified by `UserID` on macOS
- * and Shared iPad, or `EnrollmentUserID` on a user-enrollment user channel.
+ * User Enrollment (BYOD). The user channel is identified by `UserID` on macOS,
+ * `EnrollmentUserID` on a user-enrollment user channel, and the Managed Apple
+ * Account identifier on Shared iPad.
+ *
+ * Shared iPad is the exception: Apple sends the same sentinel `UserID` for
+ * every login because it never authenticates the user, so keying the channel on
+ * it would merge every person on the device into one row. `UserShortName`
+ * carries the Managed Apple Account identifier and is required there, so it
+ * becomes the key.
  */
 export const resolveCheckinChannel = (
   identifiers: CheckinIdentifiers,
@@ -225,9 +239,12 @@ export const resolveCheckinChannel = (
   if (!deviceIdentifier) return null;
 
   const enrollmentId = identifiers.EnrollmentID;
-  const userId = identifiers.UserID ?? identifiers.EnrollmentUserID;
+  const rawUserId = identifiers.UserID ?? identifiers.EnrollmentUserID;
 
-  if (!userId) return { kind: "device", deviceIdentifier, enrollmentId };
+  if (!rawUserId) return { kind: "device", deviceIdentifier, enrollmentId };
+
+  const sharedIpad = rawUserId === SHARED_IPAD_USER_ID;
+  const userId = sharedIpad ? (identifiers.UserShortName ?? rawUserId) : rawUserId;
 
   return {
     kind: "user",

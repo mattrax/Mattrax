@@ -441,3 +441,181 @@ describe("user-assigned policies", () => {
     );
   });
 });
+
+describe("channel separation", () => {
+  const user = (id: string) => ({ id, name: `User ${id}`, email: `${id}@example.test` });
+
+  const scoped = (
+    policyId: string,
+    kind: string,
+    scope: "device" | "user",
+    data: Schema.Json = {},
+  ) => ({ policyId, kind, scope, data, hash: `hash-${policyId}-${kind}` });
+
+  const resolveForUser = (input: Partial<PolicyResolutionInput>, forUserId: string) =>
+    resolveEffectivePolicy({
+      deviceId: "device-1",
+      channel: "user",
+      forUserId,
+      groups: [],
+      groupAssignments: [],
+      deviceAssignments: [],
+      users: [],
+      userGroups: [],
+      userGroupMembers: [],
+      userAssignments: [],
+      userGroupAssignments: [],
+      policies: [],
+      configurations: [],
+      ...input,
+    });
+
+  it("keeps user-scoped settings off the device channel", () => {
+    const result = resolve({
+      deviceAssignments: [{ policyId: "policy-a" }],
+      policies: [policy("policy-a")],
+      configurations: [
+        scoped("policy-a", "mttx.apple.custom.device", "device"),
+        scoped("policy-a", "mttx.apple.custom.user", "user"),
+      ],
+    });
+
+    expect(result.channel).toBe("device");
+    expect(result.configurations.map((configuration) => configuration.kind)).toEqual([
+      "mttx.apple.custom.device",
+    ]);
+  });
+
+  it("delivers a device-assigned user-scope setting to every user channel", () => {
+    const result = resolveForUser(
+      {
+        deviceAssignments: [{ policyId: "policy-a" }],
+        users: [user("user-a"), user("user-b")],
+        policies: [policy("policy-a")],
+        configurations: [scoped("policy-a", "mttx.apple.custom.user", "user")],
+      },
+      "user-b",
+    );
+
+    expect(result.channel).toBe("user");
+    expect(result.userId).toBe("user-b");
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        kind: "mttx.apple.custom.user",
+        policyId: "policy-a",
+        channel: "user",
+        scope: "direct",
+      }),
+    ]);
+  });
+
+  it("only delivers a user assignment to that user's channel", () => {
+    const input = {
+      users: [user("user-a"), user("user-b")],
+      userAssignments: [{ userId: "user-a", policyId: "policy-a" }],
+      policies: [policy("policy-a")],
+      configurations: [scoped("policy-a", "mttx.apple.custom.user", "user")],
+    };
+
+    expect(resolveForUser(input, "user-a").configurations).toHaveLength(1);
+    expect(resolveForUser(input, "user-b").configurations).toHaveLength(0);
+  });
+
+  it("lets a device policy beat a user policy on the user channel", () => {
+    const result = resolveForUser(
+      {
+        deviceAssignments: [{ policyId: "device-policy" }],
+        users: [user("user-a")],
+        userAssignments: [{ userId: "user-a", policyId: "user-policy" }],
+        policies: [policy("device-policy", 0), policy("user-policy", 100)],
+        configurations: [
+          scoped("device-policy", "mttx.apple.custom.user", "user"),
+          scoped("user-policy", "mttx.apple.custom.user", "user"),
+        ],
+      },
+      "user-a",
+    );
+
+    expect(result.configurations).toEqual([
+      expect.objectContaining({ policyId: "device-policy", channel: "user" }),
+    ]);
+    expect(result.overridden).toContainEqual(
+      expect.objectContaining({ policyId: "user-policy", reason: "device-scope" }),
+    );
+  });
+
+  it("keeps device-scoped settings off the user channel", () => {
+    const result = resolveForUser(
+      {
+        deviceAssignments: [{ policyId: "policy-a" }],
+        users: [user("user-a")],
+        policies: [policy("policy-a")],
+        configurations: [
+          scoped("policy-a", "mttx.apple.custom.device", "device"),
+          scoped("policy-a", "mttx.apple.custom.user", "user"),
+        ],
+      },
+      "user-a",
+    );
+
+    expect(result.configurations.map((configuration) => configuration.kind)).toEqual([
+      "mttx.apple.custom.user",
+    ]);
+  });
+
+  it("keeps user-scoped settings off the device channel by default", () => {
+    const result = resolve({
+      deviceAssignments: [{ policyId: "policy-a" }],
+      policies: [policy("policy-a")],
+      configurations: [
+        scoped("policy-a", "mttx.windows.custom.device", "device"),
+        scoped("policy-a", "mttx.windows.custom.user", "user"),
+      ],
+    });
+
+    expect(result.configurations.map((configuration) => configuration.kind)).toEqual([
+      "mttx.windows.custom.device",
+    ]);
+  });
+
+  it("resolves user-scoped settings on a device-wide platform", () => {
+    // Windows has no per-login channel, so the device check-in carries its
+    // `./User/` settings and they apply to every user on the machine.
+    const result = resolve({
+      includeUserScoped: true,
+      deviceAssignments: [{ policyId: "policy-a" }],
+      policies: [policy("policy-a")],
+      configurations: [
+        scoped("policy-a", "mttx.windows.custom.device", "device"),
+        scoped("policy-a", "mttx.windows.custom.user", "user"),
+      ],
+    });
+
+    expect(result.channel).toBe("device");
+    expect(result.configurations).toEqual([
+      expect.objectContaining({
+        kind: "mttx.windows.custom.device",
+        configurationScope: "device",
+      }),
+      expect.objectContaining({
+        kind: "mttx.windows.custom.user",
+        configurationScope: "user",
+      }),
+    ]);
+  });
+
+  it("applies a user exclusion only to that user's channel", () => {
+    const input = {
+      users: [user("user-a"), user("user-b")],
+      userAssignments: [
+        { userId: "user-a", policyId: "policy-a", mode: "exclude" as const },
+        { userId: "user-b", policyId: "policy-a" },
+      ],
+      policies: [policy("policy-a")],
+      configurations: [scoped("policy-a", "mttx.apple.custom.user", "user")],
+    };
+
+    expect(resolveForUser(input, "user-a").configurations).toHaveLength(0);
+    expect(resolveForUser(input, "user-b").configurations).toHaveLength(1);
+  });
+});
