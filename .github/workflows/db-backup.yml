@@ -110,9 +110,19 @@ jobs:
           key="$BACKUP_BUCKET/$BACKUP_PREFIX$stamp"
 
           upload() {
-            local output
+            local output status
+            # `set -e` would abort on a failed substitution before the output is
+            # printed, which hides the API error exactly when it matters.
+            set +e
             output="$(wrangler r2 object put "$1" --file "$2" --content-type "$3" --remote 2>&1)"
+            status=$?
+            set -e
             printf '%s\n' "$output"
+
+            if [ "$status" -ne 0 ]; then
+              echo "::error::wrangler could not upload $1 (exit $status)"
+              return 1
+            fi
             # Without --remote wrangler writes to a local simulation and still
             # says "Upload complete", leaving the job green with nothing in R2.
             if grep -q "Resource location: local" <<<"$output"; then
