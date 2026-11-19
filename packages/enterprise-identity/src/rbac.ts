@@ -160,6 +160,7 @@ const IDENTITY_WRITE = new Set([
   "patchSsoConfig",
   "patchEntraDirectorySync",
   "syncEntraDirectory",
+  "linkDirectoryUserSso",
   "refreshEntraDomains",
   "createScimToken",
   "revokeScimToken",

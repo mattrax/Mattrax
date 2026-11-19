@@ -257,6 +257,10 @@ type EnterpriseDashboardClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseDashboard"];
 
+type EnterpriseIdentityClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseIdentity"];
+
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
 
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
@@ -546,6 +550,17 @@ function dashboardEndpoint<A, E>(
   return endpointWith(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
     call,
+  );
+}
+
+function identityEndpoint<A, E>(
+  call: (api: EnterpriseIdentityClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseIdentity),
+    call,
+    options,
   );
 }
 
@@ -1965,6 +1980,17 @@ export const enterprise = {
     endpoint(
       (api) =>
         api.patchSsoConfig({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+      { stepUp: "sso-policy" },
+    ),
+  linkDirectoryUserSso: (tenantId: RouteParam, directoryUserId: RouteParam) =>
+    identityEndpoint(
+      (api) =>
+        api.linkDirectoryUserSso({
+          params: {
+            tenantId: required(tenantId, "tenantId"),
+            id: required(directoryUserId, "id"),
+          },
+        }),
       { stepUp: "sso-policy" },
     ),
   listScimTokens: (tenantId: RouteParam) =>

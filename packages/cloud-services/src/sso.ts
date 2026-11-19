@@ -5,6 +5,7 @@ import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import type { SsoFailureCode } from "@mattrax/enterprise-domain";
 import {
   loginAttemptClient,
   recordLoginAttempt,
@@ -55,9 +56,30 @@ const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: 
 
 /** Only internal, absolute-path destinations can be resumed after sign-in. */
 const safeReturnTo = (value: string | null | undefined) => {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return undefined;
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
+    return undefined;
 
   return value.slice(0, 2048);
+};
+
+const SSO_STATE_COOKIE_CLEAR =
+  "__Host-sso_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
+
+/** The completion page owns the user-facing copy for a failure code. */
+const completionFailure = (origin: string, code: SsoFailureCode, returnTo?: string | null) => {
+  const params = new URLSearchParams({ error: code });
+  const afterSignIn = safeReturnTo(returnTo);
+
+  if (afterSignIn) params.set("returnTo", afterSignIn);
+
+  return HttpServerResponse.empty({
+    status: 302,
+    headers: {
+      location: `${origin}/sso/complete?${params}`,
+      "cache-control": "no-store",
+      "set-cookie": SSO_STATE_COOKIE_CLEAR,
+    },
+  });
 };
 
 export type SsoRoutesOptions = {
@@ -180,7 +202,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
   const callback = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
-      if (!configured) return json({ error: "SSO is not configured" }, 503);
+      if (!configured) return completionFailure(options.origin, "sso_unavailable");
       const url = new URL(request.url, "http://localhost");
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
@@ -191,18 +213,23 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
        * callback resolved the account is a failed sign-in that account should
        * see. Rejections before that point (missing code/state, cookie mismatch,
        * invalid assertion) have no owner and are not stored: the log is only
-       * readable through an account-scoped API. Writing the log never changes
-       * the error the browser receives.
+       * readable through an account-scoped API.
+       *
+       * Every failure is a redirect to the styled completion page. The URL
+       * carries only a stable code; the reason, email and IdP detail stay in
+       * the server-side attempt log.
        */
       const reject = (input: {
-        status: number;
-        error: string;
+        code: SsoFailureCode;
         reason: LoginAttemptFailure;
         accountId?: string | null;
         email?: string | null;
+        returnTo?: string | null;
       }) =>
         Effect.gen(function* () {
-          if (input.accountId == null) return json({ error: input.error }, input.status);
+          const response = completionFailure(options.origin, input.code, input.returnTo);
+
+          if (input.accountId == null) return response;
 
           const client = loginAttemptClient(
             request.headers,
@@ -219,20 +246,27 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
             ...client,
           });
 
-          return json({ error: input.error }, input.status);
+          return response;
         });
+
+      // Entra answers a denied consent or a failed policy with `error` instead
+      // of a code. Log the provider codes, never their description.
+      const providerError = url.searchParams.get("error");
+
+      if (providerError)
+        yield* Effect.logWarning(
+          `Azure SSO provider returned an error: ${JSON.stringify(providerError.slice(0, 100))}`,
+        );
 
       if (!code || !state)
         return yield* reject({
-          status: 400,
-          error: "Missing OIDC code or state",
+          code: providerError ? "idp_rejected" : "invalid_request",
           reason: "sso_rejected",
         });
 
       if (request.cookies["__Host-sso_state"] !== state)
         return yield* reject({
-          status: 400,
-          error: "SSO state does not match this browser",
+          code: "state_mismatch",
           reason: "sso_rejected",
         });
 
@@ -247,19 +281,18 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!verified.ok)
         return yield* reject({
-          status: 400,
-          error: "SSO state is invalid",
+          code: "state_mismatch",
           reason: "sso_rejected",
         });
       const payload = verified.payload;
 
       if (payload.exp <= Date.now() || payload.purpose !== "sso-state")
         return yield* reject({
-          status: 400,
-          error: "SSO state expired",
+          code: "state_expired",
           reason: "expired",
         });
       const tenantId = payload.sub;
+      const returnTo = safeReturnTo(payload.returnTo);
 
       const config = yield* db.query.ssoConfig.findFirst({
         where: { organizationId: tenantId },
@@ -267,9 +300,9 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!config?.enabled || !config.azureTenantId)
         return yield* reject({
-          status: 404,
-          error: "SSO is not enabled for this tenant",
+          code: "sso_disabled",
           reason: "sso_rejected",
+          returnTo,
         });
 
       const oidc = yield* AzureOidc;
@@ -284,16 +317,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!discovery)
         return yield* reject({
-          status: 502,
-          error: "Could not contact the identity provider",
+          code: "idp_unavailable",
           reason: "sso_rejected",
+          returnTo,
         });
 
       if (!discovery.token_endpoint)
         return yield* reject({
-          status: 502,
-          error: "Identity provider has no token endpoint",
+          code: "idp_unavailable",
           reason: "sso_rejected",
+          returnTo,
         });
 
       const tokenResponse = yield* Effect.tryPromise({
@@ -319,16 +352,16 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!tokenResponse)
         return yield* reject({
-          status: 502,
-          error: "Could not contact the identity provider",
+          code: "idp_unavailable",
           reason: "sso_rejected",
+          returnTo,
         });
 
       if (!tokenResponse.ok)
         return yield* reject({
-          status: 502,
-          error: "Identity provider rejected the token exchange",
+          code: "idp_rejected",
           reason: "sso_rejected",
+          returnTo,
         });
 
       const rawTokens = yield* Effect.tryPromise({
@@ -340,9 +373,9 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!tokens?.id_token)
         return yield* reject({
-          status: 502,
-          error: "Identity provider returned no ID token",
+          code: "idp_rejected",
           reason: "sso_rejected",
+          returnTo,
         });
 
       const claims = yield* oidc
@@ -358,33 +391,33 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!claims)
         return yield* reject({
-          status: 400,
-          error: "Identity provider token was rejected",
+          code: "idp_rejected",
           reason: "sso_rejected",
+          returnTo,
         });
 
       if (claims.nonce !== payload.nonce)
         return yield* reject({
-          status: 400,
-          error: "Identity provider nonce did not match",
+          code: "idp_rejected",
           reason: "sso_rejected",
+          returnTo,
         });
       const email = safeEmail(claims);
 
       if (!email)
         return yield* reject({
-          status: 400,
-          error: "Identity provider did not return an email",
+          code: "unknown_account",
           reason: "unknown_account",
+          returnTo,
         });
       const objectId = claims.oid ?? claims.sub;
 
       if (!objectId)
         return yield* reject({
-          status: 400,
-          error: "Identity provider did not return an object id",
+          code: "idp_rejected",
           reason: "sso_rejected",
           email,
+          returnTo,
         });
 
       const identity = yield* db.query.ssoIdentity.findFirst({
@@ -398,11 +431,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       if (identity) {
         if (!user || user.disabled)
           return yield* reject({
-            status: 403,
-            error: "This account is disabled",
+            code: user?.disabled ? "account_disabled" : "unknown_account",
             reason: "disabled",
             accountId: user?.id ?? null,
             email,
+            returnTo,
           });
 
         const member = yield* db.query.member.findFirst({
@@ -411,11 +444,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
         if (!member)
           return yield* reject({
-            status: 403,
-            error: "You are not a member of this tenant",
+            code: "not_a_member",
             reason: "not_member",
             accountId: user.id,
             email,
+            returnTo,
           });
       } else if (user) {
         // Do not auto-link an existing account by email when it belongs to
@@ -426,20 +459,20 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
         if (!member)
           return yield* reject({
-            status: 403,
-            error: "You are not a member of this tenant",
+            code: "not_a_member",
             reason: "not_member",
             accountId: user.id,
             email,
+            returnTo,
           });
 
         if (memberships.length > 1)
           return yield* reject({
-            status: 403,
-            error: "This account belongs to multiple tenants; ask an administrator to link SSO",
+            code: "sso_link_required",
             reason: "sso_rejected",
             accountId: user.id,
             email,
+            returnTo,
           });
 
         // Only a domain the tenant has proven it controls may claim an
@@ -458,12 +491,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
         if (!verifiedDomain)
           return yield* reject({
-            status: 403,
-            error:
-              "This email domain is not verified for this tenant yet; ask an administrator to finish directory sync",
+            code: "domain_not_verified",
             reason: "sso_rejected",
             accountId: user.id,
             email,
+            returnTo,
           });
 
         yield* db.insert(schema.ssoIdentity).ignore().values({
@@ -475,10 +507,10 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       } else {
         if (!config.autoProvision)
           return yield* reject({
-            status: 403,
-            error: "No Mattrax account exists for this email",
+            code: "provisioning_disabled",
             reason: "unknown_account",
             email,
+            returnTo,
           });
         const accountId = id();
         const timestamp = now();
@@ -516,11 +548,11 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
       if (!user || user.disabled)
         return yield* reject({
-          status: 403,
-          error: "This account is disabled",
+          code: user?.disabled ? "account_disabled" : "unknown_account",
           reason: user ? "disabled" : "unknown_account",
           accountId: user?.id ?? null,
           email,
+          returnTo,
         });
       yield* ensureCredential(db, user.id);
 
@@ -533,10 +565,8 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         jti: crypto.randomUUID(),
       });
 
-      const afterSignIn = safeReturnTo(payload.returnTo);
-
       const location = `${options.origin}/sso/complete?token=${encodeURIComponent(assertion)}${
-        afterSignIn ? `&returnTo=${encodeURIComponent(afterSignIn)}` : ""
+        returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ""
       }`;
 
       return HttpServerResponse.empty({
@@ -544,13 +574,15 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         headers: {
           location,
           "cache-control": "no-store",
-          "set-cookie": "__Host-sso_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+          "set-cookie": SSO_STATE_COOKIE_CLEAR,
         },
       });
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logError("Azure SSO callback failed", cause).pipe(
-          Effect.as(json({ error: "Could not complete SSO sign-in" }, 500)),
+          // A defect or an unhandled service failure still lands on the styled
+          // page; the cause stays in the server log.
+          Effect.as(completionFailure(options.origin, "sign_in_failed")),
         ),
       ),
     );

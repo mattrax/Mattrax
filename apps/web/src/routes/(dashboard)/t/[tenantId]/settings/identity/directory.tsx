@@ -7,6 +7,7 @@ import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { Button } from "~/components/ui/button";
+import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure } from "~/lib/bulk-members";
@@ -162,6 +163,32 @@ export default function DirectorySyncPage() {
   }));
 
   type DirectorySyncStatus = Awaited<ReturnType<typeof enterprise.getEntraDirectorySync>>;
+
+  /**
+   * The Entra callback refuses to auto-link an account that belongs to several
+   * tenants. This is the administrator-confirmed version of that link: the
+   * callback finds the directory person's Entra object id here and resolves
+   * the Mattrax account with the same email.
+   */
+  const [linkTarget, setLinkTarget] = createSignal<{
+    id: string;
+    name: string;
+    email: string;
+  } | null>(null);
+
+  const [linkNotice, setLinkNotice] = createSignal<string | null>(null);
+
+  const linkSso = useMutation(() => ({
+    mutationFn: (target: { id: string; name: string; email: string }) =>
+      enterprise.linkDirectoryUserSso(params.tenantId, target.id),
+    onSuccess: (_result, target) => {
+      setLinkTarget(null);
+      setLinkNotice(
+        `${target.name} can now sign in to this tenant with Microsoft Entra single sign-on.`,
+      );
+      void qc.invalidateQueries({ queryKey: enterpriseKeys.directory(params.tenantId) });
+    },
+  }));
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.directorySync(params.tenantId) });
@@ -530,14 +557,48 @@ export default function DirectorySyncPage() {
                               )}
                             </Show>
                           </span>
-                          <span class="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
-                            {user.source}
+                          <span class="flex shrink-0 flex-col items-end gap-1">
+                            <span class="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                              {user.source}
+                            </span>
+                            <Show
+                              when={
+                                writable() && user.source === "entra" && user.externalId
+                                  ? user
+                                  : undefined
+                              }
+                            >
+                              {(linkable) => (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  disabled={linkSso.isPending}
+                                  onClick={() =>
+                                    setLinkTarget({
+                                      id: linkable().id,
+                                      name: linkable().name,
+                                      email: linkable().email,
+                                    })
+                                  }
+                                >
+                                  Link SSO
+                                </Button>
+                              )}
+                            </Show>
                           </span>
                         </div>
                       )}
                     </For>
                   </div>
                 </Show>
+                <Show when={linkNotice()}>
+                  {(notice) => (
+                    <p role="status" class="mt-2 text-[11.5px] text-success-foreground">
+                      {notice()}
+                    </p>
+                  )}
+                </Show>
+                <ErrorText error={linkSso.error} />
               </div>
               <div>
                 <p class="mb-2 text-[12px] font-medium text-foreground">
@@ -618,6 +679,24 @@ export default function DirectorySyncPage() {
         </Show>
         <ErrorText error={addToGroup.error} />
       </Panel>
+
+      <ConfirmDialog
+        open={linkTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setLinkTarget(null);
+        }}
+        title={`Link single sign-on for ${linkTarget()?.name ?? "this directory user"}?`}
+        description={`This links the Microsoft Entra identity imported for ${
+          linkTarget()?.email ?? "this directory user"
+        } to the Mattrax account with the same email. That account must already be a member of this tenant.`}
+        confirmLabel="Link SSO"
+        pending={linkSso.isPending}
+        onConfirm={() => {
+          const target = linkTarget();
+
+          if (target) void linkSso.mutate(target);
+        }}
+      />
     </div>
   );
 }

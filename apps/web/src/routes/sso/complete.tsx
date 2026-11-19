@@ -6,6 +6,7 @@ import { createSignal, onSettled, Show } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
+import { ssoFailureMessage } from "~/lib/sso-completion";
 
 export default function SsoCompletePage() {
   const [searchParams] = useSearchParams();
@@ -13,10 +14,10 @@ export default function SsoCompletePage() {
   const [error, setError] = createSignal<string | null>(null);
   const [mfaPending, setMfaPending] = createSignal(false);
 
+  const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+
   const returnTo = () => {
-    const value = Array.isArray(searchParams.returnTo)
-      ? searchParams.returnTo[0]
-      : searchParams.returnTo;
+    const value = first(searchParams.returnTo);
 
     return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\")
       ? value
@@ -24,11 +25,19 @@ export default function SsoCompletePage() {
   };
 
   onSettled(() => {
-    const token = Array.isArray(searchParams.token) ? searchParams.token[0] : searchParams.token;
+    const token = first(searchParams.token);
+    const failure = ssoFailureMessage(first(searchParams.error));
 
     // The assertion is single-use server-side only once consumed; keep it out
-    // of history and Referer headers in the meantime.
+    // of history and Referer headers in the meantime. A failure code is not a
+    // secret, but it should not survive a reload either.
     if (typeof window !== "undefined") window.history.replaceState(null, "", "/sso/complete");
+
+    if (failure) {
+      setError(failure);
+
+      return;
+    }
 
     if (!token) {
       setError("This sign-in link is missing its token.");

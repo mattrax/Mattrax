@@ -33,6 +33,7 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
+  enterpriseIdentityApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -252,6 +253,7 @@ import {
   RequiredPermission,
   resolveTenantRoleFrom,
 } from "@mattrax/enterprise-identity";
+import { linkDirectoryUserSso as linkDirectoryUserToSso } from "@mattrax/enterprise-backend";
 import {
   createScript,
   deleteScript,
@@ -7654,6 +7656,31 @@ export const createEnterpriseService = ({
           groups: outcome.groups,
           domains: outcome.domains,
         };
+      }),
+    /**
+     * The callback will not auto-link an account that belongs to more than one
+     * tenant. An administrator confirms that link here instead, using the
+     * identity the tenant's own Entra sync recorded on a directory person.
+     */
+    linkDirectoryUserSso: (request, tenantId, directoryUserId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "sso-policy");
+
+        const linked = yield* linkDirectoryUserToSso(db, {
+          organizationId: ctx.organization.id,
+          directoryUserId,
+        });
+
+        // A repeat confirmation of an existing link changes nothing, so it
+        // must not look like a new grant in the tenant audit log.
+        if (linked.created)
+          yield* audit(ctx, "sso.identity_linked", "account", linked.accountId, {
+            directoryUserId,
+            objectId: linked.objectId,
+          });
+
+        return ok;
       }),
     listEntraDomains: (request, tenantId) =>
       Effect.gen(function* () {
@@ -21639,6 +21666,19 @@ export const enterpriseHandlers = (
         service.billingInvoices(request, params.tenantId),
       ),
     );
+
+/**
+ * Identity handlers. Registered against `identityApi`, a group separate from
+ * `EnterpriseApi` so the generated client types stay manageable.
+ */
+export const enterpriseIdentityHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseIdentityApi>,
+) =>
+  handlers.handle("linkDirectoryUserSso", ({ request, params }) =>
+    Effect.flatMap(EnterpriseService, (service) =>
+      service.linkDirectoryUserSso(request, params.tenantId, params.id),
+    ),
+  );
 
 /**
  * Script management handlers. Registered against `scriptApi`, a group separate
