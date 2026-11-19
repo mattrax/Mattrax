@@ -82,6 +82,7 @@ import {
   type WebhookTestResponse,
   type SetDeviceAttributesRequest,
   type PolicyDeliveryInfo,
+  POLICY_SNAPSHOT_ENABLED_KEY,
   POLICY_SNAPSHOT_SCOPES_KEY,
   POLICY_VARIABLE_NOTES,
   policyConfigurationVariableProblem,
@@ -1881,6 +1882,12 @@ export const createEnterpriseService = ({
     policyId: string,
   ) =>
     Effect.gen(function* () {
+      const [policy] = yield* db
+        .select({ enabled: schema.policy.enabled })
+        .from(schema.policy)
+        .where(eq(schema.policy.id, policyId))
+        .limit(1);
+
       const configurations = yield* db
         .select()
         .from(schema.configuration)
@@ -1897,6 +1904,8 @@ export const createEnterpriseService = ({
           configurations.map((configuration) => [configuration.kind, configuration.data]),
         ),
         ...(Object.keys(scopes).length > 0 ? { [POLICY_SNAPSHOT_SCOPES_KEY]: scopes } : {}),
+        // Absence means enabled; only a disabled policy adds the reserved key.
+        ...(policy?.enabled === false ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false } : {}),
       };
 
       // `max(version)` can come from a stale Hyperdrive replica, so the first
@@ -3730,6 +3739,7 @@ export const createEnterpriseService = ({
         name: row.name,
         notes: row.notes,
         priority: row.priority ?? 0,
+        enabled: row.enabled ?? true,
         createdAt: iso(row.createdAt),
         updatedAt: iso(row.updatedAt),
       };
@@ -6839,6 +6849,7 @@ export const createEnterpriseService = ({
                 organizationId: tenantId,
                 name: importString(policy.name, 255)!,
                 notes: policy.notes ?? null,
+                enabled: policy.enabled ?? true,
                 createdAt: timestamp,
                 updatedAt: timestamp,
               });
@@ -6870,6 +6881,9 @@ export const createEnterpriseService = ({
                   ...Object.fromEntries(configurations),
                   ...(Object.keys(scopes).length > 0
                     ? { [POLICY_SNAPSHOT_SCOPES_KEY]: scopes }
+                    : {}),
+                  ...(policy.enabled === false
+                    ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false }
                     : {}),
                 },
                 createdByAccountId: user.id,
@@ -14897,12 +14911,18 @@ export const createEnterpriseService = ({
     createPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body: { name: string; notes?: string | null; priority?: number } = payload;
+        const body: {
+          name: string;
+          notes?: string | null;
+          priority?: number;
+          enabled?: boolean;
+        } = payload;
 
         if (body.priority !== undefined && !Number.isSafeInteger(body.priority))
           return yield* Effect.fail(
             new EnterpriseBadRequest({ message: "Priority must be a whole number" }),
           );
+
         const policyId = id();
         yield* db.insert(schema.policy).values({
           id: policyId,
@@ -14910,10 +14930,14 @@ export const createEnterpriseService = ({
           name: body.name,
           notes: body.notes ?? null,
           priority: body.priority ?? 0,
+          enabled: body.enabled ?? true,
           createdAt: now(),
           updatedAt: now(),
         });
-        yield* audit(ctx, "policy.created", "policy", policyId, { name: body.name });
+        yield* audit(ctx, "policy.created", "policy", policyId, {
+          name: body.name,
+          ...(body.enabled === false ? { enabled: false } : {}),
+        });
         yield* snapshotPolicy(ctx, policyId);
 
         return { id: policyId };
@@ -14970,6 +14994,7 @@ export const createEnterpriseService = ({
           name?: string;
           notes?: string | null;
           priority?: number;
+          enabled?: boolean;
           configurations?: Record<string, Schema.Json>;
           configurationScopes?: Record<string, "device" | "user">;
         } = payload;
@@ -15089,7 +15114,13 @@ export const createEnterpriseService = ({
 
         yield* db
           .update(schema.policy)
-          .set({ name: body.name, notes: body.notes, priority: body.priority, updatedAt: now() })
+          .set({
+            name: body.name,
+            notes: body.notes,
+            priority: body.priority,
+            enabled: body.enabled,
+            updatedAt: now(),
+          })
           .where(eq(schema.policy.id, policyId));
 
         for (const [kind, data] of configurations) {
@@ -15118,6 +15149,7 @@ export const createEnterpriseService = ({
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body),
+          ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
           configurations: Object.keys(body.configurations ?? {}),
           userScopedConfigurations: Object.entries(body.configurationScopes ?? {})
             .filter(([, scope]) => scope === "user")
@@ -15181,7 +15213,8 @@ export const createEnterpriseService = ({
         );
 
         const entries = Object.entries(snapshot).filter(
-          ([kind]) => kind !== POLICY_SNAPSHOT_SCOPES_KEY,
+          ([kind]) =>
+            kind !== POLICY_SNAPSHOT_SCOPES_KEY && kind !== POLICY_SNAPSHOT_ENABLED_KEY,
         );
 
         if (entries.length > 0)
@@ -15198,6 +15231,12 @@ export const createEnterpriseService = ({
               ),
             ),
           );
+
+        // Older snapshots have no state key and are therefore enabled.
+        yield* db
+          .update(schema.policy)
+          .set({ enabled: snapshot[POLICY_SNAPSHOT_ENABLED_KEY] !== false, updatedAt: now() })
+          .where(eq(schema.policy.id, policyId));
         yield* snapshotPolicy(ctx, policyId);
         yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
         // Rollback replaces configurations, so both Apple and Android devices
@@ -16900,6 +16939,7 @@ export const createEnterpriseService = ({
           name: body.name ?? `${source.name} [duplicated]`,
           notes: source.notes,
           priority: source.priority ?? 0,
+          enabled: source.enabled ?? true,
           createdAt: now(),
           updatedAt: now(),
         });
@@ -19460,6 +19500,12 @@ export const enterpriseAttributeHandlers = (
         service.submitEnrollmentAnswers(params.id, payload),
       ),
     )
+    .handle("extractMobileconfig", ({ payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.extractMobileconfig(payload)),
+    )
+    .handle("previewMobileconfig", ({ payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)),
+    )
     .handle("importDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.importDeviceAttributes(request, params.tenantId, payload),
@@ -20608,12 +20654,6 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) =>
         service.duplicatePolicy(request, params.tenantId, params.id, payload),
       ),
-    )
-    .handle("extractMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.extractMobileconfig(payload)),
-    )
-    .handle("previewMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)),
     )
     .handle("billing", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.billing(request, params.tenantId)),

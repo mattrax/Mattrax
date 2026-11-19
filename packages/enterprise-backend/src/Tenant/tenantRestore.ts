@@ -1,6 +1,7 @@
 import { Data, Effect, Option, Schema } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import {
+  POLICY_SNAPSHOT_ENABLED_KEY,
   POLICY_SNAPSHOT_SCOPES_KEY,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
@@ -77,6 +78,8 @@ type ParsedBundle = {
     key: string;
     name: string;
     notes: string | null;
+    /** Absent means enabled, matching backups made before the flag existed. */
+    enabled?: boolean;
     configurations: ReadonlyArray<readonly [string, Schema.Json]>;
     configurationScopes: Readonly<Record<string, "device" | "user">>;
   }>;
@@ -319,6 +322,7 @@ export const parseTenantRestoreBundle = (
         key,
         name: policyName,
         notes: text(policy.notes, 10_000),
+        ...(policy.enabled === false ? { enabled: false } : {}),
         configurations: entries,
         configurationScopes: scopes,
       });
@@ -772,6 +776,7 @@ const applyBundle = (
             organizationId: organization.id,
             name: policy.name,
             notes: policy.notes,
+            enabled: policy.enabled ?? true,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -802,6 +807,7 @@ const applyBundle = (
               ...(Object.keys(policy.configurationScopes).length > 0
                 ? { [POLICY_SNAPSHOT_SCOPES_KEY]: policy.configurationScopes }
                 : {}),
+              ...(policy.enabled === false ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false } : {}),
             },
             createdByAccountId: actor.accountId,
             createdAt: timestamp,

@@ -13,13 +13,20 @@ import { Schema } from "effect";
 import { SetDeviceAttributesRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
+import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
+import { HttpApiSchema } from "effect/http-api";
+import { MobileconfigPreview } from "../Policy.js";
 import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantParam } from "./Params.js";
+
+const MobileconfigRequest = Schema.Struct({ mobileconfig: Schema.String });
+
+const MobileconfigExtractResponse = Schema.Struct({ plist: Schema.String });
 
 export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
   .add(
@@ -72,6 +79,23 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: PolicyVariablesResponse,
+    }),
+  )
+  .add(
+    // Mobileconfig utilities live in this group rather than `EnterpriseApi`:
+    // that group's generated declaration is already at the compiler's size
+    // limit, and these endpoints are stateless policy helpers.
+    HttpApiEndpoint.post("extractMobileconfig", "/v1/policy/extract-mobileconfig", {
+      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      payload: MobileconfigRequest,
+      success: MobileconfigExtractResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
+      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      payload: MobileconfigRequest,
+      success: MobileconfigPreview,
     }),
   )
   .add(

@@ -157,6 +157,28 @@ export const policyDeliverySortRank = (state: PolicyDeliveryState | undefined) =
   state === undefined ? Number.MAX_SAFE_INTEGER : sortRank[state];
 
 /**
+ * A policy is enabled unless the API explicitly says otherwise. Older
+ * responses predate the flag, so an absent value must not disable a policy.
+ */
+export const isPolicyEnabled = (policy: { readonly enabled?: boolean }) =>
+  policy.enabled !== false;
+
+/** Label, tone and explanation for a policy's enable/disable state. */
+export const policyStatePresentation = (policy: { readonly enabled?: boolean }) =>
+  isPolicyEnabled(policy)
+    ? {
+        label: "Enabled",
+        tone: "success" as const,
+        description: "The policy's settings are delivered to devices in its scope.",
+      }
+    : {
+        label: "Disabled",
+        tone: "warning" as const,
+        description:
+          "Delivery is paused and the policy's settings have been withdrawn from devices. Its configuration and assignments are kept; enabling it deploys them again.",
+      };
+
+/**
  * Scope tooltip for the device and user counts. The device number is the
  * distinct device set after group and direct exclusions; the user number is
  * the directory users that still contribute after user/group exclusions.

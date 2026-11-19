@@ -81,12 +81,24 @@ export type ConfigurationScope = typeof ConfigurationScope.Type;
  */
 export const POLICY_SNAPSHOT_SCOPES_KEY = "@@scopes";
 
+/**
+ * Reserved key in a policy deployment snapshot that records a disabled policy.
+ * Old snapshots omit it, and a `true` value is never written, so absence means
+ * enabled.
+ */
+export const POLICY_SNAPSHOT_ENABLED_KEY = "@@enabled";
+
 export const PolicyRow = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
   /** Higher wins when policies provide the same configuration kind. */
   priority: Schema.Number,
+  /**
+   * Disabled policies keep their configuration and assignments but deliver
+   * nothing. Responses that predate the flag omit it and are enabled.
+   */
+  enabled: Schema.optional(Schema.Boolean),
   configurations: Schema.optional(JsonRecord),
   /** Delivery scope per configuration kind. Missing entries are `device`. */
   configurationScopes: Schema.optional(Schema.Record(Schema.String, ConfigurationScope)),
@@ -121,12 +133,19 @@ export const CreatePolicyRequest = Schema.Struct({
   notes: Schema.optional(NullableString),
   /** Higher wins when included policies provide the same configuration kind. */
   priority: Schema.optional(Schema.Number),
+  /** Defaults to enabled. */
+  enabled: Schema.optional(Schema.Boolean),
 });
 
 export const PatchPolicyRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   priority: Schema.optional(Schema.Number),
+  /**
+   * Disabling withdraws the policy's settings from scoped devices without
+   * deleting its configuration or assignments. Omitted leaves the state alone.
+   */
+  enabled: Schema.optional(Schema.Boolean),
   configurations: Schema.optional(JsonRecord),
   /**
    * Delivery scope per configuration kind. Omitting the map leaves the stored

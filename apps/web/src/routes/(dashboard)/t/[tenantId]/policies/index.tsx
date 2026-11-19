@@ -25,9 +25,11 @@ import { ShieldCheck } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import {
+  isPolicyEnabled,
   policyDeliveryPresentation,
   policyDeliverySortRank,
   policyScopePresentation,
+  policyStatePresentation,
 } from "~/lib/policy-delivery";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
@@ -221,13 +223,24 @@ export default function PoliciesPage() {
             search: (row) => `${row.name} ${row.notes ?? ""}`,
             cell: (row) => (
               <span class="block min-w-0">
-                <EntityHoverCard
-                  preview={{ kind: "policy", policy: row }}
-                  href={routes.tenant(params.tenantId).policy(row.id)}
-                  class="block truncate font-medium hover:underline"
-                >
-                  {row.name}
-                </EntityHoverCard>
+                <span class="flex min-w-0 items-center gap-1.5">
+                  <EntityHoverCard
+                    preview={{ kind: "policy", policy: row }}
+                    href={routes.tenant(params.tenantId).policy(row.id)}
+                    class="block min-w-0 truncate font-medium hover:underline"
+                  >
+                    {row.name}
+                  </EntityHoverCard>
+                  <Show when={!isPolicyEnabled(row)}>
+                    <Badge
+                      variant={policyStatePresentation(row).tone}
+                      dot="warning"
+                      title={policyStatePresentation(row).description}
+                    >
+                      Disabled
+                    </Badge>
+                  </Show>
+                </span>
                 <Show when={row.notes}>
                   <span class="mt-0.5 block max-w-[38ch] truncate text-[11px] text-muted-foreground">
                     {row.notes}

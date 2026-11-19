@@ -1206,7 +1206,7 @@ export const enterprise = {
     ),
   createPolicy: (
     tenantId: RouteParam,
-    payload: { name: string; notes?: string | null; priority?: number },
+    payload: { name: string; notes?: string | null; priority?: number; enabled?: boolean },
   ) =>
     endpoint((api) =>
       api.createPolicy({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -1215,7 +1215,10 @@ export const enterprise = {
     tenantId: RouteParam,
     id: RouteParam,
     payload: Partial<
-      Pick<PolicyRow, "name" | "notes" | "configurations" | "configurationScopes" | "priority">
+      Pick<
+        PolicyRow,
+        "name" | "notes" | "configurations" | "configurationScopes" | "priority" | "enabled"
+      >
     >,
   ) =>
     endpoint((api) =>
@@ -1650,9 +1653,9 @@ export const enterprise = {
       api.syncPolicies({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
   previewMobileconfig: (mobileconfig: string) =>
-    endpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
+    attributeEndpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
   extractMobileconfig: (mobileconfig: string) =>
-    endpoint((api) => api.extractMobileconfig({ payload: { mobileconfig } })),
+    attributeEndpoint((api) => api.extractMobileconfig({ payload: { mobileconfig } })),
   getApns: (tenantId: RouteParam) =>
     endpoint((api) => api.getApns({ params: { tenantId: required(tenantId, "tenantId") } })),
   getAppleBusinessManager: (

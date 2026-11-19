@@ -82,6 +82,8 @@ export const TenantExportPolicy = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
   notes: Schema.optional(NullableString),
+  /** Absent means enabled, so backups made before the flag restore enabled. */
+  enabled: Schema.optional(Schema.Boolean),
   /** Configuration kind mapped to its stored JSON payload. */
   configurations: Schema.optional(JsonRecord),
   /** Non-default delivery scope per configuration kind. */

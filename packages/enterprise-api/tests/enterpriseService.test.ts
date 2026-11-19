@@ -1823,6 +1823,71 @@ describe("enterprise service policy flow", () => {
     });
   });
 
+  it("disables and re-enables a policy without dropping its configuration", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: true });
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, { enabled: false }),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: false });
+    // The configuration survives a disable; only delivery stops.
+    expect(db.store.configuration).toHaveLength(1);
+
+    const disabled = await runEffect(
+      service.getPolicy(request(headers), tenant.id, policy.id),
+    );
+
+    expect(disabled).toMatchObject({
+      enabled: false,
+      configurations: { "mttx.apple.device": { camera: false } },
+    });
+
+    expect(db.store.policy_deployment.at(-1)?.snapshot).toMatchObject({ "@@enabled": false });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "policy.updated",
+      targetId: policy.id,
+      metadata: { enabled: false },
+    });
+
+    const list = await runEffect(service.listPolicies(request(headers), tenant.id));
+
+    expect(list.rows[0]).toMatchObject({ enabled: false, configurationCount: 1 });
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, { enabled: true }),
+    );
+
+    expect(db.store.policy[0]).toMatchObject({ enabled: true });
+
+    const enabled = await runEffect(
+      service.getPolicy(request(headers), tenant.id, policy.id),
+    );
+
+    expect(enabled).toMatchObject({ enabled: true });
+    expect(db.store.policy_deployment.at(-1)?.snapshot).not.toHaveProperty("@@enabled");
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "policy.updated",
+      metadata: { enabled: true },
+    });
+  });
+
   it("rejects patching policies outside the tenant", async () => {
     const { db, service, headers } = await makeContext();
 
