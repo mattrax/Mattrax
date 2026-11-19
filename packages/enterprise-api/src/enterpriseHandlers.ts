@@ -33,6 +33,7 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
+  enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
   TENANT_EXPORT_MAX_ROWS,
@@ -99,11 +100,16 @@ import {
   authIdentifiers,
   authPending,
   authSessions,
+  countWindowsFailures,
   deviceLimitForOrganization,
   hasMfaFactor,
+  listWindowsFailuresForDevice,
+  listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
   tenantLimitForAccount,
+  WINDOWS_FAILURE_RETENTION_DAYS,
   type PlanLimitsConfig,
+  type WindowsFailureRow,
 } from "@mattrax/enterprise-core";
 import {
   and,
@@ -539,6 +545,12 @@ export type EnterpriseHandlersConfig = {
    * leave it unconfigured) to keep every plan unlimited.
    */
   readonly planLimits?: PlanLimitsConfig;
+  /**
+   * Windows failure-history retention window used by the delivery panel.
+   * Defaults to `WINDOWS_FAILURE_RETENTION_DAYS`; `0` keeps history forever.
+   * Maintenance must be configured with the same value.
+   */
+  readonly windowsFailureRetentionDays?: number;
   /**
    * Deployment identity used to CMS-sign Apple enrollment profile downloads.
    * This is an explicit self-hosted override. When it is omitted, each tenant's
@@ -1383,11 +1395,15 @@ export const createEnterpriseService = ({
   webhookFetch,
   webhookTimeoutMs,
   planLimits,
+  windowsFailureRetentionDays: configuredWindowsFailureRetentionDays,
   appleProfileSigning,
   analytics,
   enrollmentProfileTtlSeconds: configuredEnrollmentProfileTtlSeconds,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
+  const windowsFailureRetentionDays =
+    configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
 
   const enrollmentProfileTtlSeconds = normalizeEnrollmentProfileTtlSeconds(
     configuredEnrollmentProfileTtlSeconds,
@@ -3146,6 +3162,24 @@ export const createEnterpriseService = ({
       revertedAt: row.windowsPolicyRevertedAt ? iso(row.windowsPolicyRevertedAt) : null,
     };
   };
+
+  /**
+   * One recorded Windows fault, in the shape the device page and delivery
+   * diagnostics render. `at` is the only date field; everything else is already
+   * bounded and redacted by the recorder.
+   */
+  const windowsFailureInfo = (row: WindowsFailureRow) => ({
+    id: row.id,
+    deviceId: row.deviceId,
+    deviceIdentifier: row.deviceIdentifier,
+    serial: row.serial,
+    hostname: row.hostname,
+    phase: row.phase,
+    code: row.code,
+    message: row.message,
+    detail: row.detail,
+    at: iso(row.createdAt),
+  });
 
   /** A random Recovery Lock password the operator can read back from the device page. */
   const recoveryLockPassword = () =>
@@ -14487,6 +14521,45 @@ export const createEnterpriseService = ({
 
         return { counts: summarizeApplePushHealth(appleRows), recentFailures };
       }),
+    listWindowsFailures: (request, tenantId, query = {}) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        // A device filter is tenant-scoped before it is used, so guessing a
+        // device id cannot read another tenant's history.
+        if (query.deviceId) {
+          const device = yield* db.query.device.findFirst({
+            where: { id: query.deviceId, organizationId: ctx.organization.id },
+          });
+
+          if (!device)
+            return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        }
+
+        const [count, failures] = yield* Effect.all(
+          [
+            countWindowsFailures(db, {
+              organizationId: ctx.organization.id,
+              deviceId: query.deviceId,
+              retentionDays: windowsFailureRetentionDays,
+            }),
+            query.deviceId
+              ? listWindowsFailuresForDevice(db, {
+                  organizationId: ctx.organization.id,
+                  deviceId: query.deviceId,
+                  limit: query.limit,
+                })
+              : listWindowsFailuresForOrganization(db, ctx.organization.id, query.limit),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        return {
+          retentionDays: windowsFailureRetentionDays,
+          count,
+          failures: failures.map(windowsFailureInfo),
+        };
+      }),
     getCredentialHealth: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -19458,6 +19531,15 @@ export const enterpriseDashboardHandlers = (
   handlers.handle("queryDashboardBatch", ({ request, params, payload }) =>
     Effect.flatMap(EnterpriseService, (service) =>
       service.queryDashboardBatch(request, params.tenantId, payload),
+    ),
+  );
+
+export const enterpriseWindowsHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseWindowsApi>,
+) =>
+  handlers.handle("listWindowsFailures", ({ request, params, query }) =>
+    Effect.flatMap(EnterpriseService, (service) =>
+      service.listWindowsFailures(request, params.tenantId, query),
     ),
   );
 

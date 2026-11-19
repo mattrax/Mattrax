@@ -127,6 +127,61 @@ export const WindowsPolicyInfo = Schema.Struct({
 
 export type WindowsPolicyInfo = typeof WindowsPolicyInfo.Type;
 
+/** Where in the Windows protocol a recorded failure happened. */
+export const WindowsFailurePhase = Schema.Literals([
+  "discovery",
+  "wstep",
+  "enrollment",
+  "policy",
+  "command",
+]);
+
+export type WindowsFailurePhase = typeof WindowsFailurePhase.Type;
+
+/**
+ * One failed Windows enrollment or management request.
+ *
+ * `deviceId` is absent when the failure happened before a device row existed
+ * (a first enrollment that never completed); `deviceIdentifier` then carries
+ * the Windows `DeviceID` the client asserted, if it got that far.
+ */
+export const WindowsMdmFailure = Schema.Struct({
+  id: Schema.String,
+  deviceId: Schema.optional(NullableString),
+  deviceIdentifier: Schema.optional(NullableString),
+  serial: Schema.optional(NullableString),
+  hostname: Schema.optional(NullableString),
+  phase: WindowsFailurePhase,
+  /** Stable machine-readable cause, e.g. `certificate_signing_failed`. */
+  code: Schema.String,
+  message: Schema.String,
+  /** Optional diagnostic text (internal error, OMA-URI). */
+  detail: Schema.optional(NullableString),
+  at: Schema.String,
+});
+
+export type WindowsMdmFailure = typeof WindowsMdmFailure.Type;
+
+/** Tenant-level Windows failure rollup shown in Settings → Delivery. */
+export const WindowsFailureQuery = Schema.Struct({
+  /** Restrict to one device row; omitted means the whole tenant. */
+  deviceId: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+});
+
+export type WindowsFailureQuery = typeof WindowsFailureQuery.Type;
+
+export const WindowsFailureListResponse = Schema.Struct({
+  /** Retained window in days; `0` means history is kept forever. */
+  retentionDays: Schema.Number,
+  /** Failures inside the retention window, using the same scope as `failures`. */
+  count: Schema.Number,
+  /** Newest first. */
+  failures: Schema.Array(WindowsMdmFailure),
+});
+
+export type WindowsFailureListResponse = typeof WindowsFailureListResponse.Type;
+
 export const WindowsDeviceInfo = Schema.Struct({
   security: WindowsSecurityInfo,
   policy: WindowsPolicyInfo,

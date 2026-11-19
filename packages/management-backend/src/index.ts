@@ -5,16 +5,28 @@ export class ManagementNotSupported extends Schema.TaggedError<ManagementNotSupp
   {},
 ) {}
 
-export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {}) {}
+/**
+ * The device, tenant or certificate could not be resolved.
+ *
+ * `recorded` is set by the Windows backend when the same fault has already been
+ * written to the durable failure history, so the protocol layer does not append
+ * a duplicate row for an unattributable failure it knows nothing about.
+ */
+export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {
+  recorded: Schema.optional(Schema.Boolean),
+}) {}
 
 export class ServerInitiatedUnenrollment extends Schema.TaggedError<ServerInitiatedUnenrollment>()(
   "ServerInitiatedUnenrollment",
   {},
 ) {}
 
+/** A backend-side failure; `recorded` has the same meaning as on `UnknownDevice`. */
 export class InternalServerError extends Schema.TaggedError<InternalServerError>()(
   "InternalServerError",
-  {},
+  {
+    recorded: Schema.optional(Schema.Boolean),
+  },
 ) {}
 
 export class MdmOrigin extends Schema.Class<MdmOrigin>("MdmOrigin")({
@@ -329,6 +341,41 @@ export const WindowsDeviceEvent = Schema.Union([
 
 export type WindowsDeviceEvent = typeof WindowsDeviceEvent.Type;
 
+/** Where in the Windows protocol a failed request stopped. */
+export const WindowsFailurePhase = Schema.Literals([
+  "discovery",
+  "wstep",
+  "enrollment",
+  "policy",
+  "command",
+]);
+
+export type WindowsFailurePhase = typeof WindowsFailurePhase.Type;
+
+/**
+ * A protocol-level Windows fault reported by the SOAP/SyncML layer.
+ *
+ * Those failures (a malformed envelope, a missing security token, an
+ * unparseable SyncML body) happen above the management backend, so the HTTP
+ * layer hands the request context back for tenant/device attribution. The
+ * backend only records it; the SOAP fault returned to the device is unchanged.
+ */
+export const WindowsFailureReport = Schema.Struct({
+  phase: WindowsFailurePhase,
+  /** Stable machine-readable cause, e.g. `missing_token`. */
+  code: Schema.String,
+  /** Curated, already-redacted reason; the recorder bounds it again. */
+  message: Schema.String,
+  detail: Schema.optional(Schema.String),
+  tenantToken: Schema.optional(Schema.String),
+  identityCertificate: Schema.optional(Schema.String),
+  identityCertificateSerial: Schema.optional(Schema.String),
+  /** Windows `DeviceID` the request asserted, when it got that far. */
+  deviceId: Schema.optional(Schema.String),
+});
+
+export type WindowsFailureReport = typeof WindowsFailureReport.Type;
+
 export declare namespace ManagementBackend {
   export type Service = {
     // Device lifecycle and protocol events (device-initiated)
@@ -433,6 +480,12 @@ export declare namespace ManagementBackend {
       scope: WindowsManagementScope,
       event: WindowsDeviceEvent,
     ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    /**
+     * Persist a fault that never reached the Windows backend (bad SOAP/SyncML).
+     * Optional so protocol adapters without a database (the compliance harness)
+     * keep working; the fault response is never affected.
+     */
+    readonly windowsRecordFailure?: (report: WindowsFailureReport) => Effect.Effect<void>;
   };
 }
 

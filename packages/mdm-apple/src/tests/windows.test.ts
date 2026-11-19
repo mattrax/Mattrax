@@ -29,7 +29,12 @@ import {
   WINDOWS_POLICY_REPLACE_REQUEST_TYPE,
   WINDOWS_UNENROLL_REQUEST_TYPE,
 } from "@mattrax/mdm-windows";
-import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
+import {
+  parsePlanLimits,
+  pruneWindowsFailures,
+  recordWindowsFailure,
+  schema,
+} from "@mattrax/enterprise-core";
 import type { Row } from "./fake-db.js";
 
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
@@ -1935,5 +1940,312 @@ describe("Windows partial application inventory", () => {
     );
 
     expect(row).toMatchObject({ status: "failed", resultStatus: "404" });
+  });
+});
+
+describe("Windows failure history", () => {
+  const failures = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schema.windowsFailure));
+
+  it("records a rejected enrollment when Windows is disabled for the tenant", async () => {
+    const { backend, db } = await setup();
+
+    const enrollment = db.store[tableName(schema.enterpriseEnrollment)]!.find(
+      (row) => row.organizationId === "org-early",
+    )!;
+
+    enrollment.enabledWindows = false;
+
+    // Policy still issues a WSTEP token; the enrollment step is what refuses.
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr()))),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "enrollment",
+        code: "windows_disabled",
+        deviceIdentifier: "device-1",
+        hostname: "DESKTOP-TEST",
+        deviceId: null,
+      }),
+    ]);
+  });
+
+  it("records a WSTEP failure when the certificate request cannot be signed", async () => {
+    const { backend, db } = await setup();
+
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, "not-a-csr"))),
+    ).rejects.toMatchObject({ _tag: "InternalServerError" as const });
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "wstep",
+        code: "certificate_signing_failed",
+        deviceIdentifier: "device-1",
+      }),
+    ]);
+    // No partial device row: certificate issuance failed before registration.
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(0);
+  });
+
+  it("records a management failure for a device that is not enrolled", async () => {
+    const { backend, db } = await setup();
+
+    await expect(
+      run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-unknown", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-unknown",
+            target: origin,
+            statuses: [],
+            alerts: [],
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "command",
+        code: "unknown_device",
+        deviceIdentifier: "device-unknown",
+      }),
+    ]);
+  });
+
+  it("records a device event failure that the check-in did not cover", async () => {
+    const { backend, db } = await setup();
+
+    await expect(
+      run(
+        backend.windowsDeviceEvent(
+          { deviceId: "missing-device", mdmOrigin },
+          { _tag: "CommandResult" as const, deviceId: "missing-device", status: "200" },
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "command",
+        code: "unknown_device",
+        deviceIdentifier: "missing-device",
+      }),
+    ]);
+  });
+
+  it("coalesces identical faults recorded within the window", async () => {
+    const { db } = await setup();
+
+    const input = {
+      organizationId: "org-early",
+      phase: "enrollment" as const,
+      code: "windows_disabled",
+      message: "Windows enrollment is disabled for this tenant.",
+      deviceIdentifier: "device-1",
+    };
+
+    // SAFETY: the fake store implements the select/insert chains the recorder uses.
+    const enterpriseDb = db as any;
+
+    await run(recordWindowsFailure(enterpriseDb, input));
+    await run(recordWindowsFailure(enterpriseDb, input));
+
+    expect(failures(db)).toHaveLength(1);
+
+    // A different code (or device) is a different fault and is kept.
+    await run(
+      recordWindowsFailure(enterpriseDb, {
+        ...input,
+        code: "device_limit_reached",
+      }),
+    );
+    expect(
+      failures(db)
+        .map((row) => row.code)
+        .sort(),
+    ).toEqual(["device_limit_reached", "windows_disabled"]);
+
+    // A fault outside the coalescing window appends a new row.
+    await run(
+      recordWindowsFailure(enterpriseDb, input, {
+        now: new Date(Date.now() + 5 * 60 * 1_000),
+      }),
+    );
+    expect(failures(db)).toHaveLength(3);
+  });
+
+  it("does not attribute a failure when no tenant can be resolved", async () => {
+    const { backend, db } = await setup({ windowsOrganizationId: null });
+
+    await expect(
+      run(
+        backend.windowsDiscovery({
+          requestVersion: "5.0",
+          deviceType: "CIMClient_Windows",
+          applicationVersion: "10.0",
+          osEdition: 48,
+          authPolicies: ["OnPremise"],
+          mdmOrigin,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+
+    expect(failures(db)).toHaveLength(0);
+  });
+
+  it("attributes a protocol fault through the signed tenant token", async () => {
+    const { backend, db } = await setup();
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+
+    await run(
+      backend.windowsRecordFailure!({
+        phase: "policy",
+        code: "missing_token",
+        message: "Missing binary security token",
+        tenantToken,
+      }),
+    );
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "policy",
+        code: "missing_token",
+        deviceId: null,
+      }),
+    ]);
+  });
+
+  it("attributes a protocol fault through the certificate when the URL token has expired", async () => {
+    const { backend, db } = await setup();
+
+    const expiredToken = await createWindowsTenantToken("org-early", authSecret, {
+      now: Date.now() - 8 * 24 * 60 * 60 * 1000,
+    });
+
+    await run(
+      backend.windowsRecordFailure!({
+        phase: "command",
+        code: "invalid_syncml",
+        message: "Invalid SyncML request",
+        tenantToken: expiredToken,
+        identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+      }),
+    );
+
+    expect(failures(db)).toEqual([
+      expect.objectContaining({
+        organizationId: "org-early",
+        phase: "command",
+        code: "invalid_syncml",
+        deviceIdentifier: "device-1",
+      }),
+    ]);
+  });
+
+  it("drops a protocol fault whose tenant token cannot be verified", async () => {
+    const { backend, db } = await setup({ windowsOrganizationId: null });
+
+    await run(
+      backend.windowsRecordFailure!({
+        phase: "enrollment",
+        code: "invalid_request",
+        message: "Invalid enrollment request",
+        tenantToken: "not-a-signed-token",
+      }),
+    );
+
+    expect(failures(db)).toHaveLength(0);
+  });
+
+  it("redacts certificate material and bounds a stored diagnostic", async () => {
+    const db = makeDb();
+
+    await run(
+      // SAFETY: the fake store implements the insert chain this recorder uses.
+      recordWindowsFailure(db as any, {
+        organizationId: "org-early",
+        phase: "wstep",
+        code: "certificate signing failed!",
+        message: "m".repeat(900),
+        detail:
+          "-----BEGIN CERTIFICATE-----\nMIIBc2VjcmV0\n-----END CERTIFICATE----- contact admin@example.com " +
+          "A".repeat(80),
+      }),
+    );
+
+    const [row] = failures(db);
+
+    expect(row!.code).toBe("certificate_signing_failed_");
+    expect(String(row!.message)).toHaveLength(500);
+    expect(row!.detail).toContain("[certificate]");
+    expect(row!.detail).toContain("[email]");
+    expect(row!.detail).toContain("[redacted]");
+    expect(row!.detail).not.toContain("BEGIN CERTIFICATE");
+    expect(row!.detail).not.toContain("admin@example.com");
+    expect(String(row!.detail).length).toBeLessThanOrEqual(1_000);
+  });
+
+  it("never throws when the diagnostic insert fails", async () => {
+    const db = {
+      insert: () => {
+        throw new Error("database is down");
+      },
+    };
+
+    await expect(
+      run(
+        // SAFETY: only `insert` is reached; it throws before any query typing matters.
+        recordWindowsFailure(db as any, {
+          organizationId: "org-early",
+          phase: "command",
+          code: "request_failed",
+          message: "Windows request failed.",
+        }),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("prunes records outside the retention window", async () => {
+    const now = new Date("2026-01-31T00:00:00Z");
+    const old = new Date("2025-12-01T00:00:00Z");
+
+    const db = makeDb({
+      [tableName(schema.windowsFailure)]: [
+        {
+          id: "old",
+          organizationId: "org-early",
+          phase: "enrollment",
+          code: "windows_disabled",
+          message: "Old",
+          createdAt: old,
+        },
+        {
+          id: "new",
+          organizationId: "org-early",
+          phase: "command",
+          code: "unknown_device",
+          message: "New",
+          createdAt: now,
+        },
+      ],
+    });
+
+    await expect(
+      // SAFETY: the fake store implements the select/delete chains the prune uses.
+      run(pruneWindowsFailures(db as any, { now, retentionDays: 30 })),
+    ).resolves.toBe(1);
+    expect(failures(db).map((row) => row.id)).toEqual(["new"]);
   });
 });

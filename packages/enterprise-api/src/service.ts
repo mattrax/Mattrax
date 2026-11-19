@@ -30,6 +30,11 @@ export type EnterpriseServiceOptions = {
   readonly appleApi?: AppleApiConfig;
   /** Deployment plan catalogue; omit for unlimited plans. */
   readonly planLimits?: PlanLimitsConfig;
+  /**
+   * Retention window for the Windows failure history shown in Settings →
+   * Delivery. Defaults to the maintenance default; `0` means kept forever.
+   */
+  readonly windowsFailureRetentionDays?: number;
   /** Stripe price for the per-device plan; enables Checkout and seat sync. */
   readonly deviceMonthlyPriceId?: string;
   /**
@@ -112,6 +117,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           android: options.android,
           appleApi: options.appleApi,
           planLimits: options.planLimits,
+          windowsFailureRetentionDays: options.windowsFailureRetentionDays,
           analytics: options.analytics,
           email: options.email,
           invitationFromEmail: options.invitationFromEmail,

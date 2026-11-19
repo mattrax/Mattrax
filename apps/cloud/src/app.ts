@@ -12,6 +12,7 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
+  enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
@@ -24,6 +25,7 @@ import {
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
   enterpriseHandlers,
+  enterpriseWindowsHandlers,
   mcpOAuthRoutes,
   scriptAgentHandlers,
   scriptHandlers,
@@ -182,6 +184,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
+  .add(enterpriseWindowsApi)
   .add(scriptApi)
   .add(scriptAgentApi)
   .add(authHttp)
@@ -239,6 +242,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
@@ -386,6 +390,13 @@ const parseDayCount = (value: string | undefined, fallback: number) => {
 
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 };
+
+/**
+ * Windows enrollment/management failure diagnostics are kept for the same
+ * window by the delivery panel and the daily prune, so the count an operator
+ * sees is what maintenance actually retains.
+ */
+const windowsFailureRetentionDays = 30;
 
 const optionalIsoDate = (value: string | undefined) => {
   if (!value) return null;
@@ -742,6 +753,8 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
         : undefined,
       android: androidConfig,
       planLimits,
+      // Match the delivery panel's "in N days" window to what maintenance keeps.
+      windowsFailureRetentionDays,
       // Checkout and seat reconciliation need the per-device price; both
       // report a configuration error when it is absent.
       deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
@@ -1400,6 +1413,7 @@ export const createApiRuntime = (
           runMaintenance({
             staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
             auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
+            windowsFailureRetentionDays,
             // Outbound webhook retries need the same secret used to seal endpoint
             // secrets; retention/pruning runs regardless.
             webhookAuthSecret: apiEnv.AUTH_SECRET,

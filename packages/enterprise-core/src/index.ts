@@ -31,6 +31,21 @@ export {
 } from "./deviceApplications.ts";
 
 export {
+  WINDOWS_FAILURE_DETAIL_LIMIT,
+  WINDOWS_FAILURE_MESSAGE_LIMIT,
+  WINDOWS_FAILURE_RETENTION_DAYS,
+  countWindowsFailures,
+  describeWindowsFailure,
+  listWindowsFailuresForDevice,
+  listWindowsFailuresForOrganization,
+  pruneWindowsFailures,
+  recordWindowsFailure,
+  type WindowsFailureInput,
+  type WindowsFailurePhase,
+  type WindowsFailureRow,
+} from "./windowsFailures.ts";
+
+export {
   R2,
   R2_IMMUTABLE_CACHE_CONTROL,
   R2_PRIVATE_CACHE_CONTROL,

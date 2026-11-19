@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer, Predicate, Schema } from "effect";
+import { Cause, Context, Data, Effect, Layer, Predicate, Schema } from "effect";
 import {
   deserializeSoapElement,
   extractSoapBody,
@@ -19,6 +19,7 @@ import {
 import {
   ManagementBackend,
   MdmOrigin,
+  type WindowsFailurePhase,
   type WindowsManagementScope,
 } from "@mattrax/management-backend";
 import {
@@ -38,6 +39,12 @@ import {
 export class WindowsMdmError extends Data.TaggedError("WindowsMdmError")<{
   message: string;
   cause?: unknown;
+  /** Where the fault happened, when it is more specific than the endpoint. */
+  phase?: WindowsFailurePhase;
+  /** Stable code for the recorded failure history. */
+  code?: string;
+  /** The backend wrote this failure to its durable history. */
+  recorded?: boolean;
 }> {}
 
 /**
@@ -177,17 +184,83 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
        * `UnknownDevice` covers an invalid/expired tenant token as well as an
        * unknown device. Give the operator a concrete recovery step instead of
        * leaking the generic backend error into the SOAP fault.
+       *
+       * A backend failure carries whether it was written to the durable
+       * history, so an unattributable failure is still recorded here.
        */
+      const backendRecorded = (cause: unknown): boolean =>
+        Schema.is(Schema.Struct({ recorded: Schema.optional(Schema.Boolean) }))(cause)
+          ? cause.recorded === true
+          : false;
+
       const backendError = (message: string, cause: unknown) => {
+        const recorded = backendRecorded(cause);
+
         if (Predicate.isTagged(cause, "UnknownDevice"))
           return new WindowsMdmError({
             message:
               "This Windows enrollment link is invalid or has expired. Open a fresh enrollment link from the tenant's enrollment page.",
             cause,
+            code: "unknown_device",
+            recorded,
           });
 
-        return new WindowsMdmError({ message, cause });
+        return new WindowsMdmError({
+          message,
+          cause,
+          code: Predicate.isTagged(cause, "InternalServerError") ? "internal_error" : undefined,
+          recorded,
+        });
       };
+
+      /**
+       * Persist a fault the backend never wrote. Never affects the response and
+       * never throws: the fault the device receives is already decided.
+       */
+      const recordFault = (
+        phase: WindowsFailurePhase,
+        context: WindowsMdmRequestContext,
+        cause: Cause.Cause<unknown>,
+        fallbackMessage: string,
+        deviceId?: string,
+      ) =>
+        Effect.suspend(() => {
+          const record = backend.windowsRecordFailure;
+
+          // A shutdown or client abort is not a Windows failure.
+          if (!record || Cause.hasInterruptsOnly(cause)) return Effect.void;
+
+          let error: unknown;
+
+          try {
+            error = Cause.squash(cause);
+          } catch {
+            error = undefined;
+          }
+
+          const mdmError = error instanceof WindowsMdmError ? error : undefined;
+
+          if (mdmError?.recorded) return Effect.void;
+
+          const code =
+            mdmError?.code ??
+            (Predicate.isTagged(error, "UnknownDevice")
+              ? "unknown_device"
+              : Predicate.isTagged(error, "InternalServerError")
+                ? "internal_error"
+                : "soap_fault");
+
+          return record({
+            phase: mdmError?.phase ?? phase,
+            code,
+            message: mdmError?.message.trim() || fallbackMessage,
+            detail: mdmError?.cause === undefined ? undefined : String(mdmError.cause),
+            tenantToken: context.tenantToken,
+            identityCertificate: context.identityCertificate,
+            identityCertificateSerial: context.identityCertificateSerial,
+            deviceId,
+          }).pipe(Effect.catchCause(() => Effect.void));
+        });
 
       const envelope = (body: string, relatesTo: string | undefined, actionValue: string) =>
         serializeSoapEnvelope({
@@ -223,7 +296,13 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
 
             const req = yield* deserializeSoapElement(body, DiscoverRequest).pipe(
               Effect.mapError(
-                (cause) => new WindowsMdmError({ message: "Invalid discovery request", cause }),
+                (cause) =>
+                  new WindowsMdmError({
+                    message: "Invalid discovery request",
+                    cause,
+                    phase: "discovery",
+                    code: "invalid_request",
+                  }),
               ),
             );
 
@@ -249,12 +328,21 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             const responseBody = yield* serializeSoapElement(DiscoverResponse, response).pipe(
               Effect.mapError(
                 (cause) =>
-                  new WindowsMdmError({ message: "Failed to serialize discovery response", cause }),
+                  new WindowsMdmError({
+                    message: "Failed to serialize discovery response",
+                    cause,
+                    phase: "discovery",
+                    code: "response_serialization_failed",
+                  }),
               ),
             );
 
             return envelope(responseBody, header.messageId, action.discovery);
-          }),
+          }).pipe(
+            Effect.tapCause((cause) =>
+              recordFault("discovery", context, cause, "Invalid SOAP request"),
+            ),
+          ),
         policy: (xml, context = {}) =>
           Effect.gen(function* () {
             const header = extractSoapHeader(xml);
@@ -262,12 +350,22 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
 
             if (!token)
               return yield* Effect.fail(
-                new WindowsMdmError({ message: "Missing binary security token" }),
+                new WindowsMdmError({
+                  message: "Missing binary security token",
+                  phase: "policy",
+                  code: "missing_token",
+                }),
               );
             const body = extractSoapBody(xml);
             yield* deserializeSoapElement(body, GetPolicies).pipe(
               Effect.mapError(
-                (cause) => new WindowsMdmError({ message: "Invalid policy request", cause }),
+                (cause) =>
+                  new WindowsMdmError({
+                    message: "Invalid policy request",
+                    cause,
+                    phase: "policy",
+                    code: "invalid_request",
+                  }),
               ),
             );
 
@@ -281,20 +379,35 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
             ).pipe(
               Effect.mapError(
                 (cause) =>
-                  new WindowsMdmError({ message: "Failed to serialize policy response", cause }),
+                  new WindowsMdmError({
+                    message: "Failed to serialize policy response",
+                    cause,
+                    phase: "policy",
+                    code: "response_serialization_failed",
+                  }),
               ),
             );
 
             return envelope(responseBody, header.messageId, action.policy);
-          }),
-        enroll: (xml, context = {}) =>
-          Effect.gen(function* () {
+          }).pipe(
+            Effect.tapCause((cause) =>
+              recordFault("policy", context, cause, "Invalid SOAP request"),
+            ),
+          ),
+        enroll: (xml, context = {}) => {
+          let requestDeviceId: string | undefined;
+
+          return Effect.gen(function* () {
             const header = extractSoapHeader(xml);
             const token = extractBinarySecurityToken(header.securityXml ?? "");
 
             if (!token)
               return yield* Effect.fail(
-                new WindowsMdmError({ message: "Missing binary security token" }),
+                new WindowsMdmError({
+                  message: "Missing binary security token",
+                  phase: "enrollment",
+                  code: "missing_token",
+                }),
               );
 
             const req = yield* deserializeSoapElement(
@@ -302,11 +415,18 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               RequestSecurityToken,
             ).pipe(
               Effect.mapError(
-                (cause) => new WindowsMdmError({ message: "Invalid enrollment request", cause }),
+                (cause) =>
+                  new WindowsMdmError({
+                    message: "Invalid enrollment request",
+                    cause,
+                    phase: "enrollment",
+                    code: "invalid_request",
+                  }),
               ),
             );
 
             const ctx = contextMap(req);
+            requestDeviceId = ctx.DeviceID ?? ctx.DeviceId;
 
             const result = yield* backend
               .windowsEnroll({
@@ -333,7 +453,13 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               managementUrl,
             ).pipe(
               Effect.mapError(
-                (cause) => new WindowsMdmError({ message: "Provisioning document failed", cause }),
+                (cause) =>
+                  new WindowsMdmError({
+                    message: "Provisioning document failed",
+                    cause,
+                    phase: "wstep",
+                    code: "provisioning_document_failed",
+                  }),
               ),
             );
 
@@ -361,19 +487,36 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
                   new WindowsMdmError({
                     message: "Failed to serialize enrollment response",
                     cause,
+                    phase: "enrollment",
+                    code: "response_serialization_failed",
                   }),
               ),
             );
 
             return envelope(responseBody, header.messageId, action.enroll);
-          }),
-        management: (xml, context = {}) =>
-          Effect.gen(function* () {
+          }).pipe(
+            Effect.tapCause((cause) =>
+              recordFault("enrollment", context, cause, "Invalid SOAP request", requestDeviceId),
+            ),
+          );
+        },
+        management: (xml, context = {}) => {
+          let requestDeviceId: string | undefined;
+
+          return Effect.gen(function* () {
             const sync = yield* parseSyncML(xml).pipe(
               Effect.mapError(
-                (cause) => new WindowsMdmError({ message: "Invalid SyncML request", cause }),
+                (cause) =>
+                  new WindowsMdmError({
+                    message: "Invalid SyncML request",
+                    cause,
+                    phase: "command",
+                    code: "invalid_syncml",
+                  }),
               ),
             );
+
+            requestDeviceId = sync.syncHdr.source.locURI;
 
             const scope: WindowsManagementScope = {
               deviceId: sync.syncHdr.source.locURI,
@@ -387,18 +530,38 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
               .windowsManagementCheckin(scope, toManagementRequest(sync))
               .pipe(Effect.mapError((cause) => backendError("Management backend failed", cause)));
 
+            // The event is an acknowledgement (a command result or the tail of
+            // enrollment). The backend records its own failure, but it must be
+            // logged instead of disappearing: the device already has its
+            // response, so this never changes the SyncML status.
             yield* backend
               .windowsDeviceEvent(scope, ManagementCheckinEvent.make({ deviceId: scope.deviceId }))
-              .pipe(Effect.match({ onFailure: () => undefined, onSuccess: () => undefined }));
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning(
+                    `Windows device event failed for ${scope.deviceId}: ${String(cause)}`,
+                  ),
+                ),
+              );
             const response: SyncMLType = fromManagementResponse(sync, backendResponse);
 
             return yield* serializeSyncML(response).pipe(
               Effect.mapError(
                 (cause) =>
-                  new WindowsMdmError({ message: "Failed to serialize SyncML response", cause }),
+                  new WindowsMdmError({
+                    message: "Failed to serialize SyncML response",
+                    cause,
+                    phase: "command",
+                    code: "response_serialization_failed",
+                  }),
               ),
             );
-          }),
+          }).pipe(
+            Effect.tapCause((cause) =>
+              recordFault("command", context, cause, "Invalid SyncML request", requestDeviceId),
+            ),
+          );
+        },
       });
     }),
   );

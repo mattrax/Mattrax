@@ -149,6 +149,10 @@ function Chip(props: { tone?: ChipTone; class?: string; children: JSX.Element })
   );
 }
 
+/** Certificate/enrollment faults block a device; policy and check-in ones degrade it. */
+const windowsFailureTone = (phase: string): ChipTone =>
+  phase === "wstep" || phase === "enrollment" ? "danger" : phase === "policy" ? "warning" : "muted";
+
 const statusMeta = {
   enrolled: { variant: "success", dot: "success" },
   enrolling: { variant: "brand", dot: "info" },
@@ -865,6 +869,13 @@ export default function DeviceDetailPage() {
   const health = useQuery(() => ({
     queryKey: enterpriseKeys.deviceHealth(params.tenantId, params.deviceId),
     queryFn: () => enterprise.getDeviceHealth(params.tenantId, params.deviceId),
+  }));
+
+  const windowsFailures = useQuery(() => ({
+    ...enterpriseQueries.deviceWindowsFailures(params.tenantId, params.deviceId),
+    // Never fetch the history for a non-Windows device: the section does not
+    // render and the endpoint would return nothing useful.
+    enabled: row()?.proto === "win",
   }));
 
   const effectivePolicy = useQuery(() =>
@@ -1831,6 +1842,77 @@ export default function DeviceDetailPage() {
                       <ErrorText error={command.error} />
                     </div>
                   </DetailCard>
+                  <Show when={row()!.proto === "win"}>
+                    <DetailCard
+                      flush
+                      title="Enrollment & management failures"
+                      description="Newest Windows faults recorded for this device, kept for 30 days."
+                    >
+                      <Show
+                        when={windowsFailures.data}
+                        fallback={
+                          <div class="p-4 sm:p-5">
+                            <Show
+                              when={windowsFailures.isError}
+                              fallback={<SkeletonRows rows={3} />}
+                            >
+                              <QueryError
+                                error={windowsFailures.error}
+                                onRetry={() => void windowsFailures.refetch()}
+                              />
+                            </Show>
+                          </div>
+                        }
+                      >
+                        {(failures) => (
+                          <Show
+                            when={failures().failures.length > 0}
+                            fallback={
+                              <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                                No failures recorded.
+                              </p>
+                            }
+                          >
+                            <ul class="divide-y divide-border">
+                              <For each={failures().failures}>
+                                {(failure) => (
+                                  <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                                    <div class="flex items-center justify-between gap-2">
+                                      <span class="flex min-w-0 items-center gap-1.5">
+                                        <Chip
+                                          tone={windowsFailureTone(failure.phase)}
+                                          class="uppercase tracking-wide"
+                                        >
+                                          {failure.phase}
+                                        </Chip>
+                                        <strong
+                                          class="min-w-0 truncate font-medium text-foreground"
+                                          title={failure.message}
+                                        >
+                                          {failure.message}
+                                        </strong>
+                                      </span>
+                                      <span
+                                        class="shrink-0 text-muted-foreground"
+                                        title={formatDate(failure.at)}
+                                      >
+                                        {relativeTime(failure.at)}
+                                      </span>
+                                    </div>
+                                    <Show when={failure.code || failure.detail}>
+                                      <p class="mt-1 break-all text-muted-foreground">
+                                        {[failure.code, failure.detail].filter(Boolean).join(" · ")}
+                                      </p>
+                                    </Show>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </Show>
+                        )}
+                      </Show>
+                    </DetailCard>
+                  </Show>
                   <DetailCard
                     flush
                     title="Applications"

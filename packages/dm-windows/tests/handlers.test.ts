@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
+import { InternalServerError, UnknownDevice } from "@mattrax/management-backend";
 import type {
+  WindowsFailureReport,
   WindowsManagementRequest,
   WindowsManagementScope,
 } from "@mattrax/management-backend";
@@ -228,7 +230,10 @@ describe("Windows MDM handlers", () => {
     let received: unknown;
 
     const h = await handler({
-      windowsManagementCheckin: (_scope: WindowsManagementScope, request: WindowsManagementRequest) => {
+      windowsManagementCheckin: (
+        _scope: WindowsManagementScope,
+        request: WindowsManagementRequest,
+      ) => {
         received = request.results;
 
         return Effect.succeed({
@@ -254,5 +259,187 @@ describe("Windows MDM handlers", () => {
     ]);
     expect(text).toContain("<Get>");
     expect(text).toContain("./DevDetail/SwV");
+  });
+});
+
+describe("Windows protocol fault history", () => {
+  it("records a missing security token without changing the SOAP fault", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const body = soapEnvelope(
+      `<GetPolicies xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollmentpolicy"><client/></GetPolicies>`,
+      "",
+    );
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/policy?tenant=tenant-token", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    const text = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(text).toContain("Missing binary security token");
+    expect(reports).toEqual([
+      expect.objectContaining({
+        phase: "policy",
+        code: "missing_token",
+        message: "Missing binary security token",
+        tenantToken: "tenant-token",
+      }),
+    ]);
+  });
+
+  it("records an unparseable SyncML body as a command fault", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/management", {
+        method: "POST",
+        body: "not-syncml",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Invalid SyncML request");
+    expect(reports).toEqual([
+      expect.objectContaining({
+        phase: "command",
+        code: "invalid_syncml",
+      }),
+    ]);
+  });
+
+  it("does not duplicate a failure the backend already recorded", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsDiscovery: () => Effect.fail(new UnknownDevice({ recorded: true })),
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const body = soapEnvelope(
+      `<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment"><request><RequestVersion>5.0</RequestVersion><DeviceType>CIMClient_Windows</DeviceType><ApplicationVersion>10.0</ApplicationVersion><OSEdition>48</OSEdition><AuthPolicies><AuthPolicy>OnPremise</AuthPolicy></AuthPolicies></request></Discover>`,
+    );
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/discovery?tenant=tenant-token", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("enrollment link is invalid");
+    expect(reports).toEqual([]);
+  });
+
+  it("records a backend failure that was never persisted", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsDiscovery: () => Effect.fail(new UnknownDevice()),
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const body = soapEnvelope(
+      `<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment"><request><RequestVersion>5.0</RequestVersion><DeviceType>CIMClient_Windows</DeviceType><ApplicationVersion>10.0</ApplicationVersion><OSEdition>48</OSEdition><AuthPolicies><AuthPolicy>OnPremise</AuthPolicy></AuthPolicies></request></Discover>`,
+    );
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/discovery?tenant=tenant-token", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(reports).toEqual([
+      expect.objectContaining({
+        phase: "discovery",
+        code: "unknown_device",
+        tenantToken: "tenant-token",
+      }),
+    ]);
+  });
+
+  it("classifies an unpersisted internal backend failure", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsDiscovery: () => Effect.fail(new InternalServerError()),
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const body = soapEnvelope(
+      `<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment"><request><RequestVersion>5.0</RequestVersion><DeviceType>CIMClient_Windows</DeviceType><ApplicationVersion>10.0</ApplicationVersion><OSEdition>48</OSEdition><AuthPolicies><AuthPolicy>OnPremise</AuthPolicy></AuthPolicies></request></Discover>`,
+    );
+
+    await h(
+      new Request("http://localhost/mdm/windows/discovery?tenant=tenant-token", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    expect(reports).toEqual([
+      expect.objectContaining({ phase: "discovery", code: "internal_error" }),
+    ]);
+  });
+
+  it("includes the enrollment DeviceID in a recorded fault", async () => {
+    const reports: Array<WindowsFailureReport> = [];
+
+    const h = await handler({
+      windowsEnroll: () => Effect.fail(new InternalServerError()),
+      windowsRecordFailure: (report: WindowsFailureReport) =>
+        Effect.sync(() => {
+          reports.push(report);
+        }),
+    });
+
+    const body = soapEnvelope(
+      `<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-1</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>`,
+    );
+
+    await h(
+      new Request("http://localhost/mdm/windows/enroll?tenant=tenant-token", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    expect(reports).toEqual([
+      expect.objectContaining({
+        phase: "enrollment",
+        code: "internal_error",
+        deviceId: "device-1",
+      }),
+    ]);
   });
 });

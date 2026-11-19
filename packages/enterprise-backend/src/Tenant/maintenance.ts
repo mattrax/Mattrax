@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
-import { Db, schema as s } from "@mattrax/enterprise-core";
+import { Db, pruneWindowsFailures, schema as s } from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
@@ -170,6 +170,13 @@ export type MaintenanceOptions = {
    */
   readonly windowsCommandRetentionDays?: number;
   /**
+   * Windows enrollment and management failure history older than this many
+   * days is deleted. Defaults to 30 so the diagnostics that explain a failed
+   * enrollment outlive a device's first few support cycles but do not grow
+   * forever. Set to `0` to keep it indefinitely.
+   */
+  readonly windowsFailureRetentionDays?: number;
+  /**
    * Detect credentials and the deployment domain that have no certificate and
    * trigger issuance. Defaults to true. A missing tenant SCEP CA is generated
    * when the tenant has active devices; a missing APNs certificate starts the
@@ -247,6 +254,8 @@ export type MaintenanceResult = {
   readonly purgedCommands: number;
   /** Windows state-generated command rows deleted by retention. */
   readonly purgedWindowsCommands: number;
+  /** Windows enrollment/management failure records deleted by retention. */
+  readonly purgedWindowsFailures: number;
   /** Tenant SCEP CAs generated because the tenant had none. */
   readonly scepCasIssued: number;
   /** Tenants whose SCEP CA could not be generated; retried next run. */
@@ -486,6 +495,7 @@ export const runMaintenance = (
       expiredCommands: 0,
       purgedCommands: 0,
       purgedWindowsCommands: 0,
+      purgedWindowsFailures: 0,
       scepCasIssued: 0,
       scepCasFailed: 0,
       missingApnsCertificates: 0,
@@ -674,7 +684,15 @@ export const runMaintenance = (
       }
     }
 
-    // 5c. SCEP CA lifecycle. A CA inside its rotation window is replaced by a
+    // 5c. Windows enrollment/management failure history is diagnostic, not an
+    //     audit log: keep it for the same month as enrollment attempts. A
+    //     device that never enrolled has no other durable trace of why.
+    result.purgedWindowsFailures = yield* pruneWindowsFailures(db, {
+      now,
+      retentionDays: options.windowsFailureRetentionDays,
+    });
+
+    // 5d. SCEP CA lifecycle. A CA inside its rotation window is replaced by a
     //     successor: the successor signs new and renewed identities, and the
     //     previous CA stays a verification anchor until it expires. No identity
     //     is revoked, so a fleet survives the rotation without re-enrolling.
