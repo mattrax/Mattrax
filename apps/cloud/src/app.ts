@@ -981,7 +981,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
           ? BillingServiceLive(makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN }))
           : Layer.empty,
       ),
-      Layer.provide(enterpriseAuthLive),
+      // Merge auth into the service layer's output so raw routes (the SSE
+      // stream) can resolve it from the request context too.
+      Layer.provideMerge(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(stripeLayer),
       Layer.provide(R2.layer(storageBucket)),
@@ -1142,7 +1144,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     // output. With plain `provide` the routes were built, but their handlers
     // failed at request time with `Service not found: ScepService`.
     Layer.provideMerge(servicesLayer),
-    Layer.provide(authLive),
+    // Merge auth into the output too: the raw realtime route resolves it from
+    // the request context, and plain `provide` only satisfies construction.
+    Layer.provideMerge(authLive),
     Layer.provideMerge(Db.layer),
     Layer.provide(databaseLayer(env)),
     Layer.provideMerge(telemetryLayer),
