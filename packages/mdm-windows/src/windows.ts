@@ -1,5 +1,6 @@
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { osPolicyRuleFromRow, windowsOsUpdatePolicyNodes } from "@mattrax/enterprise-domain";
 import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
@@ -861,10 +862,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           .select()
           .from(s.device)
           .where(
-            and(
-              eq(s.device.organizationId, organizationId),
-              eq(s.device.id, certificate.deviceId),
-            ),
+            and(eq(s.device.organizationId, organizationId), eq(s.device.id, certificate.deviceId)),
           )
           .limit(1);
 
@@ -2146,8 +2144,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           const wasApplied = applied.has(uri);
           const hadFailure = failures.delete(uri);
 
-          const removed =
-            isDelete && (wasApplied || delivered.has(uri) || reverting.has(uri));
+          const removed = isDelete && (wasApplied || delivered.has(uri) || reverting.has(uri));
 
           if (isDelete) {
             applied.delete(uri);
@@ -2171,8 +2168,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           const previous = failures.get(uri);
           const hash = payloadString(commandPayload(row.payload), "hash") ?? "";
 
-          const unchanged =
-            previous?.resultStatus === resultStatus && previous?.hash === hash;
+          const unchanged = previous?.resultStatus === resultStatus && previous?.hash === hash;
 
           // Append to the failure history once per distinct rejection. A device
           // re-reports the same status on every poll while a setting is stuck;
@@ -2573,6 +2569,43 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
               desired.set(node.omaUri, desiredNode);
             }
+          }
+
+          // Tenant OS policy is an update ring, not a policy fragment: it is
+          // generated here so it applies to every Windows device without
+          // creating a policy the operator did not author. It deliberately
+          // overrides a fragment targeting the same OMA-URI, because the
+          // tenant-wide rule is the more specific statement of intent.
+          const osPolicyRows = yield* db
+            .select({
+              platform: s.tenantOsPolicy.platform,
+              minimumVersion: s.tenantOsPolicy.minimumVersion,
+              enforcement: s.tenantOsPolicy.enforcement,
+              deferralDays: s.tenantOsPolicy.deferralDays,
+              updatedAt: s.tenantOsPolicy.updatedAt,
+            })
+            .from(s.tenantOsPolicy)
+            .where(
+              and(
+                eq(s.tenantOsPolicy.organizationId, device.organizationId),
+                eq(s.tenantOsPolicy.platform, "windows"),
+              ),
+            )
+            .limit(1);
+
+          const osPolicyRule = osPolicyRows[0] ? osPolicyRuleFromRow(osPolicyRows[0]) : null;
+
+          for (const node of windowsOsUpdatePolicyNodes(osPolicyRule)) {
+            const hash = yield* Effect.promise(() =>
+              windowsPolicyNodeHash(node.value, node.format),
+            );
+
+            desired.set(node.omaUri, {
+              uri: node.omaUri,
+              data: node.value,
+              hash,
+              format: node.format,
+            });
           }
         }
 

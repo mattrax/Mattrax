@@ -111,11 +111,13 @@ import {
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { SoftwareUpdateTag } from "~/components/software-update-badge";
+import { OsComplianceTag } from "~/components/os-compliance-badge";
 import {
   decodeSoftwareUpdate,
   isMacOsUpdateTracked,
   softwareUpdateReason,
 } from "~/lib/software-updates";
+import { decodeOsCompliance } from "~/lib/os-compliance";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -930,10 +932,7 @@ export default function DeviceDetailPage() {
   const membershipRows = () =>
     (groupMemberships.data?.groups ?? []).map((group) => ({
       ...group,
-      kind:
-        group.source === "directory"
-          ? ("directory" as const)
-          : knownGroup(group.id)?.kind,
+      kind: group.source === "directory" ? ("directory" as const) : knownGroup(group.id)?.kind,
     }));
 
   const assignedGroupIds = () => new Set((groupMemberships.data?.groups ?? []).map((g) => g.id));
@@ -941,9 +940,7 @@ export default function DeviceDetailPage() {
   const joinableGroups = () =>
     (groupDirectory.data?.rows ?? []).filter(
       (group) =>
-        group.kind !== "dynamic" &&
-        !group.directoryGroupId &&
-        !assignedGroupIds().has(group.id),
+        group.kind !== "dynamic" && !group.directoryGroupId && !assignedGroupIds().has(group.id),
     );
 
   const membershipTone = (kind: "manual" | "dynamic" | "directory" | undefined) =>
@@ -1008,8 +1005,17 @@ export default function DeviceDetailPage() {
         | "reset-password"
         | "clear-app-data"
         | "request-device-info"
-        | "relinquish-ownership";
+        | "relinquish-ownership"
+        | "schedule-os-update";
       manifestUrl?: string;
+      osUpdateInstallAction?:
+        | "Default"
+        | "InstallASAP"
+        | "InstallLater"
+        | "NotifyOnly"
+        | "InstallForceRestart";
+      osUpdateProductKey?: string;
+      osUpdateDeadline?: string;
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
     onSuccess: async (result) => {
       setLockPin(result.pin ?? null);
@@ -1100,6 +1106,14 @@ export default function DeviceDetailPage() {
 
   /** macOS update status carried on the device row; `undefined` on other platforms. */
   const osUpdate = () => decodeSoftwareUpdate(row()?.osUpdate);
+
+  const osCompliance = () => decodeOsCompliance(row()?.osCompliance);
+
+  const [osUpdateAction, setOsUpdateAction] = createSignal<
+    "InstallASAP" | "InstallLater" | "NotifyOnly"
+  >("InstallASAP");
+
+  const [osUpdateDeadline, setOsUpdateDeadline] = createSignal("");
 
   /** Only a missing security release or a major upgrade is worth a banner. */
   const osUpdateWarning = () => {
@@ -1673,6 +1687,9 @@ export default function DeviceDetailPage() {
                     <DeviceHealthTag level={health.data?.health.level ?? "unknown"} />
                     <Show when={isMacOsUpdateTracked(osUpdate())}>
                       <SoftwareUpdateTag info={osUpdate()} />
+                    </Show>
+                    <Show when={osCompliance()}>
+                      {(compliance) => <OsComplianceTag info={compliance()} />}
                     </Show>
                   </div>
                 </div>
@@ -3109,6 +3126,81 @@ export default function DeviceDetailPage() {
                               </Button>
                             </div>
                           </Field>
+                        </Show>
+                        <Show when={supports("schedule-os-update")}>
+                          <div class="rounded-lg border border-border p-3">
+                            <p class="text-[12.5px] font-medium text-foreground">macOS update</p>
+                            <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                              Sends Apple's <code class="font-mono">ScheduleOSUpdate</code> command.
+                              It runs on the next check-in and may restart the Mac. Apple has no
+                              absolute deadline; <em>Install later</em> lets the user postpone it.
+                            </p>
+                            <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                              <Field label="Install action">
+                                <NativeSelect
+                                  value={osUpdateAction()}
+                                  onChange={(event) => {
+                                    const value = event.currentTarget.value;
+
+                                    if (
+                                      value === "InstallASAP" ||
+                                      value === "InstallLater" ||
+                                      value === "NotifyOnly"
+                                    )
+                                      setOsUpdateAction(value);
+                                  }}
+                                >
+                                  <option value="InstallASAP">Install immediately</option>
+                                  <option value="InstallLater">
+                                    Install later (user can defer)
+                                  </option>
+                                  <option value="NotifyOnly">Notify only</option>
+                                </NativeSelect>
+                              </Field>
+                              <Show when={osUpdateAction() === "InstallLater"}>
+                                <Field
+                                  label="Deadline"
+                                  hint="Converted into a bounded deferral count."
+                                >
+                                  <Input
+                                    type="date"
+                                    value={osUpdateDeadline()}
+                                    onInput={(event) =>
+                                      setOsUpdateDeadline(event.currentTarget.value)
+                                    }
+                                  />
+                                </Field>
+                              </Show>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="mt-2"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                const deadline = osUpdateDeadline();
+
+                                if (
+                                  window.confirm(
+                                    "Request the latest macOS update on this device? The command is delivered on its next check-in and may restart it.",
+                                  )
+                                )
+                                  command.mutate({
+                                    action: "schedule-os-update",
+                                    osUpdateInstallAction: osUpdateAction(),
+                                    ...(osUpdateAction() === "InstallLater" && deadline
+                                      ? {
+                                          osUpdateDeadline: new Date(
+                                            `${deadline}T23:59:59.000Z`,
+                                          ).toISOString(),
+                                        }
+                                      : {}),
+                                  });
+                              }}
+                            >
+                              Request macOS update
+                            </Button>
+                          </div>
                         </Show>
                         <Show when={lockPin()}>
                           {(pin) => (

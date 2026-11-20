@@ -14,6 +14,7 @@ import { enterpriseIdentityApi } from "./IdentityApi.js";
 import { enterpriseOnboardingApi } from "./OnboardingApi.js";
 import { enterpriseUserApi } from "./UserApi.js";
 import { enterpriseSoftwareUpdateApi } from "./SoftwareUpdateApi.js";
+import { enterpriseOsPolicyApi } from "./OsPolicyApi.js";
 import { enterpriseListApi } from "./ListApi.js";
 import { enterpriseWindowsApi } from "./WindowsApi.js";
 
@@ -39,6 +40,8 @@ export * from "./UserApi.js";
 
 export * from "./SoftwareUpdateApi.js";
 
+export * from "./OsPolicyApi.js";
+
 export * from "./ListApi.js";
 
 export * from "./WindowsApi.js";
@@ -60,6 +63,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseOnboardingApi
   | typeof enterpriseUserApi
   | typeof enterpriseSoftwareUpdateApi
+  | typeof enterpriseOsPolicyApi
   | typeof enterpriseListApi
   | typeof enterpriseWindowsApi
 > = HttpApi.make("MattraxEnterprise")
@@ -74,6 +78,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   .add(enterpriseOnboardingApi)
   .add(enterpriseUserApi)
   .add(enterpriseSoftwareUpdateApi)
+  .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
   .add(enterpriseWindowsApi);
 
@@ -89,6 +94,7 @@ export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi>
   HttpApiClient.Client<typeof enterpriseOnboardingApi> &
   HttpApiClient.Client<typeof enterpriseUserApi> &
   HttpApiClient.Client<typeof enterpriseSoftwareUpdateApi> &
+  HttpApiClient.Client<typeof enterpriseOsPolicyApi> &
   HttpApiClient.Client<typeof enterpriseListApi> &
   HttpApiClient.Client<typeof enterpriseWindowsApi>;
 

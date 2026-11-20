@@ -186,6 +186,7 @@ export function tenantSectionPermission(section: string): Permission | undefined
     case "dashboards":
       return "dashboards.read";
     case "devices":
+    case "os-versions":
       return "devices.read";
     case "users":
       return "members.read";
@@ -220,6 +221,8 @@ export function settingsTabPermission(tab: string): Permission {
       return "webhooks.read";
     case "audit":
       return "audit.read";
+    case "os-updates":
+      return "devices.read";
     case "billing":
       return "billing.read";
     default:
@@ -249,6 +252,7 @@ const SETTINGS_TABS = [
   "delivery",
   "integrations",
   "audit",
+  "os-updates",
   "billing",
 ] as const;
 
@@ -256,6 +260,7 @@ const SECTIONS = [
   "overview",
   "dashboards",
   "devices",
+  "os-versions",
   "users",
   "groups",
   "policies",
@@ -303,6 +308,8 @@ function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): stri
       return tenant.dashboards();
     case "devices":
       return tenant.devices();
+    case "os-versions":
+      return tenant.osVersions();
     case "users":
       return tenant.users();
     case "groups":

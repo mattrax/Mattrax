@@ -20,6 +20,8 @@ export * from "./Device.js";
 
 export * from "./softwareUpdates.js";
 
+export * from "./osPolicy.js";
+
 export * from "./Group.js";
 
 export * from "./Policy.js";

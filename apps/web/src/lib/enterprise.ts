@@ -9,6 +9,7 @@ import type {
   AppleUserActionName,
   MeResponse,
   UpdateMeRequest,
+  UpdateTenantOsPolicyRequest,
 } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
@@ -313,6 +314,10 @@ type EnterpriseSoftwareUpdateClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseSoftwareUpdate"];
 
+type EnterpriseOsPolicyClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseOsPolicy"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -353,6 +358,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-health-summary", keyTenant(tenantId)] as const,
   softwareUpdates: (tenantId: RouteParam) =>
     ["enterprise", "software-updates", keyTenant(tenantId)] as const,
+  osPolicy: (tenantId: RouteParam) => ["enterprise", "os-policy", keyTenant(tenantId)] as const,
+  osFleet: (tenantId: RouteParam) => ["enterprise", "os-fleet", keyTenant(tenantId)] as const,
   devicePushHealth: (tenantId: RouteParam) =>
     ["enterprise", "device-push-health", keyTenant(tenantId)] as const,
   windowsFailures: (tenantId: RouteParam, deviceId?: string) =>
@@ -688,6 +695,17 @@ function softwareUpdateEndpoint<A, E>(
   return endpointWith(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseSoftwareUpdate),
     call,
+  );
+}
+
+function osPolicyEndpoint<A, E>(
+  call: (api: EnterpriseOsPolicyClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseOsPolicy),
+    call,
+    options,
   );
 }
 
@@ -1252,9 +1270,18 @@ export const enterprise = {
         | "reset-password"
         | "clear-app-data"
         | "request-device-info"
-        | "relinquish-ownership";
+        | "relinquish-ownership"
+        | "schedule-os-update";
       manifestUrl?: string;
       iTunesStoreId?: number;
+      osUpdateInstallAction?:
+        | "Default"
+        | "InstallASAP"
+        | "InstallLater"
+        | "NotifyOnly"
+        | "InstallForceRestart";
+      osUpdateProductKey?: string;
+      osUpdateDeadline?: string;
     } = { action: "sync" },
   ) =>
     endpoint((api) =>
@@ -1341,6 +1368,23 @@ export const enterprise = {
   getSoftwareUpdateSummary: (tenantId: RouteParam) =>
     softwareUpdateEndpoint((api) =>
       api.getSoftwareUpdateSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getTenantOsPolicy: (tenantId: RouteParam) =>
+    osPolicyEndpoint((api) =>
+      api.getTenantOsPolicy({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchTenantOsPolicy: (tenantId: RouteParam, payload: UpdateTenantOsPolicyRequest) =>
+    osPolicyEndpoint(
+      (api) =>
+        api.patchTenantOsPolicy({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "device-command" },
+    ),
+  getOsFleet: (tenantId: RouteParam) =>
+    osPolicyEndpoint((api) =>
+      api.getOsFleet({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
   getDevicePushHealth: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -3113,6 +3157,18 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.softwareUpdates(tenantId),
       queryFn: () => enterprise.getSoftwareUpdateSummary(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  osPolicy: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.osPolicy(tenantId),
+      queryFn: () => enterprise.getTenantOsPolicy(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  osFleet: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.osFleet(tenantId),
+      queryFn: () => enterprise.getOsFleet(tenantId),
       enabled: Boolean(tenantId),
     }),
   windowsFailures: (tenantId: RouteParam, limit = 5) =>
