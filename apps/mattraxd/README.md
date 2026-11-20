@@ -192,10 +192,11 @@ Before the installed binary is touched, `update` checks, in order:
 1. the manifest is HTTPS, has schema `1`, a semver `version`, a matching
    `channel` and a non-empty artifact set;
 2. every artifact URL is HTTPS and every SHA-256 is 64 hex characters;
-3. the Ed25519 signature over the canonical payload (builds compiled with
-   `MATTRAXD_UPDATE_PUBLIC_KEY` **require** a signature; a build without a key
-   logs that it is checksum-only and rejects an unsigned manifest when a key is
-   configured);
+3. the Ed25519 signature over the canonical payload. Every deployed build is
+   compiled with `MATTRAXD_UPDATE_PUBLIC_KEY` and refuses to update at all
+   without a valid signature (or with no configured key). Only a local
+   development build started with `MATTRAX_UPDATE_ALLOW_UNSIGNED=1` may fall
+   back to checksums; releases never publish an unsigned manifest.
 4. the remote version is not older than the running version (unless `--force`);
 5. the downloaded bytes match the manifest's SHA-256;
 6. the binary is flushed and renamed over the target atomically (on Windows the

@@ -370,22 +370,33 @@ jobs:
           merge-multiple: true
 
       - name: Check the update signing key
+        id: signing
         run: |
           set -eu
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+
           if [ -z "${MATTRAXD_UPDATE_SIGNING_KEY:-}" ]; then
-            echo "::warning::MATTRAXD_UPDATE_SIGNING_KEY is not configured; publishing an unsigned manifest. Agents built with MATTRAXD_UPDATE_PUBLIC_KEY will refuse it."
+            echo "::warning::MATTRAXD_UPDATE_SIGNING_KEY is not configured; skipping the publish. A release must not ship an unsigned update manifest."
             exit 0
           fi
 
           derived="$(cargo run --release --locked --quiet --bin mattraxd-manifest -- public-key)"
           echo "update signing key configured (public: $derived)"
 
-          if [ -n "${MATTRAXD_UPDATE_PUBLIC_KEY:-}" ] && [ "$derived" != "$MATTRAXD_UPDATE_PUBLIC_KEY" ]; then
+          if [ -z "${MATTRAXD_UPDATE_PUBLIC_KEY:-}" ]; then
+            echo "::error::MATTRAXD_UPDATE_PUBLIC_KEY repository variable must match MATTRAXD_UPDATE_SIGNING_KEY"
+            exit 1
+          fi
+
+          if [ "$derived" != "$MATTRAXD_UPDATE_PUBLIC_KEY" ]; then
             echo "::error::MATTRAXD_UPDATE_PUBLIC_KEY does not match MATTRAXD_UPDATE_SIGNING_KEY"
             exit 1
           fi
 
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
       - name: Build update manifests
+        if: steps.signing.outputs.signed == 'true'
         working-directory: apps/mattraxd
         run: |
           set -eu
@@ -429,6 +440,7 @@ jobs:
           fi
 
       - name: Create the release and upload assets
+        if: steps.signing.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           MACOS_SIGNED: ${{ needs.macos.outputs.signed }}
@@ -455,6 +467,7 @@ jobs:
           gh release upload "$RELEASE_TAG" dist/* --clobber
 
       - name: Advance the channel pointers
+        if: steps.signing.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

@@ -199,10 +199,21 @@ pub fn run(
 
     let public_key = configured_public_key()?;
 
+    // A root daemon must not install bytes that nobody signed. Only an
+    // explicitly opted-in development build may fall back to checksums, which
+    // protect against corruption but not against a hostile manifest server.
+    if public_key.is_none() && !allow_unsigned_updates() {
+        return Err(UpdateError::Signature(
+            "this build has no update signing key; refusing to update. Build with \
+             MATTRAXD_UPDATE_PUBLIC_KEY (or set MATTRAX_UPDATE_ALLOW_UNSIGNED=1 for local development)."
+                .into(),
+        ));
+    }
+
     if public_key.is_none() {
         logger.log(
-      "update: no manifest public key configured; verifying checksums only (signature verification disabled)",
-    );
+            "update: MATTRAX_UPDATE_ALLOW_UNSIGNED=1; verifying checksums only (signature verification disabled)",
+        );
     }
 
     manifest.validate(allow_insecure_urls())?;
@@ -312,6 +323,14 @@ fn allowed_protocols() -> &'static str {
 
 fn allow_insecure_urls() -> bool {
     std::env::var("MATTRAX_UPDATE_ALLOW_INSECURE")
+        .map(|value| value == "1")
+        .unwrap_or(false)
+}
+
+/// Local-development escape hatch. Never set this in a deployment: without a
+/// signature, a mirror can replace both the manifest and the artifact.
+fn allow_unsigned_updates() -> bool {
+    std::env::var("MATTRAX_UPDATE_ALLOW_UNSIGNED")
         .map(|value| value == "1")
         .unwrap_or(false)
 }
