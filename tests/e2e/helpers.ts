@@ -91,8 +91,8 @@ export async function register(page: Page, options: { name?: string; email?: str
     { timeout: 20_000 },
   );
 
+  // Six digits submits on its own: filling the field is the whole interaction.
   await verificationCodeInput.fill(code);
-  await page.getByRole("button", { name: /verify and create passkey/i }).click();
   const response = await registration.catch(() => undefined);
 
   if (!response) throw new Error("Registration request was never sent");

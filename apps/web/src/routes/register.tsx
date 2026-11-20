@@ -47,6 +47,8 @@ export default function RegisterPage() {
 
   let codeInput: HTMLInputElement | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** The last value an input event submitted, so it cannot submit twice. */
+  let submittedCode: string | null = null;
 
   onCleanup(() => clearInterval(timer));
 
@@ -83,6 +85,7 @@ export default function RegisterPage() {
     setNotice(null);
     setError(null);
     setCooldown(0);
+    submittedCode = null;
   };
 
   /**
@@ -152,6 +155,7 @@ export default function RegisterPage() {
       }
 
       setCode("");
+      submittedCode = null;
 
       if (!result.data?.emailSent) {
         // The code is stored, but no mail left the building. Say that instead of
@@ -219,11 +223,11 @@ export default function RegisterPage() {
     navigate(destination, { replace: true });
   };
 
-  const verifyCode = async () => {
+  const verifyCode = async (value: string) => {
     setError(null);
     setNotice(null);
 
-    if (!/^\d{6}$/.test(code())) {
+    if (!/^\d{6}$/.test(value)) {
       setError("Enter the six-digit code from the email.");
 
       return;
@@ -234,7 +238,7 @@ export default function RegisterPage() {
     try {
       const result = await authClient.verifyRegistrationCode({
         email: email().trim(),
-        code: code(),
+        code: value,
       });
 
       if (result.error) {
@@ -251,12 +255,26 @@ export default function RegisterPage() {
     }
   };
 
+  /**
+   * Six digits is a complete code, so it is sent as soon as it appears — typed,
+   * pasted or filled by the OS autofill — rather than waiting for a button.
+   * The guard stops a repeated input event from submitting the same code twice.
+   */
+  const updateCode = (value: string) => {
+    setCode(value);
+
+    if (value.length !== 6 || pending() !== null || value === submittedCode) return;
+
+    submittedCode = value;
+    void verifyCode(value);
+  };
+
   const handleSubmit = (event: SubmitEvent) => {
     event.preventDefault();
 
     if (pending() !== null) return;
 
-    void (codeSent() ? verifyCode() : sendCode());
+    void (codeSent() ? verifyCode(code()) : sendCode());
   };
 
   return (
@@ -340,7 +358,7 @@ export default function RegisterPage() {
             <div class="space-y-1.5 motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]">
               <EmailCodeField
                 value={code()}
-                onInput={setCode}
+                onInput={updateCode}
                 invalid={error() !== null}
                 describedBy={error() ? "register-error" : undefined}
                 inputRef={(input) => (codeInput = input)}

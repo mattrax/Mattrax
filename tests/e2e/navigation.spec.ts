@@ -98,8 +98,8 @@ test.describe("top navigation", () => {
         response.url().includes("/api/v1/completePasskeyRegistration"),
     );
 
+    // The completed code submits without a button press.
     await page.locator("#verification-code").fill(code);
-    await page.getByRole("button", { name: /verify and create passkey/i }).click();
     expect((await registration).ok()).toBe(true);
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 

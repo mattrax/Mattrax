@@ -26,6 +26,8 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
 
   let timer: ReturnType<typeof setInterval> | undefined;
   let codeField: HTMLInputElement | undefined;
+  /** The last value an input event submitted, so it cannot submit twice. */
+  let submittedCode: string | null = null;
 
   const startCooldown = () => {
     clearInterval(timer);
@@ -61,6 +63,11 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
       }
 
       setChallenge(result.data?.challenge ?? "");
+      // A new code replaces the old one: empty the field so the digits for this
+      // message can be typed or autofilled into a clean input.
+      submittedCode = null;
+      setCode("");
+      codeField?.focus();
       // Say when the mail is still queued rather than promising it arrived.
       setNotice(
         result.data?.emailSent === false
@@ -83,12 +90,11 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
     void send();
   });
 
-  const submit = async (event: SubmitEvent) => {
-    event.preventDefault();
+  const submitCode = async (value: string) => {
     setError(null);
     setNotice(null);
 
-    if (!/^\d{6}$/.test(code())) {
+    if (!/^\d{6}$/.test(value)) {
       setError("Enter the six-digit code from the email.");
 
       return;
@@ -103,7 +109,7 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
     setPending(true);
 
     try {
-      const result = await authClient.verifyEmail({ code: code(), challenge: challenge() });
+      const result = await authClient.verifyEmail({ code: value, challenge: challenge() });
 
       if (result.error) {
         setError(result.error.message ?? "That code is invalid or has expired.");
@@ -117,6 +123,27 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
     } finally {
       setPending(false);
     }
+  };
+
+  /**
+   * Six digits is a complete code, so it is sent as soon as it appears — typed,
+   * pasted or filled by the OS autofill — rather than waiting for a button.
+   * The guard stops a repeated input event from submitting the same code twice.
+   */
+  const updateCode = (value: string) => {
+    setCode(value);
+
+    if (value.length !== 6 || pending() || sending() || value === submittedCode) return;
+
+    if (!challenge()) return;
+
+    submittedCode = value;
+    void submitCode(value);
+  };
+
+  const submit = (event: SubmitEvent) => {
+    event.preventDefault();
+    void submitCode(code());
   };
 
   return (
@@ -133,7 +160,7 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
         <div class="space-y-1.5">
           <EmailCodeField
             value={code()}
-            onInput={setCode}
+            onInput={updateCode}
             invalid={error() !== null}
             describedBy={error() ? "verification-code-error" : undefined}
             inputRef={(input) => (codeField = input)}

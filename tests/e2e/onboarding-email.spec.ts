@@ -60,8 +60,8 @@ test.describe("onboarding email", () => {
         response.url().includes("/api/v1/completePasskeyRegistration"),
     );
 
+    // The completed code submits without a button press.
     await page.locator("#verification-code").fill(code);
-    await page.getByRole("button", { name: /verify and create passkey/i }).click();
     const registrationResponse = await registration;
     expect(
       registrationResponse.status(),
