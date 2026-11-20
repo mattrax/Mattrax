@@ -5,5 +5,6 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["src/**/*.test.ts"],
+    setupFiles: ["./src/admx/test-dom.ts"],
   },
 });

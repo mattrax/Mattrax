@@ -75,25 +75,57 @@ const signalTree = (signal: NodeJS.Signals): void => {
   }
 };
 
+/**
+ * Kill whatever still owns the dev-server port.
+ *
+ * `pnpm` starts the script through `setsid`, so its children can reparent
+ * before the tree walk below runs. The port is the one invariant that always
+ * identifies the dev server; Playwright's teardown waits for it to close.
+ */
+const killPort = (): void => {
+  try {
+    const pids = execFileSync("lsof", ["-ti", "tcp:9050"], { encoding: "utf8" })
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+
+    for (const pid of pids) {
+      try {
+        process.kill(Number(pid), "SIGKILL");
+      } catch {
+        // Already gone.
+      }
+    }
+  } catch {
+    // No listener (or lsof is unavailable) is not a failure.
+  }
+};
+
 child.on("exit", (code: number | null) => {
-  // pnpm can exit while its Vite children remain. Stop the group before
-  // leaving so teardown cannot strand the port.
+  // pnpm can exit while its Vite children remain. Stop the group and the
+  // port immediately; Playwright can SIGKILL this wrapper before a timer runs.
   signalTree("SIGTERM");
+  killPort();
   setTimeout(() => {
     signalTree("SIGKILL");
+    killPort();
     process.exit(code ?? 1);
   }, 1_000).unref();
 });
 
 const stop = (): void => {
   signalTree("SIGTERM");
+  // Playwright may SIGKILL this wrapper shortly after SIGTERM, so close the
+  // port now rather than waiting for a timer.
+  killPort();
 
   // Give Vite a moment to flush, then force the tree down and exit ourselves
   // so Playwright's webServer teardown cannot hang.
   setTimeout(() => {
     signalTree("SIGKILL");
+    killPort();
     process.exit(0);
-  }, 3_000).unref();
+  }, 1_000).unref();
 };
 
 process.on("SIGINT", stop);
@@ -121,9 +153,37 @@ const waitForServer = async (timeoutMs = 90_000): Promise<void> => {
 
 await waitForServer();
 
+/**
+ * Settle every lazy route once before Playwright starts.
+ *
+ * Solid caches a route module's import promise. In dev a request can end before
+ * the first import settles (for example while the optimizer is still writing),
+ * and the rejected promise is then cached for that module URL, so every later
+ * navigation renders an empty shell. Reading the whole body keeps the request
+ * open until the module has resolved.
+ */
+for (const path of [
+  "/",
+  "/login",
+  "/register",
+  "/designer",
+  "/dashboard",
+  "/account",
+  "/tenants",
+  "/settings",
+]) {
+  try {
+    const response = await fetch(`http://localhost:9050${path}`);
+
+    await response.text();
+  } catch {
+    // Best effort: a route that fails still gets a normal request later.
+  }
+}
+
 // Let the client and SSR optimizers finish writing their caches before
 // Playwright starts driving the browser.
-await new Promise((resolve) => setTimeout(resolve, 10_000));
+await new Promise((resolve) => setTimeout(resolve, 2_000));
 
 // Keep the wrapper alive while the dev server runs; Playwright stops it.
 process.stdin.resume();
