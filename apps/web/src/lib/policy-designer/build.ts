@@ -1,5 +1,11 @@
 import { Option, Schema } from "effect";
 import {
+  admxInstallOmaUri,
+  translateAdmxPolicy,
+  type AdmxElementKind,
+  type AdmxElementValue,
+} from "@mattrax/enterprise-domain/admx";
+import {
   collectionProperties,
   Property as PropertySchema,
   type Collection,
@@ -13,13 +19,40 @@ export type PolicyValue = Schema.Json;
 
 export type PolicyValueMap = Record<string, PolicyValue | undefined>;
 
-export type SelectionTemplate = {
+export type ThirdPartySelectionTemplate = {
   readonly provider: "thirdparty-app";
   readonly appId: string;
   readonly bundleId?: string;
   readonly packageName?: string;
   readonly installType?: string;
 };
+
+/**
+ * An imported ADMX policy. The element list is enough to rebuild the XML
+ * payload at save time; `admx` carries the template text for vendor ingestion.
+ */
+export type AdmxSelectionTemplate = {
+  readonly provider: "admx";
+  readonly source: "inbox" | "vendor";
+  readonly appName: string;
+  readonly fileId: string;
+  readonly policyName: string;
+  readonly scope: "device" | "user";
+  /** The Policy CSP `Config` URI the translated payload is written to. */
+  readonly omaUri: string;
+  /** The original ADMX text; set for vendor policies that need `ADMXInstall`. */
+  readonly admx?: string;
+  readonly elements: ReadonlyArray<{
+    readonly id: string;
+    readonly kind: AdmxElementKind;
+    readonly required?: boolean;
+  }>;
+};
+
+export type SelectionTemplate = ThirdPartySelectionTemplate | AdmxSelectionTemplate;
+
+/** The value key that stores an ADMX policy's Enabled/Disabled state. */
+export const ADMX_STATE_KEY = "@@admx.state";
 
 export type Selection = {
   collectionId: string;
@@ -122,9 +155,13 @@ const uuid = () => crypto.randomUUID();
 
 const identifierSafe = (value: string) => value.replace(/[^A-Za-z0-9._-]+/g, "-");
 
-/** Windows vector/CSP settings are identified by OMA-URI, not just the key. */
+/**
+ * Windows vector/CSP settings are identified by OMA-URI, not just the key.
+ * An ADMX policy delivers one payload to one OMA-URI, so its fields override
+ * the key with their element id to stay individually addressable.
+ */
 export const valueKey = (property: Property, platform: PlatformId) =>
-  platform === "windows" ? (property.address ?? property.key) : property.key;
+  property.valueKey ?? (platform === "windows" ? (property.address ?? property.key) : property.key);
 
 const isEnvelope = (property: Property) => property.category === "Envelope";
 
@@ -367,6 +404,24 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
         }
       }
     }
+
+    // ADMX values are serialized as one payload, so value-level checks above
+    // cannot see an invalid decimal or a missing required element. Surface the
+    // translator's own issues against the field that caused them.
+    for (const issue of admxSelectionTranslation(selection)?.issues ?? []) {
+      const property = issue.elementId
+        ? selection.properties.find((item) => item.valueKey === issue.elementId)
+        : undefined;
+
+      issues.push({
+        severity: issue.severity,
+        collectionId: selection.collectionId,
+        collectionName: selection.name,
+        propertyKey: property?.valueKey ?? issue.elementId ?? "",
+        propertyName: property?.name ?? issue.elementId ?? selection.name,
+        message: issue.message,
+      });
+    }
   }
 
   if (
@@ -518,6 +573,37 @@ const syncmlData = (value: PolicyValue) => {
   return String(value);
 };
 
+/** Normalise a draft value into something an ADMX element can serialize. */
+const admxElementValue = (value: PolicyValue | undefined): AdmxElementValue | undefined => {
+  if (isString(value) || isBoolean(value) || isNumber(value)) return value;
+
+  if (
+    Array.isArray(value) &&
+    value.every((entry) => isString(entry) || isNumber(entry) || isBoolean(entry))
+  )
+    return value.map(String);
+
+  return undefined;
+};
+
+/** Translate one imported ADMX selection, or `null` for a normal selection. */
+const admxSelectionTranslation = (selection: Selection) => {
+  if (selection.template?.provider !== "admx") return null;
+
+  const values: Record<string, AdmxElementValue | undefined> = {};
+
+  for (const element of selection.template.elements) {
+    const value = admxElementValue(selection.values[element.id]);
+
+    if (value !== undefined) values[element.id] = value;
+  }
+
+  return translateAdmxPolicy(
+    { elements: selection.template.elements },
+    { enabled: selection.values[ADMX_STATE_KEY] !== "disabled", values },
+  );
+};
+
 export type WindowNode = {
   readonly omaUri: string;
   readonly value: PolicyValue;
@@ -536,6 +622,29 @@ export const buildWindowsNodes = (draft: Draft): WindowNode[] => {
   const nodes = new Map<string, WindowNode>();
 
   for (const selection of draft.selections) {
+    // An imported ADMX policy is one XML payload at one OMA-URI, not one node
+    // per element. Vendor templates also install the ADMX before using it.
+    if (selection.template?.provider === "admx") {
+      const template = selection.template;
+      const translation = admxSelectionTranslation(selection);
+
+      if (translation) {
+        if (template.source === "vendor" && template.admx) {
+          const ingestionUri = admxInstallOmaUri(template.appName, template.fileId);
+
+          nodes.set(ingestionUri, { omaUri: ingestionUri, value: template.admx, format: "chr" });
+        }
+
+        nodes.set(template.omaUri, {
+          omaUri: template.omaUri,
+          value: translation.payload,
+          format: "chr",
+        });
+      }
+
+      continue;
+    }
+
     for (const property of collectionProperties(selection)) {
       const rawValue = selection.values[valueKey(property, "windows")];
 
@@ -868,13 +977,40 @@ const SelectionSchema = Schema.Struct({
   properties: Schema.Array(PropertySchema),
   values: Schema.Record(Schema.String, Schema.Json),
   template: Schema.optional(
-    Schema.Struct({
-      provider: Schema.Literal("thirdparty-app"),
-      appId: Schema.String,
-      bundleId: Schema.optional(Schema.String),
-      packageName: Schema.optional(Schema.String),
-      installType: Schema.optional(Schema.String),
-    }),
+    Schema.Union([
+      Schema.Struct({
+        provider: Schema.Literal("thirdparty-app"),
+        appId: Schema.String,
+        bundleId: Schema.optional(Schema.String),
+        packageName: Schema.optional(Schema.String),
+        installType: Schema.optional(Schema.String),
+      }),
+      Schema.Struct({
+        provider: Schema.Literal("admx"),
+        source: Schema.Literals(["inbox", "vendor"]),
+        appName: Schema.String,
+        fileId: Schema.String,
+        policyName: Schema.String,
+        scope: Schema.Literals(["device", "user"]),
+        omaUri: Schema.String,
+        admx: Schema.optional(Schema.String),
+        elements: Schema.Array(
+          Schema.Struct({
+            id: Schema.String,
+            kind: Schema.Literals([
+              "boolean",
+              "decimal",
+              "longDecimal",
+              "text",
+              "enum",
+              "list",
+              "multiText",
+            ]),
+            required: Schema.optional(Schema.Boolean),
+          }),
+        ),
+      }),
+    ]),
   ),
 });
 
