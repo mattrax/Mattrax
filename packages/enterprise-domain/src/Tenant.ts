@@ -27,6 +27,11 @@ export const AccountInfo = Schema.Struct({
    * the account has not chosen one or is no longer a member of it.
    */
   defaultTenantId: Schema.optional(NullableString),
+  /**
+   * Effective platform-operator flag. Optional for rolling deploys: an older
+   * API omits it and every consumer fails closed.
+   */
+  superadmin: Schema.optional(Schema.Boolean),
 });
 
 export type AccountInfo = typeof AccountInfo.Type;

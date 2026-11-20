@@ -42,6 +42,12 @@ const ApiEnvSchema = Schema.Struct({
    * Missing or `null` limits are unlimited. Parsed defensively at startup.
    */
   MATTRAX_PLAN_LIMITS: Schema.optional(Schema.String),
+  /**
+   * Comma-separated verified email addresses that always hold platform
+   * superadmin. This is the bootstrap path and a hard ceiling: a listed
+   * account cannot be demoted through the API or dashboard.
+   */
+  MATTRAX_SUPERADMINS: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_CERT: Schema.optional(Schema.String),
   CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
   /**
@@ -212,6 +218,7 @@ const RawApiEnvSchema = Schema.Struct({
   STRIPE_DEVICE_MONTHLY_PRICE_ID: optionalString,
   STRIPE_LICENSE_PRICE_ID: optionalString,
   MATTRAX_PLAN_LIMITS: optionalString,
+  MATTRAX_SUPERADMINS: optionalString,
   CLOUD_APPLE_VENDOR_CERT: optionalString,
   CLOUD_APPLE_VENDOR_KEY: optionalString,
   APPLE_PROFILE_SIGNING_CERT: optionalString,
@@ -284,6 +291,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID),
   STRIPE_LICENSE_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_LICENSE_PRICE_ID),
   MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
+  MATTRAX_SUPERADMINS: emptyStringAsUndefined(rawEnv.MATTRAX_SUPERADMINS),
   CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),
   CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_KEY),
   APPLE_PROFILE_SIGNING_CERT: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_CERT),

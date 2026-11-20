@@ -17,6 +17,11 @@ describe("route builders", () => {
     expect(tenant.policy("policy#1")).toBe("/t/acme%20corp/policies/policy%231");
   });
 
+  it("keeps platform routes outside every tenant", () => {
+    expect(routes.adminAccounts()).toBe("/admin/accounts");
+    expect(routes.account()).toBe("/account");
+  });
+
   it("builds settings tabs and the general tab", () => {
     const tenant = routes.tenant("acme");
 

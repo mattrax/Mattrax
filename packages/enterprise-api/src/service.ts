@@ -51,6 +51,11 @@ export type EnterpriseServiceOptions = {
    */
   readonly appleProfileSigning?: AppleProfileSigningConfig;
   readonly email?: EmailTransport;
+  /**
+   * Deployment-owned platform operators, parsed from `MATTRAX_SUPERADMINS`.
+   * The list is authoritative over the stored account flag.
+   */
+  readonly superadmins?: ReadonlyArray<string>;
   /** Verified invitation sender; defaults to `hello@mattrax.cloud`. */
   readonly invitationFromEmail?: string;
   /**
@@ -114,6 +119,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
                 }
               : undefined),
           apns,
+          superadmins: options.superadmins,
           android: options.android,
           appleApi: options.appleApi,
           planLimits: options.planLimits,

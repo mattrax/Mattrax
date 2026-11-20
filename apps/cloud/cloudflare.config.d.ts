@@ -38,6 +38,8 @@ export declare const apiWorker: {
         STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
         /** Optional JSON plan catalogue; absent means unlimited plans. */
         MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+        /** Comma-separated verified emails that always hold platform superadmin. */
+        MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
         /**
          * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
          * One hour by default; deployments can raise it up to one day.
@@ -163,6 +165,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+            /** Comma-separated verified emails that always hold platform superadmin. */
+            MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.
@@ -283,6 +287,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+            /** Comma-separated verified emails that always hold platform superadmin. */
+            MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.

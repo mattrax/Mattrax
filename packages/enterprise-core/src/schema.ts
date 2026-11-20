@@ -68,6 +68,12 @@ export const account = mysqlTable(
     }),
     disabled: boolean("disabled").notNull().default(false),
     /**
+     * Platform operator. This is not a tenant role: it grants the cross-tenant
+     * account catalogue independently of any membership. `MATTRAX_SUPERADMINS`
+     * can also grant the effective flag and is authoritative over this column.
+     */
+    superadmin: boolean("superadmin").notNull().default(false),
+    /**
      * How this account was created. `manual` is website registration and
      * invitation acceptance; `sso` is first-sign-in provisioning. `scim` and
      * `graph` remain for accounts provisioned before directory sync was split

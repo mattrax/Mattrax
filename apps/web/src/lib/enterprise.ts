@@ -1,5 +1,6 @@
 import { infiniteQueryOptions, queryOptions, type InfiniteData } from "@tanstack/solid-query";
 import type {
+  AdminAccountsQuery,
   AppleUserActionName,
   MeResponse,
   UpdateMeRequest,
@@ -83,6 +84,10 @@ import {
 } from "@mattrax/enterprise-domain/client";
 
 export type {
+  AdminAccountInfo,
+  AdminAccountMembership,
+  AdminAccountsQuery,
+  AdminAccountsResponse,
   AndroidEnrollment,
   AndroidEnterpriseInfo,
   AndroidSignupResponse,
@@ -249,6 +254,8 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
+type EnterpriseAdminClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAdmin"];
+
 type EnterpriseAttributeClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseAttribute"];
@@ -409,6 +416,8 @@ export const enterpriseKeys = {
     ["enterprise", "autopilot-devices", keyTenant(tenantId)] as const,
   autopilotProfiles: (tenantId: RouteParam) =>
     ["enterprise", "autopilot-profiles", keyTenant(tenantId)] as const,
+  adminAccounts: (query: AdminAccountsQuery = {}) =>
+    ["enterprise", "admin-accounts", query] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -533,6 +542,15 @@ function accountEndpoint<A, E>(
   );
 }
 
+function adminEndpoint<A, E>(
+  call: (api: EnterpriseAdminClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAdmin),
+    call,
+  );
+}
+
 function attributeEndpoint<A, E>(
   call: (api: EnterpriseAttributeClient) => Effect.Effect<A, E, never>,
   options: EndpointStepUp = { stepUp: false },
@@ -634,6 +652,16 @@ export const enterprise = {
   me: () => accountEndpoint((api) => api.me({})),
   /** Account-level profile fields, including the default landing tenant. */
   updateMe: (payload: UpdateMeRequest) => accountEndpoint((api) => api.updateMe({ payload })),
+  /** Platform operator catalogue; the API rejects non-superadmins. */
+  listAdminAccounts: (query: AdminAccountsQuery = {}) =>
+    adminEndpoint((api) => api.listAdminAccounts({ query })),
+  patchAdminAccountSuperadmin: (accountId: RouteParam, superadmin: boolean) =>
+    adminEndpoint((api) =>
+      api.patchAdminAccountSuperadmin({
+        params: { accountId: required(accountId, "accountId") },
+        payload: { superadmin },
+      }),
+    ),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
   listTenants: () => endpoint((api) => api.listTenants({})),
@@ -2324,6 +2352,11 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
 
 export const enterpriseQueries = {
   me: (userId?: string) => meQueryOptions(userId),
+  adminAccounts: (query: AdminAccountsQuery = {}) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.adminAccounts(query),
+      queryFn: () => enterprise.listAdminAccounts(query),
+    }),
   tenants: () =>
     enterpriseQueryOptions({ queryKey: enterpriseKeys.tenants(), queryFn: enterprise.listTenants }),
   tenant: (tenantId: RouteParam) =>

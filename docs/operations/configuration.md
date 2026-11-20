@@ -59,6 +59,32 @@ with the write and avoids similar stale reads on policy and membership changes.
 | ----------------- | ------- | --------------------------------------- |
 | `TRUSTED_ORIGINS` | —       | Comma-separated extra same-site origins |
 
+## Platform superadmins
+
+| Variable              | Default | Purpose                                                     |
+| --------------------- | ------- | ----------------------------------------------------------- |
+| `MATTRAX_SUPERADMINS` | —       | Comma-separated verified emails that always hold superadmin |
+
+A superadmin is a platform operator, not a tenant role. It grants the
+cross-tenant account catalogue at **Account menu → Platform accounts**
+(`/admin/accounts`): listing every account, its tenant memberships and its
+platform-access flag, and promoting or demoting other accounts. It does not
+grant access to any tenant's devices, policies, members or audit log.
+
+`MATTRAX_SUPERADMINS` is the bootstrap path: a fresh deployment has no stored
+superadmin, so the deployer names one before the first sign-in. Entries are
+trimmed and compared case-insensitively; blank entries are ignored. The listed
+address must be verified on the account, and the allowlist is authoritative
+over the stored flag — an account named there cannot be demoted from the
+dashboard or the API. Removing the entry and redeploying is the only way to
+take that account's access away.
+
+Keep the list small and owned by the deployer. The first stored superadmin can
+then grant access to the others without a redeploy. The API refuses to demote
+the caller themselves or the last enabled superadmin, and refuses to promote a
+disabled account. Every grant and revocation is written to the account audit
+stream with the actor, target and before/after state.
+
 ## Billing
 
 | Variable                         | Purpose                                              |

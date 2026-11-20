@@ -1,0 +1,1 @@
+ALTER TABLE `account` ADD `superadmin` boolean DEFAULT false NOT NULL;

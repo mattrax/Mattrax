@@ -276,6 +276,7 @@ type ShellUser = {
 function UserMenu(props: {
   user: ShellUser | undefined;
   onSignOut: () => void | Promise<void>;
+  superadmin?: boolean;
   variant?: "sidebar" | "bar";
 }) {
   const user = () => props.user;
@@ -337,6 +338,12 @@ function UserMenu(props: {
           <User class="size-3.5 text-muted-foreground" />
           Account settings
         </DropdownMenuItem>
+        <Show when={props.superadmin}>
+          <DropdownMenuItem onSelect={() => navigate(routes.adminAccounts())}>
+            <ShieldCheck class="size-3.5 text-muted-foreground" />
+            Platform accounts
+          </DropdownMenuItem>
+        </Show>
         <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
@@ -510,6 +517,7 @@ function NavGroups(props: {
 function SidebarPanel(props: {
   user: ShellUser | undefined;
   onSignOut: () => void | Promise<void>;
+  superadmin?: boolean;
   activeId: string | undefined;
   items: NavItem[];
   path: string;
@@ -544,7 +552,11 @@ function SidebarPanel(props: {
 
       <Separator />
       <div class="shrink-0 p-2">
-        <UserMenu user={props.user} onSignOut={props.onSignOut} />
+        <UserMenu
+          user={props.user}
+          onSignOut={props.onSignOut}
+          superadmin={props.superadmin}
+        />
       </div>
     </div>
   );
@@ -590,6 +602,7 @@ export function AppShell(props: {
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => meQueryOptions(props.user?.id));
+  const superadmin = () => me.data?.account.superadmin === true;
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
 
@@ -707,6 +720,8 @@ export function AppShell(props: {
 
     if (path === "/account") return "Account";
 
+    if (path === "/admin/accounts") return "Platform accounts";
+
     if (path === "/tenants/new") return "Create tenant";
 
     if (path === "/dashboard") return "Tenant";
@@ -791,6 +806,7 @@ export function AppShell(props: {
         <SidebarPanel
           user={props.user}
           onSignOut={props.onSignOut}
+          superadmin={superadmin()}
           activeId={activeId()}
           items={navItems()}
           path={location.pathname}
@@ -842,7 +858,12 @@ export function AppShell(props: {
               </Button>
               <span class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden" aria-hidden="true" />
               <span class="lg:hidden">
-                <UserMenu user={props.user} onSignOut={props.onSignOut} variant="bar" />
+                <UserMenu
+                  user={props.user}
+                  onSignOut={props.onSignOut}
+                  superadmin={superadmin()}
+                  variant="bar"
+                />
               </span>
             </div>
           </div>
@@ -895,6 +916,7 @@ export function AppShell(props: {
           <SidebarPanel
             user={props.user}
             onSignOut={props.onSignOut}
+            superadmin={superadmin()}
             activeId={activeId()}
             items={navItems()}
             path={location.pathname}

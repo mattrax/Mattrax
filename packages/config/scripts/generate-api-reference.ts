@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import { HttpApi, OpenApi } from "effect/http-api";
 import {
   enterpriseAccountApi,
+  enterpriseAdminApi,
   enterpriseAdeApi,
   enterpriseApi,
   enterpriseAttributeApi,
@@ -45,6 +46,7 @@ const isRecord = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
 const restDocument = OpenApi.fromApi(
   HttpApi.make("Mattrax")
     .add(enterpriseAccountApi)
+    .add(enterpriseAdminApi)
     .add(enterpriseApi)
     .add(enterpriseAdeApi)
     .add(enterpriseAttributeApi)

@@ -12,6 +12,10 @@ export * from "./Audit.js";
 
 export * from "./Account.js";
 
+export * from "./Admin.js";
+
+export * from "./superadmin.js";
+
 export * from "./Device.js";
 
 export * from "./Group.js";
