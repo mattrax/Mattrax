@@ -10,9 +10,12 @@ test.describe("identity directory pages", () => {
     await page.getByRole("link", { name: "Directory sync" }).click();
     await expect(page.getByText("Microsoft Entra directory sync")).toBeVisible();
     await expect(page.getByText(/Graph (not )?configured/)).toBeVisible();
-    await expect(page.getByLabel("Automatic sync")).toBeVisible();
-    await expect(page.getByLabel("Automatic sync")).toHaveValue("0");
-    await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
+    // The directory-sync page has an Entra panel and a Google Workspace panel,
+    // each with its own automatic-sync control and Sync now button. Entra is
+    // first; the Google panel is covered by its own settings tests.
+    await expect(page.getByLabel("Automatic sync").first()).toBeVisible();
+    await expect(page.getByLabel("Automatic sync").first()).toHaveValue("0");
+    await expect(page.getByRole("button", { name: "Sync now" }).first()).toBeVisible();
 
     await page.getByRole("link", { name: "Domains" }).click();
     await expect(page.getByText("Verified domains", { exact: true })).toBeVisible();
