@@ -8,6 +8,7 @@ import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
 import { isCacheablePublicPage } from "~/lib/public-routes";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { postHogEnvironment, setPostHogConfig } from "~/lib/posthog-config-store";
+import { setSupportConfig } from "~/lib/support-config-store";
 import { DEPLOYMENT_ID } from "~/lib/deployment";
 import {
   expireSsrToken,
@@ -153,6 +154,8 @@ const middleware: StartMiddleware = async (event, next) => {
   // client. Resolved per isolate; the shape is the same on Cloudflare and Node.
   const bindings = getBindings();
   const posthogKey = bindings.POSTHOG_KEY?.trim();
+
+  setSupportConfig(event.request, { url: bindings.SUPPORT_URL?.trim() ?? "" });
 
   if (posthogKey)
     setPostHogConfig(event.request, {

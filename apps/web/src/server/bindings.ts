@@ -14,6 +14,8 @@ export interface DeploymentBindings {
   readonly AUTH_SECRET: string | undefined;
   readonly POSTHOG_KEY: string | undefined;
   readonly POSTHOG_HOST: string | undefined;
+  /** Optional support or calendar URL used by the app menu and checklist. */
+  readonly SUPPORT_URL: string | undefined;
   /** The API: a service binding on Cloudflare, loopback HTTP on Node. */
   readonly API: { fetch(request: Request): Promise<Response> };
 }
@@ -48,6 +50,7 @@ const workerBindings = (env: Env): DeploymentBindings => {
     AUTH_SECRET: env.AUTH_SECRET,
     POSTHOG_KEY: env.POSTHOG_KEY,
     POSTHOG_HOST: env.POSTHOG_HOST,
+    SUPPORT_URL: env.SUPPORT_URL,
     API: {
       fetch: (request) => (apiUrl ? forward(apiUrl, request) : env.API.fetch(request)),
     },
@@ -66,6 +69,7 @@ const nodeBindings = (): DeploymentBindings => {
     AUTH_SECRET: process.env.AUTH_SECRET,
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
+    SUPPORT_URL: process.env.SUPPORT_URL,
     API: {
       async fetch(request) {
         try {

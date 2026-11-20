@@ -103,6 +103,7 @@ export default defineConfig({
             { text: "What is Mattrax?", link: "/getting-started/" },
             { text: "Quick start", link: "/getting-started/quick-start" },
             { text: "Core concepts", link: "/getting-started/concepts" },
+            { text: "What alpha means", link: "/getting-started/alpha" },
           ],
         },
         {

@@ -103,7 +103,13 @@ function DeploymentSwitch() {
         <div class="lx-deploy__panel" data-on={mode() === "cloud" ? "" : undefined}>
           <p class="lx-deploy__panel-title">Cloud</p>
           <p class="lx-deploy__panel-body">Cloud runs on Cloudflare Workers.</p>
-          <p class="lx-deploy__note">Free during alpha.</p>
+          <p class="lx-deploy__note">
+            Free during alpha.{" "}
+            <a href="/docs/getting-started/alpha" target="_self">
+              What alpha means
+            </a>
+            .
+          </p>
         </div>
 
         <div class="lx-deploy__panel" data-on={mode() === "self" ? "" : undefined}>

@@ -277,7 +277,8 @@ type RouteParam = string | undefined;
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
-  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"];
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
@@ -296,6 +297,7 @@ type EnterpriseIdentityClient = Effect.Success<
 >["EnterpriseIdentity"];
 
 type EnterpriseUserClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseUser"];
+
 type EnterpriseListClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseList"];
 
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
@@ -391,6 +393,8 @@ export const enterpriseKeys = {
     ["enterprise", "search", keyTenant(tenantId), term, limit] as const,
   mcpConnections: () => ["enterprise", "mcp-connections"] as const,
   dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", keyTenant(tenantId)] as const,
+  onboarding: (tenantId: RouteParam) =>
+    ["enterprise", "onboarding", keyTenant(tenantId)] as const,
   dashboard: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "dashboard", keyTenant(tenantId), id ?? ""] as const,
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
@@ -592,6 +596,7 @@ function endpoint<A, E>(
       Effect.map(clientEffect(headers), (client) => ({
         ...client.EnterpriseApi,
         ...client.EnterpriseGroup,
+        ...client.EnterpriseOnboarding,
       })),
     call,
     options,
@@ -714,6 +719,9 @@ const enterpriseQueryOptions = <
   /** Leave endpoint failures in state instead of throwing to the error boundary. */
   throwOnError?: boolean;
   suspense?: boolean;
+  /** Override the cache's stale window for a query that must reflect a just-made change. */
+  staleTime?: number;
+  refetchOnMount?: boolean | "always";
 }) =>
   queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>({
     // SAFETY: `T` is the endpoint promise for this key; its resolved value is
@@ -724,6 +732,8 @@ const enterpriseQueryOptions = <
       enabled?: boolean;
       throwOnError?: boolean;
       suspense?: boolean;
+      staleTime?: number;
+      refetchOnMount?: boolean | "always";
     }),
     // The API Worker authenticates with the browser's cookie; a server render
     // has no reliable way to forward it through every endpoint. Keep all
@@ -833,6 +843,17 @@ export const enterprise = {
     ),
   getTenant: (tenantId: RouteParam) =>
     endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getTenantOnboarding: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getTenantOnboarding({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchTenantOnboarding: (tenantId: RouteParam, dismissed: boolean) =>
+    endpoint((api) =>
+      api.patchTenantOnboarding({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { dismissed },
+      }),
+    ),
   patchTenant: (
     tenantId: RouteParam,
     payload: Partial<{
@@ -2555,6 +2576,19 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.dashboards(tenantId),
       queryFn: () => enterprise.listDashboards(tenantId),
       enabled: Boolean(tenantId) && !isServer,
+    }),
+  /**
+   * The overview checklist. It is the overview's one extra request, and it is
+   * kept fresh on every mount because the steps are derived from resources the
+   * user may have just created on another page.
+   */
+  onboarding: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.onboarding(tenantId),
+      queryFn: () => enterprise.getTenantOnboarding(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+      staleTime: 0,
+      refetchOnMount: "always",
     }),
   dashboard: (tenantId: RouteParam, id: RouteParam) =>
     enterpriseQueryOptions({

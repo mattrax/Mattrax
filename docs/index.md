@@ -13,6 +13,8 @@ production operations, the REST API and migration.
 - [What is Mattrax?](/getting-started/) — the product model and terminology.
 - [Quick start](/getting-started/quick-start) — create a tenant and enroll a device.
 - [Core concepts](/getting-started/concepts) — tenants, groups, policies and assignments.
+- [What alpha means](/getting-started/alpha) — support, backups and breaking changes during
+  the Cloud alpha.
 
 ## Platforms
 
