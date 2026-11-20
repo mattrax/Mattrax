@@ -16,6 +16,8 @@ import {
   SkeletonRows,
 } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
+import { PolicyProgressBar } from "~/components/mdm/policy-progress";
+import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -46,7 +48,12 @@ import {
   optimisticallyRemoveRows,
   optimisticallyUpdateList,
 } from "~/lib/optimistic";
-import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
+import {
+  isPolicyEnabled,
+  policyDeploymentSegments,
+  policyDeliveryStatePresentation,
+  policyStatePresentation,
+} from "~/lib/policy-delivery";
 import {
   policyOsRangeLabel,
   policyScopeChannelLabel,
@@ -221,42 +228,6 @@ const kindLabel = (kind: string) => {
   return kind;
 };
 
-/** Links to the alternate policy surfaces, styled as a console tab strip. */
-function ViewTabs(props: { base: string; active: "overview" | "assignments" | "designer" }) {
-  const tabs = () => [
-    { id: "overview" as const, label: "Overview", href: props.base },
-    { id: "assignments" as const, label: "Assignments", href: `${props.base}/assignments` },
-    { id: "designer" as const, label: "Designer", href: `${props.base}/design` },
-  ];
-
-  return (
-    <nav
-      aria-label="Policy views"
-      class="no-scrollbar -mb-px flex items-center gap-0.5 overflow-x-auto border-b border-border"
-    >
-      <For each={tabs()}>
-        {(tab) => {
-          const current = tab.id === props.active;
-
-          return (
-            <a
-              href={tab.href}
-              aria-current={current ? "page" : undefined}
-              class={
-                current
-                  ? "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-brand px-2.5 text-[12.5px] font-medium text-foreground transition-colors duration-[var(--duration-hover)] ease-swift"
-                  : "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/50 hover:text-foreground"
-              }
-            >
-              {tab.label}
-            </a>
-          );
-        }}
-      </For>
-    </nav>
-  );
-}
-
 export const route = {
   preload: ({
     params,
@@ -340,6 +311,9 @@ export default function PolicyDetailPage() {
       qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") }),
       qc.invalidateQueries({
         queryKey: enterpriseKeys.policyScope(params.tenantId, params.policyId),
+      }),
+      qc.invalidateQueries({
+        queryKey: enterpriseKeys.policyDeployment(params.tenantId, params.policyId, "latest", 1, 0),
       }),
     ]);
   };
@@ -483,6 +457,18 @@ export default function PolicyDetailPage() {
     queryFn: () => enterprise.listPolicyDeployments(params.tenantId, params.policyId),
   }));
 
+  // One row is enough for the compact counts; the Deployment tab loads the
+  // device page under its own key.
+  const deploymentSummary = useQuery(() =>
+    enterpriseQueries.policyDeployment(params.tenantId, params.policyId, "latest", { limit: 1 }),
+  );
+
+  const deploymentApplicable = () => {
+    const counts = deploymentSummary.data?.counts;
+
+    return counts ? counts.delivered + counts.pending + counts.failed : 0;
+  };
+
   const rollback = useMutation(() => ({
     mutationFn: (deploymentId: string) =>
       enterprise.rollbackPolicy(params.tenantId, params.policyId, deploymentId),
@@ -576,7 +562,10 @@ export default function PolicyDetailPage() {
         }
       />
 
-      <ViewTabs base={`/t/${params.tenantId}/policies/${params.policyId}`} active="overview" />
+      <PolicyViewTabs
+        base={`/t/${params.tenantId}/policies/${params.policyId}`}
+        active="overview"
+      />
 
       <ErrorText error={sync.error} />
       <ErrorText error={dup.error} />
@@ -912,6 +901,113 @@ export default function PolicyDetailPage() {
 
         <Panel
           class="lg:col-span-2"
+          title="Deployment"
+          description="Per-device progress for the latest saved version."
+          actions={
+            <Show when={deploymentSummary.data}>
+              {(summary) => (
+                <Button
+                  as="a"
+                  size="sm"
+                  variant="outline"
+                  href={`/t/${params.tenantId}/policies/${params.policyId}/deployment?version=${summary().version}`}
+                >
+                  Per-device progress
+                </Button>
+              )}
+            </Show>
+          }
+        >
+          <Show when={!deployments.isPending} fallback={<SkeletonRows rows={2} />}>
+            <Show
+              when={(deployments.data?.deployments.length ?? 0) > 0}
+              fallback={
+                <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                  No deployments yet. Every save creates a version and starts tracking each device
+                  in scope.
+                </p>
+              }
+            >
+              <Show
+                when={deploymentSummary.data}
+                fallback={
+                  <Show when={deploymentSummary.isError} fallback={<SkeletonRows rows={2} />}>
+                    <QueryError
+                      error={deploymentSummary.error}
+                      onRetry={() => void deploymentSummary.refetch()}
+                    />
+                  </Show>
+                }
+              >
+                {(summary) => {
+                  const presentation = () => policyDeliveryStatePresentation(summary().state);
+
+                  const segments = () => policyDeploymentSegments(summary().counts);
+
+                  return (
+                    <div class="space-y-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                          <Badge variant={presentation().tone} dot={presentation().dot}>
+                            {presentation().label}
+                          </Badge>
+                          <span class="tabular-nums text-muted-foreground">
+                            Version {summary().version}
+                          </span>
+                        </p>
+                        <p class="text-[11.5px] text-muted-foreground">
+                          {summary().counts.scoped} device
+                          {summary().counts.scoped === 1 ? "" : "s"} in scope
+                        </p>
+                      </div>
+
+                      <PolicyProgressBar segments={segments()} />
+
+                      <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-[11.5px] text-muted-foreground">
+                        <For each={segments().filter((segment) => segment.value > 0)}>
+                          {(segment) => (
+                            <span class="inline-flex items-center gap-1.5">
+                              <span
+                                class={`size-1.5 rounded-full ${segment.class}`}
+                                aria-hidden="true"
+                              />
+                              <span class="tabular-nums text-foreground">{segment.value}</span>
+                              {segment.label.toLowerCase()}
+                            </span>
+                          )}
+                        </For>
+                      </div>
+
+                      <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                        {summary().counts.scoped === 0
+                          ? "This policy's assignments match no devices right now."
+                          : deploymentApplicable() > 0
+                            ? `${summary().counts.delivered} of ${deploymentApplicable()} tracked devices report this version. Apple devices converge on their next check-in; Windows and Android apply it on their own schedule.`
+                            : "No device in scope has a declarable configuration from this policy yet."}
+                        <Show when={summary().counts.untracked > 0}>
+                          {" "}
+                          {summary().counts.untracked} device
+                          {summary().counts.untracked === 1 ? " is" : "s are"} untracked because
+                          Windows, Android or a legacy Apple profile does not report declaration
+                          status.
+                        </Show>
+                        <Show when={summary().counts.notInScope > 0}>
+                          {" "}
+                          {summary().counts.notInScope} device
+                          {summary().counts.notInScope === 1 ? " has" : "s have"} left the policy's
+                          scope but still reports its declarations.
+                        </Show>
+                      </p>
+                    </div>
+                  );
+                }}
+              </Show>
+            </Show>
+          </Show>
+        </Panel>
+
+        <Panel
+          class="lg:col-span-2"
           title="Deployment history"
           description="Every save produces a versioned deployment that can be restored."
           actions={
@@ -935,9 +1031,14 @@ export default function PolicyDetailPage() {
                 {(deployment) => (
                   <div class="flex flex-wrap items-center justify-between gap-3 bg-muted/10 px-3 py-2.5 text-[13px]">
                     <span class="flex min-w-0 items-center gap-2">
-                      <Badge variant="secondary" class="text-[10px] tabular-nums">
-                        Version {deployment.version}
-                      </Badge>
+                      <a
+                        class="rounded-[5px] outline-none hover:opacity-80 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                        href={`/t/${params.tenantId}/policies/${params.policyId}/deployment?version=${deployment.version}`}
+                      >
+                        <Badge variant="secondary" class="text-[10px] tabular-nums">
+                          Version {deployment.version}
+                        </Badge>
+                      </a>
                       <span class="truncate text-muted-foreground">
                         {formatDate(deployment.createdAt)}
                       </span>

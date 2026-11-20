@@ -24,6 +24,8 @@ export * from "./Group.js";
 
 export * from "./Policy.js";
 
+export * from "./PolicyDeployment.js";
+
 export * from "./PolicyDocument.js";
 
 export * from "./PolicyScope.js";

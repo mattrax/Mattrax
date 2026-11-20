@@ -60,6 +60,7 @@ const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/groups/[groupId].tsx",
   "routes/(dashboard)/t/[tenantId]/groups/new.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/assignments.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/deployment.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/design.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/editor.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/index.tsx",

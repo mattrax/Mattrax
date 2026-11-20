@@ -76,6 +76,7 @@ const POLICY_READ = new Set([
   "getPolicy",
   "getPolicyScope",
   "listPolicyDeployments",
+  "getPolicyDeploymentDevices",
   "getPolicyAssignments",
   "downloadPolicyApplication",
 ]);

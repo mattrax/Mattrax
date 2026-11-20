@@ -235,6 +235,8 @@ export type PolicyDeclarationReport = {
   readonly valid: string;
   readonly active: boolean;
   readonly serverToken?: string | null;
+  /** When the report was recorded, used as per-device delivery evidence. */
+  readonly updatedAt?: string | null;
 };
 
 export type PolicyDeliveryConfiguration = {
@@ -275,7 +277,7 @@ export type PolicyDeliveryInput = {
  * installed imperatively (they never publish a declaration), so none of those
  * kinds can ever produce delivery evidence.
  */
-const isDeclarableAppleKind = (kind: string) => {
+export const isDeclarableAppleKind = (kind: string) => {
   switch (parseConfigurationKind(kind).type) {
     case "device":
     case "custom":
@@ -315,6 +317,130 @@ const declarationIsCurrent = (
 type DeviceEvidence = {
   readonly byIdentifier: Map<string, PolicyDeclarationReport>;
   readonly byKind: Map<string, Set<string>>;
+  /** Newest report time per kind, from any policy. */
+  readonly latestByKind: Map<string, string>;
+};
+
+const evidenceFor = (declarations: ReadonlyArray<PolicyDeclarationReport>): DeviceEvidence => {
+  const byIdentifier = new Map<string, PolicyDeclarationReport>();
+  const byKind = new Map<string, Set<string>>();
+  const latestByKind = new Map<string, string>();
+
+  for (const declaration of declarations) {
+    const parsed = splitConfigurationDeclarationIdentifier(declaration.identifier);
+
+    if (!parsed.policyId || !parsed.kind) continue;
+
+    byIdentifier.set(declaration.identifier, declaration);
+    const policiesForKind = byKind.get(parsed.kind) ?? new Set<string>();
+
+    policiesForKind.add(parsed.policyId);
+    byKind.set(parsed.kind, policiesForKind);
+
+    if (declaration.updatedAt) {
+      const latest = latestByKind.get(parsed.kind);
+
+      if (!latest || declaration.updatedAt > latest)
+        latestByKind.set(parsed.kind, declaration.updatedAt);
+    }
+  }
+
+  return { byIdentifier, byKind, latestByKind };
+};
+
+export type AppleDeviceDeliveryStatus = "delivered" | "failed" | "pending" | "not-applicable";
+
+/** One Apple device's evidence against a set of declarable configuration kinds. */
+export type AppleDeviceDelivery = {
+  readonly status: AppleDeviceDeliveryStatus;
+  readonly totalKinds: number;
+  readonly deliveredKinds: number;
+  readonly overriddenKinds: number;
+  /** Kinds the device currently reports as invalid or failed. */
+  readonly failedKinds: ReadonlyArray<string>;
+  /** Kinds with no current, valid, active declaration of their own. */
+  readonly unreportedKinds: ReadonlyArray<string>;
+  /** Newest report time for these kinds, from this policy or another. */
+  readonly lastEvidenceAt: string | null;
+};
+
+/**
+ * Evaluate one Apple device's declarations against the version's kinds.
+ *
+ * This is the single per-device rule behind both the policy-list rollup and the
+ * deployment progress view, so the two cannot disagree. A device is delivered
+ * only when every kind is reported valid, active and current. Kinds another
+ * policy provides are counted as overridden rather than pending; a device whose
+ * kinds are all overridden is not applicable to this policy.
+ */
+export const resolveAppleDeviceDelivery = (input: {
+  readonly policyId: string;
+  readonly configurations: ReadonlyArray<PolicyDeliveryConfiguration>;
+  readonly declarations: ReadonlyArray<PolicyDeclarationReport>;
+}): AppleDeviceDelivery => {
+  const evidence = evidenceFor(input.declarations);
+  const totalKinds = input.configurations.length;
+  const failedKinds: string[] = [];
+  const unreportedKinds: string[] = [];
+  let deliveredKinds = 0;
+  let overriddenKinds = 0;
+  let lastEvidenceAt: string | null = null;
+
+  for (const configuration of input.configurations) {
+    const latest = evidence.latestByKind.get(configuration.kind);
+
+    if (latest && (!lastEvidenceAt || latest > lastEvidenceAt)) lastEvidenceAt = latest;
+
+    const identifier = configurationDeclarationIdentifier(input.policyId, configuration.kind);
+    const declaration = evidence.byIdentifier.get(identifier);
+
+    if (!declaration) {
+      // Another policy published this kind for the device, so this policy
+      // cannot have contributed it. No evidence at all stays unreported.
+      if (evidence.byKind.get(configuration.kind)?.size) overriddenKinds++;
+      else unreportedKinds.push(configuration.kind);
+
+      continue;
+    }
+
+    const current = declarationIsCurrent(configuration, declaration);
+
+    if (isDeclarationFailure(declaration.valid)) {
+      // A stale failure from a previous save is not the current state.
+      if (current) failedKinds.push(configuration.kind);
+
+      continue;
+    }
+
+    // `unknown` and inactive declarations are not evidence of delivery.
+    if (declaration.valid.trim().toLowerCase() !== "valid") {
+      unreportedKinds.push(configuration.kind);
+      continue;
+    }
+
+    if (!declaration.active || !current) {
+      unreportedKinds.push(configuration.kind);
+      continue;
+    }
+
+    deliveredKinds++;
+  }
+
+  let status: AppleDeviceDeliveryStatus = "pending";
+
+  if (failedKinds.length > 0) status = "failed";
+  else if (totalKinds > 0 && deliveredKinds === totalKinds) status = "delivered";
+  else if (totalKinds > 0 && overriddenKinds === totalKinds) status = "not-applicable";
+
+  return {
+    status,
+    totalKinds,
+    deliveredKinds,
+    overriddenKinds,
+    failedKinds,
+    unreportedKinds,
+    lastEvidenceAt,
+  };
 };
 
 /**
@@ -369,24 +495,13 @@ export const derivePolicyDelivery = (input: PolicyDeliveryInput): PolicyDelivery
   if (configurations.length === 0)
     return state(input.hasUserScopedConfigurations ? "user-channel" : "no-configurations");
 
-  const evidenceByDevice = new Map<string, DeviceEvidence>();
+  const declarationsByDevice = new Map<string, Array<PolicyDeclarationReport>>();
 
   for (const declaration of input.declarations) {
-    const parsed = splitConfigurationDeclarationIdentifier(declaration.identifier);
+    const list = declarationsByDevice.get(declaration.deviceId) ?? [];
 
-    if (!parsed.policyId || !parsed.kind) continue;
-
-    const evidence = evidenceByDevice.get(declaration.deviceId) ?? {
-      byIdentifier: new Map<string, PolicyDeclarationReport>(),
-      byKind: new Map<string, Set<string>>(),
-    };
-
-    evidence.byIdentifier.set(declaration.identifier, declaration);
-    const policiesForKind = evidence.byKind.get(parsed.kind) ?? new Set<string>();
-
-    policiesForKind.add(parsed.policyId);
-    evidence.byKind.set(parsed.kind, policiesForKind);
-    evidenceByDevice.set(declaration.deviceId, evidence);
+    list.push(declaration);
+    declarationsByDevice.set(declaration.deviceId, list);
   }
 
   let deliveredDevices = 0;
@@ -397,43 +512,15 @@ export const derivePolicyDelivery = (input: PolicyDeliveryInput): PolicyDelivery
   for (const device of appleDevices) {
     if (device.declarationMode === "legacy") continue;
 
-    const evidence = evidenceByDevice.get(device.id);
-    let failed = false;
-    let deliveredKinds = 0;
-    let overriddenKinds = 0;
+    const delivery = resolveAppleDeviceDelivery({
+      policyId: input.policyId,
+      configurations,
+      declarations: declarationsByDevice.get(device.id) ?? [],
+    });
 
-    for (const configuration of configurations) {
-      const identifier = configurationDeclarationIdentifier(input.policyId, configuration.kind);
-      const declaration = evidence?.byIdentifier.get(identifier);
-
-      if (!declaration) {
-        // Another policy published this kind for the device, so this policy
-        // cannot have contributed it. No evidence at all stays pending.
-        if (evidence?.byKind.get(configuration.kind)?.size) overriddenKinds++;
-
-        continue;
-      }
-
-      const current = declarationIsCurrent(configuration, declaration);
-
-      if (isDeclarationFailure(declaration.valid)) {
-        // A stale failure from a previous save is not the current state.
-        if (current) failed = true;
-
-        continue;
-      }
-
-      // `unknown` and inactive declarations are not evidence of delivery.
-      if (declaration.valid.trim().toLowerCase() !== "valid") continue;
-
-      if (!declaration.active || !current) continue;
-
-      deliveredKinds++;
-    }
-
-    if (failed) failedDevices++;
-    else if (deliveredKinds === configurations.length) deliveredDevices++;
-    else if (overriddenKinds === configurations.length) overriddenDevices++;
+    if (delivery.status === "failed") failedDevices++;
+    else if (delivery.status === "delivered") deliveredDevices++;
+    else if (delivery.status === "not-applicable") overriddenDevices++;
     else pendingDevices++;
   }
 
