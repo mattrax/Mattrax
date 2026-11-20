@@ -53,10 +53,9 @@ export declare const apiWorker: {
         APNS_RELAY_SECRET: import("cf/config").SecretBinding;
         AZURE_CLIENT_ID: import("cf/config").SecretBinding;
         AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
-        /** Deployment-wide Google Workspace directory sync (optional). */
-        GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
-        GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
-        GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
+        GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+        GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+        GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
         /** Google Android Management API service account and Pub/Sub delivery. */
         ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -185,10 +184,9 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
-            /** Deployment-wide Google Workspace directory sync (optional). */
-            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
-            GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
-            GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -315,10 +313,9 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
-            /** Deployment-wide Google Workspace directory sync (optional). */
-            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
-            GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
-            GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;

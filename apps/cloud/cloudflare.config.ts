@@ -156,9 +156,18 @@ export const apiWorker = {
     AZURE_CLIENT_ID: bindings.secret(),
     AZURE_CLIENT_SECRET: bindings.secret(),
     /** Deployment-wide Google Workspace directory sync (optional). */
-    GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: bindings.secret(),
-    GOOGLE_WORKSPACE_ADMIN_EMAIL: bindings.secret(),
-    GOOGLE_WORKSPACE_CUSTOMER: bindings.secret(),
+    // Optional deployment-wide Google Workspace credentials. Tenants can store
+    // their own sealed credentials in the dashboard, so a deployment without
+    // these must still build and deploy.
+    ...(process.env.GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON
+      ? { GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: bindings.secret() }
+      : {}),
+    ...(process.env.GOOGLE_WORKSPACE_ADMIN_EMAIL
+      ? { GOOGLE_WORKSPACE_ADMIN_EMAIL: bindings.secret() }
+      : {}),
+    ...(process.env.GOOGLE_WORKSPACE_CUSTOMER
+      ? { GOOGLE_WORKSPACE_CUSTOMER: bindings.secret() }
+      : {}),
     /** Google Android Management API service account and Pub/Sub delivery. */
     ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: bindings.secret(),
     ANDROID_MANAGEMENT_PROJECT_ID: bindings.secret(),
