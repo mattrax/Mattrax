@@ -1,12 +1,22 @@
 import { useLocation } from "@solidjs/router";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import { raisedFailure } from "~/lib/errors";
-import { Errored, type ParentProps, Show } from "solid-js";
+import { Errored, lazy, type ParentProps, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { BrandLogo } from "~/components/brand-logo";
 import { PageErrorFallback } from "~/components/error-boundary";
-import { UserDropdown } from "~/components/user-dropdown";
-import { authClient } from "~/lib/auth";
 import { reportGlobalError } from "~/lib/global-errors";
+import { getPreloadedSession, readClientPreloadedSession } from "~/lib/session-store";
+
+/**
+ * The account menu needs the auth client and the full dropdown primitive set.
+ * Keep it out of the signed-out public bundle: the landing page is the most
+ * performance-sensitive route, and most visitors are not signed in. Signing out
+ * also imports the client on demand.
+ */
+const UserDropdown = lazy(() =>
+  import("~/components/user-dropdown").then((module) => ({ default: module.UserDropdown })),
+);
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
@@ -98,7 +108,15 @@ const navigation = [
 ];
 
 function TopNavigation() {
-  const session = authClient.useSession();
+  // The server already resolved the session for this request and the document
+  // serialised it for hydration. Reading it here keeps the first client frame
+  // identical to the server render: no pending placeholder, no layout shift and
+  // no session request on the public page.
+  const preloaded = isServer
+    ? getPreloadedSession(getRequestEvent()!.request)
+    : readClientPreloadedSession();
+
+  const account = () => preloaded?.me?.account;
   const location = useLocation();
 
   const isActive = (href: string) =>
@@ -106,6 +124,7 @@ function TopNavigation() {
 
   const handleLogout = async () => {
     try {
+      const { authClient } = await import("~/lib/auth");
       const result = await authClient.signOut();
 
       if (result.error) {
@@ -147,7 +166,7 @@ function TopNavigation() {
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <Show when={!session().isPending && session().data?.user}>
+          <Show when={account()}>
             <Button
               as="a"
               href="/dashboard"
@@ -157,14 +176,18 @@ function TopNavigation() {
             >
               Dashboard
             </Button>
+            <UserDropdown
+              user={account()}
+              pending={false}
+              showDashboardLink
+              onSignOut={handleLogout}
+            />
           </Show>
-          <UserDropdown
-            user={session().data?.user}
-            pending={session().isPending}
-            signInHref="/login"
-            showDashboardLink
-            onSignOut={handleLogout}
-          />
+          <Show when={!account()}>
+            <Button as="a" href="/login" size="sm" class="touch-target">
+              Sign in
+            </Button>
+          </Show>
 
           {/* Native popover: light-dismiss (outside click) and Escape come from
               the platform, with no JS listener to keep in sync. */}
@@ -206,10 +229,10 @@ function TopNavigation() {
             </nav>
             <div class="mt-1 border-t border-border p-1">
               <a
-                href={session().data?.user ? "/dashboard" : "/register"}
+                href={account() ? "/dashboard" : "/register"}
                 class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
               >
-                {session().data?.user ? "Open dashboard" : "Create an account"}
+                {account() ? "Open dashboard" : "Create an account"}
               </a>
             </div>
           </div>

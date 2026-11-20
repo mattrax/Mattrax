@@ -44,9 +44,20 @@ const ClientSessionGlobal = Schema.Struct({
  * `window.__MATTRAX_SESSION__`) so a client-side query can seed from it too.
  */
 export function readClientPreloadedMe(): MeResponse | undefined {
+  return readClientPreloadedSession()?.me ?? undefined;
+}
+
+/**
+ * The browser-side preloaded session (claims and me) the SSR shell serialised.
+ *
+ * The landing header uses it to render the correct signed-in or signed-out
+ * state on the first frame, so it neither shifts after a session request nor
+ * pulls the auth client into the public bundle.
+ */
+export function readClientPreloadedSession(): PreloadedSession | undefined {
   const stored = Option.getOrUndefined(
     Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis),
   );
 
-  return stored?.__MATTRAX_SESSION__?.me ?? undefined;
+  return stored?.__MATTRAX_SESSION__ ?? undefined;
 }
