@@ -128,7 +128,7 @@ one process and reports complete figures. Counters reset when the isolate is rec
 
 Useful queries:
 
-```promql
+```text
 # p95 request latency over 5 minutes
 histogram_quantile(0.95, sum by (le, route) (rate(mattrax_http_request_duration_seconds_bucket[5m])))
 
