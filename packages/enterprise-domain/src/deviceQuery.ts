@@ -31,6 +31,15 @@ export type DeviceQueryHealth = typeof DeviceHealthLevel.Type | "stale";
 
 const DeviceFileVault = Schema.Literals(["enabled", "disabled", "unknown"]);
 
+/**
+ * Identity provider that provisioned a directory user, as recorded on
+ * `user.source`. Entra covers the tenant's SSO/Graph import; `scim` is a
+ * generic SCIM directory; `manual` users were created by an administrator.
+ */
+export const DeviceUserSource = Schema.Literals(["manual", "entra", "scim"]);
+
+export type DeviceUserSource = typeof DeviceUserSource.Type;
+
 const TextField = Schema.Literals([
   "name",
   "model",
@@ -40,10 +49,25 @@ const TextField = Schema.Literals([
   "batteryHealth",
 ]);
 
+/**
+ * Conditions that read the directory users linked to a device rather than the
+ * device itself. They are part of the shared query language so a dynamic group
+ * can express "signed-in user's domain is …", but a caller that has no linked
+ * users (for example a device-table filter) must leave `DeviceQueryDevice.users`
+ * undefined: user conditions then match nothing, including `ne` ones.
+ */
+const UserTextField = Schema.Literals(["userEmail", "userDomain", "userName", "userExternalId"]);
+
 const TextCondition = Schema.Struct({
-  field: TextField,
+  field: Schema.Union([TextField, UserTextField]),
   op: Schema.optional(Schema.Literals(["eq", "ne", "contains", "prefix"])),
   value: Schema.String,
+});
+
+const UserSourceCondition = Schema.Struct({
+  field: Schema.Literal("userSource"),
+  op: Schema.optional(Schema.Literals(["eq", "ne"])),
+  value: DeviceUserSource,
 });
 
 const PlatformCondition = Schema.Struct({
@@ -102,6 +126,7 @@ const ApplicationCondition = Schema.Struct({
 
 export const DeviceCondition = Schema.Union([
   TextCondition,
+  UserSourceCondition,
   PlatformCondition,
   OsVersionCondition,
   StatusCondition,
@@ -179,6 +204,22 @@ export type DeviceQueryDevice = {
     readonly bundleId: string;
     readonly name?: string | null;
   }>;
+  /**
+   * Directory users linked to the device. `undefined` means "not loaded" and
+   * makes every user condition fail; an empty array means "no linked users" and
+   * is a real answer (positive conditions fail, negative ones hold).
+   */
+  readonly users?: ReadonlyArray<DeviceQueryUser>;
+};
+
+export type DeviceQueryUser = {
+  /** Present when the caller can attribute a matched condition to a person. */
+  readonly id?: string;
+  readonly email?: string | null;
+  readonly name?: string | null;
+  readonly externalId?: string | null;
+  /** `manual`, `entra` or `scim`. */
+  readonly source?: string | null;
 };
 
 export type DeviceQueryEvaluationOptions = {
@@ -337,6 +378,53 @@ const matchesApplication = (
   return condition.op === "lacks" ? !found : found;
 };
 
+/** The domain part of an email address, lowercased, or `null`. */
+const emailDomain = (email: string | null | undefined): string | null => {
+  const text = email?.trim().toLowerCase() ?? "";
+  const at = text.lastIndexOf("@");
+
+  return at > 0 && at < text.length - 1 ? text.slice(at + 1) : null;
+};
+
+/**
+ * Evaluate a condition against the users linked to a device.
+ *
+ * Semantics (documented on `DeviceQueryUser` and in the group editor):
+ * - `undefined` user data means the answer is unknown, so the condition fails
+ *   (including `ne`, which would otherwise sweep in every device).
+ * - Positive operators are existential: at least one linked user must match.
+ *   Two user conditions in `all` therefore do not have to describe the same
+ *   person.
+ * - `ne` is universal: no linked user may match. A device with no linked users
+ *   satisfies it, because nobody has the excluded value.
+ */
+const userConditionMatches = (
+  device: DeviceQueryDevice,
+  matches: (user: DeviceQueryUser) => boolean,
+  negative: boolean,
+): boolean => {
+  if (device.users === undefined) return false;
+
+  return negative ? device.users.every((user) => !matches(user)) : device.users.some(matches);
+};
+
+const matchesUserText = (
+  device: DeviceQueryDevice,
+  read: (user: DeviceQueryUser) => string | null | undefined,
+  condition: { op?: string; value: string },
+) => {
+  const op = condition.op ?? "contains";
+
+  if (op === "ne")
+    return userConditionMatches(
+      device,
+      (user) => textMatches(read(user), { op: "eq", value: condition.value }),
+      true,
+    );
+
+  return userConditionMatches(device, (user) => textMatches(read(user), condition), false);
+};
+
 const matchesCondition = (
   condition: DeviceCondition,
   device: DeviceQueryDevice,
@@ -350,6 +438,20 @@ const matchesCondition = (
     case "osEdition":
     case "batteryHealth":
       return textMatches(device[condition.field], condition);
+    case "userEmail":
+      return matchesUserText(device, (user) => user.email, condition);
+    case "userDomain":
+      return matchesUserText(device, (user) => emailDomain(user.email), condition);
+    case "userName":
+      return matchesUserText(device, (user) => user.name, condition);
+    case "userExternalId":
+      return matchesUserText(device, (user) => user.externalId, condition);
+    case "userSource": {
+      const expected = normalized(condition.value);
+      const matches = (user: DeviceQueryUser) => normalized(user.source) === expected;
+
+      return userConditionMatches(device, matches, condition.op === "ne");
+    }
     case "platform":
     case "proto": {
       const actual = normalized(device.proto);
@@ -616,6 +718,20 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
 
       return null;
 
+    case "userSource": {
+      if (!Schema.is(DeviceUserSource)(value)) return null;
+
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
+    }
+
+    case "userEmail":
+    case "userDomain":
+    case "userName":
+    case "userExternalId":
     case "name":
     case "model":
     case "serial":

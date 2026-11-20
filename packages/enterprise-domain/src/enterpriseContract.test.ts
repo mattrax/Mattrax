@@ -8,6 +8,7 @@ import {
   enterpriseAccountApi,
   enterpriseApi,
   enterpriseAttributeApi,
+  enterpriseGroupApi,
   enterpriseIdentityApi,
 } from "./enterprise.ts";
 import { EnterpriseNotConfigured, EnterpriseUpstreamError } from "./Errors.js";
@@ -17,6 +18,7 @@ import { StepUpRequired } from "./stepUp.js";
 const endpoints = {
   ...enterpriseAccountApi.endpoints,
   ...enterpriseApi.endpoints,
+  ...enterpriseGroupApi.endpoints,
   ...enterpriseAttributeApi.endpoints,
   ...enterpriseIdentityApi.endpoints,
 };

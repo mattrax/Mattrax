@@ -11,7 +11,11 @@ import {
   validateTenantBranding,
   type TenantExportGroup,
 } from "@mattrax/enterprise-domain";
-import { syncDirectoryGroupsForTenant, validateConfiguration } from "@mattrax/mdm-apple";
+import {
+  syncDirectoryGroupsForTenant,
+  syncGroupInheritance,
+  validateConfiguration,
+} from "@mattrax/mdm-apple";
 import { schema } from "@mattrax/enterprise-core";
 import { loadTenantEscrowKey } from "../Device/fdeEscrow.ts";
 import {
@@ -1058,6 +1062,77 @@ const applyBundle = (
 
         if (groupDeviceValues.length > 0)
           yield* tx.insert(schema.groupDevice).ignore().values(groupDeviceValues);
+
+        // Nested groups are restored from their child edges. Inherited rows
+        // were not exported, so they are re-derived below instead of trusting a
+        // stale snapshot of a parent's membership.
+        const childEdgeValues: Array<{
+          parentGroupId: string;
+          childGroupId: string;
+          createdAt: Date;
+        }> = [];
+
+        for (const group of bundle.groups) {
+          const parentGroupId = groupIdByKey.get(group.key);
+
+          if (!parentGroupId) continue;
+
+          for (const childKey of group.childGroupKeys ?? []) {
+            const childGroupId = groupIdByKey.get(childKey);
+
+            if (!childGroupId || childGroupId === parentGroupId) continue;
+            childEdgeValues.push({ parentGroupId, childGroupId, createdAt: timestamp });
+          }
+        }
+
+        if (childEdgeValues.length > 0)
+          yield* tx.insert(schema.groupGroup).ignore().values(childEdgeValues);
+
+        const exclusionValues: Array<{
+          groupId: string;
+          target: "device" | "user";
+          targetId: string;
+          createdAt: Date;
+        }> = [];
+
+        for (const group of bundle.groups) {
+          const groupId = groupIdByKey.get(group.key);
+
+          if (!groupId) continue;
+
+          for (const deviceKey of group.excludedDeviceKeys ?? []) {
+            const deviceId = resolveDevice(deviceKey, null);
+
+            if (deviceId)
+              exclusionValues.push({
+                groupId,
+                target: "device",
+                targetId: deviceId,
+                createdAt: timestamp,
+              });
+          }
+
+          for (const email of group.excludedUserEmails ?? []) {
+            const userId = userIdByEmail.get(email.toLowerCase());
+
+            if (userId)
+              exclusionValues.push({
+                groupId,
+                target: "user",
+                targetId: userId,
+                createdAt: timestamp,
+              });
+          }
+        }
+
+        if (exclusionValues.length > 0)
+          yield* tx.insert(schema.groupExclusion).ignore().values(exclusionValues);
+
+        // Every restored group needs its inherited rows materialised. Each
+        // refresh also walks its ancestors, so a child processed last still
+        // corrects a parent that read it early.
+        for (const groupId of groupIdByKey.values())
+          yield* syncGroupInheritance(tx, organization.id, groupId);
 
         // Directory-linked groups are restored from live directory membership,
         // not from the exported device list: an in-place restore keeps directory

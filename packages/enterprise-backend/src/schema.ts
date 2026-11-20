@@ -24,6 +24,10 @@ export type EnterpriseGroup = typeof schema.enterpriseGroup.$inferSelect;
 
 export type EnterpriseGroupDevice = typeof schema.groupDevice.$inferSelect;
 
+export type EnterpriseGroupChildGroup = typeof schema.groupGroup.$inferSelect;
+
+export type EnterpriseGroupExclusion = typeof schema.groupExclusion.$inferSelect;
+
 export type EnterpriseGroupPolicy = typeof schema.groupPolicy.$inferSelect;
 
 export type EnterprisePolicy = typeof schema.policy.$inferSelect;

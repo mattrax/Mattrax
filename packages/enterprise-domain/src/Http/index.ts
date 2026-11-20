@@ -8,6 +8,7 @@ import { enterpriseAdeApi } from "./AdeApi.js";
 import { enterpriseAttributeApi } from "./AttributeApi.js";
 import { enterpriseApi } from "./EnterpriseApi.js";
 import { enterpriseDashboardApi } from "./DashboardApi.js";
+import { enterpriseGroupApi } from "./GroupApi.js";
 import { enterpriseIdentityApi } from "./IdentityApi.js";
 import { enterpriseWindowsApi } from "./WindowsApi.js";
 
@@ -21,6 +22,8 @@ export * from "./EnterpriseApi.js";
 
 export * from "./DashboardApi.js";
 
+export * from "./GroupApi.js";
+
 export * from "./IdentityApi.js";
 
 export * from "./WindowsApi.js";
@@ -33,6 +36,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   "MattraxEnterprise",
   | typeof enterpriseAccountApi
   | typeof enterpriseApi
+  | typeof enterpriseGroupApi
   | typeof enterpriseAdeApi
   | typeof enterpriseAttributeApi
   | typeof enterpriseDashboardApi
@@ -41,6 +45,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
 > = HttpApi.make("MattraxEnterprise")
   .add(enterpriseAccountApi)
   .add(enterpriseApi)
+  .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
@@ -50,6 +55,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
 /** The flattened client groups the dashboard can call. */
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
   HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseGroupApi> &
   HttpApiClient.Client<typeof enterpriseAdeApi> &
   HttpApiClient.Client<typeof enterpriseAttributeApi> &
   HttpApiClient.Client<typeof enterpriseDashboardApi> &

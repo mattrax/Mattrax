@@ -9,6 +9,7 @@ import {
   AuthApi,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseGroupApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
@@ -25,6 +26,7 @@ import {
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
+  enterpriseGroupHandlers,
   enterpriseHandlers,
   enterpriseIdentityHandlers,
   enterpriseWindowsHandlers,
@@ -208,6 +210,7 @@ const authHttps = Http.make(appAuth, {
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAccountApi)
   .add(enterpriseApi)
+  .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
@@ -267,6 +270,7 @@ const apiDocsResponse = () => HttpServerResponse.html(apiDocsHtml);
 const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAccount", enterpriseAccountHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseGroup", enterpriseGroupHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),

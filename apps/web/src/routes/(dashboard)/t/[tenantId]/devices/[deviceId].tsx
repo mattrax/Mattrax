@@ -118,7 +118,8 @@ type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 type GroupMembership = {
   id: string;
   name: string;
-  source?: "manual" | "dynamic" | "directory";
+  source?: "manual" | "dynamic" | "directory" | "nested";
+  inheritedFrom?: ReadonlyArray<{ id: string; name: string }>;
 };
 
 const ACTIVITY_PAGE_SIZE = 50;

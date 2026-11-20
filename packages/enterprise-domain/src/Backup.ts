@@ -62,6 +62,16 @@ export const TenantExportGroup = Schema.Struct({
   directoryGroupId: Schema.optional(NullableString),
   /** Device members are metadata only; devices themselves are never imported. */
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
+  /**
+   * Child groups this group nests. Inherited device rows are not exported;
+   * restore re-derives them from these edges. Older bundles omit the field and
+   * restore a flat group.
+   */
+  childGroupKeys: Schema.optional(Schema.Array(Schema.String)),
+  /** Devices explicitly excluded from this group. */
+  excludedDeviceKeys: Schema.optional(Schema.Array(Schema.String)),
+  /** Directory people explicitly excluded, matched by email on restore. */
+  excludedUserEmails: Schema.optional(Schema.Array(Schema.String)),
   policyKeys: Schema.Array(Schema.String),
 });
 

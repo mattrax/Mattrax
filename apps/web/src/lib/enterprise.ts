@@ -245,7 +245,8 @@ type RouteParam = string | undefined;
 
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
-type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"];
+type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
@@ -516,7 +517,11 @@ function endpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseApi),
+    (headers) =>
+      Effect.map(clientEffect(headers), (client) => ({
+        ...client.EnterpriseApi,
+        ...client.EnterpriseGroup,
+      })),
     call,
     options,
   );
@@ -1233,11 +1238,15 @@ export const enterprise = {
       assign?: {
         devices?: string[];
         policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+        childGroups?: string[];
       };
       unassign?: {
         devices?: string[];
         policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+        childGroups?: string[];
       };
+      exclude?: { devices?: string[]; users?: string[] };
+      unexclude?: { devices?: string[]; users?: string[] };
     },
   ) =>
     endpoint((api) =>

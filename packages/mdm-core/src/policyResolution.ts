@@ -25,6 +25,20 @@ import { Schema } from "effect";
  *    wins. Equal priorities break by most recent `updatedAt`, then by
  *    ascending policy id so the result is stable across check-ins.
  *
+ * Exclusions layered on top:
+ *
+ * - A device explicitly excluded from a group is not a member of that group at
+ *   all. The loader filters those membership rows before resolution, so the
+ *   group's includes, excludes, scripts and applications all stop applying.
+ *   This wins over manual membership, rule matches and inherited membership.
+ * - A directory user explicitly excluded from a group has that group's
+ *   user-scoped delivery skipped on their channel (`groupUserExclusions`). The
+ *   device channel and other linked users are unaffected: excluding a person
+ *   must never silently pull a shared device out of device-scoped policy.
+ *
+ * Nested groups are flattened into the membership rows the loader reads, so a
+ * parent's assignment is resolved once per device; it is never applied twice.
+ *
  * A configuration carries a delivery channel. Device-scoped configurations
  * are resolved for the device channel and apply to every user; user-scoped
  * configurations are resolved for one authenticated user channel and never
@@ -123,6 +137,19 @@ export type PolicyResolutionUserGroup = {
   readonly name: string;
 };
 
+/**
+ * A directory user explicitly excluded from a device group.
+ *
+ * The group's user-scoped delivery is skipped for that person on the user
+ * channel. Device-scoped membership is unaffected: an excluded person never
+ * removes a shared device from device policy, and that is why this is separate
+ * from the loader's device-exclusion filter.
+ */
+export type PolicyResolutionGroupUserExclusion = {
+  readonly groupId: string;
+  readonly userId: string;
+};
+
 /** A policy assigned directly to a directory user linked to the device. */
 export type PolicyResolutionUserAssignment = {
   readonly userId: string;
@@ -158,6 +185,8 @@ export type PolicyResolutionInput = {
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
   readonly groupAssignments: ReadonlyArray<PolicyResolutionGroupAssignment>;
   readonly deviceAssignments: ReadonlyArray<PolicyResolutionDeviceAssignment>;
+  /** Users excluded from a group; applied on that user's channel only. */
+  readonly groupUserExclusions?: ReadonlyArray<PolicyResolutionGroupUserExclusion>;
   /** Directory users linked to this device. */
   readonly users?: ReadonlyArray<PolicyResolutionUser>;
   /** Directory groups those users belong to. */
@@ -355,6 +384,17 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     configurations.set(configuration.policyId, list);
   }
 
+  // A group-level person exclusion only applies to that person's channel. On
+  // the device channel (and for every other user) the group's policy is
+  // untouched, so a shared device never loses device-scoped delivery.
+  const excludedFromGroups = new Set(
+    forUserId === undefined
+      ? []
+      : (input.groupUserExclusions ?? [])
+          .filter((exclusion) => exclusion.userId === forUserId)
+          .map((exclusion) => exclusion.groupId),
+  );
+
   const groups = new Map(input.groups.map((group) => [group.id, group]));
   const groupIncludes = new Map<string, Array<PolicyResolutionGroup>>();
 
@@ -367,6 +407,10 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
     const group = groups.get(assignment.groupId);
 
     if (!group || !policies.has(assignment.policyId)) continue;
+
+    // The person is excluded from this group, so neither its include nor its
+    // exclude speaks for their channel.
+    if (excludedFromGroups.has(assignment.groupId)) continue;
 
     if ((assignment.mode ?? "include") === "exclude") {
       const list = groupExcludes.get(assignment.policyId) ?? [];

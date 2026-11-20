@@ -21,7 +21,7 @@ import { EmptyState, Kbd } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { announce } from "~/components/toast";
 import { chord, sequence, useCommands } from "~/lib/commands";
-import { shouldOfferAllMatching } from "~/lib/table-selection";
+import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selection";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 
@@ -134,6 +134,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [internalSort, setInternalSort] = createSignal<SortState>(null);
   const [activeRow, setActiveRow] = createSignal(-1);
   const [tableFocused, setTableFocused] = createSignal(false);
+  // Shift-click / Shift+Space anchor. The anchor is a row id, not an index, so
+  // it survives sorting and filtering of the visible rows.
+  const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null);
+  let rangeGesture = false;
   // The server cannot see the platform; keep the SSR hint stable ("CtrlF")
   // and switch to the Mac glyph after hydration so both trees match.
   const [modKey, setModKey] = createSignal("Ctrl");
@@ -237,6 +241,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       if (previous === undefined || key === previous || controlled()) return;
       setSelected({});
       setAllMatching(false);
+      setSelectionAnchor(null);
     },
   );
 
@@ -376,6 +381,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   const clear = () => {
     setAllMatching(false);
+    setSelectionAnchor(null);
 
     if (controlled()) setControlled(new Set());
     else setSelected({});
@@ -547,12 +553,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       if (allSelected()) for (const id of ids) next.delete(id);
       else for (const id of ids) next.add(id);
       setControlled(next);
+      setSelectionAnchor(null);
 
       return;
     }
 
     if (allSelected()) {
       setSelected({});
+      setSelectionAnchor(null);
 
       return;
     }
@@ -562,6 +570,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     for (const row of rows()) next[row.id] = true;
 
     setSelected(next);
+    setSelectionAnchor(null);
   };
 
   const toggleSort = (id: string) => {
@@ -578,11 +587,18 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   const toggleRow = (row: T, checked: boolean) => {
     if (controlled()) {
-      const next = new Set(props.selectedIds?.() ?? []);
+      const result = applyRangeSelection({
+        rows: rows(),
+        selected: props.selectedIds?.() ?? new Set<string>(),
+        anchorId: selectionAnchor(),
+        targetId: row.id,
+        checked,
+        range: rangeGesture,
+      });
 
-      if (checked) next.add(row.id);
-      else next.delete(row.id);
-      setControlled(next);
+      setControlled(result.ids);
+      setSelectionAnchor(result.anchorId);
+      rangeGesture = false;
 
       return;
     }
@@ -590,24 +606,45 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     // Narrowing an all-matching selection starts a new, explicit selection
     // from the rows on screen so the count always describes what is ticked.
     if (allMatching()) {
+      const visibleSelection = new Set<string>();
+
+      for (const visible of rows()) if (isSelected(visible.id)) visibleSelection.add(visible.id);
+
+      const result = applyRangeSelection({
+        rows: rows(),
+        selected: visibleSelection,
+        anchorId: selectionAnchor(),
+        targetId: row.id,
+        checked,
+        range: rangeGesture,
+      });
+
       const next: Record<string, true> = {};
 
-      for (const visible of rows()) if (isSelected(visible.id)) next[visible.id] = true;
-
-      if (checked) next[row.id] = true;
-      else delete next[row.id];
+      for (const id of result.ids) next[id] = true;
       setAllMatching(false);
       setSelected(next);
+      setSelectionAnchor(result.anchorId);
+      rangeGesture = false;
 
       return;
     }
 
-    const next = { ...selected() };
+    const result = applyRangeSelection({
+      rows: rows(),
+      selected: new Set(Object.keys(selected())),
+      anchorId: selectionAnchor(),
+      targetId: row.id,
+      checked,
+      range: rangeGesture,
+    });
 
-    if (checked) next[row.id] = true;
-    else delete next[row.id];
+    const next: Record<string, true> = {};
 
+    for (const id of result.ids) next[id] = true;
     setSelected(next);
+    setSelectionAnchor(result.anchorId);
+    rangeGesture = false;
   };
 
   /** Persist a visibility map and drop any sort whose column just disappeared. */
@@ -1009,8 +1046,19 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                               type="checkbox"
                               class="size-3.5 accent-[var(--primary)]"
                               checked={isSelected(row.id)}
+                              // The click/keydown capture the modifier because a
+                              // `change` event carries no shiftKey. Click fires
+                              // before change, and a Shift+Space activation produces
+                              // the same click.
+                              onClick={(event) => {
+                                rangeGesture = event.shiftKey;
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === " " || event.key === "Enter")
+                                  rangeGesture = event.shiftKey;
+                              }}
                               onChange={(e) => toggleRow(row, e.currentTarget.checked)}
-                              aria-label={`Select ${row.name ?? row.id}`}
+                              aria-label={`Select ${row.name ?? row.id} (Shift-click to select a range)`}
                             />
                           </td>
                         </Show>

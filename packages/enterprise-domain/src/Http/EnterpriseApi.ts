@@ -148,9 +148,6 @@ import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { EntraDirectorySyncResult } from "../Tenant.js";
 import { EntraDirectorySyncStatus } from "../Tenant.js";
 import { EntraDomainsResponse } from "../Tenant.js";
-import { GroupListResponse } from "../Search.js";
-import { GroupNode } from "../Group.js";
-import { GroupPreviewResponse } from "../Search.js";
 import { IdParam } from "./Params.js";
 import { ImportTenantScepCaRequest } from "../Enrollment.js";
 import { InvitationOptionsResponse } from "../Tenant.js";
@@ -169,8 +166,6 @@ import { TenantOwnershipTransferResponse } from "../Tenant.js";
 import { PatchApplicationRequest } from "../Application.js";
 import { PatchDeviceRequest } from "../Device.js";
 import { PatchEntraDirectorySyncRequest } from "../Tenant.js";
-import { PatchGroupMembersRequest } from "../Group.js";
-import { PatchGroupRequest } from "../Group.js";
 import { PatchPolicyRequest } from "../Policy.js";
 import { PatchSsoConfigRequest } from "../Tenant.js";
 import { PolicyApplicationObject } from "../Policy.js";
@@ -219,7 +214,6 @@ import { VppReleaseRequest } from "../Apple.js";
 import { VppReleaseResponse } from "../Apple.js";
 import { VppSyncResponse } from "../Apple.js";
 import { WebhookDeliveryQuery } from "../Common.js";
-import { CreateGroupRequest } from "../Group.js";
 import { CreateScimTokenRequest } from "../Scim.js";
 import { CreateTenantRequest } from "../Tenant.js";
 import { IdResponse } from "../Common.js";
@@ -1496,75 +1490,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: CredentialHealthResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("listGroups", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantParam,
-      success: GroupListResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("getGroup", "/v1/tenants/:tenantId/groups/:id", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantIdParam,
-      success: GroupNode,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("previewGroup", "/v1/tenants/:tenantId/groups/:id/preview", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantIdParam,
-      success: GroupPreviewResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: CreateGroupRequest,
-      success: IdResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: BulkOperationResult,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: PatchGroupRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: PatchGroupMembersRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: DuplicateRequest,
-      success: IdResponse,
     }),
   )
   .add(

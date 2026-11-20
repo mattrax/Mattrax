@@ -192,6 +192,20 @@ export const buildTenantExport = (
           .where(inArray(schema.groupDevice.groupId, groupIds))
       : [];
 
+    const groupChildren = groupIds.length
+      ? yield* db
+          .select()
+          .from(schema.groupGroup)
+          .where(inArray(schema.groupGroup.parentGroupId, groupIds))
+      : [];
+
+    const groupExclusions = groupIds.length
+      ? yield* db
+          .select()
+          .from(schema.groupExclusion)
+          .where(inArray(schema.groupExclusion.groupId, groupIds))
+      : [];
+
     // Direct device assignments are not derived from group membership, so they
     // need their own reads. Their devices are exported too, so a restore can
     // re-link them (or fall back to the serial when ids changed).
@@ -226,9 +240,13 @@ export const buildTenantExport = (
 
     const deviceIds = [
       ...new Set([
-        ...groupDevices.map((link) => link.deviceId),
+        // Inherited rows are re-derived from the child edges on restore.
+        ...groupDevices.filter((link) => link.source !== "nested").map((link) => link.deviceId),
         ...devicePolicies.map((link) => link.deviceId),
         ...applicationDevices.map((link) => link.deviceId),
+        ...groupExclusions
+          .filter((exclusion) => exclusion.target === "device")
+          .map((exclusion) => exclusion.targetId),
       ]),
     ];
 
@@ -386,7 +404,7 @@ export const buildTenantExport = (
       rules: group.rules ?? null,
       directoryGroupId: group.directoryGroupId ?? null,
       devices: groupDevices.flatMap((link) => {
-        if (link.groupId !== group.id) return [];
+        if (link.groupId !== group.id || link.source === "nested") return [];
         const device = devicesById.get(link.deviceId);
 
         if (!device) return [];
@@ -399,6 +417,21 @@ export const buildTenantExport = (
             source: link.source,
           },
         ];
+      }),
+      childGroupKeys: groupChildren
+        .filter((edge) => edge.parentGroupId === group.id && groupIds.includes(edge.childGroupId))
+        .map((edge) => edge.childGroupId),
+      excludedDeviceKeys: groupExclusions.flatMap((exclusion) => {
+        if (exclusion.groupId !== group.id || exclusion.target !== "device") return [];
+        const device = devicesById.get(exclusion.targetId);
+
+        return device ? [device.id] : [];
+      }),
+      excludedUserEmails: groupExclusions.flatMap((exclusion) => {
+        if (exclusion.groupId !== group.id || exclusion.target !== "user") return [];
+        const user = directoryUsersById.get(exclusion.targetId);
+
+        return user ? [user.email] : [];
       }),
       policyKeys: groupPolicyKeys.get(group.id) ?? [],
     }));
