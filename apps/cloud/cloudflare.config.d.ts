@@ -1,5 +1,4 @@
 import type { InferEnv, UnwrapConfig } from "cf/config";
-
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
@@ -37,8 +36,12 @@ export declare const apiWorker: {
         STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
         /** Optional JSON plan catalogue; absent means unlimited plans. */
         MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
-        /** Comma-separated verified emails that always hold platform superadmin. */
-        MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
+        /**
+         * Comma-separated verified emails that always hold platform superadmin.
+         * Not a secret: this is an operator allowlist, and an unset value simply
+         * means no environment-granted superadmin exists yet.
+         */
+        MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
         /**
          * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
          * One hour by default; deployments can raise it up to one day.
@@ -128,11 +131,8 @@ export declare const apiWorker: {
         EMAIL: import("cf/config").SendEmailBinding;
     };
 };
-
 export type ApiConfig = UnwrapConfig<typeof apiWorker>;
-
 export type ApiEnv = InferEnv<ApiConfig>;
-
 declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
     worker: {
         name: string;
@@ -163,8 +163,12 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
-            /** Comma-separated verified emails that always hold platform superadmin. */
-            MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
+            /**
+             * Comma-separated verified emails that always hold platform superadmin.
+             * Not a secret: this is an operator allowlist, and an unset value simply
+             * means no environment-granted superadmin exists yet.
+             */
+            MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.
@@ -284,8 +288,12 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
-            /** Comma-separated verified emails that always hold platform superadmin. */
-            MATTRAX_SUPERADMINS: import("cf/config").SecretBinding;
+            /**
+             * Comma-separated verified emails that always hold platform superadmin.
+             * Not a secret: this is an operator allowlist, and an unset value simply
+             * means no environment-granted superadmin exists yet.
+             */
+            MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.
@@ -379,5 +387,4 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
         };
     };
 };
-
 export default _default;
