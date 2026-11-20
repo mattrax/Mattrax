@@ -114,6 +114,8 @@ export const DeviceSearchParams = Schema.Struct({
   attributeKey: Schema.optional(Schema.String),
   attributeValue: Schema.optional(Schema.String),
   query: Schema.optional(Schema.String),
+  /** 1-based page index, so a paged device view is shareable. */
+  page: Schema.optional(Schema.String),
   import: Schema.optional(Schema.Literal("1")),
 });
 
@@ -150,6 +152,18 @@ const literalValue = <const T extends ReadonlyArray<string>>(
   return Schema.is(schema)(value) ? value : undefined;
 };
 
+/**
+ * A page index survives the URL only when it is a positive integer. Out-of-range
+ * or non-numeric values are dropped rather than sent to the API, which would
+ * otherwise return an empty page and leave the pagination controls stranded.
+ */
+const pageIndexValue = (value: string | undefined): string | undefined => {
+  if (value === undefined) return undefined;
+  const page = Number(value);
+
+  return Number.isInteger(page) && page >= 1 ? String(page) : undefined;
+};
+
 type MutableDeviceSearchParams = {
   -readonly [K in keyof DeviceSearchParams]: DeviceSearchParams[K];
 };
@@ -165,6 +179,7 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   const activation = literalValue(DEVICE_ACTIVATION_FILTERS, values.activation);
   const sort = literalValue(DEVICE_SORT_FIELDS, values.sort);
   const direction = literalValue(SORT_DIRECTIONS, values.direction);
+  const page = pageIndexValue(values.page);
 
   if (status !== undefined) params.status = status;
 
@@ -192,6 +207,8 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
 
   if (values.query !== undefined) params.query = values.query;
 
+  if (page !== undefined) params.page = page;
+
   if (values.import === "1") params.import = "1";
 
   return params;
@@ -216,6 +233,7 @@ export const readDeviceSearchParams = (search: RouteSearch): DeviceSearchParams 
     attributeKey: search.attributeKey,
     attributeValue: search.attributeValue,
     query: search.query,
+    page: search.page,
     import: search.import,
   });
 

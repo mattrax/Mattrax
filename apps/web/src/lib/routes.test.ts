@@ -108,6 +108,20 @@ describe("device search codecs", () => {
     });
   });
 
+  it("keeps a shareable page index and drops invalid ones", () => {
+    expect(decodeDeviceSearchParams({ page: "3" })).toEqual({ page: "3" });
+    expect(decodeDeviceSearchParams({ page: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "-2" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "2.5" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "next" })).toEqual({});
+  });
+
+  it("serialises the page alongside the filters", () => {
+    expect(routes.tenant("acme").devices({ health: "attention", page: "2" })).toBe(
+      "/t/acme/devices?health=attention&page=2",
+    );
+  });
+
   it("has a schema that matches the decoded shape", () => {
     const decoded = decodeDeviceSearchParams({ proto: "win" });
 

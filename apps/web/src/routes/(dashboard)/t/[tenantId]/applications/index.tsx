@@ -1,7 +1,7 @@
 import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
 import { Match } from "effect";
-import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createSignal, Show } from "solid-js";
+import { useInfiniteQuery } from "@tanstack/solid-query";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   EmptyState,
   formatDate,
@@ -11,11 +11,11 @@ import {
   PlatformBadge,
   relativeTime,
 } from "~/components/mdm/common";
-import { MdmTable } from "~/components/mdm/table";
+import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { Button } from "~/components/ui/button";
 import {
   EntityQueryBar,
   formatEntityQuery,
-  matchesEntityQuery,
   parseEntityQuery,
   type EntityCondition,
   type EntityField,
@@ -28,12 +28,21 @@ import { useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
 
+const PAGE_SIZE = 50;
+
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
     if (intent === "initial") return;
 
     return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.applications(params.tenantId)),
+      () =>
+        queryClient.ensureInfiniteQueryData(
+          enterpriseQueries.searchApplications(params.tenantId, {
+            limit: PAGE_SIZE,
+            sort: "name",
+            direction: "asc",
+          }),
+        ),
     ]);
   },
 };
@@ -99,15 +108,61 @@ export default function ApplicationsPage() {
     setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
   };
 
-  const apps = useQuery(() => enterpriseQueries.applications(params.tenantId));
+  const [q, setQ] = createSignal("");
+  const [debouncedQ, setDebouncedQ] = createSignal("");
+  const [sort, setSort] = createSignal<MdmSortState>({ id: "name", dir: "asc" });
 
-  const rows = () =>
-    (apps.data?.applications ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
+  // Debounce typing so the search endpoint is not hit on every keystroke.
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(settleTimer));
+  createEffect(
+    () => q(),
+    (value) => {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => setDebouncedQ(value), 250);
+    },
+  );
 
-  const assignedCount = () =>
-    rows().filter(
-      (row) => (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0) + (row.devicesCount ?? 0) > 0,
-    ).length;
+  const SORT_FIELDS = ["name", "platform", "source", "updatedAt", "createdAt"] as const;
+  const sortField = () => SORT_FIELDS.find((field) => field === sort()?.id) ?? ("name" as const);
+
+  const filters = createMemo(() => ({
+    q: debouncedQ().trim() || undefined,
+    query: formatEntityQuery(conditions()) || undefined,
+    limit: PAGE_SIZE,
+    sort: sortField(),
+    direction: sort()?.dir ?? ("asc" as const),
+  }));
+
+  const apps = useInfiniteQuery(() =>
+    enterpriseQueries.searchApplications(params.tenantId, filters()),
+  );
+
+  const rows = () => apps.data?.pages.flatMap((page) => page.applications) ?? [];
+  const total = () => apps.data?.pages.at(-1)?.total ?? 0;
+
+  /** Non-blocking notice when the filters change under a load in flight. */
+  const [filtersChanged, setFiltersChanged] = createSignal(false);
+
+  const filterKey = () =>
+    JSON.stringify({ q: debouncedQ(), query: formatEntityQuery(conditions()) });
+
+  let lastFilterKey = filterKey();
+  createEffect(filterKey, (key) => {
+    if (key !== lastFilterKey) {
+      lastFilterKey = key;
+      setFiltersChanged(true);
+    }
+  });
+  createEffect(
+    () => apps.isFetching,
+    (fetching) => {
+      if (!fetching) setFiltersChanged(false);
+    },
+  );
+  const loadingWarning = () => filtersChanged() && apps.isFetching;
+
+  const hasFilters = () => q().trim() !== "" || conditions().length > 0;
 
   return (
     <Page>
@@ -118,12 +173,12 @@ export default function ApplicationsPage() {
         meta={
           <Show when={apps.data}>
             <span class="tabular-nums">
-              {rows().length} application{rows().length === 1 ? "" : "s"}
+              {total()} application{total() === 1 ? "" : "s"}
             </span>
             <span class="text-muted-foreground/40" aria-hidden="true">
               ·
             </span>
-            <span class="tabular-nums">{assignedCount()} assigned</span>
+            <span class="tabular-nums">{rows().length} loaded</span>
           </Show>
         }
         actions={
@@ -137,18 +192,66 @@ export default function ApplicationsPage() {
         }
       />
       <MdmTable<ApplicationRow>
+        mode="server"
         rows={rows()}
+        total={total()}
         loading={apps.isPending}
         isFetching={apps.isFetching}
         onRefresh={() => void apps.refetch()}
         error={apps.error}
         storageKey="applications"
+        selectionKey={JSON.stringify(filters())}
+        searchValue={q()}
+        onSearchChange={setQ}
+        searchPlaceholder="Search applications…"
+        sortValue={sort()}
+        onSortChange={setSort}
         toolbar={
-          <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+          <div class="space-y-2">
+            <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+            <Show when={loadingWarning()}>
+              <p
+                role="status"
+                aria-live="polite"
+                class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+              >
+                Filters changed — loading results. The rows below are from the previous filter until
+                this finishes.
+              </p>
+            </Show>
+          </div>
+        }
+        footer={
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-card">
+            <span
+              role="status"
+              aria-live="polite"
+              class="text-[12px] tabular-nums text-muted-foreground"
+            >
+              {rows().length} of {total()} application{total() === 1 ? "" : "s"} loaded
+            </span>
+            <Show
+              when={apps.hasNextPage}
+              fallback={
+                <span class="text-[12px] text-muted-foreground">
+                  All matching applications are loaded.
+                </span>
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={apps.isFetchingNextPage || apps.isPlaceholderData}
+                onClick={() => void apps.fetchNextPage()}
+              >
+                {apps.isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            </Show>
+          </div>
         }
         rowHref={(row) => routes.tenant(params.tenantId).application(row.id)}
         empty={
-          conditions().length > 0 ? (
+          hasFilters() ? (
             <EmptyState
               icon={(props) => <Package {...props} />}
               title="No matching applications"
@@ -210,7 +313,6 @@ export default function ApplicationsPage() {
           {
             id: "version",
             header: "Version",
-            sort: (row) => row.version ?? "",
             cell: (row) => (
               <span class="whitespace-nowrap text-[12.5px] tabular-nums">{row.version || "—"}</span>
             ),
@@ -218,8 +320,6 @@ export default function ApplicationsPage() {
           {
             id: "assignments",
             header: "Assignments",
-            sort: (row) =>
-              (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0) + (row.devicesCount ?? 0),
             cell: (row) => {
               const groups = (row.groupsCount ?? 0) + (row.userGroupsCount ?? 0);
               const devices = row.devicesCount ?? 0;
@@ -245,6 +345,7 @@ export default function ApplicationsPage() {
             id: "updated",
             header: "Updated",
             sort: (row) => row.updatedAt,
+            sortId: "updatedAt",
             cell: (row) => (
               <span class="block min-w-0">
                 <span class="block whitespace-nowrap text-[12.5px]">
@@ -261,6 +362,7 @@ export default function ApplicationsPage() {
             header: "Added",
             defaultHidden: true,
             sort: (row) => row.createdAt,
+            sortId: "createdAt",
             cell: (row) => (
               <span class="whitespace-nowrap text-[12.5px] text-muted-foreground">
                 {formatDate(row.createdAt)}

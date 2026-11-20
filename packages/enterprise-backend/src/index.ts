@@ -662,6 +662,14 @@ export {
 } from "./Device/softwareUpdates.ts";
 
 export {
+  ENTITY_LIST_DEFAULT_LIMIT,
+  ENTITY_LIST_MAX_LIMIT,
+  normalizeEntityListQuery,
+  type EntityListQuery,
+  type NormalizedEntityListQuery,
+} from "./Search/entityList.ts";
+
+export {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
   deviceSearchStatuses,

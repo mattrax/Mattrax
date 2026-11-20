@@ -33,10 +33,7 @@ import {
   type BulkFailure,
   type BulkOutcome,
 } from "~/lib/bulk-members";
-import {
-  optimisticallyRemoveRows,
-  optimisticallyUpdateDeviceSearch,
-} from "~/lib/optimistic";
+import { optimisticallyRemoveRows, optimisticallyUpdateDeviceSearch } from "~/lib/optimistic";
 
 type Named = { id: string; name: string };
 
@@ -348,6 +345,11 @@ export function EntityActions(props: {
   /** Refetch the list, then keep only the rows that still need attention. */
   const invalidate = async (keep?: readonly string[]) => {
     await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, props.entity) });
+    // The list pages read the paginated search endpoints; both caches must be
+    // refreshed or a deleted row lingers until the next navigation.
+    await qc.invalidateQueries({
+      queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, props.entity),
+    });
 
     if (props.entity === "device")
       await qc.invalidateQueries({ queryKey: ["enterprise", "device-search"] });

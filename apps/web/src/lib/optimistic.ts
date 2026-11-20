@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/solid-query";
+import type { InfiniteData, QueryClient } from "@tanstack/solid-query";
 import {
   enterpriseKeys,
   type DeviceRow,
@@ -46,23 +46,113 @@ export const optimisticallyUpdateList = <E extends Entity>(
   entity: E,
   update: (rows: RowFor<E>[]) => RowFor<E>[],
 ) =>
-  optimisticUpdate<RowsResponse<RowFor<E>>>(queryClient, enterpriseKeys.listPrefix(tenantId, entity), (current) => ({
-    ...current,
-    rows: update(current.rows),
-  }));
+  optimisticUpdate<RowsResponse<RowFor<E>>>(
+    queryClient,
+    enterpriseKeys.listPrefix(tenantId, entity),
+    (current) => ({
+      ...current,
+      rows: update(current.rows),
+    }),
+  );
 
-/** Drop rows from every cached list of one entity type. */
-export const optimisticallyRemoveRows = <E extends Entity>(
+/** The row shape every paginated entity page shares. */
+type EntitySearchRow = { id: string };
+
+/**
+ * One cached page of an entity list. Only one collection field is present on
+ * any given entity's page; naming all three keeps a single update helper
+ * honest without a dictionary of unknown values.
+ */
+type EntitySearchPage = {
+  total: number;
+  groups?: EntitySearchRow[];
+  policies?: EntitySearchRow[];
+  applications?: EntitySearchRow[];
+};
+
+const dropEntitySearchRows = (page: EntitySearchPage, removed: ReadonlySet<string>) => {
+  if (page.groups) {
+    const kept = page.groups.filter((row) => !removed.has(row.id));
+
+    return {
+      ...page,
+      groups: kept,
+      total: Math.max(0, page.total - (page.groups.length - kept.length)),
+    };
+  }
+
+  if (page.policies) {
+    const kept = page.policies.filter((row) => !removed.has(row.id));
+
+    return {
+      ...page,
+      policies: kept,
+      total: Math.max(0, page.total - (page.policies.length - kept.length)),
+    };
+  }
+
+  if (page.applications) {
+    const kept = page.applications.filter((row) => !removed.has(row.id));
+
+    return {
+      ...page,
+      applications: kept,
+      total: Math.max(0, page.total - (page.applications.length - kept.length)),
+    };
+  }
+
+  return page;
+};
+
+/**
+ * Drop rows from every cached page of an entity's server-paginated list and
+ * keep each page's `total` honest. The infinite query stores pages under the
+ * entity-search prefix, which the plain list helper never matches.
+ */
+export const optimisticallyRemoveEntitySearchRows = <E extends Entity>(
   queryClient: QueryClient,
   tenantId: string,
   entity: E,
   ids: Iterable<string>,
 ) => {
+  if (entity === "device") return Promise.resolve(() => {});
+
   const removed = new Set(ids);
 
-  return optimisticallyUpdateList(queryClient, tenantId, entity, (rows) =>
+  return optimisticUpdate<InfiniteData<EntitySearchPage, number>>(
+    queryClient,
+    enterpriseKeys.entitySearchPrefix(tenantId, entity),
+    (current) => ({
+      ...current,
+      pages: current.pages.map((page) => dropEntitySearchRows(page, removed)),
+    }),
+  );
+};
+
+/** Drop rows from every cached list and paginated page of one entity type. */
+export const optimisticallyRemoveRows = async <E extends Entity>(
+  queryClient: QueryClient,
+  tenantId: string,
+  entity: E,
+  ids: Iterable<string>,
+) => {
+  const removed = new Set([...ids]);
+
+  const restoreList = await optimisticallyUpdateList(queryClient, tenantId, entity, (rows) =>
     rows.filter((row) => !removed.has(row.id)),
   );
+
+  const restoreSearch = await optimisticallyRemoveEntitySearchRows(
+    queryClient,
+    tenantId,
+    entity,
+    removed,
+  );
+
+  return () => {
+    restoreList();
+    restoreSearch();
+  };
 };
 
 /** Patch one cached entity row so a detail header updates before the refetch. */
@@ -73,10 +163,14 @@ export const optimisticallyPatchItem = <E extends Entity>(
   id: string,
   patch: Partial<RowFor<E>>,
 ) =>
-  optimisticUpdate<RowFor<E>>(queryClient, enterpriseKeys.item(tenantId, entity, id), (current) => ({
-    ...current,
-    ...patch,
-  }));
+  optimisticUpdate<RowFor<E>>(
+    queryClient,
+    enterpriseKeys.item(tenantId, entity, id),
+    (current) => ({
+      ...current,
+      ...patch,
+    }),
+  );
 
 /** Rewrite any cached device search page, including its total. */
 export const optimisticallyUpdateDeviceSearch = (

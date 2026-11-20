@@ -10,6 +10,7 @@ import { GroupRelation } from "./Group.js";
 import { GroupRow } from "./Group.js";
 import { NullableString } from "./Errors.js";
 import { PolicyRow } from "./Policy.js";
+import { ApplicationRow } from "./Application.js";
 import { WindowsActivationStatus } from "./deviceInventory.js";
 
 export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) });
@@ -89,7 +90,94 @@ export const GroupPreviewResponse = Schema.Struct({
 
 export type GroupPreviewResponse = typeof GroupPreviewResponse.Type;
 
+export const SortDirection = Schema.Literals(["asc", "desc"]);
+
+export type SortDirection = typeof SortDirection.Type;
+
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
+
+/**
+ * Server-side entity list pagination.
+ *
+ * The three catalogue lists share one query shape: a bounded offset page with
+ * a deterministic order, free-text search and the table's encoded filter
+ * conditions. Each entity narrows `sort` to the columns it can order in SQL.
+ */
+const EntityListQueryFields = {
+  /** Free text, matched against the columns the table shows. */
+  q: Schema.optional(Schema.String),
+  /** Shareable conditions encoded by `formatEntityQuery`. */
+  query: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Number),
+  offset: Schema.optional(Schema.Number),
+  direction: Schema.optional(SortDirection),
+};
+
+export const POLICY_LIST_SORTS = ["name", "priority", "updatedAt", "createdAt"] as const;
+
+export const PolicyListSort = Schema.Literals(POLICY_LIST_SORTS);
+
+export type PolicyListSort = typeof PolicyListSort.Type;
+
+export const PolicySearchQuery = Schema.Struct({
+  ...EntityListQueryFields,
+  sort: Schema.optional(PolicyListSort),
+});
+
+export type PolicySearchQuery = typeof PolicySearchQuery.Type;
+
+export const PolicySearchResponse = Schema.Struct({
+  policies: Schema.Array(PolicyRow),
+  total: Schema.Number,
+});
+
+export type PolicySearchResponse = typeof PolicySearchResponse.Type;
+
+export const GROUP_LIST_SORTS = ["name", "kind", "updatedAt", "createdAt"] as const;
+
+export const GroupListSort = Schema.Literals(GROUP_LIST_SORTS);
+
+export type GroupListSort = typeof GroupListSort.Type;
+
+export const GroupSearchQuery = Schema.Struct({
+  ...EntityListQueryFields,
+  sort: Schema.optional(GroupListSort),
+});
+
+export type GroupSearchQuery = typeof GroupSearchQuery.Type;
+
+export const GroupSearchResponse = Schema.Struct({
+  groups: Schema.Array(GroupRow),
+  total: Schema.Number,
+});
+
+export type GroupSearchResponse = typeof GroupSearchResponse.Type;
+
+export const APPLICATION_LIST_SORTS = [
+  "name",
+  "platform",
+  "source",
+  "updatedAt",
+  "createdAt",
+] as const;
+
+export const ApplicationListSort = Schema.Literals(APPLICATION_LIST_SORTS);
+
+export type ApplicationListSort = typeof ApplicationListSort.Type;
+
+export const ApplicationSearchQuery = Schema.Struct({
+  ...EntityListQueryFields,
+  sort: Schema.optional(ApplicationListSort),
+});
+
+export type ApplicationSearchQuery = typeof ApplicationSearchQuery.Type;
+
+export const ApplicationSearchResponse = Schema.Struct({
+  applications: Schema.Array(ApplicationRow),
+  total: Schema.Number,
+});
+
+export type ApplicationSearchResponse = typeof ApplicationSearchResponse.Type;
 
 export const DeviceSearchSort = Schema.Literals([
   "name",
@@ -103,10 +191,6 @@ export const DeviceSearchSort = Schema.Literals([
 ]);
 
 export type DeviceSearchSort = typeof DeviceSearchSort.Type;
-
-export const SortDirection = Schema.Literals(["asc", "desc"]);
-
-export type SortDirection = typeof SortDirection.Type;
 
 export const DeviceHealthFilter = Schema.Literals([
   "healthy",
