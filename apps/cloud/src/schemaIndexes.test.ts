@@ -92,6 +92,7 @@ const INNODB_IMPLICIT_FK_INDEXES = new Set([
   "application_group_application_id_application_id_fkey",
   "autopilot_device_profile_id_autopilot_profile_id_fkey",
   "dashboard_created_by_account_id_account_id_fkey",
+  "dashboard_report_created_by_account_id_account_id_fkey",
   "device_apple_user_directory_user_id_user_id_fkey",
   "device_attribute_updated_by_account_id_account_id_fkey",
   "device_pre_registration_consumed_device_id_device_id_fkey",

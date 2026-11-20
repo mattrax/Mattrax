@@ -59,6 +59,7 @@ import {
   runOnboardingEmails,
   runScheduledBackups,
   runScheduledEntraSync,
+  runScheduledReports,
   runWelcomeEmailSweep,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
@@ -542,6 +543,27 @@ const serverCertificateJob = (env: Env) =>
     const db = yield* Db;
 
     return yield* runServerCertificateCheck(db, { origin: apiEnv.ORIGIN });
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+/**
+ * Generate due dashboard reports. The daily run does this too, but a report
+ * scheduled for a specific UTC hour would otherwise wait for 03:17; the hourly
+ * trigger lets the hour setting mean what it says. Claiming a run per
+ * `(report, period)` makes a second tick in the same hour a no-op.
+ */
+const dashboardReportsJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const mailer = resolveMailer(env);
+
+    if (!mailer.transport)
+      return { due: 0, queued: 0, skipped: 0, failed: 0 };
+
+    return yield* runScheduledReports({
+      db,
+      email: mailer.transport,
+      from: mailer.sender,
+    });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
 /**
@@ -1486,6 +1508,15 @@ export const createApiRuntime = (
           ),
         );
 
+        ctx.waitUntil(
+          Effect.runPromise(Effect.exit(dashboardReportsJob(env))).then((exit) => {
+            if (Exit.isFailure(exit))
+              console.error("Scheduled dashboard reports failed", exit.cause);
+            else if (exit.value.queued > 0 || exit.value.failed > 0)
+              console.log("Scheduled dashboard reports complete", exit.value);
+          }, (cause) => console.error("Scheduled dashboard reports job failed", cause)),
+        );
+
         if (graphConfigured)
           ctx.waitUntil(
             Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
@@ -1579,6 +1610,9 @@ export const createApiRuntime = (
             // Review the public origin certificate as part of the daily run too;
             // the hourly trigger normally owns the frequent probe.
             serverCertificateOrigin: apiEnv.ORIGIN,
+            // Report mail uses the same verified sender as the rest of the
+            // deployment's transactional mail.
+            reportEmailFrom: mailer.sender,
             // Queued transactional mail is drained here as well as by the
             // hourly trigger; without a transport the rows stay pending.
             email: mailer.transport,

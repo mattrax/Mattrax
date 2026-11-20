@@ -58,6 +58,9 @@ import {
   type DeviceRow,
   type DeviceSearchQuery,
   type DashboardQueryRequest,
+  type DashboardReportFormat,
+  type CreateDashboardReportRequest,
+  type PatchDashboardReportRequest,
   type DashboardSummary,
   type PatchDashboardWidgetRequest,
   type DashboardWidgetType,
@@ -93,6 +96,16 @@ import {
   type PatchScriptAssignmentsRequest,
   type RunScriptRequest,
   type ScriptSettings,
+} from "@mattrax/enterprise-domain/client";
+
+export type {
+  DashboardReport,
+  DashboardReportFormat,
+  DashboardReportFrequency,
+  DashboardReportRecipients,
+  DashboardReportRun,
+  DashboardReportRunListResponse,
+  DashboardReportListResponse,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -415,6 +428,16 @@ export const enterpriseKeys = {
     ["enterprise", "dashboard-query", keyTenant(tenantId), request] as const,
   dashboardQueryBatch: (tenantId: RouteParam, requests: ReadonlyArray<DashboardQueryRequest>) =>
     ["enterprise", "dashboard-query-batch", keyTenant(tenantId), requests] as const,
+  dashboardReports: (tenantId: RouteParam, dashboardId: RouteParam) =>
+    ["enterprise", "dashboard-reports", keyTenant(tenantId), dashboardId ?? ""] as const,
+  dashboardReportRuns: (tenantId: RouteParam, dashboardId: RouteParam, reportId: RouteParam) =>
+    [
+      "enterprise",
+      "dashboard-report-runs",
+      keyTenant(tenantId),
+      dashboardId ?? "",
+      reportId ?? "",
+    ] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", keyTenant(tenantId)] as const,
   accountActivity: (query: AuditSearchQuery = {}) =>
     ["enterprise", "account-activity", query] as const,
@@ -1081,6 +1104,97 @@ export const enterprise = {
       api.queryDashboardBatch({
         params: { tenantId: required(tenantId, "tenantId") },
         payload: { queries: [...queries] },
+      }),
+    ),
+  listDashboardReports: (tenantId: RouteParam, dashboardId: RouteParam) =>
+    dashboardEndpoint((api) =>
+      api.listDashboardReports({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+        },
+      }),
+    ),
+  createDashboardReport: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    payload: CreateDashboardReportRequest,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.createDashboardReport({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+        },
+        payload,
+      }),
+    ),
+  patchDashboardReport: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    reportId: RouteParam,
+    payload: PatchDashboardReportRequest,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.patchDashboardReport({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          reportId: required(reportId, "reportId"),
+        },
+        payload,
+      }),
+    ),
+  deleteDashboardReport: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    reportId: RouteParam,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.deleteDashboardReport({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          reportId: required(reportId, "reportId"),
+        },
+      }),
+    ),
+  sendDashboardReport: (tenantId: RouteParam, dashboardId: RouteParam, reportId: RouteParam) =>
+    dashboardEndpoint((api) =>
+      api.sendDashboardReport({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          reportId: required(reportId, "reportId"),
+        },
+      }),
+    ),
+  listDashboardReportRuns: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    reportId: RouteParam,
+  ) =>
+    dashboardEndpoint((api) =>
+      api.listDashboardReportRuns({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+          reportId: required(reportId, "reportId"),
+        },
+      }),
+    ),
+  downloadDashboardReport: (
+    tenantId: RouteParam,
+    dashboardId: RouteParam,
+    format: DashboardReportFormat = "csv",
+  ) =>
+    dashboardEndpoint((api) =>
+      api.exportDashboardReport({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          dashboardId: required(dashboardId, "dashboardId"),
+        },
+        query: { format },
       }),
     ),
   /** Returns CSV text; callers turn it into a file download. */
@@ -2752,6 +2866,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.dashboard(tenantId, id),
       queryFn: () => enterprise.getDashboard(tenantId, id),
       enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  dashboardReports: (tenantId: RouteParam, dashboardId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.dashboardReports(tenantId, dashboardId),
+      queryFn: () => enterprise.listDashboardReports(tenantId, dashboardId),
+      enabled: Boolean(tenantId && dashboardId) && !isServer,
+    }),
+  dashboardReportRuns: (tenantId: RouteParam, dashboardId: RouteParam, reportId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.dashboardReportRuns(tenantId, dashboardId, reportId),
+      queryFn: () => enterprise.listDashboardReportRuns(tenantId, dashboardId, reportId),
+      enabled: Boolean(tenantId && dashboardId && reportId) && !isServer,
     }),
   item: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) =>
     enterpriseQueryOptions({

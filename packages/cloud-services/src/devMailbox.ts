@@ -4,6 +4,12 @@ export type DevEmail = {
   readonly subject: string;
   readonly text: string;
   readonly html?: string;
+  /** Present for report mail so browser tests can decode the attachment. */
+  readonly attachments?: ReadonlyArray<{
+    readonly filename: string;
+    readonly contentType: string;
+    readonly contentBase64: string;
+  }>;
   readonly sentAt: string;
 };
 

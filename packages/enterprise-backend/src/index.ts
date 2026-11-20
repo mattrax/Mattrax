@@ -645,6 +645,58 @@ export {
 } from "./Policy/dashboardQuery.ts";
 
 export {
+  loadDeviceSnapshots,
+  rowDeviceHealth,
+  runDashboardQuery,
+  runDashboardQueryBatch,
+} from "./Dashboard/dashboardQuery.ts";
+
+export type { DeviceDashboardSnapshot } from "./Dashboard/dashboardQuery.ts";
+
+export {
+  buildReportDocument,
+  nextScheduledReportSlot,
+  normalizeReportEmails,
+  reportAttachment,
+  reportCsv,
+  reportEmailText,
+  reportHtml,
+  reportPdf,
+  reportScheduleProblem,
+  REPORT_RUN_MAX_ATTEMPTS,
+  scheduledReportSlot,
+} from "./Dashboard/report.ts";
+
+export type {
+  ReportAttachment,
+  ReportDocument,
+  ReportSection,
+  ScheduledReportSlot,
+} from "./Dashboard/report.ts";
+
+export {
+  DASHBOARD_REPORT_RUN_RETENTION_DAYS,
+  dashboardReportInfo,
+  dashboardReportRunInfo,
+  listDashboardReportRuns,
+  loadDashboardReportDocument,
+  purgeDashboardReportRuns,
+  resolveReportRecipients,
+  runScheduledReports,
+  sendDashboardReportNow,
+  validateReportRecipients,
+} from "./Dashboard/reportRun.ts";
+
+export type {
+  DashboardReportRow,
+  DashboardReportRunRow,
+  ReportRecipientResult,
+  RunScheduledReportsOptions,
+  RunScheduledReportsResult,
+  SendReportNowResult,
+} from "./Dashboard/reportRun.ts";
+
+export {
   DEVICE_ACTIVITY_AUDIT_PREFIX,
   DEVICE_ACTIVITY_COMMAND_PREFIX,
   decodeDeviceActivityCursor,

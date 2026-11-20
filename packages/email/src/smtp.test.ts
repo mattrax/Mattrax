@@ -172,6 +172,45 @@ describe("mail relay MIME rendering", () => {
     expect(rendered).toContain(Buffer.from(message.text, "utf8").toString("base64").slice(0, 24));
   });
 
+  it("wraps a report attachment in multipart/mixed", () => {
+    const contentBase64 = Buffer.from("Report,Fleet digest\r\n", "utf8").toString("base64");
+
+    const rendered = buildMimeMessage({
+      ...message,
+      attachments: [
+        { filename: "fleet-digest.csv", contentType: "text/csv; charset=utf-8", contentBase64 },
+      ],
+    });
+
+    expect(rendered).toContain('Content-Type: multipart/mixed; boundary="mattrax-');
+    expect(rendered).toContain('Content-Type: multipart/alternative; boundary="mattrax-');
+    expect(rendered).toContain(
+      'Content-Disposition: attachment; filename="fleet-digest.csv"',
+    );
+    expect(rendered).toContain(
+      'Content-Type: text/csv; charset=utf-8; name="fleet-digest.csv"',
+    );
+    expect(rendered).toContain(contentBase64);
+  });
+
+  it("cannot inject a header through an attachment filename", () => {
+    const rendered = buildMimeMessage({
+      ...message,
+      attachments: [
+        {
+          filename: 'report\r\nBcc: evil@example.com.csv',
+          contentType: "text/csv",
+          contentBase64: Buffer.from("x").toString("base64"),
+        },
+      ],
+    });
+
+    // The newline is flattened, so the value stays inside the filename header
+    // instead of becoming a second header line.
+    expect(rendered).not.toMatch(/\r\nBcc:/);
+    expect(rendered).toContain('filename="report Bcc: evil@example.com.csv"');
+  });
+
   it("stuffs a leading dot so the terminator cannot be forged", () => {
     expect(dotStuff("first\r\n.\r\nsecond")).toBe("first\r\n..\r\nsecond");
     expect(dotStuff("no dots")).toBe("no dots");

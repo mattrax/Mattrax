@@ -267,8 +267,7 @@ const encodeSubject = (value: string | undefined): string => {
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 };
 
-const base64Body = (value: string): string => {
-  const encoded = Buffer.from(String(value), "utf8").toString("base64");
+const wrapBase64 = (encoded: string): string => {
   const lines: string[] = [];
 
   for (let index = 0; index < encoded.length; index += 76)
@@ -276,6 +275,13 @@ const base64Body = (value: string): string => {
 
   return lines.join(CRLF);
 };
+
+const base64Body = (value: string): string =>
+  wrapBase64(Buffer.from(String(value), "utf8").toString("base64"));
+
+/** A filename that cannot break out of the Content-Disposition header. */
+const attachmentFilename = (value: string): string =>
+  sanitizeHeader(value).replaceAll(/["\\]/g, "_").slice(0, 180) || "attachment";
 
 /**
  * Render the RFC 5322 message. Pure so the relay's wire format is unit-tested
@@ -317,36 +323,66 @@ export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new 
 
   if (!text && !html) throw new Error("a text or html body is required");
 
-  if (text && html) {
-    const boundary = `mattrax-${randomUUID()}`;
+  /** The message body as one MIME entity, without the enclosing headers. */
+  const bodyEntity = (): string => {
+    if (text && html) {
+      const boundary = `mattrax-${randomUUID()}`;
 
-    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+      return [
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        `--${boundary}`,
+        'Content-Type: text/plain; charset="utf-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        base64Body(text),
+        `--${boundary}`,
+        'Content-Type: text/html; charset="utf-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        base64Body(html),
+        `--${boundary}--`,
+      ].join(CRLF);
+    }
 
     return [
-      ...headers,
-      "",
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="utf-8"',
+      html
+        ? 'Content-Type: text/html; charset="utf-8"'
+        : 'Content-Type: text/plain; charset="utf-8"',
       "Content-Transfer-Encoding: base64",
       "",
-      base64Body(text),
-      `--${boundary}`,
-      'Content-Type: text/html; charset="utf-8"',
-      "Content-Transfer-Encoding: base64",
-      "",
-      base64Body(html),
-      `--${boundary}--`,
+      // The check above guarantees one of the two bodies is present; `?? ""`
+      // only satisfies the type of the nullable pair.
+      base64Body(html ?? text ?? ""),
     ].join(CRLF);
+  };
+
+  const attachments = message.attachments ?? [];
+
+  if (attachments.length === 0)
+    return [...headers, "", bodyEntity()].join(CRLF);
+
+  // A report is body + one attachment, so the MIME tree is mixed(alternative,
+  // attachment...). Anything that does not understand the attachment still
+  // renders the summary body.
+  const mixed = `mattrax-${randomUUID()}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${mixed}"`);
+  const parts: string[] = [...headers, "", `--${mixed}`, bodyEntity()];
+
+  for (const attachment of attachments) {
+    parts.push(
+      `--${mixed}`,
+      `Content-Type: ${sanitizeHeader(attachment.contentType) || "application/octet-stream"}; name="${attachmentFilename(attachment.filename)}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${attachmentFilename(attachment.filename)}"`,
+      "",
+      wrapBase64(attachment.contentBase64.replaceAll(/\s+/g, "")),
+    );
   }
 
-  headers.push(
-    html ? 'Content-Type: text/html; charset="utf-8"' : 'Content-Type: text/plain; charset="utf-8"',
-    "Content-Transfer-Encoding: base64",
-  );
+  parts.push(`--${mixed}--`);
 
-  // The check above guarantees one of the two bodies is present; `?? ""` only
-  // satisfies the type of the nullable pair.
-  return [...headers, "", base64Body(html ?? text ?? "")].join(CRLF);
+  return parts.join(CRLF);
 };
 
 /** RFC 5321 transparency: a body line beginning with `.` is sent with two. */

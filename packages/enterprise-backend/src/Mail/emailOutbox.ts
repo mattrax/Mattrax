@@ -31,6 +31,7 @@ export const EMAIL_OUTBOX_TEMPLATES = [
   "email_change_confirm",
   "email_change_notice",
   "credential_expiry",
+  "dashboard_report",
 ] as const;
 
 export type EmailOutboxTemplate = (typeof EMAIL_OUTBOX_TEMPLATES)[number];
@@ -77,6 +78,16 @@ const EmailOutboxPayload = Schema.Struct({
   subject: Schema.String,
   text: Schema.optional(Schema.String),
   html: Schema.optional(Schema.String),
+  /** Base64 attachment bodies (scheduled reports). */
+  attachments: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        filename: Schema.String,
+        contentType: Schema.String,
+        contentBase64: Schema.String,
+      }),
+    ),
+  ),
 });
 
 type EmailOutboxPayload = typeof EmailOutboxPayload.Type;

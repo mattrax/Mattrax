@@ -3119,6 +3119,104 @@ export const dashboardWidget = mysqlTable(
   ],
 );
 
+/**
+ * A report definition attached to a dashboard.
+ *
+ * The dashboard widgets are the report contents, so a report never stores its
+ * own query: it snapshots the dashboard as it is when the digest runs.
+ * Recipients are stored by account id (tenant members) and by address
+ * (external). Members are re-checked against the tenant on every send, so a
+ * removed member stops receiving mail; external addresses are only writable by
+ * an owner or admin.
+ */
+export const dashboardReport = mysqlTable(
+  "dashboard_report",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    dashboardId: id("dashboard_id")
+      .notNull()
+      .references(() => dashboard.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    frequency: varchar("frequency", { length: 16, enum: ["daily", "weekly", "monthly"] }).notNull(),
+    /** UTC hour the digest is scheduled for, 0-23. */
+    hourUtc: int("hour_utc").notNull().default(7),
+    format: varchar("format", { length: 8, enum: ["csv", "pdf"] }).notNull().default("csv"),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Tenant member account ids that receive the report. */
+    memberAccountIds: json("member_account_ids").$type<string[]>().notNull(),
+    /** External recipients; validated at write time and bounded. */
+    externalEmails: json("external_emails").$type<string[]>().notNull(),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Latest scheduled period attempted, e.g. 2026-11-20. */
+    lastPeriod: varchar("last_period", { length: 32 }),
+    lastRunAt: timestamp("last_run_at"),
+    /** Next scheduled slot, shown in the report settings panel. */
+    nextRunAt: timestamp("next_run_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("dashboard_report_dashboard_idx").on(table.dashboardId),
+    index("dashboard_report_organization_enabled_idx").on(table.organizationId, table.enabled),
+  ],
+);
+
+/**
+ * One attempt at rendering and emailing a report.
+ *
+ * (reportId, period) is unique: a scheduled digest can be retried, but the
+ * row for a period is only ever created once, so two isolates (or two cron
+ * ticks in the same minute) cannot send the same digest twice. Manual downloads
+ * use a manual: period and are never retried.
+ */
+export const dashboardReportRun = mysqlTable(
+  "dashboard_report_run",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    reportId: id("report_id")
+      .notNull()
+      .references(() => dashboardReport.id, { onDelete: "cascade" }),
+    /** Snapshot so the run list survives a rename or deletion. */
+    reportName: shortText("report_name").notNull(),
+    format: varchar("format", { length: 8, enum: ["csv", "pdf"] }).notNull(),
+    /** Schedule slot key, or manual:<id> for an on-demand run. */
+    period: varchar("period", { length: 40 }).notNull(),
+    status: varchar("status", {
+      length: 16,
+      enum: ["pending", "sending", "queued", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    attempts: int("attempts").notNull().default(0),
+    /** Addresses the digest was queued for; empty until recipients resolve. */
+    recipients: json("recipients").$type<string[]>().notNull(),
+    /** Attachment size in bytes, recorded after rendering. */
+    sizeBytes: int("size_bytes").notNull().default(0),
+    /** Truncated, secret-free description of the last failure. */
+    lastError: text("last_error"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("dashboard_report_run_period_unique").on(table.reportId, table.period),
+    index("dashboard_report_run_report_created_idx").on(table.reportId, table.createdAt),
+    index("dashboard_report_run_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    index("dashboard_report_run_status_created_idx").on(table.status, table.createdAt),
+  ],
+);
+
 export const policy = mysqlTable(
   "policy",
   {
