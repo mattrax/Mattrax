@@ -12,6 +12,8 @@
     "catalog:sync": "tsx apps/web/scripts/catalog-sync/sync.ts",
     "catalog:split": "tsx apps/web/scripts/split-policy-catalog.ts",
     "catalog:check": "tsx apps/web/scripts/split-policy-catalog.ts --check",
+    "cis:templates": "tsx apps/web/scripts/generate-cis-templates.ts",
+    "cis:check": "tsx apps/web/scripts/generate-cis-templates.ts --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "bench:fleet": "tsx apps/cloud/scripts/fleet-bench.ts",

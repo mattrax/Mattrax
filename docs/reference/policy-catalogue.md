@@ -4,6 +4,10 @@ The policy designer on `/designer` and in the dashboard reads static catalogue f
 and Android ship as one file each; Windows is split so browsing does not download the whole
 dataset.
 
+The catalogue also powers the CIS benchmark templates. See
+[CIS benchmark templates](/reference/cis-templates) for the template format, coverage and
+regeneration commands.
+
 ## What ships
 
 | File                            | Size    | Loaded when                            |

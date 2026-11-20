@@ -210,6 +210,7 @@ export default defineConfig({
             { text: "Threat model", link: "/reference/threat-model" },
             { text: "Production readiness", link: "/reference/production-readiness" },
             { text: "Policy catalogue", link: "/reference/policy-catalogue" },
+            { text: "CIS benchmark templates", link: "/reference/cis-templates" },
             { text: "Catalogue sources", link: "/reference/catalogue-sources" },
             { text: "Project history", link: "/reference/history" },
             { text: "Glossary", link: "/reference/glossary" },

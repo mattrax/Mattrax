@@ -2,12 +2,17 @@ import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
+import {
+  CisTemplateDialog,
+  type CisTemplateOutcome,
+} from "~/components/mdm/cis-template-dialog";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { policyToConfigurations, type PolicyDraft } from "~/lib/policy-designer/build";
 
 const textareaClass =
   "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -19,13 +24,34 @@ export default function NewPolicyPage() {
   const { can } = useCan();
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [cisOpen, setCisOpen] = createSignal(false);
+  const [cisTemplate, setCisTemplate] = createSignal<CisTemplateOutcome | null>(null);
 
   const create = useMutation(() => ({
-    mutationFn: () =>
-      enterprise.createPolicy(params.tenantId, { name: name(), notes: notes() || null }),
-    onSuccess: async ({ id }) => {
+    mutationFn: async () => {
+      const template = cisTemplate();
+
+      const configurations = template
+        ? policyToConfigurations({
+            version: 2,
+            name: name(),
+            platforms: { [template.template.platform]: template.selections },
+          } satisfies PolicyDraft)
+        : undefined;
+
+      const payload = {
+        name: name(),
+        notes: notes() || null,
+        ...(configurations ? { configurations } : {}),
+      };
+
+      const policy = await enterprise.createPolicy(params.tenantId, payload);
+
+      return { ...policy, fromTemplate: template !== null };
+    },
+    onSuccess: async ({ id, fromTemplate }) => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
-      navigate(`/t/${params.tenantId}/policies/${id}/editor`);
+      navigate(`/t/${params.tenantId}/policies/${id}/${fromTemplate ? "design" : "editor"}`);
     },
   }));
 
@@ -35,7 +61,7 @@ export default function NewPolicyPage() {
         <PageHeader
           eyebrow="Policies"
           title="Create policy"
-          description="Create a policy, then configure payloads in the editor."
+          description="Create a policy, then configure payloads in the editor or start from a CIS benchmark."
         />
         <div class="grid max-w-3xl gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
           <Panel
@@ -64,6 +90,56 @@ export default function NewPolicyPage() {
                   onInput={(e) => setNotes(e.currentTarget.value)}
                   placeholder="What does this policy do?"
                 />
+              </Field>
+              <Field
+                label="Start from a template"
+                hint="Optional. Apply a reviewed CIS benchmark, then tune the settings in the designer."
+              >
+                <Show
+                  when={cisTemplate()}
+                  fallback={
+                    <Button type="button" variant="outline" onClick={() => setCisOpen(true)}>
+                      <ShieldCheck class="mr-1.5 size-4" /> Choose a CIS benchmark
+                    </Button>
+                  }
+                >
+                  {(template) => (
+                    <div class="rounded-lg border border-border bg-surface/60 p-3">
+                      <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div class="min-w-0">
+                          <p class="text-[13px] font-semibold text-foreground">
+                            {template().template.benchmark.name}
+                          </p>
+                          <p class="mt-0.5 text-[11px] text-muted-foreground">
+                            Version {template().template.benchmark.version} ·{" "}
+                            {template().appliedControls} control
+                            {template().appliedControls === 1 ? "" : "s"} ·{" "}
+                            {template().appliedSettings} setting
+                            {template().appliedSettings === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                        <div class="flex shrink-0 gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setCisOpen(true)}
+                          >
+                            Change
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setCisTemplate(null)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Show>
               </Field>
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 pt-1">
@@ -103,6 +179,13 @@ export default function NewPolicyPage() {
           </Panel>
         </div>
       </Page>
+      <CisTemplateDialog
+        open={cisOpen()}
+        platform={cisTemplate()?.template.platform}
+        selections={cisTemplate()?.selections ?? []}
+        onOpenChange={setCisOpen}
+        onApply={(outcome) => setCisTemplate(outcome)}
+      />
     </Show>
   );
 }

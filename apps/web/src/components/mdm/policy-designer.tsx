@@ -15,6 +15,10 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { AdmxImportDialog } from "~/components/mdm/admx-import";
+import {
+  CisTemplateDialog,
+  type CisTemplateOutcome,
+} from "~/components/mdm/cis-template-dialog";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
 import {
   Dialog,
@@ -35,6 +39,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  ShieldCheck,
   TriangleAlert,
   X,
 } from "~/components/ui/icons";
@@ -298,6 +303,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [thirdParty, setThirdParty] = createSignal<ThirdPartyCatalog | null>(null);
   const [thirdPartyError, setThirdPartyError] = createSignal<string | null>(null);
   const [admxOpen, setAdmxOpen] = createSignal(false);
+  const [cisOpen, setCisOpen] = createSignal(false);
 
   const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
     {},
@@ -1321,6 +1327,45 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     })();
   };
 
+  const applyCisTemplate = (outcome: CisTemplateOutcome) => {
+    const target = outcome.template.platform;
+
+    setSelectionMap((current) => ({ ...current, [target]: outcome.selections }));
+    setCollections((current) => {
+      const next = { ...current };
+
+      for (const collection of outcome.collections)
+        next[collectionCacheKey(target, collection.id)] = collection;
+
+      return next;
+    });
+
+    if (target !== platform()) {
+      setPlatform(target);
+      setMobileView("editor");
+    }
+
+    const first = outcome.collections[0];
+
+    const selection = first
+      ? outcome.selections.find(
+          (candidate) => collectionIdOf(candidate.collectionId) === first.id,
+        )
+      : undefined;
+
+    setActiveKey(selection?.collectionId ?? outcome.selections[0]?.collectionId ?? null);
+    setQuery("");
+    setFilterQuery("");
+    setFilterMode("all");
+    setNotice(
+      `Applied ${outcome.appliedControls} CIS control${outcome.appliedControls === 1 ? "" : "s"} from ${outcome.template.benchmark.name} (${outcome.appliedSettings} setting${outcome.appliedSettings === 1 ? "" : "s"}).`,
+    );
+    setLiveMessage(
+      `${outcome.appliedControls} CIS controls applied to the ${target} policy.`,
+    );
+    focusEditor();
+  };
+
   const download = () => {
     if (policySelectionCount(policyDraft()) === 0) return;
 
@@ -1594,6 +1639,27 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         )}
       </For>
     </div>
+  );
+
+  const cisTemplateButton = () => (
+    <button
+      type="button"
+      onClick={() => setCisOpen(true)}
+      class="pressable w-full rounded-xl border border-brand/30 bg-brand/[0.04] p-3 text-left hover:border-brand/60 hover:bg-brand/[0.07] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none"
+    >
+      <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <ShieldCheck class="size-4 text-brand-solid" />
+        <strong class="text-[13px] font-semibold text-foreground">
+          Start from a CIS benchmark
+        </strong>
+        <Badge variant="outline" class="h-4 px-1 text-[9px]">
+          Template
+        </Badge>
+      </span>
+      <span class="mt-0.5 block text-xs text-muted-foreground">
+        Review a benchmark's controls, see what each maps to, and apply only the ones you want.
+      </span>
+    </button>
   );
 
   const platformPills = () => (
@@ -1907,6 +1973,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
           <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
             <span class="hidden xl:inline-flex">{issuesButton()}</span>
+            <Button size="sm" variant="outline" onClick={() => setCisOpen(true)}>
+              <ShieldCheck class="mr-1 size-3.5" />
+              <span class="hidden sm:inline">Apply template</span>
+              <span class="sm:hidden">Template</span>
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -2423,6 +2494,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   The fastest way to see a real policy. Add a baseline, then tune individual
                   settings.
                 </p>
+                <div class="mt-3">{cisTemplateButton()}</div>
                 <div class="mt-3">{templateButtons()}</div>
                 <div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-input px-4 py-3 text-[13px] text-muted-foreground">
                   <span class="min-w-0 flex-1">
@@ -3029,6 +3101,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         open={admxOpen()}
         onOpenChange={setAdmxOpen}
         onImport={addAdmxImport}
+      />
+
+      <CisTemplateDialog
+        open={cisOpen()}
+        platform={platform()}
+        selections={selections()}
+        onOpenChange={setCisOpen}
+        onApply={applyCisTemplate}
       />
 
       {/* Summary sheet below xl */}

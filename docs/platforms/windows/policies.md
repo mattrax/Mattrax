@@ -125,3 +125,4 @@ Everything else is rejected. There is no push; commands wait for the next poll.
 
 - [Windows enrollment](/platforms/windows/)
 - [Policies](/manage/policies)
+- [CIS benchmark templates](/reference/cis-templates)

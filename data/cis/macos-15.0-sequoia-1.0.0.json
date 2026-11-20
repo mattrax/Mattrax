@@ -1,0 +1,896 @@
+{
+  "format": 1,
+  "id": "macos-15.0-sequoia-1.0.0",
+  "platform": "apple",
+  "benchmark": {
+    "name": "CIS Apple macOS 15.0 Sequoia Benchmark",
+    "version": "1.0.0",
+    "source": "https://www.cisecurity.org/benchmark/apple_os",
+    "os": "macOS 15"
+  },
+  "description": "A reviewed subset of the Level 1 recommendations expressible through configuration profiles. Controls that need filesystem state, audit configuration, or a DDM declaration stay listed as unmapped. This is not a reproduction of the benchmark text.",
+  "controls": [
+    {
+      "id": "1.1",
+      "level": "L1",
+      "title": "Apple software current",
+      "description": "Keep macOS and Apple applications at the current supported release.",
+      "mappings": [],
+      "note": "This is an outcome rather than a switch. The update settings below implement the managed part of it."
+    },
+    {
+      "id": "1.2",
+      "level": "L1",
+      "title": "Automatic update checks",
+      "description": "Check for software updates automatically.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "AutomaticCheckEnabled",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "1.3",
+      "level": "L1",
+      "title": "Automatic update downloads",
+      "description": "Download available updates automatically.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "AutomaticDownload",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "1.4",
+      "level": "L1",
+      "title": "macOS update installation",
+      "description": "Install macOS updates when they are offered.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "AutomaticallyInstallMacOSUpdates",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "1.5",
+      "level": "L1",
+      "title": "App Store update installation",
+      "description": "Install application updates from the App Store automatically.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "AutomaticallyInstallAppUpdates",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "1.6",
+      "level": "L1",
+      "title": "Security responses",
+      "description": "Install security responses and system files automatically.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "CriticalUpdateInstall",
+          "value": true
+        },
+        {
+          "collection": "apple/profiles/com.apple.SoftwareUpdate",
+          "setting": "ConfigDataInstall",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "1.7",
+      "level": "L1",
+      "title": "Software update deferment",
+      "description": "Keep update deferment within 30 days.",
+      "mappings": [],
+      "note": "The profile exposes a deferral delay, not a maximum deferral. Mattrax does not set a delay on the organisation's behalf."
+    },
+    {
+      "id": "1.8",
+      "level": "L1",
+      "title": "MDM management",
+      "description": "Confirm the Mac is enrolled in a management service.",
+      "mappings": [],
+      "note": "Enrolment is a device fact, not a policy value. Mattrax reports it from the device record."
+    },
+    {
+      "id": "2.2.1",
+      "level": "L1",
+      "title": "Application firewall",
+      "description": "Turn on the macOS application firewall.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.security.firewall",
+          "setting": "EnableFirewall",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.2.2",
+      "level": "L1",
+      "title": "Firewall stealth mode",
+      "description": "Enable firewall stealth mode.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.security.firewall",
+          "setting": "EnableStealthMode",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.3.1.1",
+      "level": "L1",
+      "title": "AirDrop",
+      "description": "Disable AirDrop when files are not actively being transferred.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowAirDrop",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "2.3.1.2",
+      "level": "L1",
+      "title": "AirPlay receiver",
+      "description": "Disable the inbound AirPlay receiver.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowAirPlayIncomingRequests",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "2.3.2.1",
+      "level": "L1",
+      "title": "Automatic date and time",
+      "description": "Set the clock from the network automatically.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "forceAutomaticDateAndTime",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.3.2.2",
+      "level": "L1",
+      "title": "Time service",
+      "description": "Keep the macOS time service enabled.",
+      "mappings": [],
+      "note": "The current catalogue does not expose a managed time-service switch."
+    },
+    {
+      "id": "2.3.3.1",
+      "level": "L1",
+      "title": "DVD and CD sharing",
+      "description": "Disable DVD or CD sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change sharing settings, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.2",
+      "level": "L1",
+      "title": "Screen sharing",
+      "description": "Disable Screen Sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change sharing settings, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.3",
+      "level": "L1",
+      "title": "File sharing",
+      "description": "Disable File Sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change sharing settings, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.4",
+      "level": "L1",
+      "title": "Printer sharing",
+      "description": "Disable Printer Sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change sharing settings, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.5",
+      "level": "L1",
+      "title": "Remote login",
+      "description": "Disable Remote Login (SSH).",
+      "mappings": [],
+      "note": "The catalogue does not expose the remote-login service switch."
+    },
+    {
+      "id": "2.3.3.6",
+      "level": "L1",
+      "title": "Remote management",
+      "description": "Disable Remote Management.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change the setting, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.7",
+      "level": "L1",
+      "title": "Remote Apple Events",
+      "description": "Disable Remote Apple Events.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change the setting, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.8",
+      "level": "L1",
+      "title": "Internet sharing",
+      "description": "Disable Internet Sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change the setting, not whether the service runs."
+    },
+    {
+      "id": "2.3.3.11",
+      "level": "L1",
+      "title": "Bluetooth sharing",
+      "description": "Disable Bluetooth Sharing.",
+      "mappings": [],
+      "note": "The restrictions payload only exposes whether the user may change the setting, not whether the service runs."
+    },
+    {
+      "id": "2.3.4.2",
+      "level": "L1",
+      "title": "Time Machine encryption",
+      "description": "Encrypt Time Machine volumes when Time Machine is in use.",
+      "mappings": [],
+      "note": "The catalogue does not expose Time Machine volume encryption."
+    },
+    {
+      "id": "2.4.1",
+      "level": "L1",
+      "title": "Wi-Fi menu bar status",
+      "description": "Show Wi-Fi status in the menu bar.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mcxMenuExtras",
+          "setting": "AirPort.menu",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.4.2",
+      "level": "L1",
+      "title": "Bluetooth menu bar status",
+      "description": "Show Bluetooth status in the menu bar.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mcxMenuExtras",
+          "setting": "Bluetooth.menu",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.5.1",
+      "level": "L1",
+      "title": "Siri settings audit",
+      "description": "Review the Siri configuration on the device.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.5.2",
+      "level": "L1",
+      "title": "Siri listening",
+      "description": "Disable Siri listening.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowAssistant",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "2.6.3.1",
+      "level": "L1",
+      "title": "Mac analytics",
+      "description": "Stop sharing Mac analytics.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowDiagnosticSubmission",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "2.6.3.2",
+      "level": "L1",
+      "title": "Siri and dictation improvement",
+      "description": "Stop sharing Siri and dictation data.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowAssistantUserGeneratedContent",
+          "value": false
+        }
+      ],
+      "note": "The catalogue exposes the Assistant content-sharing restriction; macOS has no separate managed switch for this programme."
+    },
+    {
+      "id": "2.6.3.3",
+      "level": "L1",
+      "title": "Assistive voice improvement",
+      "description": "Stop sharing assistive voice data.",
+      "mappings": [],
+      "note": "The catalogue does not expose this analytics programme."
+    },
+    {
+      "id": "2.6.3.4",
+      "level": "L1",
+      "title": "App developer analytics",
+      "description": "Stop sharing analytics with app developers.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowDiagnosticSubmission",
+          "value": false
+        }
+      ],
+      "note": "The diagnostic-submission restriction also covers app developer analytics."
+    },
+    {
+      "id": "2.6.3.5",
+      "level": "L1",
+      "title": "iCloud analytics",
+      "description": "Stop sharing iCloud analytics.",
+      "mappings": [],
+      "note": "The catalogue does not expose a separate iCloud analytics switch."
+    },
+    {
+      "id": "2.6.4",
+      "level": "L1",
+      "title": "Ad tracking",
+      "description": "Limit personalised advertising.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowApplePersonalizedAdvertising",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "2.6.5",
+      "level": "L1",
+      "title": "Gatekeeper",
+      "description": "Require Gatekeeper assessment and allow identified developers.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.systempolicy.control",
+          "setting": "EnableAssessment",
+          "value": true
+        },
+        {
+          "collection": "apple/profiles/com.apple.systempolicy.control",
+          "setting": "AllowIdentifiedDevelopers",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.6.6",
+      "level": "L1",
+      "title": "FileVault",
+      "description": "Turn on FileVault full-disk encryption.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.MCX.FileVault2",
+          "setting": "Enable",
+          "value": "On"
+        }
+      ]
+    },
+    {
+      "id": "2.6.8",
+      "level": "L1",
+      "title": "System-wide preference changes",
+      "description": "Require an administrator password to change system-wide preferences.",
+      "mappings": [],
+      "note": "The catalogue does not expose this authorisation behaviour."
+    },
+    {
+      "id": "2.8.1",
+      "level": "L1",
+      "title": "Universal Control",
+      "description": "Review Universal Control settings.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.9.2",
+      "level": "L1",
+      "title": "Power Nap",
+      "description": "Disable Power Nap on Intel Macs.",
+      "mappings": [],
+      "note": "The catalogue's energy-saver payload is not exposed under an unambiguous collection id."
+    },
+    {
+      "id": "2.9.3",
+      "level": "L1",
+      "title": "Wake for network access",
+      "description": "Disable wake for network access.",
+      "mappings": [],
+      "note": "The catalogue's energy-saver payload is not exposed under an unambiguous collection id."
+    },
+    {
+      "id": "2.10.1",
+      "level": "L1",
+      "title": "Screen saver inactivity",
+      "description": "Start the screen saver after 20 minutes or less of inactivity.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.screensaver",
+          "setting": "idleTime",
+          "value": 1200
+        }
+      ]
+    },
+    {
+      "id": "2.10.2",
+      "level": "L1",
+      "title": "Screen saver password",
+      "description": "Require a password within five seconds of the screen saver starting.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.screensaver",
+          "setting": "askForPassword",
+          "value": true
+        },
+        {
+          "collection": "apple/profiles/com.apple.screensaver",
+          "setting": "askForPasswordDelay",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "id": "2.10.3",
+      "level": "L1",
+      "title": "Login screen message",
+      "description": "Show a custom message on the login screen.",
+      "mappings": [],
+      "note": "The message is organisation-specific, so the template cannot choose its wording."
+    },
+    {
+      "id": "2.10.4",
+      "level": "L1",
+      "title": "Login window style",
+      "description": "Show the login window as name and password fields.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.loginwindow",
+          "setting": "SHOWFULLNAME",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "2.10.5",
+      "level": "L1",
+      "title": "Password hints",
+      "description": "Do not show password hints after failed attempts.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.loginwindow",
+          "setting": "RetriesUntilHint",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.11.1",
+      "level": "L1",
+      "title": "Account password hints",
+      "description": "Ensure individual accounts have no password hint.",
+      "mappings": [],
+      "note": "Hints are stored per user account; the catalogue has no managed setting for them."
+    },
+    {
+      "id": "2.11.2",
+      "level": "L1",
+      "title": "Touch ID",
+      "description": "Review Touch ID configuration.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.12.1",
+      "level": "L1",
+      "title": "Guest account",
+      "description": "Disable the guest account.",
+      "mappings": [],
+      "note": "The guest account payload shares a collection id with several other MCX payloads, so the designer cannot address it unambiguously."
+    },
+    {
+      "id": "2.12.2",
+      "level": "L1",
+      "title": "Guest shared folders",
+      "description": "Disable guest access to shared folders.",
+      "mappings": [],
+      "note": "The catalogue does not expose guest share access."
+    },
+    {
+      "id": "2.12.3",
+      "level": "L1",
+      "title": "Automatic login",
+      "description": "Disable automatic login.",
+      "mappings": [],
+      "note": "DisableFDEAutoLogin only covers the FileVault login path, so it is not a complete mapping."
+    },
+    {
+      "id": "2.13.1",
+      "level": "L1",
+      "title": "Passwords preference",
+      "description": "Review the Passwords settings.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.15.1",
+      "level": "L1",
+      "title": "Notification and Focus",
+      "description": "Review Notification and Focus settings.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.17.1",
+      "level": "L1",
+      "title": "Internet accounts",
+      "description": "Review the configured Internet accounts.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "2.18.1",
+      "level": "L1",
+      "title": "On-device dictation",
+      "description": "Enable dictation while keeping processing on the device.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "allowDictation",
+          "value": true
+        },
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "forceOnDeviceOnlyDictation",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "3.1",
+      "level": "L1",
+      "title": "Security auditing",
+      "description": "Enable security auditing.",
+      "mappings": [],
+      "note": "The catalogue does not expose the audit daemon configuration."
+    },
+    {
+      "id": "3.3",
+      "level": "L1",
+      "title": "install.log retention",
+      "description": "Retain install.log for at least 365 days.",
+      "mappings": [],
+      "note": "The catalogue does not expose log retention."
+    },
+    {
+      "id": "3.4",
+      "level": "L1",
+      "title": "Audit retention",
+      "description": "Enable security audit retention.",
+      "mappings": [],
+      "note": "The catalogue does not expose audit retention."
+    },
+    {
+      "id": "3.5",
+      "level": "L1",
+      "title": "Audit record access",
+      "description": "Restrict access to audit records.",
+      "mappings": [],
+      "note": "The catalogue does not expose audit file permissions."
+    },
+    {
+      "id": "4.2",
+      "level": "L1",
+      "title": "HTTP server",
+      "description": "Disable the built-in HTTP server.",
+      "mappings": [],
+      "note": "The catalogue does not expose the web server service."
+    },
+    {
+      "id": "4.3",
+      "level": "L1",
+      "title": "NFS server",
+      "description": "Disable the NFS server.",
+      "mappings": [],
+      "note": "The catalogue does not expose the NFS service."
+    },
+    {
+      "id": "5.1.1",
+      "level": "L1",
+      "title": "Home folder permissions",
+      "description": "Keep home folders private to their owners.",
+      "mappings": [],
+      "note": "Home folder ACLs are not a managed profile setting."
+    },
+    {
+      "id": "5.1.2",
+      "level": "L1",
+      "title": "System Integrity Protection",
+      "description": "Enable System Integrity Protection.",
+      "mappings": [],
+      "note": "SIP is not configurable through a configuration profile."
+    },
+    {
+      "id": "5.1.3",
+      "level": "L1",
+      "title": "Apple Mobile File Integrity",
+      "description": "Enable Apple Mobile File Integrity.",
+      "mappings": [],
+      "note": "AMFI is not configurable through a configuration profile."
+    },
+    {
+      "id": "5.1.4",
+      "level": "L1",
+      "title": "Signed System Volume",
+      "description": "Enable the Signed System Volume.",
+      "mappings": [],
+      "note": "SSV is a property of the installed OS, not a managed setting."
+    },
+    {
+      "id": "5.1.5",
+      "level": "L1",
+      "title": "System application permissions",
+      "description": "Check permissions on system-wide applications.",
+      "mappings": [],
+      "note": "This is a filesystem audit with no managed setting."
+    },
+    {
+      "id": "5.1.6",
+      "level": "L1",
+      "title": "World-writable system folders",
+      "description": "Ensure no world-writable folders exist in the System folder.",
+      "mappings": [],
+      "note": "This is a filesystem audit with no managed setting."
+    },
+    {
+      "id": "5.1.7",
+      "level": "L1",
+      "title": "World-writable Library folders",
+      "description": "Ensure no world-writable folders exist in the Library folder.",
+      "mappings": [],
+      "note": "This is a filesystem audit with no managed setting."
+    },
+    {
+      "id": "5.2.1",
+      "level": "L1",
+      "title": "Password lockout threshold",
+      "description": "Lock an account after five failed password attempts.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mobiledevice.passwordpolicy",
+          "setting": "maxFailedAttempts",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "id": "5.2.2",
+      "level": "L1",
+      "title": "Minimum password length",
+      "description": "Require at least 15 characters and enforce the password policy.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mobiledevice.passwordpolicy",
+          "setting": "minLength",
+          "value": 15
+        },
+        {
+          "collection": "apple/profiles/com.apple.mobiledevice.passwordpolicy",
+          "setting": "forcePIN",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "5.2.7",
+      "level": "L1",
+      "title": "Password age",
+      "description": "Expire passwords after 365 days.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mobiledevice.passwordpolicy",
+          "setting": "maxPINAgeInDays",
+          "value": 365
+        }
+      ]
+    },
+    {
+      "id": "5.2.8",
+      "level": "L1",
+      "title": "Password history",
+      "description": "Keep 24 previous passwords out of reuse.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.mobiledevice.passwordpolicy",
+          "setting": "pinHistory",
+          "value": 24
+        }
+      ]
+    },
+    {
+      "id": "5.3.1",
+      "level": "L1",
+      "title": "APFS user volume encryption",
+      "description": "Encrypt user storage volumes.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.MCX.FileVault2",
+          "setting": "Enable",
+          "value": "On"
+        }
+      ],
+      "note": "FileVault encrypts the APFS volume that holds user data."
+    },
+    {
+      "id": "5.3.2",
+      "level": "L1",
+      "title": "CoreStorage volume encryption",
+      "description": "Encrypt legacy CoreStorage volumes.",
+      "mappings": [],
+      "note": "The catalogue does not expose CoreStorage volume encryption."
+    },
+    {
+      "id": "5.4",
+      "level": "L1",
+      "title": "Sudo timeout",
+      "description": "Set the sudo timeout to zero.",
+      "mappings": [],
+      "note": "Sudoers is not a managed profile setting."
+    },
+    {
+      "id": "5.5",
+      "level": "L1",
+      "title": "Per-tty timestamps",
+      "description": "Use a separate timestamp for each user and terminal.",
+      "mappings": [],
+      "note": "Sudoers is not a managed profile setting."
+    },
+    {
+      "id": "5.7",
+      "level": "L1",
+      "title": "Locked session login",
+      "description": "Stop administrators logging into another user's locked session.",
+      "mappings": [],
+      "note": "The catalogue does not expose this login-window behaviour."
+    },
+    {
+      "id": "5.9",
+      "level": "L1",
+      "title": "Guest home folder",
+      "description": "Remove the guest home folder.",
+      "mappings": [],
+      "note": "This is a filesystem state, not a managed profile setting."
+    },
+    {
+      "id": "5.10",
+      "level": "L1",
+      "title": "XProtect",
+      "description": "Keep XProtect running and updated.",
+      "mappings": [],
+      "note": "XProtect updates are managed by macOS, not by a configuration profile."
+    },
+    {
+      "id": "5.11",
+      "level": "L1",
+      "title": "Sudo logging",
+      "description": "Log sudo commands.",
+      "mappings": [],
+      "note": "Sudoers is not a managed profile setting."
+    },
+    {
+      "id": "6.1.1",
+      "level": "L1",
+      "title": "Filename extensions",
+      "description": "Show all filename extensions in Finder.",
+      "mappings": [],
+      "note": "The catalogue does not expose the Finder extension preference."
+    },
+    {
+      "id": "6.3.1",
+      "level": "L1",
+      "title": "Safari safe files",
+      "description": "Disable automatic opening of safe files in Safari.",
+      "mappings": [],
+      "note": "The catalogue does not expose this Safari preference as a profile payload."
+    },
+    {
+      "id": "6.3.3",
+      "level": "L1",
+      "title": "Safari fraud warning",
+      "description": "Warn when Safari visits a suspected fraudulent website.",
+      "mappings": [
+        {
+          "collection": "apple/profiles/com.apple.applicationaccess",
+          "setting": "safariForceFraudWarning",
+          "value": true
+        }
+      ]
+    },
+    {
+      "id": "6.3.4",
+      "level": "L1",
+      "title": "Safari cross-site tracking",
+      "description": "Prevent cross-site tracking in Safari.",
+      "mappings": [],
+      "note": "Safari privacy settings are DDM declarations; this profile template does not mix profiles and declarations."
+    },
+    {
+      "id": "6.3.6",
+      "level": "L1",
+      "title": "Safari advertising privacy",
+      "description": "Enable Safari advertising privacy protection.",
+      "mappings": [],
+      "note": "Safari privacy settings are DDM declarations; this profile template does not mix profiles and declarations."
+    },
+    {
+      "id": "6.3.7",
+      "level": "L1",
+      "title": "Safari full website address",
+      "description": "Show the full website address in Safari.",
+      "mappings": [],
+      "note": "The catalogue does not expose this Safari preference as a profile payload."
+    },
+    {
+      "id": "6.3.9",
+      "level": "L1",
+      "title": "Safari pop-up windows",
+      "description": "Review Safari pop-up handling.",
+      "mappings": [],
+      "note": "This is an audit recommendation with no single managed value."
+    },
+    {
+      "id": "6.3.10",
+      "level": "L1",
+      "title": "Safari status bar",
+      "description": "Show the status bar in Safari.",
+      "mappings": [],
+      "note": "The catalogue does not expose this Safari preference as a profile payload."
+    },
+    {
+      "id": "6.4.1",
+      "level": "L1",
+      "title": "Terminal secure keyboard entry",
+      "description": "Enable secure keyboard entry in Terminal.",
+      "mappings": [],
+      "note": "The catalogue does not expose this Terminal preference."
+    }
+  ]
+}

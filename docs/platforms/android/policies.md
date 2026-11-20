@@ -102,3 +102,4 @@ characters.
 
 - [Android setup and enrollment](/platforms/android/)
 - [Policies](/manage/policies)
+- [CIS benchmark templates](/reference/cis-templates)
