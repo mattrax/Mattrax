@@ -1,0 +1,2343 @@
+{
+  "format": 1,
+  "id": "windows-11-enterprise-3.0.0",
+  "platform": "windows",
+  "benchmark": {
+    "name": "CIS Microsoft Windows 11 Enterprise Benchmark",
+    "version": "3.0.0",
+    "source": "https://www.cisecurity.org/benchmark/microsoft_windows_desktop",
+    "os": "Windows 11"
+  },
+  "description": "A reviewed subset of the Level 1 recommendations that the Mattrax Windows policy catalogue can express. Controls that have no reliable catalogue mapping stay listed as unmapped. This is not a reproduction of the benchmark; see the CIS document for the authoritative text.",
+  "controls": [
+    {
+      "id": "1.1.1",
+      "level": "L1",
+      "title": "Password history",
+      "description": "Require users to cycle through 24 previously used passwords before one can be reused.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "PasswordHistorySize",
+          "value": 24
+        }
+      ]
+    },
+    {
+      "id": "1.1.2",
+      "level": "L1",
+      "title": "Maximum password age",
+      "description": "Expire passwords after a year so a leaked password cannot stay valid indefinitely.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "MaximumPasswordAge",
+          "value": 365
+        }
+      ]
+    },
+    {
+      "id": "1.1.3",
+      "level": "L1",
+      "title": "Minimum password age",
+      "description": "Prevent users from changing a password repeatedly in one day to defeat history.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "MinimumPasswordAge",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "1.1.4",
+      "level": "L1",
+      "title": "Minimum password length",
+      "description": "Require at least 14 characters for local account passwords.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "MinimumPasswordLength",
+          "value": 14
+        }
+      ]
+    },
+    {
+      "id": "1.1.5",
+      "level": "L1",
+      "title": "Password complexity",
+      "description": "Require the Windows complexity rules for local account passwords.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "PasswordComplexity",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "1.1.6",
+      "level": "L1",
+      "title": "Long password support",
+      "description": "Allow passwords longer than the legacy limit, so passphrases are practical.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "RelaxMinimumPasswordLengthLimits",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "1.1.7",
+      "level": "L1",
+      "title": "Reversible password storage",
+      "description": "Keep passwords out of the reversibly encrypted store.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "ClearTextPassword",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "1.2.1",
+      "level": "L1",
+      "title": "Account lockout duration",
+      "description": "Keep a locked account locked long enough to slow down guessing.",
+      "mappings": [],
+      "note": "The catalogue exposes lockout duration, threshold and reset time as one ADMX string. Mattrax does not model that serialisation yet."
+    },
+    {
+      "id": "1.2.2",
+      "level": "L1",
+      "title": "Account lockout threshold",
+      "description": "Lock an account after a small number of failed sign-ins.",
+      "mappings": [],
+      "note": "The catalogue exposes lockout duration, threshold and reset time as one ADMX string. Mattrax does not model that serialisation yet."
+    },
+    {
+      "id": "1.2.3",
+      "level": "L1",
+      "title": "Administrator account lockout",
+      "description": "Apply the lockout policy to the built-in Administrator account too.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-lock",
+          "setting": "AllowAdministratorLockout",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "1.2.4",
+      "level": "L1",
+      "title": "Lockout counter reset",
+      "description": "Wait long enough before clearing the failed sign-in counter.",
+      "mappings": [],
+      "note": "The catalogue exposes lockout duration, threshold and reset time as one ADMX string. Mattrax does not model that serialisation yet."
+    },
+    {
+      "id": "2.2.1",
+      "level": "L1",
+      "title": "Credential Manager caller right",
+      "description": "Restrict which accounts may act as a trusted caller of Credential Manager.",
+      "mappings": [],
+      "note": "User-right assignment is not exposed as a policy setting in the current catalogue."
+    },
+    {
+      "id": "2.2.5",
+      "level": "L1",
+      "title": "Local sign-in right",
+      "description": "Limit the accounts that may sign in at the console.",
+      "mappings": [],
+      "note": "User-right assignment is not exposed as a policy setting in the current catalogue."
+    },
+    {
+      "id": "2.2.16",
+      "level": "L1",
+      "title": "Deny network sign-in",
+      "description": "Stop guest and local accounts from signing in over the network.",
+      "mappings": [],
+      "note": "User-right assignment is not exposed as a policy setting in the current catalogue."
+    },
+    {
+      "id": "2.3.1.1",
+      "level": "L1",
+      "title": "Block Microsoft accounts",
+      "description": "Stop users adding Microsoft accounts and stop those accounts signing in.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "Accounts_BlockMicrosoftAccounts",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "id": "2.3.1.2",
+      "level": "L1",
+      "title": "Guest account",
+      "description": "Keep the built-in guest account disabled.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "Accounts_EnableGuestAccountStatus",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.1.3",
+      "level": "L1",
+      "title": "Blank passwords",
+      "description": "Only allow accounts with blank passwords to sign in at the console.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "Accounts_LimitLocalAccountUseOfBlankPasswordsToConsoleLogonOnly",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.1.4",
+      "level": "L1",
+      "title": "Administrator account name",
+      "description": "Rename the built-in Administrator account.",
+      "mappings": [],
+      "note": "The replacement name is tenant-specific, so the template cannot choose it."
+    },
+    {
+      "id": "2.3.1.5",
+      "level": "L1",
+      "title": "Guest account name",
+      "description": "Rename the built-in guest account.",
+      "mappings": [],
+      "note": "The replacement name is tenant-specific, so the template cannot choose it."
+    },
+    {
+      "id": "2.3.2.1",
+      "level": "L1",
+      "title": "Audit subcategory override",
+      "description": "Let subcategory audit settings override the legacy category settings.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "Audit_ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.2.2",
+      "level": "L1",
+      "title": "Shut down when auditing fails",
+      "description": "Keep the machine running when the security log cannot record events, so an outage does not become a denial of service.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "Audit_ShutdownSystemImmediatelyIfUnableToLogSecurityAudits",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.1",
+      "level": "L1",
+      "title": "Secure channel encryption and signing",
+      "description": "Always encrypt and sign domain secure-channel traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_DigitallyEncryptOrSignSecureChannelDataAlways",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.2",
+      "level": "L1",
+      "title": "Secure channel encryption",
+      "description": "Encrypt domain secure-channel traffic when the peer supports it.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_DigitallyEncryptSecureChannelDataWhenPossible",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.3",
+      "level": "L1",
+      "title": "Secure channel signing",
+      "description": "Sign domain secure-channel traffic when the peer supports it.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_DigitallySignSecureChannelDataWhenPossible",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.4",
+      "level": "L1",
+      "title": "Machine account password changes",
+      "description": "Keep machine account password rotation enabled.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_DisableMachineAccountPasswordChanges",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.5",
+      "level": "L1",
+      "title": "Machine account password age",
+      "description": "Rotate the machine account password at least every 30 days.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_MaximumMachineAccountPasswordAge",
+          "value": 30
+        }
+      ]
+    },
+    {
+      "id": "2.3.6.6",
+      "level": "L1",
+      "title": "Strong session keys",
+      "description": "Require a strong session key for domain member traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "DomainMember_RequireStrongSessionKey",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.7.1",
+      "level": "L1",
+      "title": "Ctrl+Alt+Del sign-in",
+      "description": "Require the secure attention sequence before sign-in.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "InteractiveLogon_DoNotRequireCTRLALTDEL",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.7.2",
+      "level": "L1",
+      "title": "Last signed-in user",
+      "description": "Do not show the previous user name on the sign-in screen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "InteractiveLogon_DoNotDisplayLastSignedIn",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.7.4",
+      "level": "L1",
+      "title": "Machine inactivity limit",
+      "description": "Lock an idle machine after 15 minutes.",
+      "mappings": [],
+      "note": "The catalogue exposes this key twice: first as a 0/1 enable toggle, then as the numeric timeout. The designer cannot address the numeric form separately."
+    },
+    {
+      "id": "2.3.7.5",
+      "level": "L1",
+      "title": "Sign-in message text",
+      "description": "Show an authorised-use message before sign-in.",
+      "mappings": [],
+      "note": "The message is organisation-specific, so the template cannot choose its wording."
+    },
+    {
+      "id": "2.3.7.6",
+      "level": "L1",
+      "title": "Sign-in message title",
+      "description": "Show a title above the authorised-use message.",
+      "mappings": [],
+      "note": "The message is organisation-specific, so the template cannot choose its wording."
+    },
+    {
+      "id": "2.3.7.8",
+      "level": "L1",
+      "title": "Password expiry warning",
+      "description": "Warn users 14 days before their password expires.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "InteractiveLogon_PromptUserToChangePasswordBeforeExpiration",
+          "value": 14
+        }
+      ]
+    },
+    {
+      "id": "2.3.7.9",
+      "level": "L1",
+      "title": "Smart card removal",
+      "description": "Lock the workstation when a smart card is removed.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "InteractiveLogon_SmartCardRemovalBehavior",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.8.1",
+      "level": "L1",
+      "title": "SMB client signing",
+      "description": "Always sign SMB client traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkClient_DigitallySignCommunicationsAlways",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.8.2",
+      "level": "L1",
+      "title": "SMB client signing when supported",
+      "description": "Sign SMB client traffic when the server agrees.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkClient_DigitallySignCommunicationsIfServerAgrees",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.8.3",
+      "level": "L1",
+      "title": "Unencrypted SMB passwords",
+      "description": "Never send plaintext passwords to third-party SMB servers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkClient_SendUnencryptedPasswordToThirdPartySMBServers",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.9.1",
+      "level": "L1",
+      "title": "SMB session idle timeout",
+      "description": "Disconnect idle SMB sessions after 15 minutes.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkServer_AmountOfIdleTimeRequiredBeforeSuspendingSession",
+          "value": 15
+        }
+      ]
+    },
+    {
+      "id": "2.3.9.2",
+      "level": "L1",
+      "title": "SMB server signing",
+      "description": "Always sign SMB server traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkServer_DigitallySignCommunicationsAlways",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.9.3",
+      "level": "L1",
+      "title": "SMB server signing when supported",
+      "description": "Sign SMB server traffic when the client agrees.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkServer_DigitallySignCommunicationsIfClientAgrees",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.9.4",
+      "level": "L1",
+      "title": "Disconnect expired sessions",
+      "description": "Disconnect clients when their logon hours expire.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkServer_DisconnectClientsWhenLogonHoursExpire",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.9.5",
+      "level": "L1",
+      "title": "Server SPN validation",
+      "description": "Validate the service principal name a client supplies.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "MicrosoftNetworkServer_ServerSPNTargetNameValidationLevel",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.1",
+      "level": "L1",
+      "title": "Anonymous SID/name translation",
+      "description": "Stop anonymous callers translating account names to SIDs.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_AllowAnonymousSIDOrNameTranslation",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.2",
+      "level": "L1",
+      "title": "Anonymous SAM accounts",
+      "description": "Stop anonymous enumeration of SAM accounts.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_DoNotAllowAnonymousEnumerationOfSAMAccounts",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.3",
+      "level": "L1",
+      "title": "Anonymous SAM accounts and shares",
+      "description": "Stop anonymous enumeration of SAM accounts and shares.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_DoNotAllowAnonymousEnumerationOfSamAccountsAndShares",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.4",
+      "level": "L1",
+      "title": "Stored network credentials",
+      "description": "Stop Windows storing passwords and credentials for network authentication.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_DoNotAllowStorageOfPasswordsAndCredentialsForNetworkAuthentication",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.5",
+      "level": "L1",
+      "title": "Anonymous Everyone permissions",
+      "description": "Stop the Everyone group applying to anonymous users.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_LetEveryonePermissionsApplyToAnonymousUsers",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.6",
+      "level": "L1",
+      "title": "Anonymous named pipes",
+      "description": "Expose no named pipes to anonymous callers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_NamedPipesThatCanBeAccessedAnonymously",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.7",
+      "level": "L1",
+      "title": "Anonymous registry paths",
+      "description": "Expose no registry paths to anonymous callers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_RemotelyAccessibleRegistryPaths",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.8",
+      "level": "L1",
+      "title": "Anonymous registry subpaths",
+      "description": "Expose no registry subpaths to anonymous callers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_RemotelyAccessibleRegistryPathsAndSubpaths",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.9",
+      "level": "L1",
+      "title": "Anonymous named pipe access",
+      "description": "Restrict anonymous access to named pipes and shares.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_RestrictAnonymousAccessToNamedPipesAndShares",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.10",
+      "level": "L1",
+      "title": "Remote SAM callers",
+      "description": "Restrict which accounts may query SAM remotely.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_RestrictClientsAllowedToMakeRemoteCallsToSAM",
+          "value": "O:BAG:BAD:(A;;RC;;;BA)"
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.11",
+      "level": "L1",
+      "title": "Anonymous share access",
+      "description": "Expose no shares to anonymous callers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_SharesThatCanBeAccessedAnonymously",
+          "value": []
+        }
+      ]
+    },
+    {
+      "id": "2.3.10.12",
+      "level": "L1",
+      "title": "Local account sharing model",
+      "description": "Make local accounts authenticate as themselves for network access.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkAccess_SharingAndSecurityModelForLocalAccounts",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.1",
+      "level": "L1",
+      "title": "NTLM computer identity",
+      "description": "Let Local System use the computer identity for NTLM.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_AllowLocalSystemToUseComputerIdentityForNTLM",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.2",
+      "level": "L1",
+      "title": "NTLM NULL session fallback",
+      "description": "Disable the LocalSystem NULL session fallback.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_AllowLocalSystemNULLSessionFallback",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.3",
+      "level": "L1",
+      "title": "PKU2U online identities",
+      "description": "Reject PKU2U authentication using online identities.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_AllowPKU2UAuthenticationRequests",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.4",
+      "level": "L1",
+      "title": "Kerberos encryption types",
+      "description": "Limit Kerberos to AES and future encryption types.",
+      "mappings": [],
+      "note": "The catalogue exposes this setting as an ADMX bitmask without a typed field for each encryption suite."
+    },
+    {
+      "id": "2.3.11.5",
+      "level": "L1",
+      "title": "LAN Manager password hash",
+      "description": "Discard the LAN Manager hash when the password next changes.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_DoNotStoreLANManagerHashValueOnNextPasswordChange",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.6",
+      "level": "L1",
+      "title": "Logoff when hours expire",
+      "description": "Force a logoff when a user's permitted hours end.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_ForceLogoffWhenLogonHoursExpire",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.7",
+      "level": "L1",
+      "title": "LAN Manager authentication level",
+      "description": "Send NTLMv2 responses only and refuse LAN Manager and NTLM.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_LANManagerAuthenticationLevel",
+          "value": 5
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.8",
+      "level": "L1",
+      "title": "LDAP client signing",
+      "description": "Require LDAP clients to sign their requests.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_LDAPClientSigningRequirements",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.9",
+      "level": "L1",
+      "title": "NTLM session security for clients",
+      "description": "Require NTLMv2 and 128-bit encryption for NTLM clients.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_MinimumSessionSecurityForNTLMSSPBasedClients",
+          "value": 537395200
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.10",
+      "level": "L1",
+      "title": "NTLM session security for servers",
+      "description": "Require NTLMv2 and 128-bit encryption for NTLM servers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_MinimumSessionSecurityForNTLMSSPBasedServers",
+          "value": 537395200
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.11",
+      "level": "L1",
+      "title": "NTLM audit traffic",
+      "description": "Audit incoming NTLM traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_RestrictNTLM_AuditIncomingNTLMTraffic",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "2.3.11.12",
+      "level": "L1",
+      "title": "Outgoing NTLM traffic",
+      "description": "Audit outgoing NTLM traffic to remote servers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "NetworkSecurity_RestrictNTLM_OutgoingNTLMTrafficToRemoteServers",
+          "value": 2
+        }
+      ],
+      "note": "The catalogue offers allow or deny, not an audit-only state. The mapping denies all outgoing NTLM, which is stricter than the benchmark and may affect legacy servers."
+    },
+    {
+      "id": "2.3.15.1",
+      "level": "L1",
+      "title": "Case-insensitive subsystems",
+      "description": "Keep case-insensitivity for non-Windows subsystems.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "SystemObjects_RequireCaseInsensitivityForNonWindowsSubsystems",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.15.2",
+      "level": "L1",
+      "title": "Internal system object permissions",
+      "description": "Strengthen the default permissions on internal system objects.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "SystemObjects_StrengthenDefaultPermissionsOfInternalSystemObjects",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.1",
+      "level": "L1",
+      "title": "Built-in Administrator UAC",
+      "description": "Run the built-in Administrator account in Admin Approval Mode.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_UseAdminApprovalMode",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.2",
+      "level": "L1",
+      "title": "Administrator elevation prompt",
+      "description": "Prompt administrators for consent on the secure desktop.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_BehaviorOfTheElevationPromptForAdministrators",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.3",
+      "level": "L1",
+      "title": "Standard user elevation prompt",
+      "description": "Deny elevation requests from standard users automatically.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_BehaviorOfTheElevationPromptForStandardUsers",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.4",
+      "level": "L1",
+      "title": "Detect installer elevation",
+      "description": "Detect application installers and prompt for elevation.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_DetectApplicationInstallationsAndPromptForElevation",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.5",
+      "level": "L1",
+      "title": "UIAccess secure locations",
+      "description": "Only elevate UIAccess applications installed in secure locations.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_OnlyElevateUIAccessApplicationsThatAreInstalledInSecureLocations",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.6",
+      "level": "L1",
+      "title": "Admin Approval Mode",
+      "description": "Run every administrator in Admin Approval Mode.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_RunAllAdministratorsInAdminApprovalMode",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.7",
+      "level": "L1",
+      "title": "Secure desktop prompts",
+      "description": "Switch to the secure desktop for elevation prompts.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_SwitchToTheSecureDesktopWhenPromptingForElevation",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "2.3.17.8",
+      "level": "L1",
+      "title": "Virtualise write failures",
+      "description": "Redirect per-user file and registry write failures to the user profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/local-policies-security-options",
+          "setting": "UserAccountControl_VirtualizeFileAndRegistryWriteFailuresToPerUserLocations",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "9.1.1",
+      "level": "L1",
+      "title": "Domain firewall",
+      "description": "Turn on Windows Firewall for the domain profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableFirewall",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/EnableFirewall"
+        }
+      ]
+    },
+    {
+      "id": "9.1.2",
+      "level": "L1",
+      "title": "Domain inbound connections",
+      "description": "Block unsolicited inbound traffic on the domain profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DefaultInboundAction",
+          "value": 1,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/DefaultInboundAction"
+        }
+      ]
+    },
+    {
+      "id": "9.1.3",
+      "level": "L1",
+      "title": "Domain firewall notifications",
+      "description": "Stop Windows showing inbound-blocked notifications on the domain profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DisableInboundNotifications",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/DisableInboundNotifications"
+        }
+      ]
+    },
+    {
+      "id": "9.1.4",
+      "level": "L1",
+      "title": "Domain firewall log file",
+      "description": "Write the domain firewall log to the standard System32 location.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogFilePath",
+          "value": "%SystemRoot%\\System32\\logfiles\\firewall\\domainfw.log",
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/LogFilePath"
+        }
+      ]
+    },
+    {
+      "id": "9.1.5",
+      "level": "L1",
+      "title": "Domain firewall log size",
+      "description": "Allow at least 16 MB for the domain firewall log.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogMaxFileSize",
+          "value": 16384,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/LogMaxFileSize"
+        }
+      ]
+    },
+    {
+      "id": "9.1.6",
+      "level": "L1",
+      "title": "Domain firewall dropped packets",
+      "description": "Log dropped packets on the domain profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogDroppedPackets",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/EnableLogDroppedPackets"
+        }
+      ]
+    },
+    {
+      "id": "9.1.7",
+      "level": "L1",
+      "title": "Domain firewall successful connections",
+      "description": "Log successful connections on the domain profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogSuccessConnections",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/DomainProfile/EnableLogSuccessConnections"
+        }
+      ]
+    },
+    {
+      "id": "9.2.1",
+      "level": "L1",
+      "title": "Private firewall",
+      "description": "Turn on Windows Firewall for the private profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableFirewall",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/EnableFirewall"
+        }
+      ]
+    },
+    {
+      "id": "9.2.2",
+      "level": "L1",
+      "title": "Private inbound connections",
+      "description": "Block unsolicited inbound traffic on the private profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DefaultInboundAction",
+          "value": 1,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/DefaultInboundAction"
+        }
+      ]
+    },
+    {
+      "id": "9.2.3",
+      "level": "L1",
+      "title": "Private firewall notifications",
+      "description": "Stop Windows showing inbound-blocked notifications on the private profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DisableInboundNotifications",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/DisableInboundNotifications"
+        }
+      ]
+    },
+    {
+      "id": "9.2.4",
+      "level": "L1",
+      "title": "Private firewall log file",
+      "description": "Write the private firewall log to the standard System32 location.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogFilePath",
+          "value": "%SystemRoot%\\System32\\logfiles\\firewall\\privatefw.log",
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/LogFilePath"
+        }
+      ]
+    },
+    {
+      "id": "9.2.5",
+      "level": "L1",
+      "title": "Private firewall log size",
+      "description": "Allow at least 16 MB for the private firewall log.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogMaxFileSize",
+          "value": 16384,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/LogMaxFileSize"
+        }
+      ]
+    },
+    {
+      "id": "9.2.6",
+      "level": "L1",
+      "title": "Private firewall dropped packets",
+      "description": "Log dropped packets on the private profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogDroppedPackets",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/EnableLogDroppedPackets"
+        }
+      ]
+    },
+    {
+      "id": "9.2.7",
+      "level": "L1",
+      "title": "Private firewall successful connections",
+      "description": "Log successful connections on the private profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogSuccessConnections",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PrivateProfile/EnableLogSuccessConnections"
+        }
+      ]
+    },
+    {
+      "id": "9.3.1",
+      "level": "L1",
+      "title": "Public firewall",
+      "description": "Turn on Windows Firewall for the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableFirewall",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/EnableFirewall"
+        }
+      ]
+    },
+    {
+      "id": "9.3.2",
+      "level": "L1",
+      "title": "Public inbound connections",
+      "description": "Block unsolicited inbound traffic on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DefaultInboundAction",
+          "value": 1,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/DefaultInboundAction"
+        }
+      ]
+    },
+    {
+      "id": "9.3.3",
+      "level": "L1",
+      "title": "Public firewall notifications",
+      "description": "Stop Windows showing inbound-blocked notifications on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "DisableInboundNotifications",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/DisableInboundNotifications"
+        }
+      ]
+    },
+    {
+      "id": "9.3.4",
+      "level": "L1",
+      "title": "Public local firewall rules",
+      "description": "Ignore locally defined firewall rules on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "AllowLocalPolicyMerge",
+          "value": false,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/AllowLocalPolicyMerge"
+        }
+      ]
+    },
+    {
+      "id": "9.3.5",
+      "level": "L1",
+      "title": "Public local connection rules",
+      "description": "Ignore locally defined connection security rules on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "AllowLocalIpsecPolicyMerge",
+          "value": false,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/AllowLocalIpsecPolicyMerge"
+        }
+      ]
+    },
+    {
+      "id": "9.3.6",
+      "level": "L1",
+      "title": "Public firewall log file",
+      "description": "Write the public firewall log to the standard System32 location.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogFilePath",
+          "value": "%SystemRoot%\\System32\\logfiles\\firewall\\publicfw.log",
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/LogFilePath"
+        }
+      ]
+    },
+    {
+      "id": "9.3.7",
+      "level": "L1",
+      "title": "Public firewall log size",
+      "description": "Allow at least 16 MB for the public firewall log.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "LogMaxFileSize",
+          "value": 16384,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/LogMaxFileSize"
+        }
+      ]
+    },
+    {
+      "id": "9.3.8",
+      "level": "L1",
+      "title": "Public firewall dropped packets",
+      "description": "Log dropped packets on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogDroppedPackets",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/EnableLogDroppedPackets"
+        }
+      ]
+    },
+    {
+      "id": "9.3.9",
+      "level": "L1",
+      "title": "Public firewall successful connections",
+      "description": "Log successful connections on the public profile.",
+      "mappings": [
+        {
+          "collection": "windows/settings/firewall",
+          "setting": "EnableLogSuccessConnections",
+          "value": true,
+          "address": "./Vendor/MSFT/Firewall/MdmStore/PublicProfile/EnableLogSuccessConnections"
+        }
+      ]
+    },
+    {
+      "id": "18.1.1.1",
+      "level": "L1",
+      "title": "Lock screen camera",
+      "description": "Stop users enabling the camera from the lock screen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/personalization",
+          "setting": "CPL_Personalization_NoLockScreenCamera",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.1.1.2",
+      "level": "L1",
+      "title": "Lock screen slideshow",
+      "description": "Stop users enabling a slideshow on the lock screen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/personalization",
+          "setting": "CPL_Personalization_NoLockScreenSlideshow",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.1.2.2",
+      "level": "L1",
+      "title": "Online speech recognition",
+      "description": "Disable online speech recognition.",
+      "mappings": [
+        {
+          "collection": "windows/settings/privacy",
+          "setting": "AllowInputPersonalization",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.4.1",
+      "level": "L1",
+      "title": "UAC for local accounts",
+      "description": "Apply UAC restrictions to local accounts on network logons.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_0201_LATFP",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.4.3",
+      "level": "L1",
+      "title": "SMBv1 client driver",
+      "description": "Disable the SMBv1 client driver.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_SMB1ClientDriver",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "id": "18.4.4",
+      "level": "L1",
+      "title": "SMBv1 server",
+      "description": "Disable server-side SMBv1 processing.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_0001_SMBv1_Server",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.4.6",
+      "level": "L1",
+      "title": "SEHOP",
+      "description": "Enable Structured Exception Handling Overwrite Protection.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_0102_SEHOP",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.4.7",
+      "level": "L1",
+      "title": "NetBIOS node type",
+      "description": "Use point-to-point NetBIOS name resolution.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_SecGuide_NetbtNodeTypeCfg",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "id": "18.4.8",
+      "level": "L1",
+      "title": "WDigest authentication",
+      "description": "Stop WDigest retaining plaintext credentials in memory.",
+      "mappings": [
+        {
+          "collection": "windows/settings/ms-security-guide",
+          "setting": "Pol_SecGuide_0202_WDigestAuthn",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.5.1",
+      "level": "L1",
+      "title": "Automatic sign-in",
+      "description": "Disable automatic sign-in at boot.",
+      "mappings": [
+        {
+          "collection": "windows/settings/mss-legacy",
+          "setting": "Pol_MSS_AutoAdminLogon",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.5.5",
+      "level": "L1",
+      "title": "ICMP redirects",
+      "description": "Stop ICMP redirects overriding OSPF routes.",
+      "mappings": [
+        {
+          "collection": "windows/settings/mss-legacy",
+          "setting": "Pol_MSS_EnableICMPRedirect",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.5.7",
+      "level": "L1",
+      "title": "NetBIOS name release",
+      "description": "Ignore NetBIOS name release requests except from WINS servers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/mss-legacy",
+          "setting": "Pol_MSS_NoNameReleaseOnDemand",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.5.9",
+      "level": "L1",
+      "title": "Safe DLL search mode",
+      "description": "Enable the safe DLL search order.",
+      "mappings": [
+        {
+          "collection": "windows/settings/mss-legacy",
+          "setting": "Pol_MSS_SafeDllSearchMode",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.5.10",
+      "level": "L1",
+      "title": "Screen saver grace period",
+      "description": "Use a screen saver grace period of five seconds or less.",
+      "mappings": [],
+      "note": "The catalogue exposes the numeric grace period behind an enable toggle that the designer resolves first, so the value cannot be set safely."
+    },
+    {
+      "id": "18.5.13",
+      "level": "L1",
+      "title": "Security log warning level",
+      "description": "Warn when the security log reaches 90% capacity.",
+      "mappings": [],
+      "note": "The catalogue exposes the numeric warning level behind an enable toggle that the designer resolves first, so the value cannot be set safely."
+    },
+    {
+      "id": "18.6.4.3",
+      "level": "L1",
+      "title": "Multicast name resolution",
+      "description": "Turn off multicast name resolution.",
+      "mappings": [
+        {
+          "collection": "windows/settings/dns-client",
+          "setting": "Turn_Off_Multicast",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.1",
+      "level": "L1",
+      "title": "Virtualisation-based security",
+      "description": "Turn on virtualisation-based security.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-guard",
+          "setting": "EnableVirtualizationBasedSecurity",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.2",
+      "level": "L1",
+      "title": "VBS platform security",
+      "description": "Require Secure Boot for virtualisation-based security.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-guard",
+          "setting": "RequirePlatformSecurityFeatures",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.3",
+      "level": "L1",
+      "title": "Hypervisor code integrity",
+      "description": "Enable hypervisor-protected code integrity with UEFI lock.",
+      "mappings": [
+        {
+          "collection": "windows/settings/virtualization-based-technology",
+          "setting": "HypervisorEnforcedCodeIntegrity",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.4",
+      "level": "L1",
+      "title": "UEFI memory attributes",
+      "description": "Require the UEFI memory attributes table.",
+      "mappings": [
+        {
+          "collection": "windows/settings/virtualization-based-technology",
+          "setting": "RequireUEFIMemoryAttributesTable",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.5",
+      "level": "L1",
+      "title": "Credential Guard",
+      "description": "Enable Credential Guard with UEFI lock.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-guard",
+          "setting": "LsaCfgFlags",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.5.6",
+      "level": "L1",
+      "title": "Secure Launch",
+      "description": "Enable Secure Launch when the hardware supports it.",
+      "mappings": [
+        {
+          "collection": "windows/settings/device-guard",
+          "setting": "ConfigureSystemGuardLaunch",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.9.35.1",
+      "level": "L1",
+      "title": "Offer Remote Assistance",
+      "description": "Disable unsolicited Remote Assistance offers.",
+      "mappings": [
+        {
+          "collection": "windows/settings/remote-assistance",
+          "setting": "RA_Unsolicit",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.9.35.2",
+      "level": "L1",
+      "title": "Solicited Remote Assistance",
+      "description": "Disable solicited Remote Assistance.",
+      "mappings": [
+        {
+          "collection": "windows/settings/remote-assistance",
+          "setting": "RA_Solicit",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.7.1",
+      "level": "L1",
+      "title": "Non-volume autoplay",
+      "description": "Disallow AutoPlay for MTP devices such as cameras and phones.",
+      "mappings": [
+        {
+          "collection": "windows/settings/auto-play-policies",
+          "setting": "NoAutoplayfornonVolume",
+          "value": 1,
+          "address": "./Device/Vendor/MSFT/Policy/Config/Autoplay/DisallowAutoplayForNonVolumeDevices"
+        }
+      ]
+    },
+    {
+      "id": "18.10.7.2",
+      "level": "L1",
+      "title": "AutoRun default",
+      "description": "Do not execute AutoRun commands.",
+      "mappings": [
+        {
+          "collection": "windows/settings/auto-play-policies",
+          "setting": "NoAutorun_Dropdown",
+          "value": 1,
+          "address": "./Device/Vendor/MSFT/Policy/Config/Autoplay/SetDefaultAutoRunBehavior"
+        }
+      ]
+    },
+    {
+      "id": "18.10.7.3",
+      "level": "L1",
+      "title": "AutoPlay",
+      "description": "Turn off AutoPlay.",
+      "mappings": [
+        {
+          "collection": "windows/settings/auto-play-policies",
+          "setting": "Autorun",
+          "value": 1,
+          "address": "./Device/Vendor/MSFT/Policy/Config/Autoplay/TurnOffAutoPlay"
+        }
+      ]
+    },
+    {
+      "id": "18.10.12.1",
+      "level": "L1",
+      "title": "Consumer account content",
+      "description": "Turn off cloud consumer account state content.",
+      "mappings": [
+        {
+          "collection": "windows/settings/experience",
+          "setting": "DisableConsumerAccountStateContent",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.12.3",
+      "level": "L1",
+      "title": "Consumer experiences",
+      "description": "Turn off Microsoft consumer experiences.",
+      "mappings": [
+        {
+          "collection": "windows/settings/experience",
+          "setting": "AllowWindowsConsumerFeatures",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.14.1",
+      "level": "L1",
+      "title": "Password reveal button",
+      "description": "Do not show the password reveal button.",
+      "mappings": [
+        {
+          "collection": "windows/settings/credential-user-interface",
+          "setting": "DisablePasswordReveal",
+          "value": 1,
+          "address": "./Device/Vendor/MSFT/Policy/Config/CredentialsUI/DisablePasswordReveal"
+        }
+      ]
+    },
+    {
+      "id": "18.10.14.2",
+      "level": "L1",
+      "title": "Administrator enumeration",
+      "description": "Do not enumerate administrator accounts on elevation.",
+      "mappings": [
+        {
+          "collection": "windows/settings/credential-user-interface",
+          "setting": "EnumerateAdministrators",
+          "value": 0,
+          "address": "./Device/Vendor/MSFT/Policy/Config/CredentialsUI/EnumerateAdministrators"
+        }
+      ]
+    },
+    {
+      "id": "18.10.14.3",
+      "level": "L1",
+      "title": "Security questions",
+      "description": "Prevent local accounts using security questions for password reset.",
+      "mappings": [
+        {
+          "collection": "windows/settings/credential-user-interface",
+          "setting": "NoLocalPasswordResetQuestions",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.15.1",
+      "level": "L1",
+      "title": "Diagnostic data",
+      "description": "Send no optional diagnostic data.",
+      "mappings": [
+        {
+          "collection": "windows/settings/system",
+          "setting": "AllowTelemetry",
+          "value": 0,
+          "address": "./Device/Vendor/MSFT/Policy/Config/System/AllowTelemetry"
+        }
+      ]
+    },
+    {
+      "id": "18.10.15.4",
+      "level": "L1",
+      "title": "Feedback notifications",
+      "description": "Do not show feedback notifications.",
+      "mappings": [
+        {
+          "collection": "windows/settings/experience",
+          "setting": "DoNotShowFeedbackNotifications",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.17.1",
+      "level": "L1",
+      "title": "App Installer",
+      "description": "Disable the App Installer.",
+      "mappings": [
+        {
+          "collection": "windows/settings/desktop-app-installer",
+          "setting": "EnableAppInstaller",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.17.2",
+      "level": "L1",
+      "title": "App Installer experiments",
+      "description": "Disable App Installer experimental features.",
+      "mappings": [
+        {
+          "collection": "windows/settings/desktop-app-installer",
+          "setting": "EnableExperimentalFeatures",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.17.3",
+      "level": "L1",
+      "title": "App Installer hash override",
+      "description": "Disable the App Installer hash override.",
+      "mappings": [
+        {
+          "collection": "windows/settings/desktop-app-installer",
+          "setting": "EnableHashOverride",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.17.4",
+      "level": "L1",
+      "title": "App Installer protocol",
+      "description": "Disable the ms-appinstaller protocol.",
+      "mappings": [
+        {
+          "collection": "windows/settings/desktop-app-installer",
+          "setting": "EnableMSAppInstallerProtocol",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.6.3.1",
+      "level": "L1",
+      "title": "Network protection",
+      "description": "Block dangerous websites with Defender network protection.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "EnableNetworkProtection",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.7.1",
+      "level": "L1",
+      "title": "File hash computation",
+      "description": "Enable Defender file hash computation.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "EnableFileHashComputation",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.10.1",
+      "level": "L1",
+      "title": "Downloaded file scanning",
+      "description": "Scan all downloaded files and attachments.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "AllowIOAVProtection",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.10.2",
+      "level": "L1",
+      "title": "Real-time protection",
+      "description": "Keep Defender real-time protection on.",
+      "mappings": [
+        {
+          "collection": "windows/settings/real-time-protection",
+          "setting": "DisableRealtimeMonitoring",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.10.3",
+      "level": "L1",
+      "title": "Behaviour monitoring",
+      "description": "Turn on Defender behaviour monitoring.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "AllowBehaviorMonitoring",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.10.4",
+      "level": "L1",
+      "title": "Script scanning",
+      "description": "Turn on Defender script scanning.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "AllowScriptScanning",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.13.2",
+      "level": "L1",
+      "title": "Removable drive scanning",
+      "description": "Scan removable drives during full scans.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "AllowFullScanRemovableDriveScanning",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.13.3",
+      "level": "L1",
+      "title": "Email scanning",
+      "description": "Turn on Defender email scanning.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "AllowEmailScanning",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.16",
+      "level": "L1",
+      "title": "Potentially unwanted applications",
+      "description": "Block potentially unwanted applications.",
+      "mappings": [
+        {
+          "collection": "windows/settings/defender",
+          "setting": "PUAProtection",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.42.17",
+      "level": "L1",
+      "title": "Defender antivirus",
+      "description": "Keep Microsoft Defender Antivirus enabled.",
+      "mappings": [
+        {
+          "collection": "windows/settings/microsoft-defender-antivirus",
+          "setting": "DisableAntiSpywareDefender",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.50.1",
+      "level": "L1",
+      "title": "OneDrive file storage",
+      "description": "Prevent OneDrive being used for file storage.",
+      "mappings": [],
+      "note": "The catalogue's OneDrive collection does not expose the tenant-wide disable switch this recommendation needs."
+    },
+    {
+      "id": "18.10.56.3.3.3",
+      "level": "L1",
+      "title": "Drive redirection",
+      "description": "Do not allow drive redirection in Remote Desktop sessions.",
+      "mappings": [],
+      "note": "The catalogue does not expose the drive-redirection setting."
+    },
+    {
+      "id": "18.10.56.3.9.1",
+      "level": "L1",
+      "title": "RDP password prompt",
+      "description": "Always prompt for a password when a Remote Desktop connection is made.",
+      "mappings": [
+        {
+          "collection": "windows/settings/security",
+          "setting": "TS_PASSWORD",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.56.3.9.2",
+      "level": "L1",
+      "title": "RDP secure RPC",
+      "description": "Require secure RPC for Remote Desktop.",
+      "mappings": [
+        {
+          "collection": "windows/settings/security",
+          "setting": "TS_RPC_ENCRYPTION",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.56.3.9.3",
+      "level": "L1",
+      "title": "RDP security layer",
+      "description": "Require SSL for Remote Desktop connections.",
+      "mappings": [],
+      "note": "The catalogue's first entry for the shared OMA-URI exposes only Enabled/Disabled, not the SSL level."
+    },
+    {
+      "id": "18.10.56.3.9.4",
+      "level": "L1",
+      "title": "RDP network level authentication",
+      "description": "Require Network Level Authentication for Remote Desktop.",
+      "mappings": [
+        {
+          "collection": "windows/settings/security",
+          "setting": "TS_USER_AUTHENTICATION_POLICY",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.56.3.9.5",
+      "level": "L1",
+      "title": "RDP encryption level",
+      "description": "Require high-level encryption for Remote Desktop.",
+      "mappings": [
+        {
+          "collection": "windows/settings/security",
+          "setting": "TS_ENCRYPTION_LEVEL",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "id": "18.10.58.3",
+      "level": "L1",
+      "title": "Cortana",
+      "description": "Disable Cortana.",
+      "mappings": [
+        {
+          "collection": "windows/settings/experience",
+          "setting": "AllowCortana",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.58.4",
+      "level": "L1",
+      "title": "Cortana above lock",
+      "description": "Disable Cortana on the lock screen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/above-lock",
+          "setting": "AllowCortanaAboveLock",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.71.1",
+      "level": "L1",
+      "title": "Widgets",
+      "description": "Disable Windows widgets.",
+      "mappings": [
+        {
+          "collection": "windows/settings/widgets",
+          "setting": "AllowNewsAndInterests",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.1.1",
+      "level": "L1",
+      "title": "Phishing data collection",
+      "description": "Enable automatic data collection for enhanced phishing protection.",
+      "mappings": [
+        {
+          "collection": "windows/settings/enhanced-phishing-protection",
+          "setting": "AutomaticDataCollection",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.1.2",
+      "level": "L1",
+      "title": "Malicious password warning",
+      "description": "Warn users when they type a known-compromised password.",
+      "mappings": [
+        {
+          "collection": "windows/settings/enhanced-phishing-protection",
+          "setting": "NotifyMalicious",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.1.3",
+      "level": "L1",
+      "title": "Password reuse warning",
+      "description": "Warn users when they reuse a password.",
+      "mappings": [
+        {
+          "collection": "windows/settings/enhanced-phishing-protection",
+          "setting": "NotifyPasswordReuse",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.1.4",
+      "level": "L1",
+      "title": "Unsafe app warning",
+      "description": "Warn users before they use an unsafe application.",
+      "mappings": [
+        {
+          "collection": "windows/settings/enhanced-phishing-protection",
+          "setting": "NotifyUnsafeApp",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.1.5",
+      "level": "L1",
+      "title": "Phishing protection service",
+      "description": "Enable the enhanced phishing protection service.",
+      "mappings": [
+        {
+          "collection": "windows/settings/enhanced-phishing-protection",
+          "setting": "ServiceEnabled",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.75.2.1",
+      "level": "L1",
+      "title": "SmartScreen",
+      "description": "Enable Windows Defender SmartScreen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/file-explorer",
+          "setting": "EnableSmartScreen",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.80.1",
+      "level": "L1",
+      "title": "MSI user control",
+      "description": "Disallow user control over Windows Installer installs.",
+      "mappings": [
+        {
+          "collection": "windows/settings/microsoft-app-store",
+          "setting": "MSIAllowUserControlOverInstall",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.80.2",
+      "level": "L1",
+      "title": "MSI elevated installs",
+      "description": "Disallow always installing with elevated privileges.",
+      "mappings": [
+        {
+          "collection": "windows/settings/microsoft-app-store",
+          "setting": "MSIAlwaysInstallWithElevatedPrivileges",
+          "value": 0,
+          "address": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/MSIAlwaysInstallWithElevatedPrivileges"
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.1.1",
+      "level": "L1",
+      "title": "WinRM client basic auth",
+      "description": "Disable Basic authentication on the WinRM client.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-client",
+          "setting": "AllowBasic_2",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.1.2",
+      "level": "L1",
+      "title": "WinRM client unencrypted traffic",
+      "description": "Disable unencrypted WinRM client traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-client",
+          "setting": "AllowUnencrypted_2",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.1.3",
+      "level": "L1",
+      "title": "WinRM client digest",
+      "description": "Disallow Digest authentication on the WinRM client.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-client",
+          "setting": "DisallowDigest",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.2.1",
+      "level": "L1",
+      "title": "WinRM service basic auth",
+      "description": "Disable Basic authentication on the WinRM service.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-service",
+          "setting": "AllowBasic_1",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.2.3",
+      "level": "L1",
+      "title": "WinRM service unencrypted traffic",
+      "description": "Disable unencrypted WinRM service traffic.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-service",
+          "setting": "AllowUnencrypted_1",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.88.2.4",
+      "level": "L1",
+      "title": "WinRM RunAs credentials",
+      "description": "Stop WinRM storing RunAs credentials.",
+      "mappings": [
+        {
+          "collection": "windows/settings/win-rm-service",
+          "setting": "DisableRunAs",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.90.1",
+      "level": "L1",
+      "title": "Windows Sandbox clipboard",
+      "description": "Disable clipboard sharing with Windows Sandbox.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-sandbox",
+          "setting": "AllowClipboardRedirection",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.90.2",
+      "level": "L1",
+      "title": "Windows Sandbox networking",
+      "description": "Disable networking in Windows Sandbox.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-sandbox",
+          "setting": "AllowNetworking",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.92.2.1",
+      "level": "L1",
+      "title": "Automatic updates",
+      "description": "Configure Windows Update to download and schedule installs automatically.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-update-for-business",
+          "setting": "AllowAutoUpdate",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "id": "18.10.92.2.4",
+      "level": "L1",
+      "title": "Pause updates",
+      "description": "Remove the user's ability to pause updates.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-update-for-business",
+          "setting": "SetDisablePauseUXAccess",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "id": "18.10.92.4.1",
+      "level": "L1",
+      "title": "Preview builds",
+      "description": "Disable preview build enrolment.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-update-for-business",
+          "setting": "ManagePreviewBuilds",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "18.10.92.4.2",
+      "level": "L1",
+      "title": "Feature update deferral",
+      "description": "Defer feature updates for 180 days.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-update-for-business",
+          "setting": "DeferFeatureUpdatesPeriodInDays",
+          "value": 180
+        }
+      ]
+    },
+    {
+      "id": "18.10.92.4.3",
+      "level": "L1",
+      "title": "Quality update deferral",
+      "description": "Do not defer quality updates.",
+      "mappings": [
+        {
+          "collection": "windows/settings/windows-update-for-business",
+          "setting": "DeferQualityUpdatesPeriodInDays",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "19.5.1.1",
+      "level": "L1",
+      "title": "Lock screen notifications",
+      "description": "Turn off toast notifications on the lock screen.",
+      "mappings": [
+        {
+          "collection": "windows/settings/above-lock",
+          "setting": "AllowToasts",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "id": "19.7.5.1",
+      "level": "L1",
+      "title": "Attachment zone information",
+      "description": "Preserve zone information on file attachments.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.5.2",
+      "level": "L1",
+      "title": "Attachment antivirus notification",
+      "description": "Notify antivirus programs when attachments are opened.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.8.1",
+      "level": "L1",
+      "title": "Lock screen spotlight",
+      "description": "Disable Windows Spotlight on the lock screen.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.8.2",
+      "level": "L1",
+      "title": "Spotlight third-party suggestions",
+      "description": "Block third-party suggestions in Windows Spotlight.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.8.5",
+      "level": "L1",
+      "title": "Desktop spotlight collection",
+      "description": "Turn off the Spotlight collection on the desktop.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.38.1",
+      "level": "L1",
+      "title": "Windows Copilot",
+      "description": "Turn off Windows Copilot.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    },
+    {
+      "id": "19.7.42.1",
+      "level": "L1",
+      "title": "MSI elevated installs (user)",
+      "description": "Disallow user-configured always-elevated MSI installs.",
+      "mappings": [],
+      "note": "User-scoped Windows setting. The policy designer saves device-scoped configurations, so add this through the policy editor with user scope."
+    }
+  ]
+}

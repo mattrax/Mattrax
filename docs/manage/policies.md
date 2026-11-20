@@ -126,6 +126,10 @@ Selections are stored as `mttx.apple.custom.designer` or
 `mttx.apple.declaration.d<hash>`. The designer is optional; you can upload a profile or
 write a declaration directly.
 
+The designer and the policy creation form can start from a reviewed CIS benchmark. The
+picker shows coverage and every control, and applies only the controls you select without
+removing unrelated settings. See [CIS benchmark templates](/reference/cis-templates).
+
 See [Policy catalogue](/reference/policy-catalogue) for file sizes and regeneration.
 
 ## Assign

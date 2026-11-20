@@ -303,3 +303,4 @@ delivery failures and invalid tokens.
 
 - [Manage devices](/manage/devices)
 - [Security](/manage/security)
+- [CIS benchmark templates](/reference/cis-templates)
