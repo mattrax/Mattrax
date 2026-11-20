@@ -5,12 +5,15 @@ import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
+
 const headers = { cookie: "mattrax_session=test" };
+
 const timestamp = new Date("2026-11-01T00:00:00.000Z");
 
 const makeContext = () => {
   const db = makeDb();
   const now = new Date();
+
   const user = {
     id: "user-1",
     name: "Owner",
@@ -180,6 +183,7 @@ describe("nested groups", () => {
         devices: ["device-1"],
       }),
     );
+
     const parent = await runEffect(
       context.service.createGroup(request(headers), tenant.id, {
         name: "Parent",
@@ -207,6 +211,7 @@ describe("nested groups", () => {
         devices: ["device-1"],
       }),
     );
+
     const parent = await runEffect(
       context.service.createGroup(request(headers), tenant.id, {
         name: "Parent",
@@ -238,6 +243,7 @@ describe("nested groups", () => {
     const a = await runEffect(
       context.service.createGroup(request(headers), tenant.id, { name: "A" }),
     );
+
     const b = await runEffect(
       context.service.createGroup(request(headers), tenant.id, { name: "B", childGroups: [a.id] }),
     );
@@ -262,6 +268,7 @@ describe("nested groups", () => {
   it("refuses a child group from another tenant", async () => {
     const context = makeContext();
     const tenant = await makeTenant(context);
+
     const other = await runEffect(
       context.service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
@@ -332,6 +339,7 @@ describe("group exclusions", () => {
         devices: ["device-1"],
       }),
     );
+
     const parent = await runEffect(
       context.service.createGroup(request(headers), tenant.id, {
         name: "Parent",

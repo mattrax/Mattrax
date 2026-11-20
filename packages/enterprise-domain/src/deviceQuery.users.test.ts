@@ -108,10 +108,12 @@ describe("user conditions", () => {
       version: 1 as const,
       all: [{ field: "userName" as const, op: "eq" as const, value: "Ada Lovelace" }],
     };
+
     const external = {
       version: 1 as const,
       all: [{ field: "userExternalId" as const, op: "eq" as const, value: "entra-1" }],
     };
+
     const users = [user({ name: "Ada Lovelace", externalId: "entra-1" })];
 
     expect(evaluateDeviceQuery(named, device(users))).toBe(true);
