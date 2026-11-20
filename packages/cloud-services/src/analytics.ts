@@ -615,6 +615,8 @@ export const shouldTrackApiRequest = (path: string, method: string): boolean => 
     pathname === "/api/health" ||
     pathname === "/health" ||
     pathname === "/api/ready" ||
+    // A Prometheus scrape is operational traffic, not product usage.
+    pathname === "/api/metrics" ||
     pathname === "/api/version" ||
     pathname === "/api/openapi.json" ||
     pathname === "/api/webhooks/openapi.json" ||

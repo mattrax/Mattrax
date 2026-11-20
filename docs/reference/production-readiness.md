@@ -68,6 +68,10 @@ real-vendor validation. It is a status page, not a marketing page.
   so a readiness poller does not write to the bucket on every request), rate limits
   (credential buckets fail closed if a configured edge limiter is unavailable) and
   optional PostHog product analytics and error tracking.
+- Request tracing with W3C `traceparent`: every request log line carries `traceId`,
+  `spanId` and the slowest child spans (management-backend check-in/enrollment calls and
+  every SQL statement), and an opt-in Prometheus `/api/metrics` endpoint exposes
+  bounded-cardinality request, span, SQL and MDM outcome counters/histograms.
 - An SSR shell snapshot bound to a signed session-revision cookie and invalidated on
   sign-out, session revoke, passkey removal, TOTP disable and email change.
 - A per-deployment `/sitemap.xml` and `/robots.txt` generated from the request origin,
@@ -108,7 +112,7 @@ These are implemented but not proven end to end in this repository.
 | Transactional email       | Queued in `email_outbox`, retried hourly with exponential backoff and a 5-attempt cap; a permanent failure is audited but not re-driven automatically                                                                                                                                                |
 | Backups                   | No off-site copy or restore drills; tenant bundles exclude members, devices, audit history and SCEP identities (direct device assignments are included)                                                                                                                                              |
 | Tenant teardown           | One attempt owns a pending deletion for a 10-minute lease; Apple unenroll depends on a check-in racing the delete, and Windows devices always need manual retirement                                                                                                                                 |
-| Observability             | No metrics endpoint; readiness checks are bounded but the underlying query is not cancelled on timeout                                                                                                                                                                                               |
+| Observability             | Metrics and spans are in-process only: counters reset with the isolate, there is no OTLP exporter or long-term span store, and outbound vendor calls (APNs relay, Graph, Stripe, PostHog) are not instrumented. Readiness checks are bounded but the underlying query is not cancelled on timeout    |
 | SSO                       | Entra OIDC only; no SAML, no IdP group-to-role mapping                                                                                                                                                                                                                                               |
 | Account recovery          | Ceremony, rate limits and approval rules are unit-tested; not yet rehearsed against a real mailer or a self-hosted operator run                                                                                                                                                                      |
 | MCP OAuth                 | Route-level boundary tests cover redirect, PKCE, client binding, code/refresh single use; not driven by a real MCP client                                                                                                                                                                            |
@@ -137,6 +141,8 @@ These are implemented but not proven end to end in this repository.
       still builds, but credential routes use the weaker per-isolate fallback instead of
       failing closed.
 - [ ] PostHog project key is configured for analytics and error tracking.
+- [ ] `MATTRAX_METRICS` is `token` (or `public` only behind a private network) and the
+      p95 latency and MDM outcome alerts are configured against `/api/metrics`.
 - [ ] Daily and hourly crons are enabled.
 
 ### Identity
@@ -216,7 +222,7 @@ These are implemented but not proven end to end in this repository.
 - Compliance/conditional access integration.
 - Queues/job ids for bulk operations.
 - Off-site backups and restore drills.
-- Metrics and indexed fleet aggregation.
+- Indexed fleet aggregation and a long-term trace store.
 - SAML SSO and role mapping.
 - Vendor migration connectors.
 - Android Google device deletion.

@@ -544,7 +544,10 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
 
             const backendResponse = yield* backend
               .windowsManagementCheckin(scope, toManagementRequest(sync))
-              .pipe(Effect.mapError((cause) => backendError("Management backend failed", cause)));
+              .pipe(
+                Effect.withSpan("mdm.windows.backend.checkin", { kind: "client" }),
+                Effect.mapError((cause) => backendError("Management backend failed", cause)),
+              );
 
             // The event is an acknowledgement (a command result or the tail of
             // enrollment). The backend records its own failure, but it must be

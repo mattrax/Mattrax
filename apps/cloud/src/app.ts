@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Option, Redacted, Schema, Tracer } from "effect";
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
@@ -78,6 +78,7 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
+import { metricsResponse, telemetry } from "./telemetry.js";
 import {
   DAILY_CRON,
   HOURLY_CRON,
@@ -91,7 +92,6 @@ import {
   logRequest,
   readErrorTag,
   resolveRequestId,
-  shouldLogRequest,
   tenantIdFromPath,
   withDefaultNoStore,
   withRequestId,
@@ -101,6 +101,8 @@ import {
   authEventForRequest,
   authOutcomeFromResponse,
   createRequestAnalytics,
+  routeClassForPath,
+  shouldLogRequest,
   shouldReportError,
   shouldTrackApiRequest,
   checkReadiness,
@@ -955,6 +957,14 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       }),
   );
 
+  // One tracer for the whole request graph. Effect creates a span for
+  // `Effect.withSpan` and for every SQL statement, so service code and MySQL
+  // are instrumented without threading anything through. The web handler uses
+  // the same instance to open the request's root span. `provideMerge` keeps
+  // the service in the layer's output, which is the context the request fiber
+  // runs in; a plain `provide` would only cover layer construction.
+  const telemetryLayer = Layer.succeed(Tracer.Tracer, telemetry.tracer);
+
   return appWithDevRoutes.pipe(
     Layer.provide(scimNotifierLayer),
     // `provideMerge` keeps the MDM/SCEP service instances in the layer's
@@ -964,6 +974,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     Layer.provide(authLive),
     Layer.provideMerge(Db.layer),
     Layer.provide(databaseLayer(env)),
+    Layer.provideMerge(telemetryLayer),
   );
 };
 
@@ -1188,6 +1199,14 @@ export const createApiRuntime = (
       const requestId = resolveRequestId(request);
       const startedAt = Date.now();
       const pathname = new URL(request.url).pathname;
+      // One bounded label for metrics; the raw path never becomes a label.
+      const route = routeClassForPath(pathname);
+
+      const trace = telemetry.beginRequest({
+        method: request.method,
+        route,
+        traceparent: request.headers.get("traceparent"),
+      });
 
       if (!apiEnv.POSTHOG_KEY) reportMissingPostHogKey();
 
@@ -1227,14 +1246,26 @@ export const createApiRuntime = (
           });
         } else if (pathname === "/api/ready" && request.method === "GET") {
           response = await readinessResponse(env, requestId);
+        } else if (pathname === "/api/metrics" && request.method === "GET") {
+          // Handled before the Effect router: it needs no database, no auth
+          // machinery and no service layer, so a scrape stays cheap.
+          response = metricsResponse(request);
         } else {
           const deviceRequest = new Request(request, { headers: deviceIdentityHeaders(request) });
 
-          const context = Context.makeUnsafe(
-            new Map([[EnterpriseAnalyticsService.key, analytics]]),
-          );
+          // The root span becomes the parent of every span the handler creates
+          // (including `@effect/sql` query spans), which is what makes the
+          // trace ids on the log line join up.
+          const requestServices = new Map<string, unknown>([
+            [EnterpriseAnalyticsService.key, analytics],
+          ]);
 
-          response = await appHandler(env).handler(deviceRequest, context);
+          if (trace) requestServices.set(Tracer.ParentSpan.key, trace.span);
+
+          response = await appHandler(env).handler(
+            deviceRequest,
+            Context.makeUnsafe(requestServices),
+          );
         }
       } catch (cause) {
         uncaught = cause;
@@ -1245,15 +1276,30 @@ export const createApiRuntime = (
       }
 
       const errorTag = uncaught ? "UncaughtError" : await readErrorTag(response);
+      const durationMs = Math.max(0, Date.now() - startedAt);
+
+      // Closing the root span also records the request and MDM-outcome
+      // metrics; the returned children are the trace's timing breakdown.
+      const childSpans = trace
+        ? telemetry.finishRequest(trace, { status: response.status, durationMs, errorTag })
+        : [];
 
       if (shouldLogRequest(pathname, response.status)) {
+        const summary = telemetry.summariseSpans(childSpans);
+
         logRequest({
           requestId,
           method: request.method,
           path: pathname,
           status: response.status,
-          durationMs: Math.max(0, Date.now() - startedAt),
+          durationMs,
           tenantId: tenantIdFromPath(pathname),
+          traceId: trace?.traceId,
+          spanId: trace?.spanId,
+          // Only include the breakdown when there is something to show; a
+          // request with no children keeps the line as small as before.
+          spans: summary.spans.length > 0 ? summary.spans : undefined,
+          spanCount: summary.spanCount > 0 ? summary.spanCount : undefined,
           errorTag,
           error: uncaught ? describeError(uncaught) : undefined,
         });
@@ -1262,7 +1308,6 @@ export const createApiRuntime = (
       // PostHog product analytics. Paths are recorded without query strings and
       // no bodies, cookies, headers or email addresses leave the Worker.
       if (shouldTrackApiRequest(pathname, request.method)) {
-        const durationMs = Math.max(0, Date.now() - startedAt);
         const tenantId = tenantIdFromPath(pathname);
 
         const properties: AnalyticsProperties = {

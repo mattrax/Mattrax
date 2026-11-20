@@ -96,6 +96,8 @@ describe("request logging", () => {
     expect(shouldLogRequest("/health", 200)).toBe(false);
     expect(shouldLogRequest("/api/ready", 200)).toBe(false);
     expect(shouldLogRequest("/api/ready", 503)).toBe(true);
+    expect(shouldLogRequest("/api/metrics", 200)).toBe(false);
+    expect(shouldLogRequest("/api/metrics", 401)).toBe(true);
     expect(shouldLogRequest("/api/v1/me", 200)).toBe(true);
   });
 });

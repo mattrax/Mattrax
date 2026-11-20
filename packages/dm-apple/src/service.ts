@@ -427,6 +427,9 @@ const makeAppleMdmService = (
         }),
       )
       .pipe(
+        // `Authenticate` is the first transaction of enrollment, so this span is
+        // the enrollment's backend time.
+        Effect.withSpan("mdm.apple.backend.enroll", { kind: "client" }),
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.mapError(toMdmError("Failed to send Authenticate event")),
       );
@@ -682,6 +685,9 @@ const makeAppleMdmService = (
   > =>
     Effect.gen(function* () {
       const manifest = yield* backend.appleManagementCheckin(scope).pipe(
+        // The management backend call gets its own span so a slow check-in can
+        // be split into protocol, backend and SQL time without guessing.
+        Effect.withSpan("mdm.apple.backend.checkin", { kind: "client" }),
         // Unknown devices must receive Apple's 410 Gone so they stop checking
         // in and remove the (now meaningless) management profile. An Idle 200
         // would leave a deleted or unenrolled device polling forever.

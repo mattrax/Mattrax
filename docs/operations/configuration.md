@@ -274,6 +274,18 @@ message, request id, path, method, status, release and deployment id. Bodies,
 cookies, query strings, emails and tokens are excluded; browser autocapture text is
 redacted the same way.
 
+## Telemetry and metrics
+
+| Variable                | Default | Purpose                                                                                  |
+| ----------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `MATTRAX_TELEMETRY`     | on      | `off` installs Effect's no-op tracer: no spans, no metrics, no per-request work          |
+| `MATTRAX_METRICS`       | `off`   | `public` serves `/api/metrics`; `token` requires a bearer token; `on`/`true` mean public |
+| `MATTRAX_METRICS_TOKEN` | —       | Bearer token for `MATTRAX_METRICS=token`; a missing token fails closed (404)             |
+
+The endpoint is Prometheus text format with aggregate-only labels: no tenant, device, email
+or raw URL. See [Monitoring](/operations/monitoring#metrics) for the metric catalogue and
+the per-isolate caveat.
+
 ## Development only
 
 | Variable                   | Purpose                                |
