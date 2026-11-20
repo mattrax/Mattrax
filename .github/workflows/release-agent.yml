@@ -1,0 +1,486 @@
+name: Release agent
+
+# Build and test mattraxd on every agent change. Signed artifacts are only
+# published from trusted events:
+#
+# - push a tag `mattraxd-v<version>` to publish a stable (or, with a
+#   prerelease suffix such as -rc.1, a prerelease) release;
+# - the nightly schedule publishes a prerelease and advances the nightly
+#   pointer;
+# - workflow_dispatch with channel=nightly does the same by hand;
+# - workflow_dispatch with channel=stable only builds and tests (no publish),
+#   so a stable release is always a reviewed tag.
+#
+# Pull requests never receive signing secrets: the signing steps are gated on
+# the event and on the secrets being present, so fork and same-repository PRs
+# produce unsigned artifacts. See apps/mattraxd/README.md for the secret list.
+on:
+  push:
+    tags:
+      - "mattraxd-v*"
+  pull_request:
+    paths:
+      - "apps/mattraxd/**"
+      - ".github/workflows/release-agent.yml"
+  schedule:
+    # 03:17 UTC, off the hour to avoid the usual CI thundering herd.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "nightly publishes a build; stable only validates one"
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+
+concurrency:
+  group: release-agent-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # One place that decides the version and the release tag, so the three
+  # platform jobs and the publisher cannot disagree.
+  prepare:
+    name: Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+        run: |
+          set -eu
+          package_version="$(sed -n 's/^version = "\(.*\)"/\1/p' apps/mattraxd/Cargo.toml | head -n 1)"
+          # A nightly must sort after the stable build it was cut from, or an
+          # agent on the stable channel would refuse it as a downgrade. Use the
+          # next patch prerelease (1.1.0 -> 1.1.1-nightly.YYYYMMDD).
+          next_patch="$(printf '%s' "$package_version" | awk -F. '{ print $1"."$2"."$3+1 }')"
+          publish=false
+          prerelease=false
+
+          case "$EVENT_NAME" in
+            push)
+              # refs/tags/mattraxd-v1.2.3 -> 1.2.3
+              version="${REF_NAME#mattraxd-v}"
+              release_tag="$REF_NAME"
+              publish=true
+              case "$version" in
+                *-*) prerelease=true ;;
+              esac
+              ;;
+            schedule)
+              version="${next_patch}-nightly.$(date -u +%Y%m%d)"
+              release_tag="nightly-$(date -u +%Y%m%d)"
+              publish=true
+              ;;
+            workflow_dispatch)
+              if [ "${INPUT_CHANNEL:-nightly}" = "stable" ]; then
+                # A manual stable run is a dry run: tags are the only way to
+                # publish a stable build.
+                version="$package_version"
+                release_tag=""
+                publish=false
+              else
+                version="${next_patch}-nightly.$(date -u +%Y%m%d)"
+                release_tag="nightly-$(date -u +%Y%m%d)"
+                publish=true
+              fi
+              ;;
+            pull_request)
+              version="${package_version}-pr.${{ github.run_number }}"
+              release_tag=""
+              publish=false
+              ;;
+            *)
+              version="$package_version"
+              release_tag=""
+              publish=false
+              ;;
+          esac
+
+          # The manifest and the binary must embed the same string.
+          {
+            echo "version=$version"
+            echo "release_tag=$release_tag"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "mattraxd $version (tag: ${release_tag:-none}, publish: $publish)"
+
+  test:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/mattraxd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --locked
+
+  macos:
+    name: macOS universal
+    needs: prepare
+    runs-on: macos-14
+    timeout-minutes: 45
+    outputs:
+      signed: ${{ steps.signing.outputs.enabled }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      MATTRAX_MATTRAXD_VERSION: ${{ needs.prepare.outputs.version }}
+      MATTRAX_MATTRAXD_TARGETS: "aarch64-apple-darwin x86_64-apple-darwin"
+      MATTRAXD_UPDATE_PUBLIC_KEY: ${{ vars.MATTRAXD_UPDATE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Add the Intel target
+        run: rustup target add x86_64-apple-darwin
+      - name: Test the macOS build
+        working-directory: apps/mattraxd
+        run: cargo test --locked
+
+      - name: Detect signing credentials
+        id: signing
+        env:
+          DEVELOPMENT_EVENT: ${{ github.event_name }}
+          APP_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APP_P12: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
+          INSTALLER_IDENTITY: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          INSTALLER_P12: ${{ secrets.DEVELOPER_ID_INSTALLER_P12 }}
+          NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          set -eu
+          enabled=false
+          installer=false
+          notarize=false
+
+          if [ "$DEVELOPMENT_EVENT" != "pull_request" ] &&
+             [ -n "${APP_IDENTITY:-}" ] && [ -n "${APP_P12:-}" ]; then
+            enabled=true
+          fi
+
+          if [ "$enabled" = "true" ] &&
+             [ -n "${INSTALLER_IDENTITY:-}" ] && [ -n "${INSTALLER_P12:-}" ]; then
+            installer=true
+          fi
+
+          if [ "$enabled" = "true" ] && [ -n "${NOTARY_PROFILE:-}" ] &&
+             [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_TEAM_ID:-}" ] &&
+             [ -n "${NOTARY_PASSWORD:-}" ]; then
+            notarize=true
+          fi
+
+          {
+            echo "enabled=$enabled"
+            echo "installer=$installer"
+            echo "notarize=$notarize"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$enabled" != "true" ]; then
+            echo "::notice::macOS signing secrets are not configured (or this is a PR); building an unsigned package"
+          elif [ "$installer" != "true" ]; then
+            echo "::warning::DEVELOPER_ID_INSTALLER or DEVELOPER_ID_INSTALLER_P12 is missing; the binary will be signed but the pkg will not"
+          fi
+
+          if [ "$installer" = "true" ] && [ "$notarize" != "true" ]; then
+            echo "::warning::macOS package will be signed but not notarized: NOTARY_PROFILE, NOTARY_APPLE_ID, NOTARY_TEAM_ID and NOTARY_PASSWORD are incomplete"
+          fi
+
+      - name: Import Developer ID certificates
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APP_P12: ${{ secrets.DEVELOPER_ID_APPLICATION_P12 }}
+          APP_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
+          INSTALLER_P12: ${{ secrets.DEVELOPER_ID_INSTALLER_P12 }}
+          INSTALLER_PASSWORD: ${{ secrets.DEVELOPER_ID_INSTALLER_PASSWORD }}
+        run: |
+          set -eu
+          keychain="$RUNNER_TEMP/mattrax-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+
+          printf '%s' "$APP_P12" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          security import "$RUNNER_TEMP/app.p12" -P "$APP_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$keychain"
+
+          if [ -n "${INSTALLER_P12:-}" ]; then
+            printf '%s' "$INSTALLER_P12" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+            security import "$RUNNER_TEMP/installer.p12" -P "${INSTALLER_PASSWORD:-}" \
+              -A -t cert -f pkcs12 -k "$keychain"
+          fi
+
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+
+      - name: Store the notarytool profile
+        if: steps.signing.outputs.notarize == 'true'
+        env:
+          PROFILE: ${{ secrets.NOTARY_PROFILE }}
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "${PROFILE:-mattrax-notary}" \
+            --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$PASSWORD"
+
+      - name: Build, sign and package
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ steps.signing.outputs.enabled == 'true' && secrets.DEVELOPER_ID_APPLICATION || '' }}
+          DEVELOPER_ID_INSTALLER: ${{ steps.signing.outputs.installer == 'true' && secrets.DEVELOPER_ID_INSTALLER || '' }}
+          NOTARY_PROFILE: ${{ steps.signing.outputs.notarize == 'true' && (secrets.NOTARY_PROFILE || 'mattrax-notary') || '' }}
+        run: apps/mattraxd/scripts/build-macos.sh
+
+      - name: Stage release assets
+        run: |
+          set -eu
+          mkdir -p dist
+          cp apps/mattraxd/build/mattraxd "dist/mattraxd-$VERSION-macos-universal"
+          cp "apps/mattraxd/build/mattraxd-$VERSION.pkg" dist/
+          shasum -a 256 dist/*
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mattraxd-macos
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows x86_64
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 35
+    outputs:
+      signed: ${{ steps.signing.outputs.enabled }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      MATTRAXD_UPDATE_PUBLIC_KEY: ${{ vars.MATTRAXD_UPDATE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Test the Windows build
+        working-directory: apps/mattraxd
+        shell: pwsh
+        run: |
+          $env:MATTRAXD_VERSION = "$env:VERSION"
+          cargo test --locked
+          cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Detect signing credentials
+        id: signing
+        shell: pwsh
+        env:
+          DEVELOPMENT_EVENT: ${{ github.event_name }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $enabled = $env:DEVELOPMENT_EVENT -ne "pull_request" -and
+            -not [string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE) -and
+            -not [string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE_PASSWORD)
+
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          if (-not $enabled) {
+            Write-Host "::notice::Windows signing secrets are not configured (or this is a PR); building an unsigned zip"
+          }
+
+      - name: Stage and sign
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ steps.signing.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE || '' }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ steps.signing.outputs.enabled == 'true' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $source = "apps/mattraxd/target/x86_64-pc-windows-msvc/release/mattraxd.exe"
+          $exe = "dist/mattraxd-$env:VERSION-windows-x86_64.exe"
+          Copy-Item $source $exe
+
+          if ("${{ steps.signing.outputs.enabled }}" -eq "true") {
+            $pfx = Join-Path $env:RUNNER_TEMP "mattraxd-signing.pfx"
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+
+            $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+              Sort-Object FullName -Descending | Select-Object -First 1
+
+            if (-not $signtool) { throw "signtool.exe was not found" }
+
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $exe
+
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed with exit code $LASTEXITCODE" }
+          }
+
+          Compress-Archive -Path $exe -DestinationPath "dist/mattraxd-$env:VERSION-windows-x86_64.zip"
+          Get-FileHash -Algorithm SHA256 dist/* | Format-Table -AutoSize
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: mattraxd-windows
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish
+    needs: [prepare, macos, windows]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      MATTRAXD_UPDATE_PUBLIC_KEY: ${{ vars.MATTRAXD_UPDATE_PUBLIC_KEY }}
+      MATTRAXD_UPDATE_SIGNING_KEY: ${{ secrets.MATTRAXD_UPDATE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: mattraxd-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check the update signing key
+        id: signing
+        run: |
+          set -eu
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+
+          if [ -z "${MATTRAXD_UPDATE_SIGNING_KEY:-}" ]; then
+            echo "::warning::MATTRAXD_UPDATE_SIGNING_KEY is not configured; skipping the publish. A release must not ship an unsigned update manifest."
+            exit 0
+          fi
+
+          derived="$(cargo run --release --locked --quiet --bin mattraxd-manifest -- public-key)"
+          echo "update signing key configured (public: $derived)"
+
+          if [ -z "${MATTRAXD_UPDATE_PUBLIC_KEY:-}" ]; then
+            echo "::error::MATTRAXD_UPDATE_PUBLIC_KEY repository variable must match MATTRAXD_UPDATE_SIGNING_KEY"
+            exit 1
+          fi
+
+          if [ "$derived" != "$MATTRAXD_UPDATE_PUBLIC_KEY" ]; then
+            echo "::error::MATTRAXD_UPDATE_PUBLIC_KEY does not match MATTRAXD_UPDATE_SIGNING_KEY"
+            exit 1
+          fi
+
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build update manifests
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: apps/mattraxd
+        run: |
+          set -eu
+          channels="$GITHUB_WORKSPACE/channels"
+          mkdir -p "$channels"
+          base_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          universal="$GITHUB_WORKSPACE/dist/mattraxd-$VERSION-macos-universal"
+          windows_exe="$GITHUB_WORKSPACE/dist/mattraxd-$VERSION-windows-x86_64.exe"
+
+          build_manifest() {
+            channel="$1"
+            output="$2"
+
+            cargo run --release --locked --quiet --bin mattraxd-manifest -- build \
+              --version "$VERSION" \
+              --channel "$channel" \
+              --release-base-url "$base_url" \
+              --artifact "macos-aarch64=$universal" \
+              --artifact "macos-x86_64=$universal" \
+              --artifact "windows-x86_64=$windows_exe" \
+              --output "$output"
+          }
+
+          if [ "$PRERELEASE" = "true" ]; then
+            build_manifest latest "$channels/latest.json"
+          else
+            build_manifest stable "$channels/stable.json"
+            build_manifest latest "$channels/latest.json"
+          fi
+
+          primary="$channels/latest.json"
+          if [ -f "$channels/stable.json" ]; then
+            primary="$channels/stable.json"
+          fi
+          cp "$primary" "$GITHUB_WORKSPACE/dist/mattraxd-manifest.json"
+
+          if [ "$RELEASE_TAG" != "${RELEASE_TAG#nightly-}" ]; then
+            published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf '{"channel":"nightly","version":"%s","release":"%s","manifest":"latest.json","publishedAt":"%s"}\n' \
+              "$VERSION" "$RELEASE_TAG" "$published_at" > "$channels/nightly.json"
+          fi
+
+      - name: Create the release and upload assets
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_SIGNED: ${{ needs.macos.outputs.signed }}
+          WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
+        run: |
+          set -eu
+          notes="mattraxd $VERSION
+
+          macOS signed: ${MACOS_SIGNED:-false}
+          Windows signed: ${WINDOWS_SIGNED:-false}
+
+          Install or update with the instructions in apps/mattraxd/README.md."
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; updating its assets"
+          else
+            args=(--title "$RELEASE_TAG" --notes "$notes" --target "$GITHUB_SHA")
+            if [ "$PRERELEASE" = "true" ]; then
+              args+=(--prerelease)
+            fi
+            gh release create "$RELEASE_TAG" "${args[@]}"
+          fi
+
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+
+      - name: Advance the channel pointers
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if ! gh release view agent-channels >/dev/null 2>&1; then
+            gh release create agent-channels --prerelease --target "$GITHUB_SHA" \
+              --title "mattraxd release channels" \
+              --notes "Rolling pointers for mattraxd update: stable.json, latest.json and nightly.json. Do not delete; agents read these URLs."
+          fi
+
+          # Upload one file at a time so a missing stable.json is not an error.
+          for file in channels/stable.json channels/latest.json channels/nightly.json; do
+            if [ -f "$file" ]; then
+              gh release upload agent-channels "$file" --clobber
+            fi
+          done

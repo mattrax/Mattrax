@@ -265,8 +265,9 @@ The body maps those columns to `licenseStatus`, `licenseName`, `productKeyChanne
 one already stored is ignored (`applied: false`), and a future clock or a timestamp outside
 MySQL's `datetime` range is clamped to the ingest time so a bad clock cannot break reporting.
 
-**Scope in this repository:** Mattrax ships only the ingestion side of this channel. There
-is no Windows `mattraxd` installer or MSI in this repository, and no API issues a device token.
+**Scope in this repository:** Mattrax ships only the ingestion side of this channel. The
+release workflow publishes a standalone `mattraxd.exe` zip for the runtime and updater, but
+there is no Windows installer or MSI, and no API issues a device token.
 The bearer token is the same HMAC-derived token the Windows script channel expects
 (`scriptAgentToken(deviceId, AUTH_SECRET)`), so whatever installs `mattraxd` has to provision
 it. Until `mattraxd` posts a sample, a Windows device shows "Not reported" and never matches

@@ -38,8 +38,9 @@ real-vendor validation. It is a status page, not a marketing page.
   triggers), device and group assignment, a per-device execution queue with idempotency and
   24-hour expiry, capped and redacted stdout/stderr, per-device run history, a device
   timeline entry per agent-reported run, 30-day retention and a tenant opt-out. Apple
-  delivery is a `com.mattrax.script` profile executed by `mattraxd` in `apps/mattraxd` (built
-  unsigned here); `mattraxd` posts token-authenticated results. Step-up and audit cover
+  delivery is a `com.mattrax.script` profile executed by `mattraxd` in `apps/mattraxd` (the
+  release workflow signs and notarizes it when the credentials exist); `mattraxd` posts
+  token-authenticated results. Step-up and audit cover
   every change and run.
 - Windows WSTEP enrollment, SyncML OMA-URI `Replace`/`Delete` delivery with applied-state
   tracking and command history, wipe/restart/unenroll, security inventory (BitLocker, TPM,
@@ -104,8 +105,8 @@ These are implemented but not proven end to end in this repository.
 | Windows apps              | MSI install jobs and result reporting are unit-tested; not validated against real Windows hardware                                                                                                                                                                                                   |
 | Third-party app catalogue | Settings are sourced from vendor/ProfileManifests data and validated by tests; not reviewed by the vendors                                                                                                                                                                                           |
 | Apple OS scoping          | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                                                                                                                                                        |
-| Scripts                   | Profile encoding, queueing, redaction, retention and result ingestion are fixture-tested; `mattraxd` is unsigned here because no Developer ID/notary credentials exist                                                                                                                               |
-| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist, but no signed Windows `mattraxd` artifact is built in this repository                                                                                                                                                     |
+| Scripts                   | Profile encoding, queueing, redaction, retention, result ingestion and the agent's trigger/redaction/update logic are fixture-tested; the release workflow builds and signs the pkg, but no Developer ID/notary credentials are configured here and it has not run on real hardware |
+| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist and CI builds the Windows executable, but script delivery and Authenticode signing are not configured                                                                    |
 | Android scripts           | Unsupported by the Android Management API; devices are skipped with a reason rather than silently ignored                                                                                                                                                                                            |
 | Compliance                | Derived health only; no policy engine or Conditional Access                                                                                                                                                                                                                                          |
 | Bulk work                 | Synchronous; no Cloudflare Queues or job ids                                                                                                                                                                                                                                                         |
@@ -182,7 +183,8 @@ These are implemented but not proven end to end in this repository.
       iOS manifest install on an iPhone).
 - [ ] Uploaded package URL expires and a re-check-in installs without re-adding the app.
 - [ ] `mattraxd` is signed with a Developer ID, the pkg is notarized and stapled,
-      and a script runs on a real Mac with a manual run and an interval trigger.
+      and a script runs on a real Mac with a manual run and an interval trigger. The
+      `release-agent.yml` secrets are documented in `apps/mattraxd/README.md`.
 - [ ] Script output redaction is verified with a secret environment value.
 
 ### Windows

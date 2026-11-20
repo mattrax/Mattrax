@@ -7,6 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/libexec/mattraxd</string>
+    <string>agent</string>
     <string>run</string>
   </array>
   <key>RunAtLoad</key>

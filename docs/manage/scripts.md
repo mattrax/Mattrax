@@ -58,8 +58,9 @@ rejected.
 
 Apple devices need the macOS build of `mattraxd` (build and signing instructions in
 [`apps/mattraxd/README.md`](https://github.com/mattrax/Mattrax/tree/main/apps/mattraxd)).
-The Windows build consumes the same endpoint contract, but that artifact is not built in
-this repository yet; Windows devices report no script runs until one is installed.
+The release workflow publishes a Windows `mattraxd.exe` zip. It does not implement the
+script source (`GET /api/v1/script-agent/scripts`) yet, so Windows devices report no script
+runs until that delivery path lands.
 
 ## Run on demand
 
