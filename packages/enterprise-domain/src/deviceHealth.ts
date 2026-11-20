@@ -5,6 +5,7 @@ import type {
   DeviceHealthLevel,
   DeviceHealthReason,
 } from "./enterprise.ts";
+import { deriveDevicePresence } from "./devicePresence.ts";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -129,6 +130,11 @@ export type DeviceHealthSummary = {
   readonly reasons: ReadonlyArray<DeviceHealthReason>;
   readonly lastSeenAt: string | null;
   readonly stale: boolean;
+  /**
+   * Check-in recency presence, derived from the same clock and row as
+   * `lastSeenAt`/`stale` so a badge and the health reasons cannot disagree.
+   */
+  readonly online: boolean;
 };
 
 export const normalizeDeviceHealth = (health: DeviceHealthSummary): DeviceHealth => ({
@@ -136,6 +142,7 @@ export const normalizeDeviceHealth = (health: DeviceHealthSummary): DeviceHealth
   reasons: [...health.reasons],
   lastSeenAt: health.lastSeenAt,
   stale: health.stale,
+  online: health.online,
 });
 
 const parseDate = (value: Date | string | null | undefined): Date | null => {
@@ -298,6 +305,14 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
   const stale = age !== null && age > staleAfterDays * MS_PER_DAY;
   const reasons: DeviceHealthReason[] = [];
   const status = input.status?.trim();
+
+  // One presence rule for the API, the table badge and health: a device is
+  // online based on its newest check-in, and never before its first one.
+  const presence = deriveDevicePresence({
+    status: input.status,
+    lastSeenAt: input.lastSeenAt,
+    now,
+  });
 
   // Only an enrolled device can be MIA. Once maintenance retires it the
   // `unenrolled` status and its critical reason take precedence. MIA also
@@ -548,7 +563,13 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     );
   }
 
-  return { level: healthLevel(status, reasons, missing), reasons, lastSeenAt, stale };
+  return {
+    level: healthLevel(status, reasons, missing),
+    reasons,
+    lastSeenAt,
+    stale,
+    online: presence.online,
+  };
 };
 
 /**

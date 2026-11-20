@@ -8,6 +8,8 @@ export * from "./policyDeployment.js";
 
 export * from "./policyList.js";
 
+export * from "./realtimeRoutes.js";
+
 export * from "./scim.js";
 
 export * from "./service.js";

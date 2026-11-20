@@ -677,6 +677,14 @@ export const runMaintenance = (
       result.purgedLoginAttempts = yield* pruneLoginAttempts(db, auditCutoff);
     }
 
+    // 4b. Realtime notifications only bridge a browser connection or a bounded
+    // reconnect. A day is far longer than any client cursor, so keeping them
+    // beyond it has no value and would make the stream table grow with fleet
+    // check-in traffic. This is independent of audit retention.
+    yield* db
+      .delete(s.realtimeEvent)
+      .where(lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)));
+
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {
       const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);

@@ -104,6 +104,7 @@ import {
   validateAttributeValue,
   windowsActivationStatusFromLicenseStatus,
   windowsLicenseStatusValue,
+  deriveDevicePresence,
   deriveUserPolicies,
   type UserGroupPolicyEdge,
   type UserPolicyEdge,
@@ -3820,6 +3821,9 @@ export const createEnterpriseService = ({
     status: row.status,
     enrolledAt: iso(row.enrolledAt),
     lastSeenAt: iso(row.lastSeenAt),
+    // Presence is check-in recency, derived from the same row and clock the
+    // health rollup uses. Never true before the first authenticated check-in.
+    online: deriveDevicePresence({ status: row.status, lastSeenAt: row.lastSeenAt }).online,
     awaitingConfiguration: setup?.awaitingConfiguration ?? null,
     configured: setup?.configured ?? null,
     setupReleasedAt: setup?.setupReleasedAt ? iso(setup.setupReleasedAt) : null,

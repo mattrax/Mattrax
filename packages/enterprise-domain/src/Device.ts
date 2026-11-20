@@ -210,6 +210,11 @@ export const DeviceRow = Schema.Struct({
   status: DeviceStatus,
   enrolledAt: Schema.String,
   lastSeenAt: Schema.String,
+  /**
+   * Check-in recency presence. Optional so stored snapshots and older clients
+   * decode; the device endpoints always set it from `deriveDevicePresence`.
+   */
+  online: Schema.optional(Schema.Boolean),
   assetTag: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   physicalName: Schema.optional(NullableString),
@@ -624,6 +629,8 @@ export const DeviceHealth = Schema.Struct({
   reasons: Schema.Array(DeviceHealthReason),
   lastSeenAt: Schema.optional(NullableString),
   stale: Schema.Boolean,
+  /** Check-in recency presence; absent on rows derived before it existed. */
+  online: Schema.optional(Schema.Boolean),
 });
 
 export type DeviceHealth = typeof DeviceHealth.Type;

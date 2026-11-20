@@ -36,6 +36,8 @@ export * from "./policyScopeStore.js";
 
 export * from "./policySupport.js";
 
+export * from "./realtime.js";
+
 export * from "./scep.js";
 
 export * from "./scripts.js";

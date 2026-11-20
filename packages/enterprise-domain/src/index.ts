@@ -24,6 +24,10 @@ export * from "./webhooks.ts";
 
 export * from "./deviceHealth.ts";
 
+export * from "./devicePresence.ts";
+
+export * from "./realtime.ts";
+
 export * from "./softwareUpdates.ts";
 
 export * from "./deviceActions.ts";
