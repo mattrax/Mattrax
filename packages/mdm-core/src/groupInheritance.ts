@@ -190,14 +190,26 @@ export const loadGroupHierarchyEdges = (
   organizationId: string,
 ) =>
   Effect.gen(function* () {
+    // Two plain reads rather than a join: the tenant's group ids are bounded by
+    // the tenant, and filtering edges by a parent set is the same predicate the
+    // join would express. It also keeps the traversal independent of join
+    // planning, which matters because this runs on every membership recompute.
+    const groups = yield* db
+      .select({ id: s.enterpriseGroup.id })
+      .from(s.enterpriseGroup)
+      .where(eq(s.enterpriseGroup.organizationId, organizationId));
+
+    const groupIds = groups.map((group) => group.id);
+
+    if (groupIds.length === 0) return [];
+
     const rows = yield* db
       .select({
         parentId: s.groupGroup.parentGroupId,
         childId: s.groupGroup.childGroupId,
       })
       .from(s.groupGroup)
-      .innerJoin(s.enterpriseGroup, eq(s.enterpriseGroup.id, s.groupGroup.parentGroupId))
-      .where(eq(s.enterpriseGroup.organizationId, organizationId));
+      .where(inArray(s.groupGroup.parentGroupId, groupIds));
 
     // SAFETY: the select projects exactly the parent and child id columns,
     // which is the entire shape of GroupHierarchyEdge.

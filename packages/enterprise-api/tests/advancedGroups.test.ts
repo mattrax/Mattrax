@@ -236,6 +236,89 @@ describe("nested groups", () => {
     ]);
   });
 
+  it("drops inherited devices when a child group is deleted", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedDevice(context, tenant.id, "device-1", "Ada's Mac");
+
+    const child = await runEffect(
+      context.service.createGroup(request(headers), tenant.id, {
+        name: "Child",
+        devices: ["device-1"],
+      }),
+    );
+
+    const parent = await runEffect(
+      context.service.createGroup(request(headers), tenant.id, {
+        name: "Parent",
+        childGroups: [child.id],
+      }),
+    );
+
+    await runEffect(
+      context.service.deleteGroups(request(headers), tenant.id, [child.id]),
+    );
+
+    expect(context.db.store.group_group).toEqual([]);
+    expect(groupDevices(context, child.id)).toEqual([]);
+    expect(groupDevices(context, parent.id)).toEqual([]);
+  });
+
+  it("promotes an inherited member to a rule match so removing the child keeps it", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seedDevice(context, tenant.id, "device-1", "Studio");
+
+    const child = await runEffect(
+      context.service.createGroup(request(headers), tenant.id, { name: "Child" }),
+    );
+
+    const parent = await runEffect(
+      context.service.createGroup(request(headers), tenant.id, {
+        name: "Parent",
+        kind: "dynamic",
+        rules: {
+          version: 1,
+          all: [{ field: "name", op: "contains", value: "Mac" }],
+        },
+        childGroups: [child.id],
+      }),
+    );
+
+    await runEffect(
+      context.service.patchGroupMembers(request(headers), tenant.id, child.id, {
+        assign: { devices: ["device-1"] },
+      }),
+    );
+
+    expect(groupDevices(context, parent.id)).toEqual([
+      { groupId: parent.id, deviceId: "device-1", source: "nested" },
+    ]);
+
+    // The device now matches the parent's rules through the device-driven
+    // recompute; the inherited row is promoted rather than left as nested.
+    await runEffect(
+      context.service.patchDevice(request(headers), tenant.id, "device-1", {
+        name: "Studio Mac",
+      }),
+    );
+
+    expect(groupDevices(context, parent.id)).toEqual([
+      { groupId: parent.id, deviceId: "device-1", source: "dynamic" },
+    ]);
+
+    await runEffect(
+      context.service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        unassign: { childGroups: [child.id] },
+      }),
+    );
+
+    // Rules still select it, so removing the child edge does not drop it.
+    expect(groupDevices(context, parent.id)).toEqual([
+      { groupId: parent.id, deviceId: "device-1", source: "dynamic" },
+    ]);
+  });
+
   it("rejects direct and indirect cycles", async () => {
     const context = makeContext();
     const tenant = await makeTenant(context);

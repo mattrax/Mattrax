@@ -570,11 +570,13 @@ export default function GroupDetailPage() {
     setChildGroupIds(next);
   };
 
-  /** Devices already excluded, or already members, are not offered again. */
+  /**
+   * Any device on the current page that is not already excluded. Members are
+   * included: excluding a current member is the common case, and choosing it
+   * clears the pending membership tick.
+   */
   const excludeDeviceChoices = () =>
-    deviceRows().filter(
-      (device) => !excludedDeviceIds().has(device.id) && !deviceIds().has(device.id),
-    );
+    deviceRows().filter((device) => !excludedDeviceIds().has(device.id));
 
   const excludeUserChoices = () =>
     (directory.data?.users ?? []).filter((user) => !excludedUserIds().has(user.id));

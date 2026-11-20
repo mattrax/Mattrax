@@ -6677,7 +6677,7 @@ export const createEnterpriseService = ({
       const groupIds = [...new Set(groupAssignments.map((row) => row.groupId))];
       const userGroupIds = [...new Set(userGroupAssignments.map((row) => row.groupId))];
 
-      const [groupMembers, userGroupMembers] = yield* Effect.all(
+      const [rawGroupMembers, userGroupMembers, groupDeviceExclusions] = yield* Effect.all(
         [
           queryEffect(
             groupIds.length
@@ -6701,8 +6701,34 @@ export const createEnterpriseService = ({
                   .where(inArray(schema.userGroupMember.groupId, userGroupIds))
               : emptyRows<{ groupId: string; userId: string }>(),
           ),
+          queryEffect(
+            groupIds.length
+              ? db
+                  .select({
+                    groupId: schema.groupExclusion.groupId,
+                    targetId: schema.groupExclusion.targetId,
+                  })
+                  .from(schema.groupExclusion)
+                  .where(
+                    and(
+                      eq(schema.groupExclusion.target, "device"),
+                      inArray(schema.groupExclusion.groupId, groupIds),
+                    ),
+                  )
+              : emptyRows<{ groupId: string; targetId: string }>(),
+          ),
         ],
         { concurrency: "unbounded" },
+      );
+
+      // The policy list counts delivered devices, so an explicit device
+      // exclusion must not appear as reach.
+      const excludedMemberKeys = new Set(
+        groupDeviceExclusions.map((row) => `${row.groupId}:${row.targetId}`),
+      );
+
+      const groupMembers = rawGroupMembers.filter(
+        (row) => !excludedMemberKeys.has(`${row.groupId}:${row.deviceId}`),
       );
 
       const assignedUserIds = [
@@ -16678,6 +16704,26 @@ export const createEnterpriseService = ({
               // devices are captured now so they can be woken after the delete.
               const affectedIds = yield* affectedGroupIds(ctx.organization.id, groupId);
               const devices = yield* applePush.deviceIdsInGroups([...affectedIds]);
+
+              // Delete the group's edges and membership explicitly rather than
+              // relying only on foreign-key cascades: the ancestor refresh below
+              // must read a graph that no longer mentions this group.
+              yield* db
+                .delete(schema.groupDevice)
+                .where(eq(schema.groupDevice.groupId, groupId));
+
+              yield* db
+                .delete(schema.groupGroup)
+                .where(
+                  or(
+                    eq(schema.groupGroup.parentGroupId, groupId),
+                    eq(schema.groupGroup.childGroupId, groupId),
+                  ),
+                );
+
+              yield* db
+                .delete(schema.groupExclusion)
+                .where(eq(schema.groupExclusion.groupId, groupId));
 
               yield* db
                 .delete(schema.enterpriseGroup)
