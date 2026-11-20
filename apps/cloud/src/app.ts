@@ -46,6 +46,7 @@ import {
   enterpriseWindowsHandlers,
   fleetMigrationHandlers,
   mcpOAuthRoutes,
+  realtimeRoutes,
   scriptAgentHandlers,
   scriptHandlers,
   scimRoutes,
@@ -989,6 +990,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       config: androidConfig,
       planLimits,
     }).pipe(Layer.provide(HttpServer.layerServices)),
+    // Authenticated, tenant-scoped SSE invalidation. Mounted as a raw route so
+    // it can return a bounded streaming body instead of an HttpApi JSON value.
+    realtimeRoutes().pipe(Layer.provide(HttpServer.layerServices)),
   );
 
   const scimNotifierLayer = Layer.succeed(

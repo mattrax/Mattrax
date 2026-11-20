@@ -1,6 +1,6 @@
 import { useIsRouting, useLocation, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createEffect, type ParentProps, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
@@ -13,6 +13,7 @@ import {
   permissionForTenantPath,
   useCan,
 } from "~/lib/permissions";
+import { startTenantRealtime } from "~/lib/realtime";
 
 /**
  * Guards every tenant-scoped route. The tenant id in the URL is the source of
@@ -168,7 +169,35 @@ export default function TenantLayout(props: ParentProps) {
         }
       >
         {props.children}
+        <RealtimeTenantSync tenantId={tenant()?.id ?? ""} />
       </Show>
     </Show>
   );
+}
+
+/**
+ * One realtime subscription for the active tenant.
+ *
+ * Mounted inside the tenant guard so it starts only after membership resolved,
+ * and stopped by the component's cleanup on sign-out, tenant switch or a
+ * redirect. It never gates rendering: when the stream is unavailable the
+ * subscriber falls back to polling in the background.
+ */
+function RealtimeTenantSync(props: { readonly tenantId: string }) {
+  const queryClient = useQueryClient();
+
+  createEffect(
+    () => props.tenantId,
+    (tenantId) => {
+      if (!tenantId || isServer) return;
+
+      const realtime = startTenantRealtime({ tenantId, queryClient });
+
+      // Runs before the next tenant (or on disposal): closes the stream, its
+      // timers and any pending invalidation.
+      return () => realtime.dispose();
+    },
+  );
+
+  return null;
 }

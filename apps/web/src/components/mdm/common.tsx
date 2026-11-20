@@ -1,6 +1,7 @@
 import { useLocation } from "@solidjs/router";
 import { Match } from "effect";
-import { createMemo, createUniqueId, For, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, onSettled, Show } from "solid-js";
+import { deriveDevicePresence } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import {
   Card,
@@ -456,6 +457,99 @@ export function DeviceStatusBadge(props: { status: string }) {
       <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
       {props.status}
     </span>
+  );
+}
+
+/**
+ * Presence clock.
+ *
+ * Online/offline is derived from check-in recency, so it changes with time even
+ * without new data. One shared signal (and one 30-second timer) keeps every
+ * badge on a page in step without giving each row its own interval. Hooks only
+ * run while a page component is mounted.
+ */
+export const PRESENCE_TICK_MS = 30_000;
+
+const [presenceNow, setPresenceNow] = createSignal(Date.now());
+
+let presenceSubscribers = 0;
+
+let presenceTimer: ReturnType<typeof setInterval> | undefined;
+
+export const usePresenceNow = () => {
+  onSettled(() => {
+    presenceSubscribers += 1;
+
+    if (presenceTimer === undefined)
+      presenceTimer = setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+
+    return () => {
+      presenceSubscribers = Math.max(0, presenceSubscribers - 1);
+
+      if (presenceSubscribers === 0 && presenceTimer !== undefined) {
+        clearInterval(presenceTimer);
+        presenceTimer = undefined;
+      }
+    };
+  });
+
+  return presenceNow;
+};
+
+/** Presence for a row, using the shared clock. */
+export const devicePresence = (
+  device: { readonly status?: string | null; readonly lastSeenAt?: string | null },
+  nowMs: number,
+) =>
+  deriveDevicePresence({
+    status: device.status,
+    lastSeenAt: device.lastSeenAt,
+    now: new Date(nowMs),
+  });
+
+/** Online/offline chip; silent and untinted when the device is offline. */
+export function DevicePresenceBadge(props: {
+  status?: string | null;
+  lastSeenAt?: string | null;
+  now: number;
+  class?: string;
+}) {
+  const online = () => devicePresence(props, props.now).online;
+
+  return (
+    <span
+      class={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        online()
+          ? "border-success/25 bg-success/10 text-success-foreground"
+          : "border-border bg-surface text-muted-foreground",
+        props.class,
+      )}
+      title={
+        online() ? "Checked in within the last 15 minutes" : "No check-in in the last 15 minutes"
+      }
+    >
+      <span
+        class={cn("size-1.5 rounded-full", online() ? "bg-success" : "bg-muted-foreground/50")}
+        aria-hidden="true"
+      />
+      {online() ? "Online" : "Offline"}
+    </span>
+  );
+}
+
+/** A compact dot for table cells that already show the last-seen time. */
+export function PresenceDot(props: { online: boolean; class?: string }) {
+  return (
+    <span
+      class={cn(
+        "inline-block size-1.5 shrink-0 rounded-full",
+        props.online ? "bg-success" : "bg-muted-foreground/40",
+        props.class,
+      )}
+      role="img"
+      aria-label={props.online ? "Online" : "Offline"}
+    />
   );
 }
 

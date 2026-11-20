@@ -1636,6 +1636,46 @@ export const auditLog = mysqlTable(
 );
 
 /**
+ * Transient realtime invalidation stream.
+ *
+ * The dashboard does not mirror MDM state; it needs to know which cached
+ * queries became stale. `audit_log` cannot serve as the cursor source: its
+ * ids are random, device check-ins are folded into an existing row inside a
+ * fixed time bucket (so the newest update has an older `created_at`), and its
+ * retention is a year. This table is append-only with an auto-increment cursor,
+ * carries no PII, and is pruned after a day (far longer than a browser stream
+ * or a reconnect).
+ *
+ * `device_id` is a plain id rather than a foreign key: the event is a
+ * notification, not history, and a device delete must not cascade-delete a
+ * tenant's pending notifications. `organization_id` does cascade so tenant
+ * teardown leaves nothing behind.
+ */
+export const realtimeEvent = mysqlTable(
+  "realtime_event",
+  {
+    /** Monotonic cursor; also the SSE `id:`. */
+    seq: bigint("seq", { mode: "number" }).autoincrement().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** `device.checkin`, `device.command`, ... (see enterprise-domain/realtime). */
+    kind: varchar("kind", { length: 32 }).notNull(),
+    /** Internal device row the event concerns; null for tenant-wide events. */
+    deviceId: id("device_id"),
+    protocol: varchar("protocol", { length: 16, enum: ["apple", "win", "android"] }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    // The tail query is `organization_id = ? AND seq > ? ORDER BY seq`.
+    // The composite also covers the organisation foreign key.
+    index("realtime_event_organization_seq_idx").on(table.organizationId, table.seq),
+    // Daily retention deletes by age across every tenant.
+    index("realtime_event_created_idx").on(table.createdAt),
+  ],
+);
+
+/**
  * Customer-managed outbound webhook endpoint. The signing secret is sealed
  * with the deployment `AUTH_SECRET`; only a display prefix is stored in the
  * clear. `eventFilters` is a JSON array of event names and an empty array

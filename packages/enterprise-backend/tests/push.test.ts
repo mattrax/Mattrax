@@ -160,9 +160,11 @@ describe("makeApplePush outbound backstop", () => {
           }),
       },
     },
-    insert: () => ({
+    insert: (table: typeof schema.auditLog | typeof schema.realtimeEvent) => ({
       values: (row: PushAuditRow) => {
-        captured.audit?.push(row);
+        // The push path also appends a realtime notification; only the audit
+        // row is what this assertion is about.
+        if (table === schema.auditLog) captured.audit?.push(row);
 
         return Effect.void;
       },

@@ -188,6 +188,12 @@ Core tables:
   feed; there is no second device-event table. `category` is assigned by
   `defaultAuditCategory`: `device.*`/`mdm.*`/`enrollment.*` are `mdm`, everything else
   written by the system actor is `system`.
+- `realtime_event`: a transient, append-only notification stream (auto-increment `seq`,
+  `organization_id`, `kind`, optional `device_id`/`protocol`, `created_at`). It is written
+  from `writeSystemAudit` for the mapped check-in, enrollment, command-result,
+  declaration and status actions and read by the dashboard's SSE endpoint;
+  daily maintenance prunes it after a day. It is not a history table: audit retention
+  and the activity feed still read `audit_log`.
 - `webhook_endpoint`, `webhook_delivery`, `backup_run`, `subscription`,
   and `email_outbox` (one row per transactional message, claimed and retried by the
   cron with exponential backoff and a permanent-failure audit entry).
@@ -200,6 +206,29 @@ Core tables:
 - `tenant_deletion`: the teardown journal (no foreign key to `organization`, so it
   survives the row) and the retry record for device unenroll, Stripe cancellation, object
   reclamation and the final delete.
+
+## Realtime invalidation and presence
+
+Open dashboards keep MDM state in TanStack Query and invalidate it, rather than mirroring
+it. `GET /api/v1/tenants/:tenantId/realtime` is an authenticated, tenant-scoped SSE
+stream. It requires a verified account, tenant membership, any tenant-wide MFA
+requirement, and `devices.read` (role and credential scopes); a cursor can only ever
+read that tenant's rows. Each response is bounded to 25 seconds, 200 events and 100 rows
+per poll (every 2.5 seconds), and ends normally so the browser reconnects with
+`Last-Event-ID` (or `?after=`). Workers cannot hold a WebSocket without Durable Objects,
+and pinning an isolate and a MySQL connection to one idle tab is worse than a bounded
+stream: the trade-off is roughly 2.4 requests/minute per open tab and immediate
+disconnect detection. The browser coalesces events in a debounce window, collapses
+repeated device events, and falls back to a 60-second invalidation poll when EventSource
+is unavailable or repeatedly failing. Sign-out and tenant switches dispose the
+subscription.
+
+Presence is check-in recency, not a socket: an `enrolled` device is online when
+`last_seen_at` is inside a 15-minute window (the same cadence the check-in coalescing
+uses), offline after that, and never online before its first check-in. The dashboard
+derives it from the same row and clock on a 30-second tick, and `device.online` exposes
+the server's answer next to `lastSeenAt`. Health keeps its own seven-day "stale" and
+fourteen-day MIA thresholds; presence is the shorter, live signal.
 
 Migrations live in `apps/cloud/migrations` and are applied with Drizzle Kit.
 

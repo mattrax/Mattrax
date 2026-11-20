@@ -18,6 +18,8 @@ import { createEffect, createMemo, createSignal, Errored, For, Show } from "soli
 import { isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import {
+  DevicePresenceBadge,
+  devicePresence,
   ErrorText,
   Field,
   formatDate,
@@ -26,8 +28,10 @@ import {
   PageBreadcrumbs,
   PageSkeleton,
   PlatformBadge,
+  PresenceDot,
   QueryError,
   SkeletonRows,
+  usePresenceNow,
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -454,6 +458,9 @@ export const route = {
 };
 
 export default function DeviceDetailPage() {
+  // Presence is a function of the clock, so a device drops offline after the
+  // 15-minute window even if no new event arrives.
+  const presenceNow = usePresenceNow();
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1216,7 +1223,16 @@ export default function DeviceDetailPage() {
       {
         label: "Last seen",
         value: device.lastSeenAt ? (
-          <span title={formatDeviceDate(device.lastSeenAt)}>{relativeTime(device.lastSeenAt)}</span>
+          <span
+            title={formatDeviceDate(device.lastSeenAt)}
+            class="inline-flex items-center gap-1.5"
+          >
+            <PresenceDot online={devicePresence(device, presenceNow()).online} />
+            {relativeTime(device.lastSeenAt)}
+            <span class="text-muted-foreground">
+              {devicePresence(device, presenceNow()).online ? "· online" : "· offline"}
+            </span>
+          </span>
         ) : undefined,
       },
       {
@@ -1680,6 +1696,11 @@ export default function DeviceDetailPage() {
                   </Show>
                   <div class="mt-3 flex flex-wrap items-center gap-1.5">
                     <DeviceStatusTag status={row()!.status} />
+                    <DevicePresenceBadge
+                      status={row()!.status}
+                      lastSeenAt={row()!.lastSeenAt}
+                      now={presenceNow()}
+                    />
                     <PlatformBadge proto={row()!.proto} />
                     <Show when={row()!.awaitingConfiguration}>
                       <Badge variant="warning">Awaiting setup</Badge>

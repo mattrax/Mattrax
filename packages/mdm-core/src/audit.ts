@@ -1,6 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import { and, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { publishRealtimeEvent } from "./realtime.ts";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
 
 /**
@@ -382,6 +383,19 @@ export const writeSystemAudit = (
             : initialCheckInMetadata(event.metadata, now),
       });
     }
+
+    // Tell open dashboards which cached queries became stale. Every protocol
+    // ingress already writes one of the mapped audit actions, so this is the
+    // single publish point for check-ins, enrollments, command results,
+    // declarations and status changes. Failed notification writes are
+    // swallowed: the audit row is the record, the event is only a hint.
+    yield* publishRealtimeEvent(db, {
+      organizationId: event.organizationId,
+      action: event.action,
+      deviceId: event.deviceId,
+      protocol: event.protocol,
+      now,
+    });
 
     // Device lifecycle transitions are mirrored to customer webhooks. Only
     // mapped actions are delivered; dispatch swallows every failure so audit

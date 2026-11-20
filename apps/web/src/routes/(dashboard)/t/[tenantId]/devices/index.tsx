@@ -3,13 +3,16 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-quer
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { Match, Option, Schema } from "effect";
 import {
+  devicePresence,
   ErrorText,
   formatDeviceDate,
   LinkButton,
   Page,
   PageHeader,
   PlatformBadge,
+  PresenceDot,
   QueryError,
+  usePresenceNow,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityHoverCard } from "~/components/entity-hover-card";
@@ -332,6 +335,9 @@ export default function DevicesPage() {
   const params = useParams();
   const { can, canAny } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
+  // One clock for every row; presence flips to offline with time, not only
+  // when a new query arrives.
+  const presenceNow = usePresenceNow();
 
   const search = () => readDeviceSearchParams(searchParams);
 
@@ -1489,8 +1495,11 @@ export default function DevicesPage() {
             sortId: "lastSeenAt",
             class: "text-right",
             cell: (row) => (
-              <span class="tabular-nums text-muted-foreground">
-                {formatDeviceDate(row.lastSeenAt)}
+              <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+                <PresenceDot online={devicePresence(row, presenceNow()).online} />
+                <span title={devicePresence(row, presenceNow()).online ? "Online" : "Offline"}>
+                  {formatDeviceDate(row.lastSeenAt)}
+                </span>
               </span>
             ),
           },
