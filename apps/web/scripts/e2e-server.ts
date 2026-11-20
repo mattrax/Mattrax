@@ -153,37 +153,9 @@ const waitForServer = async (timeoutMs = 90_000): Promise<void> => {
 
 await waitForServer();
 
-/**
- * Settle every lazy route once before Playwright starts.
- *
- * Solid caches a route module's import promise. In dev a request can end before
- * the first import settles (for example while the optimizer is still writing),
- * and the rejected promise is then cached for that module URL, so every later
- * navigation renders an empty shell. Reading the whole body keeps the request
- * open until the module has resolved.
- */
-for (const path of [
-  "/",
-  "/login",
-  "/register",
-  "/designer",
-  "/dashboard",
-  "/account",
-  "/tenants",
-  "/settings",
-]) {
-  try {
-    const response = await fetch(`http://localhost:9050${path}`);
-
-    await response.text();
-  } catch {
-    // Best effort: a route that fails still gets a normal request later.
-  }
-}
-
 // Let the client and SSR optimizers finish writing their caches before
 // Playwright starts driving the browser.
-await new Promise((resolve) => setTimeout(resolve, 2_000));
+await new Promise((resolve) => setTimeout(resolve, 10_000));
 
 // Keep the wrapper alive while the dev server runs; Playwright stops it.
 process.stdin.resume();
