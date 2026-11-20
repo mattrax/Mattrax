@@ -167,7 +167,6 @@ export default function VerifyEmailPage() {
                 >
                   <EmailCodeForm
                     email={user().email}
-                    autoSend
                     onVerified={async () => {
                       await session().refetch();
                       // Defer past the query-cache write: navigation issued in
