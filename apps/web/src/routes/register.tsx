@@ -191,6 +191,17 @@ export default function RegisterPage() {
     });
 
     if (result.error) {
+      // The account and passkey are committed before the follow-up session is
+      // issued, so a failure after that commit (a lost response, or a second
+      // attempt after the wallet already stored the credential) can leave a
+      // real account signed in. Send the person in rather than stranding them
+      // on an error they cannot act on.
+      if ((await authClient.session()).data) {
+        navigate(returnTo() ?? "/dashboard", { replace: true });
+
+        return;
+      }
+
       setError(
         errorMessage(
           result.error,
@@ -418,11 +429,6 @@ export default function RegisterPage() {
                 ? "Sending code…"
                 : "Continue"}
           </Button>
-
-          <p class="text-center text-xs leading-relaxed text-stone-500">
-            We'll email a six-digit code, then ask your device to create a passkey with Face ID,
-            Touch ID, Windows Hello or a security key. Mattrax never stores a password.
-          </p>
         </form>
 
         <p class="mt-6 text-center text-sm text-stone-500">

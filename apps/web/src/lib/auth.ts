@@ -128,9 +128,7 @@ async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise
     const error = new AuthRequestError(
       errorMessage(
         raisedFailure({ _tag: tag, message, reason }),
-        response.status === 429
-          ? "Too many attempts. Wait a minute and try again."
-          : "We couldn't complete that request. Try again.",
+        authFailureFallback(tag, response.status),
       ),
     );
 
@@ -383,6 +381,58 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
   return state;
 };
 
+/**
+ * Human copy for the tagged auth failures that arrive without a message.
+ *
+ * Passkey ceremonies answer with a tag and nothing else; falling back to one
+ * vague sentence left people with no next step and no way to tell us which
+ * stage broke. Each case names the likely cause and the action that fixes it.
+ */
+const authFailureFallback = (tag: string | undefined, status: number) => {
+  if (status === 429) return "Too many attempts. Wait a minute and try again.";
+
+  switch (tag) {
+    case "PasskeyProtocolRejected":
+      return "That passkey couldn't be verified. If your password manager saved it, delete that entry and try again.";
+    case "PasskeyUnavailable":
+      return "Passkeys aren't available right now. Try again in a moment.";
+    case "PasskeyRejected":
+      return "That passkey wasn't accepted. Try again.";
+    case "PasskeyActionRequired":
+      return "Confirm this action with your authenticator, then try again.";
+    case "PasskeyMethodUnsupported":
+      return "This browser can't create passkeys. Try another browser, or use your device's own passkey prompt.";
+    case "PasskeyConfigurationError":
+      return "Passkeys aren't configured correctly for this deployment. Ask an administrator.";
+    default:
+      return "We couldn't complete that request. Try again.";
+  }
+};
+
+/**
+ * Why `navigator.credentials.create` handed back no passkey.
+ *
+ * Password-manager extensions fail through the same handful of DOMExceptions
+ * as a platform authenticator, but the way out differs: a wallet that already
+ * holds a credential for this account throws `InvalidStateError`, and a
+ * provider that could not save leaves nothing behind. Name the case instead of
+ * telling someone to try the same thing again.
+ */
+const passkeyCreationFailure = (cause: unknown) => {
+  switch (cause instanceof DOMException ? cause.name : undefined) {
+    case "InvalidStateError":
+      return "Your device or password manager already has a passkey for Mattrax. Delete it there, then try again.";
+    case "NotAllowedError":
+      return "The passkey prompt was dismissed or timed out. Try again.";
+    case "SecurityError":
+      return "Passkeys can't be created on this address. Open Mattrax on its normal address and try again.";
+    case "NotSupportedError":
+      return "This browser or password manager can't create passkeys. Try another browser, or use your device's own passkey prompt.";
+    default:
+      return "That passkey wasn't created. Try again.";
+  }
+};
+
 export const authClient = {
   useSession: () => {
     const store = sessionStore();
@@ -429,8 +479,8 @@ export const authClient = {
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
         response = await startRegistration({ optionsJSON: started.options });
-      } catch {
-        throw new Error("That passkey wasn't created. Try again.");
+      } catch (cause) {
+        throw new Error(passkeyCreationFailure(cause));
       }
 
       await request("/completePasskeyRegistration", {
@@ -623,8 +673,8 @@ export const authClient = {
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
         response = await startRegistration({ optionsJSON: started.options });
-      } catch {
-        throw new Error("That passkey wasn't created. Try again.");
+      } catch (cause) {
+        throw new Error(passkeyCreationFailure(cause));
       }
 
       return request<{
