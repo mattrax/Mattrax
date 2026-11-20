@@ -676,27 +676,44 @@ const hashJson = (value: Schema.Json) =>
  * reused: they live under this tenant's `a/<tenant>/` prefix and were not
  * touched by the restore.
  */
-const applyBundle = (
-  db: EnterpriseDb,
+/** The subset of the database surface a restore needs. */
+export type TenantRestoreTransaction = Pick<
+  EnterpriseDb,
+  "select" | "insert" | "update" | "delete" | "query" | "transaction"
+>;
+
+export type TenantRestoreApplied = {
+  counts: TenantRestoreResult["counts"];
+  skippedDevices: number;
+  /** Device-level assignment rows whose device no longer exists. */
+  skippedDeviceAssignments: number;
+  /** Directory links dropped because the directory group is gone or the group is dynamic. */
+  skippedDirectoryLinks: number;
+  applicationsWithoutFiles: number;
+  /** Source key -> new internal id, for callers that reference created rows. */
+  ids: {
+    groups: Map<string, string>;
+    policies: Map<string, string>;
+    applications: Map<string, string>;
+  };
+};
+
+/**
+ * Apply a parsed bundle inside an existing transaction (or any db-like handle).
+ *
+ * Exported so a deployment cutover writes devices, members and the SCEP CA in
+ * the same transaction as the configuration. Prefer {@link applyBundle} for an
+ * in-place restore, which owns its transaction.
+ */
+export const applyTenantBundle = (
+  tx: TenantRestoreTransaction,
   organization: EnterpriseOrganization,
   bundle: ParsedBundle,
   actor: BackupActor,
   timestamp: Date,
-): Effect.Effect<
-  {
-    counts: TenantRestoreResult["counts"];
-    skippedDevices: number;
-    /** Device-level assignment rows whose device no longer exists. */
-    skippedDeviceAssignments: number;
-    /** Directory links dropped because the directory group is gone or the group is dynamic. */
-    skippedDirectoryLinks: number;
-    applicationsWithoutFiles: number;
-  },
-  unknown,
-  never
-> =>
+): Effect.Effect<TenantRestoreApplied, unknown, never> =>
   Effect.gen(function* () {
-    const existingDevices = yield* db
+    const existingDevices = yield* tx
       .select({ id: schema.device.id, serial: schema.device.serial })
       .from(schema.device)
       .where(eq(schema.device.organizationId, organization.id));
@@ -718,28 +735,28 @@ const applyBundle = (
       (deviceIds.has(key) ? key : undefined) ??
       (serial ? serials.get(serial.toLowerCase()) : undefined);
 
-    const enrollment = yield* db.query.enterpriseEnrollment.findFirst({
+    const enrollment = yield* tx.query.enterpriseEnrollment.findFirst({
       where: { organizationId: organization.id },
     });
 
-    const existingPolicies = yield* db
+    const existingPolicies = yield* tx
       .select({ id: schema.policy.id })
       .from(schema.policy)
       .where(eq(schema.policy.organizationId, organization.id));
 
-    const existingGroups = yield* db
+    const existingGroups = yield* tx
       .select({ id: schema.enterpriseGroup.id })
       .from(schema.enterpriseGroup)
       .where(eq(schema.enterpriseGroup.organizationId, organization.id));
 
-    const existingDirectoryGroups = yield* db
+    const existingDirectoryGroups = yield* tx
       .select({ id: schema.userGroup.id })
       .from(schema.userGroup)
       .where(eq(schema.userGroup.organizationId, organization.id));
 
     const existingDirectoryGroupIds = new Set(existingDirectoryGroups.map((row) => row.id));
 
-    const existingApplications = yield* db
+    const existingApplications = yield* tx
       .select({ id: schema.application.id })
       .from(schema.application)
       .where(eq(schema.application.organizationId, organization.id));
@@ -748,8 +765,7 @@ const applyBundle = (
     const groupIds = existingGroups.map((row) => row.id);
     const applicationIds = existingApplications.map((row) => row.id);
 
-    const applied = yield* db.transaction((tx) =>
-      Effect.gen(function* () {
+    const applied = yield* Effect.gen(function* () {
         // Children first. Production cascades these from the parent rows, but
         // deleting explicitly keeps the order visible and measurable in tests.
         yield* tx
@@ -981,7 +997,7 @@ const applyBundle = (
         if (userPolicyValues.length > 0)
           yield* tx.insert(schema.userPolicy).ignore().values(userPolicyValues);
 
-        const directoryGroups = yield* db
+        const directoryGroups = yield* tx
           .select({ id: schema.userGroup.id })
           .from(schema.userGroup)
           .where(eq(schema.userGroup.organizationId, organization.id));
@@ -1390,12 +1406,28 @@ const applyBundle = (
           skippedDeviceAssignments,
           skippedDirectoryLinks,
           applicationsWithoutFiles,
+          ids: {
+            groups: groupIdByKey,
+            policies: policyIdByKey,
+            applications: applicationIdByKey,
+          },
         };
-      }),
-    );
+      });
 
     return applied;
   });
+
+/**
+ * Restore one bundle in its own transaction. The cutover import calls
+ * {@link applyTenantBundle} directly so it can compose a larger write.
+ */
+const applyBundle = (
+  db: EnterpriseDb,
+  organization: EnterpriseOrganization,
+  bundle: ParsedBundle,
+  actor: BackupActor,
+  timestamp: Date,
+) => db.transaction((tx) => applyTenantBundle(tx, organization, bundle, actor, timestamp));
 
 /**
  * Restore one backup into its own tenant. A pinned snapshot is taken first so

@@ -173,6 +173,7 @@ export default defineConfig({
             { text: "Deployment", link: "/operations/deployment" },
             { text: "Monitoring", link: "/operations/monitoring" },
             { text: "Backups", link: "/operations/backups" },
+            { text: "Move a deployment", link: "/operations/cutover" },
             { text: "Troubleshooting", link: "/operations/troubleshooting" },
           ],
         },

@@ -1,7 +1,11 @@
 # Migration
 
-Migrating to Mattrax is a re-enrollment project, not a data import. MDM identities are
-bound to the previous vendor; devices must enroll again.
+Migrating from another MDM to Mattrax is a re-enrollment project, not a data import.
+MDM identities are bound to the previous vendor; devices must enroll again.
+
+Moving between two **Mattrax** deployments (Cloud ↔ self-hosted) is different: the
+[deployment cutover](/operations/cutover) moves device identities, the SCEP CA and
+escrowed secrets, so already-enrolled devices keep checking in.
 
 This page explains what can be preserved, how to run coexistence and a cutover that does
 not strand users.
@@ -32,7 +36,8 @@ not strand users.
 - FileVault recovery keys in bulk. There is no bulk import; escrow is per device after
   re-enrollment.
 - Members other than the importing owner, devices, audit history and SCEP certificates in
-  a tenant import.
+  a plain tenant import. Use the [deployment cutover](/operations/cutover) when both
+  sides are Mattrax.
 
 ## Coexistence
 

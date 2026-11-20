@@ -50,6 +50,10 @@ import {
   type AuditSearchQuery,
   type AuditSearchResponse,
   type AutopilotImportRequest,
+  type CutoverExportRequest,
+  type CutoverImportRequest,
+  type CutoverPreviewRequest,
+  type CutoverPreflightQuery,
   type CreateAttributeRequest,
   type CreateFleetMigrationRequest,
   type IssueFleetMigrationUnenrolRequest,
@@ -896,6 +900,33 @@ export const enterprise = {
     ),
   /** Creates a new tenant owned by the caller from an exported bundle. */
   importTenant: (payload: TenantImportRequest) => endpoint((api) => api.importTenant({ payload })),
+  /**
+   * Encrypted archive with device identities, the SCEP CA and escrowed secrets.
+   * Requires `cutover-export` step-up in addition to tenant.export.
+   */
+  exportTenantCutover: (tenantId: RouteParam, payload: CutoverExportRequest) =>
+    endpoint(
+      (api) =>
+        api.exportTenantCutover({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "cutover-export" },
+    ),
+  /** Verify an archive and list conflicts without writing anything. */
+  previewTenantCutover: (payload: CutoverPreviewRequest) =>
+    endpoint((api) => api.previewTenantCutover({ payload })),
+  /** Apply an archive. Requires `cutover-import` step-up. */
+  importTenantCutover: (payload: CutoverImportRequest) =>
+    endpoint((api) => api.importTenantCutover({ payload }), { stepUp: "cutover-import" }),
+  /** What a change of ORIGIN breaks, counted for this tenant. */
+  getTenantCutoverPreflight: (tenantId: RouteParam, query: CutoverPreflightQuery = {}) =>
+    endpoint((api) =>
+      api.getTenantCutoverPreflight({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
+      }),
+    ),
   /** Runs a manual backup now and records the attempt. */
   runTenantBackup: (tenantId: RouteParam) =>
     endpoint((api) =>

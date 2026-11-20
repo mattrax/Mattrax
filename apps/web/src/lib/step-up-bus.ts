@@ -23,6 +23,8 @@ export const STEP_UP_ACTIONS = [
   "backup-pin",
   "backup-delete",
   "backup-restore",
+  "cutover-export",
+  "cutover-import",
   "device-command",
   "android-disconnect",
   "script-change",
@@ -178,6 +180,10 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "delete this backup";
     case "backup-restore":
       return "restore this tenant from a backup";
+    case "cutover-export":
+      return "export this deployment with private keys";
+    case "cutover-import":
+      return "import devices and credentials from another deployment";
     case "device-command":
       return "run this device action";
     case "android-disconnect":

@@ -21,6 +21,8 @@ export const STEP_UP_ACTIONS = [
   "backup-pin",
   "backup-delete",
   "backup-restore",
+  "cutover-export",
+  "cutover-import",
   "device-command",
   "android-disconnect",
   "script-change",

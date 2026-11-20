@@ -210,6 +210,13 @@ TARGET_DATABASE_URL="$DATABASE_URL" RESTORE_CONFIRM=yes \
   apps/cloud/scripts/db-restore.sh "$stamp.sql.zst"
 ```
 
+## Moving a tenant between deployments
+
+A backup restores a tenant in place, and a plain export/import rebuilds its
+configuration. Neither moves device identities or the SCEP CA. To move a tenant
+between Cloud and self-hosted without re-enrolling devices, use the encrypted
+[deployment cutover](/operations/cutover) instead.
+
 ## What this does not cover
 
 A database dump restores the rows, not the product.

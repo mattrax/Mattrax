@@ -47,6 +47,7 @@ import {
   fleetMigrationApi,
   scriptAgentApi,
   scriptApi,
+  deriveDeploymentId,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
@@ -539,6 +540,14 @@ import {
 } from "@mattrax/enterprise-backend";
 import { AndroidManagement } from "@mattrax/dm-android";
 import { buildTenantExport } from "@mattrax/enterprise-backend";
+import {
+  buildTenantCutover,
+  importTenantCutover,
+  preflightTenantOriginSwitch,
+  previewTenantCutover,
+  TenantCutoverError,
+  type CutoverTarget,
+} from "@mattrax/enterprise-backend";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
@@ -1314,6 +1323,15 @@ const requireStepUp = (
   request: HttpServerRequest,
   action: StepUpAction,
 ) => auth.requireStepUp(request, action);
+
+/** Map a cutover failure onto the HTTP error the API schema declares. */
+const cutoverFailure = (error: TenantCutoverError) => {
+  if (error.reason === "conflict") return new EnterpriseConflict({ message: error.message });
+
+  if (error.reason === "internal") return new EnterpriseInternal({ message: error.message });
+
+  return new EnterpriseBadRequest({ message: error.message });
+};
 
 const exportHeaders = (
   filename: string,
@@ -2361,6 +2379,13 @@ export const createEnterpriseService = ({
 
       return requireMfa;
     });
+
+  /**
+   * Stable identity for this deployment. Origin-derived, not secret-derived:
+   * the archive publishes it, and a hash of AUTH_SECRET would be an offline
+   * verifier for the deployment's master secret.
+   */
+  const deploymentId = () => Effect.promise(() => deriveDeploymentId({ origin }));
 
   const audit = (
     ctx: {
@@ -8913,6 +8938,149 @@ export const createEnterpriseService = ({
           },
           applicationsWithoutFiles,
         } satisfies TenantImportResponse;
+      }),
+    exportTenantCutover: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        // tenant.export gates a plain bundle; a cutover archive also carries
+        // private keys, so it needs fresh proof of presence as well.
+        const ctx = yield* requireTenant(request, tenantId, "read");
+        yield* requireStepUp(auth, request, "cutover-export");
+
+        const identity = yield* deploymentId();
+
+        return yield* buildTenantCutover(db, ctx.organization, {
+          passphrase: payload.passphrase,
+          sections: payload.sections,
+          origin,
+          deploymentId: identity,
+          authSecret,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof TenantCutoverError
+              ? cutoverFailure(cause)
+              : new EnterpriseInternal({ message: "Could not build the cutover archive" }),
+          ),
+        );
+      }),
+    previewTenantCutover: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before importing a tenant.",
+            }),
+          );
+
+        let target: CutoverTarget = { kind: "new" };
+
+        if (payload.targetTenantId) {
+          // Preview names conflicting device serials, so it needs the same
+          // access as the import itself. Replacing an existing tenant is an
+          // owner operation: importing bypasses the individual group, policy,
+          // application and member write permissions.
+          const ctx = yield* requireTenant(request, payload.targetTenantId, "write");
+
+          if (!ctx.permissions.has("tenant.delete"))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message: "Only a tenant owner can import into an existing tenant.",
+              }),
+            );
+
+          target = { kind: "existing", organization: ctx.organization };
+        }
+
+        const identity = yield* deploymentId();
+
+        return yield* previewTenantCutover(db, {
+          archive: payload.archive,
+          passphrase: payload.passphrase,
+          target,
+          targetDeploymentId: identity,
+          targetOrigin: origin,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof TenantCutoverError
+              ? cutoverFailure(cause)
+              : new EnterpriseInternal({ message: "Could not read the cutover archive" }),
+          ),
+        );
+      }),
+    importTenantCutover: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
+
+        if (!user.emailVerified)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Verify your email address before importing a tenant.",
+            }),
+          );
+
+        yield* requireStepUp(auth, request, "cutover-import");
+
+        let target: CutoverTarget = { kind: "new" };
+
+        if (payload.targetTenantId) {
+          // Owner-only: the import replaces configuration and writes devices,
+          // members and credentials, which would otherwise bypass each
+          // resource's own write permission.
+          const ctx = yield* requireTenant(request, payload.targetTenantId, "write");
+
+          if (!ctx.permissions.has("tenant.delete"))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message: "Only a tenant owner can import into an existing tenant.",
+              }),
+            );
+
+          target = { kind: "existing", organization: ctx.organization };
+        } else {
+          yield* assertTenantCreationAllowed(user.id);
+        }
+
+        const identity = yield* deploymentId();
+
+        return yield* importTenantCutover(db, {
+          archive: payload.archive,
+          passphrase: payload.passphrase,
+          confirm: payload.confirm,
+          target,
+          actor: { accountId: user.id, email: user.email },
+          targetDeploymentId: identity,
+          targetOrigin: origin,
+          authSecret,
+          allowCrossDeployment: payload.allowCrossDeployment,
+          replaceConfiguration: payload.replaceConfiguration,
+          replaceScepCa: payload.replaceScepCa,
+          replaceEscrowKey: payload.replaceEscrowKey,
+          deviceConflicts: payload.deviceConflicts,
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof TenantCutoverError
+              ? cutoverFailure(cause)
+              : new EnterpriseInternal({ message: "Could not import the cutover archive" }),
+          ),
+        );
+      }),
+    getTenantCutoverPreflight: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+        const identity = yield* deploymentId();
+
+        return yield* preflightTenantOriginSwitch(db, ctx.organization, {
+          currentOrigin: origin,
+          targetOrigin: query?.origin ?? origin,
+          deploymentId: identity,
+        }).pipe(
+          Effect.mapError(
+            () => new EnterpriseInternal({ message: "Could not build the cutover preflight" }),
+          ),
+        );
       }),
     patchTenant: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -25046,6 +25214,14 @@ export const enterpriseHandlers = (
     .handle("importTenant", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.importTenant(request, payload)),
     )
+    .handle("previewTenantCutover", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewTenantCutover(request, payload),
+      ),
+    )
+    .handle("importTenantCutover", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.importTenantCutover(request, payload)),
+    )
     .handle("getTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.getTenant(request, params.tenantId)),
     )
@@ -25063,6 +25239,19 @@ export const enterpriseHandlers = (
               },
             }),
         ),
+      ),
+    )
+    .handle("exportTenantCutover", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportTenantCutover(request, params.tenantId, payload),
+          (result: { body: string }) => result.body,
+        ),
+      ),
+    )
+    .handle("getTenantCutoverPreflight", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantCutoverPreflight(request, params.tenantId, query),
       ),
     )
     .handle("runTenantBackup", ({ request, params }) =>
