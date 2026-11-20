@@ -10,6 +10,7 @@ import {
   enterpriseIdentityApi,
   enterpriseUserApi,
   enterpriseWindowsApi,
+  fleetMigrationApi,
   scriptAgentApi,
   scriptApi,
 } from "../../enterprise-domain/src/enterprise.ts";
@@ -54,6 +55,7 @@ const restDocument = OpenApi.fromApi(
     .add(enterpriseIdentityApi)
     .add(enterpriseUserApi)
     .add(enterpriseWindowsApi)
+    .add(fleetMigrationApi)
     .add(scriptApi)
     .add(scriptAgentApi),
 );

@@ -383,6 +383,17 @@ export function Package(props: IconProps) {
   );
 }
 
+export function ArrowRightLeft(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m16 3 4 4-4 4" />
+      <path d="M20 7H4" />
+      <path d="m8 21-4-4 4-4" />
+      <path d="M4 17h16" />
+    </Icon>
+  );
+}
+
 export function RefreshCw(props: IconProps) {
   return (
     <Icon {...props}>

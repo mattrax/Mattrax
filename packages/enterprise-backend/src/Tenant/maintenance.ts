@@ -13,6 +13,7 @@ import {
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
 } from "@mattrax/mdm-apple";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
+import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
 import { loadCredentialHealth, type CredentialHealth } from "../Device/credentialHealth.ts";
 import {
   sweepCredentialIssuance,
@@ -206,6 +207,12 @@ export type MaintenanceOptions = {
    */
   readonly requestDomainCertificate?: DomainCertificateRequester;
   /**
+   * Reconcile fleet migration cohorts: a device that reappeared is marked
+   * enrolled and one past its window becomes stuck. Defaults to true; the
+   * dashboard runs the same reconciliation when a cohort is opened.
+   */
+  readonly fleetMigrations?: boolean;
+  /**
    * Terminal script-execution rows older than this many days are deleted.
    * Defaults to 30. Queued runs expire first; they are never pruned while
    * active. Set to `0` to keep script results indefinitely.
@@ -300,6 +307,10 @@ export type MaintenanceResult = {
   readonly expiredScriptRuns: number;
   /** Terminal script-execution rows deleted by retention. */
   readonly purgedScriptRuns: number;
+  /** Migration devices whose return was detected during this run. */
+  readonly migrationDevicesEnrolled: number;
+  /** Migration devices declared stuck because their window closed. */
+  readonly migrationDevicesStuck: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
   /** Stripe webhook-event ledger rows deleted by retention. */
@@ -545,6 +556,8 @@ export const runMaintenance = (
       domainCertificateRequests: 0,
       expiredScriptRuns: 0,
       purgedScriptRuns: 0,
+      migrationDevicesEnrolled: 0,
+      migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
       purgedStripeEvents: 0,
       billingSeatsUpdated: 0,
@@ -1092,6 +1105,17 @@ export const runMaintenance = (
 
     result.expiredScriptRuns = scriptRuns.expired;
     result.purgedScriptRuns = scriptRuns.pruned;
+
+    // 10c. Fleet migration cohorts. A device that reappears after its unenrol
+    //      is matched by serial, and one that has not returned inside its
+    //      cohort window becomes stuck. The dashboard reconciles on read too;
+    //      this is the backstop for a cohort nobody opens.
+    if (options.fleetMigrations !== false) {
+      const migrations = yield* sweepFleetMigrations(db, { now });
+
+      result.migrationDevicesEnrolled = migrations.enrolled;
+      result.migrationDevicesStuck = migrations.stuck;
+    }
 
     // 11. Tenant-teardown journal retention. The journal carries the operator
     //     email that requested the deletion and survives the tenant row, so it

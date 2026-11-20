@@ -4064,8 +4064,117 @@ export const scriptExecution = mysqlTable(
   ],
 );
 
+/**
+ * A fleet migration cohort: the devices an operator is moving from another MDM
+ * (Jamf, Intune, Kandji, ...) onto this tenant.
+ *
+ * The incumbent MDM is the only thing that can remove its own profile from a
+ * device, so the cohort is not a device group and does not move devices by
+ * itself. It records the intent (name, source, target platforms, optional group
+ * or explicit serial list), issues the one-shot unenrol handoff, and then tracks
+ * each device back to enrolment. The per-device rows live in
+ * `fleet_migration_device`, keyed by hardware serial because the device may not
+ * exist in Mattrax yet; `device_id` is filled in once it reappears.
+ */
+export const fleetMigration = mysqlTable(
+  "fleet_migration",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    /** The MDM the fleet is leaving. Remediation advice hangs off this value. */
+    sourceMdm: varchar("source_mdm", {
+      length: 16,
+      enum: ["jamf", "intune", "kandji", "other"],
+    }).notNull(),
+    /** Platforms this cohort expects to return. */
+    platforms: json("platforms").$type<Array<"apple" | "win" | "android">>().notNull(),
+    /** The group the cohort was seeded from, kept for audit and re-seeding. */
+    groupId: id("group_id").references(() => enterpriseGroup.id, { onDelete: "set null" }),
+    /**
+     * Days between issuing the unenrol and declaring a silent device stuck.
+     * A device that never comes back is the operator's real problem, so the
+     * window is per cohort rather than a deployment constant.
+     */
+    stuckAfterDays: int("stuck_after_days").notNull().default(7),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("fleet_migration_organization_idx").on(table.organizationId, table.createdAt),
+    index("fleet_migration_group_idx").on(table.groupId),
+    index("fleet_migration_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * One device in a migration cohort, keyed by serial.
+ *
+ * A row exists before the device enrolls (that is the point: the operator has a
+ * list of serials from the incumbent), so `device_id` is nullable and is filled
+ * in when a device with the serial appears in this tenant. `status` is the
+ * cohort's own state machine (`pending` → `unenrol-issued` →
+ * `awaiting-enrolment` → `enrolled` → `confirmed`, with `stuck` as the terminal
+ * failure). `last_evidence` always holds the observation that produced the
+ * current status, so a stale cohort explains itself.
+ */
+export const fleetMigrationDevice = mysqlTable(
+  "fleet_migration_device",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    migrationId: id("migration_id")
+      .notNull()
+      .references(() => fleetMigration.id, { onDelete: "cascade" }),
+    serial: shortText("serial").notNull(),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    status: varchar("status", {
+      length: 24,
+      enum: ["pending", "unenrol-issued", "awaiting-enrolment", "enrolled", "confirmed", "stuck"],
+    })
+      .notNull()
+      .default("pending"),
+    /** Present once a device with this serial enrols into the tenant. */
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    /** Script execution that carried the unenrol command, when one was queued. */
+    executionId: id("execution_id"),
+    unenrolIssuedAt: timestamp("unenrol_issued_at"),
+    awaitingEnrolmentAt: timestamp("awaiting_enrolment_at"),
+    enrolledAt: timestamp("enrolled_at"),
+    confirmedAt: timestamp("confirmed_at"),
+    stuckAt: timestamp("stuck_at"),
+    confirmedByAccountId: id("confirmed_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Operator-facing reason for the current status; never secrets. */
+    lastEvidence: text("last_evidence"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // A serial appears once per cohort. Two cohorts may legitimately overlap
+    // (a staged rollout), so uniqueness is scoped to the migration.
+    uniqueIndex("fleet_migration_device_migration_serial_unique").on(
+      table.migrationId,
+      table.serial,
+    ),
+    index("fleet_migration_device_organization_idx").on(table.organizationId, table.status),
+    index("fleet_migration_device_device_idx").on(table.deviceId),
+    index("fleet_migration_device_confirmed_by_idx").on(table.confirmedByAccountId),
+  ],
+);
+
 export const relations = defineRelations(
   {
+    fleetMigration,
+    fleetMigrationDevice,
     account,
     user,
     organization,
@@ -4369,6 +4478,28 @@ export const relations = defineRelations(
       script: r.one.script({ from: r.scriptAssignment.scriptId, to: r.script.id }),
       organization: r.one.organization({
         from: r.scriptAssignment.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    fleetMigration: {
+      organization: r.one.organization({
+        from: r.fleetMigration.organizationId,
+        to: r.organization.id,
+      }),
+      group: r.one.enterpriseGroup({ from: r.fleetMigration.groupId, to: r.enterpriseGroup.id }),
+      devices: r.many.fleetMigrationDevice({
+        from: r.fleetMigration.id,
+        to: r.fleetMigrationDevice.migrationId,
+      }),
+    },
+    fleetMigrationDevice: {
+      migration: r.one.fleetMigration({
+        from: r.fleetMigrationDevice.migrationId,
+        to: r.fleetMigration.id,
+      }),
+      device: r.one.device({ from: r.fleetMigrationDevice.deviceId, to: r.device.id }),
+      organization: r.one.organization({
+        from: r.fleetMigrationDevice.organizationId,
         to: r.organization.id,
       }),
     },

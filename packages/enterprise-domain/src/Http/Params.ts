@@ -34,6 +34,14 @@ export const TenantAutopilotDeviceParam = { tenantId: Schema.String, serial: Sch
 
 export const TenantAutopilotProfileParam = { tenantId: Schema.String, profileId: Schema.String };
 
+export const TenantMigrationParam = { tenantId: Schema.String, migrationId: Schema.String };
+
+export const TenantMigrationEntryParam = {
+  tenantId: Schema.String,
+  migrationId: Schema.String,
+  entryId: Schema.String,
+};
+
 export const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
 
 export const TenantDashboardWidgetParam = {

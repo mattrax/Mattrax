@@ -29,6 +29,7 @@ import {
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
+  fleetMigrationHttpApi,
   makeEnterpriseClient,
   scriptHttpApi,
   formatDeviceQueryText,
@@ -50,6 +51,8 @@ import {
   type AuditSearchResponse,
   type AutopilotImportRequest,
   type CreateAttributeRequest,
+  type CreateFleetMigrationRequest,
+  type IssueFleetMigrationUnenrolRequest,
   type PatchAttributeRequest,
   type PatchEnrollmentQuestionsRequest,
   type SetDeviceAttributesRequest,
@@ -334,6 +337,35 @@ type EnterpriseOsPolicyClient = Effect.Success<
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
+ * Migration cohorts are their own HttpApi, like scripts, so the main contract's
+ * generated client type stays within TypeScript's declaration-size limit.
+ */
+const migrationClientEffect = (headers: Readonly<Record<string, string>>) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+
+  return HttpApiClient.make(fleetMigrationHttpApi, {
+    baseUrl,
+    transformClient: (client) =>
+      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+  });
+};
+
+type FleetMigrationApiClient = Effect.Success<
+  ReturnType<typeof migrationClientEffect>
+>["FleetMigration"];
+
+/**
+ * Types the migration pages render. Re-exported here so a page imports them
+ * alongside the queries instead of reaching into the domain package.
+ */
+export type {
+  FleetMigrationDetail,
+  FleetMigrationEntry,
+  FleetMigrationSummary,
+} from "@mattrax/enterprise-domain/client";
+
+/**
  * Query keys must not change when a tenant URL moves between its canonical slug
  * and its id (the shell rewrites one to the other). Keying on the resolved id
  * keeps the cached data mounted, so the segment swap neither refetches nor
@@ -474,6 +506,10 @@ export const enterpriseKeys = {
   application: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "application", keyTenant(tenantId), id ?? ""] as const,
   scripts: (tenantId: RouteParam) => ["enterprise", "scripts", keyTenant(tenantId)] as const,
+  fleetMigrations: (tenantId: RouteParam) =>
+    ["enterprise", "fleet-migrations", keyTenant(tenantId)] as const,
+  fleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
+    ["enterprise", "fleet-migration", keyTenant(tenantId), migrationId ?? ""] as const,
   script: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "script", keyTenant(tenantId), id ?? ""] as const,
   scriptAssignments: (tenantId: RouteParam, id: RouteParam) =>
@@ -747,6 +783,17 @@ function windowsEndpoint<A, E>(
   return endpointWith(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseWindows),
     call,
+  );
+}
+
+function migrationEndpoint<A, E>(
+  call: (api: FleetMigrationApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(migrationClientEffect(headers), (client) => client.FleetMigration),
+    call,
+    options,
   );
 }
 
@@ -1767,6 +1814,79 @@ export const enterprise = {
           payload,
         }),
       { stepUp: "script-change" },
+    ),
+  listFleetMigrations: (tenantId: RouteParam) =>
+    migrationEndpoint((api) =>
+      api.listFleetMigrations({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getFleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
+    migrationEndpoint((api) =>
+      api.getFleetMigration({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          migrationId: required(migrationId, "migrationId"),
+        },
+      }),
+    ),
+  createFleetMigration: (tenantId: RouteParam, payload: CreateFleetMigrationRequest) =>
+    migrationEndpoint((api) =>
+      api.createFleetMigration({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  deleteFleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
+    migrationEndpoint((api) =>
+      api.deleteFleetMigration({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          migrationId: required(migrationId, "migrationId"),
+        },
+      }),
+    ),
+  issueFleetMigrationUnenrol: (
+    tenantId: RouteParam,
+    migrationId: RouteParam,
+    payload: IssueFleetMigrationUnenrolRequest,
+  ) =>
+    migrationEndpoint(
+      (api) =>
+        api.issueFleetMigrationUnenrol({
+          params: {
+            tenantId: required(tenantId, "tenantId"),
+            migrationId: required(migrationId, "migrationId"),
+          },
+          payload,
+        }),
+      { stepUp: "device-command" },
+    ),
+  markFleetMigrationUnenrolled: (
+    tenantId: RouteParam,
+    migrationId: RouteParam,
+    entryId: RouteParam,
+  ) =>
+    migrationEndpoint((api) =>
+      api.markFleetMigrationUnenrolled({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          migrationId: required(migrationId, "migrationId"),
+          entryId: required(entryId, "entryId"),
+        },
+      }),
+    ),
+  confirmFleetMigrationEntry: (
+    tenantId: RouteParam,
+    migrationId: RouteParam,
+    entryId: RouteParam,
+  ) =>
+    migrationEndpoint((api) =>
+      api.confirmFleetMigrationEntry({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          migrationId: required(migrationId, "migrationId"),
+          entryId: required(entryId, "entryId"),
+        },
+      }),
     ),
   listApplications: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -2890,6 +3010,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.sso(tenantId),
       queryFn: () => enterprise.getSsoConfig(tenantId),
       enabled: Boolean(tenantId),
+    }),
+  fleetMigrations: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.fleetMigrations(tenantId),
+      queryFn: () => enterprise.listFleetMigrations(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  fleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.fleetMigration(tenantId, migrationId),
+      queryFn: () => enterprise.getFleetMigration(tenantId, migrationId),
+      enabled: Boolean(tenantId && migrationId) && !isServer,
     }),
   scripts: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

@@ -34,6 +34,7 @@ import {
 } from "@mattrax/ui";
 import {
   Activity,
+  ArrowRightLeft,
   BookOpen,
   Building2,
   ChevronsUpDown,
@@ -422,6 +423,9 @@ function navFor(tenantId: string | undefined): NavItem[] {
       permission: "devices.read",
     }),
     item("os-versions", "OS versions", tenant.osVersions(), MonitorSmartphone, "workspace", {
+      permission: "devices.read",
+    }),
+    item("migration", "Migration", tenant.migrations(), ArrowRightLeft, "workspace", {
       permission: "devices.read",
     }),
     item("users", "Users", tenant.users(), User, "workspace", {
