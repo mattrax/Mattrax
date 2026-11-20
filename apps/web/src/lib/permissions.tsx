@@ -187,6 +187,8 @@ export function tenantSectionPermission(section: string): Permission | undefined
       return "dashboards.read";
     case "devices":
       return "devices.read";
+    case "users":
+      return "members.read";
     case "groups":
       return "groups.read";
     case "policies":
@@ -254,6 +256,7 @@ const SECTIONS = [
   "overview",
   "dashboards",
   "devices",
+  "users",
   "groups",
   "policies",
   "applications",
@@ -300,6 +303,8 @@ function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): stri
       return tenant.dashboards();
     case "devices":
       return tenant.devices();
+    case "users":
+      return tenant.users();
     case "groups":
       return tenant.groups();
     case "policies":

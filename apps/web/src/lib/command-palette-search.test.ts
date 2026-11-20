@@ -144,7 +144,7 @@ describe("command palette search rows", () => {
       title: "Ada Lovelace",
       subtitle: "ada@example.com",
       group: "People",
-      href: "/t/tenant-1/settings/identity/directory",
+      href: "/t/tenant-1/users/directory-user-1",
       permission: "members.read",
       keywords: ["directory", "person"],
     });

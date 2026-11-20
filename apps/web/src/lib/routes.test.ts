@@ -15,6 +15,8 @@ describe("route builders", () => {
     expect(tenant.overview()).toBe("/t/acme%20corp");
     expect(tenant.device("dev/1")).toBe("/t/acme%20corp/devices/dev%2F1");
     expect(tenant.policy("policy#1")).toBe("/t/acme%20corp/policies/policy%231");
+    expect(tenant.users()).toBe("/t/acme%20corp/users");
+    expect(tenant.user("user/1")).toBe("/t/acme%20corp/users/user%2F1");
   });
 
   it("builds settings tabs and the general tab", () => {

@@ -100,7 +100,7 @@ export const searchRowCommand = (
       title: row.name,
       subtitle: row.email,
       group: "People",
-      href: tenant.settingsDirectory(),
+      href: tenant.user(row.id),
       permission: "members.read",
       keywords: ["directory", "person"],
     };

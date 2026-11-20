@@ -43,6 +43,13 @@ export const GroupRouteParams = Schema.Struct({
 
 export type GroupRouteParams = typeof GroupRouteParams.Type;
 
+export const UserRouteParams = Schema.Struct({
+  tenantId: Schema.String,
+  userId: Schema.String,
+});
+
+export type UserRouteParams = typeof UserRouteParams.Type;
+
 export const ApplicationRouteParams = Schema.Struct({
   tenantId: Schema.String,
   applicationId: Schema.String,
@@ -254,6 +261,8 @@ export const routes = {
         return `${base}/devices${entries.length > 0 ? `?${query}` : ""}`;
       },
       device: (deviceId: string) => `${base}/devices/${segment(deviceId)}`,
+      users: () => `${base}/users`,
+      user: (userId: string) => `${base}/users/${segment(userId)}`,
       groups: () => `${base}/groups`,
       newGroup: () => `${base}/groups/new`,
       group: (groupId: string) => `${base}/groups/${segment(groupId)}`,

@@ -210,6 +210,11 @@ export type {
   TenantInvitation,
   TenantAccount,
   TenantOwnershipTransfer,
+  UserDetail,
+  UserPolicyAssignment,
+  UserGroupRef,
+  UserListRow,
+  UserDeviceRef,
   OwnershipTransferPreviewResponse,
   RequestTenantOwnershipTransferResponse,
   AccountInfo,
@@ -260,6 +265,8 @@ type EnterpriseDashboardClient = Effect.Success<
 type EnterpriseIdentityClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseIdentity"];
+
+type EnterpriseUserClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseUser"];
 
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
 
@@ -397,6 +404,9 @@ export const enterpriseKeys = {
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-effective-policy", keyTenant(tenantId), id ?? ""] as const,
   directory: (tenantId: RouteParam) => ["enterprise", "directory", keyTenant(tenantId)] as const,
+  users: (tenantId: RouteParam) => ["enterprise", "users", keyTenant(tenantId)] as const,
+  user: (tenantId: RouteParam, userId: RouteParam) =>
+    ["enterprise", "user", keyTenant(tenantId), userId ?? ""] as const,
   deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-users", keyTenant(tenantId), id ?? ""] as const,
   deviceAppleUsers: (tenantId: RouteParam, id: RouteParam) =>
@@ -550,6 +560,17 @@ function dashboardEndpoint<A, E>(
   return endpointWith(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
     call,
+  );
+}
+
+function userEndpoint<A, E>(
+  call: (api: EnterpriseUserClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseUser),
+    call,
+    options,
   );
 }
 
@@ -1423,6 +1444,19 @@ export const enterprise = {
     ),
   listDirectory: (tenantId: RouteParam) =>
     endpoint((api) => api.listDirectory({ params: { tenantId: required(tenantId, "tenantId") } })),
+  /** Directory people in this tenant, with group and (permitted) device counts. */
+  listUsers: (tenantId: RouteParam) =>
+    userEndpoint((api) => api.listUsers({ params: { tenantId: required(tenantId, "tenantId") } })),
+  /** One directory person, their groups, devices and policy assignments. */
+  getUser: (tenantId: RouteParam, userId: RouteParam) =>
+    userEndpoint((api) =>
+      api.getUser({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          userId: required(userId, "userId"),
+        },
+      }),
+    ),
   /** Add selected directory users to one directory (user) group. */
   addUserGroupMembers: (tenantId: RouteParam, groupId: RouteParam, userIds: string[]) =>
     attributeEndpoint((api) =>
@@ -2475,6 +2509,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.directory(tenantId),
       queryFn: () => enterprise.listDirectory(tenantId),
       enabled: Boolean(tenantId) && !isServer,
+    }),
+  users: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.users(tenantId),
+      queryFn: () => enterprise.listUsers(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  user: (tenantId: RouteParam, userId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.user(tenantId, userId),
+      queryFn: () => enterprise.getUser(tenantId, userId),
+      enabled: Boolean(tenantId && userId) && !isServer,
     }),
   deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
     enterpriseQueryOptions({

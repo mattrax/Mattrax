@@ -34,6 +34,7 @@ import {
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseIdentityApi,
+  enterpriseUserApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -41,6 +42,7 @@ import {
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
   type DevicePreRegistrationImportResponse,
+  type Permission,
   type EnterpriseAuth,
   type DevicePreRegistrationImportRow,
   type TenantImportRequest,
@@ -92,6 +94,9 @@ import {
   validateAttributeValue,
   windowsActivationStatusFromLicenseStatus,
   windowsLicenseStatusValue,
+  deriveUserPolicies,
+  type UserGroupPolicyEdge,
+  type UserPolicyEdge,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
@@ -1811,6 +1816,16 @@ export const createEnterpriseService = ({
           }),
         );
 
+      // Sub-gates inside a handler (search facets, user-view sections) must
+      // apply the same ceiling as the method-level check. A narrowed credential
+      // limits the role; a browser session is limited by its role alone. Using
+      // the role alone here let a members.read token read device and policy
+      // data the role happened to hold.
+      const permissions: ReadonlySet<Permission> =
+        credentialRestricted && credentialGrant
+          ? new Set([...role.permissions].filter((permission) => credentialGrant.has(permission)))
+          : role.permissions;
+
       const credential = apiToken
         ? { type: "api_token" as const, id: apiToken.id, name: apiToken.name }
         : oauth
@@ -1835,6 +1850,7 @@ export const createEnterpriseService = ({
         organization,
         member,
         role,
+        permissions,
         credential,
         // The address is set by the deployment boundary after applying the
         // rate limiter's trusted-proxy policy; a caller cannot supply it.
@@ -16588,6 +16604,317 @@ export const createEnterpriseService = ({
 
         return { updated, failed };
       }),
+    listUsers: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        // Device counts are device data, not directory data. A member who can
+        // see the directory but not the fleet gets the row without the count
+        // rather than a number derived from rows they cannot read.
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
+
+        const [users, groups, identities] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  id: schema.user.id,
+                  name: schema.user.name,
+                  email: schema.user.email,
+                  externalId: schema.user.externalId,
+                  source: schema.user.source,
+                  disabled: schema.user.disabled,
+                })
+                .from(schema.user)
+                .where(eq(schema.user.organizationId, ctx.organization.id)),
+            ),
+            queryEffect(
+              db
+                .select({ id: schema.userGroup.id })
+                .from(schema.userGroup)
+                .where(eq(schema.userGroup.organizationId, ctx.organization.id)),
+            ),
+            // Linking is keyed by the Entra object id the directory person was
+            // imported with, so this read exposes the same state listDirectory
+            // reports.
+            queryEffect(
+              db
+                .select({ objectId: schema.ssoIdentity.objectId })
+                .from(schema.ssoIdentity)
+                .where(eq(schema.ssoIdentity.organizationId, ctx.organization.id)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const userIds = users.map((user) => user.id);
+        const groupIds = groups.map((group) => group.id);
+
+        // One grouped read per count (never one per user). Both are bounded by
+        // the tenant's rows, not by a page size, because the list is complete.
+        const [groupCounts, deviceCounts] = yield* Effect.all(
+          [
+            userIds.length && groupIds.length
+              ? queryEffect(
+                  db
+                    .select({ userId: schema.userGroupMember.userId, value: count() })
+                    .from(schema.userGroupMember)
+                    .where(
+                      and(
+                        inArray(schema.userGroupMember.groupId, groupIds),
+                        inArray(schema.userGroupMember.userId, userIds),
+                      ),
+                    )
+                    .groupBy(schema.userGroupMember.userId),
+                )
+              : emptyRows<{ userId: string; value: number }>(),
+            canReadDevices && userIds.length
+              ? queryEffect(
+                  db
+                    .select({ userId: schema.deviceUser.userId, value: count() })
+                    .from(schema.deviceUser)
+                    .where(
+                      and(
+                        eq(schema.deviceUser.organizationId, ctx.organization.id),
+                        inArray(schema.deviceUser.userId, userIds),
+                      ),
+                    )
+                    .groupBy(schema.deviceUser.userId),
+                )
+              : emptyRows<{ userId: string; value: number }>(),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const linkedObjectIds = new Set(identities.map((identity) => identity.objectId));
+        const groupCount = new Map(groupCounts.map((row) => [row.userId, Number(row.value)]));
+        const deviceCount = new Map(deviceCounts.map((row) => [row.userId, Number(row.value)]));
+
+        return {
+          rows: users
+            .map((user) => ({
+              ...user,
+              linked: user.externalId != null && linkedObjectIds.has(user.externalId),
+              groupCount: groupCount.get(user.id) ?? 0,
+              ...(canReadDevices ? { deviceCount: deviceCount.get(user.id) ?? 0 } : {}),
+            }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+        };
+      }),
+    getUser: (request, tenantId, userId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const [user] = yield* db
+          .select({
+            id: schema.user.id,
+            name: schema.user.name,
+            email: schema.user.email,
+            externalId: schema.user.externalId,
+            source: schema.user.source,
+            disabled: schema.user.disabled,
+            createdAt: schema.user.createdAt,
+            updatedAt: schema.user.updatedAt,
+          })
+          .from(schema.user)
+          .where(
+            and(eq(schema.user.organizationId, ctx.organization.id), eq(schema.user.id, userId)),
+          )
+          .limit(1);
+
+        // A row from another tenant is reported as missing, exactly like an
+        // unknown id, so the endpoint cannot be used to probe tenant data.
+        if (!user) return yield* Effect.fail(new EnterpriseNotFound({ message: "User not found" }));
+
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
+        const canReadPolicies = hasPermission(ctx.permissions, "policies.read");
+
+        const [groups, linkedAccounts, devices] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  id: schema.userGroup.id,
+                  name: schema.userGroup.name,
+                  source: schema.userGroup.source,
+                })
+                .from(schema.userGroupMember)
+                .innerJoin(
+                  schema.userGroup,
+                  eq(schema.userGroup.id, schema.userGroupMember.groupId),
+                )
+                .where(
+                  and(
+                    eq(schema.userGroup.organizationId, ctx.organization.id),
+                    eq(schema.userGroupMember.userId, user.id),
+                  ),
+                ),
+            ),
+            queryEffect(
+              user.externalId
+                ? db
+                    .select({
+                      id: schema.account.id,
+                      name: schema.account.name,
+                      email: schema.account.email,
+                    })
+                    .from(schema.ssoIdentity)
+                    .innerJoin(schema.account, eq(schema.account.id, schema.ssoIdentity.accountId))
+                    .where(
+                      and(
+                        eq(schema.ssoIdentity.organizationId, ctx.organization.id),
+                        eq(schema.ssoIdentity.objectId, user.externalId),
+                      ),
+                    )
+                    .limit(1)
+                : emptyRows<{ id: string; name: string; email: string }>(),
+            ),
+            queryEffect(
+              canReadDevices
+                ? db
+                    .select({
+                      id: schema.device.id,
+                      name: schema.device.name,
+                      proto: schema.device.proto,
+                      status: schema.device.status,
+                      source: schema.deviceUser.source,
+                      linkedAt: schema.deviceUser.createdAt,
+                    })
+                    .from(schema.deviceUser)
+                    .innerJoin(schema.device, eq(schema.device.id, schema.deviceUser.deviceId))
+                    .where(
+                      and(
+                        eq(schema.deviceUser.organizationId, ctx.organization.id),
+                        eq(schema.deviceUser.userId, user.id),
+                        eq(schema.device.organizationId, ctx.organization.id),
+                      ),
+                    )
+                : emptyRows<{
+                    id: string;
+                    name: string;
+                    proto: "apple" | "win" | "android";
+                    status: "enrolling" | "enrolled" | "unenrolling" | "unenrolled";
+                    source: "manual" | "directory";
+                    linkedAt: Date;
+                  }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const linkedAccount = linkedAccounts[0] ?? null;
+        let policies: ReturnType<typeof deriveUserPolicies> | undefined;
+
+        if (canReadPolicies) {
+          const groupIds = groups.map((group) => group.id);
+
+          // The two user-policy edges are read together with their policy
+          // metadata so the derivation needs no per-assignment lookup.
+          const [directEdges, groupEdges] = yield* Effect.all(
+            [
+              queryEffect(
+                db
+                  .select({
+                    policyId: schema.userPolicy.policyId,
+                    policyName: schema.policy.name,
+                    priority: schema.policy.priority,
+                    enabled: schema.policy.enabled,
+                    mode: schema.userPolicy.mode,
+                  })
+                  .from(schema.userPolicy)
+                  .innerJoin(schema.policy, eq(schema.policy.id, schema.userPolicy.policyId))
+                  .where(
+                    and(
+                      eq(schema.userPolicy.organizationId, ctx.organization.id),
+                      eq(schema.userPolicy.userId, user.id),
+                      eq(schema.policy.organizationId, ctx.organization.id),
+                    ),
+                  ),
+              ),
+              groupIds.length
+                ? queryEffect(
+                    db
+                      .select({
+                        policyId: schema.userGroupPolicy.policyId,
+                        policyName: schema.policy.name,
+                        priority: schema.policy.priority,
+                        enabled: schema.policy.enabled,
+                        mode: schema.userGroupPolicy.mode,
+                        groupId: schema.userGroup.id,
+                        groupName: schema.userGroup.name,
+                      })
+                      .from(schema.userGroupPolicy)
+                      .innerJoin(
+                        schema.policy,
+                        eq(schema.policy.id, schema.userGroupPolicy.policyId),
+                      )
+                      .innerJoin(
+                        schema.userGroup,
+                        eq(schema.userGroup.id, schema.userGroupPolicy.groupId),
+                      )
+                      .where(
+                        and(
+                          eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                          inArray(schema.userGroupPolicy.groupId, groupIds),
+                          eq(schema.policy.organizationId, ctx.organization.id),
+                        ),
+                      ),
+                  )
+                : emptyRows<{
+                    policyId: string;
+                    policyName: string;
+                    priority: number;
+                    enabled: boolean;
+                    mode: "include" | "exclude";
+                    groupId: string;
+                    groupName: string;
+                  }>(),
+            ],
+            { concurrency: "unbounded" },
+          );
+
+          policies = deriveUserPolicies({
+            direct: directEdges.map((edge): UserPolicyEdge => ({
+              policyId: edge.policyId,
+              policyName: edge.policyName,
+              priority: edge.priority ?? 0,
+              enabled: edge.enabled ?? true,
+              mode: edge.mode ?? "include",
+            })),
+            groups: groupEdges.map((edge): UserGroupPolicyEdge => ({
+              policyId: edge.policyId,
+              policyName: edge.policyName,
+              priority: edge.priority ?? 0,
+              enabled: edge.enabled ?? true,
+              mode: edge.mode ?? "include",
+              groupId: edge.groupId,
+              groupName: edge.groupName,
+            })),
+          });
+        }
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          externalId: user.externalId,
+          source: user.source,
+          disabled: user.disabled,
+          linked: linkedAccount !== null,
+          linkedAccount,
+          createdAt: iso(user.createdAt),
+          updatedAt: iso(user.updatedAt),
+          groups: [...groups].sort((left, right) => left.name.localeCompare(right.name)),
+          ...(canReadDevices
+            ? {
+                devices: [...devices]
+                  .map((device) => ({ ...device, linkedAt: iso(device.linkedAt) }))
+                  .sort((left, right) => left.name.localeCompare(right.name)),
+              }
+            : {}),
+          ...(policies ? { policies } : {}),
+        };
+      }),
     getDeviceUsers: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -17923,9 +18250,9 @@ export const createEnterpriseService = ({
         // Tenant-level read is not enough to enumerate an entity class:
         // serials, group names and policy names need their section permission,
         // the same as the corresponding list endpoints.
-        const canReadDevices = hasPermission(ctx.role.permissions, "devices.read");
-        const canReadGroups = hasPermission(ctx.role.permissions, "groups.read");
-        const canReadPolicies = hasPermission(ctx.role.permissions, "policies.read");
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
+        const canReadGroups = hasPermission(ctx.permissions, "groups.read");
+        const canReadPolicies = hasPermission(ctx.permissions, "policies.read");
 
         const devices = canReadDevices
           ? yield* db
@@ -17976,7 +18303,7 @@ export const createEnterpriseService = ({
 
         // Both administrator accounts and directory people are gated by
         // `members.read`; tenant-level read must not bypass it.
-        const canReadPeople = hasPermission(ctx.role.permissions, "members.read");
+        const canReadPeople = hasPermission(ctx.permissions, "members.read");
 
         const accounts = canReadPeople
           ? yield* db
@@ -18018,7 +18345,7 @@ export const createEnterpriseService = ({
 
         // Catalogue entries are not device data: the palette links to the
         // application page, which itself requires `applications.read`.
-        const applications = hasPermission(ctx.role.permissions, "applications.read")
+        const applications = hasPermission(ctx.permissions, "applications.read")
           ? yield* db
               .select({
                 id: schema.application.id,
@@ -18045,7 +18372,7 @@ export const createEnterpriseService = ({
         // The same permission guards the tenant software inventory that the
         // palette links to. Inventory rows are per device, so aggregation runs
         // before the limit is applied.
-        const software = hasPermission(ctx.role.permissions, "applications.read")
+        const software = hasPermission(ctx.permissions, "applications.read")
           ? yield* (
               db
                 .select({
@@ -20469,6 +20796,19 @@ export const enterpriseDashboardHandlers = (
       service.queryDashboardBatch(request, params.tenantId, payload),
     ),
   );
+
+export const enterpriseUserHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseUserApi>,
+) =>
+  handlers
+    .handle("listUsers", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listUsers(request, params.tenantId)),
+    )
+    .handle("getUser", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getUser(request, params.tenantId, params.userId),
+      ),
+    );
 
 export const enterpriseWindowsHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseWindowsApi>,

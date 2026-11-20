@@ -100,6 +100,8 @@ export * as Device from "./Device.ts";
 
 export * as Directory from "./Directory.ts";
 
+export * as User from "./User.ts";
+
 export * as Enrollment from "./Enrollment.ts";
 
 export * as Group from "./Group.ts";

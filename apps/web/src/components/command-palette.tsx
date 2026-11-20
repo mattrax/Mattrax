@@ -254,6 +254,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
         ),
       ),
       nav(navigable("nav-devices", "Devices", tenantRoutes.devices(), go(tenantRoutes.devices()))),
+      nav(navigable("nav-users", "Users", tenantRoutes.users(), go(tenantRoutes.users()))),
       nav(navigable("nav-groups", "Groups", tenantRoutes.groups(), go(tenantRoutes.groups()))),
       nav(
         navigable("nav-policies", "Policies", tenantRoutes.policies(), go(tenantRoutes.policies())),
@@ -276,6 +277,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       ["nav-overview", sequence("g", "o")],
       ["nav-dashboards", sequence("g", "b")],
       ["nav-devices", sequence("g", "d")],
+      ["nav-users", sequence("g", "u")],
       ["nav-groups", sequence("g", "g")],
       ["nav-policies", sequence("g", "p")],
       ["nav-applications", sequence("g", "a")],
