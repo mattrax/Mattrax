@@ -16,6 +16,8 @@ export * from "./enterprise.ts";
 
 export * from "./Errors.ts";
 
+export * from "./Preconditions.ts";
+
 export * from "./rbac.ts";
 
 export * from "./branding.ts";

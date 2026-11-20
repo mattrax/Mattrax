@@ -20,6 +20,8 @@ import {
   scriptExecutionIsExpired,
   scriptProblem,
   scriptSecretValues,
+  updatedAtSatisfiesPrecondition,
+  type UpdatedAtPrecondition,
   type CreateScriptRequest,
   type PatchScriptAssignmentsRequest,
   type PatchScriptRequest,
@@ -400,6 +402,7 @@ export const updateScript = (
   scriptId: string,
   input: PatchScriptRequest,
   now: Date,
+  precondition: UpdatedAtPrecondition = { _tag: "Missing" },
 ) =>
   Effect.gen(function* () {
     const existing = yield* scriptById(db, organizationId, scriptId);
@@ -420,12 +423,36 @@ export const updateScript = (
 
     if ("problem" in built) return built;
 
-    yield* db
-      .update(s.script)
-      .set({ ...built.values, updatedAt: now })
-      .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)));
+    // Lock the row, compare the version, then write. The lock makes the
+    // check and the write atomic, and the comparison understands the
+    // second-precision `If-Unmodified-Since` fallback without losing it in a
+    // SQL equality predicate.
+    const outcome = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [current] = yield* tx
+          .select()
+          .from(s.script)
+          .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)))
+          .limit(1)
+          .for("update");
 
-    return { status: "ok" as const };
+        if (!current) return { notFound: true as const };
+
+        if (!updatedAtSatisfiesPrecondition(current.updatedAt, precondition))
+          return { stale: true as const, current };
+
+        yield* tx
+          .update(s.script)
+          .set({ ...built.values, updatedAt: now })
+          .where(
+            and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)),
+          );
+
+        return { status: "ok" as const };
+      }),
+    );
+
+    return outcome;
   });
 
 export const deleteScript = (db: EnterpriseDb, organizationId: string, scriptId: string) =>

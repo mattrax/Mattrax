@@ -140,6 +140,8 @@ export const CreateGroupRequest = Schema.Struct({
 });
 
 export const PatchGroupRequest = Schema.Struct({
+  /** The group's `updatedAt` when the caller loaded it; a mismatch is a 412. */
+  expectedUpdatedAt: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   kind: Schema.optional(DynamicGroupKind),

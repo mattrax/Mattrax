@@ -132,6 +132,8 @@ export const CreateApplicationRequest = Schema.Struct({
 });
 
 export const PatchApplicationRequest = Schema.Struct({
+  /** The application's `updatedAt` when the caller loaded it; a mismatch is a 412. */
+  expectedUpdatedAt: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   bundleId: Schema.optional(NullableString),
   version: Schema.optional(NullableString),

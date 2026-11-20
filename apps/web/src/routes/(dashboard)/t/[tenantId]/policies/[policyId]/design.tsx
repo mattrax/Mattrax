@@ -7,12 +7,15 @@ import { createSignal, Errored, onSettled, Show } from "solid-js";
 import { ErrorPanel } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { isPolicyEnabled } from "~/lib/policy-delivery";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import {
   emptyPolicyDraft,
@@ -76,6 +79,9 @@ export default function PolicyDesignerPage() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
+  /** Bumped by "Reload latest" to remount the designer from the saved draft. */
+  const [draftEpoch, setDraftEpoch] = createSignal(0);
 
   // A disabled policy delivers nothing, so saving the designer into one would
   // look successful while changing nothing on devices. Block the save and
@@ -136,6 +142,7 @@ export default function PolicyDesignerPage() {
   });
 
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (draft: PolicyDraft) => {
       const next = policyToConfigurations(draft);
 
@@ -152,9 +159,11 @@ export default function PolicyDesignerPage() {
       return enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: row()?.name,
         configurations: next,
+        expectedUpdatedAt: guard.expectedUpdatedAt(),
       });
     },
     onSuccess: (_result, draft) => {
+      guard.markSaved();
       localStorage.setItem(storageKey(), JSON.stringify(draft));
 
       // Navigate before the refreshes settle: awaiting them keeps the mutation
@@ -166,10 +175,41 @@ export default function PolicyDesignerPage() {
       void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
       navigate(`/t/${params.tenantId}/policies/${params.policyId}`);
     },
+    onError: (error, draft) => {
+      if (
+        handleStaleWriteWithToast(error, {
+          reload: () =>
+            qc.invalidateQueries({
+              queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+            }),
+        })
+      ) {
+        // Keep the in-progress draft (and the local autosave copy) so nothing
+        // the operator typed is lost while they decide what to do.
+        localStorage.setItem(storageKey(), JSON.stringify(draft));
+        guard.markConflict();
+
+        return;
+      }
+    },
   }));
 
+  const reloadLatest = async () => {
+    await policy.refetch();
+    // Drop the stale browser draft so the remounted designer starts from the
+    // freshly fetched configuration instead of the copy kept for recovery.
+    localStorage.removeItem(storageKey());
+    setDraftEpoch((value) => value + 1);
+    guard.acceptLatest();
+  };
+
   const enable = useMutation(() => ({
-    mutationFn: () => enterprise.patchPolicy(params.tenantId, params.policyId, { enabled: true }),
+    meta: { inlineError: true },
+    mutationFn: () =>
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        enabled: true,
+        expectedUpdatedAt: row()?.updatedAt,
+      }),
     onSuccess: () => {
       toast.success("Policy enabled", {
         description: "Its saved configuration is being delivered to scoped devices again.",
@@ -179,10 +219,23 @@ export default function PolicyDesignerPage() {
       });
       void qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
     },
-    onError: (error) =>
+    onError: (error) => {
+      // Enabling has no draft of its own; a conflict only needs the latest
+      // row, not a merge prompt.
+      if (
+        handleStaleWriteWithToast(error, {
+          reload: () =>
+            qc.invalidateQueries({
+              queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+            }),
+        })
+      )
+        return;
+
       toast.error("Could not enable the policy", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const pageActions = () => (
@@ -232,6 +285,16 @@ export default function PolicyDesignerPage() {
             </Show>
           }
         >
+          <Show when={guard.conflict()}>
+            <div class="shrink-0 px-3 pt-2 sm:px-4">
+              <StaleWriteBanner
+                reloading={policy.isFetching}
+                onReload={() => void reloadLatest()}
+                onKeepMine={() => guard.acceptLatest()}
+              />
+            </div>
+          </Show>
+
           <Show when={row() && !enabled()}>
             <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] text-foreground sm:px-4">
               <div class="min-w-0 flex-1">
@@ -284,8 +347,8 @@ export default function PolicyDesignerPage() {
           {/* Remount per policy: the designer holds its draft in local state,
               so a reused route would otherwise keep the previous policy's
               selections when both policies are already cached. */}
-          <Show keyed when={params.policyId}>
-            {(_policyId) => (
+          <Show keyed when={`${params.policyId}:${draftEpoch()}`}>
+            {(_identity) => (
               <PolicyDesigner
                 mode="dashboard"
                 pageActions={pageActions()}

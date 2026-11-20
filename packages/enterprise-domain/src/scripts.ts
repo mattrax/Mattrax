@@ -611,6 +611,8 @@ export const CreateScriptRequest = Schema.Struct({
 export type CreateScriptRequest = typeof CreateScriptRequest.Type;
 
 export const PatchScriptRequest = Schema.Struct({
+  /** The script's `updatedAt` when the caller loaded it; a mismatch is a 412. */
+  expectedUpdatedAt: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   description: Schema.optional(Schema.NullOr(Schema.String)),
   language: Schema.optional(ScriptLanguage),

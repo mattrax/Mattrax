@@ -117,6 +117,7 @@ import { EnterpriseAppleReadErrors } from "../Errors.js";
 import { EnterpriseAppleWriteErrors } from "../Errors.js";
 import { EnterpriseApplicationDownloadErrors } from "../Policy.js";
 import { EnterpriseApplicationErrors } from "../Errors.js";
+import { EnterpriseConditionalWriteErrors } from "../Errors.js";
 import { EnterpriseApplicationUploadErrors } from "../Policy.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
 import { EnterpriseAutopilotReadErrors } from "../Errors.js";
@@ -1553,7 +1554,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
       payload: PatchPolicyRequest,
       success: OkResponse,
@@ -1614,7 +1615,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchApplication", "/v1/tenants/:tenantId/applications/:id", {
-      error: EnterpriseApplicationErrors,
+      error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
       payload: PatchApplicationRequest,
       success: OkResponse,

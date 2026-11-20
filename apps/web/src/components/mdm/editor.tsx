@@ -19,6 +19,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
@@ -31,6 +32,8 @@ import {
 } from "~/lib/policy-designer/documentation";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 
 const keys = {
@@ -112,7 +115,10 @@ export function PolicyConfigurationEditor() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
   const [canEdit, setCanEdit] = createSignal(false);
+  /** Bumped by "Reload latest" to reseed the form from the refetched policy. */
+  const [reseed, setReseed] = createSignal(0);
   const [active, setActive] = createSignal("custom");
   const [config, setConfig] = createSignal<Config>({});
   const [scopes, setScopes] = createSignal<Record<string, "device" | "user">>({});
@@ -121,24 +127,28 @@ export function PolicyConfigurationEditor() {
   const [raw, setRaw] = createSignal("{}");
   const [rawError, setRawError] = createSignal<string | null>(null);
 
+  const seedFromRow = () => {
+    const configurations = row()?.configurations;
+
+    if (!configurations) return;
+
+    const decoded = Option.getOrUndefined(decodeConfig(configurations)) ?? {};
+
+    const nextScopes = { ...row()?.configurationScopes };
+
+    setConfig(decoded);
+    setScopes(nextScopes);
+    setInitial(JSON.stringify(decoded));
+    setInitialScopes(JSON.stringify(nextScopes));
+    setRaw(JSON.stringify(decoded, null, 2));
+    setRawError(null);
+  };
+
+  // Seed per policy, and again only when the operator explicitly reloads the
+  // latest version. A background refetch after a 412 must keep the draft.
   createEffect(
-    () => row()?.id,
-    () => {
-      const configurations = row()?.configurations;
-
-      if (!configurations) return;
-
-      const decoded = Option.getOrUndefined(decodeConfig(configurations)) ?? {};
-
-      const nextScopes = { ...row()?.configurationScopes };
-
-      setConfig(decoded);
-      setScopes(nextScopes);
-      setInitial(JSON.stringify(decoded));
-      setInitialScopes(JSON.stringify(nextScopes));
-      setRaw(JSON.stringify(decoded, null, 2));
-      setRawError(null);
-    },
+    () => `${row()?.id ?? ""}:${reseed()}`,
+    () => seedFromRow(),
   );
 
   const dirty = createMemo(
@@ -173,10 +183,12 @@ export function PolicyConfigurationEditor() {
     setScopes((current) => ({ ...current, [kind]: scope }));
 
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () =>
       enterprise.patchPolicy(params.tenantId, params.policyId, {
         configurations: config(),
         configurationScopes: scopes(),
+        expectedUpdatedAt: guard.expectedUpdatedAt(),
       }),
     onMutate: async () =>
       optimisticallyPatchItem(queryClient, params.tenantId!, "policy", params.policyId!, {
@@ -184,6 +196,7 @@ export function PolicyConfigurationEditor() {
         configurationScopes: scopes(),
       }),
     onSuccess: () => {
+      guard.markSaved();
       setCanEdit(false);
       setInitial(JSON.stringify(config()));
       setInitialScopes(JSON.stringify(scopes()));
@@ -191,6 +204,23 @@ export function PolicyConfigurationEditor() {
     },
     onError: (error, _variables, restore) => {
       restore?.();
+
+      if (
+        handleStaleWriteWithToast(error, {
+          reload: () =>
+            queryClient.invalidateQueries({
+              queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+            }),
+        })
+      ) {
+        // Keep the draft and stay in edit mode; the banner offers an explicit
+        // reload or overwrite.
+        guard.markConflict();
+        setCanEdit(true);
+
+        return;
+      }
+
       toast.error("Could not save the configurations", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -200,6 +230,12 @@ export function PolicyConfigurationEditor() {
         queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
       }),
   }));
+
+  const reloadLatest = async () => {
+    await policy.refetch();
+    setReseed((value) => value + 1);
+    guard.acceptLatest();
+  };
 
   const toggleEdit = () => {
     if (!writable()) return;
@@ -327,6 +363,13 @@ export function PolicyConfigurationEditor() {
         }
       />
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+      <Show when={guard.conflict()}>
+        <StaleWriteBanner
+          reloading={policy.isFetching}
+          onReload={() => void reloadLatest()}
+          onKeepMine={() => guard.acceptLatest()}
+        />
+      </Show>
       <Show when={!writable()}>
         <ReadOnlyNotice>
           Your role can view this policy's configuration but not edit it.
