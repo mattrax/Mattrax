@@ -47,6 +47,13 @@ const outcomeForStatus = (status: number): RequestOutcome => {
   return "ok";
 };
 
+/** A child span as it appears in a request log line. */
+export type LoggedSpan = {
+  readonly name: string;
+  readonly durationMs: number;
+  readonly status: "ok" | "error";
+};
+
 export type RequestLogEntry = {
   readonly requestId: string;
   readonly method: string;
@@ -55,6 +62,17 @@ export type RequestLogEntry = {
   readonly durationMs: number;
   readonly tenantId?: string;
   readonly errorTag?: string;
+  /**
+   * W3C trace context for this request. `traceId` is shared by the edge, the
+   * API Worker and every child span, so one log line is enough to find the
+   * others; `spanId` identifies this request's root span.
+   */
+  readonly traceId?: string;
+  readonly spanId?: string;
+  /** Slowest child spans (name, duration, status), already bounded by the caller. */
+  readonly spans?: ReadonlyArray<LoggedSpan>;
+  /** How many child spans were recorded, if more than `spans` holds. */
+  readonly spanCount?: number;
   /** Short, secret-free description when the Worker itself threw. */
   readonly error?: string;
 };
@@ -72,6 +90,10 @@ export const formatRequestLog = (entry: RequestLogEntry): string => {
     outcome,
     durationMs: entry.durationMs,
     tenantId: entry.tenantId,
+    traceId: entry.traceId,
+    spanId: entry.spanId,
+    spans: entry.spans,
+    spanCount: entry.spanCount,
     errorTag: entry.errorTag,
     error: entry.error,
   });
@@ -161,9 +183,11 @@ export const errorResponse = (
     requestId,
   );
 
-/** Health/readiness probes are high-frequency; only log them when they fail. */
+/** Health/readiness probes and metric scrapes are high-frequency; only log failures. */
 export const shouldLogRequest = (path: string, status: number): boolean => {
   if (status >= 400) return true;
 
-  return path !== "/api/health" && path !== "/health" && path !== "/api/ready";
+  return (
+    path !== "/api/health" && path !== "/health" && path !== "/api/ready" && path !== "/api/metrics"
+  );
 };

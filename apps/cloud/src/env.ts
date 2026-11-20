@@ -212,6 +212,19 @@ const ApiEnvSchema = Schema.Struct({
   POSTHOG_ERROR_SAMPLE_RATE: Schema.optional(nonEmptyString),
   /** Maximum error events per isolate per minute. Defaults to 20. */
   POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
+  /**
+   * `off` disables span recording and metrics collection (the tracer becomes
+   * Effect's no-op). Any other value, or leaving it unset, keeps telemetry on.
+   */
+  MATTRAX_TELEMETRY: Schema.optional(nonEmptyString),
+  /**
+   * `GET /api/metrics` exposure: `off` (default), `public` or `token`.
+   * Metrics are aggregate-only, but the endpoint stays closed unless a
+   * deployment opts in.
+   */
+  MATTRAX_METRICS: Schema.optional(nonEmptyString),
+  /** Bearer token required when `MATTRAX_METRICS=token`. */
+  MATTRAX_METRICS_TOKEN: Schema.optional(nonEmptyString),
 });
 
 const optionalString = Schema.optional(Schema.String);
@@ -284,6 +297,9 @@ const RawApiEnvSchema = Schema.Struct({
   POSTHOG_ENVIRONMENT: optionalString,
   POSTHOG_ERROR_SAMPLE_RATE: optionalString,
   POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: optionalString,
+  MATTRAX_TELEMETRY: optionalString,
+  MATTRAX_METRICS: optionalString,
+  MATTRAX_METRICS_TOKEN: optionalString,
 });
 
 const rawEnv = Schema.decodeUnknownSync(RawApiEnvSchema)(cfEnv);
@@ -390,4 +406,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: emptyStringAsUndefined(
     rawEnv.POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE,
   ),
+  MATTRAX_TELEMETRY: emptyStringAsUndefined(rawEnv.MATTRAX_TELEMETRY),
+  MATTRAX_METRICS: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS),
+  MATTRAX_METRICS_TOKEN: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS_TOKEN),
 });

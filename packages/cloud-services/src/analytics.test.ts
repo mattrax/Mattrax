@@ -278,6 +278,7 @@ describe("PostHog analytics", () => {
     expect(shouldTrackApiRequest("/api/v1/me", "GET")).toBe(true);
     expect(shouldTrackApiRequest("/api/health", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/ready", "GET")).toBe(false);
+    expect(shouldTrackApiRequest("/api/metrics", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/openapi.json", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/webhooks/openapi.json", "GET")).toBe(false);
     expect(shouldTrackApiRequest("/api/v1/getSession", "POST")).toBe(false);

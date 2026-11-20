@@ -24,6 +24,8 @@ export * from "./readiness.js";
 
 export * from "./sessionPresence.js";
 
+export * from "./telemetry/index.js";
+
 export * from "./sessionShell.js";
 
 export * from "./sso.js";
