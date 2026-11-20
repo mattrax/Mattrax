@@ -95,6 +95,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
+import { resolvePolicyDeployment } from "./policyDeployment.js";
 import type { StripeClientLike } from "@mattrax/effect-stripe";
 import {
   authCredentials,
@@ -15671,9 +15672,7 @@ export const createEnterpriseService = ({
           body.configurationScopes?.[kind] ?? "device";
 
         const escrowFingerprint =
-          configurations.length > 0
-            ? yield* tenantEscrowFingerprint(ctx.organization.id)
-            : null;
+          configurations.length > 0 ? yield* tenantEscrowFingerprint(ctx.organization.id) : null;
 
         const policyId = id();
 
@@ -15898,6 +15897,364 @@ export const createEnterpriseService = ({
             createdAt: iso(deployment.createdAt),
             createdByAccountId: deployment.createdByAccountId,
           })),
+        };
+      }),
+    getPolicyDeploymentDevices: (request, tenantId, policyId, version, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+
+        const latest = version === "latest";
+        const wanted = latest ? null : Number(version);
+
+        if (wanted !== null && (!Number.isSafeInteger(wanted) || wanted < 1))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: 'Deployment version must be a positive whole number or "latest"',
+            }),
+          );
+
+        const deploymentWhere =
+          wanted === null
+            ? and(
+                eq(schema.policyDeployment.organizationId, ctx.organization.id),
+                eq(schema.policyDeployment.policyId, policyId),
+              )
+            : and(
+                eq(schema.policyDeployment.organizationId, ctx.organization.id),
+                eq(schema.policyDeployment.policyId, policyId),
+                eq(schema.policyDeployment.version, wanted),
+              );
+
+        const [deployment] = yield* db
+          .select()
+          .from(schema.policyDeployment)
+          .where(deploymentWhere)
+          .orderBy(desc(schema.policyDeployment.version))
+          .limit(1);
+
+        if (!deployment)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Policy deployment not found" }),
+          );
+
+        // The assignment graph this policy can reach, loaded once. Scope
+        // arithmetic is shared with the policy list, so the device set and the
+        // counts here describe exactly the devices the policy targets.
+        const [groupAssignments, deviceAssignments, userAssignments, userGroupAssignments] =
+          yield* Effect.all(
+            [
+              queryEffect(
+                db
+                  .select({
+                    policyId: schema.groupPolicy.policyId,
+                    groupId: schema.groupPolicy.groupId,
+                    mode: schema.groupPolicy.mode,
+                  })
+                  .from(schema.groupPolicy)
+                  .innerJoin(
+                    schema.enterpriseGroup,
+                    eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
+                  )
+                  .where(
+                    and(
+                      eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                      eq(schema.groupPolicy.policyId, policyId),
+                    ),
+                  ),
+              ),
+              queryEffect(
+                db
+                  .select({
+                    policyId: schema.devicePolicy.policyId,
+                    deviceId: schema.devicePolicy.deviceId,
+                    mode: schema.devicePolicy.mode,
+                  })
+                  .from(schema.devicePolicy)
+                  .where(eq(schema.devicePolicy.policyId, policyId)),
+              ),
+              queryEffect(
+                db
+                  .select({
+                    policyId: schema.userPolicy.policyId,
+                    userId: schema.userPolicy.userId,
+                    mode: schema.userPolicy.mode,
+                  })
+                  .from(schema.userPolicy)
+                  .where(
+                    and(
+                      eq(schema.userPolicy.organizationId, ctx.organization.id),
+                      eq(schema.userPolicy.policyId, policyId),
+                    ),
+                  ),
+              ),
+              queryEffect(
+                db
+                  .select({
+                    policyId: schema.userGroupPolicy.policyId,
+                    groupId: schema.userGroupPolicy.groupId,
+                    mode: schema.userGroupPolicy.mode,
+                  })
+                  .from(schema.userGroupPolicy)
+                  .where(
+                    and(
+                      eq(schema.userGroupPolicy.organizationId, ctx.organization.id),
+                      eq(schema.userGroupPolicy.policyId, policyId),
+                    ),
+                  ),
+              ),
+            ],
+            { concurrency: "unbounded" },
+          );
+
+        const groupIds = [...new Set(groupAssignments.map((row) => row.groupId))];
+        const userGroupIds = [...new Set(userGroupAssignments.map((row) => row.groupId))];
+
+        const [groupMembers, userGroupMembers] = yield* Effect.all(
+          [
+            queryEffect(
+              groupIds.length
+                ? db
+                    .select({
+                      groupId: schema.groupDevice.groupId,
+                      deviceId: schema.groupDevice.deviceId,
+                    })
+                    .from(schema.groupDevice)
+                    .where(inArray(schema.groupDevice.groupId, groupIds))
+                : emptyRows<{ groupId: string; deviceId: string }>(),
+            ),
+            queryEffect(
+              userGroupIds.length
+                ? db
+                    .select({
+                      groupId: schema.userGroupMember.groupId,
+                      userId: schema.userGroupMember.userId,
+                    })
+                    .from(schema.userGroupMember)
+                    .where(inArray(schema.userGroupMember.groupId, userGroupIds))
+                : emptyRows<{ groupId: string; userId: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const assignedUserIds = [
+          ...new Set([
+            ...userAssignments.map((row) => row.userId),
+            ...userGroupMembers.map((row) => row.userId),
+          ]),
+        ];
+
+        const [activeUsers, deviceUsers] = yield* Effect.all(
+          [
+            queryEffect(
+              assignedUserIds.length
+                ? db
+                    .select({ id: schema.user.id })
+                    .from(schema.user)
+                    .where(
+                      and(
+                        eq(schema.user.organizationId, ctx.organization.id),
+                        eq(schema.user.disabled, false),
+                        inArray(schema.user.id, assignedUserIds),
+                      ),
+                    )
+                : emptyRows<{ id: string }>(),
+            ),
+            queryEffect(
+              assignedUserIds.length
+                ? db
+                    .select({
+                      deviceId: schema.deviceUser.deviceId,
+                      userId: schema.deviceUser.userId,
+                    })
+                    .from(schema.deviceUser)
+                    .where(
+                      and(
+                        eq(schema.deviceUser.organizationId, ctx.organization.id),
+                        inArray(schema.deviceUser.userId, assignedUserIds),
+                      ),
+                    )
+                : emptyRows<{ deviceId: string; userId: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const candidateDeviceIds = [
+          ...new Set([
+            ...deviceAssignments.map((row) => row.deviceId),
+            ...groupMembers.map((row) => row.deviceId),
+            ...deviceUsers.map((row) => row.deviceId),
+          ]),
+        ];
+
+        const devices = candidateDeviceIds.length
+          ? yield* db
+              .select({
+                id: schema.device.id,
+                name: schema.device.name,
+                proto: schema.device.proto,
+                declarationMode: schema.deviceApple.declarationMode,
+              })
+              .from(schema.device)
+              .leftJoin(schema.deviceApple, eq(schema.deviceApple.deviceId, schema.device.id))
+              .where(
+                and(
+                  eq(schema.device.organizationId, ctx.organization.id),
+                  inArray(schema.device.id, candidateDeviceIds),
+                ),
+              )
+          : [];
+
+        const scopes = resolvePolicyScopes({
+          policyIds: [policyId],
+          devices,
+          groupAssignments,
+          groupMembers,
+          deviceAssignments,
+          userAssignments,
+          userGroupAssignments,
+          userGroupMembers,
+          deviceUsers,
+          activeUserIds: new Set(activeUsers.map((row) => row.id)),
+        });
+
+        const scopedDeviceIds = scopes.get(policyId)?.deviceIds ?? new Set<string>();
+        const deviceById = new Map(devices.map((device) => [device.id, device]));
+
+        const scopedDevices = [...scopedDeviceIds].flatMap((deviceId) => {
+          const device = deviceById.get(deviceId);
+
+          return device ? [device] : [];
+        });
+
+        // The snapshot is authoritative for the version, not the policy's
+        // current configuration: a later save must not make an old version
+        // appear delivered.
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // record of `Schema.Json` values when the stored snapshot does not decode.
+        const snapshot = Option.getOrElse(
+          Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
+            deployment.snapshot,
+          ),
+          () => ({}) as Record<string, Schema.Json>,
+        );
+
+        // SAFETY: an empty record has no values to mistype, so it is a valid
+        // record of device/user scopes; lookups below default to device.
+        const snapshotScopes = Option.getOrElse(
+          Schema.decodeUnknownOption(
+            Schema.Record(Schema.String, Schema.Literals(["device", "user"])),
+          )(snapshot[POLICY_SNAPSHOT_SCOPES_KEY]),
+          () => ({}) as Record<string, "device" | "user">,
+        );
+
+        const entries = Object.entries(snapshot).filter(
+          ([kind]) => kind !== POLICY_SNAPSHOT_SCOPES_KEY && kind !== POLICY_SNAPSHOT_ENABLED_KEY,
+        );
+
+        const configurations: Array<{
+          kind: string;
+          hash: string;
+          hasVariables: boolean;
+        }> = [];
+
+        let hasUserScopedConfigurations = false;
+
+        for (const [kind, data] of entries) {
+          if (snapshotScopes[kind] === "user") {
+            hasUserScopedConfigurations = true;
+            continue;
+          }
+
+          configurations.push({
+            kind,
+            hash: yield* hashJson(data),
+            hasVariables: containsPolicyVariables(data),
+          });
+        }
+
+        // Declarations are loaded for every Apple device the assignment graph
+        // reaches, not only the scoped set: another policy's report for the
+        // same kind is how an overridden kind is recognised, and a device that
+        // left scope may still report this version.
+        const candidateAppleIds = devices.flatMap((device) =>
+          device.proto === "apple" ? [device.id] : [],
+        );
+
+        const declarations = candidateAppleIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceDeclaration.deviceId,
+                identifier: schema.deviceDeclaration.identifier,
+                valid: schema.deviceDeclaration.valid,
+                active: schema.deviceDeclaration.active,
+                serverToken: schema.deviceDeclaration.serverToken,
+                updatedAt: schema.deviceDeclaration.updatedAt,
+              })
+              .from(schema.deviceDeclaration)
+              .where(inArray(schema.deviceDeclaration.deviceId, candidateAppleIds))
+          : [];
+
+        const legacyDeviceIds = scopedDevices.flatMap((device) =>
+          device.proto === "apple" && device.declarationMode === "legacy" ? [device.id] : [],
+        );
+
+        const commands = legacyDeviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceCommand.deviceId,
+                requestType: schema.deviceCommand.requestType,
+                status: schema.deviceCommand.status,
+                updatedAt: schema.deviceCommand.updatedAt,
+              })
+              .from(schema.deviceCommand)
+              .where(
+                and(
+                  inArray(schema.deviceCommand.deviceId, legacyDeviceIds),
+                  eq(schema.deviceCommand.requestType, "InstallProfile"),
+                ),
+              )
+          : [];
+
+        const resolution = resolvePolicyDeployment({
+          policyId,
+          version: deployment.version,
+          configurations,
+          hasUserScopedConfigurations,
+          devices: scopedDevices,
+          outOfScopeDevices: devices.filter(
+            (device) => device.proto === "apple" && !scopedDeviceIds.has(device.id),
+          ),
+          declarations: declarations.map((declaration) => ({
+            ...declaration,
+            updatedAt: iso(declaration.updatedAt),
+          })),
+          commands: commands.map((command) => ({
+            ...command,
+            updatedAt: iso(command.updatedAt),
+          })),
+        });
+
+        const integer = (value: number | undefined, fallback: number) =>
+          value !== undefined && Number.isSafeInteger(value) ? value : fallback;
+
+        const limit = Math.min(Math.max(integer(query.limit, 50), 1), 200);
+        const offset = Math.max(integer(query.offset, 0), 0);
+        const page = resolution.devices.slice(offset, offset + limit);
+
+        return {
+          policyId,
+          version: deployment.version,
+          createdAt: iso(deployment.createdAt),
+          createdByAccountId: deployment.createdByAccountId ?? null,
+          state: resolution.state,
+          counts: resolution.counts,
+          devices: page,
+          offset,
+          nextOffset:
+            offset + page.length < resolution.devices.length ? offset + page.length : null,
         };
       }),
     rollbackPolicy: (request, tenantId, policyId, deploymentId) =>
@@ -16512,7 +16869,8 @@ export const createEnterpriseService = ({
           where: { id: groupId, organizationId: ctx.organization.id },
         });
 
-        if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+        if (!group)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
 
         const body: { readonly userIds: ReadonlyArray<string> } = payload;
 
@@ -20521,6 +20879,17 @@ export const enterpriseAttributeHandlers = (
     .handle("getPolicyScope", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getPolicyScope(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getPolicyDeploymentDevices", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getPolicyDeploymentDevices(
+          request,
+          params.tenantId,
+          params.id,
+          params.version,
+          query,
+        ),
       ),
     )
     .handle("getGroupScope", ({ request, params }) =>

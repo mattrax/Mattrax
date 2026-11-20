@@ -193,6 +193,10 @@ export type {
   NodeResponse,
   PlatformEnrollment,
   PolicyApplicationObject,
+  PolicyDeploymentCounts,
+  PolicyDeploymentDevice,
+  PolicyDeploymentDeviceStatus,
+  PolicyDeploymentProgressResponse,
   PolicyRow,
   RowFor,
   ScimTokenInfo,
@@ -392,6 +396,22 @@ export const enterpriseKeys = {
     ["enterprise", "policy-assignments", keyTenant(tenantId), id ?? ""] as const,
   policyScope: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "policy-scope", keyTenant(tenantId), id ?? ""] as const,
+  policyDeployment: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    version: string | number,
+    limit = 50,
+    offset = 0,
+  ) =>
+    [
+      "enterprise",
+      "policy-deployment",
+      keyTenant(tenantId),
+      id ?? "",
+      String(version),
+      limit,
+      offset,
+    ] as const,
   groupScope: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "group-scope", keyTenant(tenantId), id ?? ""] as const,
   deviceEffectivePolicy: (tenantId: RouteParam, id: RouteParam) =>
@@ -1714,6 +1734,23 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
+  /** Per-device progress for one version; pass "latest" to follow new saves. */
+  getPolicyDeploymentDevices: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    version: string | number,
+    options: { limit?: number; offset?: number } = {},
+  ) =>
+    attributeEndpoint((api) =>
+      api.getPolicyDeploymentDevices({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          version: String(version),
+        },
+        query: { limit: options.limit ?? 50, offset: options.offset ?? 0 },
+      }),
+    ),
   rollbackPolicy: (tenantId: RouteParam, id: RouteParam, deploymentId: string) =>
     endpoint((api) =>
       api.rollbackPolicy({
@@ -2456,6 +2493,23 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.policyScope(tenantId, id),
       queryFn: () => enterprise.getPolicyScope(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  policyDeployment: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    version: string | number,
+    options: { limit?: number; offset?: number } = {},
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.policyDeployment(
+        tenantId,
+        id,
+        version,
+        options.limit ?? 50,
+        options.offset ?? 0,
+      ),
+      queryFn: () => enterprise.getPolicyDeploymentDevices(tenantId, id, version, options),
       enabled: Boolean(tenantId && id) && !isServer,
     }),
   groupScope: (tenantId: RouteParam, id: RouteParam) =>

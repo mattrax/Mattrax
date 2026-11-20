@@ -20,6 +20,7 @@ import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { HttpApiSchema } from "effect/http-api";
 import { MobileconfigPreview } from "../Policy.js";
 import { GroupScopeSummary, PolicyScopeSummary } from "../PolicyScope.js";
+import { PolicyDeploymentProgressResponse } from "../PolicyDeployment.js";
 import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
@@ -96,6 +97,25 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     }),
   )
   .add(
+    // Per-device progress for one saved policy version. This lives here rather
+    // than in `EnterpriseApi` for the same compiler-size reason as the scope
+    // endpoints above. `:version` accepts a number or "latest"; the handler
+    // resolves "latest" to the newest row so the dashboard needs one request.
+    HttpApiEndpoint.get(
+      "getPolicyDeploymentDevices",
+      "/v1/tenants/:tenantId/policies/:id/deployments/:version/devices",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: { tenantId: Schema.String, id: Schema.String, version: Schema.String },
+        query: Schema.Struct({
+          limit: Schema.optional(Schema.Number),
+          offset: Schema.optional(Schema.Number),
+        }),
+        success: PolicyDeploymentProgressResponse,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("getGroupScope", "/v1/tenants/:tenantId/groups/:id/scope", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
@@ -150,16 +170,12 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
   .add(
     // Bulk member operations live here rather than in `EnterpriseApi`: that
     // group's generated declaration is already at the compiler's size limit.
-    HttpApiEndpoint.post(
-      "patchTenantAccountRoles",
-      "/v1/tenants/:tenantId/accounts/roles",
-      {
-        error: EnterpriseTenantWriteErrors,
-        params: TenantParam,
-        payload: PatchTenantAccountRolesRequest,
-        success: BulkUpdateResult,
-      },
-    ),
+    HttpApiEndpoint.post("patchTenantAccountRoles", "/v1/tenants/:tenantId/accounts/roles", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchTenantAccountRolesRequest,
+      success: BulkUpdateResult,
+    }),
   )
   .add(
     HttpApiEndpoint.post(

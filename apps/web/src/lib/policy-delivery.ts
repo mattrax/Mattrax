@@ -1,4 +1,9 @@
-import type { PolicyDeliveryInfo, PolicyDeliveryState } from "@mattrax/enterprise-domain/client";
+import type {
+  PolicyDeploymentCounts,
+  PolicyDeploymentDeviceStatus,
+  PolicyDeliveryInfo,
+  PolicyDeliveryState,
+} from "@mattrax/enterprise-domain/client";
 
 /**
  * Presentation for the policy list's delivery and scope columns.
@@ -130,14 +135,107 @@ const describe = (delivery: PolicyDeliveryInfo): string => {
   }
 };
 
+/** Label, tone and dot for a rollup state, without its explanatory copy. */
+export const policyDeliveryStatePresentation = (state: PolicyDeliveryState) => ({
+  label: label[state],
+  tone: tone[state],
+  dot: dot[state],
+});
+
 export const policyDeliveryPresentation = (
   delivery: PolicyDeliveryInfo,
 ): PolicyDeliveryPresentation => ({
-  label: label[delivery.state],
+  ...policyDeliveryStatePresentation(delivery.state),
   description: describe(delivery),
-  tone: tone[delivery.state],
-  dot: dot[delivery.state],
 });
+
+/**
+ * Presentation for one device's progress in a deployment. The copy is aligned
+ * with the API's status semantics: untracked and not-applicable are not
+ * failures, and only delivered proves the version arrived.
+ */
+export const policyDeploymentDevicePresentation: Record<
+  PolicyDeploymentDeviceStatus,
+  { label: string; tone: PolicyDeliveryTone; dot: NonNullable<PolicyDeliveryPresentation["dot"]> }
+> = {
+  delivered: {
+    label: "Delivered",
+    tone: "success",
+    dot: "success",
+  },
+  pending: {
+    label: "Pending",
+    tone: "warning",
+    dot: "warning",
+  },
+  failed: {
+    label: "Failed",
+    tone: "destructive",
+    dot: "destructive",
+  },
+  "not-applicable": {
+    label: "Not applicable",
+    tone: "subtle",
+    dot: "neutral",
+  },
+  untracked: {
+    label: "Untracked",
+    tone: "outline",
+    dot: "neutral",
+  },
+  "not-in-scope": {
+    label: "Left scope",
+    tone: "outline",
+    dot: "neutral",
+  },
+};
+
+export type PolicyProgressSegment = {
+  readonly label: string;
+  readonly value: number;
+  /** Tailwind background class for the segment. */
+  readonly class: string;
+};
+
+const progressSegment = (label: string, value: number, tone: string): PolicyProgressSegment => ({
+  label,
+  value,
+  class: tone,
+});
+
+/** Segments for the deployment page's bar, over the scoped device set. */
+export const policyDeploymentSegments = (
+  counts: PolicyDeploymentCounts,
+): ReadonlyArray<PolicyProgressSegment> => [
+  progressSegment("Delivered", counts.delivered, "bg-success"),
+  progressSegment("Pending", counts.pending, "bg-warning"),
+  progressSegment("Failed", counts.failed, "bg-destructive"),
+  progressSegment("Not applicable", counts.notApplicable, "bg-muted-foreground/25"),
+  progressSegment("Untracked", counts.untracked, "bg-border"),
+];
+
+/**
+ * Segments for the overview's compact bar. The rollup does not split tracked
+ * and untracked devices the same way as the per-device list, so the untracked
+ * slice is derived: every scoped device that is not on the declarative path.
+ */
+export const policyDeliverySegments = (
+  delivery: PolicyDeliveryInfo,
+): ReadonlyArray<PolicyProgressSegment> => {
+  const untracked = Math.max(
+    0,
+    delivery.scopedDevices - delivery.trackedDevices - delivery.legacyDevices,
+  );
+
+  return [
+    progressSegment("Delivered", delivery.deliveredDevices, "bg-success"),
+    progressSegment("Pending", delivery.pendingDevices, "bg-warning"),
+    progressSegment("Failed", delivery.failedDevices, "bg-destructive"),
+    progressSegment("Not applicable", delivery.overriddenDevices, "bg-muted-foreground/25"),
+    progressSegment("Legacy profile", delivery.legacyDevices, "bg-border"),
+    progressSegment("Untracked", untracked, "bg-border"),
+  ];
+};
 
 /** Action-needed first, so a default ascending sort surfaces broken policies. */
 const sortRank: Record<PolicyDeliveryState, number> = {
@@ -160,8 +258,7 @@ export const policyDeliverySortRank = (state: PolicyDeliveryState | undefined) =
  * A policy is enabled unless the API explicitly says otherwise. Older
  * responses predate the flag, so an absent value must not disable a policy.
  */
-export const isPolicyEnabled = (policy: { readonly enabled?: boolean }) =>
-  policy.enabled !== false;
+export const isPolicyEnabled = (policy: { readonly enabled?: boolean }) => policy.enabled !== false;
 
 /** Label, tone and explanation for a policy's enable/disable state. */
 export const policyStatePresentation = (policy: { readonly enabled?: boolean }) =>
