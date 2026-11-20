@@ -53,6 +53,12 @@ export interface SendEmail {
     readonly subject: string;
     readonly text?: string;
     readonly html?: string;
+    readonly attachments?: ReadonlyArray<{
+      readonly disposition: "attachment";
+      readonly filename: string;
+      readonly type: string;
+      readonly content: ArrayBuffer;
+    }>;
   }): Promise<{ readonly messageId: string }>;
 }
 
@@ -97,6 +103,15 @@ const replyToForBinding = (replyTo: EmailReplyTo | undefined) =>
       ? replyTo
       : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
 
+/** Decode a base64 attachment for the binding's ArrayBuffer field. */
+const attachmentContent = (base64: string): ArrayBuffer => {
+  const bytes = Buffer.from(base64.replaceAll(/\s+/g, ""), "base64");
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+
+  return copy.buffer;
+};
+
 /** Adapter for the Cloudflare `send_email` binding. */
 export const cloudEmailTransport = (binding: SendEmail): EmailTransport => ({
   send: (message) =>
@@ -109,6 +124,16 @@ export const cloudEmailTransport = (binding: SendEmail): EmailTransport => ({
           subject: message.subject,
           text: message.text,
           html: message.html,
+          ...(message.attachments && message.attachments.length > 0
+            ? {
+                attachments: message.attachments.map((attachment) => ({
+                  disposition: "attachment" as const,
+                  filename: attachment.filename,
+                  type: attachment.contentType,
+                  content: attachmentContent(attachment.contentBase64),
+                })),
+              }
+            : {}),
         }),
       catch: (cause) =>
         new EmailFailure({
@@ -139,6 +164,7 @@ export const devMailboxTransport = (): EmailTransport => ({
           subject: message.subject,
           text: message.text ?? "",
           html: message.html,
+          attachments: message.attachments,
         });
 
         // The link is the point of the mailbox during local development.

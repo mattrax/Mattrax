@@ -630,6 +630,66 @@ Tenant bundles are not a database backup. Also back up:
 Restore order: database → R2 → secrets/config → migrations → deploy → verify health and
 readiness → re-enable cron.
 
+## Dashboards and reports
+
+A dashboard is the report definition. Widgets run live queries against the tenant; a
+scheduled report takes a snapshot of the same widgets, renders it, and emails it to the
+chosen recipients.
+
+### Schedules
+
+| Setting    | Meaning                                                                |
+| ---------- | ---------------------------------------------------------------------- |
+| `daily`    | Every day at the chosen UTC hour.                                       |
+| `weekly`   | Every Monday at the chosen UTC hour.                                    |
+| `monthly`  | The 1st of each month at the chosen UTC hour.                           |
+
+The schedule is evaluated in UTC. The hourly cron generates any report whose latest slot
+has not been queued, so changing the hour takes effect on the next tick rather than the
+next day. A claim row keyed by `(report, period)` and an outbox dedupe key per recipient
+make a repeated tick or a retry a no-op: the same digest can be retried after a provider
+failure without sending a second copy.
+
+### Formats
+
+- **CSV** — one labelled section per widget (title, type, total, then a header row and
+  rows). Columns use the widget's configured order, or the dataset default. Values are
+  RFC 4180 escaped and formula-prefixed fields are neutralised.
+- **PDF** — a dependency-free text PDF (Helvetica) with headings, totals and tables.
+  Charts are represented by their underlying numbers. Core fonts are ASCII/WinAnsi, so
+  non-Latin characters render as `?` rather than corrupting the text stream.
+- **Email body** — a print-ready HTML summary is the message body; the CSV or PDF is the
+  attachment.
+
+### Recipients and permissions
+
+Viewing reports and downloading the current dashboard needs `dashboards.read`; creating,
+editing, deleting and sending needs `dashboards.write`. Tenant members are stored by
+account id and re-checked on every send, so a removed member stops receiving mail.
+External addresses are only writable by a built-in owner or admin, and at most 20
+recipients are accepted per report. Disabled and unverified accounts are skipped at send
+time: report mail carries tenant data and must not land in an unverified mailbox.
+
+### What a dashboard can show
+
+| Data from the report brief                  | Where it comes from                                |
+| ------------------------------------------- | -------------------------------------------------- |
+| Active devices                              | Devices dataset (status, health, check-in age)     |
+| OS versions                                 | Devices dataset (group by OS version)              |
+| Installed/outdated software                 | Software dataset (managed/update state, versions)  |
+| Device inventory                            | Devices dataset (table with model, serial, dates)  |
+| User inventory and active/inactive users    | Users dataset (name, email, status, source)        |
+
+Two gaps are deliberate rather than accidental:
+
+- **Patch state.** A macOS device's SOFA update status is derived on the device page and
+  is not part of the dashboard query row, so a dashboard can filter and group by OS
+  version but cannot ask "which Macs are behind on patches". Adding it means extending
+  the shared device projection, not inventing a report-only query.
+- **Spending.** Mattrax and app spending live behind the billing service and Stripe,
+  which the dashboard query layer does not read. A spending widget would need a new
+  dataset (and a tenant-scoped billing read) rather than a query on the device snapshot.
+
 ## Next
 
 - [Configuration](/operations/configuration)

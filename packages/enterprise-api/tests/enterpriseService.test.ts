@@ -6831,3 +6831,154 @@ describe("Windows activation reporting", () => {
     expect(macRow.windows).toBeNull();
   });
 });
+
+describe("dashboard reports", () => {
+  it("maps report methods to dashboard read/write permissions", () => {
+    expect(permissionForMethod("listDashboardReports")).toBe("dashboards.read");
+    expect(permissionForMethod("listDashboardReportRuns")).toBe("dashboards.read");
+    expect(permissionForMethod("exportDashboardReport")).toBe("dashboards.read");
+    expect(permissionForMethod("createDashboardReport")).toBe("dashboards.write");
+    expect(permissionForMethod("patchDashboardReport")).toBe("dashboards.write");
+    expect(permissionForMethod("deleteDashboardReport")).toBe("dashboards.write");
+    expect(permissionForMethod("sendDashboardReport")).toBe("dashboards.write");
+  });
+
+  it("creates, edits, queues and deletes a report scoped to its dashboard", async () => {
+    const { db, service, headers } = await makeContext({
+      email: makeEmailTransport(async () => undefined),
+    });
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const dashboard = await runEffect(
+      service.createDashboard(request(headers), tenant.id, { name: "Fleet" }),
+    );
+
+    const created = await runEffect(
+      service.createDashboardReport(request(headers), tenant.id, dashboard.id, {
+        name: "Weekly digest",
+        frequency: "weekly",
+        hourUtc: 8,
+        format: "csv",
+        recipients: { memberAccountIds: [], emails: ["owner@example.com"] },
+      }),
+    );
+
+    expect(created).toMatchObject({
+      name: "Weekly digest",
+      frequency: "weekly",
+      hourUtc: 8,
+      format: "csv",
+      enabled: true,
+      recipients: { memberAccountIds: [], emails: ["owner@example.com"] },
+    });
+    expect(created.nextRunAt).not.toBeNull();
+
+    const listed = await runEffect(
+      service.listDashboardReports(request(headers), tenant.id, dashboard.id),
+    );
+
+    expect(listed.reports).toHaveLength(1);
+
+    await runEffect(
+      service.patchDashboardReport(request(headers), tenant.id, dashboard.id, created.id, {
+        enabled: false,
+        hourUtc: 9,
+      }),
+    );
+
+    const afterPatch = await runEffect(
+      service.listDashboardReports(request(headers), tenant.id, dashboard.id),
+    );
+
+    expect(afterPatch.reports[0]).toMatchObject({ enabled: false, hourUtc: 9 });
+
+    // Send now renders the dashboard and queues the attachment.
+    const run = await runEffect(
+      service.sendDashboardReport(request(headers), tenant.id, dashboard.id, created.id),
+    );
+
+    expect(run.status).toBe("queued");
+    expect(run.recipients).toEqual(["owner@example.com"]);
+    expect(db.store.email_outbox).toHaveLength(1);
+
+    const runs = await runEffect(
+      service.listDashboardReportRuns(request(headers), tenant.id, dashboard.id, created.id),
+    );
+
+    expect(runs.runs[0]?.id).toBe(run.id);
+
+    await runEffect(
+      service.deleteDashboardReport(request(headers), tenant.id, dashboard.id, created.id),
+    );
+
+    const afterDelete = await runEffect(
+      service.listDashboardReports(request(headers), tenant.id, dashboard.id),
+    );
+
+    expect(afterDelete.reports).toHaveLength(0);
+  });
+
+  it("requires dashboards.write to manage a report", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const dashboard = await runEffect(
+      service.createDashboard(request(headers), tenant.id, { name: "Fleet" }),
+    );
+
+    // Demote the owner to a plain member: reads stay available, writes do not.
+    db.store.member[0]!.role = "member";
+
+    await expect(
+      runEffect(
+        service.createDashboardReport(request(headers), tenant.id, dashboard.id, {
+          name: "Nope",
+          frequency: "daily",
+          format: "csv",
+          recipients: { memberAccountIds: [], emails: [] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+  });
+
+  it("cannot reach a report through another tenant", async () => {
+    const { service, headers } = await makeContext();
+
+    const first = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const second = await runEffect(
+      service.createTenant(request(headers), { name: "Globex", slug: "globex" }),
+    );
+
+    const dashboard = await runEffect(
+      service.createDashboard(request(headers), first.id, { name: "Fleet" }),
+    );
+
+    const report = await runEffect(
+      service.createDashboardReport(request(headers), first.id, dashboard.id, {
+        name: "Digest",
+        frequency: "daily",
+        format: "csv",
+        recipients: { memberAccountIds: [], emails: ["owner@example.com"] },
+      }),
+    );
+
+    await expect(
+      runEffect(service.listDashboardReports(request(headers), second.id, dashboard.id)),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+
+    await expect(
+      runEffect(
+        service.deleteDashboardReport(request(headers), second.id, dashboard.id, report.id),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+});

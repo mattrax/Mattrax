@@ -2,7 +2,7 @@ import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
-import { Option, Schema } from "effect";
+import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import { ErrorText, Page, QueryError, relativeTime } from "~/components/mdm/common";
 import {
@@ -11,6 +11,7 @@ import {
   useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
+import { DashboardReportsPanel } from "~/components/dashboard/reports";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { toast } from "~/components/toast";
@@ -70,7 +71,7 @@ const decodeWidgetType = Schema.decodeUnknownOption(
   Schema.Literals(["table", "pie", "stat", "markdown"]),
 );
 
-const decodeDataset = Schema.decodeUnknownOption(Schema.Literals(["devices", "software"]));
+const decodeDataset = Schema.decodeUnknownOption(Schema.Literals(["devices", "software", "users"]));
 
 const widgetConfig = (widget: DashboardWidget): MutableJsonObject => {
   const decoded = Option.getOrUndefined(decodeWidgetConfig(widget.config));
@@ -78,7 +79,7 @@ const widgetConfig = (widget: DashboardWidget): MutableJsonObject => {
   return decoded === undefined ? {} : { ...decoded };
 };
 
-const isDataset = Schema.is(Schema.Literals(["devices", "software"]));
+const isDataset = Schema.is(Schema.Literals(["devices", "software", "users"]));
 
 const configString = (config: MutableJsonObject, key: string) => {
   const value = config[key];
@@ -90,6 +91,15 @@ const configColumns = (config: MutableJsonObject) => {
   const columns = config.columns;
 
   return Array.isArray(columns) ? columns.filter(Schema.is(Schema.String)) : [];
+};
+
+/** `all` is represented by an empty filter, not a stored literal. */
+const configUserStatus = (config: MutableJsonObject) => {
+  const filter = config.userFilter;
+
+  return Schema.is(Schema.JsonObject)(filter) && Schema.is(Schema.String)(filter.status)
+    ? filter.status
+    : "all";
 };
 
 const rowHeight = 64;
@@ -165,6 +175,32 @@ const softwareColumns = [
   ["deviceCount", "Devices"],
   ["bundleId", "Bundle ID"],
 ] as const;
+
+const userDimensions = [
+  ["status", "Status"],
+  ["source", "Identity provider"],
+] as const;
+
+const userColumns = [
+  ["name", "Name"],
+  ["email", "Email"],
+  ["status", "Status"],
+  ["source", "Source"],
+] as const;
+
+const tableColumnsFor = (dataset: "devices" | "software" | "users") =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => ["name", "version", "managed", "deviceCount"]),
+    Match.when("users", () => ["name", "email", "status", "source"]),
+    Match.orElse(() => ["name", "platform", "osVersion", "status", "health", "lastSeenAt"]),
+  );
+
+const pieDimensionFor = (dataset: "devices" | "software" | "users") =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "managed"),
+    Match.when("users", () => "status"),
+    Match.orElse(() => "platform"),
+  );
 
 const overlaps = (left: Layout, right: Layout) =>
   left.x < right.x + right.w &&
@@ -417,7 +453,8 @@ export default function DashboardPage() {
 
       const config = { ...value.config };
 
-      if (value.type !== "markdown") config.query = value.config.query ?? { all: [] };
+      if (value.type !== "markdown" && config.dataset !== "users")
+        config.query = value.config.query ?? { all: [] };
 
       if (value.type === "markdown" && !String(config.markdown ?? "").trim())
         throw new Error("Write some markdown first");
@@ -466,7 +503,8 @@ export default function DashboardPage() {
 
       const config = { ...value.config };
 
-      if (value.type !== "markdown") config.query = value.config.query ?? { all: [] };
+      if (value.type !== "markdown" && config.dataset !== "users")
+        config.query = value.config.query ?? { all: [] };
 
       const restore = await optimisticUpdate<{ widgets: DashboardWidget[] }>(
         queryClient,
@@ -634,14 +672,25 @@ export default function DashboardPage() {
     window.addEventListener("pointercancel", up);
   };
 
-  const dataset = (): "devices" | "software" => {
+  const dataset = (): "devices" | "software" | "users" => {
     const value = draft().config.dataset;
 
     return isDataset(value) ? value : "devices";
   };
 
-  const dimensionOptions = () => (dataset() === "software" ? softwareDimensions : deviceDimensions);
-  const columnOptions = () => (dataset() === "software" ? softwareColumns : deviceColumns);
+  const dimensionOptions = () =>
+    Match.value(dataset()).pipe(
+      Match.when("software", () => softwareDimensions),
+      Match.when("users", () => userDimensions),
+      Match.orElse(() => deviceDimensions),
+    );
+
+  const columnOptions = () =>
+    Match.value(dataset()).pipe(
+      Match.when("software", () => softwareColumns),
+      Match.when("users", () => userColumns),
+      Match.orElse(() => deviceColumns),
+    );
 
   const toggleColumn = (id: string) => {
     setDraft((value) => {
@@ -897,6 +946,8 @@ export default function DashboardPage() {
         </DashboardWidgetBatchProvider>
       </Show>
 
+      <DashboardReportsPanel tenantId={params.tenantId!} dashboardId={params.dashboardId!} />
+
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
         <DialogContent class="max-w-2xl rounded-xl border border-border bg-card p-5">
           <DialogHeader>
@@ -976,13 +1027,19 @@ export default function DashboardPage() {
                         const config = defaultConfig(value.type);
 
                         if (value.type === "table")
-                          config.columns =
-                            nextDataset === "software"
-                              ? ["name", "version", "managed", "deviceCount"]
-                              : ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+                          config.columns = [...tableColumnsFor(nextDataset)];
 
-                        if (value.type === "pie")
-                          config.dimension = nextDataset === "software" ? "managed" : "platform";
+                        if (value.type === "pie") config.dimension = pieDimensionFor(nextDataset);
+
+                        config.dataset = nextDataset;
+
+                        if (nextDataset === "users") {
+                          delete config.query;
+                          config.userFilter = {};
+                        } else {
+                          delete config.userFilter;
+                          config.query = { all: [] };
+                        }
 
                         return {
                           ...value,
@@ -993,6 +1050,7 @@ export default function DashboardPage() {
                   >
                     <option value="devices">Devices</option>
                     <option value="software">Software inventory</option>
+                    <option value="users">Users (directory)</option>
                   </select>
                 </label>
                 <Show when={draft().type === "pie"}>
@@ -1036,20 +1094,56 @@ export default function DashboardPage() {
                 </Show>
               </div>
 
-              <div class="rounded-lg border border-border bg-surface p-2.5">
-                <DeviceQueryBuilder
-                  compact
-                  dataset={dataset()}
-                  disabled={saveWidget.isPending}
-                  query={Option.getOrUndefined(decodeDeviceQuery(draft().config.query)) ?? null}
-                  onChange={(query) =>
-                    setDraft((value) => ({
-                      ...value,
-                      config: { ...value.config, query: query ?? { all: [] } },
-                    }))
-                  }
-                />
-              </div>
+              <Show
+                when={dataset() !== "users"}
+                fallback={
+                  <div class="rounded-lg border border-border bg-surface p-2.5">
+                    <label class="block">
+                      <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                        Directory filter
+                      </span>
+                      <select
+                        class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        value={configUserStatus(draft().config)}
+                        onChange={(event) => {
+                          const status = event.currentTarget.value;
+
+                          const userFilter: MutableJsonObject =
+                            status === "all" ? {} : { status };
+
+                          setDraft((value) => ({
+                            ...value,
+                            config: { ...value.config, userFilter },
+                          }));
+                        }}
+                      >
+                        <option value="all">All users</option>
+                        <option value="active">Active only</option>
+                        <option value="disabled">Inactive only</option>
+                      </select>
+                    </label>
+                    <p class="mt-1.5 text-[11px] text-muted-foreground">
+                      The tenant directory, including people who have never signed in. Inactive
+                      people are accounts an administrator disabled.
+                    </p>
+                  </div>
+                }
+              >
+                <div class="rounded-lg border border-border bg-surface p-2.5">
+                  <DeviceQueryBuilder
+                    compact
+                    dataset={dataset()}
+                    disabled={saveWidget.isPending}
+                    query={Option.getOrUndefined(decodeDeviceQuery(draft().config.query)) ?? null}
+                    onChange={(query) =>
+                      setDraft((value) => ({
+                        ...value,
+                        config: { ...value.config, query: query ?? { all: [] } },
+                      }))
+                    }
+                  />
+                </div>
+              </Show>
 
               <Show when={draft().type === "table"}>
                 <div>

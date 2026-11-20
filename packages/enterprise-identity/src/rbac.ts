@@ -131,6 +131,9 @@ const DASHBOARD_READ = new Set([
   "getDashboard",
   "queryDashboard",
   "queryDashboardBatch",
+  "listDashboardReports",
+  "listDashboardReportRuns",
+  "exportDashboardReport",
 ]);
 
 const DASHBOARD_WRITE = new Set([
@@ -141,6 +144,10 @@ const DASHBOARD_WRITE = new Set([
   "patchDashboardWidget",
   "deleteDashboardWidget",
   "patchDashboardLayout",
+  "createDashboardReport",
+  "patchDashboardReport",
+  "deleteDashboardReport",
+  "sendDashboardReport",
 ]);
 
 const ENROLLMENT_READ = new Set([

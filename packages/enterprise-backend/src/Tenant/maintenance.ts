@@ -33,8 +33,9 @@ import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
 import type { EnterpriseDb } from "../schema.ts";
-import type { EmailTransport } from "@mattrax/email";
+import type { EmailAddress, EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";
+import { purgeDashboardReportRuns, runScheduledReports } from "../Dashboard/reportRun.ts";
 import { pruneLoginAttempts } from "../Account/loginAttempts.ts";
 
 /**
@@ -155,6 +156,14 @@ export type MaintenanceOptions = {
   readonly email?: EmailTransport | null;
   /** Maximum outbox deliveries in flight. Defaults to 4. */
   readonly emailOutboxConcurrency?: number;
+  /**
+   * Generate and queue due dashboard reports. Defaults to true. Reports are
+   * queued through the outbox and drained by the same run, so this has no
+   * effect without an email transport.
+   */
+  readonly reports?: boolean;
+  /** Envelope sender for report mail; defaults to the built-in sender. */
+  readonly reportEmailFrom?: EmailAddress;
   /** Attempts before an outbox row is permanently failed. Defaults to 5. */
   readonly emailOutboxMaxAttempts?: number;
   /**
@@ -313,6 +322,14 @@ export type MaintenanceResult = {
   readonly emailOutboxFailed: number;
   /** Delivered/failed outbox rows deleted by retention. */
   readonly purgedEmailOutbox: number;
+  /** Scheduled dashboard reports generated and queued this run. */
+  readonly reportsQueued: number;
+  /** Reports already queued for their period, or whose attempt cap is reached. */
+  readonly reportsSkipped: number;
+  /** Reports whose render or queue step failed (retried next run). */
+  readonly reportsFailed: number;
+  /** Report run history rows deleted by retention. */
+  readonly purgedReportRuns: number;
   /** Apps and Books licence pools refreshed by the scheduled sync. */
   readonly vppSynced: number;
   /** Tenants whose Apps and Books sync failed this run. */
@@ -539,6 +556,10 @@ export const runMaintenance = (
       emailOutboxRetried: 0,
       emailOutboxFailed: 0,
       purgedEmailOutbox: 0,
+      reportsQueued: 0,
+      reportsSkipped: 0,
+      reportsFailed: 0,
+      purgedReportRuns: 0,
       vppSynced: 0,
       vppFailed: 0,
     };
@@ -916,6 +937,29 @@ export const runMaintenance = (
           );
         }
       }
+    }
+
+    // 6a. Scheduled dashboard reports. Each report is a dashboard snapshot
+    //     rendered to CSV/PDF and queued for its recipients. Claiming a
+    //     `(report, period)` row makes this safe to run from the hourly and
+    //     daily triggers; the drain below delivers what this step queued.
+    if (options.reports !== false) {
+      if (options.email) {
+        const reports = yield* runScheduledReports({
+          db,
+          email: options.email,
+          from: options.reportEmailFrom,
+          now,
+        });
+
+        result.reportsQueued = reports.queued;
+        result.reportsSkipped = reports.skipped;
+        result.reportsFailed = reports.failed;
+      }
+
+      // Old attempts are pruned even when no mailer is configured: history
+      // written before a transport was removed would otherwise never expire.
+      result.purgedReportRuns = yield* purgeDashboardReportRuns(db, now);
     }
 
     // 6b. Drain the transactional-email outbox. Queued invitations,

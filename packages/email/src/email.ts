@@ -11,6 +11,17 @@ export type EmailReplyTo = { readonly name?: string; readonly email: string } | 
 
 export type EmailAddress = { readonly name: string; readonly email: string };
 
+/**
+ * One attachment. Content is base64 so a rendered message survives the
+ * transactional outbox's JSON column unchanged; adapters decode it at the
+ * provider boundary.
+ */
+export type EmailAttachment = {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly contentBase64: string;
+};
+
 export type OutboundEmailMessage = {
   readonly to: string | ReadonlyArray<string>;
   readonly from: EmailAddress;
@@ -18,6 +29,7 @@ export type OutboundEmailMessage = {
   readonly subject: string;
   readonly text?: string;
   readonly html?: string;
+  readonly attachments?: ReadonlyArray<EmailAttachment>;
 };
 
 /**

@@ -59,6 +59,7 @@ import {
   isMacOsDevice,
   DEVICE_SECURITY_INFO_STALE_AFTER_DAYS,
   defaultOverviewWidgets,
+  DASHBOARD_REPORTS_PER_DASHBOARD,
   defaultErrorCode,
   applicationsInventoryStale,
   containsPolicyVariables,
@@ -70,11 +71,10 @@ import {
   errorDiagnostic,
   evaluateDeviceQuery,
   normalizeDeviceCommandStatus,
-  type DashboardQueryRequest,
   type DashboardQueryBatchRequest,
-  type DeviceQuery,
   DeviceActionName,
   DashboardWidgetType,
+  DashboardReportFrequency,
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   DynamicGroupRules,
@@ -307,11 +307,21 @@ import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import { EMAIL_CODE_TTL_MS, emailCodeHash, generateEmailCode } from "@mattrax/enterprise-backend";
 import {
-  deviceBucket,
+  dashboardReportInfo,
+  listDashboardReportRuns,
+  loadDashboardReportDocument,
+  loadDeviceSnapshots,
+  nextScheduledReportSlot,
   normalizeWidgetConfig,
   normalizeWidgetLayout,
-  softwareBucket,
-  toBuckets,
+  reportCsv,
+  reportPdf,
+  reportScheduleProblem,
+  rowDeviceHealth,
+  runDashboardQuery,
+  runDashboardQueryBatch,
+  sendDashboardReportNow,
+  validateReportRecipients,
 } from "@mattrax/enterprise-backend";
 import {
   syncEntraDirectory,
@@ -437,7 +447,6 @@ import {
 } from "@mattrax/apple-business-manager";
 import {
   countDeviceHealth,
-  deriveDeviceHealth,
   groupDeviceHealthReasons,
   loadSoftwareUpdateCatalog,
   normalizeDeviceHealth,
@@ -1441,6 +1450,16 @@ const OWNER_ONLY_PERMISSIONS: ReadonlySet<string> = new Set([
  */
 const canWriteTenant = (role: string) =>
   role.split(",").some((item) => item === "owner" || item === "admin");
+
+/**
+ * External report recipients carry tenant data outside the organisation, so
+ * only built-in owners/admins may add one. A delegated custom role is excluded
+ * even when its role string still says `admin`.
+ */
+const canEmailExternalReportRecipients = (member: {
+  readonly role: string;
+  readonly customRoleId?: string | null;
+}) => member.customRoleId == null && canWriteTenant(member.role);
 
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
@@ -4154,56 +4173,6 @@ export const createEnterpriseService = ({
       return active.length;
     });
 
-  const rowDeviceHealth = (
-    device: Pick<
-      EnterpriseDevice,
-      | "status"
-      | "lastSeenAt"
-      | "diskTotal"
-      | "diskUsed"
-      | "proto"
-      | "model"
-      | "osEdition"
-      | "fileVaultEnabled"
-      | "batteryHealth"
-      | "bitLockerEnabled"
-      | "bitLockerStatus"
-      | "tpmVersion"
-      | "secureBootState"
-      | "domainName"
-      | "entraDeviceId"
-      | "securityUpdatedAt"
-    >,
-    declarations: ReadonlyArray<{
-      readonly identifier?: string;
-      readonly declarationType?: string;
-      readonly valid?: string | null;
-      readonly active?: boolean;
-      readonly reasons?: unknown;
-    }>,
-    awaitingConfiguration?: boolean | null,
-  ) =>
-    deriveDeviceHealth({
-      status: device.status,
-      awaitingConfiguration: awaitingConfiguration ?? null,
-      lastSeenAt: device.lastSeenAt,
-      declarations,
-      diskTotal: device.diskTotal,
-      diskUsed: device.diskUsed,
-      proto: device.proto,
-      model: device.model,
-      osEdition: device.osEdition,
-      fileVaultEnabled: device.fileVaultEnabled,
-      batteryHealth: device.batteryHealth,
-      bitLockerEnabled: device.bitLockerEnabled,
-      bitLockerStatus: device.bitLockerStatus,
-      tpmVersion: device.tpmVersion,
-      secureBootState: device.secureBootState,
-      domainName: device.domainName,
-      entraDeviceId: device.entraDeviceId,
-      windowsSecurityReported: device.securityUpdatedAt != null,
-    });
-
   /**
    * Health for a set of devices, derived from rows the caller already loaded.
    *
@@ -5529,104 +5498,25 @@ export const createEnterpriseService = ({
       .set({ updatedAt: now() })
       .where(eq(schema.dashboard.id, dashboardId));
 
-  /**
-   * Load every device in a tenant with the derived health and application
-   * inventory the shared query evaluator needs. Dashboard queries are
-   * evaluated in application code so they have exactly the same semantics as
-   * dynamic-group membership.
-   */
-  const loadDeviceSnapshots = (
-    organizationId: string,
-    candidates?: ReadonlyArray<typeof schema.device.$inferSelect>,
-    options: { readonly includeApplications?: boolean } = {},
-  ) =>
+  /** A report is only reachable through its dashboard and tenant. */
+  const requireDashboardReport = (organizationId: string, dashboardId: string, reportId: string) =>
     Effect.gen(function* () {
-      const rows = candidates
-        ? [...candidates]
-        : yield* db
-            .select()
-            .from(schema.device)
-            .where(eq(schema.device.organizationId, organizationId))
-            .orderBy(asc(schema.device.name), asc(schema.device.id));
-
-      const ids = rows.map((row) => row.id);
-
-      if (ids.length === 0) return [];
-
-      // Declarations, installed applications and ADE state are independent
-      // reads over the same id set; one wave instead of three sequential ones.
-      const [declarations, applications, awaiting] = yield* Effect.all(
-        [
-          queryEffect(
-            db
-              .select()
-              .from(schema.deviceDeclaration)
-              .where(inArray(schema.deviceDeclaration.deviceId, ids)),
+      const [row] = yield* db
+        .select()
+        .from(schema.dashboardReport)
+        .where(
+          and(
+            eq(schema.dashboardReport.id, reportId),
+            eq(schema.dashboardReport.dashboardId, dashboardId),
+            eq(schema.dashboardReport.organizationId, organizationId),
           ),
-          queryEffect(
-            // Count-only device stats do not render rows, so the application
-            // inventory scan is skipped unless the query actually references apps.
-            options.includeApplications === false
-              ? emptyRows<{ deviceId: string; bundleId: string; name: string | null }>()
-              : db
-                  .select({
-                    deviceId: schema.deviceApplication.deviceId,
-                    bundleId: schema.deviceApplication.bundleId,
-                    name: schema.deviceApplication.name,
-                  })
-                  .from(schema.deviceApplication)
-                  .where(
-                    and(
-                      eq(schema.deviceApplication.organizationId, organizationId),
-                      inArray(schema.deviceApplication.deviceId, ids),
-                    ),
-                  ),
-          ),
-          queryEffect(
-            db
-              .select({
-                deviceId: schema.deviceApple.deviceId,
-                awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
-              })
-              .from(schema.deviceApple)
-              .where(inArray(schema.deviceApple.deviceId, ids)),
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
+        )
+        .limit(1);
 
-      const awaitingByDevice = new Map(
-        awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
-      );
+      if (!row)
+        return yield* Effect.fail(new EnterpriseNotFound({ message: "Report not found" }));
 
-      const declarationsByDevice = new Map<string, Array<(typeof declarations)[number]>>();
-
-      for (const declaration of declarations) {
-        const list = declarationsByDevice.get(declaration.deviceId) ?? [];
-        list.push(declaration);
-        declarationsByDevice.set(declaration.deviceId, list);
-      }
-
-      const applicationsByDevice = new Map<
-        string,
-        Array<{ bundleId: string; name: string | null }>
-      >();
-
-      for (const application of applications) {
-        const list = applicationsByDevice.get(application.deviceId) ?? [];
-        list.push({ bundleId: application.bundleId, name: application.name });
-        applicationsByDevice.set(application.deviceId, list);
-      }
-
-      return rows.map((row) => ({
-        row,
-        health: rowDeviceHealth(
-          row,
-          declarationsByDevice.get(row.id) ?? [],
-          awaitingByDevice.get(row.id) ?? null,
-        ),
-        applications: applicationsByDevice.get(row.id) ?? [],
-      }));
+      return row;
     });
 
   const builtInRoleDescription = (role: string) => {
@@ -5639,318 +5529,6 @@ export const createEnterpriseService = ({
         return "Read-only access to tenant data.";
     }
   };
-
-  const groupBucketOrder = (groupBy: string | undefined): ReadonlyArray<string> | undefined => {
-    switch (groupBy) {
-      case "health":
-        return ["Healthy", "Attention", "Missing", "Critical", "Unknown"];
-      case "platform":
-        return ["Apple", "Windows", "Android", "Unknown"];
-      default:
-        return undefined;
-    }
-  };
-
-  /** Whether any clause of a dashboard query needs installed-application data. */
-  const deviceQueryNeedsApplications = (query: DeviceQuery): boolean =>
-    (query.all ?? [])
-      .concat(query.any ?? [], query.none ?? [])
-      .some((condition) => condition.field === "application");
-
-  const isUnfilteredDeviceQuery = (query: DeviceQuery): boolean =>
-    (query.all?.length ?? 0) === 0 &&
-    (query.any?.length ?? 0) === 0 &&
-    (query.none?.length ?? 0) === 0;
-
-  type DeviceDashboardSnapshot = {
-    row: typeof schema.device.$inferSelect;
-    health: ReturnType<typeof rowDeviceHealth>;
-    applications: ReadonlyArray<{ bundleId: string; name: string | null }>;
-  };
-
-  /** A stat card renders only `total`. */
-  const dashboardCountOnly = (payload: DashboardQueryRequest): boolean =>
-    payload.countOnly === true && payload.dataset === "devices" && !payload.groupBy;
-
-  /**
-   * Device health is derived rather than stored, so everything that needs it
-   * loads one snapshot of the matching devices. The whole-fleet read is skipped
-   * for an unfiltered count, which MySQL can answer directly.
-   */
-  const dashboardNeedsSnapshot = (payload: DashboardQueryRequest): boolean =>
-    !(
-      payload.dataset === "devices" &&
-      dashboardCountOnly(payload) &&
-      isUnfilteredDeviceQuery(payload.query)
-    );
-
-  const dashboardSnapshot = (
-    organizationId: string,
-    payloads: ReadonlyArray<DashboardQueryRequest>,
-  ) =>
-    loadDeviceSnapshots(organizationId, undefined, {
-      includeApplications: payloads.some(
-        (payload) => payload.dataset === "devices" && deviceQueryNeedsApplications(payload.query),
-      ),
-    });
-
-  const matchingSnapshots = (
-    snapshots: ReadonlyArray<DeviceDashboardSnapshot>,
-    payload: DashboardQueryRequest,
-    timestamp: Date,
-  ) =>
-    snapshots.filter((snapshot) =>
-      evaluateDeviceQuery(
-        payload.query,
-        {
-          ...snapshot.row,
-          health: snapshot.health,
-          applications: snapshot.applications,
-        },
-        { now: timestamp },
-      ),
-    );
-
-  const projectDeviceDashboardQuery = (
-    payload: DashboardQueryRequest,
-    matches: ReadonlyArray<DeviceDashboardSnapshot>,
-    timestamp: Date,
-  ) => {
-    const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
-
-    if (dashboardCountOnly(payload)) return { total: matches.length, buckets: [], rows: [] };
-
-    const buckets = payload.groupBy
-      ? toBuckets(
-          matches.map((snapshot) =>
-            deviceBucket(snapshot.row, payload.groupBy!, snapshot.health, timestamp),
-          ),
-          groupBucketOrder(payload.groupBy),
-        )
-      : [];
-
-    return {
-      total: matches.length,
-      buckets,
-      rows: matches.slice(0, limit).map((snapshot) => ({
-        id: snapshot.row.id,
-        name: snapshot.row.name,
-        platform: snapshot.row.proto,
-        osVersion: snapshot.row.osVersion,
-        model: snapshot.row.model,
-        serial: snapshot.row.serial,
-        status: snapshot.row.status,
-        health: snapshot.health.level,
-        lastSeenAt: iso(snapshot.row.lastSeenAt),
-        enrolledAt: iso(snapshot.row.enrolledAt),
-      })),
-    };
-  };
-
-  type DeviceApplicationRow = typeof schema.deviceApplication.$inferSelect;
-
-  /**
-   * One installed-application read for every software widget in a batch.
-   *
-   * Software widgets bucket the same rows by bundle id, so loading them once
-   * avoids one whole-fleet inventory scan per widget.
-   */
-  const loadApplicationsByDevice = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
-    Effect.gen(function* () {
-      const byDevice = new Map<string, DeviceApplicationRow[]>();
-
-      if (deviceIds.length === 0) return byDevice;
-
-      const rows = yield* db
-        .select()
-        .from(schema.deviceApplication)
-        .where(
-          and(
-            eq(schema.deviceApplication.organizationId, organizationId),
-            inArray(schema.deviceApplication.deviceId, [...deviceIds]),
-          ),
-        );
-
-      for (const row of rows) {
-        const list = byDevice.get(row.deviceId);
-
-        if (list) list.push(row);
-        else byDevice.set(row.deviceId, [row]);
-      }
-
-      return byDevice;
-    });
-
-  const projectSoftwareDashboardQuery = (
-    organizationId: string,
-    payload: DashboardQueryRequest,
-    matches: ReadonlyArray<DeviceDashboardSnapshot>,
-    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
-  ) =>
-    Effect.gen(function* () {
-      const limit = Math.min(Math.max(Math.trunc(Number(payload.limit ?? 100)) || 100, 1), 500);
-      const matchingIds = matches.map((snapshot) => snapshot.row.id);
-
-      const applications = sharedApplications
-        ? matchingIds.flatMap((id) => sharedApplications.get(id) ?? [])
-        : matchingIds.length
-          ? yield* db
-              .select()
-              .from(schema.deviceApplication)
-              .where(
-                and(
-                  eq(schema.deviceApplication.organizationId, organizationId),
-                  inArray(schema.deviceApplication.deviceId, matchingIds),
-                ),
-              )
-          : [];
-
-      type SoftwareGroup = {
-        bundleId: string;
-        name: string | null;
-        version: string | null;
-        isManaged: boolean;
-        hasUpdateAvailable: boolean;
-        devices: Set<string>;
-      };
-
-      const groups = new Map<string, SoftwareGroup>();
-
-      for (const application of applications) {
-        const group = groups.get(application.bundleId) ?? {
-          bundleId: application.bundleId,
-          name: application.name,
-          version: application.version,
-          isManaged: false,
-          hasUpdateAvailable: false,
-          devices: new Set<string>(),
-        };
-
-        group.name ??= application.name;
-        group.version ??= application.version;
-        group.isManaged ||= application.isManaged;
-        group.hasUpdateAvailable ||= application.hasUpdateAvailable;
-        group.devices.add(application.deviceId);
-        groups.set(application.bundleId, group);
-      }
-
-      const software = [...groups.values()].sort((left, right) =>
-        (left.name ?? left.bundleId).localeCompare(right.name ?? right.bundleId),
-      );
-
-      const buckets = payload.groupBy
-        ? toBuckets(
-            software.map((application) =>
-              payload.groupBy === "name"
-                ? (application.name ?? application.bundleId)
-                : softwareBucket(application, payload.groupBy!),
-            ),
-            payload.groupBy === "managed"
-              ? ["Managed", "Unmanaged"]
-              : payload.groupBy === "updates" || payload.groupBy === "hasUpdate"
-                ? ["Update available", "Up to date"]
-                : undefined,
-          )
-        : [];
-
-      return {
-        total: software.length,
-        buckets,
-        rows: software.slice(0, limit).map((application) => ({
-          id: application.bundleId,
-          name: application.name ?? application.bundleId,
-          bundleId: application.bundleId,
-          version: application.version,
-          managed: application.isManaged,
-          deviceCount: application.devices.size,
-        })),
-      };
-    });
-
-  const evaluateDashboardQuery = (
-    organizationId: string,
-    payload: DashboardQueryRequest,
-    snapshots: ReadonlyArray<DeviceDashboardSnapshot> | null,
-    timestamp: Date,
-    sharedApplications?: ReadonlyMap<string, ReadonlyArray<DeviceApplicationRow>>,
-  ) =>
-    Effect.gen(function* () {
-      if (
-        payload.dataset === "devices" &&
-        snapshots === null &&
-        dashboardCountOnly(payload) &&
-        isUnfilteredDeviceQuery(payload.query)
-      ) {
-        const [row] = yield* db
-          .select({ value: count() })
-          .from(schema.device)
-          .where(eq(schema.device.organizationId, organizationId));
-
-        return { total: Number(row?.value ?? 0), buckets: [], rows: [] };
-      }
-
-      const matches = matchingSnapshots(snapshots ?? [], payload, timestamp);
-
-      return payload.dataset === "devices"
-        ? projectDeviceDashboardQuery(payload, matches, timestamp)
-        : yield* projectSoftwareDashboardQuery(
-            organizationId,
-            payload,
-            matches,
-            sharedApplications,
-          );
-    });
-
-  const runDashboardQuery = (organizationId: string, payload: DashboardQueryRequest) =>
-    Effect.gen(function* () {
-      const timestamp = now();
-
-      const snapshots = dashboardNeedsSnapshot(payload)
-        ? yield* dashboardSnapshot(organizationId, [payload])
-        : null;
-
-      return yield* evaluateDashboardQuery(organizationId, payload, snapshots, timestamp);
-    });
-
-  /**
-   * Evaluate every widget of a dashboard against one tenant snapshot.
-   *
-   * Each widget used to be its own request and its own whole-fleet read, so a
-   * default overview paid for the device table (and health/declaration reads)
-   * five times. Queries share the snapshot here and are evaluated in memory;
-   * only unfiltered stat cards still need their own `COUNT(*)`.
-   */
-  const runDashboardQueryBatch = (
-    organizationId: string,
-    payloads: ReadonlyArray<DashboardQueryRequest>,
-  ) =>
-    Effect.gen(function* () {
-      if (payloads.length === 0) return { results: [] };
-
-      const timestamp = now();
-
-      const snapshots = payloads.some(dashboardNeedsSnapshot)
-        ? yield* dashboardSnapshot(organizationId, payloads)
-        : null;
-
-      // Several software widgets bucket the same inventory, so read it once.
-      const sharedApplications =
-        snapshots && payloads.filter((payload) => payload.dataset === "software").length > 1
-          ? yield* loadApplicationsByDevice(
-              organizationId,
-              snapshots.map((snapshot) => snapshot.row.id),
-            )
-          : undefined;
-
-      const results = yield* Effect.all(
-        payloads.map((payload) =>
-          evaluateDashboardQuery(organizationId, payload, snapshots, timestamp, sharedApplications),
-        ),
-        { concurrency: "unbounded" },
-      );
-
-      return { results };
-    });
 
   const mePayload = (user: {
     readonly id: string;
@@ -20423,7 +20001,7 @@ export const createEnterpriseService = ({
           // apps) behave identically everywhere.
           const candidates = yield* db.select().from(schema.device).where(where);
 
-          const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
+          const matches = (yield* loadDeviceSnapshots(db, ctx.organization.id, candidates)).filter(
             (snapshot) =>
               evaluateDeviceQuery(
                 filters.query,
@@ -21022,13 +20600,322 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        return yield* runDashboardQuery(ctx.organization.id, payload);
+        return yield* runDashboardQuery(db, ctx.organization.id, payload);
       }),
     queryDashboardBatch: (request, tenantId, payload: DashboardQueryBatchRequest) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
-        return yield* runDashboardQueryBatch(ctx.organization.id, payload.queries);
+        return yield* runDashboardQueryBatch(db, ctx.organization.id, payload.queries);
+      }),
+    listDashboardReports: (request, tenantId, dashboardId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
+        const rows = yield* db
+          .select()
+          .from(schema.dashboardReport)
+          .where(eq(schema.dashboardReport.dashboardId, dashboardRow.id))
+          .orderBy(asc(schema.dashboardReport.name));
+
+        return { reports: rows.map(dashboardReportInfo) };
+      }),
+    createDashboardReport: (request, tenantId, dashboardId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
+        const body: {
+          name?: string;
+          frequency?: "daily" | "weekly" | "monthly";
+          hourUtc?: number;
+          format?: "csv" | "pdf";
+          recipients?: { memberAccountIds: string[]; emails: string[] };
+          enabled?: boolean;
+        } = payload;
+
+        const name = body.name?.trim();
+
+        if (!name)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Report name is required" }),
+          );
+
+        const frequency = body.frequency ?? "daily";
+        const hourUtc = body.hourUtc ?? 7;
+        const scheduleProblem = reportScheduleProblem(frequency, hourUtc);
+
+        if (scheduleProblem)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: scheduleProblem }));
+
+        if (!body.recipients)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Add at least one recipient" }),
+          );
+
+        const validated = yield* validateReportRecipients(
+          db,
+          ctx.organization.id,
+          body.recipients,
+        );
+
+        if (!validated.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: validated.problem }));
+
+        if (
+          validated.recipients.emails.length > 0 &&
+          !canEmailExternalReportRecipients(ctx.member)
+        )
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only a tenant owner or admin can send a report to an external address.",
+            }),
+          );
+
+        const existing = yield* db
+          .select({ id: schema.dashboardReport.id })
+          .from(schema.dashboardReport)
+          .where(eq(schema.dashboardReport.dashboardId, dashboardRow.id))
+          .limit(DASHBOARD_REPORTS_PER_DASHBOARD);
+
+        if (existing.length >= DASHBOARD_REPORTS_PER_DASHBOARD)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `A dashboard can have at most ${DASHBOARD_REPORTS_PER_DASHBOARD} reports`,
+            }),
+          );
+
+        const timestamp = now();
+        const reportId = id();
+
+        const values = {
+          id: reportId,
+          organizationId: ctx.organization.id,
+          dashboardId: dashboardRow.id,
+          name: name.slice(0, 120),
+          frequency,
+          hourUtc,
+          format: body.format ?? ("csv" as const),
+          enabled: body.enabled ?? true,
+          memberAccountIds: [...validated.recipients.memberAccountIds],
+          externalEmails: [...validated.recipients.emails],
+          createdByAccountId: ctx.account.id,
+          lastPeriod: null,
+          lastRunAt: null,
+          nextRunAt: nextScheduledReportSlot(frequency, hourUtc, timestamp),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+
+        yield* db.insert(schema.dashboardReport).values(values);
+        yield* audit(ctx, "dashboard.report_created", "dashboard_report", reportId);
+
+        return dashboardReportInfo(values);
+      }),
+    patchDashboardReport: (request, tenantId, dashboardId, reportId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
+        const report = yield* requireDashboardReport(
+          ctx.organization.id,
+          dashboardRow.id,
+          reportId,
+        );
+
+        const body: {
+          name?: string;
+          frequency?: "daily" | "weekly" | "monthly";
+          hourUtc?: number;
+          format?: "csv" | "pdf";
+          recipients?: { memberAccountIds: string[]; emails: string[] };
+          enabled?: boolean;
+        } = payload;
+
+        if (body.name !== undefined && !body.name.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Report name is required" }),
+          );
+
+        const frequency =
+          body.frequency ??
+          (Schema.is(DashboardReportFrequency)(report.frequency) ? report.frequency : "daily");
+
+        const hourUtc = body.hourUtc ?? report.hourUtc;
+        const scheduleProblem = reportScheduleProblem(frequency, hourUtc);
+
+        if (scheduleProblem)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: scheduleProblem }));
+
+        let recipients:
+          | { memberAccountIds: string[]; emails: string[] }
+          | undefined;
+
+        if (body.recipients) {
+          const validated = yield* validateReportRecipients(
+            db,
+            ctx.organization.id,
+            body.recipients,
+          );
+
+          if (!validated.ok)
+            return yield* Effect.fail(new EnterpriseBadRequest({ message: validated.problem }));
+
+          const existingExternal = Array.isArray(report.externalEmails)
+            ? report.externalEmails
+            : [];
+
+          const keepsExistingExternal =
+            validated.recipients.emails.length === existingExternal.length &&
+            validated.recipients.emails.every((email) => existingExternal.includes(email));
+
+          if (
+            validated.recipients.emails.length > 0 &&
+            !keepsExistingExternal &&
+            !canEmailExternalReportRecipients(ctx.member)
+          )
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message:
+                  "Only a tenant owner or admin can send a report to an external address.",
+              }),
+            );
+
+          recipients = {
+            memberAccountIds: [...validated.recipients.memberAccountIds],
+            emails: [...validated.recipients.emails],
+          };
+        }
+
+        const timestamp = now();
+
+        yield* db
+          .update(schema.dashboardReport)
+          .set({
+            name: body.name !== undefined ? body.name.trim().slice(0, 120) : undefined,
+            frequency: body.frequency,
+            hourUtc: body.hourUtc,
+            format: body.format,
+            enabled: body.enabled,
+            memberAccountIds: recipients?.memberAccountIds,
+            externalEmails: recipients?.emails,
+            nextRunAt: nextScheduledReportSlot(frequency, hourUtc, timestamp),
+            updatedAt: timestamp,
+          })
+          .where(eq(schema.dashboardReport.id, report.id));
+
+        yield* audit(ctx, "dashboard.report_updated", "dashboard_report", report.id);
+
+        return ok;
+      }),
+    deleteDashboardReport: (request, tenantId, dashboardId, reportId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
+        const report = yield* requireDashboardReport(
+          ctx.organization.id,
+          dashboardRow.id,
+          reportId,
+        );
+
+        yield* db.delete(schema.dashboardReport).where(eq(schema.dashboardReport.id, report.id));
+        yield* audit(ctx, "dashboard.report_deleted", "dashboard_report", report.id);
+
+        return ok;
+      }),
+    listDashboardReportRuns: (request, tenantId, dashboardId, reportId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        yield* requireDashboardReport(ctx.organization.id, dashboardRow.id, reportId);
+
+        return {
+          runs: yield* listDashboardReportRuns(db, ctx.organization.id, reportId),
+        };
+      }),
+    sendDashboardReport: (request, tenantId, dashboardId, reportId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+
+        const report = yield* requireDashboardReport(
+          ctx.organization.id,
+          dashboardRow.id,
+          reportId,
+        );
+
+        if (!email)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Email is not configured for this deployment, so reports cannot be sent.",
+            }),
+          );
+
+        const result = yield* sendDashboardReportNow({
+          db,
+          email,
+          from: {
+            name: DEFAULT_EMAIL_FROM.name,
+            email: invitationFromEmail ?? DEFAULT_EMAIL_FROM.email,
+          },
+          report,
+          now: now(),
+        });
+
+        yield* audit(ctx, "dashboard.report_sent", "dashboard_report", report.id, {
+          outcome: result.outcome,
+        });
+
+        if (!result.run)
+          return yield* Effect.fail(
+            new EnterpriseInternal({ message: "The report could not be started. Try again." }),
+          );
+
+        return result.run;
+      }),
+    exportDashboardReport: (request, tenantId, dashboardId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const dashboardRow = yield* requireDashboard(ctx.organization.id, dashboardId);
+        const generatedAt = now();
+
+        const document = yield* loadDashboardReportDocument(
+          db,
+          ctx.organization.id,
+          dashboardRow.id,
+          generatedAt,
+        );
+
+        if (Option.isNone(document))
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Dashboard not found" }));
+
+        const format = query.format ?? "csv";
+
+        const slug = (value: string) =>
+          value
+            .trim()
+            .toLowerCase()
+            .replaceAll(/[^a-z0-9]+/g, "-")
+            .replaceAll(/^-+|-+$/g, "")
+            .slice(0, 60) || "dashboard";
+
+        const filename = `${slug(dashboardRow.name)}-${generatedAt
+          .toISOString()
+          .slice(0, 10)}.${format === "pdf" ? "pdf" : "csv"}`;
+
+        return format === "pdf"
+          ? {
+              bytes: reportPdf(document.value),
+              filename,
+              contentType: "application/pdf",
+            }
+          : {
+              bytes: new TextEncoder().encode(reportCsv(document.value)),
+              filename,
+              contentType: "text/csv; charset=utf-8",
+            };
       }),
     exportDevices: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -21042,7 +20929,7 @@ export const createEnterpriseService = ({
         if (filters.query) {
           const candidates = yield* db.select().from(schema.device).where(where);
 
-          const matches = (yield* loadDeviceSnapshots(ctx.organization.id, candidates)).filter(
+          const matches = (yield* loadDeviceSnapshots(db, ctx.organization.id, candidates)).filter(
             (snapshot) =>
               evaluateDeviceQuery(
                 filters.query,
@@ -22556,11 +22443,78 @@ export const enterpriseListHandlers = (
 export const enterpriseDashboardHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDashboardApi>,
 ) =>
-  handlers.handle("queryDashboardBatch", ({ request, params, payload }) =>
-    Effect.flatMap(EnterpriseService, (service) =>
-      service.queryDashboardBatch(request, params.tenantId, payload),
-    ),
-  );
+  handlers
+    .handle("queryDashboardBatch", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.queryDashboardBatch(request, params.tenantId, payload),
+      ),
+    )
+    .handle("listDashboardReports", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDashboardReports(request, params.tenantId, params.dashboardId),
+      ),
+    )
+    .handle("createDashboardReport", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createDashboardReport(request, params.tenantId, params.dashboardId, payload),
+      ),
+    )
+    .handle("patchDashboardReport", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchDashboardReport(
+          request,
+          params.tenantId,
+          params.dashboardId,
+          params.reportId,
+          payload,
+        ),
+      ),
+    )
+    .handle("deleteDashboardReport", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteDashboardReport(
+          request,
+          params.tenantId,
+          params.dashboardId,
+          params.reportId,
+        ),
+      ),
+    )
+    .handle("sendDashboardReport", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.sendDashboardReport(request, params.tenantId, params.dashboardId, params.reportId),
+      ),
+    )
+    .handle("listDashboardReportRuns", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDashboardReportRuns(
+          request,
+          params.tenantId,
+          params.dashboardId,
+          params.reportId,
+        ),
+      ),
+    )
+    .handleRaw("exportDashboardReport", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportDashboardReport(
+            request,
+            params.tenantId,
+            params.dashboardId,
+            query,
+          ),
+          (result: { bytes: Uint8Array; filename: string; contentType: string }) =>
+            HttpServerResponse.uint8Array(result.bytes, {
+              contentType: result.contentType,
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+              },
+            }),
+        ),
+      ),
+    );
 
 export const enterpriseUserHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseUserApi>,

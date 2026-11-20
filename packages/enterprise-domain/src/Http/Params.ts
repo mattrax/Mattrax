@@ -42,6 +42,12 @@ export const TenantDashboardWidgetParam = {
   widgetId: Schema.String,
 };
 
+export const TenantDashboardReportParam = {
+  tenantId: Schema.String,
+  dashboardId: Schema.String,
+  reportId: Schema.String,
+};
+
 export const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
 
 export const McpConnectionParam = { connectionId: Schema.String };

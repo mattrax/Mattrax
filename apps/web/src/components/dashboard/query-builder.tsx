@@ -376,7 +376,7 @@ export function DeviceQueryBuilder(props: {
   disabled?: boolean;
   compact?: boolean;
   /** Explain that a software widget filters the devices that reported apps. */
-  dataset?: "devices" | "software";
+  dataset?: "devices" | "software" | "users";
   /**
    * Offer conditions on the device's linked directory people. Only the
    * dynamic-group builder sets this; device tables have no user data.

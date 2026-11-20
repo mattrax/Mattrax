@@ -1,5 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/solid-query";
 import {
+  dashboardQueryForWidget,
   DashboardQueryRequest,
   DashboardQueryResponse,
   DashboardQueryRow,
@@ -27,7 +28,7 @@ const CHART_COLORS = [
 ];
 
 const QueryConfig = Schema.Struct({
-  dataset: Schema.optional(Schema.Literals(["devices", "software"])),
+  dataset: Schema.optional(Schema.Literals(["devices", "software", "users"])),
   query: Schema.optional(DeviceQuery),
   label: Schema.optional(Schema.String),
   dimension: Schema.optional(Schema.String),
@@ -75,10 +76,49 @@ const SOFTWARE_COLUMNS = new Map([
   ["bundleId", "Bundle ID"],
 ]);
 
-const defaultColumns = (dataset: string | undefined) =>
-  dataset === "software"
-    ? ["name", "version", "managed", "deviceCount"]
-    : ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+const USER_COLUMNS = new Map([
+  ["name", "Name"],
+  ["email", "Email"],
+  ["status", "Status"],
+  ["source", "Source"],
+]);
+
+const columnsFor = (dataset: string | undefined) => {
+  if (dataset === "software") return SOFTWARE_COLUMNS;
+
+  if (dataset === "users") return USER_COLUMNS;
+
+  return DEVICE_COLUMNS;
+};
+
+const defaultColumns = (dataset: string | undefined) => {
+  if (dataset === "software") return ["name", "version", "managed", "deviceCount"];
+
+  if (dataset === "users") return ["name", "email", "status", "source"];
+
+  return ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+};
+
+const datasetNoun = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "applications"),
+    Match.when("users", () => "users"),
+    Match.orElse(() => "devices"),
+  );
+
+const datasetCaption = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "matching installed software"),
+    Match.when("users", () => "matching the directory filter"),
+    Match.orElse(() => "matching the current query"),
+  );
+
+const datasetRowsLabel = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "Applications"),
+    Match.when("users", () => "Users"),
+    Match.orElse(() => "Devices"),
+  );
 
 const healthClass = (value: string | null | undefined) =>
   Match.value(value).pipe(
@@ -138,6 +178,8 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
     serial: row.serial,
     version: row.version,
     bundleId: row.bundleId,
+    email: row.email,
+    source: row.source,
   }[column];
 
   if (value === null || value === undefined || value === "") return "—";
@@ -145,21 +187,12 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
   return String(value);
 };
 
-/** The exact request a widget sends; shared with the page-level batch. */
-export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest => {
-  const config = configOf(widget);
-
-  return {
-    dataset: config.dataset ?? "devices",
-    query: config.query ?? { all: [] },
-    groupBy: config.dimension,
-    limit: config.limit,
-    // Stats render only `total`, so the API can skip row projection and (for
-    // device queries that do not reference installed apps) the application
-    // inventory scan.
-    countOnly: widget.type === "stat",
-  };
-};
+/**
+ * The exact request a widget sends; shared with the page-level batch, the
+ * dashboard export and the scheduled report renderer.
+ */
+export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest =>
+  dashboardQueryForWidget(widget);
 
 type DashboardWidgetBatch = {
   readonly data: DashboardQueryResponse | undefined;
@@ -319,12 +352,10 @@ export function DashboardWidgetView(props: {
                       {data().total}
                     </p>
                     <p class="mt-1.5 text-[11px] text-muted-foreground">
-                      {config().label ?? (dataset() === "software" ? "applications" : "devices")}
+                      {config().label ?? datasetNoun(dataset())}
                     </p>
                     <p class="mt-0.5 text-[10.5px] text-muted-foreground">
-                      {dataset() === "software"
-                        ? "matching installed software"
-                        : "matching the current query"}
+                      {datasetCaption(dataset())}
                     </p>
                   </div>
                 }
@@ -344,18 +375,14 @@ export function DashboardWidgetView(props: {
                     <div class="overflow-x-auto" aria-busy={pending() ? "true" : undefined}>
                       <table class="w-full text-[11.5px]">
                         <caption class="sr-only">
-                          {dataset() === "software" ? "Applications" : "Devices"} matching this
-                          widget
+                          {datasetRowsLabel(dataset())} matching this widget
                         </caption>
                         <thead class="text-left text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground">
                           <tr>
                             <For each={columns()}>
                               {(column) => (
                                 <th scope="col" class="whitespace-nowrap px-1.5 py-1.5 font-medium">
-                                  {(dataset() === "software"
-                                    ? SOFTWARE_COLUMNS
-                                    : DEVICE_COLUMNS
-                                  ).get(column) ?? column}
+                                  {columnsFor(dataset()).get(column) ?? column}
                                 </th>
                               )}
                             </For>
