@@ -65,6 +65,9 @@ export default function NewGroupPage() {
       }),
     onSuccess: async ({ id }) => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "group"),
+      });
       navigate(`/t/${params.tenantId}/groups/${id}`);
     },
   }));

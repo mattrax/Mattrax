@@ -222,6 +222,9 @@ export default function ApplicationDetailPage() {
       queryKey: enterpriseKeys.application(params.tenantId, params.applicationId),
     });
     await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
+    await qc.invalidateQueries({
+      queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "application"),
+    });
   };
 
   /** Group relations for the checkboxes, named from the cached group list. */
@@ -436,6 +439,9 @@ export default function ApplicationDetailPage() {
     onError: (_error, _variables, restore) => restore?.(),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
+      void qc.invalidateQueries({
+        queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "application"),
+      });
       navigate(`/t/${params.tenantId}/applications`);
     },
   }));

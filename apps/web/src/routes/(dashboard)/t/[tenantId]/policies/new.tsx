@@ -25,6 +25,9 @@ export default function NewPolicyPage() {
       enterprise.createPolicy(params.tenantId, { name: name(), notes: notes() || null }),
     onSuccess: async ({ id }) => {
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "policy"),
+      });
       navigate(`/t/${params.tenantId}/policies/${id}/editor`);
     },
   }));

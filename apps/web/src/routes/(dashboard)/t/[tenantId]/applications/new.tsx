@@ -100,6 +100,9 @@ export default function NewApplicationPage() {
       // the catalogue list refreshes in the background.
       navigate(`/t/${params.tenantId}/applications/${id}`);
       void qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
+      void qc.invalidateQueries({
+        queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "application"),
+      });
     },
   }));
 
