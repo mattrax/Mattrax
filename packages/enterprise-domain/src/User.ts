@@ -82,14 +82,16 @@ export const UserLinkedAccount = Schema.Struct({
 export type UserLinkedAccount = typeof UserLinkedAccount.Type;
 
 /**
- * One policy that reaches the user's own channel, with the assignment edges
- * that contribute it.
+ * One policy assignment that scopes to the user, with the grant edges that
+ * contribute it.
  *
- * This is deliberately about the *user*: device-group policies that reach a
- * device are resolved by the device page and are not attributed to the person
- * sitting at it.
+ * This models assignment scope only. It cannot express which configuration
+ * kinds or platforms the policy actually delivers, device-level exclusions, or
+ * per-kind priority conflicts; the device page resolves those. It is also
+ * deliberately about the *user*: policies assigned to a device group are
+ * attributed to the group, not to the person sitting at one of its devices.
  */
-export const UserEffectivePolicy = Schema.Struct({
+export const UserPolicyAssignment = Schema.Struct({
   policyId: Schema.String,
   policyName: Schema.String,
   priority: Schema.Number,
@@ -104,7 +106,7 @@ export const UserEffectivePolicy = Schema.Struct({
   overriddenExclusions: Schema.Array(GroupRelation),
 });
 
-export type UserEffectivePolicy = typeof UserEffectivePolicy.Type;
+export type UserPolicyAssignment = typeof UserPolicyAssignment.Type;
 
 export const UserDetail = Schema.Struct({
   id: Schema.String,
@@ -123,7 +125,7 @@ export const UserDetail = Schema.Struct({
   /** Omitted, rather than empty, when the caller cannot read devices. */
   devices: Schema.optional(Schema.Array(UserDeviceRef)),
   /** Omitted, rather than empty, when the caller cannot read policies. */
-  policies: Schema.optional(Schema.Array(UserEffectivePolicy)),
+  policies: Schema.optional(Schema.Array(UserPolicyAssignment)),
 });
 
 export type UserDetail = typeof UserDetail.Type;
@@ -154,19 +156,22 @@ const byName = (left: GroupRef, right: GroupRef) =>
   left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
 
 /**
- * Derive the policies that reach one user's channel.
+ * Derive the policies assigned to one user, directly or through a directory
+ * group.
  *
- * The rules mirror `resolveEffectivePolicy` in `@mattrax/mdm-core` so this view
- * cannot disagree with delivery:
+ * This is assignment scoping, not delivery. The include/exclude precedence is
+ * copied from the user-channel rules in `resolveEffectivePolicy`
+ * (`@mattrax/mdm-core`); platform and configuration-kind resolution, and the
+ * device an assignment eventually reaches, are not modelled here.
  *
- * - A disabled policy delivers nothing.
+ * - A disabled policy is omitted: it contributes nothing while disabled.
  * - A direct exclusion vetoes the policy entirely, even when a group includes
  *   it or the user is also assigned it directly.
  * - A direct inclusion survives a group exclusion.
  * - A group exclusion vetoes the policy for every member of that group, not
  *   only for the group edge that was excluded. A user in group A (include) and
- *   group B (exclude) therefore does not receive the policy unless it is also
- *   assigned to them directly.
+ *   group B (exclude) therefore has no group-sourced assignment unless one is
+ *   also made directly.
  *
  * The order of the input rows is irrelevant: groups are de-duplicated by id and
  * the result is sorted by policy name so the panel is stable across refetches.
@@ -174,7 +179,7 @@ const byName = (left: GroupRef, right: GroupRef) =>
 export const deriveUserPolicies = (input: {
   readonly direct: ReadonlyArray<UserPolicyEdge>;
   readonly groups: ReadonlyArray<UserGroupPolicyEdge>;
-}): ReadonlyArray<UserEffectivePolicy> => {
+}): ReadonlyArray<UserPolicyAssignment> => {
   type Contribution = {
     readonly policyId: string;
     readonly policyName: string;
@@ -228,7 +233,7 @@ export const deriveUserPolicies = (input: {
     else item.groups.set(group.id, group);
   }
 
-  const effective: UserEffectivePolicy[] = [];
+  const assignments: UserPolicyAssignment[] = [];
 
   for (const item of policies.values()) {
     if (!item.enabled || item.directExclude) continue;
@@ -240,7 +245,7 @@ export const deriveUserPolicies = (input: {
     // group-sourced delivery. Only a direct assignment outranks one.
     if (!item.directInclude && (included.length === 0 || excluded.length > 0)) continue;
 
-    effective.push({
+    assignments.push({
       policyId: item.policyId,
       policyName: item.policyName,
       priority: item.priority,
@@ -250,7 +255,7 @@ export const deriveUserPolicies = (input: {
     });
   }
 
-  return effective.sort(
+  return assignments.sort(
     (left, right) =>
       left.policyName.localeCompare(right.policyName) ||
       left.policyId.localeCompare(right.policyId),

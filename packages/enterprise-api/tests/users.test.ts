@@ -20,9 +20,12 @@ const owner = {
   updatedAt: timestamp,
 };
 
+type FakeToken = { scopes: ReadonlyArray<string> };
+
 const makeContext = () => {
   const db = makeDb();
   const state = { user: owner };
+  let token: FakeToken | undefined;
 
   db.store.account.push(owner);
 
@@ -31,9 +34,12 @@ const makeContext = () => {
       const inputHeaders =
         input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
-      return inputHeaders.cookie
-        ? Effect.succeed({ user: state.user })
-        : Effect.fail(new Error("Unauthenticated"));
+      if (!inputHeaders.cookie) return Effect.fail(new Error("Unauthenticated"));
+
+      return Effect.succeed({
+        user: state.user,
+        ...(token ? { apiToken: token } : {}),
+      });
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
     createApiToken: () => Effect.die("not used"),
@@ -55,7 +61,14 @@ const makeContext = () => {
     authSecret: "users-test-secret",
   });
 
-  return { db, service, state };
+  return {
+    db,
+    service,
+    state,
+    useToken: (value: FakeToken) => {
+      token = value;
+    },
+  };
 };
 
 const makeTenant = async (context: ReturnType<typeof makeContext>, slug = "acme") =>
@@ -241,7 +254,7 @@ describe("directory user views", () => {
     ]);
   });
 
-  it("returns the groups, devices and effective user policies of one person", async () => {
+  it("returns the groups, devices and policy assignments of one person", async () => {
     const context = makeContext();
     const tenant = await makeTenant(context);
     seed(context, tenant.id);
@@ -301,6 +314,28 @@ describe("directory user views", () => {
     await expect(
       runEffect(context.service.getUser(request(headers), tenant.id, "other-user")),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it("applies a narrowed credential's scope to the optional sections", async () => {
+    const context = makeContext();
+    const tenant = await makeTenant(context);
+    seed(context, tenant.id);
+
+    // The owner role can read devices and policies, but this token is limited
+    // to the directory. The optional sections must be absent, not merely
+    // permission-checked: a members.read token used to inherit the role's
+    // devices.read and policies.read through the old sub-gate.
+    context.useToken({ scopes: ["members.read"] });
+
+    const list = await runEffect(context.service.listUsers(request(headers), tenant.id));
+
+    expect(list.rows[0]).not.toHaveProperty("deviceCount");
+
+    const detail = await runEffect(context.service.getUser(request(headers), tenant.id, "user-1"));
+
+    expect(detail.groups).toHaveLength(2);
+    expect(detail).not.toHaveProperty("devices");
+    expect(detail).not.toHaveProperty("policies");
   });
 
   it("omits device and policy data the caller cannot read", async () => {

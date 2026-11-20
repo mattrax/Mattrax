@@ -111,6 +111,9 @@ describe("GET /api/v1/bootstrap", () => {
     // must not fall through to the tenant-wide read permission.
     expect(permissionForMethod("getPolicyScope")).toBe("policies.read");
     expect(permissionForMethod("getGroupScope")).toBe("groups.read");
+    // Directory people are member data, not a tenant-wide read.
+    expect(permissionForMethod("listUsers")).toBe("members.read");
+    expect(permissionForMethod("getUser")).toBe("members.read");
     // Device secrets are not ordinary reads: a read-only role must not reveal
     // the managed local-admin password or Activation Lock bypass code.
     expect(permissionForMethod("getDeviceLocalAdmin")).toBe("devices.recovery_key");

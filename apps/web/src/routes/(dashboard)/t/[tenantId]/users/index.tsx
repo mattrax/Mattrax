@@ -21,7 +21,7 @@ const SOURCE_LABELS: Record<UserListRow["source"], string> = {
  *
  * This is the same data Settings -> Identity -> Directory lists, but focused on
  * the person rather than the sync: each row links to the user view, which shows
- * their groups, linked devices and user-scoped policies. Editing still belongs
+ * their groups, linked devices and policy assignments. Editing still belongs
  * to the directory and device pages, so the table offers no bulk actions.
  */
 export const route = {

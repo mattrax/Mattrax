@@ -211,7 +211,7 @@ export type {
   TenantAccount,
   TenantOwnershipTransfer,
   UserDetail,
-  UserEffectivePolicy,
+  UserPolicyAssignment,
   UserGroupRef,
   UserListRow,
   UserDeviceRef,
@@ -1447,7 +1447,7 @@ export const enterprise = {
   /** Directory people in this tenant, with group and (permitted) device counts. */
   listUsers: (tenantId: RouteParam) =>
     userEndpoint((api) => api.listUsers({ params: { tenantId: required(tenantId, "tenantId") } })),
-  /** One directory person, their groups, devices and user-scoped policies. */
+  /** One directory person, their groups, devices and policy assignments. */
   getUser: (tenantId: RouteParam, userId: RouteParam) =>
     userEndpoint((api) =>
       api.getUser({

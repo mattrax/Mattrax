@@ -42,6 +42,7 @@ import {
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
   type DevicePreRegistrationImportResponse,
+  type Permission,
   type EnterpriseAuth,
   type DevicePreRegistrationImportRow,
   type TenantImportRequest,
@@ -1815,6 +1816,16 @@ export const createEnterpriseService = ({
           }),
         );
 
+      // Sub-gates inside a handler (search facets, user-view sections) must
+      // apply the same ceiling as the method-level check. A narrowed credential
+      // limits the role; a browser session is limited by its role alone. Using
+      // the role alone here let a members.read token read device and policy
+      // data the role happened to hold.
+      const permissions: ReadonlySet<Permission> =
+        credentialRestricted && credentialGrant
+          ? new Set([...role.permissions].filter((permission) => credentialGrant.has(permission)))
+          : role.permissions;
+
       const credential = apiToken
         ? { type: "api_token" as const, id: apiToken.id, name: apiToken.name }
         : oauth
@@ -1839,6 +1850,7 @@ export const createEnterpriseService = ({
         organization,
         member,
         role,
+        permissions,
         credential,
         // The address is set by the deployment boundary after applying the
         // rate limiter's trusted-proxy policy; a caller cannot supply it.
@@ -16599,7 +16611,7 @@ export const createEnterpriseService = ({
         // Device counts are device data, not directory data. A member who can
         // see the directory but not the fleet gets the row without the count
         // rather than a number derived from rows they cannot read.
-        const canReadDevices = hasPermission(ctx.role.permissions, "devices.read");
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
 
         const [users, groups, identities] = yield* Effect.all(
           [
@@ -16714,8 +16726,8 @@ export const createEnterpriseService = ({
         // unknown id, so the endpoint cannot be used to probe tenant data.
         if (!user) return yield* Effect.fail(new EnterpriseNotFound({ message: "User not found" }));
 
-        const canReadDevices = hasPermission(ctx.role.permissions, "devices.read");
-        const canReadPolicies = hasPermission(ctx.role.permissions, "policies.read");
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
+        const canReadPolicies = hasPermission(ctx.permissions, "policies.read");
 
         const [groups, linkedAccounts, devices] = yield* Effect.all(
           [
@@ -18238,9 +18250,9 @@ export const createEnterpriseService = ({
         // Tenant-level read is not enough to enumerate an entity class:
         // serials, group names and policy names need their section permission,
         // the same as the corresponding list endpoints.
-        const canReadDevices = hasPermission(ctx.role.permissions, "devices.read");
-        const canReadGroups = hasPermission(ctx.role.permissions, "groups.read");
-        const canReadPolicies = hasPermission(ctx.role.permissions, "policies.read");
+        const canReadDevices = hasPermission(ctx.permissions, "devices.read");
+        const canReadGroups = hasPermission(ctx.permissions, "groups.read");
+        const canReadPolicies = hasPermission(ctx.permissions, "policies.read");
 
         const devices = canReadDevices
           ? yield* db
@@ -18291,7 +18303,7 @@ export const createEnterpriseService = ({
 
         // Both administrator accounts and directory people are gated by
         // `members.read`; tenant-level read must not bypass it.
-        const canReadPeople = hasPermission(ctx.role.permissions, "members.read");
+        const canReadPeople = hasPermission(ctx.permissions, "members.read");
 
         const accounts = canReadPeople
           ? yield* db
@@ -18333,7 +18345,7 @@ export const createEnterpriseService = ({
 
         // Catalogue entries are not device data: the palette links to the
         // application page, which itself requires `applications.read`.
-        const applications = hasPermission(ctx.role.permissions, "applications.read")
+        const applications = hasPermission(ctx.permissions, "applications.read")
           ? yield* db
               .select({
                 id: schema.application.id,
@@ -18360,7 +18372,7 @@ export const createEnterpriseService = ({
         // The same permission guards the tenant software inventory that the
         // palette links to. Inventory rows are per device, so aggregation runs
         // before the limit is applied.
-        const software = hasPermission(ctx.role.permissions, "applications.read")
+        const software = hasPermission(ctx.permissions, "applications.read")
           ? yield* (
               db
                 .select({

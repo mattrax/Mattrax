@@ -24,7 +24,7 @@ import { Card, CardContent } from "@mattrax/ui";
 import {
   enterpriseQueries,
   type UserDetail,
-  type UserEffectivePolicy,
+  type UserPolicyAssignment,
   type UserGroupRef,
 } from "~/lib/enterprise";
 import { initials } from "~/lib/names";
@@ -34,9 +34,9 @@ import { queryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
 
 /**
- * The user view: the same directory person, device links and user-scoped
- * policy edges that the directory, device and policy pages expose, gathered
- * around the person instead of the resource.
+ * The user view: the same directory person, device links and policy
+ * assignment edges that the directory, device and policy pages expose,
+ * gathered around the person instead of the resource.
  *
  * Nothing here mutates. Group membership is managed by directory sync (or the
  * directory page) and device links by the device page, so this page is a read
@@ -99,10 +99,10 @@ function SourceBadge(props: { source: UserGroupRef["source"] }) {
   );
 }
 
-/** One effective policy with the assignment edges that contribute it. */
+/** One policy assignment with the grant edges that contribute it. */
 function PolicyRow(props: {
   tenantId: string | undefined;
-  policy: UserEffectivePolicy;
+  policy: UserPolicyAssignment;
   canReadPolicies: boolean;
 }) {
   return (
@@ -292,6 +292,17 @@ export default function UserDetailPage() {
               </div>
             </section>
 
+            <Show when={value().disabled}>
+              <div
+                role="status"
+                class="rounded-xl border border-warning/25 bg-warning/[0.07] px-4 py-3 text-[12px] leading-relaxed text-warning-foreground"
+              >
+                This person is disabled. Directory sync disables a leaver instead of deleting them,
+                so their groups, device links and policy assignments stay visible for reference, but
+                no user-scoped policy is delivered.
+              </div>
+            </Show>
+
             <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
               <div class="min-w-0 space-y-4">
                 <Panel
@@ -342,7 +353,7 @@ export default function UserDetailPage() {
                   {(devices) => (
                     <Panel
                       title="Linked devices"
-                      description="Devices this person is linked to. User-scoped policy reaches these devices through the person's own channel."
+                      description="Devices this person is linked to. User policy is scoped to these devices through the link."
                       flush
                     >
                       <Show
@@ -352,7 +363,7 @@ export default function UserDetailPage() {
                             <EmptyState
                               icon={Laptop}
                               title="No linked devices"
-                              description="Link a directory user to a device from that device's page to deliver their user-scoped settings."
+                              description="Link a directory user to a device from that device's page to scope their user policy to it."
                             />
                           </div>
                         }
@@ -389,25 +400,18 @@ export default function UserDetailPage() {
                 <Show when={value().policies}>
                   {(policies) => (
                     <Panel
-                      title="Effective policies"
-                      description="Policies assigned directly to this person, or to a directory group they belong to. Group exclusions are applied the same way the user channel applies them."
+                      title="Policy assignments"
+                      description="Policies granted directly to this person or through a directory group above. This is assignment scope: device-level excludes and configuration conflicts are resolved per device."
                       flush
                     >
-                      <Show when={value().disabled}>
-                        <div class="border-b border-border bg-warning/[0.07] px-4 py-2.5 text-[11.5px] leading-relaxed text-warning-foreground">
-                          This person is disabled. Directory sync disables a leaver instead of
-                          deleting them, so their assignments are listed here but no user-scoped
-                          policy is delivered.
-                        </div>
-                      </Show>
                       <Show
                         when={policies().length > 0}
                         fallback={
                           <div class="p-4">
                             <EmptyState
                               icon={ShieldCheck}
-                              title="No user-scoped policies"
-                              description="Assign a policy to this person or one of their directory groups. Policies assigned to a device group are delivered on that device, not here."
+                              title="No policy assignments"
+                              description="Assign a policy to this person or one of their directory groups. Policies assigned to a device group appear on that device instead."
                             />
                           </div>
                         }
