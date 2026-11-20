@@ -100,6 +100,10 @@ export * as Common from "./Common.ts";
 
 export * as Credential from "./Credential.ts";
 
+export * from "./Cutover.ts";
+
+export * as Cutover from "./Cutover.ts";
+
 export * as Device from "./Device.ts";
 
 export * as Directory from "./Directory.ts";

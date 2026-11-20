@@ -46,6 +46,7 @@ import { rememberTenantAlias } from "~/lib/tenant";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
+import { CutoverPanel } from "./cutover-panel";
 
 /**
  * Turn an HTTP failure into a friendly message. Tagged API failures are
@@ -1264,6 +1265,8 @@ export default function GeneralSettingsPage() {
           if (target) removeBackup.mutate(target.id);
         }}
       />
+
+      <CutoverPanel tenant={tenant.data} />
 
       <Show when={canDelete()}>
         <Panel

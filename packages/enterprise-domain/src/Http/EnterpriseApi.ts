@@ -1,3 +1,10 @@
+import { CutoverExportRequest } from "../Cutover.js";
+import { CutoverImportRequest } from "../Cutover.js";
+import { CutoverImportResponse } from "../Cutover.js";
+import { CutoverPreflightQuery } from "../Cutover.js";
+import { CutoverPreflightReport } from "../Cutover.js";
+import { CutoverPreview } from "../Cutover.js";
+import { CutoverPreviewRequest } from "../Cutover.js";
 import { CreateDashboardRequest } from "../dashboard.js";
 import { CreateDashboardWidgetRequest } from "../dashboard.js";
 import { CreateTenantRoleRequest } from "../rbac.js";
@@ -278,6 +285,42 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantImportErrors,
       payload: TenantImportRequest,
       success: TenantImportResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("exportTenantCutover", "/v1/tenants/:tenantId/cutover/export", {
+      error: [
+        ...EnterpriseTenantExportErrors,
+        ...EnterpriseStepUpRequired,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
+      params: TenantParam,
+      payload: CutoverExportRequest,
+      success: Schema.String.pipe(
+        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
+      ),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("previewTenantCutover", "/v1/tenants/cutover/preview", {
+      error: EnterpriseTenantImportErrors,
+      payload: CutoverPreviewRequest,
+      success: CutoverPreview,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("importTenantCutover", "/v1/tenants/cutover/import", {
+      error: [...EnterpriseTenantImportErrors, ...EnterpriseStepUpRequired],
+      payload: CutoverImportRequest,
+      success: CutoverImportResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getTenantCutoverPreflight", "/v1/tenants/:tenantId/cutover/preflight", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: CutoverPreflightQuery,
+      success: CutoverPreflightReport,
     }),
   )
   .add(

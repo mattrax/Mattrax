@@ -220,7 +220,9 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 - **Backups and restore.** The daily job writes tenant bundles into the `mattrax-data`
   volume. Owners can pin, unpin, delete and restore them from Settings → General; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
-  [Operations](/admin/operations#restoring-in-place).
+  [Operations](/admin/operations#restoring-in-place). To move a tenant in or out of
+  this deployment without re-enrolling devices, see
+  [Move a deployment](/operations/cutover).
 - **Scheduled work.** The Node scheduler runs the same cron expressions as the
   hosted Worker: daily maintenance and tenant backups, plus the hourly
   outbox/Entra/certificate sweep.
