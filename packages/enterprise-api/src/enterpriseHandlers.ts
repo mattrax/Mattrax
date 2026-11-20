@@ -38,6 +38,7 @@ import {
   enterpriseIdentityApi,
   enterpriseUserApi,
   enterpriseSoftwareUpdateApi,
+  enterpriseOsPolicyApi,
   enterpriseListApi,
   enterpriseWindowsApi,
   scriptAgentApi,
@@ -69,6 +70,7 @@ import {
   diagnoseError,
   errorDiagnostic,
   evaluateDeviceQuery,
+  compareVersionStrings,
   normalizeDeviceCommandStatus,
   type DashboardQueryRequest,
   type DashboardQueryBatchRequest,
@@ -111,6 +113,22 @@ import {
   deriveSoftwareUpdate,
   macOsUpdateBaseline,
   softwareUpdateRank,
+  OS_POLICY_PLATFORMS,
+  OS_POLICY_CAPABILITIES,
+  appleScheduleOsUpdatePayload,
+  completeOsPolicy,
+  deriveOsCompliance,
+  effectiveOsMinimumVersion,
+  normalizeMinimumVersion,
+  osComplianceRank,
+  osPolicyDeferralEndsAt,
+  osPolicyPlatformForDevice,
+  osPolicyRuleFromRow,
+  type AppleOsUpdateInstallAction,
+  type OsComplianceInfo,
+  type OsPolicyPlatform,
+  type OsPolicyRule,
+  type UpdateTenantOsPolicyEntry,
   isEnvManagedSuperadmin,
   isSuperadmin,
   normalizeAdminAccountsQuery,
@@ -3925,6 +3943,67 @@ export const createEnterpriseService = ({
       { supportedMajorCount: softwareUpdateSupportedMajorCount },
     );
 
+  /**
+   * Every persisted platform rule for one tenant. A missing platform is simply
+   * absent from the result; callers use `completeOsPolicy` to add defaults.
+   */
+  const loadOsPolicyRules = (organizationId: string) =>
+    Effect.map(
+      queryEffect(
+        db
+          .select({
+            platform: schema.tenantOsPolicy.platform,
+            minimumVersion: schema.tenantOsPolicy.minimumVersion,
+            enforcement: schema.tenantOsPolicy.enforcement,
+            deferralDays: schema.tenantOsPolicy.deferralDays,
+            updatedAt: schema.tenantOsPolicy.updatedAt,
+          })
+          .from(schema.tenantOsPolicy)
+          .where(eq(schema.tenantOsPolicy.organizationId, organizationId)),
+      ),
+      (rows) => rows.map(osPolicyRuleFromRow),
+    );
+
+  /** Per-device compliance, using the same rules and feed as the fleet page. */
+  const osComplianceFor = (
+    row: {
+      readonly proto?: string | null;
+      readonly osVersion?: string | null;
+      readonly osEdition?: string | null;
+      readonly model?: string | null;
+    },
+    rules: ReadonlyArray<OsPolicyRule>,
+    catalog: Parameters<typeof deriveOsCompliance>[2],
+    now?: Date,
+  ): OsComplianceInfo =>
+    deriveOsCompliance(
+      {
+        proto: row.proto,
+        osVersion: row.osVersion,
+        osEdition: row.osEdition,
+        model: row.model,
+      },
+      rules,
+      catalog,
+      {
+        supportedMajorCount: softwareUpdateSupportedMajorCount,
+        ...(now ? { now } : {}),
+      },
+    );
+
+  /** The policy payload shared by the GET and PATCH handlers. */
+  const tenantOsPolicyResponse = (rules: ReadonlyArray<OsPolicyRule>) => ({
+    platforms: completeOsPolicy(rules).map((rule) => ({
+      platform: rule.platform,
+      minimumVersion: rule.minimumVersion,
+      enforcement: rule.enforcement,
+      deferralDays: rule.deferralDays,
+      updatedAt: rule.updatedAt.getTime() > 0 ? rule.updatedAt.toISOString() : null,
+      deferralEndsAt: osPolicyDeferralEndsAt(rule)?.toISOString() ?? null,
+      capability: OS_POLICY_CAPABILITIES[rule.platform],
+    })),
+  });
+
   /** ADE setup state for a page of devices, keyed by device id. */
   const deviceSetupStateFor = (deviceIds: ReadonlyArray<string>) =>
     Effect.gen(function* () {
@@ -7157,19 +7236,17 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const memberships = yield* adminMembershipsFor(rows.map((row) => row.id));
 
-      return rows.map(
-        (row): AdminAccountInfo => ({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          emailVerified: row.emailVerified,
-          disabled: row.disabled,
-          createdAt: row.createdAt.toISOString(),
-          superadmin: isSuperadmin(row, superadminAllowlist),
-          superadminSource: superadminSource(row, superadminAllowlist),
-          memberships: memberships.get(row.id) ?? [],
-        }),
-      );
+      return rows.map((row): AdminAccountInfo => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        emailVerified: row.emailVerified,
+        disabled: row.disabled,
+        createdAt: row.createdAt.toISOString(),
+        superadmin: isSuperadmin(row, superadminAllowlist),
+        superadminSource: superadminSource(row, superadminAllowlist),
+        memberships: memberships.get(row.id) ?? [],
+      }));
     });
 
   /**
@@ -7265,6 +7342,7 @@ export const createEnterpriseService = ({
           ...Object.keys(enterpriseGroupApi.endpoints),
           ...Object.keys(enterpriseAttributeApi.endpoints),
           ...Object.keys(enterpriseSoftwareUpdateApi.endpoints),
+          ...Object.keys(enterpriseOsPolicyApi.endpoints),
         ].filter((method) => {
           const permission = permissionForMethod(method);
 
@@ -7312,10 +7390,7 @@ export const createEnterpriseService = ({
           .limit(limit)
           .offset(offset);
 
-        const [totalRow] = yield* db
-          .select({ value: count() })
-          .from(schema.account)
-          .where(where);
+        const [totalRow] = yield* db.select({ value: count() }).from(schema.account).where(where);
 
         return {
           accounts: yield* adminAccountInfos(rows),
@@ -7361,9 +7436,7 @@ export const createEnterpriseService = ({
               .for("update");
 
             if (!target)
-              return yield* Effect.fail(
-                new EnterpriseNotFound({ message: "Account not found" }),
-              );
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Account not found" }));
 
             const before = isSuperadmin(target, superadminAllowlist);
 
@@ -15008,6 +15081,9 @@ export const createEnterpriseService = ({
           manifestUrl?: string;
           iTunesStoreId?: number;
           recoveryLockPassword?: string;
+          osUpdateInstallAction?: AppleOsUpdateInstallAction;
+          osUpdateProductKey?: string;
+          osUpdateDeadline?: string;
         } = payload ?? {};
 
         const action = body.action ?? "sync";
@@ -15269,6 +15345,22 @@ export const createEnterpriseService = ({
               });
             }
 
+            /** Apple rejects a malformed deadline; fail before queueing. */
+            let osUpdateDeadline: Date | null = null;
+
+            if (body.osUpdateDeadline) {
+              const parsed = new Date(body.osUpdateDeadline);
+
+              if (Number.isNaN(parsed.getTime()))
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message: "The OS update deadline must be a valid ISO-8601 date.",
+                  }),
+                );
+
+              osUpdateDeadline = parsed;
+            }
+
             const request = ((): { requestType: string; payload: CommandPayload } | null => {
               if (device.proto === "win") {
                 if (action === "wipe")
@@ -15344,6 +15436,21 @@ export const createEnterpriseService = ({
                 case "verify-recovery-lock":
                   // Filled below from the escrowed Recovery Lock password.
                   return { requestType: "VerifyRecoveryLock", payload: {} };
+                case "schedule-os-update":
+                  // Apple has no absolute-deadline key; `InstallLater` plus a
+                  // bounded deferral count is the closest supported shape, and
+                  // the fleet UI states that the command runs on check-in.
+                  return {
+                    requestType: "ScheduleOSUpdate",
+                    payload: appleScheduleOsUpdatePayload({
+                      ...(body.osUpdateInstallAction
+                        ? { installAction: body.osUpdateInstallAction }
+                        : {}),
+                      productKey: body.osUpdateProductKey ?? null,
+                      deadline: osUpdateDeadline,
+                      now: timestamp,
+                    }),
+                  };
                 case "refresh-applications":
                   return {
                     requestType: "InstalledApplicationList",
@@ -16414,6 +16521,385 @@ export const createEnterpriseService = ({
           devices: attention,
         };
       }),
+    getTenantOsPolicy: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return tenantOsPolicyResponse(yield* loadOsPolicyRules(ctx.organization.id));
+      }),
+    patchTenantOsPolicy: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "device-command");
+
+        const existing = yield* loadOsPolicyRules(ctx.organization.id);
+        const timestamp = now();
+        const seen = new Set<OsPolicyPlatform>();
+
+        for (const entry of payload.platforms) {
+          if (seen.has(entry.platform))
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Platform ${entry.platform} appears more than once in the policy`,
+              }),
+            );
+          seen.add(entry.platform);
+
+          const current = existing.find((rule) => rule.platform === entry.platform);
+
+          const minimumVersion =
+            entry.minimumVersion === undefined
+              ? (current?.minimumVersion ?? null)
+              : entry.minimumVersion === null
+                ? null
+                : normalizeMinimumVersion(entry.minimumVersion);
+
+          // A value that was supplied but cannot be normalised must be
+          // rejected: silently storing null would disable the rule.
+          if (
+            entry.minimumVersion !== undefined &&
+            entry.minimumVersion !== null &&
+            minimumVersion === null
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `${entry.minimumVersion.trim()} is not a version. Use a dotted number such as 14.6 or 10.0.22631.`,
+              }),
+            );
+
+          const enforcement = entry.enforcement ?? current?.enforcement ?? "off";
+
+          const deferralDays =
+            entry.deferralDays === undefined
+              ? (current?.deferralDays ?? 0)
+              : Math.min(Math.max(Math.trunc(entry.deferralDays), 0), 365);
+
+          // Enforcing a minimum without one would silently do nothing.
+          if (enforcement !== "off" && minimumVersion === null)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Set a minimum version before switching ${entry.platform} to ${enforcement}.`,
+              }),
+            );
+
+          yield* db
+            .insert(schema.tenantOsPolicy)
+            .values({
+              organizationId: ctx.organization.id,
+              platform: entry.platform,
+              minimumVersion,
+              enforcement,
+              deferralDays,
+              updatedAt: timestamp,
+            })
+            .onDuplicateKeyUpdate({
+              set: {
+                minimumVersion,
+                enforcement,
+                deferralDays,
+                updatedAt: timestamp,
+              },
+            });
+        }
+
+        yield* audit(ctx, "tenant.os_policy_updated", "organization", ctx.organization.id, {
+          platforms: payload.platforms.map((entry: UpdateTenantOsPolicyEntry) => entry.platform),
+        });
+
+        return tenantOsPolicyResponse(yield* loadOsPolicyRules(ctx.organization.id));
+      }),
+    getOsFleet: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const at = now();
+
+        const [rules, softwareUpdates, buckets] = yield* Effect.all(
+          [
+            loadOsPolicyRules(ctx.organization.id),
+            loadSoftwareUpdates(),
+            // Distribution is aggregated in SQL. Loading one row per distinct
+            // (platform, edition, version) keeps the fleet page independent of
+            // fleet size; the only per-device query is the bounded "behind"
+            // list below.
+            queryEffect(
+              db
+                .select({
+                  proto: schema.device.proto,
+                  osEdition: schema.device.osEdition,
+                  osVersion: schema.device.osVersion,
+                  value: count(),
+                })
+                .from(schema.device)
+                .where(eq(schema.device.organizationId, ctx.organization.id))
+                .groupBy(schema.device.proto, schema.device.osEdition, schema.device.osVersion),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const evaluated = buckets.flatMap((bucket) => {
+          const platform = osPolicyPlatformForDevice({
+            proto: bucket.proto,
+            osEdition: bucket.osEdition,
+            osVersion: bucket.osVersion,
+            model: null,
+          });
+
+          if (!platform) return [];
+
+          const info = osComplianceFor(
+            {
+              proto: bucket.proto,
+              osEdition: bucket.osEdition,
+              osVersion: bucket.osVersion,
+              model: null,
+            },
+            rules,
+            softwareUpdates.catalog,
+            at,
+          );
+
+          return [{ bucket, platform, info, count: Number(bucket.value) || 0 }];
+        });
+
+        type FleetComplianceCounts = {
+          total: number;
+          compliant: number;
+          updateAvailable: number;
+          belowMinimum: number;
+          deferred: number;
+          unknown: number;
+          enforcedBelowMinimum: number;
+        };
+
+        const emptyCounts = (): FleetComplianceCounts => ({
+          total: 0,
+          compliant: 0,
+          updateAvailable: 0,
+          belowMinimum: 0,
+          deferred: 0,
+          unknown: 0,
+          enforcedBelowMinimum: 0,
+        });
+
+        const addCount = (
+          counts: ReturnType<typeof emptyCounts>,
+          info: OsComplianceInfo,
+          value: number,
+        ) => {
+          counts.total += value;
+
+          switch (info.status) {
+            case "compliant":
+              counts.compliant += value;
+              break;
+            case "update-available":
+              counts.updateAvailable += value;
+
+              if (info.reason === "deferral_active") counts.deferred += value;
+
+              break;
+            case "below-minimum":
+              counts.belowMinimum += value;
+
+              if (info.enforced) counts.enforcedBelowMinimum += value;
+
+              break;
+            case "unknown":
+              counts.unknown += value;
+              break;
+          }
+        };
+
+        const totals = emptyCounts();
+
+        const BEHIND_LIMIT = 100;
+
+        const protoForPlatform: Record<OsPolicyPlatform, "apple" | "win" | "android"> = {
+          macos: "apple",
+          windows: "win",
+          android: "android",
+        };
+
+        const platforms = yield* Effect.forEach(
+          OS_POLICY_PLATFORMS,
+          (platform) =>
+            Effect.gen(function* () {
+              const rule = completeOsPolicy(rules).find((entry) => entry.platform === platform)!;
+
+              const platformBuckets = evaluated.filter((entry) => entry.platform === platform);
+
+              const counts = emptyCounts();
+
+              for (const entry of platformBuckets) addCount(counts, entry.info, entry.count);
+
+              for (const entry of platformBuckets) addCount(totals, entry.info, entry.count);
+
+              // SQL groups by edition as well as version so macOS and a
+              // non-macOS Apple family never mix. For display, merge the same
+              // version across editions and keep the worse status.
+              const byVersion = new Map<
+                string,
+                {
+                  version: string | null;
+                  count: number;
+                  status: OsComplianceInfo["status"];
+                  reason: OsComplianceInfo["reason"];
+                }
+              >();
+
+              for (const entry of platformBuckets) {
+                const version = entry.bucket.osVersion ?? null;
+                const key = version ?? "\u0000unknown";
+                const existing = byVersion.get(key);
+
+                if (!existing) {
+                  byVersion.set(key, {
+                    version,
+                    count: entry.count,
+                    status: entry.info.status,
+                    reason: entry.info.reason,
+                  });
+                  continue;
+                }
+
+                existing.count += entry.count;
+
+                if (osComplianceRank(entry.info.status) < osComplianceRank(existing.status)) {
+                  existing.status = entry.info.status;
+                  existing.reason = entry.info.reason;
+                }
+              }
+
+              const versions = [...byVersion.values()].sort((left, right) => {
+                if (left.version === null) return 1;
+
+                if (right.version === null) return -1;
+
+                return -(compareVersionStrings(left.version, right.version) ?? 0);
+              });
+
+              // Only actionable versions are worth a per-device query. Unknown
+              // versions stay in the distribution but are not "behind".
+              const behindVersions = [
+                ...new Set(
+                  platformBuckets
+                    .filter(
+                      (entry) =>
+                        entry.info.status === "below-minimum" ||
+                        entry.info.status === "update-available",
+                    )
+                    .map((entry) => entry.bucket.osVersion ?? null),
+                ),
+              ].slice(0, 40);
+
+              let behindRows: ReadonlyArray<{
+                readonly id: string;
+                readonly name: string;
+                readonly proto: "apple" | "win" | "android";
+                readonly osVersion: string | null;
+                readonly osEdition: string | null;
+                readonly model: string | null;
+                readonly lastSeenAt: Date;
+              }> = [];
+
+              if (behindVersions.length > 0) {
+                const versionCondition = or(
+                  ...behindVersions.map((version) =>
+                    version === null
+                      ? isNull(schema.device.osVersion)
+                      : eq(schema.device.osVersion, version),
+                  ),
+                );
+
+                behindRows = yield* queryEffect(
+                  db
+                    .select({
+                      id: schema.device.id,
+                      name: schema.device.name,
+                      proto: schema.device.proto,
+                      osVersion: schema.device.osVersion,
+                      osEdition: schema.device.osEdition,
+                      model: schema.device.model,
+                      lastSeenAt: schema.device.lastSeenAt,
+                    })
+                    .from(schema.device)
+                    .where(
+                      and(
+                        eq(schema.device.organizationId, ctx.organization.id),
+                        eq(schema.device.proto, protoForPlatform[platform]),
+                        versionCondition,
+                      ),
+                    )
+                    .orderBy(asc(schema.device.name))
+                    .limit(BEHIND_LIMIT + 1),
+                );
+              }
+
+              const behind = behindRows
+                .flatMap((row) => {
+                  if (platform === "macos" && !isMacOsDevice(row)) return [];
+
+                  const info = osComplianceFor(row, rules, softwareUpdates.catalog, at);
+
+                  if (info.status !== "below-minimum" && info.status !== "update-available")
+                    return [];
+
+                  return [
+                    {
+                      id: row.id,
+                      name: row.name,
+                      status: info.status,
+                      reason: info.reason,
+                      currentVersion: info.currentVersion,
+                      targetVersion: info.targetVersion,
+                      deferralEndsAt: info.deferralEndsAt,
+                      lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
+                    },
+                  ];
+                })
+                .sort(
+                  (left, right) =>
+                    osComplianceRank(left.status) - osComplianceRank(right.status) ||
+                    left.name.localeCompare(right.name),
+                );
+
+              return {
+                platform,
+                minimumVersion: effectiveOsMinimumVersion(rule),
+                enforcement: rule.enforcement,
+                deferralEndsAt: osPolicyDeferralEndsAt(rule)?.toISOString() ?? null,
+                capability: OS_POLICY_CAPABILITIES[platform],
+                counts,
+                versions,
+                behind: behind.slice(0, BEHIND_LIMIT),
+                behindTruncated: behind.length > BEHIND_LIMIT,
+              };
+            }),
+          { concurrency: 1 },
+        );
+
+        const baseline = macOsUpdateBaseline(
+          softwareUpdates.catalog,
+          softwareUpdateSupportedMajorCount,
+        );
+
+        return {
+          generatedAt: at.toISOString(),
+          feed: {
+            source: "sofa" as const,
+            url: softwareUpdates.sourceUrl,
+            available: softwareUpdates.available,
+            stale: softwareUpdates.stale,
+            fetchedAt: softwareUpdates.fetchedAt,
+            error: softwareUpdates.error,
+            latestVersion: baseline.latestVersion,
+            minimumSupportedVersion: baseline.minimumSupportedVersion,
+          },
+          totals,
+          platforms,
+        };
+      }),
     getDevicePushHealth: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -16639,10 +17125,14 @@ export const createEnterpriseService = ({
         if (directoryGroupId)
           yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
 
-        if (body.childGroups?.length)
-          yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+        if (body.childGroups?.length) yield* syncGroupInheritance(db, ctx.organization.id, groupId);
 
-        if (body.devices?.length || body.policies?.length || directoryGroupId || body.childGroups?.length)
+        if (
+          body.devices?.length ||
+          body.policies?.length ||
+          directoryGroupId ||
+          body.childGroups?.length
+        )
           yield* syncAndroidDevices(ctx.organization.id, [
             ...(body.devices ?? []),
             ...(yield* applePush.deviceIdsInGroups([groupId])),
@@ -17053,21 +17543,23 @@ export const createEnterpriseService = ({
             ]);
 
         if (unexcludeDevices.length || unexcludeUsers.length)
-          yield* db.delete(schema.groupExclusion).where(
-            and(
-              eq(schema.groupExclusion.groupId, groupId),
-              or(
-                and(
-                  eq(schema.groupExclusion.target, "device"),
-                  inArray(schema.groupExclusion.targetId, unexcludeDevices),
-                ),
-                and(
-                  eq(schema.groupExclusion.target, "user"),
-                  inArray(schema.groupExclusion.targetId, unexcludeUsers),
+          yield* db
+            .delete(schema.groupExclusion)
+            .where(
+              and(
+                eq(schema.groupExclusion.groupId, groupId),
+                or(
+                  and(
+                    eq(schema.groupExclusion.target, "device"),
+                    inArray(schema.groupExclusion.targetId, unexcludeDevices),
+                  ),
+                  and(
+                    eq(schema.groupExclusion.target, "user"),
+                    inArray(schema.groupExclusion.targetId, unexcludeUsers),
+                  ),
                 ),
               ),
-            ),
-          );
+            );
 
         // A dynamic/directory group must re-derive after an exclusion change:
         // removing an exclusion can bring a matching device back. The syncs
@@ -21205,7 +21697,7 @@ export const createEnterpriseService = ({
         const apple = joined.apple ?? undefined;
         const android = joined.android ?? undefined;
 
-        const [secrets, autopilotRows, groups, softwareUpdates] = yield* Effect.all(
+        const [secrets, autopilotRows, groups, softwareUpdates, osPolicyRules] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -21242,6 +21734,7 @@ export const createEnterpriseService = ({
             ),
             queryEffect(deviceGroupsFor(ctx.organization.id, [row.id])),
             loadSoftwareUpdates(),
+            loadOsPolicyRules(ctx.organization.id),
           ],
           { concurrency: "unbounded" },
         );
@@ -21261,6 +21754,7 @@ export const createEnterpriseService = ({
         return {
           ...rowDevice(row, apple, android),
           osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
+          osCompliance: osComplianceFor(row, osPolicyRules, softwareUpdates.catalog),
           attributes: attributes.get(row.id),
           groups: groups.get(row.id) ?? [],
           recoveryKeyEscrowed: Boolean(recoveryKey),
@@ -22527,6 +23021,25 @@ export const enterpriseSoftwareUpdateHandlers = (
       service.getSoftwareUpdateSummary(request, params.tenantId),
     ),
   );
+
+/** Tenant OS policy and fleet compliance. Registered against its own group. */
+export const enterpriseOsPolicyHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseOsPolicyApi>,
+) =>
+  handlers
+    .handle("getTenantOsPolicy", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantOsPolicy(request, params.tenantId),
+      ),
+    )
+    .handle("patchTenantOsPolicy", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantOsPolicy(request, params.tenantId, payload),
+      ),
+    )
+    .handle("getOsFleet", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.getOsFleet(request, params.tenantId)),
+    );
 
 /**
  * Paginated catalogue list handlers. Registered against `enterpriseListApi`, a

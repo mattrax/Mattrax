@@ -26,6 +26,8 @@ export * from "./deviceHealth.ts";
 
 export * from "./softwareUpdates.ts";
 
+export * from "./osPolicy.ts";
+
 export * from "./deviceActions.ts";
 
 export * from "./scripts.ts";

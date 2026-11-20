@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { isMacOsDevice } from "./deviceHealth.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -28,6 +29,7 @@ export const DeviceActionName = Schema.Literals([
   "clear-app-data",
   "request-device-info",
   "relinquish-ownership",
+  "schedule-os-update",
   "unenroll",
 ]);
 
@@ -83,6 +85,7 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "rotate-filevault-key",
   "set-recovery-lock",
   "verify-recovery-lock",
+  "schedule-os-update",
   "unenroll",
 ];
 
@@ -144,6 +147,8 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["rotate-filevault-key", "rotate-filevault-key"],
   ["set-recovery-lock", "set-recovery-lock"],
   ["verify-recovery-lock", "verify-recovery-lock"],
+  ["schedule-os-update", "schedule-os-update"],
+  ["os-update", "schedule-os-update"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -290,6 +295,12 @@ export const deviceAvailableActions = (
 
   const base = platformActions(input.proto)
     .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
+    // `ScheduleOSUpdate` is a macOS command. Advertising it on iOS or tvOS
+    // would queue a command Apple rejects.
+    .filter(
+      (action) =>
+        action !== "schedule-os-update" || (input.proto === "apple" && isMacOsDevice(input)),
+    )
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
@@ -349,6 +360,9 @@ export const deviceActionUnavailableReason = (
 
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
+
+  if (action === "schedule-os-update")
+    return "OS update scheduling is only available for macOS devices.";
 
   return `This device does not support the ${action} action.`;
 };

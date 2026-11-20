@@ -41,6 +41,9 @@ const BUDGETS = new Map<string, number>([
   ["InstallApplication", 24 * HOUR],
   ["InstallEnterpriseApplication", 24 * HOUR],
   ["InstalledApplicationList", 7 * DAY],
+  // OS update scheduling is only meaningful while the operator still expects
+  // the Mac to act on it; a month-old request would install at a random time.
+  ["ScheduleOSUpdate", 7 * DAY],
   // Destructive actions: a week is long enough for a travelling laptop.
   ["EraseDevice", 7 * DAY],
   ["WindowsWipe", 7 * DAY],

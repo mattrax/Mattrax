@@ -280,6 +280,7 @@ export const routes = {
         return `${base}/devices${entries.length > 0 ? `?${query}` : ""}`;
       },
       device: (deviceId: string) => `${base}/devices/${segment(deviceId)}`,
+      osVersions: () => `${base}/os-versions`,
       users: () => `${base}/users`,
       user: (userId: string) => `${base}/users/${segment(userId)}`,
       groups: () => `${base}/groups`,
@@ -313,6 +314,7 @@ export const routes = {
           | "delivery"
           | "integrations"
           | "audit"
+          | "os-updates"
           | "billing"
           | "legal",
       ) => (tab === "" ? `${base}/settings` : `${base}/settings/${tab}`),

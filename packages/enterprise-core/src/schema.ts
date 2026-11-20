@@ -1960,6 +1960,40 @@ export const softwareUpdateFeed = mysqlTable("software_update_feed", {
   lastError: varchar("last_error", { length: 64 }),
 });
 
+/**
+ * Tenant OS update policy, one row per platform family.
+ *
+ * `minimum_version` is the operator's target, `enforcement` says whether it is
+ * only reported (`warn`) or acted on (`enforce`), and `deferral_days` is a
+ * grace period measured from `updated_at` so every save restarts the window.
+ * `off` keeps the row (and its last value) without applying a minimum.
+ *
+ * The row is keyed by (organisation, platform): there is never more than one
+ * active rule per platform, and the primary key also serves the tenant read.
+ */
+export const tenantOsPolicy = mysqlTable(
+  "tenant_os_policy",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    platform: varchar("platform", {
+      length: 16,
+      enum: ["macos", "windows", "android"],
+    }).notNull(),
+    minimumVersion: varchar("minimum_version", { length: 64 }),
+    enforcement: varchar("enforcement", {
+      length: 16,
+      enum: ["off", "warn", "enforce"],
+    })
+      .notNull()
+      .default("off"),
+    deferralDays: int("deferral_days").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.platform] })],
+);
+
 export const device = mysqlTable(
   "device",
   {

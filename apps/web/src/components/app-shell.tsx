@@ -57,11 +57,7 @@ import type { Permission } from "@mattrax/enterprise-domain/client";
 import { routes } from "~/lib/routes";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
-import {
-  SETTINGS_READ_PERMISSIONS,
-  tenantRoleName,
-  useCan,
-} from "~/lib/permissions";
+import { SETTINGS_READ_PERMISSIONS, tenantRoleName, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { isServer } from "@solidjs/web";
@@ -298,7 +294,10 @@ function UserMenu(props: {
         <Show
           when={sidebar()}
           fallback={
-            <Show when={user()?.image} fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}>
+            <Show
+              when={user()?.image}
+              fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}
+            >
               {(image) => <img src={image()} alt="" class="size-full object-cover" />}
             </Show>
           }
@@ -408,6 +407,9 @@ function navFor(tenantId: string | undefined): NavItem[] {
       permission: "dashboards.read",
     }),
     item("devices", "Devices", tenant.devices(), MonitorSmartphone, "workspace", {
+      permission: "devices.read",
+    }),
+    item("os-versions", "OS versions", tenant.osVersions(), MonitorSmartphone, "workspace", {
       permission: "devices.read",
     }),
     item("users", "Users", tenant.users(), User, "workspace", {
@@ -555,11 +557,7 @@ function SidebarPanel(props: {
 
       <Separator />
       <div class="shrink-0 p-2">
-        <UserMenu
-          user={props.user}
-          onSignOut={props.onSignOut}
-          superadmin={props.superadmin}
-        />
+        <UserMenu user={props.user} onSignOut={props.onSignOut} superadmin={props.superadmin} />
       </div>
     </div>
   );
@@ -797,7 +795,8 @@ export function AppShell(props: {
     },
   );
 
-  return (    <div class="flex min-h-svh bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
+  return (
+    <div class="flex min-h-svh bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
       <a
         href="#main"
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -836,10 +835,7 @@ export function AppShell(props: {
             >
               <BrandLogo class="h-3" />
             </a>
-            <span
-              class="mx-1 hidden h-3.5 w-px bg-border lg:block"
-              aria-hidden="true"
-            />
+            <span class="mx-1 hidden h-3.5 w-px bg-border lg:block" aria-hidden="true" />
             <div class="min-w-0 flex-1">
               <ShellBreadcrumb
                 tenantName={tenantName()}
@@ -859,7 +855,10 @@ export function AppShell(props: {
               >
                 <HelpCircle class="size-4" />
               </Button>
-              <span class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden" aria-hidden="true" />
+              <span
+                class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden"
+                aria-hidden="true"
+              />
               <span class="lg:hidden">
                 <UserMenu
                   user={props.user}

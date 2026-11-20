@@ -14,6 +14,7 @@ const tabs = [
   { id: "delivery", label: "Delivery" },
   { id: "integrations", label: "Integrations" },
   { id: "audit", label: "Audit log" },
+  { id: "os-updates", label: "OS updates" },
   { id: "billing", label: "Billing" },
   { id: "legal", label: "Legal" },
 ];
@@ -28,6 +29,7 @@ const sectionDescriptions = new Map([
   ["delivery", "Check that notification delivery to devices is healthy."],
   ["integrations", "Send tenant events to webhooks you control."],
   ["audit", "Every change made in this tenant, newest first."],
+  ["os-updates", "Set minimum OS versions, enforcement and the window devices get to update."],
   ["billing", "Plan, usage and invoices for this tenant."],
   ["legal", "Open-source licences and the notices those projects require."],
 ]);

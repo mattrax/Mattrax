@@ -349,6 +349,12 @@ export const DeviceRow = Schema.Struct({
    * `platform_unsupported` code rather than a misleading "up to date".
    */
   osUpdate: Schema.optional(Schema.Json),
+  /**
+   * Tenant-policy compliance for this device. The device detail endpoint
+   * populates it; list rows omit it and the fleet page derives the same value
+   * from the OS version distribution.
+   */
+  osCompliance: Schema.optional(Schema.Json),
 });
 
 export type DeviceRow = typeof DeviceRow.Type;
@@ -1045,12 +1051,33 @@ export const DeviceActionRequest = Schema.Struct({
       "clear-app-data",
       "request-device-info",
       "relinquish-ownership",
+      "schedule-os-update",
     ]),
   ),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */
   recoveryLockPassword: Schema.optional(Schema.String),
+  /**
+   * `ScheduleOSUpdate` install action. `InstallASAP` is immediate; use
+   * `InstallLater` with a deadline to let the user postpone the restart.
+   */
+  osUpdateInstallAction: Schema.optional(
+    Schema.Literals([
+      "Default",
+      "InstallASAP",
+      "InstallLater",
+      "NotifyOnly",
+      "InstallForceRestart",
+    ]),
+  ),
+  /** Apple's ProductKey from `AvailableOSUpdates`; omitted schedules all. */
+  osUpdateProductKey: Schema.optional(Schema.String),
+  /**
+   * ISO-8601 deadline for `InstallLater`. Apple has no absolute deadline, so
+   * the server converts this into a bounded `MaxUserDeferrals` count.
+   */
+  osUpdateDeadline: Schema.optional(Schema.String),
 });
 
 export const PatchDeviceRequest = Schema.Struct({

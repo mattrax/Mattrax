@@ -22,7 +22,13 @@ import {
   type EnterpriseDb,
   type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { selectInstaller, shouldApplyReportedName } from "@mattrax/enterprise-domain";
+import {
+  ANDROID_OS_UPDATE_CONFIGURATION_KIND,
+  androidSystemUpdatePolicy,
+  osPolicyRuleFromRow,
+  selectInstaller,
+  shouldApplyReportedName,
+} from "@mattrax/enterprise-domain";
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
@@ -1527,6 +1533,36 @@ const compileEffectiveAndroidPolicy = (input: {
       (configuration) => ({ kind: configuration.kind, data: configuration.data }),
     );
 
+    // The tenant OS policy is rendered as a systemUpdate fragment rather than
+    // a stored policy, so it applies without the operator authoring one. It is
+    // appended last: the tenant-wide rule wins over a conflicting fragment,
+    // matching how the Windows check-in merges its generated nodes.
+    const osPolicyRows = yield* input.db
+      .select({
+        platform: schema.tenantOsPolicy.platform,
+        minimumVersion: schema.tenantOsPolicy.minimumVersion,
+        enforcement: schema.tenantOsPolicy.enforcement,
+        deferralDays: schema.tenantOsPolicy.deferralDays,
+        updatedAt: schema.tenantOsPolicy.updatedAt,
+      })
+      .from(schema.tenantOsPolicy)
+      .where(
+        and(
+          eq(schema.tenantOsPolicy.organizationId, input.organizationId),
+          eq(schema.tenantOsPolicy.platform, "android"),
+        ),
+      )
+      .limit(1);
+
+    const osPolicyRule = osPolicyRows[0] ? osPolicyRuleFromRow(osPolicyRows[0]) : null;
+    const systemUpdate = androidSystemUpdatePolicy(osPolicyRule);
+
+    if (systemUpdate)
+      configurations.push({
+        kind: ANDROID_OS_UPDATE_CONFIGURATION_KIND,
+        data: { systemUpdate },
+      });
+
     // Managed Google Play delivery is the policy's `applications` array. Assigned
     // catalogue apps are merged underneath the tenant's own policy fragments, so
     // an explicit `installType` or managed configuration always wins.
@@ -2327,13 +2363,15 @@ export const reconcileAndroidEnterprise = (input: {
     let policyPages = 0;
 
     do {
-      const page = yield* android.listPolicies({ enterpriseName, pageToken: policyPageToken }).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning(
-            `Could not list Android policies for ${enterpriseName}: ${describeAndroidError(error)}`,
-          ).pipe(Effect.as({ policies: [], nextPageToken: undefined })),
-        ),
-      );
+      const page = yield* android
+        .listPolicies({ enterpriseName, pageToken: policyPageToken })
+        .pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Could not list Android policies for ${enterpriseName}: ${describeAndroidError(error)}`,
+            ).pipe(Effect.as({ policies: [], nextPageToken: undefined })),
+          ),
+        );
 
       for (const policy of page.policies) {
         const name = Option.getOrUndefined(

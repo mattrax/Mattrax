@@ -17,6 +17,7 @@ import {
   enterpriseIdentityApi,
   enterpriseUserApi,
   enterpriseSoftwareUpdateApi,
+  enterpriseOsPolicyApi,
   enterpriseListApi,
   enterpriseWindowsApi,
   parseSuperadminEmails,
@@ -35,6 +36,7 @@ import {
   enterpriseGroupHandlers,
   enterpriseHandlers,
   enterpriseSoftwareUpdateHandlers,
+  enterpriseOsPolicyHandlers,
   enterpriseIdentityHandlers,
   enterpriseUserHandlers,
   enterpriseListHandlers,
@@ -236,6 +238,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseIdentityApi)
   .add(enterpriseUserApi)
   .add(enterpriseSoftwareUpdateApi)
+  .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
   .add(enterpriseWindowsApi)
   .add(scriptApi)
@@ -300,6 +303,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseUser", enterpriseUserHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareUpdate", enterpriseSoftwareUpdateHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseOsPolicy", enterpriseOsPolicyHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),

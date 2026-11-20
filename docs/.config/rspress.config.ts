@@ -143,6 +143,7 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: "Devices", link: "/manage/devices" },
+            { text: "OS versions", link: "/manage/os-versions" },
             { text: "Groups", link: "/manage/groups" },
             { text: "Policies", link: "/manage/policies" },
             { text: "Applications", link: "/manage/applications" },
