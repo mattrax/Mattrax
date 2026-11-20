@@ -6,6 +6,7 @@
  *   apps/web/public/catalog/windows/index.json     collection summaries (~130 KB)
  *   apps/web/public/catalog/windows/<key>.json     one full collection each
  *   apps/web/public/catalog/windows/search.json    lazily fetched property text
+ *   apps/web/public/catalog/windows/admx.json      ADMX policy name to OMA-URI lookup
  *
  * The source catalogue stays outside `public/` so the browser never downloads
  * it; regenerate the split files with:
@@ -20,6 +21,7 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildAdmxCatalogueIndex } from "@mattrax/enterprise-domain/admx";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -218,6 +220,9 @@ export const splitWindowsCatalog = (catalogue: unknown): SplitWindowsCatalogue =
 
   files.set("index.json", `${JSON.stringify(index)}\n`);
   files.set("search.json", `${JSON.stringify(search)}\n`);
+  // The ADMX importer needs the policy-name to OMA-URI mapping, but not the
+  // 17 MB source. Keep the lookup out of index.json: browse never needs it.
+  files.set("admx.json", `${JSON.stringify(buildAdmxCatalogueIndex(collections))}\n`);
 
   return { files, index, stats: index.stats };
 };

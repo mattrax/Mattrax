@@ -809,6 +809,7 @@ snapshots:
 		"packages/enterprise-domain": {
 			"name": "@mattrax/enterprise-domain",
 			"dependencies": {
+				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",
 			},

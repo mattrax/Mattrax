@@ -113,6 +113,11 @@ Everything else is rejected. There is no push; commands wait for the next poll.
   `Add`, arbitrary `Exec` or custom SyncML authoring, and inventory `Get` requests are
   server-generated.
 - No BitLocker key escrow, app install or per-device policy push; devices poll.
+- ADMX templates can be imported in the designer: Microsoft in-box policies map to their
+  existing `ADMX_*` catalogue URI, and vendor templates are ingested with
+  `ConfigOperations/ADMXInstall`. The designer is device-scoped, so user-scoped templates
+  must be added through the policy editor. See
+  [Policy catalogue](/reference/policy-catalogue#admx-imports) for the URI scheme and limits.
 - The policy designer's Windows catalogue is large; see
   [Policy catalogue](/reference/policy-catalogue).
 
