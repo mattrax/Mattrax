@@ -338,6 +338,10 @@ type EnterpriseOsPolicyClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseOsPolicy"];
 
+type EnterpriseCutoverClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseCutover"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -773,6 +777,17 @@ function osPolicyEndpoint<A, E>(
   );
 }
 
+function cutoverEndpoint<A, E>(
+  call: (api: EnterpriseCutoverClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseCutover),
+    call,
+    options,
+  );
+}
+
 function listEndpoint<A, E>(
   call: (api: EnterpriseListClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
@@ -905,7 +920,7 @@ export const enterprise = {
    * Requires `cutover-export` step-up in addition to tenant.export.
    */
   exportTenantCutover: (tenantId: RouteParam, payload: CutoverExportRequest) =>
-    endpoint(
+    cutoverEndpoint(
       (api) =>
         api.exportTenantCutover({
           params: { tenantId: required(tenantId, "tenantId") },
@@ -915,13 +930,13 @@ export const enterprise = {
     ),
   /** Verify an archive and list conflicts without writing anything. */
   previewTenantCutover: (payload: CutoverPreviewRequest) =>
-    endpoint((api) => api.previewTenantCutover({ payload })),
+    cutoverEndpoint((api) => api.previewTenantCutover({ payload })),
   /** Apply an archive. Requires `cutover-import` step-up. */
   importTenantCutover: (payload: CutoverImportRequest) =>
-    endpoint((api) => api.importTenantCutover({ payload }), { stepUp: "cutover-import" }),
+    cutoverEndpoint((api) => api.importTenantCutover({ payload }), { stepUp: "cutover-import" }),
   /** What a change of ORIGIN breaks, counted for this tenant. */
   getTenantCutoverPreflight: (tenantId: RouteParam, query: CutoverPreflightQuery = {}) =>
-    endpoint((api) =>
+    cutoverEndpoint((api) =>
       api.getTenantCutoverPreflight({
         params: { tenantId: required(tenantId, "tenantId") },
         query,

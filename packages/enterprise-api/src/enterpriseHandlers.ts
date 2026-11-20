@@ -33,6 +33,7 @@ import {
   enterpriseAccountApi,
   enterpriseAdminApi,
   enterpriseApi,
+  enterpriseCutoverApi,
   enterpriseGroupApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
@@ -25214,14 +25215,6 @@ export const enterpriseHandlers = (
     .handle("importTenant", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.importTenant(request, payload)),
     )
-    .handle("previewTenantCutover", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.previewTenantCutover(request, payload),
-      ),
-    )
-    .handle("importTenantCutover", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.importTenantCutover(request, payload)),
-    )
     .handle("getTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.getTenant(request, params.tenantId)),
     )
@@ -25239,19 +25232,6 @@ export const enterpriseHandlers = (
               },
             }),
         ),
-      ),
-    )
-    .handle("exportTenantCutover", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        Effect.map(
-          service.exportTenantCutover(request, params.tenantId, payload),
-          (result: { body: string }) => result.body,
-        ),
-      ),
-    )
-    .handle("getTenantCutoverPreflight", ({ request, params, query }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.getTenantCutoverPreflight(request, params.tenantId, query),
       ),
     )
     .handle("runTenantBackup", ({ request, params }) =>
@@ -26215,6 +26195,33 @@ export const enterpriseHandlers = (
     .handle("billingInvoices", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.billingInvoices(request, params.tenantId),
+      ),
+    );
+
+/** Deployment cutover handlers; registered against their own API group. */
+export const enterpriseCutoverHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseCutoverApi>,
+) =>
+  handlers
+    .handle("previewTenantCutover", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewTenantCutover(request, payload),
+      ),
+    )
+    .handle("importTenantCutover", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.importTenantCutover(request, payload)),
+    )
+    .handle("exportTenantCutover", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportTenantCutover(request, params.tenantId, payload),
+          (result: { body: string }) => result.body,
+        ),
+      ),
+    )
+    .handle("getTenantCutoverPreflight", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantCutoverPreflight(request, params.tenantId, query),
       ),
     );
 
