@@ -39,6 +39,12 @@ export const Property: Schema.Codec<Property, unknown> = Schema.Struct({
   introducedIn: Schema.optional(Schema.String),
   children: Schema.optional(Schema.Array(Schema.suspend(() => Property))),
   address: Schema.optional(Schema.String),
+  /**
+   * Storage key when the address is shared by several fields. ADMX-backed
+   * policies deliver one XML payload per OMA-URI, so each element is stored
+   * under its ADMX element id while the address stays the delivery target.
+   */
+  valueKey: Schema.optional(Schema.String),
   scope: Schema.optional(Schema.Literals(["device", "user", "system"])),
   category: Schema.optional(Schema.String),
   pattern: Schema.optional(Schema.String),
@@ -60,6 +66,7 @@ export type Property = {
   readonly introducedIn?: string;
   readonly children?: ReadonlyArray<Property>;
   readonly address?: string;
+  readonly valueKey?: string;
   readonly scope?: "device" | "user" | "system";
   readonly category?: string;
   readonly pattern?: string;
@@ -428,7 +435,8 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
 
 /** The identity a selection stores for a property; mirrors `valueKey` in `build.ts`. */
 const searchValueKey = (property: Property, platform: PlatformId) =>
-  platform === "windows" ? (property.address ?? property.key) : property.key;
+  property.valueKey ??
+  (platform === "windows" ? (property.address ?? property.key) : property.key);
 
 const buildSearchIndex = (data: PlatformData): SearchIndex => ({
   platform: data.id,
@@ -537,7 +545,7 @@ export const collectionProperties = (collection: {
 
   return collection.properties.filter((property) => {
     if (property.address && /[{}]/.test(property.address)) return false;
-    const identity = property.address ?? property.key;
+    const identity = property.valueKey ?? property.address ?? property.key;
 
     if (seen.has(identity)) return false;
     seen.add(identity);

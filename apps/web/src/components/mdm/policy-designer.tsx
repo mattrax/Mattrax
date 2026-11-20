@@ -14,6 +14,7 @@ import {
 } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { AdmxImportDialog } from "~/components/mdm/admx-import";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
 import {
   Dialog,
@@ -95,6 +96,11 @@ import {
   type SelectionTemplate,
   type ValidationIssue,
 } from "~/lib/policy-designer/build";
+import {
+  admxCollectionFromSelection,
+  isAdmxCollectionId,
+  type AdmxSelection,
+} from "~/lib/policy-designer/admx";
 import {
   isThirdPartyCollectionId,
   loadThirdPartyApps,
@@ -291,6 +297,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [loadingCollections, setLoadingCollections] = createSignal<Record<string, boolean>>({});
   const [thirdParty, setThirdParty] = createSignal<ThirdPartyCatalog | null>(null);
   const [thirdPartyError, setThirdPartyError] = createSignal<string | null>(null);
+  const [admxOpen, setAdmxOpen] = createSignal(false);
 
   const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
     {},
@@ -396,6 +403,20 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       const cacheKey = collectionCacheKey(targetPlatform, collectionId);
 
       if (collections()[cacheKey] || loadingCollections()[cacheKey]) return;
+
+      // Imported ADMX collections live in the draft, not the catalogue: the
+      // selection already carries every property and value key.
+      if (isAdmxCollectionId(collectionId)) {
+        const selection = (selectionMap()[targetPlatform] ?? []).find(
+          (item) => collectionIdOf(item.collectionId) === collectionId,
+        );
+
+        const collection = selection ? admxCollectionFromSelection(selection) : null;
+
+        if (collection) setCollections((current) => ({ ...current, [cacheKey]: collection }));
+
+        return;
+      }
 
       // Third-party app collections are data, not catalogue entries: build them
       // from the loaded app catalogue instead of fetching a platform file.
@@ -634,7 +655,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       if (
         value.active &&
-        value.data.collections.some((collection) => keyOf(collection) === value.active)
+        (value.data.collections.some((collection) => keyOf(collection) === value.active) ||
+          isThirdPartyCollectionId(value.active) ||
+          isAdmxCollectionId(value.active))
       ) {
         ensureCollection(collectionIdOf(value.active));
 
@@ -785,19 +808,21 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     if (found) return found;
 
-    // Third-party apps live outside the platform catalogue index.
+    // Third-party apps and imported ADMX policies live outside the platform
+    // catalogue index; the selection carries everything the editor needs.
     const selection = selections().find((item) => item.collectionId === key);
+    const admx = isAdmxCollectionId(key);
 
-    if (!selection || !isThirdPartyCollectionId(key)) return undefined;
+    if (!selection || (!isThirdPartyCollectionId(key) && !admx)) return undefined;
 
     return {
-      id: key,
+      id: collectionIdOf(key),
       platform: platform(),
       kind: selection.kind,
       surface: selection.surface,
       identifier: selection.identifier,
       name: selection.name,
-      group: "Third-party apps",
+      group: admx ? "ADMX import" : "Third-party apps",
       propertyCount: selection.properties.length,
     };
   });
@@ -809,6 +834,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     const cached = collections()[collectionCacheKey(platform(), collectionIdOf(key))];
 
     if (cached) return cached;
+
+    if (isAdmxCollectionId(key)) {
+      const selection = selections().find((item) => item.collectionId === key);
+
+      return selection ? (admxCollectionFromSelection(selection) ?? undefined) : undefined;
+    }
 
     if (!isThirdPartyCollectionId(key)) return undefined;
 
@@ -910,7 +941,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     const entries = searchEntries();
 
     return selections()
-      .filter((selection) => !entries || entries.has(selection.collectionId))
+      .filter(
+        (selection) =>
+          !entries ||
+          entries.has(selection.collectionId) ||
+          isAdmxCollectionId(selection.collectionId),
+      )
       .map((selection) => ({
         selection,
         stats: statsFor(selection),
@@ -1100,6 +1136,53 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       [collectionCacheKey(target, collection.id)]: collection,
     }));
     addCollection(collection, thirdPartySelectionTemplate(app, target));
+  };
+
+  /**
+   * Add the policies selected in the ADMX review. The synthetic collections are
+   * cached first so the editor can render them without a catalogue fetch.
+   */
+  const addAdmxImport = (items: readonly AdmxSelection[]) => {
+    const target = platform();
+
+    if (target !== "windows") return;
+    const cached: Record<string, Collection> = {};
+    const additions: Selection[] = [];
+
+    for (const item of items) {
+      const key = keyOf(item.collection);
+
+      if (selections().some((selection) => selection.collectionId === key)) continue;
+      cached[collectionCacheKey(target, item.collection.id)] = item.collection;
+      additions.push({
+        collectionId: key,
+        identifier: item.collection.identifier,
+        kind: item.collection.kind,
+        surface: item.collection.surface,
+        name: item.collection.name,
+        properties: collectionProperties(item.collection),
+        values: defaultValues(item.collection),
+        template: item.template,
+      });
+    }
+
+    if (additions.length === 0) {
+      setNotice("Those ADMX policies are already in this policy.");
+
+      return;
+    }
+
+    setCollections((current) => ({ ...current, ...cached }));
+    setSelections((current) => [...current, ...additions]);
+    setActiveKey(additions[0]!.collectionId);
+    setQuery("");
+    setFilterQuery("");
+    setFilterMode("all");
+    setMobileView("editor");
+    setLiveMessage(
+      `${additions.length} ADMX polic${additions.length === 1 ? "y" : "ies"} added to the policy.`,
+    );
+    focusEditor();
   };
 
   const addByKey = async (key: string, target: PlatformId = platform()) => {
@@ -2176,6 +2259,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   </Show>
                 </section>
 
+                <Show when={platform() === "windows"}>
+                  <section class="border-b border-border">
+                    <div class="flex items-center justify-between gap-2 px-3 pb-1 pt-2.5">
+                      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        ADMX templates
+                      </h3>
+                      <Button size="xs" variant="outline" onClick={() => setAdmxOpen(true)}>
+                        Import
+                      </Button>
+                    </div>
+                    <p class="px-3 pb-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                      Import a vendor .admx/.adml pair or a .zip. Microsoft in-box templates map to
+                      the settings already in the catalogue.
+                    </p>
+                  </section>
+                </Show>
+
                 <section>
                   <div class="flex items-center justify-between px-3 pb-1 pt-2.5">
                     <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2924,6 +3024,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdmxImportDialog
+        open={admxOpen()}
+        onOpenChange={setAdmxOpen}
+        onImport={addAdmxImport}
+      />
 
       {/* Summary sheet below xl */}
       <Sheet open={summaryOpen()} onOpenChange={setSummaryOpen}>

@@ -72,8 +72,14 @@ Only `Replace` is generated. There is no `Add`, `Delete` or custom SyncML.
 
 ### Settings catalog / ADMX
 
-There is no automatic translation. Find the equivalent OMA-URI in Microsoft's policy CSP
-reference or use a custom SyncML tool. Mattrax does not support ADMX ingestion.
+Mattrax can import an ADMX/ADML pair (or a zip) into a Windows policy. Microsoft in-box
+templates are matched to the equivalent Policy CSP `ADMX_*` setting. Vendor templates are
+ingested with `ConfigOperations/ADMXInstall` and then configured through
+`<AppName>~Policy~<Category>` URIs. User-scoped templates need the policy editor because the
+designer saves a device-scoped configuration.
+
+Settings with no ADMX template still need the OMA-URI from Microsoft's policy CSP reference.
+See [Policy catalogue](/reference/policy-catalogue#admx-imports) for what is supported.
 
 ## Compliance
 

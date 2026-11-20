@@ -6,9 +6,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./client": "./src/client.ts",
+    "./admx": "./src/admx/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@xmldom/xmldom": "catalog:",
     "@yielded/auth": "catalog:",
     "effect": "catalog:"
   },

@@ -28,6 +28,16 @@ const index = readJson(WindowsPlatformIndex, "index.json");
 
 const search = readJson(SearchIndex, "search.json");
 
+// SAFETY: the split script writes this shape; the assertions below check every
+// entry it uses, so a stale or corrupt file fails this test rather than the app.
+const admx = JSON.parse(readFileSync(path.join(catalogDir, "admx.json"), "utf8")) as {
+  version: number;
+  policies: Record<
+    string,
+    Array<{ area: string; scope: string; collectionId: string; policyName: string }>
+  >;
+};
+
 const summaries = index.collections.flatMap((summary) => {
   if (summary.key === undefined) throw new Error(`Missing file key for ${summary.id}`);
 
@@ -112,13 +122,38 @@ describe("split Windows policy catalogue", () => {
     }
   });
 
+  it("ships an ADMX lookup that points at real collections", () => {
+    expect(admx.version).toBe(1);
+
+    const ids = new Set(summaries.map((summary) => summary.id));
+    let addresses = 0;
+
+    for (const [key, entries] of Object.entries(admx.policies)) {
+      expect(key).toBe(key.toLowerCase());
+      expect(entries.length).toBeGreaterThan(0);
+
+      for (const entry of entries) {
+        expect(key).toBe(entry.policyName.toLowerCase());
+        expect(entry.area).toMatch(/^[A-Za-z0-9._~-]+$/);
+        expect(["device", "user"]).toContain(entry.scope);
+        expect(ids.has(entry.collectionId)).toBe(true);
+        addresses += 1;
+      }
+    }
+
+    // The catalogue exposes well over a thousand ADMX-backed addresses.
+    expect(addresses).toBeGreaterThan(2_500);
+    expect(statSync(path.join(catalogDir, "admx.json")).size).toBeLessThan(768 * 1024);
+  });
+
   it("keeps the always-loaded index small and the lazy search file reasonable", () => {
     const size = (name: string) => statSync(path.join(catalogDir, name)).size;
     expect(size("index.json")).toBeLessThan(512 * 1024);
     expect(size("search.json")).toBeLessThan(12 * 1024 * 1024);
 
     const collections = readdirSync(catalogDir).filter(
-      (name) => name.endsWith(".json") && !["index.json", "search.json"].includes(name),
+      (name) =>
+        name.endsWith(".json") && !["index.json", "search.json", "admx.json"].includes(name),
     );
 
     expect(collections).toHaveLength(summaries.length);
