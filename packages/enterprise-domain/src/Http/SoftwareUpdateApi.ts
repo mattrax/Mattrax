@@ -17,4 +17,5 @@ export const enterpriseSoftwareUpdateApi = HttpApiGroup.make("EnterpriseSoftware
     params: TenantParam,
     success: SoftwareUpdateSummaryResponse,
   }),
-);
+)
+  .prefix("/api");
