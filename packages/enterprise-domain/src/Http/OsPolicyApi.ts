@@ -42,4 +42,5 @@ export const enterpriseOsPolicyApi = HttpApiGroup.make("EnterpriseOsPolicy")
       params: TenantParam,
       success: OsFleetResponse,
     }),
-  );
+  )
+  .prefix("/api");
