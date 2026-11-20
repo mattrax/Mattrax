@@ -95,4 +95,5 @@ export const enterpriseGroupApi = HttpApiGroup.make("EnterpriseGroup")
       payload: DuplicateRequest,
       success: IdResponse,
     }),
-  );
+  )
+  .prefix("/api");
