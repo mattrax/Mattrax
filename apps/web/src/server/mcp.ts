@@ -610,9 +610,11 @@ const handleMcp = async (request: Request): Promise<Response> => {
   );
 
   // SAFETY: `mcpLayer` provides the HTTP server services this layer needs; the
-  // concrete layer type is opaque to the router constructor.
-  // oxlint-disable-next-line typescript/no-explicit-any
-  const web = HttpRouter.toWebHandler(layer as any);
+  // concrete layer type is opaque to the router constructor, which only reads
+  // the router back out of the built layer.
+  const web = HttpRouter.toWebHandler(
+    layer as Layer.Layer<unknown, unknown, HttpRouter.HttpRouter>,
+  );
 
   try {
     return withCors(await web.handler(request), request);

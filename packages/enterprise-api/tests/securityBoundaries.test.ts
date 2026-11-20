@@ -865,6 +865,8 @@ describe("SCIM directory provisioning", () => {
     method?: string;
     path?: string;
     body?: unknown;
+    /** Simulate a request body that is not valid JSON. */
+    invalidJson?: boolean;
   }) =>
     // SAFETY: the SCIM handler reads headers, url, method and the JSON effect
     // from its request value; this mirrors helpers.request.
@@ -874,7 +876,9 @@ describe("SCIM directory provisioning", () => {
         options.path ?? "/Users"
       }`,
       method: options.method ?? "GET",
-      json: Effect.succeed(options.body ?? {}),
+      json: options.invalidJson
+        ? Effect.fail(new Error("not JSON"))
+        : Effect.succeed(options.body ?? {}),
     }) as any;
 
   const callScim = (db: any, options: Parameters<typeof scimRequest>[0]) =>
@@ -953,6 +957,56 @@ describe("SCIM directory provisioning", () => {
     expect(await responseJson(response)).toMatchObject({
       schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
       status: "400",
+    });
+  });
+
+  it("answers malformed JSON with a SCIM syntax error instead of throwing", async () => {
+    const db = await makeScimDb();
+
+    const response = await callScim(db, { method: "POST", invalidJson: true });
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+      status: "400",
+      scimType: "invalidSyntax",
+      detail: "Request body must be valid JSON",
+    });
+    expect(db.store.user).toEqual([]);
+  });
+
+  it("rejects a payload whose nested fields have the wrong shape", async () => {
+    const db = await makeScimDb();
+
+    const response = await callScim(db, {
+      method: "POST",
+      body: { userName: "ada@example.com", name: "Ada Lovelace" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      status: "400",
+      scimType: "invalidValue",
+      detail: "Invalid SCIM user payload",
+    });
+    expect(db.store.user).toEqual([]);
+  });
+
+  it("rejects a patch whose operations are not an array", async () => {
+    const db = await makeScimDb();
+    const created = await createScimUser(db, { userName: "ada@example.com" });
+
+    const response = await callScim(db, {
+      method: "PATCH",
+      path: `/Users/${created.body.id}`,
+      body: { Operations: "replace" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toMatchObject({
+      status: "400",
+      scimType: "invalidValue",
+      detail: "Invalid SCIM patch",
     });
   });
 
