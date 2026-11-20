@@ -13,7 +13,7 @@ export const DirectoryUser = Schema.Struct({
   email: Schema.String,
   externalId: Schema.optional(NullableString),
   disabled: Schema.Boolean,
-  source: Schema.Literals(["entra", "scim", "manual"]),
+  source: Schema.Literals(["entra", "google", "scim", "manual"]),
   /** True when this Entra identity is already linked to a Mattrax account. */
   linked: Schema.Boolean,
 });
@@ -23,7 +23,7 @@ export type DirectoryUser = typeof DirectoryUser.Type;
 export const DirectoryGroup = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
-  source: Schema.Literals(["graph", "scim", "manual"]),
+  source: Schema.Literals(["graph", "google", "scim", "manual"]),
   memberCount: Schema.Number,
 });
 

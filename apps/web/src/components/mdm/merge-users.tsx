@@ -29,6 +29,7 @@ import {
 
 const SOURCE_LABELS: Record<DirectoryUserRef["source"], string> = {
   entra: "Entra ID",
+  google: "Google Workspace",
   scim: "SCIM",
   manual: "Manual",
 };

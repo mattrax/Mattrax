@@ -135,7 +135,7 @@ type ParsedBundle = {
     email: string;
     name: string;
     externalId: string | null;
-    source: "manual" | "entra" | "scim";
+    source: "manual" | "entra" | "google" | "scim";
     disabled: boolean;
   }>;
   userAssignments: ReadonlyArray<{
@@ -851,7 +851,9 @@ const applyBundle = (
           const dynamic = group.kind === "dynamic";
 
           const directoryGroupId =
-            !dynamic && group.directoryGroupId && existingDirectoryGroupIds.has(group.directoryGroupId)
+            !dynamic &&
+            group.directoryGroupId &&
+            existingDirectoryGroupIds.has(group.directoryGroupId)
               ? group.directoryGroupId
               : null;
 
@@ -1260,10 +1262,7 @@ const applyBundle = (
         }
 
         if (applicationUserGroupValues.length > 0)
-          yield* tx
-            .insert(schema.userGroupApplication)
-            .ignore()
-            .values(applicationUserGroupValues);
+          yield* tx.insert(schema.userGroupApplication).ignore().values(applicationUserGroupValues);
 
         // Device-level assignments are part of the configuration, not the
         // device: the device itself survives a restore. A bundle entry whose

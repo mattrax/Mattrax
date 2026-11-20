@@ -14,6 +14,7 @@
     { "path": "../effect-stripe" },
     { "path": "../email" },
     { "path": "../entra-id" },
+    { "path": "../google-workspace" },
     { "path": "../enterprise-backend" },
     { "path": "../enterprise-billing" },
     { "path": "../enterprise-core" },

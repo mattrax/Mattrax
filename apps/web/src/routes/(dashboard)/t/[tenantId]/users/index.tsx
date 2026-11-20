@@ -12,6 +12,7 @@ import { routes } from "~/lib/routes";
 
 const SOURCE_LABELS: Record<UserListRow["source"], string> = {
   entra: "Entra ID",
+  google: "Google",
   scim: "SCIM",
   manual: "Manual",
 };
@@ -133,7 +134,7 @@ export default function UsersPage() {
     <Page>
       <PageHeader
         title="Users"
-        description="Directory people imported from Entra ID or SCIM. Open a person to see their groups, linked devices and the policies scoped to them."
+        description="Directory people imported from Entra ID, Google Workspace or SCIM. Open a person to see their groups, linked devices and the policies scoped to them."
         actions={
           <Show when={can("identity.read")}>
             <LinkButton variant="outline" href={routes.tenant(params.tenantId).settingsDirectory()}>
@@ -157,7 +158,7 @@ export default function UsersPage() {
           <EmptyState
             icon={User}
             title="No directory users"
-            description="Users arrive from Microsoft Entra ID or SCIM directory sync. Once a user is imported they appear here with their groups and devices."
+            description="Users arrive from Microsoft Entra ID, Google Workspace or SCIM directory sync. Once a user is imported they appear here with their groups and devices."
             action={
               <Show when={can("identity.read")}>
                 <LinkButton href={routes.tenant(params.tenantId).settingsDirectory()}>

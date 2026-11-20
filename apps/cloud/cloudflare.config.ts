@@ -155,6 +155,10 @@ export const apiWorker = {
     APNS_RELAY_SECRET: bindings.secret(),
     AZURE_CLIENT_ID: bindings.secret(),
     AZURE_CLIENT_SECRET: bindings.secret(),
+    /** Deployment-wide Google Workspace directory sync (optional). */
+    GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: bindings.secret(),
+    GOOGLE_WORKSPACE_ADMIN_EMAIL: bindings.secret(),
+    GOOGLE_WORKSPACE_CUSTOMER: bindings.secret(),
     /** Google Android Management API service account and Pub/Sub delivery. */
     ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: bindings.secret(),
     ANDROID_MANAGEMENT_PROJECT_ID: bindings.secret(),
@@ -188,6 +192,7 @@ export const apiWorker = {
     MAINTENANCE_BACKUP_CONCURRENCY: bindings.text("4"),
     /** Tenants synced concurrently by the scheduled Entra directory sync. */
     MAINTENANCE_ENTRA_SYNC_CONCURRENCY: bindings.text("2"),
+    MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: bindings.text("2"),
     /** Disable the scheduled one-week onboarding follow-up with `false`. */
     MAINTENANCE_ONBOARDING_EMAILS: bindings.text("true"),
     /** Days after tenant creation before the onboarding follow-up is eligible. */

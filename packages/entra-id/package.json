@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mattrax/azure-graph": "workspace:*",
+    "@mattrax/directory-sync": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "drizzle-orm": "catalog:",

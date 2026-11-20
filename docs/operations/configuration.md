@@ -149,6 +149,19 @@ identity that cannot be loaded fails the download rather than serving an unsigne
 | `WINDOWS_ORGANIZATION_ID`    | Legacy single-tenant fallback                                      |
 | `WINDOWS_FEDERATED_AUDIENCE` | Audience for federated WSTEP tokens; defaults to `AZURE_CLIENT_ID` |
 
+## Google Workspace directory sync
+
+| Variable                                  | Purpose                                                        |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON`  | Optional deployment-wide service-account JSON key               |
+| `GOOGLE_WORKSPACE_ADMIN_EMAIL`           | Workspace super-admin to impersonate (deployment mode)          |
+| `GOOGLE_WORKSPACE_CUSTOMER`              | `my_customer` or a primary domain; defaults to `my_customer`    |
+| `MAINTENANCE_GOOGLE_SYNC_CONCURRENCY`    | Parallel tenants in the scheduled sweep; defaults to 2          |
+
+Tenants can instead save their own key under **Settings → Identity → Directory sync**;
+it is sealed with `AUTH_SECRET` and takes precedence over the deployment values. See
+[Identity](/admin/identity#google-workspace).
+
 ## Android
 
 | Variable                                  | Purpose                                                     |

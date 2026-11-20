@@ -524,3 +524,49 @@ export const EntraDirectorySyncResult = Schema.Struct({
   groups: Schema.Number,
   domains: Schema.Number,
 });
+
+/** Google Workspace directory sync status and configuration. */
+export const GoogleDirectorySyncStatus = Schema.Struct({
+  /** True when tenant or deployment credentials are available. */
+  configured: Schema.Boolean,
+  enabled: Schema.Boolean,
+  status: Schema.String,
+  /** Where the service-account key came from; never the key itself. */
+  credentialsSource: Schema.optional(Schema.NullOr(Schema.Literals(["tenant", "deployment"]))),
+  adminEmail: Schema.optional(NullableString),
+  customer: Schema.optional(NullableString),
+  /** Display-only service-account address; the JSON/key are never returned. */
+  serviceAccountEmail: Schema.optional(NullableString),
+  lastSyncedAt: Schema.optional(NullableString),
+  lastAttemptedAt: Schema.optional(NullableString),
+  lastHeartbeatAt: Schema.optional(NullableString),
+  lastRunTrigger: Schema.optional(NullableString),
+  lastError: Schema.optional(NullableString),
+  lastCounts: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  syncIntervalMinutes: Schema.Number,
+  nextSyncAt: Schema.optional(NullableString),
+  adminDirectoryUrl: Schema.String,
+});
+
+export type GoogleDirectorySyncStatus = typeof GoogleDirectorySyncStatus.Type;
+
+export const PatchGoogleDirectorySyncRequest = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  syncIntervalMinutes: Schema.optional(Schema.Number),
+});
+
+/**
+ * Tenant-scoped Workspace credentials. The service-account JSON is accepted on
+ * the write path only; no response ever echoes it.
+ */
+export const GoogleDirectoryCredentialsRequest = Schema.Struct({
+  serviceAccountJson: Schema.String,
+  adminEmail: Schema.String,
+  customer: Schema.optional(Schema.String),
+});
+
+export const GoogleDirectorySyncResult = Schema.Struct({
+  status: Schema.Literal("ok"),
+  users: Schema.Number,
+  groups: Schema.Number,
+});

@@ -13,12 +13,15 @@ import { AzureGraph, type AzureGraphService } from "@mattrax/azure-graph";
 import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
 import type { AppleApiConfig } from "@mattrax/apple-business-manager";
 import type { EmailTransport } from "@mattrax/email";
+import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
 export type EnterpriseServiceOptions = {
   readonly azureGraph?: AzureGraphService;
   readonly azureClientId?: string;
+  /** Deployment-wide Google Workspace directory credentials (optional). */
+  readonly googleWorkspace?: GoogleWorkspaceCredentials;
   /** Federated WSTEP configuration shown in Settings → Management. */
   readonly windowsFederated?: {
     readonly audience?: string;
@@ -150,6 +153,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           softwareUpdateFetch: options.softwareUpdateFetch ?? globalThis.fetch,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,
+          googleWorkspace: options.googleWorkspace,
           windowsFederated: options.windowsFederated,
         }),
       );

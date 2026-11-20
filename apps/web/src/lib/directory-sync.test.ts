@@ -30,6 +30,10 @@ describe("formatDirectorySyncCounts", () => {
       "0 users, 0 groups and 0 domains",
     );
   });
+
+  it("omits domains for a provider that does not import them", () => {
+    expect(formatDirectorySyncCounts({ users: 1, groups: 2 })).toBe("1 user and 2 groups");
+  });
 });
 
 describe("directorySyncRunIsStale", () => {
@@ -116,6 +120,19 @@ describe("directorySyncProgress", () => {
     });
   });
 
+  it("uses a provider-specific running message", () => {
+    expect(
+      directorySyncProgress({
+        ...base,
+        isPending: true,
+        runningMessage: "Syncing users and groups from Google Workspace…",
+      }),
+    ).toEqual({
+      state: "running",
+      message: "Syncing users and groups from Google Workspace…",
+    });
+  });
+
   it("reports a live run that is still marked running on the server", () => {
     expect(
       directorySyncProgress({
@@ -162,6 +179,18 @@ describe("directorySyncProgress", () => {
       state: "succeeded",
       message: "Synced 12 users, 3 groups and 2 domains.",
       counts,
+    });
+
+    expect(
+      directorySyncProgress({
+        ...base,
+        data: { users: 2, groups: 1 },
+        remoteStatus: "idle",
+      }),
+    ).toEqual({
+      state: "succeeded",
+      message: "Synced 2 users and 1 group.",
+      counts: { users: 2, groups: 1 },
     });
   });
 
