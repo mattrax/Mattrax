@@ -120,8 +120,13 @@ import {
   superadminSource,
   type AdminAccountInfo,
   type AdminAccountMembership,
+  DEFAULT_STOREFRONT_REGION,
+  normaliseStorefrontRegion,
+  resolveApplicationStoreId,
+  summariseApplicationAvailability,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
+import { lookupAppStoreApplication } from "./appStore.js";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
 import { resolvePolicyDeployment } from "./policyDeployment.js";
 import type { StripeClientLike } from "@mattrax/effect-stripe";
@@ -4415,6 +4420,304 @@ export const createEnterpriseService = ({
       )
       .pipe(Effect.map((rows) => [...rows].sort(compareInstallerPreference)));
 
+  const rowStorefront = (row: typeof schema.applicationStorefront.$inferSelect) => ({
+    region: row.region,
+    storeId: row.storeId,
+    available: row.available,
+    name: row.name,
+    bundleId: row.bundleId,
+    version: row.version,
+    source: row.source,
+    lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
+    reason: row.reason,
+    checkedAt: iso(row.checkedAt),
+  });
+
+  /** Storefront rows for one application, ordered by region for a stable UI. */
+  const applicationStorefronts = (organizationId: string, applicationId: string) =>
+    db
+      .select()
+      .from(schema.applicationStorefront)
+      .where(
+        and(
+          eq(schema.applicationStorefront.organizationId, organizationId),
+          eq(schema.applicationStorefront.applicationId, applicationId),
+        ),
+      )
+      .pipe(
+        Effect.map((rows) =>
+          [...rows].sort((left, right) => left.region.localeCompare(right.region)),
+        ),
+      );
+
+  /**
+   * Insert or update one storefront row. The composite primary key is
+   * `(application_id, region)`, and looking the row up first keeps the write
+   * portable across the Drizzle Effect driver and the in-memory test database.
+   */
+  const upsertApplicationStorefront = (input: {
+    organizationId: string;
+    applicationId: string;
+    region: string;
+    storeId: string | null;
+    available: boolean;
+    name: string | null;
+    bundleId: string | null;
+    version: string | null;
+    source: "lookup" | "manual";
+    lastSeenAt: Date | null;
+    reason: string | null;
+    checkedAt: Date;
+  }) =>
+    Effect.gen(function* () {
+      const [existing] = yield* db
+        .select()
+        .from(schema.applicationStorefront)
+        .where(
+          and(
+            eq(schema.applicationStorefront.applicationId, input.applicationId),
+            eq(schema.applicationStorefront.region, input.region),
+          ),
+        )
+        .limit(1);
+
+      const values = {
+        storeId: input.storeId,
+        available: input.available,
+        name: input.name,
+        bundleId: input.bundleId,
+        version: input.version,
+        source: input.source,
+        lastSeenAt: input.lastSeenAt,
+        reason: input.reason,
+        checkedAt: input.checkedAt,
+      };
+
+      if (existing) {
+        yield* db
+          .update(schema.applicationStorefront)
+          .set({ ...values, updatedAt: now() })
+          .where(
+            and(
+              eq(schema.applicationStorefront.organizationId, input.organizationId),
+              eq(schema.applicationStorefront.applicationId, input.applicationId),
+              eq(schema.applicationStorefront.region, input.region),
+            ),
+          );
+
+        return;
+      }
+
+      const at = now();
+
+      yield* db.insert(schema.applicationStorefront).values({
+        organizationId: input.organizationId,
+        applicationId: input.applicationId,
+        region: input.region,
+        ...values,
+        createdAt: at,
+        updatedAt: at,
+      });
+    });
+
+  /**
+   * Re-derive the application-wide availability badge from its storefront
+   * rows. Keeps the last successful sighting when every storefront is missing
+   * the app so the dashboard can say when it was last available.
+   */
+  const recomputeApplicationAvailability = (organizationId: string, applicationId: string) =>
+    Effect.gen(function* () {
+      const rows = yield* applicationStorefronts(organizationId, applicationId);
+      const summary = summariseApplicationAvailability(rows);
+
+      const [existing] = yield* db
+        .select()
+        .from(schema.application)
+        .where(
+          and(
+            eq(schema.application.id, applicationId),
+            eq(schema.application.organizationId, organizationId),
+          ),
+        )
+        .limit(1);
+
+      const lastSeenAt = summary.lastSeenAt
+        ? new Date(summary.lastSeenAt)
+        : (existing?.lastSeenAt ?? null);
+
+      yield* db
+        .update(schema.application)
+        .set({
+          availability: summary.availability,
+          availabilityReason: summary.reason ?? null,
+          lastSeenAt,
+          updatedAt: now(),
+        })
+        .where(
+          and(
+            eq(schema.application.id, applicationId),
+            eq(schema.application.organizationId, organizationId),
+          ),
+        );
+
+      return summary;
+    });
+
+  /**
+   * Replace the manually recorded storefront mapping. Rows omitted from the
+   * payload are removed; availability is recomputed in the same operation.
+   */
+  const replaceApplicationStorefronts = (input: {
+    organizationId: string;
+    applicationId: string;
+    storefronts: ReadonlyArray<{
+      readonly region: string;
+      readonly storeId?: string | null;
+      readonly available?: boolean;
+      readonly name?: string | null;
+      readonly bundleId?: string | null;
+      readonly version?: string | null;
+      readonly reason?: string | null;
+    }>;
+  }) =>
+    Effect.gen(function* () {
+      const existing = yield* applicationStorefronts(input.organizationId, input.applicationId);
+      const byRegion = new Map(existing.map((row) => [row.region, row]));
+      const keep = new Set<string>();
+      const at = now();
+
+      for (const storefront of input.storefronts) {
+        const region = normaliseStorefrontRegion(storefront.region);
+
+        if (!region)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${storefront.region}" is not a two-letter App Store region (for example US or GB).`,
+            }),
+          );
+
+        if (keep.has(region))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: `Region ${region} appears more than once.` }),
+          );
+
+        const storeId = optionalText(storefront.storeId) ?? null;
+        const available = storefront.available ?? true;
+
+        if (available && !storeId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Region ${region} needs an App Store ID when it is marked available.`,
+            }),
+          );
+
+        const current = byRegion.get(region);
+
+        yield* upsertApplicationStorefront({
+          organizationId: input.organizationId,
+          applicationId: input.applicationId,
+          region,
+          storeId,
+          available,
+          name: optionalText(storefront.name) ?? current?.name ?? null,
+          bundleId: optionalText(storefront.bundleId) ?? current?.bundleId ?? null,
+          version: optionalText(storefront.version) ?? current?.version ?? null,
+          source: "manual",
+          lastSeenAt: available
+            ? (current?.lastSeenAt ?? at)
+            : (current?.lastSeenAt ?? null),
+          reason: available
+            ? null
+            : (optionalText(storefront.reason) ?? `Not available in the ${region} App Store`),
+          checkedAt: at,
+        });
+
+        keep.add(region);
+      }
+
+      for (const row of existing)
+        if (!keep.has(row.region))
+          yield* db
+            .delete(schema.applicationStorefront)
+            .where(
+              and(
+                eq(schema.applicationStorefront.organizationId, input.organizationId),
+                eq(schema.applicationStorefront.applicationId, input.applicationId),
+                eq(schema.applicationStorefront.region, row.region),
+              ),
+            );
+
+      return yield* recomputeApplicationAvailability(input.organizationId, input.applicationId);
+    });
+
+  /**
+   * Remove every assignment for an application without touching the catalogue
+   * row or the device install history. Devices that previously received the app
+   * are woken so the next check-in reflects the change.
+   */
+  const removeApplicationAssignments = (organizationId: string, applicationId: string) =>
+    Effect.gen(function* () {
+      const before = yield* applicationAssignedDeviceIds(organizationId, applicationId);
+
+      const [groupLinks, deviceLinks, userGroupLinks] = yield* Effect.all(
+        [
+          queryEffect(
+            db
+              .select()
+              .from(schema.applicationGroup)
+              .where(eq(schema.applicationGroup.applicationId, applicationId)),
+          ),
+          queryEffect(
+            db
+              .select()
+              .from(schema.applicationDevice)
+              .where(eq(schema.applicationDevice.applicationId, applicationId)),
+          ),
+          queryEffect(
+            db
+              .select({ groupId: schema.userGroupApplication.groupId })
+              .from(schema.userGroupApplication)
+              .where(
+                and(
+                  eq(schema.userGroupApplication.organizationId, organizationId),
+                  eq(schema.userGroupApplication.applicationId, applicationId),
+                ),
+              ),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      yield* db
+        .delete(schema.applicationGroup)
+        .where(eq(schema.applicationGroup.applicationId, applicationId));
+      yield* db
+        .delete(schema.applicationDevice)
+        .where(eq(schema.applicationDevice.applicationId, applicationId));
+      yield* db
+        .delete(schema.userGroupApplication)
+        .where(
+          and(
+            eq(schema.userGroupApplication.organizationId, organizationId),
+            eq(schema.userGroupApplication.applicationId, applicationId),
+          ),
+        );
+
+      if (before.length > 0) {
+        yield* applePush.pushAppleDevices(before.map((device) => device.id));
+        yield* syncAndroidDevices(
+          organizationId,
+          before.flatMap((device) => (device.proto === "android" ? [device.id] : [])),
+        );
+      }
+
+      return {
+        groups: groupLinks.length,
+        userGroups: userGroupLinks.length,
+        devices: deviceLinks.length,
+      };
+    });
+
   /** Keep the legacy flat columns on `application` aligned with its best installer. */
   const syncLegacyApplicationInstaller = (organizationId: string, applicationId: string) =>
     Effect.gen(function* () {
@@ -4534,6 +4837,9 @@ export const createEnterpriseService = ({
     groupsCount,
     userGroupsCount,
     devicesCount,
+    availability: row.availability ?? "unknown",
+    availabilityReason: row.availabilityReason ?? null,
+    lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -6378,6 +6684,15 @@ export const createEnterpriseService = ({
     },
     { id: "version", kind: "text" },
     { id: "devices", kind: "number" },
+    {
+      id: "availability",
+      kind: "select",
+      options: [
+        { value: "unknown", label: "Not checked" },
+        { value: "available", label: "Available" },
+        { value: "unavailable", label: "Unavailable" },
+      ],
+    },
   ];
 
   const applicationListFields: EntityListField[] = [
@@ -6386,6 +6701,11 @@ export const createEnterpriseService = ({
     { id: "platform", kind: "select", target: schema.application.platform },
     { id: "source", kind: "select", target: schema.application.source },
     { id: "version", kind: "text", target: schema.application.version },
+    {
+      id: "availability",
+      kind: "select",
+      target: schema.application.availability,
+    },
     {
       id: "devices",
       kind: "number",
@@ -8904,7 +9224,27 @@ export const createEnterpriseService = ({
           supportEmail?: string | null;
           brandColor?: string | null;
           metadata?: Record<string, Schema.Json> | null;
+          appStoreRegion?: string | null;
+          autoUnlinkUnavailableApplications?: boolean;
         } = payload;
+
+        let appStoreRegion: string | null | undefined;
+
+        if (body.appStoreRegion !== undefined) {
+          if (body.appStoreRegion === null || body.appStoreRegion.trim() === "")
+            appStoreRegion = null;
+          else {
+            appStoreRegion = normaliseStorefrontRegion(body.appStoreRegion);
+
+            if (!appStoreRegion)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "The App Store region must be a two-letter storefront code, for example US or GB.",
+                }),
+              );
+          }
+        }
 
         if (body.slug) {
           const claimed = yield* db.query.organization.findFirst({
@@ -8939,6 +9279,8 @@ export const createEnterpriseService = ({
                 : body.metadata === null
                   ? null
                   : JSON.stringify(body.metadata),
+            appStoreRegion,
+            autoUnlinkUnavailableApplications: body.autoUnlinkUnavailableApplications,
             updatedAt: now(),
           })
           .where(eq(schema.organization.id, tenantId));
@@ -19457,7 +19799,7 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        const [groupLinks, deviceLinks, installers, userGroupLinks] = yield* Effect.all(
+        const [groupLinks, deviceLinks, installers, userGroupLinks, storefronts] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -19483,6 +19825,7 @@ export const createEnterpriseService = ({
                   ),
                 ),
             ),
+            queryEffect(applicationStorefronts(ctx.organization.id, applicationId)),
           ],
           { concurrency: "unbounded" },
         );
@@ -19533,6 +19876,7 @@ export const createEnterpriseService = ({
           devices,
           userGroups,
           resolvedDevicesCount: resolvedDevices.length,
+          storefronts: storefronts.map(rowStorefront),
         };
       }),
     createApplication: (request, tenantId, payload) =>
@@ -19780,6 +20124,225 @@ export const createEnterpriseService = ({
 
         return ok;
       }),
+    patchApplicationStorefronts: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+        const body: {
+          storefronts: ReadonlyArray<{
+            region: string;
+            storeId?: string | null;
+            available?: boolean;
+            name?: string | null;
+            bundleId?: string | null;
+            version?: string | null;
+            reason?: string | null;
+          }>;
+        } = payload;
+
+        const summary = yield* replaceApplicationStorefronts({
+          organizationId: ctx.organization.id,
+          applicationId,
+          storefronts: body.storefronts,
+        });
+
+        const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+        yield* audit(ctx, "application.storefronts_updated", "application", applicationId, {
+          regions: storefronts.map((row) => row.region),
+          availability: summary.availability,
+        });
+
+        return {
+          availability: summary.availability,
+          storefronts: storefronts.map(rowStorefront),
+        };
+      }),
+    refreshApplicationStorefronts: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+        const app = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!app)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        const existing = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+        const requested = payload?.regions ?? [];
+        const regions: string[] = [];
+
+        for (const region of requested) {
+          const value = normaliseStorefrontRegion(region);
+
+          if (!value)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${region}" is not a two-letter App Store region (for example US or GB).`,
+              }),
+            );
+
+          if (!regions.includes(value)) regions.push(value);
+        }
+
+        const targets =
+          regions.length > 0
+            ? regions
+            : existing.length > 0
+              ? existing.map((row) => row.region)
+              : [
+                  normaliseStorefrontRegion(ctx.organization.appStoreRegion) ??
+                    DEFAULT_STOREFRONT_REGION,
+                ];
+
+        const bundleId = app.bundleId?.trim() || null;
+        const legacyStoreId = app.storeId?.trim() || null;
+
+        if (!bundleId && !legacyStoreId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Add an App Store ID or bundle ID before checking availability.",
+            }),
+          );
+
+        const errors: Array<{ region: string; message: string }> = [];
+
+        for (const region of targets) {
+          const current = existing.find((row) => row.region === region);
+
+          const outcome = yield* Effect.tryPromise({
+            try: () =>
+              lookupAppStoreApplication({
+                region,
+                storeId: current?.storeId ?? legacyStoreId,
+                bundleId,
+                config: appleApi,
+              }),
+            catch: (cause) =>
+              new EnterpriseDbError({
+                message: `Could not check the ${region} App Store: ${String(cause)}`,
+              }),
+          }).pipe(Effect.result);
+
+          if (Predicate.isTagged(outcome, "Failure")) {
+            errors.push({ region, message: outcome.failure.message });
+            continue;
+          }
+
+          if (!outcome.success.ok) {
+            errors.push({ region, message: outcome.success.error });
+            continue;
+          }
+
+          const lookup = outcome.success.lookup;
+          const at = now();
+
+          if (lookup.found && lookup.storeId) {
+            yield* upsertApplicationStorefront({
+              organizationId: ctx.organization.id,
+              applicationId,
+              region,
+              storeId: lookup.storeId,
+              available: true,
+              name: lookup.name ?? current?.name ?? app.name,
+              bundleId: lookup.bundleId ?? current?.bundleId ?? bundleId,
+              version: lookup.version ?? current?.version ?? null,
+              source: "lookup",
+              lastSeenAt: at,
+              reason: null,
+              checkedAt: at,
+            });
+
+            continue;
+          }
+
+          // Not found is a definitive answer from Apple, so the row is marked
+          // unavailable. A network/HTTP failure returned above leaves the row
+          // untouched rather than falsely reporting the app as pulled.
+          yield* upsertApplicationStorefront({
+            organizationId: ctx.organization.id,
+            applicationId,
+            region,
+            storeId: current?.storeId ?? legacyStoreId,
+            available: false,
+            name: current?.name ?? app.name,
+            bundleId: current?.bundleId ?? bundleId,
+            version: current?.version ?? null,
+            source: "lookup",
+            lastSeenAt: current?.lastSeenAt ?? null,
+            reason: lookup.reason ?? `Not found in the ${region} App Store`,
+            checkedAt: at,
+          });
+        }
+
+        const summary = yield* recomputeApplicationAvailability(
+          ctx.organization.id,
+          applicationId,
+        );
+
+        const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+        yield* audit(ctx, "application.storefronts_refreshed", "application", applicationId, {
+          regions: targets,
+          availability: summary.availability,
+          errors: errors.length,
+        });
+
+        let unlinked: { groups: number; userGroups: number; devices: number } | undefined;
+
+        if (
+          summary.availability === "unavailable" &&
+          ctx.organization.autoUnlinkUnavailableApplications
+        ) {
+          const removed = yield* removeApplicationAssignments(
+            ctx.organization.id,
+            applicationId,
+          );
+
+          if (removed.groups + removed.userGroups + removed.devices > 0) {
+            unlinked = removed;
+
+            yield* audit(ctx, "application.assignments_unlinked", "application", applicationId, {
+              ...removed,
+              trigger: "auto_unavailable",
+              reason: summary.reason ?? null,
+            });
+          }
+        }
+
+        return {
+          availability: summary.availability,
+          storefronts: storefronts.map(rowStorefront),
+          errors,
+          ...(unlinked ? { unlinked } : {}),
+        };
+      }),
+    unlinkApplicationAssignments: (request, tenantId, applicationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+        const removed = yield* removeApplicationAssignments(
+          ctx.organization.id,
+          applicationId,
+        );
+
+        const total = removed.groups + removed.userGroups + removed.devices;
+
+        // A repeat call is a no-op; only record an action that changed rows.
+        if (total > 0)
+          yield* audit(ctx, "application.assignments_unlinked", "application", applicationId, {
+            ...removed,
+            trigger: "manual",
+            reason: optionalText(payload?.reason) ?? null,
+          });
+
+        return { status: "ok" as const, removed, retainedApplication: true };
+      }),
     deleteApplications: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
@@ -20002,6 +20565,28 @@ export const createEnterpriseService = ({
               ];
 
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+
+        const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+        // A pulled app stays assigned and keeps its install history, but there
+        // is nothing honest to queue until an admin relinks or unlinks it.
+        if (app.availability === "unavailable") {
+          const message =
+            app.availabilityReason ??
+            "This application is unavailable in its App Store storefronts.";
+
+          yield* audit(ctx, "application.install_blocked", "application", applicationId, {
+            reason: message,
+            devices: devices.length,
+          });
+
+          return {
+            status: "ok" as const,
+            queued: 0,
+            skipped: devices.length,
+            message,
+          };
+        }
 
         const selected = new Map<
           string,
@@ -20255,7 +20840,16 @@ export const createEnterpriseService = ({
           }
 
           if (installer.source === "store") {
-            const storeId = installer.storeId?.trim();
+            // The region mapping wins over the legacy single store id: it can
+            // name a different id for the device's storefront. When no row is
+            // available the installer column keeps prior behaviour.
+            const resolution = resolveApplicationStoreId({
+              storefronts,
+              preferredRegion: ctx.organization.appStoreRegion,
+              legacyStoreId: installer.storeId,
+            });
+
+            const storeId = resolution?.storeId;
 
             if (!storeId) {
               skipped += groupDevices.length;
@@ -24288,6 +24882,21 @@ export const enterpriseHandlers = (
     .handle("patchApplicationAssignments", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchApplicationAssignments(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("patchApplicationStorefronts", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchApplicationStorefronts(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("refreshApplicationStorefronts", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.refreshApplicationStorefronts(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("unlinkApplicationAssignments", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.unlinkApplicationAssignments(request, params.tenantId, params.id, payload),
       ),
     )
     .handle("installApplication", ({ request, params }) =>

@@ -111,6 +111,8 @@ export default function GeneralSettingsPage() {
   const [logo, setLogo] = createSignal("");
   const [supportEmail, setSupportEmail] = createSignal("");
   const [brandColor, setBrandColor] = createSignal("");
+  const [appStoreRegion, setAppStoreRegion] = createSignal("");
+  const [autoUnlink, setAutoUnlink] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [includeAudit, setIncludeAudit] = createSignal(false);
@@ -132,6 +134,8 @@ export default function GeneralSettingsPage() {
     logo: string;
     supportEmail: string;
     brandColor: string;
+    appStoreRegion: string;
+    autoUnlinkUnavailableApplications: boolean;
   } | null>(null);
 
   let importFileInput: HTMLInputElement | undefined;
@@ -148,6 +152,8 @@ export default function GeneralSettingsPage() {
         setLogo(data.logo ?? "");
         setSupportEmail(data.supportEmail ?? "");
         setBrandColor(data.brandColor ?? "");
+        setAppStoreRegion(data.appStoreRegion ?? "");
+        setAutoUnlink(data.autoUnlinkUnavailableApplications ?? false);
         setSeeded(true);
       }
     },
@@ -182,6 +188,8 @@ export default function GeneralSettingsPage() {
     logo: logo(),
     supportEmail: supportEmail(),
     brandColor: brandColor(),
+    appStoreRegion: appStoreRegion().trim().toUpperCase(),
+    autoUnlinkUnavailableApplications: autoUnlink(),
   });
 
   const dirty = () => {
@@ -195,7 +203,9 @@ export default function GeneralSettingsPage() {
       displayName() !== (current.displayName ?? "") ||
       logo() !== (current.logo ?? "") ||
       supportEmail() !== (current.supportEmail ?? "") ||
-      brandColor() !== (current.brandColor ?? "")
+      brandColor() !== (current.brandColor ?? "") ||
+      appStoreRegion().trim().toUpperCase() !== (current.appStoreRegion ?? "") ||
+      autoUnlink() !== (current.autoUnlinkUnavailableApplications ?? false)
     );
   };
 
@@ -213,6 +223,8 @@ export default function GeneralSettingsPage() {
         logo: logo() || null,
         supportEmail: supportEmail() || null,
         brandColor: brandColor() || null,
+        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
+        autoUnlinkUnavailableApplications: autoUnlink(),
       }),
     onMutate: async () => {
       const patch = {
@@ -222,6 +234,8 @@ export default function GeneralSettingsPage() {
         logo: logo() || null,
         supportEmail: supportEmail() || null,
         brandColor: brandColor() || null,
+        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
+        autoUnlinkUnavailableApplications: autoUnlink(),
       };
 
       const tenantId = tenant.data?.id;
@@ -685,6 +699,38 @@ export default function GeneralSettingsPage() {
                   {brandingErrors().brandColor}
                 </span>
               </Show>
+            </FieldRow>
+            <FieldRow
+              label="App Store region"
+              hint="Two-letter storefront used to resolve an App Store ID when a device does not report one. Leave empty for US."
+            >
+              <Input
+                disabled={!canWrite()}
+                value={appStoreRegion()}
+                maxlength={2}
+                placeholder="US"
+                pattern="[A-Za-z]{2}"
+                onInput={(e) => {
+                  setAppStoreRegion(
+                    e.currentTarget.value.replace(/[^a-zA-Z]/g, "").toUpperCase(),
+                  );
+                }}
+              />
+            </FieldRow>
+            <FieldRow
+              label="Unlink unavailable apps"
+              hint="When an availability check finds the app in none of its storefronts, remove its assignments automatically. The catalogue row and install history are kept."
+            >
+              <label class="flex items-center gap-2 text-[13px] text-foreground">
+                <input
+                  type="checkbox"
+                  class="size-3.5 accent-[var(--brand-solid)]"
+                  disabled={!canWrite()}
+                  checked={autoUnlink()}
+                  onChange={(e) => setAutoUnlink(e.currentTarget.checked)}
+                />
+                Unlink assignments when every storefront loses the app
+              </label>
             </FieldRow>
           </div>
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">

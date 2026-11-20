@@ -881,6 +881,8 @@ export const enterprise = {
       supportEmail: string | null;
       brandColor: string | null;
       metadata: Record<string, Schema.Json> | null;
+      appStoreRegion: string | null;
+      autoUnlinkUnavailableApplications: boolean;
     }>,
   ) =>
     endpoint((api) =>
@@ -1800,6 +1802,52 @@ export const enterprise = {
   ) =>
     endpoint((api) =>
       api.patchApplicationAssignments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  /** Replace the per-storefront App Store mapping for an application. */
+  patchApplicationStorefronts: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: {
+      storefronts: Array<{
+        region: string;
+        storeId?: string | null;
+        available?: boolean;
+        name?: string | null;
+        bundleId?: string | null;
+        version?: string | null;
+        reason?: string | null;
+      }>;
+    },
+  ) =>
+    endpoint((api) =>
+      api.patchApplicationStorefronts({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  /** Ask the App Store whether the app still exists in its storefronts. */
+  refreshApplicationStorefronts: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: { regions?: string[] } = {},
+  ) =>
+    endpoint((api) =>
+      api.refreshApplicationStorefronts({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
+      }),
+    ),
+  /** Remove every assignment but keep the catalogue row and install history. */
+  unlinkApplicationAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: { reason?: string } = {},
+  ) =>
+    endpoint((api) =>
+      api.unlinkApplicationAssignments({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload,
       }),

@@ -43,6 +43,12 @@ import { AppleUserActionRequest } from "../Device.js";
 import { AppleUserActionResponse } from "../Device.js";
 import { BindAppleUserIdentityRequest } from "../Device.js";
 import { ApplicationInstallResult } from "../Application.js";
+import { ApplicationStorefrontListResponse } from "../Application.js";
+import { ApplicationStorefrontRefreshResult } from "../Application.js";
+import { PatchApplicationStorefrontsRequest } from "../Application.js";
+import { RefreshApplicationStorefrontsRequest } from "../Application.js";
+import { UnlinkApplicationRequest } from "../Application.js";
+import { UnlinkApplicationResult } from "../Application.js";
 import { ApplicationInventoryQuery } from "../Device.js";
 import { ApplicationInventoryResponse } from "../Device.js";
 import { ApplicationListResponse } from "../Application.js";
@@ -1628,6 +1634,42 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       payload: IdsRequest,
       success: BulkOperationResult,
     }),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchApplicationStorefronts",
+      "/v1/tenants/:tenantId/applications/:id/storefronts",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: PatchApplicationStorefrontsRequest,
+        success: ApplicationStorefrontListResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "refreshApplicationStorefronts",
+      "/v1/tenants/:tenantId/applications/:id/storefronts/refresh",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: RefreshApplicationStorefrontsRequest,
+        success: ApplicationStorefrontRefreshResult,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "unlinkApplicationAssignments",
+      "/v1/tenants/:tenantId/applications/:id/unlink",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: UnlinkApplicationRequest,
+        success: UnlinkApplicationResult,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.patch(

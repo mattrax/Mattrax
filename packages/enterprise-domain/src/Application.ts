@@ -3,6 +3,10 @@ import { DeviceRelation } from "./Group.js";
 import { GroupRelation } from "./Group.js";
 import { NullableString } from "./Errors.js";
 
+import { ApplicationAvailability } from "./appleStorefront.js";
+
+export { ApplicationAvailability };
+
 export const ApplicationPlatform = Schema.Literals(["apple", "win", "android"]);
 
 export type ApplicationPlatform = typeof ApplicationPlatform.Type;
@@ -69,9 +73,50 @@ export const ApplicationRow = Schema.Struct({
   /** Directory user groups assigned this application. */
   userGroupsCount: Schema.optional(Schema.Number),
   devicesCount: Schema.optional(Schema.Number),
+  /**
+   * Roll-up across the recorded App Store storefronts. `unknown` until an
+   * availability check has run; an app no storefront carries is
+   * `unavailable` and is not offered for new installs.
+   */
+  availability: Schema.optional(ApplicationAvailability),
+  availabilityReason: Schema.optional(NullableString),
+  /** Last time any storefront still carried the app. */
+  lastSeenAt: Schema.optional(NullableString),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+
+/**
+ * One App Store storefront for an application.
+ *
+ * The numeric App Store id is global per app record, but availability differs
+ * by storefront and some vendors publish separate records for different
+ * markets. Keeping the mapping per region makes those cases explicit instead
+ * of overwriting one id with another.
+ */
+export const ApplicationStorefrontRow = Schema.Struct({
+  region: Schema.String,
+  /** App Store track id in this storefront; null when the app is missing. */
+  storeId: Schema.optional(NullableString),
+  available: Schema.Boolean,
+  name: Schema.optional(NullableString),
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  /** `lookup` rows come from Apple; `manual` rows were entered by an admin. */
+  source: Schema.Literals(["lookup", "manual"]),
+  lastSeenAt: Schema.optional(NullableString),
+  reason: Schema.optional(NullableString),
+  checkedAt: Schema.String,
+});
+
+export type ApplicationStorefrontRow = typeof ApplicationStorefrontRow.Type;
+
+export const ApplicationStorefrontListResponse = Schema.Struct({
+  availability: ApplicationAvailability,
+  storefronts: Schema.Array(ApplicationStorefrontRow),
+});
+
+export type ApplicationStorefrontListResponse = typeof ApplicationStorefrontListResponse.Type;
 
 export type ApplicationRow = typeof ApplicationRow.Type;
 
@@ -104,6 +149,8 @@ export const ApplicationNode = Schema.Struct({
   userGroups: Schema.Array(GroupRelation),
   /** Devices reached directly or through any assignment (group, directory group). */
   resolvedDevicesCount: Schema.optional(Schema.Number),
+  /** Per-storefront availability and id mapping, ordered by region. */
+  storefronts: Schema.Array(ApplicationStorefrontRow),
 });
 
 export type ApplicationNode = typeof ApplicationNode.Type;
@@ -144,6 +191,64 @@ export const PatchApplicationRequest = Schema.Struct({
   /** Replace the installer set. Omit to keep it unchanged. */
   installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
 });
+
+export const ApplicationStorefrontInput = Schema.Struct({
+  /** ISO 3166-1 alpha-2 storefront, for example `US` or `GB`. */
+  region: Schema.String,
+  /** Required when `available` is true. */
+  storeId: Schema.optional(NullableString),
+  available: Schema.optional(Schema.Boolean),
+  name: Schema.optional(NullableString),
+  bundleId: Schema.optional(NullableString),
+  version: Schema.optional(NullableString),
+  reason: Schema.optional(NullableString),
+});
+
+export type ApplicationStorefrontInput = typeof ApplicationStorefrontInput.Type;
+
+/** Replace the manual storefront mapping. Rows omitted from the list are removed. */
+export const PatchApplicationStorefrontsRequest = Schema.Struct({
+  storefronts: Schema.Array(ApplicationStorefrontInput),
+});
+
+/** Regions to check; omitted means the storefronts already recorded for the app. */
+export const RefreshApplicationStorefrontsRequest = Schema.Struct({
+  regions: Schema.optional(Schema.Array(Schema.String)),
+});
+
+export const RemovedApplicationAssignments = Schema.Struct({
+  groups: Schema.Number,
+  userGroups: Schema.Number,
+  devices: Schema.Number,
+});
+
+export type RemovedApplicationAssignments = typeof RemovedApplicationAssignments.Type;
+
+export const UnlinkApplicationResult = Schema.Struct({
+  status: Schema.Literal("ok"),
+  removed: RemovedApplicationAssignments,
+  /** The catalogue row and its install history are never deleted by an unlink. */
+  retainedApplication: Schema.Boolean,
+});
+
+export type UnlinkApplicationResult = typeof UnlinkApplicationResult.Type;
+
+export const UnlinkApplicationRequest = Schema.Struct({
+  /** Free-text note recorded on the audit entry. */
+  reason: Schema.optional(Schema.String),
+});
+
+export const ApplicationStorefrontRefreshResult = Schema.Struct({
+  ...ApplicationStorefrontListResponse.fields,
+  /** Storefronts Apple could not be asked about; their rows were left untouched. */
+  errors: Schema.Array(
+    Schema.Struct({ region: Schema.String, message: Schema.String }),
+  ),
+  /** Present when auto-unlink removed assignments after the app went missing. */
+  unlinked: Schema.optional(RemovedApplicationAssignments),
+});
+
+export type ApplicationStorefrontRefreshResult = typeof ApplicationStorefrontRefreshResult.Type;
 
 export const PatchApplicationAssignmentsRequest = Schema.Struct({
   assign: Schema.optional(

@@ -694,6 +694,19 @@ export const organization = mysqlTable(
      * runs; existing execution history is retained until its normal expiry.
      */
     scriptsEnabled: boolean("scripts_enabled").notNull().default(true),
+    /**
+     * Default App Store storefront used to resolve a store id when a device
+     * does not report a region. Null keeps the historical US default.
+     */
+    appStoreRegion: varchar("app_store_region", { length: 2 }),
+    /**
+     * Remove every assignment when a refresh finds the app missing from all
+     * recorded storefronts. Off by default: unlinking is an explicit decision
+     * unless the tenant opts into it.
+     */
+    autoUnlinkUnavailableApplications: boolean("auto_unlink_unavailable_applications")
+      .notNull()
+      .default(false),
     stripeCustomerId: shortText("stripe_customer_id"),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
@@ -3337,10 +3350,65 @@ export const application = mysqlTable(
     sha256: shortText("sha256"),
     r2Key: text("r2_key"),
     notes: text("notes"),
+    /** Roll-up of the per-storefront checks below. */
+    availability: varchar("availability", {
+      length: 16,
+      enum: ["unknown", "available", "unavailable"],
+    })
+      .notNull()
+      .default("unknown"),
+    /** Why the app is unavailable; kept for the dashboard banner and audits. */
+    availabilityReason: text("availability_reason"),
+    /** Last time any storefront still carried the app. */
+    lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [index("application_organization_id_idx").on(table.organizationId)],
+);
+
+/**
+ * One App Store storefront for an application.
+ *
+ * Apple allocates the numeric `trackId` per app record rather than per
+ * storefront, so the same title normally has one id everywhere. Availability
+ * still differs by storefront, and a vendor that publishes separate records per
+ * market gets different ids. Keeping one row per region lets the catalogue
+ * record both cases and resolve the id a device should install from.
+ */
+export const applicationStorefront = mysqlTable(
+  "application_storefront",
+  {
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** ISO 3166-1 alpha-2 storefront code, upper-cased. */
+    region: varchar("region", { length: 2 }).notNull(),
+    /** App Store id in this storefront; null when the lookup found nothing. */
+    storeId: varchar("store_id", { length: 32 }),
+    available: boolean("available").notNull().default(true),
+    name: shortText("name"),
+    bundleId: shortText("bundle_id"),
+    version: shortText("version"),
+    /** `lookup` rows come from Apple; `manual` rows were entered by an admin. */
+    source: varchar("source", { length: 16, enum: ["lookup", "manual"] })
+      .notNull()
+      .default("manual"),
+    /** Last time this storefront still carried the app. */
+    lastSeenAt: timestamp("last_seen_at"),
+    /** Why the last check found nothing, when `available` is false. */
+    reason: text("reason"),
+    checkedAt: timestamp("checked_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.applicationId, table.region] }),
+    index("application_storefront_organization_idx").on(table.organizationId),
+  ],
 );
 
 /**

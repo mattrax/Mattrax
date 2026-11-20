@@ -81,6 +81,17 @@ const fields: ReadonlyArray<EntityField<ApplicationRow>> = [
   },
   { id: "version", label: "Version", kind: "text", get: (row) => row.version ?? "" },
   { id: "devices", label: "Assigned devices", kind: "number", get: (row) => row.devicesCount ?? 0 },
+  {
+    id: "availability",
+    label: "Availability",
+    kind: "select",
+    options: [
+      { value: "unknown", label: "Not checked" },
+      { value: "available", label: "Available" },
+      { value: "unavailable", label: "Unavailable" },
+    ],
+    get: (row) => row.availability ?? "unknown",
+  },
 ];
 
 export default function ApplicationsPage() {
@@ -286,8 +297,15 @@ export default function ApplicationsPage() {
                 >
                   {row.name}
                 </a>
-                <span class="mt-0.5 block max-w-[34ch] truncate font-mono text-[11px] text-muted-foreground">
-                  {row.bundleId || "No bundle identifier"}
+                <span class="mt-0.5 flex items-center gap-1.5">
+                  <span class="block max-w-[34ch] truncate font-mono text-[11px] text-muted-foreground">
+                    {row.bundleId || "No bundle identifier"}
+                  </span>
+                  <Show when={row.availability === "unavailable"}>
+                    <Badge variant="destructive" dot="destructive">
+                      Unavailable
+                    </Badge>
+                  </Show>
                 </span>
               </span>
             ),
