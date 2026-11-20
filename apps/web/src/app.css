@@ -1,10 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@mattrax/ui/styles.css";
-@import "@fontsource-variable/geist";
-
-/* The Latin subset served from `public/` so the document can preload the exact
-   file the fallback swaps to. Keep this unicode range in sync with the package. */
+/* The Latin subset is served from `public/` and preloaded by the document, so
+   the first paint already uses the real metrics. Do not import the fontsource
+   CSS as well: its `swap` faces would race this `optional` face and reintroduce
+   a layout shift. Keep this unicode range in sync with the font. */
 @font-face {
   font-family: "Geist Variable";
   font-style: normal;

@@ -61,6 +61,15 @@ export default function Document(props: { children?: JSX.Element }) {
         {/* Lets operators verify browser analytics without reading Worker secrets. */}
         <meta name="mattrax-analytics" content={posthog === undefined ? "disabled" : "enabled"} />
         <link rel="icon" href="/favicon.ico" />
+        {/* Preload the exact font the stylesheet uses so first paint has the
+            final metrics; a late font swap shifts the hero and the manifesto. */}
+        <link
+          rel="preload"
+          href="/fonts/geist-latin-wght-normal.woff2"
+          as="font"
+          type="font/woff2"
+          crossorigin=""
+        />
         <link rel="ard" href="/.well-known/ard.json" />
         {/* Replaced by the theme bootstrap below before the first paint. */}
         <meta name="theme-color" content={THEME_COLOURS.light} />
