@@ -29,9 +29,21 @@ export default function Document(props: { children?: JSX.Element }) {
   const needsJavaScript = pathname === undefined || requiresJavaScript(pathname);
   const preloaded = request ? getPreloadedSession(request) : undefined;
   const serialized = preloaded === undefined ? undefined : JSON.stringify(preloaded);
-  const posthog = request ? getPostHogConfig(request) : undefined;
+  // On the client the config is the value the server already injected into
+  // this head. Reading it back (rather than leaving it undefined) keeps the
+  // rendered node list identical on both sides; omitting these scripts during
+  // hydration walks past a missing sibling and aborts the whole document.
+  const posthog = request
+    ? getPostHogConfig(request)
+    : typeof window === "undefined"
+      ? undefined
+      : window.__MATTRAX_POSTHOG__;
   const serializedPostHog = posthog === undefined ? undefined : JSON.stringify(posthog);
-  const support = request ? getSupportConfig(request) : undefined;
+  const support = request
+    ? getSupportConfig(request)
+    : typeof window === "undefined"
+      ? undefined
+      : window.__MATTRAX_SUPPORT__;
   const serializedSupport = support === undefined ? undefined : JSON.stringify(support);
 
   return (
