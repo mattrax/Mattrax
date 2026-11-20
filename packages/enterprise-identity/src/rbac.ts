@@ -245,6 +245,8 @@ const MEMBER_WRITE = new Set([
   "patchTenantAccount",
   "patchTenantAccountRoles",
   "addUserGroupMembers",
+  // Merging directory people rewrites every edge that scopes policy to them.
+  "mergeDirectoryUsers",
   "removeTenantAccount",
   "requestTenantOwnershipTransfer",
 ]);
@@ -267,6 +269,10 @@ const EXPLICIT = {
   // The detail view is the same directory data plus (permission-filtered)
   // device and policy sections, so the directory permission gates the read.
   getUser: "members.read",
+  // Merge candidates and the dry run expose the same directory rows as the
+  // detail view. The merge itself folds people together, so it needs write.
+  listUserMergeCandidates: "members.read",
+  previewDirectoryUserMerge: "members.read",
   search: "tenant.read",
   patchTenant: "tenant.write",
   deleteTenant: "tenant.delete",

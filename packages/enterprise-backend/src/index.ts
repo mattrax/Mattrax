@@ -328,6 +328,18 @@ export type {
   LinkDirectoryUserSsoResult,
 } from "./Identity/linkSsoIdentity.ts";
 
+export {
+  DIRECTORY_USER_MERGE_ACTION,
+  listDirectoryUserMergeCandidates,
+  mergeDirectoryUsers,
+  previewDirectoryUserMerge,
+} from "./Identity/mergeDirectoryUsers.ts";
+
+export type {
+  MergeDirectoryUsersInput,
+  PreviewDirectoryUserMergeInput,
+} from "./Identity/mergeDirectoryUsers.ts";
+
 export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {

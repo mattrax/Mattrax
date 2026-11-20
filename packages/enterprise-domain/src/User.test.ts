@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { deriveUserPolicies, type UserGroupPolicyEdge, type UserPolicyEdge } from "./User.js";
+import {
+  deriveUserPolicies,
+  userMergeCandidateReasons,
+  userMergeRequiresExternalIdConfirmation,
+  type UserGroupPolicyEdge,
+  type UserPolicyEdge,
+} from "./User.js";
 
 const direct = (
   policyId: string,
@@ -131,5 +137,80 @@ describe("deriveUserPolicies", () => {
     });
 
     expect(policies.map((policy) => policy.policyId)).toEqual(["p1", "p3", "p2"]);
+  });
+});
+
+describe("merge duplicate directory users", () => {
+  const evidence = (overrides: Partial<Parameters<typeof userMergeCandidateReasons>[0]> = {}) => ({
+    targetEmail: "ada@acme.test",
+    candidateEmail: "ada.old@acme.test",
+    candidateExternalId: "new-object",
+    mergedExternalIds: new Set<string>(),
+    mergedEmails: new Set<string>(),
+    ...overrides,
+  });
+
+  it("does not flag an unrelated directory person", () => {
+    expect(userMergeCandidateReasons(evidence())).toEqual([]);
+  });
+
+  it("flags a shared address, case and whitespace insensitively", () => {
+    expect(userMergeCandidateReasons(evidence({ candidateEmail: "  ADA@acme.test " }))).toEqual([
+      "same-email",
+    ]);
+  });
+
+  it("flags a recreated provider object from an earlier merge", () => {
+    expect(
+      userMergeCandidateReasons(evidence({ mergedExternalIds: new Set(["new-object"]) })),
+    ).toEqual(["previously-merged"]);
+  });
+
+  it("flags an address an earlier merge absorbed", () => {
+    expect(
+      userMergeCandidateReasons(evidence({ mergedEmails: new Set(["ada.old@acme.test"]) })),
+    ).toEqual(["previously-merged"]);
+  });
+
+  it("reports both reasons in a stable order", () => {
+    expect(
+      userMergeCandidateReasons(
+        evidence({
+          candidateEmail: "ada@acme.test",
+          mergedExternalIds: new Set(["new-object"]),
+        }),
+      ),
+    ).toEqual(["previously-merged", "same-email"]);
+  });
+
+  it("only needs confirmation when a non-null external id differs", () => {
+    expect(
+      userMergeRequiresExternalIdConfirmation({
+        targetExternalId: "target-object",
+        sourceExternalIds: ["target-object", null, undefined],
+      }),
+    ).toBe(false);
+
+    expect(
+      userMergeRequiresExternalIdConfirmation({
+        targetExternalId: "target-object",
+        sourceExternalIds: ["other-object"],
+      }),
+    ).toBe(true);
+
+    // A null target id still has no object identity to contradict.
+    expect(
+      userMergeRequiresExternalIdConfirmation({
+        targetExternalId: null,
+        sourceExternalIds: [null],
+      }),
+    ).toBe(false);
+
+    expect(
+      userMergeRequiresExternalIdConfirmation({
+        targetExternalId: null,
+        sourceExternalIds: ["object"],
+      }),
+    ).toBe(true);
   });
 });

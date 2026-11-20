@@ -1,7 +1,8 @@
 import { useParams, type RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { For, Show } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import type { JSX } from "@solidjs/web";
+import { MergeDuplicateNotice, MergeUsersDialog } from "~/components/mdm/merge-users";
 import {
   EmptyState,
   ErrorText,
@@ -38,9 +39,11 @@ import { routes } from "~/lib/routes";
  * assignment edges that the directory, device and policy pages expose,
  * gathered around the person instead of the resource.
  *
- * Nothing here mutates. Group membership is managed by directory sync (or the
- * directory page) and device links by the device page, so this page is a read
- * surface with links into the owners of each piece of data.
+ * The only mutation here is the duplicate repair: two directory rows that
+ * describe the same person, usually because the provider recreated them, can be
+ * folded into one. Group membership is otherwise managed by directory sync (or
+ * the directory page) and device links by the device page, so the page links
+ * into the owners of each piece of data.
  */
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -176,6 +179,15 @@ export default function UserDetailPage() {
 
   const user = useQuery(() => enterpriseQueries.user(params.tenantId, params.userId));
   const data = () => user.data;
+  const [mergeOpen, setMergeOpen] = createSignal(false);
+
+  // Only a caller who can merge pays for the suggestion query. It is the same
+  // tenant audit history the merge writes, so a recreated duplicate surfaces on
+  // this page without a second alias store.
+  const mergeCandidates = useQuery(() => ({
+    ...enterpriseQueries.userMergeCandidates(params.tenantId, params.userId),
+    enabled: can("members.write"),
+  }));
 
   const externalUrl = () => {
     const value = data();
@@ -265,6 +277,11 @@ export default function UserDetailPage() {
                   </div>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                  <Show when={can("members.write")}>
+                    <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
+                      Merge duplicate
+                    </Button>
+                  </Show>
                   <Show when={externalUrl()}>
                     {(href) => (
                       <Button
@@ -301,6 +318,13 @@ export default function UserDetailPage() {
                 so their groups, device links and policy assignments stay visible for reference, but
                 no user-scoped policy is delivered.
               </div>
+            </Show>
+
+            <Show when={(mergeCandidates.data?.candidates.length ?? 0) > 0}>
+              <MergeDuplicateNotice
+                candidates={mergeCandidates.data?.candidates ?? []}
+                onOpen={() => setMergeOpen(true)}
+              />
             </Show>
 
             <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
@@ -500,6 +524,8 @@ export default function UserDetailPage() {
                 </div>
               </div>
             </div>
+
+            <MergeUsersDialog open={mergeOpen()} onOpenChange={setMergeOpen} target={value()} />
           </>
         )}
       </Show>
