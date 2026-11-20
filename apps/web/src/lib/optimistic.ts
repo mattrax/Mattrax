@@ -136,7 +136,7 @@ export const optimisticallyRemoveRows = async <E extends Entity>(
   entity: E,
   ids: Iterable<string>,
 ) => {
-  const removed = new Set([...ids]);
+  const removed = new Set(ids);
 
   const restoreList = await optimisticallyUpdateList(queryClient, tenantId, entity, (rows) =>
     rows.filter((row) => !removed.has(row.id)),

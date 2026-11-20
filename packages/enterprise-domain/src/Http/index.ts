@@ -33,7 +33,9 @@ export * from "./GroupApi.js";
 export * from "./IdentityApi.js";
 
 export * from "./UserApi.js";
+
 export * from "./SoftwareUpdateApi.js";
+
 export * from "./ListApi.js";
 
 export * from "./WindowsApi.js";

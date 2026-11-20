@@ -452,6 +452,7 @@ const matchesCondition = (
 
       return userConditionMatches(device, matches, condition.op === "ne");
     }
+
     case "platform":
     case "proto": {
       const actual = normalized(device.proto);

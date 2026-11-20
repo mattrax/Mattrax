@@ -296,6 +296,7 @@ type EnterpriseIdentityClient = Effect.Success<
 >["EnterpriseIdentity"];
 
 type EnterpriseUserClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseUser"];
+
 type EnterpriseListClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseList"];
 
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];

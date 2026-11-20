@@ -324,6 +324,8 @@ const filterFieldsFor = (fields: ReadonlyArray<FieldDefinition>): FilterField[] 
     id: field.id,
     label: field.label,
     group: field.id.startsWith("user") ? "Directory user" : "Device",
+    // SAFETY: ids come from QUERY_FIELDS/USER_QUERY_FIELDS; the icon map is
+    // partial, and an unmapped id yields undefined, which FilterField permits.
     icon: fieldIcons[field.id as keyof typeof fieldIcons],
     kind: field.kind,
     options: field.options,

@@ -576,7 +576,7 @@ const resolutionFor = (
   if (cached) return cached;
 
   const result = resolveEffectivePolicy(
-    resolutionInput(input, facts, channel, { ...(forUserId ? { forUserId } : {}) }),
+    resolutionInput(input, facts, channel, (forUserId ? { forUserId } : {})),
   );
 
   facts.results.set(key, result);

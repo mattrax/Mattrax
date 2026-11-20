@@ -22527,6 +22527,7 @@ export const enterpriseSoftwareUpdateHandlers = (
       service.getSoftwareUpdateSummary(request, params.tenantId),
     ),
   );
+
 /**
  * Paginated catalogue list handlers. Registered against `enterpriseListApi`, a
  * group separate from `EnterpriseApi` so the generated client types stay
