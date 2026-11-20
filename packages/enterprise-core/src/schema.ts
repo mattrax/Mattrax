@@ -137,7 +137,7 @@ export const user = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     /** Provider object id (Graph id or SCIM external id), when known. */
     externalId: shortText("external_id"),
-    source: varchar("source", { length: 16, enum: ["manual", "entra", "scim"] })
+    source: varchar("source", { length: 16, enum: ["manual", "entra", "scim", "google"] })
       .notNull()
       .default("manual"),
     disabled: boolean("disabled").notNull().default(false),
@@ -1380,7 +1380,7 @@ export const userGroup = mysqlTable(
     name: shortText("name").notNull(),
     externalId: shortText("external_id"),
     description: text("description"),
-    source: varchar("source", { length: 16, enum: ["scim", "graph", "manual"] })
+    source: varchar("source", { length: 16, enum: ["scim", "graph", "manual", "google"] })
       .notNull()
       .default("manual"),
     createdAt: timestamp("created_at").notNull(),
@@ -1474,6 +1474,45 @@ export const entraDirectorySync = mysqlTable("entra_directory_sync", {
   usersDeltaLink: text("users_delta_link"),
   groupsDeltaLink: text("groups_delta_link"),
   domainsSyncedAt: timestamp("domains_synced_at"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  lastError: text("last_error"),
+  lastCounts: json("last_counts"),
+  status: varchar("status", { length: 32, enum: ["idle", "running", "error"] })
+    .notNull()
+    .default("idle"),
+  /** Automatic sync cadence in minutes. `0` disables scheduled runs. */
+  syncIntervalMinutes: int("sync_interval_minutes").notNull().default(0),
+  /** When the next automatic sync is due; null until a cadence is configured. */
+  nextSyncAt: timestamp("next_sync_at"),
+  /** What started the most recent run (`manual` or `scheduled`). */
+  lastRunTrigger: varchar("last_run_trigger", { length: 16, enum: ["manual", "scheduled"] }),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+/**
+ * Google Workspace directory sync state and tenant credentials.
+ *
+ * The service-account JSON is sealed with the deployment `AUTH_SECRET`; only
+ * its `client_email` is stored in the clear so the dashboard can show which
+ * identity is connected. A tenant without sealed credentials may use the
+ * deployment-wide service account instead. Admin email and customer are public
+ * settings, never secrets.
+ */
+export const googleDirectorySync = mysqlTable("google_directory_sync", {
+  organizationId: id("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  /** Workspace super-admin impersonated via domain-wide delegation. */
+  adminEmail: shortText("admin_email"),
+  /** `my_customer` (all users) or a primary domain. */
+  customer: shortText("customer"),
+  /** Display-only `client_email` of the sealed service account. */
+  serviceAccountEmail: shortText("service_account_email"),
+  /** AES-256-GCM sealed service-account JSON; never returned by the API. */
+  sealedServiceAccount: text("sealed_service_account"),
   lastSyncedAt: timestamp("last_synced_at"),
   lastAttemptedAt: timestamp("last_attempted_at"),
   lastError: text("last_error"),
@@ -3895,6 +3934,7 @@ export const relations = defineRelations(
     ssoConfig,
     ssoDomain,
     entraDirectorySync,
+    googleDirectorySync,
     ssoIdentity,
     scimToken,
     userGroup,
@@ -4081,6 +4121,12 @@ export const relations = defineRelations(
     entraDirectorySync: {
       organization: r.one.organization({
         from: r.entraDirectorySync.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    googleDirectorySync: {
+      organization: r.one.organization({
+        from: r.googleDirectorySync.organizationId,
         to: r.organization.id,
       }),
     },

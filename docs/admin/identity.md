@@ -1,8 +1,16 @@
 # Identity and access
 
-Mattrax supports Entra ID single sign-on, Entra directory sync and SCIM 2.0 provisioning.
-They are independent: use SSO for sign-in, and either Graph sync or SCIM for users and
-groups.
+Mattrax supports Entra ID single sign-on, Entra and Google Workspace directory sync,
+and SCIM 2.0 provisioning. They are independent: use SSO for sign-in, and any directory
+sync (or SCIM) for users and groups.
+
+Directory sync providers are separate packages attached to a small core registry
+(`@mattrax/directory-sync`). The shared pipeline owns lease/leaver semantics — disable,
+never delete, and keep device links — while each provider package owns authentication,
+discovery, deep links and configuration validation. Today the registry contains
+Microsoft Entra ID and Google Workspace. If two providers know the same address, the provider
+that already owns the directory row keeps it (a manual or SCIM row may be adopted), so
+enabling a second provider does not churn the first provider's people.
 
 ## Entra ID SSO
 
@@ -98,6 +106,82 @@ Endpoints:
 GET/PATCH /api/v1/tenants/:tenantId/identity/directory
 POST      /api/v1/tenants/:tenantId/identity/directory/sync
 ```
+
+### Google Workspace
+
+Google sync imports users (including suspended and deleted accounts) and groups with
+memberships. It authenticates with a service account and domain-wide delegation; it
+never mutates the Workspace directory.
+
+#### Google Cloud and Workspace setup
+
+1. Create a Google Cloud service account and download a JSON key.
+2. Enable the **Admin SDK API** for the project.
+3. In Google Admin → **Security → API controls → Domain-wide delegation**, authorise the
+   service account's client id for:
+   - `https://www.googleapis.com/auth/admin.directory.user.readonly`
+   - `https://www.googleapis.com/auth/admin.directory.group.readonly`
+4. Choose a Workspace super-admin for the service account to impersonate.
+
+The sync calls `users.list` with `showDeleted=true`, so a deleted account is disabled
+locally and loses its directory memberships; its device links are kept for correlation
+and history. Suspended and archived accounts are disabled the same way.
+
+#### Credentials: tenant or deployment
+
+Both modes are supported. Tenant credentials take precedence.
+
+**Tenant-scoped (recommended for a multi-tenant deployment).** Open **Settings → Identity
+→ Directory sync → Google Workspace → Configure credentials** and paste the JSON key plus
+the admin email. Saving validates the key with one small directory read, then seals the
+JSON with the deployment `AUTH_SECRET` (AES-256-GCM, `@mattrax/crypto`). The API never
+returns the JSON or the private key; only the service account's `client_email` is
+stored in the clear for display. Removing the key clears it and stops automatic sync
+until it is saved again.
+
+**Deployment-wide (self-hosted "configure once").** Set:
+
+```text
+GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON   # the full JSON key file
+GOOGLE_WORKSPACE_ADMIN_EMAIL            # super-admin to impersonate
+GOOGLE_WORKSPACE_CUSTOMER               # optional; defaults to my_customer
+```
+
+A tenant without a sealed key uses these. A malformed deployment value disables the
+fallback at boot and is logged without echoing the document.
+
+#### Sync behaviour and endpoints
+
+```text
+GET/PATCH  /api/v1/tenants/:tenantId/identity/directory/google
+PUT/DELETE /api/v1/tenants/:tenantId/identity/directory/google/credentials
+POST       /api/v1/tenants/:tenantId/identity/directory/google/sync
+```
+
+- The Directory API exposes no delta/sync token, so every run is a **bounded full
+  listing**. Rows are compared before writing: an unchanged person does not get a new
+  `updated_at`, and a person absent from an authoritative listing is disabled.
+- Users paginate with `nextPageToken`; group memberships are fetched per non-empty
+  group, two groups at a time. Both are bounded to 100 pages per resource.
+- `429`, `403 rateLimitExceeded/userRateLimitExceeded/quotaExceeded` and `5xx` responses
+  retry with `Retry-After` or exponential backoff (four attempts by default). Rate-limit
+  and upstream failures are recorded in `lastError`; the previous directory state is
+  kept.
+- The tenant-scoped lock has the same 15-minute stale window as Entra.
+- The hourly cron sweeps due tenants; the daily maintenance job runs due syncs too.
+  `MAINTENANCE_GOOGLE_SYNC_CONCURRENCY` bounds parallel tenants (default 2).
+- The user view links to Google Admin by Workspace id; SCIM and manual people have no
+  portable admin URL and show none.
+
+#### Google sign-in
+
+Google Workspace **directory sync does not enable Google SSO**. Dashboard and enrollment
+sign-in need a Google OAuth/OIDC client, ID-token verification (issuer, audience,
+signature and `hd`/domain checks) and a tenant SSO binding — none of which the
+service-account sync provides. The provider therefore exposes the verified directory
+profile (`resolveProfile`) for a future link flow but reports `ssoSignIn: false`; the
+dashboard refuses to link a Google user for SSO rather than promise a sign-in that
+cannot happen. Entra SSO is unchanged.
 
 ### Choosing members in bulk
 

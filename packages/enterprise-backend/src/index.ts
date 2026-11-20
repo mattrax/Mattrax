@@ -511,6 +511,30 @@ export type {
   ScheduledEntraSyncResult,
 } from "@mattrax/entra-id";
 
+export { directoryProviderRegistry } from "./Directory/registry.ts";
+
+export {
+  GOOGLE_SYNC_CONCURRENCY,
+  GOOGLE_SYNC_STALE_MS,
+  GOOGLE_WORKSPACE_NOT_CONFIGURED,
+  acquireGoogleSyncLock,
+  googleDirectorySyncStatus,
+  isGoogleSyncDue,
+  loadGoogleDirectoryConfig,
+  runGoogleDirectorySyncForTenant,
+  runScheduledGoogleSync,
+} from "@mattrax/google-workspace";
+
+export type {
+  GoogleDirectorySyncOutcome,
+  GoogleDirectorySyncRow,
+  GoogleDirectorySyncStatusView,
+  GoogleSyncLockState,
+  GoogleSyncTrigger,
+  LoadedGoogleCredentials,
+  ScheduledGoogleSyncResult,
+} from "@mattrax/google-workspace";
+
 export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
 
 export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";

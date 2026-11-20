@@ -57,6 +57,8 @@ import {
   runOnboardingEmails,
   runScheduledBackups,
   runScheduledEntraSync,
+  runScheduledGoogleSync,
+  loadGoogleDirectoryConfig,
   runWelcomeEmailSweep,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
@@ -90,6 +92,10 @@ import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
+import {
+  decodeDeploymentCredentials,
+  type GoogleWorkspaceCredentials,
+} from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import {
@@ -403,6 +409,75 @@ const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
 });
 
 /**
+ * Deployment-wide Google Workspace directory credentials.
+ *
+ * Parsed once at boot. A malformed document is reported without echoing it:
+ * the value is a private key. Tenants that save their own key do not depend on
+ * this; it is only the self-hosted "configure once" fallback.
+ */
+const googleWorkspaceCredentials = (): GoogleWorkspaceCredentials | undefined => {
+  if (!apiEnv.GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON || !apiEnv.GOOGLE_WORKSPACE_ADMIN_EMAIL)
+    return undefined;
+
+  try {
+    return Effect.runSync(
+      decodeDeploymentCredentials({
+        serviceAccountJson: apiEnv.GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON,
+        adminEmail: apiEnv.GOOGLE_WORKSPACE_ADMIN_EMAIL,
+        customer: apiEnv.GOOGLE_WORKSPACE_CUSTOMER,
+      }),
+    );
+  } catch {
+    console.error(
+      "Google Workspace directory sync is disabled: the deployment service-account configuration is invalid.",
+    );
+
+    return undefined;
+  }
+};
+
+const googleCredentials = googleWorkspaceCredentials();
+
+/** Resolve one tenant's Workspace credentials, preferring its sealed key. */
+const resolveGoogleCredentials = (db: EnterpriseDb, env: Env) => (organizationId: string) =>
+  loadGoogleDirectoryConfig({
+    db,
+    organizationId,
+    authSecret: env.AUTH_SECRET,
+    deployment: googleCredentials,
+  }).pipe(
+    Effect.map((loaded) => loaded?.credentials ?? null),
+    Effect.catch((cause) =>
+      Effect.sync(() => {
+        console.error(
+          "Google Workspace credentials unavailable",
+          organizationId,
+          cause instanceof Error ? cause.message : "unknown error",
+        );
+
+        return null;
+      }),
+    ),
+  );
+
+/** Scheduled Google Workspace sweep; tenants without credentials are skipped. */
+const googleSyncEffect = (
+  db: EnterpriseDb,
+  env: Env,
+  concurrency: number | undefined,
+  onMembershipsChanged?: (
+    organizationId: string,
+    userIds: ReadonlyArray<string>,
+  ) => Effect.Effect<void, unknown, never>,
+) =>
+  runScheduledGoogleSync({
+    db,
+    concurrency,
+    resolveCredentials: resolveGoogleCredentials(db, env),
+    onMembershipsChanged,
+  });
+
+/**
  * Run the scheduled Entra directory sweep. The Graph client is built only when
  * the deployment has Entra app credentials; otherwise the sweep returns
  * immediately so the rest of the cron job is unaffected.
@@ -604,6 +679,20 @@ const entraSyncJob = (env: Env) =>
       db,
       env,
       parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
+      refreshMemberships,
+    );
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+/** Standalone scheduled Google Workspace sweep used by the hourly trigger. */
+const googleSyncJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const refreshMemberships = makeMembershipRefresher(db, env);
+
+    return yield* googleSyncEffect(
+      db,
+      env,
+      parsePositive(apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY),
       refreshMemberships,
     );
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
@@ -840,6 +929,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       softwareUpdateSupportedMajors: parsePositive(apiEnv.SOFA_FEED_SUPPORTED_MAJORS) ?? 3,
       softwareUpdateDisabled: /^(1|true|yes|on)$/i.test(apiEnv.SOFA_FEED_DISABLED ?? ""),
       azureClientId: env.AZURE_CLIENT_ID,
+      googleWorkspace: googleCredentials,
       windowsFederated: windowsFederatedAudience
         ? { audience: windowsFederatedAudience }
         : undefined,
@@ -1449,14 +1539,22 @@ export const createApiRuntime = (
         else console.log("Scheduled Entra directory sync complete", exit.value);
       };
 
+      const logGoogleResult = (exit: Exit.Exit<unknown, unknown>) => {
+        if (Exit.isFailure(exit))
+          console.error("Scheduled Google directory sync failed", exit.cause);
+        else console.log("Scheduled Google directory sync complete", exit.value);
+      };
+
       const logOutboxResult = (exit: Exit.Exit<unknown, unknown>) => {
         if (Exit.isFailure(exit)) console.error("Scheduled email outbox drain failed", exit.cause);
         else console.log("Scheduled email outbox drain complete", exit.value);
       };
 
-      // The hourly trigger drains queued transactional mail and, when Graph is
-      // configured, sweeps due directory syncs. The outbox runs even without
-      // Graph so a retry does not wait for the daily job.
+      // The hourly trigger drains queued transactional mail and sweeps due
+      // directory syncs (Entra needs Graph app credentials; Google works with
+      // tenant credentials even when the deployment has no service account).
+      // The outbox runs even without Graph so a retry does not wait for the
+      // daily job.
       if (controller.cron === HOURLY_CRON) {
         if (!graphConfigured)
           console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
@@ -1488,6 +1586,12 @@ export const createApiRuntime = (
               console.error("Scheduled Entra directory sync job failed", cause),
             ),
           );
+
+        ctx.waitUntil(
+          Effect.runPromise(Effect.exit(googleSyncJob(env))).then(logGoogleResult, (cause) =>
+            console.error("Scheduled Google directory sync job failed", cause),
+          ),
+        );
 
         return;
       }
@@ -1658,7 +1762,18 @@ export const createApiRuntime = (
           ),
         );
 
-        return { maintenance, onboarding, backups, entra };
+        // Google runs after Entra, also bounded and failure-isolated. It skips
+        // tenants with no tenant or deployment credentials.
+        const google = yield* Effect.exit(
+          googleSyncEffect(
+            db,
+            env,
+            parsePositive(apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY),
+            refreshMemberships,
+          ),
+        );
+
+        return { maintenance, onboarding, backups, entra, google };
       }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
       if (!graphConfigured)
@@ -1666,11 +1781,12 @@ export const createApiRuntime = (
 
       ctx.waitUntil(
         Effect.runPromise(daily).then(
-          ({ backups, entra }) => {
+          ({ backups, entra, google }) => {
             if (Exit.isFailure(backups))
               console.error("Scheduled tenant backups failed", backups.cause);
             else console.log("Scheduled tenant backups complete", backups.value);
             logEntraResult(entra);
+            logGoogleResult(google);
           },
           (cause) => console.error("Scheduled daily job failed", cause),
         ),

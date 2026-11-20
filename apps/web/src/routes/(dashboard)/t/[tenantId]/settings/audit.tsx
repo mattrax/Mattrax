@@ -404,6 +404,7 @@ export default function AuditSettingsPage() {
         { value: "enrollment", label: "Enrollment" },
         { value: "apns", label: "APNs" },
         { value: "entra", label: "Entra" },
+        { value: "google", label: "Google Workspace" },
         { value: "sso", label: "SSO" },
         { value: "scim_token", label: "SCIM token" },
       ],
@@ -432,8 +433,7 @@ export default function AuditSettingsPage() {
   const filterConditions = createMemo<FilterCondition[]>(() => {
     const conditions: FilterCondition[] = [];
 
-    if (category())
-      conditions.push({ field: "category", operator: "is", values: [category()] });
+    if (category()) conditions.push({ field: "category", operator: "is", values: [category()] });
 
     if (action().trim())
       conditions.push({ field: "action", operator: "is", values: [action().trim()] });
@@ -441,11 +441,9 @@ export default function AuditSettingsPage() {
     if (actor().trim())
       conditions.push({ field: "actor", operator: "is", values: [actor().trim()] });
 
-    if (actorType())
-      conditions.push({ field: "actorType", operator: "is", values: [actorType()] });
+    if (actorType()) conditions.push({ field: "actorType", operator: "is", values: [actorType()] });
 
-    if (protocol())
-      conditions.push({ field: "protocol", operator: "is", values: [protocol()] });
+    if (protocol()) conditions.push({ field: "protocol", operator: "is", values: [protocol()] });
 
     if (deviceId().trim())
       conditions.push({ field: "deviceId", operator: "is", values: [deviceId().trim()] });
@@ -748,9 +746,7 @@ export default function AuditSettingsPage() {
                                 <Show when={entry.userAgent}>
                                   <div class="col-span-full flex gap-2">
                                     <dt class="text-muted-foreground">User agent</dt>
-                                    <dd class="break-words">
-                                      {entry.userAgent}
-                                    </dd>
+                                    <dd class="break-words">{entry.userAgent}</dd>
                                   </div>
                                 </Show>
                               </dl>

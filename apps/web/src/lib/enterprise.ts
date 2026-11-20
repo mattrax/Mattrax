@@ -393,8 +393,7 @@ export const enterpriseKeys = {
     ["enterprise", "search", keyTenant(tenantId), term, limit] as const,
   mcpConnections: () => ["enterprise", "mcp-connections"] as const,
   dashboards: (tenantId: RouteParam) => ["enterprise", "dashboards", keyTenant(tenantId)] as const,
-  onboarding: (tenantId: RouteParam) =>
-    ["enterprise", "onboarding", keyTenant(tenantId)] as const,
+  onboarding: (tenantId: RouteParam) => ["enterprise", "onboarding", keyTenant(tenantId)] as const,
   dashboard: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "dashboard", keyTenant(tenantId), id ?? ""] as const,
   dashboardQuery: (tenantId: RouteParam, request: DashboardQueryRequest) =>
@@ -477,6 +476,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-apple-users", keyTenant(tenantId), id ?? ""] as const,
   directorySync: (tenantId: RouteParam) =>
     ["enterprise", "directory-sync", keyTenant(tenantId)] as const,
+  googleDirectorySync: (tenantId: RouteParam) =>
+    ["enterprise", "google-directory-sync", keyTenant(tenantId)] as const,
   domains: (tenantId: RouteParam) => ["enterprise", "domains", keyTenant(tenantId)] as const,
   autopilot: (tenantId: RouteParam) => ["enterprise", "autopilot", keyTenant(tenantId)] as const,
   autopilotDevices: (tenantId: RouteParam) =>
@@ -1816,6 +1817,40 @@ export const enterprise = {
     endpoint((api) =>
       api.syncEntraDirectory({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
+  getGoogleDirectorySync: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getGoogleDirectorySync({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchGoogleDirectorySync: (
+    tenantId: RouteParam,
+    payload: { enabled?: boolean; syncIntervalMinutes?: number },
+  ) =>
+    endpoint((api) =>
+      api.patchGoogleDirectorySync({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  putGoogleDirectoryCredentials: (
+    tenantId: RouteParam,
+    payload: { serviceAccountJson: string; adminEmail: string; customer?: string },
+  ) =>
+    endpoint((api) =>
+      api.putGoogleDirectoryCredentials({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  deleteGoogleDirectoryCredentials: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteGoogleDirectoryCredentials({
+        params: { tenantId: required(tenantId, "tenantId") },
+      }),
+    ),
+  syncGoogleDirectory: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.syncGoogleDirectory({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
   listEntraDomains: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listEntraDomains({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -2737,6 +2772,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.directorySync(tenantId),
       queryFn: () => enterprise.getEntraDirectorySync(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  googleDirectorySync: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.googleDirectorySync(tenantId),
+      queryFn: () => enterprise.getGoogleDirectorySync(tenantId),
       enabled: Boolean(tenantId) && !isServer,
     }),
   domains: (tenantId: RouteParam) =>

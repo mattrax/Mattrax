@@ -6,6 +6,7 @@
   },
   "references": [
     { "path": "../azure-graph" },
+    { "path": "../directory-sync" },
     { "path": "../enterprise-core" },
     { "path": "../enterprise-identity" }
   ],

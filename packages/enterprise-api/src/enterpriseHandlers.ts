@@ -286,7 +286,10 @@ import {
   RequiredPermission,
   resolveTenantRoleFrom,
 } from "@mattrax/enterprise-identity";
-import { linkDirectoryUserSso as linkDirectoryUserToSso } from "@mattrax/enterprise-backend";
+import {
+  directoryProviderRegistry,
+  linkDirectoryUserSso as linkDirectoryUserToSso,
+} from "@mattrax/enterprise-backend";
 import {
   createScript,
   deleteScript,
@@ -319,6 +322,18 @@ import {
   runEntraDirectorySyncForTenant,
   acquireEntraSyncLock,
 } from "@mattrax/entra-id";
+import {
+  GOOGLE_WORKSPACE_NOT_CONFIGURED,
+  decodeServiceAccountJson,
+  googleDirectorySyncStatus,
+  isEmailAddress,
+  loadGoogleDirectoryConfig,
+  makeGoogleWorkspaceService,
+  normaliseAdminEmail,
+  normaliseCustomer,
+  runGoogleDirectorySyncForTenant,
+  type GoogleWorkspaceCredentials,
+} from "@mattrax/google-workspace";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
@@ -573,6 +588,11 @@ export type EnterpriseHandlersConfig = {
   readonly authSecret?: string;
   /** Microsoft Graph client used by directory sync and Autopilot (optional). */
   readonly azureGraph?: AzureGraphService;
+  /**
+   * Deployment-wide Google Workspace service account. Tenants may instead
+   * store their own sealed key; this is the fallback and is never returned.
+   */
+  readonly googleWorkspace?: GoogleWorkspaceCredentials;
   /** Public Entra app client id, exposed only to build the admin consent URL. */
   readonly azureClientId?: string;
   /**
@@ -1491,6 +1511,7 @@ export const createEnterpriseService = ({
   email,
   invitationFromEmail,
   azureGraph,
+  googleWorkspace,
   azureClientId,
   entraConsentRevocationTimeoutMs: configuredEntraConsentRevocationTimeoutMs,
   windowsFederated,
@@ -2394,6 +2415,23 @@ export const createEnterpriseService = ({
 
       return directoryUser !== undefined;
     });
+
+  /**
+   * The Google status response is built from {`googleDirectorySyncStatus`},
+   * which only selects safe fields. Dates are serialised here; the sealed
+   * service-account JSON is not part of the view at all.
+   */
+  const googleStatusResponse = (row: Parameters<typeof googleDirectorySyncStatus>[0]) => {
+    const status = googleDirectorySyncStatus(row, { deployment: googleWorkspace });
+
+    return {
+      ...status,
+      lastSyncedAt: status.lastSyncedAt ? iso(status.lastSyncedAt) : null,
+      lastAttemptedAt: status.lastAttemptedAt ? iso(status.lastAttemptedAt) : null,
+      lastHeartbeatAt: status.lastHeartbeatAt ? iso(status.lastHeartbeatAt) : null,
+      nextSyncAt: status.nextSyncAt ? iso(status.nextSyncAt) : null,
+    };
+  };
 
   /**
    * Best-effort removal of this app's delegated Entra consent. Unlinking must
@@ -7184,19 +7222,17 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const memberships = yield* adminMembershipsFor(rows.map((row) => row.id));
 
-      return rows.map(
-        (row): AdminAccountInfo => ({
-          id: row.id,
-          name: row.name,
-          email: row.email,
-          emailVerified: row.emailVerified,
-          disabled: row.disabled,
-          createdAt: row.createdAt.toISOString(),
-          superadmin: isSuperadmin(row, superadminAllowlist),
-          superadminSource: superadminSource(row, superadminAllowlist),
-          memberships: memberships.get(row.id) ?? [],
-        }),
-      );
+      return rows.map((row): AdminAccountInfo => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        emailVerified: row.emailVerified,
+        disabled: row.disabled,
+        createdAt: row.createdAt.toISOString(),
+        superadmin: isSuperadmin(row, superadminAllowlist),
+        superadminSource: superadminSource(row, superadminAllowlist),
+        memberships: memberships.get(row.id) ?? [],
+      }));
     });
 
   /**
@@ -7339,10 +7375,7 @@ export const createEnterpriseService = ({
           .limit(limit)
           .offset(offset);
 
-        const [totalRow] = yield* db
-          .select({ value: count() })
-          .from(schema.account)
-          .where(where);
+        const [totalRow] = yield* db.select({ value: count() }).from(schema.account).where(where);
 
         return {
           accounts: yield* adminAccountInfos(rows),
@@ -7388,9 +7421,7 @@ export const createEnterpriseService = ({
               .for("update");
 
             if (!target)
-              return yield* Effect.fail(
-                new EnterpriseNotFound({ message: "Account not found" }),
-              );
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Account not found" }));
 
             const before = isSuperadmin(target, superadminAllowlist);
 
@@ -9303,6 +9334,284 @@ export const createEnterpriseService = ({
             verifiedAt: row.verifiedAt ? iso(row.verifiedAt) : null,
           })),
         };
+      }),
+    getGoogleDirectorySync: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const row = yield* db.query.googleDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        return googleStatusResponse(row);
+      }),
+    patchGoogleDirectorySync: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body: { enabled?: boolean; syncIntervalMinutes?: number } = payload;
+
+        if (body.syncIntervalMinutes !== undefined) {
+          if (
+            !Number.isInteger(body.syncIntervalMinutes) ||
+            body.syncIntervalMinutes < 0 ||
+            body.syncIntervalMinutes > 525_600
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Sync interval must be a whole number of minutes between 0 and 525600.",
+              }),
+            );
+        }
+
+        const existing = yield* db.query.googleDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        const enabled = body.enabled ?? existing?.enabled ?? false;
+        const interval = body.syncIntervalMinutes ?? existing?.syncIntervalMinutes ?? 0;
+        const timestamp = now();
+
+        const intervalChanged =
+          body.syncIntervalMinutes !== undefined &&
+          body.syncIntervalMinutes !== (existing?.syncIntervalMinutes ?? 0);
+
+        // Keep nextSyncAt aligned with the cadence, exactly like Entra sync:
+        // changing the interval resets the clock; an already-due schedule
+        // waits a full interval; a zero/disabled schedule clears it.
+        const existingNextAt =
+          existing?.nextSyncAt instanceof Date
+            ? existing.nextSyncAt.getTime()
+            : existing?.nextSyncAt
+              ? Date.parse(String(existing.nextSyncAt))
+              : null;
+
+        const nextSyncAt =
+          interval <= 0
+            ? null
+            : intervalChanged ||
+                existingNextAt === null ||
+                !Number.isFinite(existingNextAt) ||
+                existingNextAt <= timestamp.getTime()
+              ? new Date(timestamp.getTime() + interval * 60_000)
+              : (existing?.nextSyncAt ?? null);
+
+        if (existing)
+          yield* db
+            .update(schema.googleDirectorySync)
+            .set({
+              enabled,
+              syncIntervalMinutes: interval,
+              nextSyncAt,
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.googleDirectorySync.organizationId, ctx.organization.id));
+        else
+          yield* db.insert(schema.googleDirectorySync).values({
+            organizationId: ctx.organization.id,
+            enabled,
+            status: "idle",
+            syncIntervalMinutes: interval,
+            nextSyncAt,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+
+        yield* audit(ctx, "google.directory_updated", "google", ctx.organization.id, {
+          enabled,
+          syncIntervalMinutes: interval,
+        });
+
+        return ok;
+      }),
+    putGoogleDirectoryCredentials: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "sso-policy");
+
+        const body: { serviceAccountJson: string; adminEmail: string; customer?: string } = payload;
+        const adminEmail = normaliseAdminEmail(body.adminEmail);
+
+        if (!isEmailAddress(adminEmail))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Enter the Google Workspace super-admin email the service account impersonates.",
+            }),
+          );
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "This deployment cannot store tenant Google credentials because AUTH_SECRET is not configured.",
+            }),
+          );
+
+        const serviceAccount = yield* decodeServiceAccountJson(body.serviceAccountJson).pipe(
+          Effect.mapError((error) => new EnterpriseBadRequest({ message: error.message })),
+        );
+
+        const customer = normaliseCustomer(body.customer);
+        const credentials: GoogleWorkspaceCredentials = { serviceAccount, adminEmail, customer };
+
+        // Validate before storing: a key that cannot read the directory must
+        // not replace working credentials. The check issues one small read.
+        yield* makeGoogleWorkspaceService({ credentials })
+          .validate()
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new EnterpriseBadRequest({
+                  message: "Google Workspace rejected these credentials: " + error.message,
+                }),
+            ),
+          );
+
+        const sealed = yield* Effect.tryPromise({
+          try: () => sealSecret(authSecret, body.serviceAccountJson),
+          catch: () =>
+            new EnterpriseBadRequest({ message: "The Google credentials could not be sealed." }),
+        });
+
+        const timestamp = now();
+
+        const existing = yield* db.query.googleDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        if (existing)
+          yield* db
+            .update(schema.googleDirectorySync)
+            .set({
+              sealedServiceAccount: sealed,
+              serviceAccountEmail: serviceAccount.clientEmail,
+              adminEmail,
+              customer,
+              // New, validated credentials clear a previous configuration
+              // failure; the next run proves reachability again.
+              status: "idle",
+              lastError: null,
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.googleDirectorySync.organizationId, ctx.organization.id));
+        else
+          yield* db.insert(schema.googleDirectorySync).values({
+            organizationId: ctx.organization.id,
+            enabled: false,
+            sealedServiceAccount: sealed,
+            serviceAccountEmail: serviceAccount.clientEmail,
+            adminEmail,
+            customer,
+            status: "idle",
+            syncIntervalMinutes: 0,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+
+        yield* audit(ctx, "google.credentials_updated", "google", ctx.organization.id, {
+          serviceAccountEmail: serviceAccount.clientEmail,
+          adminEmail,
+          customer,
+        });
+
+        const row = yield* db.query.googleDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        return googleStatusResponse(row);
+      }),
+    deleteGoogleDirectoryCredentials: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "sso-policy");
+
+        const timestamp = now();
+
+        yield* db
+          .update(schema.googleDirectorySync)
+          .set({
+            sealedServiceAccount: null,
+            serviceAccountEmail: null,
+            adminEmail: null,
+            customer: null,
+            status: "idle",
+            lastError: null,
+            updatedAt: timestamp,
+          })
+          .where(eq(schema.googleDirectorySync.organizationId, ctx.organization.id));
+
+        yield* audit(ctx, "google.credentials_removed", "google", ctx.organization.id, {});
+
+        const row = yield* db.query.googleDirectorySync.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        return googleStatusResponse(row);
+      }),
+    syncGoogleDirectory: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const loaded = yield* loadGoogleDirectoryConfig({
+          db,
+          organizationId: ctx.organization.id,
+          authSecret,
+          deployment: googleWorkspace,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new EnterpriseBadRequest({
+                message:
+                  cause instanceof Error
+                    ? cause.message
+                    : "The Google Workspace credentials could not be read.",
+              }),
+          ),
+        );
+
+        if (!loaded)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: GOOGLE_WORKSPACE_NOT_CONFIGURED }),
+          );
+
+        const outcome = yield* runGoogleDirectorySyncForTenant({
+          db,
+          organizationId: ctx.organization.id,
+          credentials: loaded.credentials,
+          trigger: "manual",
+          onMembershipsChanged: (organizationId, userIds) =>
+            refreshDevicesForDirectoryUsers(organizationId, userIds),
+        });
+
+        if (outcome.status === "not_configured")
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: outcome.message }));
+
+        if (outcome.status === "locked")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "A Google Workspace sync is already running for this tenant. Wait for it to finish, or retry after the lock becomes stale.",
+            }),
+          );
+
+        if (outcome.status === "error") {
+          yield* audit(ctx, "google.sync_failed", "google", ctx.organization.id, {
+            message: outcome.message.slice(0, 500),
+          });
+
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Google Workspace sync failed: " + outcome.message,
+            }),
+          );
+        }
+
+        yield* audit(ctx, "google.sync_completed", "google", ctx.organization.id, {
+          users: outcome.users,
+          groups: outcome.groups,
+        });
+
+        return { status: "ok" as const, users: outcome.users, groups: outcome.groups };
       }),
     getAutopilotSettings: (request, tenantId) =>
       Effect.gen(function* () {
@@ -16827,10 +17136,14 @@ export const createEnterpriseService = ({
         if (directoryGroupId)
           yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
 
-        if (body.childGroups?.length)
-          yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+        if (body.childGroups?.length) yield* syncGroupInheritance(db, ctx.organization.id, groupId);
 
-        if (body.devices?.length || body.policies?.length || directoryGroupId || body.childGroups?.length)
+        if (
+          body.devices?.length ||
+          body.policies?.length ||
+          directoryGroupId ||
+          body.childGroups?.length
+        )
           yield* syncAndroidDevices(ctx.organization.id, [
             ...(body.devices ?? []),
             ...(yield* applePush.deviceIdsInGroups([groupId])),
@@ -16870,9 +17183,7 @@ export const createEnterpriseService = ({
               // Delete the group's edges and membership explicitly rather than
               // relying only on foreign-key cascades: the ancestor refresh below
               // must read a graph that no longer mentions this group.
-              yield* db
-                .delete(schema.groupDevice)
-                .where(eq(schema.groupDevice.groupId, groupId));
+              yield* db.delete(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
 
               yield* db
                 .delete(schema.groupGroup)
@@ -17261,21 +17572,23 @@ export const createEnterpriseService = ({
             ]);
 
         if (unexcludeDevices.length || unexcludeUsers.length)
-          yield* db.delete(schema.groupExclusion).where(
-            and(
-              eq(schema.groupExclusion.groupId, groupId),
-              or(
-                and(
-                  eq(schema.groupExclusion.target, "device"),
-                  inArray(schema.groupExclusion.targetId, unexcludeDevices),
-                ),
-                and(
-                  eq(schema.groupExclusion.target, "user"),
-                  inArray(schema.groupExclusion.targetId, unexcludeUsers),
+          yield* db
+            .delete(schema.groupExclusion)
+            .where(
+              and(
+                eq(schema.groupExclusion.groupId, groupId),
+                or(
+                  and(
+                    eq(schema.groupExclusion.target, "device"),
+                    inArray(schema.groupExclusion.targetId, unexcludeDevices),
+                  ),
+                  and(
+                    eq(schema.groupExclusion.target, "user"),
+                    inArray(schema.groupExclusion.targetId, unexcludeUsers),
+                  ),
                 ),
               ),
-            ),
-          );
+            );
 
         // A dynamic/directory group must re-derive after an exclusion change:
         // removing an exclusion can bring a matching device back. The syncs
@@ -19058,6 +19371,13 @@ export const createEnterpriseService = ({
           });
         }
 
+        // The provider registry, not this handler, decides whether a portable
+        // admin URL exists and how it is built. SCIM/manual rows get null.
+        const provider = directoryProviderRegistry.byUserSource(user.source);
+
+        const externalUrl =
+          provider?.deepLink({ externalId: user.externalId, email: user.email }) ?? null;
+
         return {
           id: user.id,
           name: user.name,
@@ -19067,6 +19387,7 @@ export const createEnterpriseService = ({
           disabled: user.disabled,
           linked: linkedAccount !== null,
           linkedAccount,
+          externalUrl,
           createdAt: iso(user.createdAt),
           updatedAt: iso(user.updatedAt),
           groups: [...groups].sort((left, right) => left.name.localeCompare(right.name)),
@@ -23235,6 +23556,31 @@ export const enterpriseHandlers = (
     .handle("refreshEntraDomains", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.refreshEntraDomains(request, params.tenantId),
+      ),
+    )
+    .handle("getGoogleDirectorySync", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getGoogleDirectorySync(request, params.tenantId),
+      ),
+    )
+    .handle("patchGoogleDirectorySync", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchGoogleDirectorySync(request, params.tenantId, payload),
+      ),
+    )
+    .handle("syncGoogleDirectory", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncGoogleDirectory(request, params.tenantId),
+      ),
+    )
+    .handle("putGoogleDirectoryCredentials", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.putGoogleDirectoryCredentials(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteGoogleDirectoryCredentials", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteGoogleDirectoryCredentials(request, params.tenantId),
       ),
     )
     .handle("getAutopilotSettings", ({ request, params }) =>

@@ -48,6 +48,9 @@
     },
     {
       "path": "../../packages/crypto"
+    },
+    {
+      "path": "../../packages/google-workspace"
     }
   ],
   "include": [

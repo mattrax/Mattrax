@@ -32,6 +32,8 @@
     { "path": "./packages/enterprise-tokens" },
     { "path": "./packages/enterprise-identity" },
     { "path": "./packages/enterprise-billing" },
+    { "path": "./packages/directory-sync" },
+    { "path": "./packages/google-workspace" },
     { "path": "./packages/entra-id" },
     { "path": "./packages/apple-business-manager" },
     { "path": "./packages/enterprise-api" },

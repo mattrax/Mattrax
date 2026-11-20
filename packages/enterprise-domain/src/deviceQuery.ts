@@ -36,7 +36,7 @@ const DeviceFileVault = Schema.Literals(["enabled", "disabled", "unknown"]);
  * `user.source`. Entra covers the tenant's SSO/Graph import; `scim` is a
  * generic SCIM directory; `manual` users were created by an administrator.
  */
-export const DeviceUserSource = Schema.Literals(["manual", "entra", "scim"]);
+export const DeviceUserSource = Schema.Literals(["manual", "entra", "google", "scim"]);
 
 export type DeviceUserSource = typeof DeviceUserSource.Type;
 

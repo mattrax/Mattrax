@@ -424,6 +424,7 @@ snapshots:
 				"@mattrax/enterprise-backend": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/net": "workspace:*",
@@ -632,6 +633,20 @@ snapshots:
 			},
 		},
 
+		"packages/directory-sync": {
+			"name": "@mattrax/directory-sync",
+			"dependencies": {
+				"@mattrax/enterprise-core": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
 		"packages/dm-android": {
 			"name": "@mattrax/dm-android",
 			"dependencies": {
@@ -720,6 +735,7 @@ snapshots:
 				"@mattrax/enterprise-identity": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
 				"@mattrax/entra-id": "workspace:*",
+				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
@@ -744,6 +760,7 @@ snapshots:
 				"@mattrax/apple-business-manager": "workspace:*",
 				"@mattrax/azure-graph": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/directory-sync": "workspace:*",
 				"@mattrax/dm-android": "workspace:*",
 				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
@@ -754,6 +771,7 @@ snapshots:
 				"@mattrax/enterprise-identity": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
 				"@mattrax/entra-id": "workspace:*",
+				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
 				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
@@ -849,8 +867,25 @@ snapshots:
 			"name": "@mattrax/entra-id",
 			"dependencies": {
 				"@mattrax/azure-graph": "workspace:*",
+				"@mattrax/directory-sync": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-identity": "workspace:*",
+				"drizzle-orm": "catalog:",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
+
+		"packages/google-workspace": {
+			"name": "@mattrax/google-workspace",
+			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
+				"@mattrax/directory-sync": "workspace:*",
+				"@mattrax/enterprise-core": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},

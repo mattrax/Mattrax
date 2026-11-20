@@ -148,6 +148,9 @@ import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { EntraDirectorySyncResult } from "../Tenant.js";
 import { EntraDirectorySyncStatus } from "../Tenant.js";
 import { EntraDomainsResponse } from "../Tenant.js";
+import { GoogleDirectoryCredentialsRequest } from "../Tenant.js";
+import { GoogleDirectorySyncResult } from "../Tenant.js";
+import { GoogleDirectorySyncStatus } from "../Tenant.js";
 import { IdParam } from "./Params.js";
 import { ImportTenantScepCaRequest } from "../Enrollment.js";
 import { InvitationOptionsResponse } from "../Tenant.js";
@@ -166,6 +169,7 @@ import { TenantOwnershipTransferResponse } from "../Tenant.js";
 import { PatchApplicationRequest } from "../Application.js";
 import { PatchDeviceRequest } from "../Device.js";
 import { PatchEntraDirectorySyncRequest } from "../Tenant.js";
+import { PatchGoogleDirectorySyncRequest } from "../Tenant.js";
 import { PatchPolicyRequest } from "../Policy.js";
 import { PatchSsoConfigRequest } from "../Tenant.js";
 import { PolicyApplicationObject } from "../Policy.js";
@@ -412,6 +416,63 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       success: EntraDirectorySyncResult,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getGoogleDirectorySync",
+      "/v1/tenants/:tenantId/identity/directory/google",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantParam,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchGoogleDirectorySync",
+      "/v1/tenants/:tenantId/identity/directory/google",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: PatchGoogleDirectorySyncRequest,
+        success: OkResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "putGoogleDirectoryCredentials",
+      "/v1/tenants/:tenantId/identity/directory/google/credentials",
+      {
+        error: [...EnterpriseSsoErrors, ...EnterpriseStepUpRequired],
+        params: TenantParam,
+        payload: GoogleDirectoryCredentialsRequest,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteGoogleDirectoryCredentials",
+      "/v1/tenants/:tenantId/identity/directory/google/credentials",
+      {
+        error: [...EnterpriseSsoErrors, ...EnterpriseStepUpRequired],
+        params: TenantParam,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "syncGoogleDirectory",
+      "/v1/tenants/:tenantId/identity/directory/google/sync",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        success: GoogleDirectorySyncResult,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get("listEntraDomains", "/v1/tenants/:tenantId/identity/domains", {

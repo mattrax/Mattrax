@@ -64,6 +64,13 @@ const ApiEnvSchema = Schema.Struct({
   AZURE_CLIENT_ID: Schema.optional(nonEmptyString),
   AZURE_CLIENT_SECRET: Schema.optional(nonEmptyString),
   /**
+   * Deployment-wide Google Workspace directory sync. The JSON key is sealed at
+   * rest when a tenant saves its own; this copy stays in the Worker secret.
+   */
+  GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: Schema.optional(Schema.String),
+  GOOGLE_WORKSPACE_ADMIN_EMAIL: Schema.optional(nonEmptyString),
+  GOOGLE_WORKSPACE_CUSTOMER: Schema.optional(nonEmptyString),
+  /**
    * Google service-account JSON (the full key file, as a single string) used
    * for Android Management API delivery. The private key is never persisted.
    */
@@ -205,6 +212,7 @@ const ApiEnvSchema = Schema.Struct({
   MAINTENANCE_BACKUP_CONCURRENCY: Schema.optional(nonEmptyString),
   /** Scheduled Entra directory sync: tenants synced concurrently (default 2). */
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
+  MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
   /**
    * PostHog project API key. Without it product analytics and error tracking
    * are disabled and only the structured request log is written.
@@ -253,6 +261,9 @@ const RawApiEnvSchema = Schema.Struct({
   APNS_RELAY_SECRET: optionalString,
   AZURE_CLIENT_ID: optionalString,
   AZURE_CLIENT_SECRET: optionalString,
+  GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: optionalString,
+  GOOGLE_WORKSPACE_ADMIN_EMAIL: optionalString,
+  GOOGLE_WORKSPACE_CUSTOMER: optionalString,
   ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: optionalString,
   ANDROID_MANAGEMENT_PROJECT_ID: optionalString,
   ANDROID_MANAGEMENT_PUBSUB_TOPIC: optionalString,
@@ -299,6 +310,7 @@ const RawApiEnvSchema = Schema.Struct({
   MAINTENANCE_BACKUP_RETENTION_DAYS: optionalString,
   MAINTENANCE_BACKUP_CONCURRENCY: optionalString,
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: optionalString,
+  MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: optionalString,
   POSTHOG_KEY: optionalString,
   POSTHOG_HOST: optionalString,
   POSTHOG_ENVIRONMENT: optionalString,
@@ -335,6 +347,11 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   APNS_RELAY_SECRET: emptyStringAsUndefined(rawEnv.APNS_RELAY_SECRET),
   AZURE_CLIENT_ID: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_ID),
   AZURE_CLIENT_SECRET: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_SECRET),
+  GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: emptyStringAsUndefined(
+    rawEnv.GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON,
+  ),
+  GOOGLE_WORKSPACE_ADMIN_EMAIL: emptyStringAsUndefined(rawEnv.GOOGLE_WORKSPACE_ADMIN_EMAIL),
+  GOOGLE_WORKSPACE_CUSTOMER: emptyStringAsUndefined(rawEnv.GOOGLE_WORKSPACE_CUSTOMER),
   ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: emptyStringAsUndefined(
     rawEnv.ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON,
   ),
@@ -406,6 +423,9 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MAINTENANCE_BACKUP_CONCURRENCY: emptyStringAsUndefined(rawEnv.MAINTENANCE_BACKUP_CONCURRENCY),
   MAINTENANCE_ENTRA_SYNC_CONCURRENCY: emptyStringAsUndefined(
     rawEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
+  ),
+  MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: emptyStringAsUndefined(
+    rawEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY,
   ),
   POSTHOG_KEY: emptyStringAsUndefined(rawEnv.POSTHOG_KEY),
   POSTHOG_HOST: emptyStringAsUndefined(rawEnv.POSTHOG_HOST),

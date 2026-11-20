@@ -48,6 +48,12 @@
     },
     {
       "path": "../apple-business-manager"
+    },
+    {
+      "path": "../directory-sync"
+    },
+    {
+      "path": "../google-workspace"
     }
   ],
   "include": [

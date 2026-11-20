@@ -214,7 +214,7 @@ export const TenantExportDirectoryUser = Schema.Struct({
   email: Schema.String,
   name: Schema.String,
   externalId: Schema.optional(NullableString),
-  source: Schema.Literals(["manual", "entra", "scim"]),
+  source: Schema.Literals(["manual", "entra", "google", "scim"]),
   disabled: Schema.Boolean,
 });
 

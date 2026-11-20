@@ -267,6 +267,7 @@ export const USER_QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
     defaultValue: "entra",
     options: [
       { value: "entra", label: "Microsoft Entra ID" },
+      { value: "google", label: "Google Workspace" },
       { value: "scim", label: "SCIM directory" },
       { value: "manual", label: "Local / manual" },
     ],
@@ -425,7 +426,11 @@ export function DeviceQueryBuilder(props: {
         </div>
       </Show>
 
-      <Show when={props.dataset === "software" && toFilterConditions(props.query, fields()).length === 0}>
+      <Show
+        when={
+          props.dataset === "software" && toFilterConditions(props.query, fields()).length === 0
+        }
+      >
         <p class="text-[11.5px] leading-relaxed text-muted-foreground">
           Every installed application reported by the fleet is included until you filter devices.
         </p>

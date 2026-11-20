@@ -36,6 +36,7 @@
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/google-workspace": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/mdm-apple": "workspace:*",
     "@mattrax/net": "workspace:*",

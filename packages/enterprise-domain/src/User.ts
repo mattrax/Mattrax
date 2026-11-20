@@ -14,12 +14,12 @@ import { NullableString } from "./Errors.js";
  */
 
 /** Directory user sources, matching the `user.source` column. */
-export const UserSource = Schema.Literals(["entra", "scim", "manual"]);
+export const UserSource = Schema.Literals(["entra", "google", "scim", "manual"]);
 
 export type UserSource = typeof UserSource.Type;
 
 /** Membership source of a directory group, matching `user_group.source`. */
-export const UserGroupSource = Schema.Literals(["scim", "graph", "manual"]);
+export const UserGroupSource = Schema.Literals(["scim", "graph", "google", "manual"]);
 
 export type UserGroupSource = typeof UserGroupSource.Type;
 
@@ -119,6 +119,12 @@ export const UserDetail = Schema.Struct({
   linked: Schema.Boolean,
   /** The linked account, when one exists and is still readable. */
   linkedAccount: Schema.optional(Schema.NullOr(UserLinkedAccount)),
+  /**
+   * Provider admin-console page for this person, built by the provider
+   * registry. Null/absent for sources without a portable record URL (SCIM or
+   * a manually created person).
+   */
+  externalUrl: Schema.optional(NullableString),
   createdAt: Schema.String,
   updatedAt: Schema.String,
   groups: Schema.Array(UserGroupRef),

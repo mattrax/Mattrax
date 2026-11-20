@@ -10,7 +10,12 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure } from "~/lib/bulk-members";
+import {
+  bulkFailureReason,
+  bulkReport,
+  runBulkBatches,
+  type BulkFailure,
+} from "~/lib/bulk-members";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
 import { preloadPage } from "~/lib/page-data";
@@ -41,6 +46,7 @@ export const route = {
 
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.directorySync(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.googleDirectorySync(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
     ]);
   },
@@ -84,8 +90,7 @@ export default function DirectorySyncPage() {
   const allUsersSelected = () =>
     directoryUsers().length > 0 && selectedUsers().length === directoryUsers().length;
 
-  const someUsersSelected = () =>
-    selectedUsers().length > 0 && !allUsersSelected();
+  const someUsersSelected = () => selectedUsers().length > 0 && !allUsersSelected();
 
   let selectAllUsersRef: HTMLInputElement | undefined;
 
@@ -98,7 +103,10 @@ export default function DirectorySyncPage() {
 
   // Keep the picker on a group that still exists as the directory reloads.
   createEffect(
-    () => userGroups().map((group) => group.id).join(","),
+    () =>
+      userGroups()
+        .map((group) => group.id)
+        .join(","),
     () => {
       const groups = userGroups();
 
@@ -234,6 +242,111 @@ export default function DirectorySyncPage() {
     // outcome of the run that beat it instead of freezing a red error.
     onSettled: invalidate,
   }));
+
+  const google = useQuery(() => ({
+    ...enterpriseQueries.googleDirectorySync(params.tenantId),
+    refetchInterval: (query) =>
+      shouldPollDirectorySync({
+        remoteStatus: query.state.data?.status,
+        lastAttemptedAt: query.state.data?.lastAttemptedAt,
+        lastHeartbeatAt: query.state.data?.lastHeartbeatAt,
+      })
+        ? 3000
+        : false,
+  }));
+
+  const [googleFormOpen, setGoogleFormOpen] = createSignal(false);
+  const [googleAdminEmail, setGoogleAdminEmail] = createSignal("");
+  const [googleCustomer, setGoogleCustomer] = createSignal("");
+  const [googleServiceAccountJson, setGoogleServiceAccountJson] = createSignal("");
+  const [googleRemoveOpen, setGoogleRemoveOpen] = createSignal(false);
+
+  const invalidateGoogle = async () => {
+    await qc.invalidateQueries({ queryKey: enterpriseKeys.googleDirectorySync(params.tenantId) });
+    await qc.invalidateQueries({ queryKey: enterpriseKeys.directory(params.tenantId) });
+  };
+
+  const googleToggle = useMutation(() => ({
+    mutationFn: (enabled: boolean) =>
+      enterprise.patchGoogleDirectorySync(params.tenantId, { enabled }),
+    onSettled: () => void invalidateGoogle(),
+  }));
+
+  const googleInterval = useMutation(() => ({
+    mutationFn: (syncIntervalMinutes: number) =>
+      enterprise.patchGoogleDirectorySync(params.tenantId, { syncIntervalMinutes }),
+    onSettled: () => void invalidateGoogle(),
+  }));
+
+  const googleSync = useMutation(() => ({
+    mutationFn: () => enterprise.syncGoogleDirectory(params.tenantId),
+    onSettled: () => void invalidateGoogle(),
+  }));
+
+  const googleCredentials = useMutation(() => ({
+    meta: { inlineError: true },
+    mutationFn: () =>
+      enterprise.putGoogleDirectoryCredentials(params.tenantId, {
+        serviceAccountJson: googleServiceAccountJson(),
+        adminEmail: googleAdminEmail(),
+        ...(googleCustomer().trim() ? { customer: googleCustomer() } : {}),
+      }),
+    onSuccess: () => {
+      // The JSON is a private key; drop it from component state as soon as the
+      // server has sealed it.
+      setGoogleServiceAccountJson("");
+      setGoogleFormOpen(false);
+      toast.success("Google Workspace credentials saved", {
+        description: "The key was validated and encrypted at rest.",
+      });
+      void invalidateGoogle();
+    },
+  }));
+
+  const googleRemove = useMutation(() => ({
+    mutationFn: () => enterprise.deleteGoogleDirectoryCredentials(params.tenantId),
+    onSuccess: () => {
+      setGoogleRemoveOpen(false);
+      void invalidateGoogle();
+    },
+  }));
+
+  const googleCounts = () => {
+    const value = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Number))(
+        google.data?.lastCounts,
+      ),
+    );
+
+    if (!value) return null;
+
+    return { users: value.users ?? 0, groups: value.groups ?? 0 };
+  };
+
+  const googleProgress = () =>
+    directorySyncProgress({
+      isPending: googleSync.isPending,
+      localError: googleSync.isError,
+      localErrorAt: googleSync.submittedAt,
+      data: googleSync.data
+        ? { users: googleSync.data.users, groups: googleSync.data.groups }
+        : null,
+      remoteStatus: google.data?.status ?? null,
+      remoteError: google.data?.lastError ?? null,
+      remoteCounts: googleCounts(),
+      runningMessage: "Syncing users and groups from Google Workspace…",
+      lastSyncedAt: google.data?.lastSyncedAt ?? null,
+      lastAttemptedAt: google.data?.lastAttemptedAt ?? null,
+      lastHeartbeatAt: google.data?.lastHeartbeatAt ?? null,
+    });
+
+  const googleIntervalOptions = () => {
+    const minutes = google.data?.syncIntervalMinutes ?? 0;
+
+    return SYNC_INTERVALS.some((option) => option.minutes === minutes)
+      ? SYNC_INTERVALS
+      : [...SYNC_INTERVALS, { minutes, label: `${minutes} minutes` }];
+  };
 
   const counts = () =>
     Option.getOrUndefined(
@@ -476,6 +589,306 @@ export default function DirectorySyncPage() {
       </Panel>
 
       <Panel
+        title="Google Workspace directory sync"
+        description="Import users and groups from Google Workspace so admins can correlate devices with people and scope policy by user or directory group. Sync uses a service account with domain-wide delegation; it never changes anything in Google."
+      >
+        <Show
+          when={google.data}
+          fallback={
+            <Show
+              when={google.isError}
+              fallback={
+                <p class="text-[13px] text-muted-foreground">Loading Google Workspace status…</p>
+              }
+            >
+              <ErrorText error={google.error} />
+            </Show>
+          }
+        >
+          {(value) => (
+            <>
+              <div class="flex flex-wrap items-center gap-2">
+                <Show
+                  when={value().configured}
+                  fallback={<Chip tone="warning">Setup required</Chip>}
+                >
+                  <Chip tone="success">Connected</Chip>
+                  <Chip tone="neutral">Sync {value().status}</Chip>
+                  <Chip tone={value().enabled ? "success" : "neutral"}>
+                    {value().enabled ? "Automatic" : "Manual only"}
+                  </Chip>
+                  <Show when={value().credentialsSource}>
+                    {(source) => (
+                      <Chip tone="neutral">
+                        {source() === "tenant" ? "Tenant credentials" : "Deployment credentials"}
+                      </Chip>
+                    )}
+                  </Show>
+                </Show>
+              </div>
+
+              <Show when={value().serviceAccountEmail}>
+                {(email) => (
+                  <p class="mt-2 break-all font-mono text-[11px] text-muted-foreground">
+                    {email()} → {value().adminEmail ?? "no admin"} ·{" "}
+                    {value().customer ?? "my_customer"}
+                  </p>
+                )}
+              </Show>
+
+              <p class="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                {value().configured
+                  ? "Google Workspace is configured: sync can read users, groups and memberships."
+                  : "Not configured: add a service-account key below, or ask the deployment operator to set the deployment-wide Google Workspace credentials."}
+              </p>
+
+              <details class="mt-3 rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                <summary class="cursor-pointer select-none font-medium text-foreground">
+                  What the Google setup needs
+                </summary>
+                <ol class="mt-2 list-decimal space-y-1 pl-4">
+                  <li>Create a Google Cloud service account and download a JSON key.</li>
+                  <li>Enable the Admin SDK API for that project.</li>
+                  <li>
+                    In Google Admin → Security → API controls → Domain-wide delegation, authorise
+                    the service account's client id for:
+                    <span class="mt-1 block break-all font-mono text-[10.5px]">
+                      https://www.googleapis.com/auth/admin.directory.user.readonly
+                      https://www.googleapis.com/auth/admin.directory.group.readonly
+                    </span>
+                  </li>
+                  <li>
+                    Enter a Workspace super-admin below. The service account impersonates that
+                    admin; the JSON key is encrypted at rest and never returned by the API.
+                  </li>
+                </ol>
+              </details>
+
+              <div class="mt-5 divide-y divide-border">
+                <div class="flex flex-col gap-2 pb-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+                  <label for="google-sync-interval" class="min-w-0">
+                    <span class="block text-[13px] font-medium text-foreground">
+                      Automatic sync
+                    </span>
+                    <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                      {automaticSyncHint(value())}
+                    </span>
+                  </label>
+                  <select
+                    id="google-sync-interval"
+                    class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
+                    disabled={!writable() || !value().configured || googleInterval.isPending}
+                    value={String(value().syncIntervalMinutes)}
+                    onChange={(event) => googleInterval.mutate(Number(event.currentTarget.value))}
+                  >
+                    {googleIntervalOptions().map((option) => (
+                      <option value={String(option.minutes)}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 pt-3.5">
+                  <Show when={writable()}>
+                    <Button
+                      variant="outline"
+                      disabled={!value().configured || googleToggle.isPending}
+                      onClick={() => googleToggle.mutate(!value().enabled)}
+                    >
+                      {value().enabled ? "Disable sync" : "Enable sync"}
+                    </Button>
+                    <Button
+                      pending={googleSync.isPending}
+                      disabled={!value().configured}
+                      onClick={() => googleSync.mutate()}
+                    >
+                      <Show when={!googleSync.isPending}>
+                        <RotateCcw class="size-4" />
+                      </Show>
+                      Sync now
+                    </Button>
+                    <Button variant="outline" onClick={() => setGoogleFormOpen((open) => !open)}>
+                      {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
+                    </Button>
+                    <Show when={value().credentialsSource === "tenant"}>
+                      <Button
+                        variant="ghost"
+                        disabled={googleRemove.isPending}
+                        onClick={() => setGoogleRemoveOpen(true)}
+                      >
+                        Remove tenant key
+                      </Button>
+                    </Show>
+                  </Show>
+                  <a
+                    class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                    href={value().adminDirectoryUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Google Admin
+                  </a>
+                </div>
+
+                <div
+                  class={cn("space-y-1.5", googleProgress() && "mt-3")}
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <Show when={googleProgress()}>
+                    {(current) => (
+                      <p
+                        class={cn(
+                          "text-[11.5px] leading-relaxed",
+                          current().state === "running" && "text-muted-foreground",
+                          current().state === "stale" && "text-warning-foreground",
+                          current().state === "succeeded" && "text-success-foreground",
+                          current().state === "failed" && "text-destructive",
+                        )}
+                      >
+                        {current().message}
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              </div>
+
+              <Show when={googleFormOpen() && writable()}>
+                <div class="mt-4 grid gap-3 rounded-lg border border-border bg-surface/40 p-3">
+                  <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                    Saving validates the key with a single directory read before storing it. The
+                    JSON is sealed with the deployment secret; only the service account's email is
+                    kept readable.
+                  </p>
+                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                    Workspace super-admin email
+                    <input
+                      type="email"
+                      autocomplete="off"
+                      class={cn(selectClass, "sm:max-w-none")}
+                      placeholder="admin@example.com"
+                      value={googleAdminEmail()}
+                      onInput={(event) => setGoogleAdminEmail(event.currentTarget.value)}
+                    />
+                  </label>
+                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                    Customer or primary domain (optional)
+                    <input
+                      type="text"
+                      autocomplete="off"
+                      class={cn(selectClass, "sm:max-w-none")}
+                      placeholder="my_customer"
+                      value={googleCustomer()}
+                      onInput={(event) => setGoogleCustomer(event.currentTarget.value)}
+                    />
+                  </label>
+                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                    Service-account JSON
+                    <textarea
+                      rows={6}
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck={false}
+                      class="w-full rounded-lg border border-input bg-surface px-2.5 py-2 font-mono text-[11px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      placeholder={
+                        '{\n  "type": "service_account",\n  "client_email": "…",\n  "private_key": "-----BEGIN PRIVATE KEY-----…"\n}'
+                      }
+                      value={googleServiceAccountJson()}
+                      onInput={(event) => setGoogleServiceAccountJson(event.currentTarget.value)}
+                    />
+                  </label>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Button
+                      pending={googleCredentials.isPending}
+                      disabled={
+                        googleCredentials.isPending ||
+                        !googleServiceAccountJson().trim() ||
+                        !googleAdminEmail().trim()
+                      }
+                      onClick={() => googleCredentials.mutate()}
+                    >
+                      Save and validate
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={googleCredentials.isPending}
+                      onClick={() => setGoogleFormOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <ErrorText error={googleCredentials.error} />
+                </div>
+              </Show>
+
+              <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
+                <Show
+                  when={!value().lastSyncedAt}
+                  fallback={
+                    <p>
+                      Last successful {triggerLabel(value().lastRunTrigger)}{" "}
+                      {formatDate(value().lastSyncedAt!)}
+                    </p>
+                  }
+                >
+                  <p>Never synced.</p>
+                </Show>
+                <Show when={value().lastAttemptedAt}>
+                  {(at) => (
+                    <p>
+                      Last attempted {triggerLabel(value().lastRunTrigger)} {formatDate(at())}
+                    </p>
+                  )}
+                </Show>
+                <Show when={googleCounts()}>
+                  {(counts) => (
+                    <p>
+                      Last run: {counts().users} users · {counts().groups} groups
+                    </p>
+                  )}
+                </Show>
+              </div>
+
+              <Show when={value().lastError}>
+                {(error) => (
+                  <p class="mt-3 rounded-lg border border-destructive/25 bg-destructive/[0.07] p-3 text-xs leading-relaxed text-destructive">
+                    {error()}
+                  </p>
+                )}
+              </Show>
+
+              <p class="mt-3 rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                Google sign-in (OIDC) is not enabled by directory sync. Linking a Google user for
+                dashboard or enrollment sign-in requires a Google OAuth client, an ID-token verifier
+                and a tenant SSO binding for your deployment; this sync only imports the directory
+                record. Microsoft Entra SSO is unaffected.
+              </p>
+            </>
+          )}
+        </Show>
+        <ErrorText
+          error={
+            google.error ??
+            googleSync.error ??
+            googleToggle.error ??
+            googleInterval.error ??
+            googleRemove.error
+          }
+        />
+      </Panel>
+
+      <ConfirmDialog
+        open={googleRemoveOpen()}
+        onOpenChange={setGoogleRemoveOpen}
+        title="Remove this tenant's Google Workspace credentials?"
+        description="The sealed service-account key is deleted. Automatic sync stops until credentials are saved again or the deployment supplies its own. Imported users, groups and device links are kept."
+        confirmLabel="Remove credentials"
+        pending={googleRemove.isPending}
+        error={googleRemove.error}
+        onConfirm={() => googleRemove.mutate()}
+      />
+
+      <Panel
         title="Synced users and groups"
         description="Directory users are available for per-user policy assignment. Groups can be assigned policies as user groups. Adding users to a group is a manual change; a synced group is refreshed from its directory, so the provider may replace it."
       >
@@ -531,9 +944,7 @@ export default function DirectorySyncPage() {
                               type="checkbox"
                               class="size-3.5 shrink-0 accent-[var(--primary)]"
                               checked={selectedUserIds().has(user.id)}
-                              onChange={(event) =>
-                                toggleUser(user.id, event.currentTarget.checked)
-                              }
+                              onChange={(event) => toggleUser(user.id, event.currentTarget.checked)}
                               aria-label={`Select ${user.name} (${user.email})`}
                             />
                           </Show>

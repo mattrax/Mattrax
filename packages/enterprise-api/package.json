@@ -18,6 +18,7 @@
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/email": "workspace:*",
     "@mattrax/entra-id": "workspace:*",
+    "@mattrax/google-workspace": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-billing": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",

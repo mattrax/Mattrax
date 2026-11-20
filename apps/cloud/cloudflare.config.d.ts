@@ -50,6 +50,10 @@ export declare const apiWorker: {
         APNS_RELAY_SECRET: import("cf/config").SecretBinding;
         AZURE_CLIENT_ID: import("cf/config").SecretBinding;
         AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+        /** Deployment-wide Google Workspace directory sync (optional). */
+        GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
+        GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
+        GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
         /** Google Android Management API service account and Pub/Sub delivery. */
         ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -70,6 +74,7 @@ export declare const apiWorker: {
         MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
         /** Tenants synced concurrently by the scheduled Entra directory sync. */
         MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+        MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
         /** Disable the scheduled one-week onboarding follow-up with `false`. */
         MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
         /** Days after tenant creation before the onboarding follow-up is eligible. */
@@ -176,6 +181,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+            /** Deployment-wide Google Workspace directory sync (optional). */
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -196,6 +205,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
             /** Tenants synced concurrently by the scheduled Entra directory sync. */
             MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+            MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
             /** Disable the scheduled one-week onboarding follow-up with `false`. */
             MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
             /** Days after tenant creation before the onboarding follow-up is eligible. */
@@ -297,6 +307,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+            /** Deployment-wide Google Workspace directory sync (optional). */
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_CUSTOMER: import("cf/config").SecretBinding;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -317,6 +331,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
             /** Tenants synced concurrently by the scheduled Entra directory sync. */
             MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+            MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
             /** Disable the scheduled one-week onboarding follow-up with `false`. */
             MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
             /** Days after tenant creation before the onboarding follow-up is eligible. */

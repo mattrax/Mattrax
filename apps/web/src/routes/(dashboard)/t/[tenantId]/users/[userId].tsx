@@ -54,6 +54,7 @@ export const route = {
 
 const SOURCE_LABELS: Record<UserDetail["source"], string> = {
   entra: "Microsoft Entra ID",
+  google: "Google Workspace",
   scim: "SCIM",
   manual: "Created manually",
 };
@@ -66,20 +67,21 @@ const PLATFORM_LABELS: Record<"apple" | "win" | "android", string> = {
 
 const GROUP_SOURCE_LABELS: Record<UserGroupRef["source"], string> = {
   graph: "Entra ID",
+  google: "Google Workspace",
   scim: "SCIM",
   manual: "Manual",
 };
 
 /**
- * The Entra admin center addresses a user by object id, which is exactly the
- * external id directory sync imported. SCIM has no portable record URL, so its
- * external id stays text.
+ * The API builds this from the provider registry, so the dashboard does not
+ * need a source-specific URL for every future provider. SCIM and manually
+ * created people have no portable record URL and return null.
  */
-const externalIdentityUrl = (user: UserDetail): string | undefined => {
-  if (user.source !== "entra" || !user.externalId) return undefined;
+const externalIdentityUrl = (user: UserDetail): string | undefined => user.externalUrl ?? undefined;
 
-  return `https://entra.microsoft.com/#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/overview/userId/${encodeURIComponent(user.externalId)}`;
-};
+/** Label for the provider whose admin console the link opens. */
+const externalIdentityLabel = (user: UserDetail): string =>
+  user.source === "google" ? "Open in Google Admin" : "Open in Entra";
 
 function FactRow(props: { label: string; children: JSX.Element }) {
   return (
@@ -275,7 +277,7 @@ export default function UserDetailPage() {
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Open in Entra
+                        {externalIdentityLabel(value())}
                         <ArrowUpRight class="size-3.5" />
                       </Button>
                     )}

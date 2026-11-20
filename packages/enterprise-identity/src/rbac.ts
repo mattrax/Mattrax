@@ -162,6 +162,7 @@ const ENROLLMENT_WRITE = new Set([
 const IDENTITY_READ = new Set([
   "getSsoConfig",
   "getEntraDirectorySync",
+  "getGoogleDirectorySync",
   "listEntraDomains",
   "listScimTokens",
 ]);
@@ -170,6 +171,10 @@ const IDENTITY_WRITE = new Set([
   "patchSsoConfig",
   "patchEntraDirectorySync",
   "syncEntraDirectory",
+  "patchGoogleDirectorySync",
+  "putGoogleDirectoryCredentials",
+  "deleteGoogleDirectoryCredentials",
+  "syncGoogleDirectory",
   "linkDirectoryUserSso",
   "refreshEntraDomains",
   "createScimToken",
