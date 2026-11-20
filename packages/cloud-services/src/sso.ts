@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { and, eq } from "drizzle-orm";
 import { AzureOidc } from "@mattrax/azure-oidc";
-import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
+import { Db, authCredentials, schema, type EnterpriseDb } from "@mattrax/enterprise-core";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 import type { SsoFailureCode } from "@mattrax/enterprise-domain";
@@ -30,10 +30,7 @@ const now = () => new Date();
  * subject has one stable authority row. This row is not a sign-in method: the
  * SSO strategy owns the assertion and the session requirement decides access.
  */
-/* oxlint-disable-next-line typescript/no-explicit-any -- `authCredentials` is
- * exposed as `any` by the persistence library, so a narrowed database type
- * makes drizzle report its own query builder as a duplicate declaration. */
-const ensureCredential = (db: any, subjectId: string) =>
+const ensureCredential = (db: EnterpriseDb, subjectId: string) =>
   Effect.gen(function* () {
     const existing = yield* db
       .select({ credentialId: authCredentials.credentialId })

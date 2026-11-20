@@ -1,7 +1,3 @@
-/* oxlint-disable typescript/no-explicit-any -- asn1js represents schema nodes
- * as a union of primitive and constructed value blocks. The extraction helpers
- * below probe both representations at runtime, and the library exposes no
- * narrower type for a node that may be either. */
 import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
@@ -478,28 +474,44 @@ export async function buildScepCertRep(
 
 // ─── Robust eContent Extraction ──────────────────────────────────
 
+/**
+ * A parsed ASN.1 block. pkijs ships its own copy of asn1js, so the helpers
+ * below read the value-block shape rather than using `instanceof` across
+ * bundle boundaries; only the members they probe are named.
+ */
+type Asn1Node = asn1js.BaseBlock & {
+  readonly valueBlock?: {
+    readonly valueHexView?: Uint8Array;
+    readonly valueHex?: ArrayBuffer;
+    readonly value?: string | ReadonlyArray<Asn1Node>;
+    readonly valueDec?: number;
+  };
+};
+
+/** Copy a hex view into an `ArrayBuffer` owned by the caller. */
+const hexViewToArrayBuffer = (view: Uint8Array): ArrayBuffer => new Uint8Array(view).buffer;
+
 // Extract inner bytes from an OCTET STRING node, handling both primitive
 // and constructed forms (as used in PKCS#7 eContent).
-function extractOctetStringContent(node: any): ArrayBuffer {
+function extractOctetStringContent(node: Asn1Node | undefined): ArrayBuffer {
   if (!node) return new ArrayBuffer(0);
 
-  const isOctetString = node.idBlock && node.idBlock.tagClass === 1 && node.idBlock.tagNumber === 4;
+  const { valueBlock } = node;
+  const isOctetString = node.idBlock?.tagClass === 1 && node.idBlock.tagNumber === 4;
 
-  if (isOctetString) {
+  if (isOctetString && valueBlock) {
     // Primitive OCTET STRING has valueHexView
-    if (node.valueBlock && node.valueBlock.valueHexView) {
-      return node.valueBlock.valueHexView.slice().buffer;
-    }
+    if (valueBlock.valueHexView) return hexViewToArrayBuffer(valueBlock.valueHexView);
 
     // Constructed OCTET STRING has value array of fragments
-    if (node.valueBlock && Array.isArray(node.valueBlock.value)) {
+    if (Array.isArray(valueBlock.value)) {
       let total = 0;
       const parts: Uint8Array[] = [];
 
-      for (const child of node.valueBlock.value) {
+      for (const child of valueBlock.value) {
         const bytes = new Uint8Array(
           child.valueBlock?.valueHexView
-            ? child.valueBlock.valueHexView.slice().buffer
+            ? hexViewToArrayBuffer(child.valueBlock.valueHexView)
             : child.toBER(false),
         );
 
@@ -520,9 +532,7 @@ function extractOctetStringContent(node: any): ArrayBuffer {
   }
 
   // Not an OCTET STRING — return raw inner bytes (without tag/length)
-  if (node.valueBlock && node.valueBlock.valueHexView) {
-    return node.valueBlock.valueHexView.slice().buffer;
-  }
+  if (valueBlock?.valueHexView) return hexViewToArrayBuffer(valueBlock.valueHexView);
 
   // Fallback: return full serialization
   return node.toBER(false);
@@ -549,17 +559,15 @@ function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
 
 // Extract content from the eContent [0] EXPLICIT block in
 // EncapsulatedContentInfo.
-function extractEContent(eContent: any): ArrayBuffer {
+function extractEContent(eContent: Asn1Node | undefined): ArrayBuffer {
   if (!eContent) return new ArrayBuffer(0);
+
+  const { valueBlock } = eContent;
 
   // Best case: eContent is a constructed block with children.
   // This happens when pkijs preserves the [0] EXPLICIT wrapper.
-  if (
-    eContent.valueBlock &&
-    Array.isArray(eContent.valueBlock.value) &&
-    eContent.valueBlock.value.length > 0
-  ) {
-    const children = eContent.valueBlock.value;
+  if (valueBlock && Array.isArray(valueBlock.value) && valueBlock.value.length > 0) {
+    const children = valueBlock.value;
 
     if (children.length === 1) {
       return extractOctetStringContent(children[0]);
@@ -588,9 +596,7 @@ function extractEContent(eContent: any): ArrayBuffer {
 
   // eContent might be a primitive OCTET STRING (pkijs sometimes
   // rewrites the [0] EXPLICIT tag to 0x04 during parsing).
-  if (eContent.valueBlock && eContent.valueBlock.valueHexView) {
-    return eContent.valueBlock.valueHexView.slice().buffer;
-  }
+  if (valueBlock?.valueHexView) return hexViewToArrayBuffer(valueBlock.valueHexView);
 
   // Fallback: serialize the whole eContent node and manually strip
   // the outer tag + length to get the inner bytes.
@@ -640,14 +646,21 @@ const TAG_IA5_STRING = 22;
 
 const TAG_UNIVERSAL_CLASS = 1;
 
-function isUniversalTag(node: any, tagNumber: number): boolean {
-  return (
-    node &&
-    node.idBlock &&
-    node.idBlock.tagClass === TAG_UNIVERSAL_CLASS &&
-    node.idBlock.tagNumber === tagNumber
-  );
+function isUniversalTag(node: Asn1Node, tagNumber: number): boolean {
+  return node.idBlock?.tagClass === TAG_UNIVERSAL_CLASS && node.idBlock.tagNumber === tagNumber;
 }
+
+/** Narrow a thrown value that exposes a `message`, like a DOMException or a host error. */
+function hasMessage(value: unknown): value is { readonly message: unknown } {
+  return typeof value === "object" && value !== null && "message" in value;
+}
+
+const errorMessage = (cause: unknown): string => {
+  if (!hasMessage(cause) || cause.message === null || cause.message === undefined)
+    return String(cause);
+
+  return String(cause.message);
+};
 
 function bytesToHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes))
@@ -655,7 +668,7 @@ function bytesToHex(bytes: ArrayBuffer): string {
     .join("");
 }
 
-function getStringValue(node: any): string {
+function getStringValue(node: Asn1Node | undefined): string {
   if (!node) return "";
 
   if (
@@ -664,36 +677,36 @@ function getStringValue(node: any): string {
     isUniversalTag(node, TAG_IA5_STRING) ||
     isUniversalTag(node, TAG_NUMERIC_STRING)
   ) {
-    return node.valueBlock.value ?? "";
+    const value = node.valueBlock?.value;
+
+    return Schema.is(Schema.String)(value) ? value : "";
   }
 
   if (isUniversalTag(node, TAG_INTEGER)) {
     // Some SCEP implementations encode messageType as INTEGER
-    return String(node.valueBlock.valueDec ?? "");
+    return String(node.valueBlock?.valueDec ?? "");
   }
 
   if (isUniversalTag(node, TAG_OCTET_STRING)) {
+    const view = node.valueBlock?.valueHexView;
+
     return bytesToHex(
-      node.valueBlock.valueHexView
-        ? node.valueBlock.valueHexView.slice().buffer
-        : node.valueBlock.valueHex,
+      view ? hexViewToArrayBuffer(view) : (node.valueBlock?.valueHex ?? new ArrayBuffer(0)),
     );
   }
 
   return "";
 }
 
-function getOctetStringValue(node: any): ArrayBuffer {
-  if (!node) return new ArrayBuffer(0);
+function getOctetStringValue(node: Asn1Node | undefined): ArrayBuffer {
+  if (!node || !isUniversalTag(node, TAG_OCTET_STRING)) return new ArrayBuffer(0);
 
-  if (isUniversalTag(node, TAG_OCTET_STRING)) {
-    const view = node.valueBlock.valueHexView;
+  const view = node.valueBlock?.valueHexView;
 
-    if (view) return view.slice().buffer;
-    const hex = node.valueBlock.valueHex;
+  if (view) return hexViewToArrayBuffer(view);
+  const hex = node.valueBlock?.valueHex;
 
-    if (hex) return hex.slice(0);
-  }
+  if (hex) return hex.slice(0);
 
   return new ArrayBuffer(0);
 }
@@ -849,11 +862,9 @@ export function parseScepPkcsReq(
           const envelopedData = new pkijs.EnvelopedData({ schema: innerContentInfo.content });
           csrBytes = await decryptEnvelopedData(envelopedData, caPrivateKeyJwk);
         }
-      } catch (decryptErr: any) {
+      } catch (decryptErr) {
         if (isEnveloped) {
-          throw new Error(
-            `EnvelopedData decryption failed: ${decryptErr.message ?? String(decryptErr)}`,
-          );
+          throw new Error(`EnvelopedData decryption failed: ${errorMessage(decryptErr)}`);
         }
         // Not EnvelopedData — innerBytes is already the CSR (or unencrypted)
       }
@@ -869,9 +880,9 @@ export function parseScepPkcsReq(
           challengePassword: extractChallengePassword(csr),
           renewal: messageType === MSG_TYPE_RENEWAL,
         };
-      } catch (csrErr: any) {
+      } catch (csrErr) {
         throw new Error(
-          `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${csrErr.message ?? String(csrErr)}`,
+          `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${errorMessage(csrErr)}`,
         );
       }
     },

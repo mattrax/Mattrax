@@ -978,8 +978,9 @@ const getAppHandler = (env: Env, cryptoLayer: CryptoLayer) => {
   // handler only reads the router and server services from its output. The
   // layer's inferred requirement channel includes framework request services
   // that `toWebHandler` cannot name, so the assertion stays at this boundary.
-  // oxlint-disable-next-line typescript/no-explicit-any
-  return HttpRouter.toWebHandler(makeAppLayer(env, cryptoLayer) as any);
+  return HttpRouter.toWebHandler(
+    makeAppLayer(env, cryptoLayer) as Layer.Layer<unknown, unknown, HttpRouter.HttpRouter>,
+  );
 };
 
 const checkDatabaseReady = (env: Env) =>
