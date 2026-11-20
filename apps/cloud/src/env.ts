@@ -177,6 +177,18 @@ const ApiEnvSchema = Schema.Struct({
    * never coalesced.
    */
   MDM_AUDIT_CHECKIN_COALESCE_SECONDS: Schema.optional(nonEmptyString),
+  /**
+   * macOS software-update feed (SOFA). Defaults to the public macOS feed; a
+   * mirror URL can be supplied for deployments that cannot reach GitHub or
+   * SOFA. The cache/retry/timeout values are seconds/milliseconds so an
+   * operator can tune the trade-off without a schema change.
+   */
+  SOFA_FEED_URL: Schema.optional(urlString),
+  SOFA_FEED_CACHE_SECONDS: Schema.optional(Schema.String),
+  SOFA_FEED_RETRY_SECONDS: Schema.optional(Schema.String),
+  SOFA_FEED_TIMEOUT_MS: Schema.optional(Schema.String),
+  SOFA_FEED_SUPPORTED_MAJORS: Schema.optional(Schema.String),
+  SOFA_FEED_DISABLED: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
   MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
@@ -256,6 +268,12 @@ const RawApiEnvSchema = Schema.Struct({
   TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
   TRUST_PROXY_HEADERS: optionalString,
   MDM_AUDIT_CHECKIN_COALESCE_SECONDS: optionalString,
+  SOFA_FEED_URL: optionalString,
+  SOFA_FEED_CACHE_SECONDS: optionalString,
+  SOFA_FEED_RETRY_SECONDS: optionalString,
+  SOFA_FEED_TIMEOUT_MS: optionalString,
+  SOFA_FEED_SUPPORTED_MAJORS: optionalString,
+  SOFA_FEED_DISABLED: optionalString,
   MAINTENANCE_STALE_DEVICE_DAYS: optionalString,
   MAINTENANCE_AUDIT_RETENTION_DAYS: optionalString,
   MAINTENANCE_BACKUP_RETENTION_DAYS: optionalString,
@@ -350,6 +368,12 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   MDM_AUDIT_CHECKIN_COALESCE_SECONDS: emptyStringAsUndefined(
     rawEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS,
   ),
+  SOFA_FEED_URL: emptyStringAsUndefined(rawEnv.SOFA_FEED_URL),
+  SOFA_FEED_CACHE_SECONDS: emptyStringAsUndefined(rawEnv.SOFA_FEED_CACHE_SECONDS),
+  SOFA_FEED_RETRY_SECONDS: emptyStringAsUndefined(rawEnv.SOFA_FEED_RETRY_SECONDS),
+  SOFA_FEED_TIMEOUT_MS: emptyStringAsUndefined(rawEnv.SOFA_FEED_TIMEOUT_MS),
+  SOFA_FEED_SUPPORTED_MAJORS: emptyStringAsUndefined(rawEnv.SOFA_FEED_SUPPORTED_MAJORS),
+  SOFA_FEED_DISABLED: emptyStringAsUndefined(rawEnv.SOFA_FEED_DISABLED),
   MAINTENANCE_STALE_DEVICE_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_STALE_DEVICE_DAYS),
   MAINTENANCE_AUDIT_RETENTION_DAYS: emptyStringAsUndefined(rawEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
   MAINTENANCE_BACKUP_RETENTION_DAYS: emptyStringAsUndefined(

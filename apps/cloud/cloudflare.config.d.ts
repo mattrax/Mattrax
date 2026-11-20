@@ -1,13 +1,11 @@
 import type { InferEnv, UnwrapConfig } from "cf/config";
-
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
  *
- * The API Worker stays internal: no `domains` and no zone routes. The web
- * Worker owns the public hostname and proxies /api, /mdm and /scim to this
- * Worker over the `API` service binding. A route or custom domain here would
- * bypass that proxy and expose the API (and its OpenAPI document) directly.
+ * The API Worker owns only the request paths listed in `publicApiRoutes`; it
+ * has no Custom Domain of its own and previews stay private (`previewUrls`).
+ * Everything else reaches it over the website Worker's `API` service binding.
  */
 export declare const apiWorker: {
     name: string;
@@ -56,9 +54,8 @@ export declare const apiWorker: {
         ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-        /** Local-only mailbox flag. Never set in production. */
-        DEV_MAILBOX: import("cf/config").TextBinding<string>;
-        DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+        DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+        DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
         DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
         /** Days without a check-in before the maintenance job marks a device unenrolled. */
         MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -128,11 +125,8 @@ export declare const apiWorker: {
         EMAIL: import("cf/config").SendEmailBinding;
     };
 };
-
 export type ApiConfig = UnwrapConfig<typeof apiWorker>;
-
 export type ApiEnv = InferEnv<ApiConfig>;
-
 declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
     worker: {
         name: string;
@@ -151,7 +145,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             region: string;
         };
         previewUrls: boolean;
-        triggers: import("cf/config").ScheduledTrigger[];
+        triggers: (import("cf/config").FetchTrigger | import("cf/config").ScheduledTrigger)[];
         env: {
             ORIGIN: import("cf/config").TextBinding<string>;
             TRUSTED_ORIGINS: import("cf/config").SecretBinding;
@@ -181,9 +175,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-            /** Local-only mailbox flag. Never set in production. */
-            DEV_MAILBOX: import("cf/config").TextBinding<string>;
-            DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+            DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+            DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
             DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
             /** Days without a check-in before the maintenance job marks a device unenrolled. */
             MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -271,7 +264,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             region: string;
         };
         previewUrls: boolean;
-        triggers: import("cf/config").ScheduledTrigger[];
+        triggers: (import("cf/config").FetchTrigger | import("cf/config").ScheduledTrigger)[];
         env: {
             ORIGIN: import("cf/config").TextBinding<string>;
             TRUSTED_ORIGINS: import("cf/config").SecretBinding;
@@ -301,9 +294,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-            /** Local-only mailbox flag. Never set in production. */
-            DEV_MAILBOX: import("cf/config").TextBinding<string>;
-            DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+            DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+            DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
             DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
             /** Days without a check-in before the maintenance job marks a device unenrolled. */
             MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -377,5 +369,4 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
         };
     };
 };
-
 export default _default;

@@ -337,6 +337,12 @@ export const DeviceRow = Schema.Struct({
    * whole-fleet listing.
    */
   health: Schema.optional(Schema.suspend(() => DeviceHealth)),
+  /**
+   * Derived macOS update status from the SOFA feed. Present on the device list,
+   * search and detail payloads; other platforms report `unknown` with the
+   * `platform_unsupported` code rather than a misleading "up to date".
+   */
+  osUpdate: Schema.optional(Schema.Json),
 });
 
 export type DeviceRow = typeof DeviceRow.Type;

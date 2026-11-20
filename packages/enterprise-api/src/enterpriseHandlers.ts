@@ -35,6 +35,7 @@ import {
   enterpriseDashboardApi,
   enterpriseIdentityApi,
   enterpriseUserApi,
+  enterpriseSoftwareUpdateApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -97,6 +98,10 @@ import {
   deriveUserPolicies,
   type UserGroupPolicyEdge,
   type UserPolicyEdge,
+  countSoftwareUpdates,
+  deriveSoftwareUpdate,
+  macOsUpdateBaseline,
+  softwareUpdateRank,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
@@ -412,7 +417,12 @@ import {
   countDeviceHealth,
   deriveDeviceHealth,
   groupDeviceHealthReasons,
+  loadSoftwareUpdateCatalog,
   normalizeDeviceHealth,
+  DEFAULT_SOFTWARE_UPDATE_CACHE_TTL_MS,
+  DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
+  DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
+  SOFA_MACOS_FEED_URL,
 } from "@mattrax/enterprise-backend";
 import {
   APNS_RENEWAL_URL,
@@ -596,6 +606,25 @@ export type EnterpriseHandlersConfig = {
    * shared profile link cannot stay live indefinitely.
    */
   readonly enrollmentProfileTtlSeconds?: number;
+  /**
+   * macOS update feed. SOFA publishes the latest releases and security
+   * releases per major version. A deployment without outbound access can
+   * disable the check; every macOS device then reads `unknown` rather than
+   * "up to date".
+   */
+  readonly softwareUpdateFeedUrl?: string;
+  /** How long a cached feed is reused. Defaults to six hours. */
+  readonly softwareUpdateCacheTtlMs?: number;
+  /** How long a failed refresh is remembered before retrying. Defaults to 15 minutes. */
+  readonly softwareUpdateRetryMs?: number;
+  /** Deadline for one feed request. Defaults to five seconds. */
+  readonly softwareUpdateTimeoutMs?: number;
+  /** Current plus previous macOS majors to consider supported. Defaults to 3. */
+  readonly softwareUpdateSupportedMajors?: number;
+  /** Disable the feed entirely (air-gapped deployments). */
+  readonly softwareUpdateDisabled?: boolean;
+  /** Injected fetch for tests. */
+  readonly softwareUpdateFetch?: typeof globalThis.fetch;
 };
 
 type ServiceFailure = Error | Schema.Json | null | undefined;
@@ -1442,6 +1471,13 @@ export const createEnterpriseService = ({
   appleProfileSigning,
   analytics,
   enrollmentProfileTtlSeconds: configuredEnrollmentProfileTtlSeconds,
+  softwareUpdateFeedUrl,
+  softwareUpdateCacheTtlMs,
+  softwareUpdateRetryMs,
+  softwareUpdateTimeoutMs,
+  softwareUpdateSupportedMajors,
+  softwareUpdateDisabled,
+  softwareUpdateFetch,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
 
@@ -3746,6 +3782,48 @@ export const createEnterpriseService = ({
       ownership: android?.ownership ?? null,
     }),
   });
+
+  /**
+   * Number of macOS majors treated as supported. Apple ships security updates
+   * for the current major and the two previous ones; the feed baseline is
+   * computed from the same count so the device list and dashboard agree.
+   */
+  const softwareUpdateSupportedMajorCount = Math.min(
+    Math.max(Math.trunc(softwareUpdateSupportedMajors ?? 3), 1),
+    10,
+  );
+
+  /**
+   * Load the deployment-wide SOFA feed. The loader never fails; a feed outage
+   * yields an unavailable/stale state and the caller marks macOS devices
+   * `unknown` instead of guessing.
+   */
+  const loadSoftwareUpdates = () =>
+    loadSoftwareUpdateCatalog({
+      db,
+      schema,
+      feedUrl: softwareUpdateFeedUrl ?? SOFA_MACOS_FEED_URL,
+      cacheTtlMs: softwareUpdateCacheTtlMs ?? DEFAULT_SOFTWARE_UPDATE_CACHE_TTL_MS,
+      retryAfterFailureMs: softwareUpdateRetryMs ?? DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
+      timeoutMs: softwareUpdateTimeoutMs ?? DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
+      disabled: softwareUpdateDisabled === true,
+      fetch: softwareUpdateFetch,
+    });
+
+  const softwareUpdateFor = (
+    row: Pick<EnterpriseDevice, "proto" | "osVersion" | "osEdition" | "model">,
+    catalog: Parameters<typeof deriveSoftwareUpdate>[1],
+  ) =>
+    deriveSoftwareUpdate(
+      {
+        proto: row.proto,
+        osVersion: row.osVersion,
+        osEdition: row.osEdition,
+        model: row.model,
+      },
+      catalog,
+      { supportedMajorCount: softwareUpdateSupportedMajorCount },
+    );
 
   /** ADE setup state for a page of devices, keyed by device id. */
   const deviceSetupStateFor = (deviceIds: ReadonlyArray<string>) =>
@@ -6149,6 +6227,7 @@ export const createEnterpriseService = ({
         const methods = [
           ...Object.keys(enterpriseApi.endpoints),
           ...Object.keys(enterpriseAttributeApi.endpoints),
+          ...Object.keys(enterpriseSoftwareUpdateApi.endpoints),
         ].filter((method) => {
           const permission = permissionForMethod(method);
 
@@ -15044,6 +15123,82 @@ export const createEnterpriseService = ({
           devices: attention,
         };
       }),
+    getSoftwareUpdateSummary: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const [devices, softwareUpdates] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({
+                  id: schema.device.id,
+                  name: schema.device.name,
+                  proto: schema.device.proto,
+                  osVersion: schema.device.osVersion,
+                  osEdition: schema.device.osEdition,
+                  model: schema.device.model,
+                })
+                .from(schema.device)
+                .where(eq(schema.device.organizationId, ctx.organization.id)),
+            ),
+            loadSoftwareUpdates(),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const evaluated = devices.map((device) => ({
+          device,
+          info: softwareUpdateFor(device, softwareUpdates.catalog),
+        }));
+
+        const counts = countSoftwareUpdates(evaluated.map((row) => row.info));
+
+        // The dashboard only needs a short, worst-first list. The full list is
+        // already carried on each device row and the device search response.
+        const attention = evaluated
+          .filter(
+            (row) =>
+              row.info.status === "security_update_required" ||
+              row.info.status === "update_available",
+          )
+          .sort(
+            (left, right) =>
+              softwareUpdateRank(left.info.status) - softwareUpdateRank(right.info.status) ||
+              left.device.name.localeCompare(right.device.name),
+          )
+          .slice(0, 6)
+          .map(({ device, info }) => ({
+            id: device.id,
+            name: device.name,
+            status: info.status,
+            code: info.code,
+            currentVersion: info.currentVersion,
+            latestVersion: info.latestVersion,
+            releaseDate: info.releaseDate,
+            securityInfoUrl: info.securityInfoUrl,
+          }));
+
+        const baseline = macOsUpdateBaseline(
+          softwareUpdates.catalog,
+          softwareUpdateSupportedMajorCount,
+        );
+
+        return {
+          feed: {
+            source: "sofa" as const,
+            url: softwareUpdates.sourceUrl,
+            available: softwareUpdates.available,
+            stale: softwareUpdates.stale,
+            fetchedAt: softwareUpdates.fetchedAt,
+            error: softwareUpdates.error,
+            latestVersion: baseline.latestVersion,
+            minimumSupportedVersion: baseline.minimumSupportedVersion,
+          },
+          counts,
+          devices: attention,
+        };
+      }),
     getDevicePushHealth: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -15687,9 +15842,7 @@ export const createEnterpriseService = ({
           body.configurationScopes?.[kind] ?? "device";
 
         const escrowFingerprint =
-          configurations.length > 0
-            ? yield* tenantEscrowFingerprint(ctx.organization.id)
-            : null;
+          configurations.length > 0 ? yield* tenantEscrowFingerprint(ctx.organization.id) : null;
 
         const policyId = id();
 
@@ -16528,7 +16681,8 @@ export const createEnterpriseService = ({
           where: { id: groupId, organizationId: ctx.organization.id },
         });
 
-        if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+        if (!group)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
 
         const body: { readonly userIds: ReadonlyArray<string> } = payload;
 
@@ -18455,12 +18609,19 @@ export const createEnterpriseService = ({
           { concurrency: "unbounded" },
         );
 
-        const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, ids);
+        const [attributes, softwareUpdates] = yield* Effect.all(
+          [loadDeviceAttributes(db, ctx.organization.id, ids), loadSoftwareUpdates()],
+          { concurrency: "unbounded" },
+        );
 
         return {
           rows: rows.map((row) => {
             const values = attributes.get(row.id);
-            const device = rowDevice(row, appleByDevice.get(row.id), androidByDevice.get(row.id));
+
+            const device = {
+              ...rowDevice(row, appleByDevice.get(row.id), androidByDevice.get(row.id)),
+              osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
+            };
 
             return values ? { ...device, attributes: values } : device;
           }),
@@ -18542,7 +18703,10 @@ export const createEnterpriseService = ({
             { concurrency: "unbounded" },
           );
 
-          const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, pageIds);
+          const [attributes, softwareUpdates] = yield* Effect.all(
+            [loadDeviceAttributes(db, ctx.organization.id, pageIds), loadSoftwareUpdates()],
+            { concurrency: "unbounded" },
+          );
 
           return {
             devices: page.map((snapshot) => ({
@@ -18551,6 +18715,7 @@ export const createEnterpriseService = ({
                 setup.get(snapshot.row.id),
                 androidByDevice.get(snapshot.row.id),
               ),
+              osUpdate: softwareUpdateFor(snapshot.row, softwareUpdates.catalog),
               attributes: attributes.get(snapshot.row.id),
               health: normalizeDeviceHealth(snapshot.health),
               groups: groups.get(snapshot.row.id) ?? [],
@@ -18618,7 +18783,10 @@ export const createEnterpriseService = ({
             { concurrency: "unbounded" },
           );
 
-          const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, pageIds);
+          const [attributes, softwareUpdates] = yield* Effect.all(
+            [loadDeviceAttributes(db, ctx.organization.id, pageIds), loadSoftwareUpdates()],
+            { concurrency: "unbounded" },
+          );
 
           return {
             devices: page.map((row) => {
@@ -18627,6 +18795,7 @@ export const createEnterpriseService = ({
 
               return {
                 ...rowDevice(row, setup.get(row.id), androidByDevice.get(row.id)),
+                osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
                 attributes: values,
                 health: normalizeDeviceHealth(
                   summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
@@ -18680,7 +18849,10 @@ export const createEnterpriseService = ({
           new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
         );
 
-        const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, ids);
+        const [attributes, softwareUpdates] = yield* Effect.all(
+          [loadDeviceAttributes(db, ctx.organization.id, ids), loadSoftwareUpdates()],
+          { concurrency: "unbounded" },
+        );
 
         return {
           devices: rows.map((row) => {
@@ -18689,6 +18861,7 @@ export const createEnterpriseService = ({
 
             return {
               ...rowDevice(row, setup.get(row.id), androidByDevice.get(row.id)),
+              osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
               attributes: values,
               health: normalizeDeviceHealth(
                 summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
@@ -19248,7 +19421,7 @@ export const createEnterpriseService = ({
         const apple = joined.apple ?? undefined;
         const android = joined.android ?? undefined;
 
-        const [secrets, autopilotRows, groups] = yield* Effect.all(
+        const [secrets, autopilotRows, groups, softwareUpdates] = yield* Effect.all(
           [
             queryEffect(
               db
@@ -19284,6 +19457,7 @@ export const createEnterpriseService = ({
                 .limit(1),
             ),
             queryEffect(deviceGroupsFor(ctx.organization.id, [row.id])),
+            loadSoftwareUpdates(),
           ],
           { concurrency: "unbounded" },
         );
@@ -19302,6 +19476,7 @@ export const createEnterpriseService = ({
         // Presence metadata only — the sealed value never leaves the backend.
         return {
           ...rowDevice(row, apple, android),
+          osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
           attributes: attributes.get(row.id),
           groups: groups.get(row.id) ?? [],
           recoveryKeyEscrowed: Boolean(recoveryKey),
@@ -20787,6 +20962,16 @@ export const createEnterpriseService = ({
 
   return wrapServiceErrors(service, true, analytics);
 };
+
+/** macOS update summary. Registered against its own small API group. */
+export const enterpriseSoftwareUpdateHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseSoftwareUpdateApi>,
+) =>
+  handlers.handle("getSoftwareUpdateSummary", ({ request, params }) =>
+    Effect.flatMap(EnterpriseService, (service) =>
+      service.getSoftwareUpdateSummary(request, params.tenantId),
+    ),
+  );
 
 export const enterpriseDashboardHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDashboardApi>,

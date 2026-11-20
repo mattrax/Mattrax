@@ -26,6 +26,7 @@ const DEVICE_READ = new Set([
   "getDeviceHealth",
   "getDeviceActivity",
   "getDeviceHealthSummary",
+  "getSoftwareUpdateSummary",
   "getDevicePushHealth",
   "getCredentialHealth",
   "getDeviceEffectivePolicy",

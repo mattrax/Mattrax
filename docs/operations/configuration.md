@@ -152,6 +152,33 @@ Device health uses fixed thresholds ahead of the auto-unenrol sweep: stale after
 stay above 14 for MIA to be observable; the default 30 retires the device after both
 states. If this is lowered below 14, maintenance unenrols devices before they can be MIA.
 
+## macOS update warnings (SOFA)
+
+The dashboard, device list and device page compare each Mac's reported `osVersion` with
+the [SOFA](https://github.com/macadmins/sofa) macOS feed. SOFA publishes the latest
+release and the security releases for each macOS major version, so a device on an older
+patch of a supported major gets "Security update required", and a device that is current
+for its major but has a newer major available gets "Update available".
+
+The feed is deployment-wide and cached in `software_update_feed`. Dashboard and device
+requests reuse the cached catalog for the cache window. Concurrent requests in one worker
+isolate share a single refresh, and a timeout, an HTTP error or a malformed feed is
+remembered as a short cooldown; the last good catalog (if any) is served as stale. If there
+is no cached catalog, macOS devices report `unknown` — they are never treated as up to
+date. Check-in and policy delivery do not depend on this feed.
+
+| Variable                     | Default                                                 | Purpose                                                        |
+| ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| `SOFA_FEED_URL`              | `https://sofafeed.macadmins.io/v1/macos_data_feed.json` | Feed or mirror URL                                             |
+| `SOFA_FEED_CACHE_SECONDS`    | `21600` (6 hours)                                       | Minimum age before a cached feed is refreshed                  |
+| `SOFA_FEED_RETRY_SECONDS`    | `900` (15 minutes)                                      | Failure cooldown before another refresh is attempted           |
+| `SOFA_FEED_TIMEOUT_MS`       | `5000`                                                  | Deadline for one feed request                                  |
+| `SOFA_FEED_SUPPORTED_MAJORS` | `3`                                                     | Current plus previous majors treated as supported (1–10)       |
+| `SOFA_FEED_DISABLED`         | unset                                                   | `true` disables the feed; every macOS status becomes `unknown` |
+
+Only macOS is covered. Windows and Android devices report no status (the UI shows "—")
+until a supported update source is added; they are not counted as up to date.
+
 ## Transactional email
 
 Invitations, verification codes, email-change notices and credential-expiry

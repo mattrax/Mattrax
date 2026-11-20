@@ -14,6 +14,8 @@ export * from "./Account.js";
 
 export * from "./Device.js";
 
+export * from "./softwareUpdates.js";
+
 export * from "./Group.js";
 
 export * from "./Policy.js";

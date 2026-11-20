@@ -58,6 +58,19 @@ export type EnterpriseServiceOptions = {
    * seconds. Defaults to one hour (see `ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS`).
    */
   readonly enrollmentProfileTtlSeconds?: number;
+  /**
+   * SOFA macOS update feed. Omit to use the public feed and its defaults.
+   * `softwareUpdateDisabled` keeps every macOS status `unknown` on an
+   * air-gapped deployment rather than reporting devices as up to date.
+   */
+  readonly softwareUpdateFeedUrl?: string;
+  readonly softwareUpdateCacheTtlMs?: number;
+  readonly softwareUpdateRetryMs?: number;
+  readonly softwareUpdateTimeoutMs?: number;
+  readonly softwareUpdateSupportedMajors?: number;
+  readonly softwareUpdateDisabled?: boolean;
+  /** Injected fetch for tests; production uses the runtime fetch. */
+  readonly softwareUpdateFetch?: typeof globalThis.fetch;
 };
 
 export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
@@ -122,6 +135,13 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           email: options.email,
           invitationFromEmail: options.invitationFromEmail,
           enrollmentProfileTtlSeconds: options.enrollmentProfileTtlSeconds,
+          softwareUpdateFeedUrl: options.softwareUpdateFeedUrl,
+          softwareUpdateCacheTtlMs: options.softwareUpdateCacheTtlMs,
+          softwareUpdateRetryMs: options.softwareUpdateRetryMs,
+          softwareUpdateTimeoutMs: options.softwareUpdateTimeoutMs,
+          softwareUpdateSupportedMajors: options.softwareUpdateSupportedMajors,
+          softwareUpdateDisabled: options.softwareUpdateDisabled,
+          softwareUpdateFetch: options.softwareUpdateFetch ?? globalThis.fetch,
           azureGraph: options.azureGraph ?? Option.getOrUndefined(azureGraph),
           azureClientId: options.azureClientId,
           windowsFederated: options.windowsFederated,

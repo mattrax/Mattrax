@@ -270,6 +270,10 @@ type EnterpriseUserClient = Effect.Success<ReturnType<typeof clientEffect>>["Ent
 
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
 
+type EnterpriseSoftwareUpdateClient = Effect.Success<
+  ReturnType<typeof clientEffect>
+>["EnterpriseSoftwareUpdate"];
+
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
 /**
@@ -300,6 +304,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-health", keyTenant(tenantId), id ?? ""] as const,
   deviceHealthSummary: (tenantId: RouteParam) =>
     ["enterprise", "device-health-summary", keyTenant(tenantId)] as const,
+  softwareUpdates: (tenantId: RouteParam) =>
+    ["enterprise", "software-updates", keyTenant(tenantId)] as const,
   devicePushHealth: (tenantId: RouteParam) =>
     ["enterprise", "device-push-health", keyTenant(tenantId)] as const,
   windowsFailures: (tenantId: RouteParam, deviceId?: string) =>
@@ -582,6 +588,15 @@ function identityEndpoint<A, E>(
     (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseIdentity),
     call,
     options,
+  );
+}
+
+function softwareUpdateEndpoint<A, E>(
+  call: (api: EnterpriseSoftwareUpdateClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseSoftwareUpdate),
+    call,
   );
 }
 
@@ -1179,6 +1194,10 @@ export const enterprise = {
   getDeviceHealthSummary: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getDeviceHealthSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getSoftwareUpdateSummary: (tenantId: RouteParam) =>
+    softwareUpdateEndpoint((api) =>
+      api.getSoftwareUpdateSummary({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
   getDevicePushHealth: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -2712,6 +2731,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.devicePushHealth(tenantId),
       queryFn: () => enterprise.getDevicePushHealth(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  softwareUpdates: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.softwareUpdates(tenantId),
+      queryFn: () => enterprise.getSoftwareUpdateSummary(tenantId),
       enabled: Boolean(tenantId),
     }),
   windowsFailures: (tenantId: RouteParam, limit = 5) =>
