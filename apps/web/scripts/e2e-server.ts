@@ -83,21 +83,39 @@ const signalTree = (signal: NodeJS.Signals): void => {
  * identifies the dev server; Playwright's teardown waits for it to close.
  */
 const killPort = (): void => {
+  // Do not depend on lsof: the GitHub runner does not guarantee it. Scan the
+  // process table for this checkout's Vite/dev-server processes instead.
   try {
-    const pids = execFileSync("lsof", ["-ti", "tcp:9050"], { encoding: "utf8" })
+    const repository = process.cwd();
+    const rows = execFileSync("ps", ["-A", "-o", "pid=,command="], { encoding: "utf8" })
       .trim()
-      .split("\n")
-      .filter(Boolean);
+      .split("\n");
 
-    for (const pid of pids) {
-      try {
-        process.kill(Number(pid), "SIGKILL");
-      } catch {
-        // Already gone.
+    for (const row of rows) {
+      const match = /^\s*(\d+)\s+(.*)$/.exec(row);
+
+      if (!match) continue;
+
+      const pid = Number(match[1]);
+      const command = match[2] ?? "";
+
+      if (pid === process.pid || !command.includes(repository)) continue;
+
+      if (
+        /vite\.js\s+dev/.test(command) ||
+        /vite-plus[^ ]*\bdev\b/.test(command) ||
+        /pnpm[^ ]*\s+web\s+dev/.test(command) ||
+        command.includes("scripts/generate-licences")
+      ) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
       }
     }
   } catch {
-    // No listener (or lsof is unavailable) is not a failure.
+    // A missing ps or no matching process is not a teardown failure.
   }
 };
 

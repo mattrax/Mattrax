@@ -255,7 +255,30 @@ jobs:
           docker exec "$MYSQL_CONTAINER_ID" mysql -uroot -proot \
             -e "ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';"
       - run: pnpm cloud db:migrate
-      - run: pnpm test:e2e --shard="$E2E_SHARD"
+      # Start the dev server outside Playwright so its teardown cannot wait on a
+      # Vite process that `setsid` reparented. Playwright then only runs tests.
+      - name: Start the dev server
+        run: |
+          pnpm web dev > /tmp/web-dev.log 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://localhost:9050/api/health >/dev/null &&
+               curl -fsS http://localhost:9050/login >/dev/null; then
+              # Give the client/SSR optimizers a moment to settle.
+              sleep 10
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::dev server did not start after ${attempt} attempts"
+          tail -100 /tmp/web-dev.log
+          exit 1
+      - name: Browser tests
+        env:
+          E2E_BASE_URL: http://localhost:9050
+        run: pnpm test:e2e --shard="$E2E_SHARD"
+      - name: Stop the dev server
+        if: always()
+        run: pkill -9 -f 'vite.js dev' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
