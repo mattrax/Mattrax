@@ -40,6 +40,7 @@ import {
   enterpriseSoftwareUpdateApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  fleetMigrationApi,
   scriptAgentApi,
   scriptApi,
   TENANT_EXPORT_MAX_ROWS,
@@ -286,6 +287,16 @@ import {
   resolveTenantRoleFrom,
 } from "@mattrax/enterprise-identity";
 import { linkDirectoryUserSso as linkDirectoryUserToSso } from "@mattrax/enterprise-backend";
+import {
+  confirmFleetMigrationEntry as confirmMigrationEntryRecord,
+  createFleetMigration as createMigrationRecord,
+  deleteFleetMigration as deleteMigrationRecord,
+  exportFleetMigration as exportMigrationRecord,
+  getFleetMigration as getMigrationRecord,
+  issueFleetMigrationUnenrol as issueMigrationUnenrol,
+  listFleetMigrations as listMigrationRecords,
+  markFleetMigrationUnenrolled as markMigrationUnenrolledRecord,
+} from "@mattrax/enterprise-backend";
 import {
   createScript,
   deleteScript,
@@ -22506,6 +22517,188 @@ export const createEnterpriseService = ({
 
         return ok;
       }),
+    listFleetMigrations: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* listMigrationRecords(db, ctx.organization.id, now());
+      }),
+    getFleetMigration: (request, tenantId, migrationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const detail = yield* getMigrationRecord(
+          db,
+          ctx.organization.id,
+          migrationId,
+          origin,
+          now(),
+        );
+
+        if (!detail)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration not found" }));
+
+        return detail;
+      }),
+    createFleetMigration: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const result = yield* createMigrationRecord(
+          db,
+          ctx.organization.id,
+          ctx.account.id,
+          payload,
+          now(),
+        );
+
+        if ("problem" in result)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: result.problem ?? "The cohort could not be created.",
+            }),
+          );
+
+        yield* audit(ctx, "device.migration_created", "fleet_migration", result.id, {
+          name: payload.name,
+          sourceMdm: payload.sourceMdm,
+          platforms: payload.platforms,
+          added: result.added,
+          duplicates: result.duplicates.length,
+          skipped: result.skipped.length,
+        });
+
+        return {
+          id: result.id,
+          added: result.added,
+          duplicates: [...result.duplicates],
+          skipped: result.skipped,
+        };
+      }),
+    deleteFleetMigration: (request, tenantId, migrationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const result = yield* deleteMigrationRecord(db, ctx.organization.id, migrationId);
+
+        if (!result.deleted)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration not found" }));
+
+        yield* audit(ctx, "device.migration_deleted", "fleet_migration", migrationId);
+
+        return result;
+      }),
+    issueFleetMigrationUnenrol: (request, tenantId, migrationId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        // Removing an MDM profile is a device command, so it needs the same
+        // recent proof as any other destructive device action.
+        yield* requireStepUp(auth, request, "device-command");
+
+        const result = yield* issueMigrationUnenrol(
+          db,
+          ctx.organization.id,
+          migrationId,
+          ctx.account.id,
+          payload ?? {},
+          now(),
+        );
+
+        if (!result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration not found" }));
+
+        if ("problem" in result)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: result.problem ?? "The unenrol could not be issued.",
+            }),
+          );
+
+        yield* audit(ctx, "device.migration_unenrol_issued", "fleet_migration", migrationId, {
+          issued: result.issued,
+          skipped: result.skipped,
+          remaining: result.remaining,
+          soleCopies: result.soleCopies,
+        });
+
+        return result;
+      }),
+    markFleetMigrationUnenrolled: (request, tenantId, migrationId, entryId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const result = yield* markMigrationUnenrolledRecord(
+          db,
+          ctx.organization.id,
+          migrationId,
+          entryId,
+          now(),
+        );
+
+        if (!result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration device not found" }));
+
+        if ("problem" in result)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: result.problem ?? "The device could not be updated.",
+            }),
+          );
+
+        yield* audit(ctx, "device.migration_unenrolled", "fleet_migration", migrationId, {
+          entryId,
+        });
+
+        return result;
+      }),
+    confirmFleetMigrationEntry: (request, tenantId, migrationId, entryId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const result = yield* confirmMigrationEntryRecord(
+          db,
+          ctx.organization.id,
+          migrationId,
+          entryId,
+          ctx.account.id,
+          now(),
+        );
+
+        if (!result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration device not found" }));
+
+        if ("problem" in result)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: result.problem ?? "The device could not be confirmed.",
+            }),
+          );
+
+        yield* audit(ctx, "device.migration_confirmed", "fleet_migration", migrationId, {
+          entryId,
+        });
+
+        return result;
+      }),
+    exportFleetMigration: (request, tenantId, migrationId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const result = yield* exportMigrationRecord(
+          db,
+          ctx.organization.id,
+          migrationId,
+          query?.format ?? "csv",
+          origin,
+          now(),
+        );
+
+        if (!result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration not found" }));
+
+        return result;
+      }),
     stepUpMethods: (request) => auth.stepUpMethods(webRequestFromRequest(request, origin)),
     stepUpTotp: (request, payload) =>
       auth.stepUpTotp(webRequestFromRequest(request, origin), payload),
@@ -23928,6 +24121,84 @@ export const scriptHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeo
     .handle("listScriptExecutions", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listScriptExecutions(request, params.tenantId, params.id, query),
+      ),
+    );
+
+/**
+ * Fleet migration cohort handlers. Registered against `fleetMigrationApi`, a
+ * group separate from `EnterpriseApi` so the generated client types stay
+ * manageable.
+ */
+export const fleetMigrationHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof fleetMigrationApi>,
+) =>
+  handlers
+    .handle("listFleetMigrations", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listFleetMigrations(request, params.tenantId),
+      ),
+    )
+    .handle("getFleetMigration", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getFleetMigration(request, params.tenantId, params.migrationId),
+      ),
+    )
+    .handle("createFleetMigration", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createFleetMigration(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteFleetMigration", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteFleetMigration(request, params.tenantId, params.migrationId),
+      ),
+    )
+    .handle("issueFleetMigrationUnenrol", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.issueFleetMigrationUnenrol(request, params.tenantId, params.migrationId, payload),
+      ),
+    )
+    .handle("markFleetMigrationUnenrolled", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.markFleetMigrationUnenrolled(
+          request,
+          params.tenantId,
+          params.migrationId,
+          params.entryId,
+        ),
+      ),
+    )
+    .handle("confirmFleetMigrationEntry", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.confirmFleetMigrationEntry(
+          request,
+          params.tenantId,
+          params.migrationId,
+          params.entryId,
+        ),
+      ),
+    )
+    .handleRaw("exportFleetMigration", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportFleetMigration(request, params.tenantId, params.migrationId, query),
+          (result: {
+            format: "csv" | "json";
+            body: string;
+            truncated: boolean;
+            rowCount: number;
+          }) =>
+            HttpServerResponse.text(result.body, {
+              contentType:
+                result.format === "json"
+                  ? "application/json; charset=utf-8"
+                  : "text/csv; charset=utf-8",
+              headers: exportHeaders(
+                `migration-${params.migrationId}-${new Date().toISOString().slice(0, 10)}.${result.format}`,
+                result,
+              ),
+            }),
+        ),
       ),
     );
 

@@ -682,6 +682,25 @@ export {
 } from "./Device/deviceSearch.ts";
 
 export {
+  confirmFleetMigrationEntry,
+  createFleetMigration,
+  deleteFleetMigration,
+  exportFleetMigration,
+  fleetMigrationCounts,
+  fleetMigrationExportCsv,
+  fleetMigrationExportJson,
+  fleetMigrationExportRows,
+  getFleetMigration,
+  issueFleetMigrationUnenrol,
+  listFleetMigrations,
+  markFleetMigrationUnenrolled,
+  reconcileFleetMigration,
+  sweepFleetMigrations,
+  type FleetMigrationExportRow,
+  type FleetMigrationProblem,
+} from "./Device/fleetMigration.ts";
+
+export {
   ENROLLMENT_ATTEMPT_DEDUPE_MS,
   ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT,
 } from "./Device/enrollmentAttempts.ts";

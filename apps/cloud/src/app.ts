@@ -19,6 +19,7 @@ import {
   enterpriseSoftwareUpdateApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
   scriptApi,
@@ -39,6 +40,7 @@ import {
   enterpriseUserHandlers,
   enterpriseListHandlers,
   enterpriseWindowsHandlers,
+  fleetMigrationHandlers,
   mcpOAuthRoutes,
   scriptAgentHandlers,
   scriptHandlers,
@@ -238,6 +240,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseSoftwareUpdateApi)
   .add(enterpriseListApi)
   .add(enterpriseWindowsApi)
+  .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
   .add(authHttp)
@@ -302,6 +305,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareUpdate", enterpriseSoftwareUpdateHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
+  HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),

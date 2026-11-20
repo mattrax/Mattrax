@@ -30,6 +30,8 @@ export * from "./deviceActions.ts";
 
 export * from "./scripts.ts";
 
+export * from "./fleetMigration.ts";
+
 export * from "./deviceInventory.ts";
 
 export * from "./dynamicGroups.ts";

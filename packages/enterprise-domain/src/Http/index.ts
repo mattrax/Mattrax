@@ -44,6 +44,8 @@ export * from "./Params.js";
 
 export * from "./ScriptApi.js";
 
+export * from "./MigrationApi.js";
+
 export const enterpriseHttpApi: HttpApi.HttpApi<
   "MattraxEnterprise",
   | typeof enterpriseAccountApi
