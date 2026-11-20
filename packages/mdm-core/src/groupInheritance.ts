@@ -199,6 +199,8 @@ export const loadGroupHierarchyEdges = (
       .innerJoin(s.enterpriseGroup, eq(s.enterpriseGroup.id, s.groupGroup.parentGroupId))
       .where(eq(s.enterpriseGroup.organizationId, organizationId));
 
+    // SAFETY: the select projects exactly the parent/child id columns, which is
+    // the whole shape of GroupHierarchyEdge.
     return rows as ReadonlyArray<GroupHierarchyEdge>;
   });
 

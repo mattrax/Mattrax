@@ -142,6 +142,7 @@ const syncDirectoryGroupLocked = (
     const excludedUsers = new Set(
       exclusions.filter((row) => row.target === "user").map((row) => row.targetId),
     );
+
     const excludedDevices = new Set(
       exclusions.filter((row) => row.target === "device").map((row) => row.targetId),
     );
@@ -180,6 +181,7 @@ const syncDirectoryGroupLocked = (
       : [];
 
     const deviceIds = new Set(tenantDevices.map((row) => row.id));
+
     const desired = candidateDeviceIds.filter(
       (deviceId) => deviceIds.has(deviceId) && !excludedDevices.has(deviceId),
     );
