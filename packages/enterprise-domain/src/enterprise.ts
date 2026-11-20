@@ -30,6 +30,8 @@ export * from "./Common.js";
 
 export * from "./Directory.js";
 
+export * from "./User.js";
+
 export * from "./Search.js";
 
 export * from "./Android.js";

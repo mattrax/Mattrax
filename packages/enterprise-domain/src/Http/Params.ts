@@ -13,6 +13,8 @@ export const TenantInvitationParam = { tenantId: Schema.String, invitationId: Sc
 
 export const TenantAccountParam = { tenantId: Schema.String, accountId: Schema.String };
 
+export const TenantUserParam = { tenantId: Schema.String, userId: Schema.String };
+
 export const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 
 /** A user channel is addressed by the device plus Apple's opaque user id. */

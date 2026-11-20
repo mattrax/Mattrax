@@ -7,6 +7,7 @@ import {
   enterpriseApi,
   enterpriseAttributeApi,
   enterpriseIdentityApi,
+  enterpriseUserApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -49,6 +50,7 @@ const restDocument = OpenApi.fromApi(
     .add(enterpriseAdeApi)
     .add(enterpriseAttributeApi)
     .add(enterpriseIdentityApi)
+    .add(enterpriseUserApi)
     .add(enterpriseWindowsApi)
     .add(scriptApi)
     .add(scriptAgentApi),

@@ -17,6 +17,7 @@ export type BreadcrumbTrailItem = { label: string; href: string };
 
 const ROUTE_LABELS = new Map<string, string>([
   ["devices", "Devices"],
+  ["users", "Users"],
   ["groups", "Groups"],
   ["policies", "Policies"],
   ["assignments", "Assignments"],

@@ -248,6 +248,10 @@ const EXPLICIT = {
   // Directory lists expose member names and email addresses, so they need the
   // same permission as the member list rather than plain tenant read.
   listDirectory: "members.read",
+  listUsers: "members.read",
+  // The detail view is the same directory data plus (permission-filtered)
+  // device and policy sections, so the directory permission gates the read.
+  getUser: "members.read",
   search: "tenant.read",
   patchTenant: "tenant.write",
   deleteTenant: "tenant.delete",

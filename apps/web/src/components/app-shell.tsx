@@ -403,6 +403,9 @@ function navFor(tenantId: string | undefined): NavItem[] {
     item("devices", "Devices", tenant.devices(), MonitorSmartphone, "workspace", {
       permission: "devices.read",
     }),
+    item("users", "Users", tenant.users(), User, "workspace", {
+      permission: "members.read",
+    }),
     item("groups", "Groups", tenant.groups(), UsersRound, "workspace", {
       permission: "groups.read",
     }),
