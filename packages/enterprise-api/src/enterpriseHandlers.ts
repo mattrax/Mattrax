@@ -31,6 +31,7 @@ import {
   enterpriseAccountApi,
   enterpriseAdminApi,
   enterpriseApi,
+  enterpriseGroupApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
@@ -170,6 +171,10 @@ import {
   generateWebhookSecret,
   previewDynamicGroup,
   replayWebhookDelivery as redeliverWebhook,
+  groupHierarchyProblem,
+  groupIdsWithAncestors,
+  loadGroupHierarchyEdges,
+  syncGroupInheritance,
   loadPolicyScopeResolutionInput,
   resolveGroupScope,
   resolvePolicyScope,
@@ -503,6 +508,7 @@ import type {
   EnterpriseDevice,
   EnterpriseEnrollment,
   EnterpriseGroup,
+  EnterpriseGroupChildGroup,
   EnterpriseGroupDevice,
   EnterpriseGroupPolicy,
   EnterpriseApplication,
@@ -3423,6 +3429,69 @@ export const createEnterpriseService = ({
       return group;
     });
 
+  const assertTenantGroups = (tenantId: string, ids: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      const uniqueIds = [...new Set(ids)];
+
+      if (uniqueIds.length === 0) return;
+
+      const rows = yield* db
+        .select({ id: schema.enterpriseGroup.id })
+        .from(schema.enterpriseGroup)
+        .where(
+          and(
+            eq(schema.enterpriseGroup.organizationId, tenantId),
+            inArray(schema.enterpriseGroup.id, uniqueIds),
+          ),
+        );
+
+      if (rows.length !== uniqueIds.length)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "One or more child groups are not part of this tenant.",
+          }),
+        );
+    });
+
+  /**
+   * Verify every new child edge before writing any of them: the target groups
+   * must be in the tenant, and no edge may create a cycle or an over-deep chain.
+   * Edges already added in this request are considered in order, so assigning
+   * two children that together close a loop is rejected too.
+   */
+  const assertNestableGroups = (
+    tenantId: string,
+    parentId: string,
+    childIds: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const uniqueChildIds = [...new Set(childIds)];
+
+      if (uniqueChildIds.length === 0) return;
+
+      yield* assertTenantGroups(tenantId, uniqueChildIds);
+
+      const existing = yield* loadGroupHierarchyEdges(db, tenantId);
+      const edges = [...existing];
+
+      for (const childId of uniqueChildIds) {
+        const problem = groupHierarchyProblem(edges, parentId, childId);
+
+        if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+        if (!edges.some((edge) => edge.parentId === parentId && edge.childId === childId))
+          edges.push({ parentId, childId });
+      }
+    });
+
+  /**
+   * Every group whose membership is affected by a change to `groupId`: the
+   * group itself and each group that contains it. Membership writes refresh all
+   * of them, and pushes must wake their devices too.
+   */
+  const affectedGroupIds = (tenantId: string, groupId: string) =>
+    groupIdsWithAncestors(db, tenantId, groupId);
+
   /**
    * One directory group drives at most one device group. The database enforces
    * it with a unique index; checking first turns the race into a readable error
@@ -5060,7 +5129,7 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const groups = new Map<
         string,
-        Array<{ id: string; name: string; source: "manual" | "dynamic" | "directory" }>
+        Array<{ id: string; name: string; source: "manual" | "dynamic" | "directory" | "nested" }>
       >();
 
       if (deviceIds.length === 0) return groups;
@@ -7193,6 +7262,7 @@ export const createEnterpriseService = ({
 
         const methods = [
           ...Object.keys(enterpriseApi.endpoints),
+          ...Object.keys(enterpriseGroupApi.endpoints),
           ...Object.keys(enterpriseAttributeApi.endpoints),
           ...Object.keys(enterpriseSoftwareUpdateApi.endpoints),
         ].filter((method) => {
@@ -16473,6 +16543,7 @@ export const createEnterpriseService = ({
           directoryGroupId?: string | null;
           devices?: Array<string>;
           policies?: Array<string>;
+          childGroups?: Array<string>;
         } = payload;
 
         const kind = body.kind ?? "manual";
@@ -16517,6 +16588,7 @@ export const createEnterpriseService = ({
 
         yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
         yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
+        yield* assertTenantGroups(ctx.organization.id, body.childGroups ?? []);
         const groupId = id();
         yield* db.insert(schema.enterpriseGroup).values({
           id: groupId,
@@ -16545,13 +16617,32 @@ export const createEnterpriseService = ({
             .ignore()
             .values(body.policies.map((policyId) => ({ groupId, policyId })));
 
+        // A brand-new group cannot already be a parent, so the only hierarchy
+        // rules that matter are self-inclusion and the depth cap.
+        if (body.childGroups?.length) {
+          yield* assertNestableGroups(ctx.organization.id, groupId, body.childGroups);
+          yield* db
+            .insert(schema.groupGroup)
+            .ignore()
+            .values(
+              body.childGroups.map((childGroupId) => ({
+                parentGroupId: groupId,
+                childGroupId,
+                createdAt: now(),
+              })),
+            );
+        }
+
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
 
         if (directoryGroupId)
           yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
 
-        if (body.devices?.length || body.policies?.length || directoryGroupId)
+        if (body.childGroups?.length)
+          yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+
+        if (body.devices?.length || body.policies?.length || directoryGroupId || body.childGroups?.length)
           yield* syncAndroidDevices(ctx.organization.id, [
             ...(body.devices ?? []),
             ...(yield* applePush.deviceIdsInGroups([groupId])),
@@ -16562,6 +16653,7 @@ export const createEnterpriseService = ({
           directoryGroupId,
           devices: body.devices?.length ?? 0,
           policies: body.policies?.length ?? 0,
+          childGroups: body.childGroups?.length ?? 0,
         });
 
         return { id: groupId };
@@ -16581,7 +16673,12 @@ export const createEnterpriseService = ({
               });
 
               if (!existing) return { id: groupId, deleted: false as const, reason: "notFound" };
-              const devices = yield* applePush.deviceIdsInGroups([groupId]);
+
+              // Ancestors keep inheriting from this group until it is gone; the
+              // devices are captured now so they can be woken after the delete.
+              const affectedIds = yield* affectedGroupIds(ctx.organization.id, groupId);
+              const devices = yield* applePush.deviceIdsInGroups([...affectedIds]);
+
               yield* db
                 .delete(schema.enterpriseGroup)
                 .where(
@@ -16590,6 +16687,11 @@ export const createEnterpriseService = ({
                     eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
                   ),
                 );
+
+              // The edge and this group's membership rows are gone through the
+              // cascades; each enclosing group must drop the inherited devices.
+              for (const ancestorId of affectedIds.filter((id) => id !== groupId))
+                yield* syncGroupInheritance(db, ctx.organization.id, ancestorId);
 
               return { id: groupId, deleted: true as const, devices };
             }),
@@ -16668,10 +16770,14 @@ export const createEnterpriseService = ({
         const wasDynamic = existing.kind === "dynamic";
         const wasLinked = Boolean(existing.directoryGroupId);
 
+        // Enclosing groups inherit this group's devices, so a mode change can
+        // move a parent's membership without touching the parent itself.
+        const affectedIds = yield* affectedGroupIds(ctx.organization.id, groupId);
+
         // Capture the old membership so devices that lose the group are woken
         // too. A linked group can gain or lose every member here without any
         // device check-in.
-        const beforeDevices = yield* applePush.deviceIdsInGroups([groupId]);
+        const beforeDevices = yield* applePush.deviceIdsInGroups([...affectedIds]);
 
         yield* db
           .update(schema.enterpriseGroup)
@@ -16722,6 +16828,10 @@ export const createEnterpriseService = ({
             .where(eq(schema.enterpriseGroup.id, groupId));
         }
 
+        // Always refresh nested rows: the group's own membership may have just
+        // changed, and that is what its parents read.
+        yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+
         yield* audit(ctx, "group.updated", "group", groupId, { fields: Object.keys(body) });
 
         // Membership-affecting edits (link, unlink, mode or rule change) can
@@ -16732,7 +16842,7 @@ export const createEnterpriseService = ({
           body.directoryGroupId !== undefined ||
           body.rules !== undefined
         ) {
-          const afterDevices = yield* applePush.deviceIdsInGroups([groupId]);
+          const afterDevices = yield* applePush.deviceIdsInGroups([...affectedIds]);
           const affected = [...new Set([...beforeDevices, ...afterDevices])];
 
           yield* applePush.pushAppleDevices(affected);
@@ -16750,11 +16860,15 @@ export const createEnterpriseService = ({
           assign?: {
             devices?: Array<string>;
             policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+            childGroups?: Array<string>;
           };
           unassign?: {
             devices?: Array<string>;
             policies?: Array<string | { id: string; mode?: "include" | "exclude" }>;
+            childGroups?: Array<string>;
           };
+          exclude?: { devices?: Array<string>; users?: Array<string> };
+          unexclude?: { devices?: Array<string>; users?: Array<string> };
         } = payload;
 
         if (
@@ -16770,14 +16884,60 @@ export const createEnterpriseService = ({
           );
         const assignPolicies = assignmentRefs(body.assign?.policies);
         const unassignPolicies = assignmentRefs(body.unassign?.policies);
+        const assignChildGroups = [...new Set(body.assign?.childGroups ?? [])];
+        const unassignChildGroups = [...new Set(body.unassign?.childGroups ?? [])];
+        const excludeDevices = [...new Set(body.exclude?.devices ?? [])];
+        const excludeUsers = [...new Set(body.exclude?.users ?? [])];
+        const unexcludeDevices = [...new Set(body.unexclude?.devices ?? [])];
+        const unexcludeUsers = [...new Set(body.unexclude?.users ?? [])];
+
         yield* assertTenantDevices(ctx.organization.id, [
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
+          ...excludeDevices,
+          ...unexcludeDevices,
         ]);
         yield* assertTenantPolicies(ctx.organization.id, [
           ...assignPolicies.map((assignment) => assignment.id),
           ...unassignPolicies.map((assignment) => assignment.id),
         ]);
+        yield* assertTenantUsers(ctx.organization.id, [...excludeUsers, ...unexcludeUsers]);
+        yield* assertTenantGroups(ctx.organization.id, unassignChildGroups);
+        yield* assertNestableGroups(ctx.organization.id, groupId, assignChildGroups);
+
+        // Membership edits ripple through enclosing groups, so capture the
+        // whole chain before anything changes.
+        const affectedIds = yield* affectedGroupIds(ctx.organization.id, groupId);
+        const beforeDevices = yield* applePush.deviceIdsInGroups([...affectedIds]);
+
+        const currentExclusions = yield* db
+          .select({
+            target: schema.groupExclusion.target,
+            targetId: schema.groupExclusion.targetId,
+          })
+          .from(schema.groupExclusion)
+          .where(eq(schema.groupExclusion.groupId, groupId));
+
+        const excludedDeviceIds = new Set(
+          currentExclusions
+            .filter((exclusion) => exclusion.target === "device")
+            .map((exclusion) => exclusion.targetId),
+        );
+
+        // An excluded device cannot be re-added by a stale checkbox: the
+        // operator has to remove the exclusion first, which keeps exclusion
+        // precedence explicit rather than silently dropping the write.
+        const blocked = (body.assign?.devices ?? []).filter((deviceId) =>
+          excludedDeviceIds.has(deviceId),
+        );
+
+        if (blocked.length > 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "One or more devices are excluded from this group. Remove the exclusion before assigning them.",
+            }),
+          );
 
         if (body.assign?.devices?.length)
           yield* db
@@ -16837,15 +16997,112 @@ export const createEnterpriseService = ({
             ),
           );
 
+        // Nested groups: an edge is written only after the cycle/depth check.
+        if (unassignChildGroups.length)
+          yield* db
+            .delete(schema.groupGroup)
+            .where(
+              and(
+                eq(schema.groupGroup.parentGroupId, groupId),
+                inArray(schema.groupGroup.childGroupId, unassignChildGroups),
+              ),
+            );
+
+        if (assignChildGroups.length)
+          yield* db
+            .insert(schema.groupGroup)
+            .ignore()
+            .values(
+              assignChildGroups.map((childGroupId) => ({
+                parentGroupId: groupId,
+                childGroupId,
+                createdAt: now(),
+              })),
+            );
+
+        // Device exclusions remove every membership row for the device: manual,
+        // dynamic, directory and inherited. This is the write that makes the
+        // exclusion win immediately rather than on the next recompute.
+        if (excludeDevices.length)
+          yield* db
+            .delete(schema.groupDevice)
+            .where(
+              and(
+                eq(schema.groupDevice.groupId, groupId),
+                inArray(schema.groupDevice.deviceId, excludeDevices),
+              ),
+            );
+
+        if (excludeDevices.length || excludeUsers.length)
+          yield* db
+            .insert(schema.groupExclusion)
+            .ignore()
+            .values([
+              ...excludeDevices.map((targetId) => ({
+                groupId,
+                target: "device" as const,
+                targetId,
+                createdAt: now(),
+              })),
+              ...excludeUsers.map((targetId) => ({
+                groupId,
+                target: "user" as const,
+                targetId,
+                createdAt: now(),
+              })),
+            ]);
+
+        if (unexcludeDevices.length || unexcludeUsers.length)
+          yield* db.delete(schema.groupExclusion).where(
+            and(
+              eq(schema.groupExclusion.groupId, groupId),
+              or(
+                and(
+                  eq(schema.groupExclusion.target, "device"),
+                  inArray(schema.groupExclusion.targetId, unexcludeDevices),
+                ),
+                and(
+                  eq(schema.groupExclusion.target, "user"),
+                  inArray(schema.groupExclusion.targetId, unexcludeUsers),
+                ),
+              ),
+            ),
+          );
+
+        // A dynamic/directory group must re-derive after an exclusion change:
+        // removing an exclusion can bring a matching device back. The syncs
+        // refresh nested membership as well; a plain manual group only needs
+        // the inheritance refresh.
+        if (group.kind === "dynamic")
+          yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
+        else if (group.directoryGroupId)
+          yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
+
+        yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+
         // Device membership changes affect those devices; policy membership
-        // changes affect every device in the group. Deduplicate in the helper.
+        // changes affect every device in the group (and its enclosing groups).
+        // Deduplicate in the helper.
         const affectedDevices = [
           ...(body.assign?.devices ?? []),
           ...(body.unassign?.devices ?? []),
+          ...excludeDevices,
+          ...unexcludeDevices,
         ];
 
-        if (assignPolicies.length || unassignPolicies.length)
-          affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
+        if (
+          assignPolicies.length ||
+          unassignPolicies.length ||
+          assignChildGroups.length ||
+          unassignChildGroups.length ||
+          excludeUsers.length ||
+          unexcludeUsers.length
+        ) {
+          const afterDevices = yield* applePush.deviceIdsInGroups([...affectedIds]);
+
+          affectedDevices.push(...beforeDevices, ...afterDevices);
+        }
+
         yield* applePush.pushAppleDevices(affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "group.members_changed", "group", groupId, {
@@ -16853,6 +17110,12 @@ export const createEnterpriseService = ({
           unassignDevices: body.unassign?.devices?.length ?? 0,
           assignPolicies: assignPolicies.length,
           unassignPolicies: unassignPolicies.length,
+          assignChildGroups: assignChildGroups.length,
+          unassignChildGroups: unassignChildGroups.length,
+          excludeDevices: excludeDevices.length,
+          excludeUsers: excludeUsers.length,
+          unexcludeDevices: unexcludeDevices.length,
+          unexcludeUsers: unexcludeUsers.length,
         });
 
         return ok;
@@ -16877,7 +17140,11 @@ export const createEnterpriseService = ({
               if (group.directoryGroupId)
                 yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
 
-              return yield* applePush.deviceIdsInGroups([groupId]);
+              // Enclosing groups inherit this group's membership, so wake their
+              // devices too; the sync above refreshed their rows.
+              const affectedIds = yield* affectedGroupIds(ctx.organization.id, groupId);
+
+              return yield* applePush.deviceIdsInGroups([...affectedIds]);
             }),
           { concurrency: 10 },
         );
@@ -16944,8 +17211,41 @@ export const createEnterpriseService = ({
             })),
           );
 
+        // A copy keeps the source's child groups and exclusions: without them
+        // the duplicate would silently reach a different device set.
+        const childEdges = yield* db
+          .select()
+          .from(schema.groupGroup)
+          .where(eq(schema.groupGroup.parentGroupId, groupId));
+
+        if (childEdges.length)
+          yield* db.insert(schema.groupGroup).values(
+            childEdges.map((edge: EnterpriseGroupChildGroup) => ({
+              parentGroupId: newId,
+              childGroupId: edge.childGroupId,
+              createdAt: now(),
+            })),
+          );
+
+        const exclusions = yield* db
+          .select()
+          .from(schema.groupExclusion)
+          .where(eq(schema.groupExclusion.groupId, groupId));
+
+        if (exclusions.length)
+          yield* db.insert(schema.groupExclusion).values(
+            exclusions.map((exclusion) => ({
+              groupId: newId,
+              target: exclusion.target,
+              targetId: exclusion.targetId,
+              createdAt: now(),
+            })),
+          );
+
         if (kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, newId, { now: now() });
+
+        yield* syncGroupInheritance(db, ctx.organization.id, newId);
         yield* audit(ctx, "group.duplicated", "group", newId, { sourceId: groupId });
 
         return { id: newId };
@@ -21592,16 +21892,161 @@ export const createEnterpriseService = ({
           deviceLinks.map((link) => [link.deviceId, link.source ?? ("manual" as const)]),
         );
 
+        const childEdges = yield* db
+          .select({ childGroupId: schema.groupGroup.childGroupId })
+          .from(schema.groupGroup)
+          .where(eq(schema.groupGroup.parentGroupId, groupId));
+
+        const childIds = childEdges.map((edge) => edge.childGroupId);
+
+        const [childGroupRows, childDeviceLinks, exclusionRows] = yield* Effect.all(
+          [
+            queryEffect(
+              childIds.length
+                ? db
+                    .select({
+                      id: schema.enterpriseGroup.id,
+                      name: schema.enterpriseGroup.name,
+                      kind: schema.enterpriseGroup.kind,
+                    })
+                    .from(schema.enterpriseGroup)
+                    .where(
+                      and(
+                        eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                        inArray(schema.enterpriseGroup.id, childIds),
+                      ),
+                    )
+                : emptyRows<{
+                    id: string;
+                    name: string;
+                    kind: "manual" | "dynamic";
+                  }>(),
+            ),
+            queryEffect(
+              childIds.length
+                ? db
+                    .select({
+                      groupId: schema.groupDevice.groupId,
+                      deviceId: schema.groupDevice.deviceId,
+                    })
+                    .from(schema.groupDevice)
+                    .where(inArray(schema.groupDevice.groupId, childIds))
+                : emptyRows<{ groupId: string; deviceId: string }>(),
+            ),
+            queryEffect(
+              db
+                .select({
+                  target: schema.groupExclusion.target,
+                  targetId: schema.groupExclusion.targetId,
+                })
+                .from(schema.groupExclusion)
+                .where(eq(schema.groupExclusion.groupId, groupId)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const excludedDeviceTargets = exclusionRows
+          .filter((exclusion) => exclusion.target === "device")
+          .map((exclusion) => exclusion.targetId);
+
+        const excludedUserTargets = exclusionRows
+          .filter((exclusion) => exclusion.target === "user")
+          .map((exclusion) => exclusion.targetId);
+
+        const [excludedDevices, excludedUsers] = yield* Effect.all(
+          [
+            queryEffect(
+              excludedDeviceTargets.length
+                ? db
+                    .select({ id: schema.device.id, name: schema.device.name })
+                    .from(schema.device)
+                    .where(
+                      and(
+                        eq(schema.device.organizationId, ctx.organization.id),
+                        inArray(schema.device.id, excludedDeviceTargets),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string }>(),
+            ),
+            queryEffect(
+              excludedUserTargets.length
+                ? db
+                    .select({
+                      id: schema.user.id,
+                      name: schema.user.name,
+                      email: schema.user.email,
+                    })
+                    .from(schema.user)
+                    .where(
+                      and(
+                        eq(schema.user.organizationId, ctx.organization.id),
+                        inArray(schema.user.id, excludedUserTargets),
+                      ),
+                    )
+                : emptyRows<{ id: string; name: string; email: string }>(),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const childById = new Map(childGroupRows.map((child) => [child.id, child]));
+        const childDeviceCounts = new Map<string, number>();
+
+        for (const link of childDeviceLinks)
+          childDeviceCounts.set(link.groupId, (childDeviceCounts.get(link.groupId) ?? 0) + 1);
+
+        // A direct child's rows already include its own inherited members, so
+        // one level is enough to attribute an inherited device to the child
+        // groups that bring it in.
+        const inheritedFromByDevice = new Map<string, Array<{ id: string; name: string }>>();
+
+        for (const link of childDeviceLinks) {
+          const child = childById.get(link.groupId);
+
+          if (!child) continue;
+          const list = inheritedFromByDevice.get(link.deviceId) ?? [];
+
+          list.push({ id: child.id, name: child.name });
+          inheritedFromByDevice.set(link.deviceId, list);
+        }
+
         return {
           ...rowGroup(row, devices.length, policies.length),
           directoryGroup: directoryGroup[0]
             ? { id: directoryGroup[0].id, name: directoryGroup[0].name }
             : null,
-          devices: [...devices]
-            .map((device) => ({
-              ...device,
-              source: sourceByDevice.get(device.id) ?? ("manual" as const),
+          childGroups: childGroupRows
+            .map((child) => ({
+              id: child.id,
+              name: child.name,
+              kind: child.kind ?? ("manual" as const),
+              devicesCount: childDeviceCounts.get(child.id) ?? 0,
             }))
+            .sort((left, right) => left.name.localeCompare(right.name)),
+          exclusions: [
+            ...excludedDevices.map((device) => ({
+              kind: "device" as const,
+              id: device.id,
+              name: device.name,
+            })),
+            ...excludedUsers.map((user) => ({
+              kind: "user" as const,
+              id: user.id,
+              name: user.name,
+              email: user.email,
+            })),
+          ].sort((left, right) => left.name.localeCompare(right.name)),
+          devices: [...devices]
+            .map((device) => {
+              const inheritedFrom = inheritedFromByDevice.get(device.id);
+
+              return {
+                ...device,
+                source: sourceByDevice.get(device.id) ?? ("manual" as const),
+                ...(inheritedFrom ? { inheritedFrom } : {}),
+              };
+            })
             .sort((left, right) => left.name.localeCompare(right.name)),
           policies: policies
             .map((policy) => ({
@@ -22404,6 +22849,58 @@ export const enterpriseAdeHandlers = (
     ),
   );
 
+/**
+ * Device-group endpoints live in their own HTTP API group (see
+ * `GroupApi`), but share the same service and error handling.
+ */
+export const enterpriseGroupHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseGroupApi>,
+) =>
+  handlers
+    .handle("listGroups", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listGroups(request, params.tenantId)),
+    )
+    .handle("getGroup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getGroup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("previewGroup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewGroup(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("createGroup", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createGroup(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deleteGroups", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteGroups(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchGroup", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchGroup(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("patchGroupMembers", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchGroupMembers(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("syncGroups", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.syncGroups(request, params.tenantId, payload),
+      ),
+    )
+    .handle("duplicateGroup", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.duplicateGroup(request, params.tenantId, params.id, payload),
+      ),
+    );
+
 export const enterpriseHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>,
 ) =>
@@ -23202,49 +23699,6 @@ export const enterpriseHandlers = (
     .handle("getCredentialHealth", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getCredentialHealth(request, params.tenantId),
-      ),
-    )
-    .handle("listGroups", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.listGroups(request, params.tenantId)),
-    )
-    .handle("getGroup", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.getGroup(request, params.tenantId, params.id),
-      ),
-    )
-    .handle("previewGroup", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.previewGroup(request, params.tenantId, params.id),
-      ),
-    )
-    .handle("createGroup", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.createGroup(request, params.tenantId, payload),
-      ),
-    )
-    .handle("deleteGroups", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.deleteGroups(request, params.tenantId, payload),
-      ),
-    )
-    .handle("patchGroup", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.patchGroup(request, params.tenantId, params.id, payload),
-      ),
-    )
-    .handle("patchGroupMembers", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.patchGroupMembers(request, params.tenantId, params.id, payload),
-      ),
-    )
-    .handle("syncGroups", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.syncGroups(request, params.tenantId, payload),
-      ),
-    )
-    .handle("duplicateGroup", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.duplicateGroup(request, params.tenantId, params.id, payload),
       ),
     )
     .handle("listApplications", ({ request, params }) =>

@@ -190,6 +190,11 @@ export type PolicyScopeResolutionInput = {
   readonly groups: ReadonlyArray<PolicyResolutionGroup>;
   readonly groupAssignments: ReadonlyArray<PolicyResolutionGroupAssignment>;
   readonly groupMembers: ReadonlyArray<{ readonly groupId: string; readonly deviceId: string }>;
+  /** People excluded from a group's user-scoped delivery. */
+  readonly groupUserExclusions?: ReadonlyArray<{
+    readonly groupId: string;
+    readonly userId: string;
+  }>;
   readonly deviceAssignments: ReadonlyArray<PolicyScopeDeviceAssignment>;
   readonly users: ReadonlyArray<PolicyResolutionUser>;
   /** Directory users linked to each device. */
@@ -545,6 +550,7 @@ const resolutionInput = (
   groups: facts.groups,
   groupAssignments: facts.groupAssignments,
   deviceAssignments: facts.deviceAssignments,
+  ...(input.groupUserExclusions ? { groupUserExclusions: input.groupUserExclusions } : {}),
   users: facts.users,
   userGroups: facts.userGroups,
   userGroupMembers: facts.userGroupMembers,

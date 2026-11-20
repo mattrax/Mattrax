@@ -3190,8 +3190,10 @@ export const groupDevice = mysqlTable(
      * recompute; manual rows survive recomputes as explicit exceptions.
      * `directory` rows are derived from the group's linked directory group and
      * are replaced whenever directory membership or a device-user link changes.
+     * `nested` rows are inherited from a child group and refreshed whenever the
+     * child's membership or the parent's child list changes.
      */
-    source: varchar("source", { length: 16, enum: ["manual", "dynamic", "directory"] })
+    source: varchar("source", { length: 16, enum: ["manual", "dynamic", "directory", "nested"] })
       .notNull()
       .default("manual"),
   },
@@ -3200,6 +3202,76 @@ export const groupDevice = mysqlTable(
     // Device check-ins evaluate that device's dynamic groups, so lookups by
     // device id must not scan the whole membership table.
     index("group_device_device_id_idx").on(table.deviceId),
+  ],
+);
+
+/**
+ * Parent → child edges between device groups.
+ *
+ * A parent group includes every member of its child groups, transitively. The
+ * edge is a real row (not a free-text id list) so tenant scoping is a join,
+ * deleting a group removes its edges by cascade, and cycle detection can read
+ * the actual graph.
+ *
+ * Inherited devices are materialised into `group_device` with
+ * `source = 'nested'`, so policy, script and scope resolution keep reading one
+ * membership table. A row's source records the strongest reason the device is a
+ * member: `manual` > `dynamic`/`directory` > `nested`.
+ */
+export const groupGroup = mysqlTable(
+  "group_group",
+  {
+    parentGroupId: id("parent_group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    childGroupId: id("child_group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.parentGroupId, table.childGroupId] }),
+    // Both foreign keys need a leading index. The primary key covers the
+    // parent; the child-leading lookup ("which groups include this one") and
+    // the child foreign key share this index.
+    index("group_group_child_idx").on(table.childGroupId),
+  ],
+);
+
+/** What a group exclusion targets: a device or a directory user. */
+export const GROUP_EXCLUSION_TARGETS = ["device", "user"] as const;
+
+/**
+ * Explicit exclusions from a group.
+ *
+ * Exclusions always win over manual membership, dynamic rule matches and
+ * directory-derived membership. A device exclusion removes the device from
+ * every membership source; a user exclusion removes that user's user-scoped
+ * delivery and the device mappings this group derives from the user (see
+ * `docs/reference/architecture.md`). Device-scoped membership a shared device
+ * gains through another source is deliberately kept; excluding a person must
+ * not silently pull a shared Mac out of a device policy.
+ *
+ * `target_id` is polymorphic, so it carries no foreign key: the write path
+ * verifies the target belongs to the tenant. A deleted device or user leaves an
+ * inert row behind; ids are random and never reused, and reads only apply to
+ * targets that still resolve inside the tenant.
+ */
+export const groupExclusion = mysqlTable(
+  "group_exclusion",
+  {
+    groupId: id("group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    target: varchar("target", { length: 16, enum: ["device", "user"] }).notNull(),
+    targetId: id("target_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.target, table.targetId] }),
+    // Policy resolution checks the device's exclusions across its groups in one
+    // read, and the group editor looks up a user's exclusions by user id.
+    index("group_exclusion_target_idx").on(table.target, table.targetId),
   ],
 );
 
@@ -3858,6 +3930,8 @@ export const relations = defineRelations(
     policyDeployment,
     configuration,
     groupDevice,
+    groupGroup,
+    groupExclusion,
     groupPolicy,
     application,
     applicationGroup,
@@ -4207,6 +4281,18 @@ export const relations = defineRelations(
         to: r.userGroup.id,
       }),
       devices: r.many.groupDevice({ from: r.enterpriseGroup.id, to: r.groupDevice.groupId }),
+      childGroups: r.many.groupGroup({
+        from: r.enterpriseGroup.id,
+        to: r.groupGroup.parentGroupId,
+      }),
+      parentGroups: r.many.groupGroup({
+        from: r.enterpriseGroup.id,
+        to: r.groupGroup.childGroupId,
+      }),
+      exclusions: r.many.groupExclusion({
+        from: r.enterpriseGroup.id,
+        to: r.groupExclusion.groupId,
+      }),
       policies: r.many.groupPolicy({ from: r.enterpriseGroup.id, to: r.groupPolicy.groupId }),
       applications: r.many.applicationGroup({
         from: r.enterpriseGroup.id,
@@ -4227,6 +4313,22 @@ export const relations = defineRelations(
     groupDevice: {
       group: r.one.enterpriseGroup({ from: r.groupDevice.groupId, to: r.enterpriseGroup.id }),
       device: r.one.device({ from: r.groupDevice.deviceId, to: r.device.id }),
+    },
+    groupGroup: {
+      parent: r.one.enterpriseGroup({
+        from: r.groupGroup.parentGroupId,
+        to: r.enterpriseGroup.id,
+      }),
+      child: r.one.enterpriseGroup({
+        from: r.groupGroup.childGroupId,
+        to: r.enterpriseGroup.id,
+      }),
+    },
+    groupExclusion: {
+      group: r.one.enterpriseGroup({
+        from: r.groupExclusion.groupId,
+        to: r.enterpriseGroup.id,
+      }),
     },
     groupPolicy: {
       group: r.one.enterpriseGroup({ from: r.groupPolicy.groupId, to: r.enterpriseGroup.id }),

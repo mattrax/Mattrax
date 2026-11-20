@@ -18,6 +18,8 @@ export * from "./directoryGroups.js";
 
 export * from "./dynamicGroups.js";
 
+export * from "./groupInheritance.js";
+
 export * from "./inventory.js";
 
 export * from "./legacyDelivery.js";

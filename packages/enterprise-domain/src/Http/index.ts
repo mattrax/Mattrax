@@ -9,6 +9,7 @@ import { enterpriseAdeApi } from "./AdeApi.js";
 import { enterpriseAttributeApi } from "./AttributeApi.js";
 import { enterpriseApi } from "./EnterpriseApi.js";
 import { enterpriseDashboardApi } from "./DashboardApi.js";
+import { enterpriseGroupApi } from "./GroupApi.js";
 import { enterpriseIdentityApi } from "./IdentityApi.js";
 import { enterpriseUserApi } from "./UserApi.js";
 import { enterpriseSoftwareUpdateApi } from "./SoftwareUpdateApi.js";
@@ -27,6 +28,8 @@ export * from "./EnterpriseApi.js";
 
 export * from "./DashboardApi.js";
 
+export * from "./GroupApi.js";
+
 export * from "./IdentityApi.js";
 
 export * from "./UserApi.js";
@@ -44,6 +47,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseAccountApi
   | typeof enterpriseAdminApi
   | typeof enterpriseApi
+  | typeof enterpriseGroupApi
   | typeof enterpriseAdeApi
   | typeof enterpriseAttributeApi
   | typeof enterpriseDashboardApi
@@ -56,6 +60,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
   .add(enterpriseApi)
+  .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
@@ -69,6 +74,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
   HttpApiClient.Client<typeof enterpriseAdminApi> &
   HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseGroupApi> &
   HttpApiClient.Client<typeof enterpriseAdeApi> &
   HttpApiClient.Client<typeof enterpriseAttributeApi> &
   HttpApiClient.Client<typeof enterpriseDashboardApi> &

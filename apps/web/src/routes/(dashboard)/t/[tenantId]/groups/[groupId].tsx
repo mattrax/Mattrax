@@ -158,6 +158,13 @@ export default function GroupDetailPage() {
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
 
+  // Only needed while editing, to offer child groups that are not already
+  // nested here. The list is tenant-scoped by the API.
+  const allGroups = useQuery(() => ({
+    queryKey: enterpriseKeys.list(params.tenantId, "group"),
+    queryFn: () => enterprise.list(params.tenantId, "group"),
+  }));
+
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 
   const preview = useQuery(() => ({
@@ -206,6 +213,13 @@ export default function GroupDetailPage() {
   const [policyModes, setPolicyModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
   const [policySearch, setPolicySearch] = createSignal("");
   const [seeded, setSeeded] = createSignal(false);
+  // Nested groups and exclusions are saved through the same members endpoint.
+  const [childGroupIds, setChildGroupIds] = createSignal<Set<string>>(new Set());
+  const [excludedDeviceIds, setExcludedDeviceIds] = createSignal<Set<string>>(new Set());
+  const [excludedUserIds, setExcludedUserIds] = createSignal<Set<string>>(new Set());
+  const [childGroupChoice, setChildGroupChoice] = createSignal("");
+  const [excludeDeviceChoice, setExcludeDeviceChoice] = createSignal("");
+  const [excludeUserChoice, setExcludeUserChoice] = createSignal("");
 
   /** Only explicit manual rows are the editable selection; derived rows are not. */
   const savedManualDeviceIds = () =>
@@ -213,6 +227,18 @@ export default function GroupDetailPage() {
       (row()?.devices ?? [])
         .filter((device) => (device.source ?? "manual") === "manual")
         .map((device) => device.id),
+    );
+
+  const savedChildGroupIds = () => new Set((row()?.childGroups ?? []).map((group) => group.id));
+
+  const savedExcludedDeviceIds = () =>
+    new Set(
+      (row()?.exclusions ?? []).filter((item) => item.kind === "device").map((item) => item.id),
+    );
+
+  const savedExcludedUserIds = () =>
+    new Set(
+      (row()?.exclusions ?? []).filter((item) => item.kind === "user").map((item) => item.id),
     );
 
   createEffect(
@@ -225,6 +251,9 @@ export default function GroupDetailPage() {
         setDirectoryGroupId(row.directoryGroupId ?? null);
         setRules(row.rules ?? { version: 1 });
         setDeviceIds(savedManualDeviceIds());
+        setChildGroupIds(savedChildGroupIds());
+        setExcludedDeviceIds(savedExcludedDeviceIds());
+        setExcludedUserIds(savedExcludedUserIds());
         setPolicyModes(
           new Map(
             (row.policies ?? []).map((policy) => [policy.id, policy.mode ?? ("include" as const)]),
@@ -264,6 +293,9 @@ export default function GroupDetailPage() {
   const rulesChanged = () =>
     JSON.stringify(rules()) !== JSON.stringify(row()?.rules ?? { version: 1 });
 
+  const sameIds = (left: Iterable<string>, right: Iterable<string>) =>
+    [...left].sort().join("\u0000") === [...right].sort().join("\u0000");
+
   const dirty = createMemo(
     () =>
       seeded() &&
@@ -273,12 +305,10 @@ export default function GroupDetailPage() {
         kindChanged() ||
         directoryChanged() ||
         rulesChanged() ||
-        (membershipMode() === "manual" &&
-          [...deviceIds()].sort().join(",") !==
-            (row()!
-              .devices?.map((d) => d.id)
-              .sort()
-              .join(",") ?? "")) ||
+        (membershipMode() === "manual" && !sameIds(deviceIds(), savedManualDeviceIds())) ||
+        !sameIds(childGroupIds(), savedChildGroupIds()) ||
+        !sameIds(excludedDeviceIds(), savedExcludedDeviceIds()) ||
+        !sameIds(excludedUserIds(), savedExcludedUserIds()) ||
         currentPolicySignature() !== policySignature(row()!.policies ?? [])),
   );
 
@@ -316,14 +346,23 @@ export default function GroupDetailPage() {
 
   const save = useMutation(() => ({
     mutationFn: async () => {
-      const oldDevices = row()?.devices?.map((d) => d.id) ?? [];
+      // Derived rows (dynamic, directory, nested) are not manual membership and
+      // must never be sent as an unassign.
+      const oldDevices = [...savedManualDeviceIds()];
 
       const oldPolicies = new Map(
         (row()?.policies ?? []).map((policy) => [policy.id, policy.mode ?? "include"]),
       );
 
+      const oldChildGroups = [...savedChildGroupIds()];
+      const oldExcludedDevices = [...savedExcludedDeviceIds()];
+      const oldExcludedUsers = [...savedExcludedUserIds()];
+
       const nextDevices = membershipMode() === "manual" ? [...deviceIds()] : oldDevices;
       const nextPolicies = policyModes();
+      const nextChildGroups = [...childGroupIds()];
+      const nextExcludedDevices = [...excludedDeviceIds()];
+      const nextExcludedUsers = [...excludedUserIds()];
 
       if (
         name() !== row()?.name ||
@@ -345,10 +384,20 @@ export default function GroupDetailPage() {
           policies: [...nextPolicies].flatMap(([id, mode]) =>
             oldPolicies.get(id) === mode ? [] : [{ id, mode }],
           ),
+          childGroups: nextChildGroups.filter((id) => !oldChildGroups.includes(id)),
         },
         unassign: {
           devices: oldDevices.filter((id) => !nextDevices.includes(id)),
           policies: [...oldPolicies.keys()].filter((id) => !nextPolicies.has(id)),
+          childGroups: oldChildGroups.filter((id) => !nextChildGroups.includes(id)),
+        },
+        exclude: {
+          devices: nextExcludedDevices.filter((id) => !oldExcludedDevices.includes(id)),
+          users: nextExcludedUsers.filter((id) => !oldExcludedUsers.includes(id)),
+        },
+        unexclude: {
+          devices: oldExcludedDevices.filter((id) => !nextExcludedDevices.includes(id)),
+          users: oldExcludedUsers.filter((id) => !nextExcludedUsers.includes(id)),
         },
       });
     },
@@ -454,7 +503,9 @@ export default function GroupDetailPage() {
   /** MdmTable's checkbox column mirrors the include set, not a bulk selection. */
   const setDeviceSelection = (ids: ReadonlySet<string>) => {
     if (!edit()) return;
-    setDeviceIds(new Set(ids));
+    // Exclusions win over manual membership, so an excluded device cannot be
+    // ticked as a member; the server would reject the write.
+    setDeviceIds(new Set([...ids].filter((id) => !excludedDeviceIds().has(id))));
   };
 
   const setPolicySelection = (ids: ReadonlySet<string>) => {
@@ -471,7 +522,8 @@ export default function GroupDetailPage() {
     if (!edit()) return;
     const next = new Set(deviceIds());
 
-    for (const device of deviceRows()) next.add(device.id);
+    for (const device of deviceRows())
+      if (!excludedDeviceIds().has(device.id)) next.add(device.id);
     setDeviceIds(next);
   };
 
@@ -495,8 +547,85 @@ export default function GroupDetailPage() {
     setPolicyModes(next);
   };
 
+  /** Child groups that are not this group and not already nested here. */
+  const childGroupChoices = () =>
+    (allGroups.data?.rows ?? []).filter(
+      (group) => group.id !== params.groupId && !childGroupIds().has(group.id),
+    );
+
+  const addChildGroup = () => {
+    if (!edit()) return;
+    const value = childGroupChoice();
+
+    if (!value) return;
+    setChildGroupIds(new Set([...childGroupIds(), value]));
+    setChildGroupChoice("");
+  };
+
+  const removeChildGroup = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(childGroupIds());
+
+    next.delete(id);
+    setChildGroupIds(next);
+  };
+
+  /** Devices already excluded, or already members, are not offered again. */
+  const excludeDeviceChoices = () =>
+    deviceRows().filter(
+      (device) => !excludedDeviceIds().has(device.id) && !deviceIds().has(device.id),
+    );
+
+  const excludeUserChoices = () =>
+    (directory.data?.users ?? []).filter((user) => !excludedUserIds().has(user.id));
+
+  const addExcludedDevice = () => {
+    if (!edit()) return;
+    const value = excludeDeviceChoice();
+
+    if (!value) return;
+    // An exclusion always wins: drop it from the pending membership as well.
+    const members = new Set(deviceIds());
+
+    members.delete(value);
+    setDeviceIds(members);
+    setExcludedDeviceIds(new Set([...excludedDeviceIds(), value]));
+    setExcludeDeviceChoice("");
+  };
+
+  const addExcludedUser = () => {
+    if (!edit()) return;
+    const value = excludeUserChoice();
+
+    if (!value) return;
+    setExcludedUserIds(new Set([...excludedUserIds(), value]));
+    setExcludeUserChoice("");
+  };
+
+  const removeExcludedDevice = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(excludedDeviceIds());
+
+    next.delete(id);
+    setExcludedDeviceIds(next);
+  };
+
+  const removeExcludedUser = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(excludedUserIds());
+
+    next.delete(id);
+    setExcludedUserIds(next);
+  };
+
+  /** Membership source per device for the table's Source column. */
+  const membershipByDevice = () =>
+    new Map((row()?.devices ?? []).map((device) => [device.id, device]));
+
+  // The materialised membership is authoritative: it includes inherited
+  // devices, which the live rule preview deliberately does not.
   const memberCount = () =>
-    row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : (row()?.devices?.length ?? 0);
+    row()?.devices?.length ?? (row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : 0);
 
   return (
     <Page wide>
@@ -552,6 +681,18 @@ export default function GroupDetailPage() {
             </Show>
             <Show when={row()!.kind === "manual" && !row()!.directoryGroupId}>
               <Badge variant="secondary">Manual</Badge>
+            </Show>
+            <Show when={(row()!.childGroups?.length ?? 0) > 0}>
+              <Badge variant="outline">
+                {row()!.childGroups!.length} nested group
+                {row()!.childGroups!.length === 1 ? "" : "s"}
+              </Badge>
+            </Show>
+            <Show when={(row()!.exclusions?.length ?? 0) > 0}>
+              <Badge variant="subtle">
+                {row()!.exclusions!.length} exclusion
+                {row()!.exclusions!.length === 1 ? "" : "s"}
+              </Badge>
             </Show>
             <span class="flex items-baseline gap-1.5">
               <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
@@ -775,6 +916,89 @@ export default function GroupDetailPage() {
           </Show>
 
           <Panel
+            title="Nested groups"
+            description="Every device in a child group is also a member here. Membership is a transitive union; a device is never counted twice."
+            actions={
+              <Show when={(row()?.childGroups?.length ?? 0) > 0}>
+                <Badge variant="outline" class="tabular-nums text-muted-foreground">
+                  {row()!.childGroups!.length}
+                </Badge>
+              </Show>
+            }
+          >
+            <div class="space-y-3">
+              <Show
+                when={(row()?.childGroups?.length ?? 0) > 0}
+                fallback={
+                  <p class="text-[12px] text-muted-foreground">
+                    This group has no child groups. Nesting a group includes all of its members,
+                    including members it inherits from its own children.
+                  </p>
+                }
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={row()?.childGroups ?? []}>
+                    {(child) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                        <span class="flex min-w-0 items-center gap-2">
+                          <a
+                            class="truncate text-[12.5px] font-medium text-foreground hover:underline"
+                            href={`/t/${params.tenantId}/groups/${child.id}`}
+                          >
+                            {child.name}
+                          </a>
+                          <Badge variant="subtle">{child.kind ?? "manual"}</Badge>
+                        </span>
+                        <span class="flex shrink-0 items-center gap-2 text-[11px] tabular-nums text-muted-foreground">
+                          {child.devicesCount ?? 0} device
+                          {(child.devicesCount ?? 0) === 1 ? "" : "s"}
+                          <Show when={edit()}>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => removeChildGroup(child.id)}
+                            >
+                              Remove
+                            </Button>
+                          </Show>
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={childGroupChoice()}
+                    aria-label="Add a child group"
+                    onChange={(event) => setChildGroupChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a group to nest…</option>
+                    <For each={childGroupChoices()}>
+                      {(group) => <option value={group.id}>{group.name}</option>}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!childGroupChoice()}
+                    onClick={addChildGroup}
+                  >
+                    Add child group
+                  </Button>
+                </div>
+                <p class="text-[11px] text-muted-foreground">
+                  A group cannot contain itself, directly or through another group, and chains are
+                  limited to eight levels. Removing a child immediately removes the devices only it
+                  contributed.
+                </p>
+              </Show>
+            </div>
+          </Panel>
+
+          <Panel
             class="xl:col-span-2"
             title="Computed scope"
             description="Policies this group carries and the member devices each one actually wins on."
@@ -976,6 +1200,40 @@ export default function GroupDetailPage() {
                   </div>
                 </Show>
               </Panel>
+              <Show when={(row()?.childGroups?.length ?? 0) > 0}>
+                <Panel
+                  flush
+                  title="Inherited devices"
+                  description="Members inherited from child groups. They receive this group's policies but stay in the child group."
+                >
+                  <Show
+                    when={(row()?.devices ?? []).some((device) => device.source === "nested")}
+                    fallback={
+                      <p class="px-4 py-6 text-[12px] text-muted-foreground">
+                        The child groups have no members yet.
+                      </p>
+                    }
+                  >
+                    <div class="divide-y divide-border">
+                      <For each={(row()?.devices ?? []).filter((device) => device.source === "nested")}>
+                        {(device) => (
+                          <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                            <a
+                              class="font-medium text-foreground hover:underline"
+                              href={`/t/${params.tenantId}/devices/${device.id}`}
+                            >
+                              {device.name}
+                            </a>
+                            <span class="text-[11.5px] text-muted-foreground">
+                              via {(device.inheritedFrom ?? []).map((group) => group.name).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </Panel>
+              </Show>
             </div>
           }
         >
@@ -1103,6 +1361,30 @@ export default function GroupDetailPage() {
                       cell: (device) => device.assetTag ?? "—",
                     },
                     {
+                      id: "source",
+                      header: "Membership",
+                      cell: (device) => {
+                        const membership = membershipByDevice().get(device.id);
+                        const source = membership?.source ?? "manual";
+
+                        if (source === "nested")
+                          return (
+                            <span class="inline-flex min-w-0 items-center gap-1.5 text-[12px] text-muted-foreground">
+                              <Badge variant="subtle">Inherited</Badge>
+                              <span class="truncate">
+                                {(membership?.inheritedFrom ?? [])
+                                  .map((group) => group.name)
+                                  .join(", ") || "child group"}
+                              </span>
+                            </span>
+                          );
+
+                        return (
+                          <span class="text-[12px] capitalize text-muted-foreground">{source}</span>
+                        );
+                      },
+                    },
+                    {
                       id: "lastSeen",
                       header: "Last seen",
                       cell: (device) => formatDeviceDate(device.lastSeenAt),
@@ -1113,6 +1395,151 @@ export default function GroupDetailPage() {
             </Panel>
           </div>
         </Show>
+
+        <Panel
+          class="mt-5"
+          title="Exclusions"
+          description="Explicit exclusions always win over manual membership, rule matches and inherited membership."
+        >
+          <div class="space-y-4">
+            <div>
+              <p class="mb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                Excluded devices
+              </p>
+              <Show
+                when={(row()?.exclusions ?? []).some((item) => item.kind === "device")}
+                fallback={
+                  <p class="text-[12px] text-muted-foreground">No devices are excluded.</p>
+                }
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "device")}>
+                    {(exclusion) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                        <a
+                          class="min-w-0 truncate text-[12.5px] font-medium text-foreground hover:underline"
+                          href={`/t/${params.tenantId}/devices/${exclusion.id}`}
+                        >
+                          {exclusion.name}
+                        </a>
+                        <Show when={edit()}>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => removeExcludedDevice(exclusion.id)}
+                          >
+                            Remove
+                          </Button>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={excludeDeviceChoice()}
+                    aria-label="Exclude a device"
+                    onChange={(event) => setExcludeDeviceChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a device on this page to exclude…</option>
+                    <For each={excludeDeviceChoices()}>
+                      {(device) => <option value={device.id}>{device.name}</option>}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!excludeDeviceChoice()}
+                    onClick={addExcludedDevice}
+                  >
+                    Exclude device
+                  </Button>
+                </div>
+              </Show>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                Excluding a device removes every way it is a member of this group, including
+                inherited membership. Its other groups and direct policy assignments still apply.
+              </p>
+            </div>
+
+            <div class="border-t border-border pt-4">
+              <p class="mb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                Excluded people
+              </p>
+              <Show
+                when={(row()?.exclusions ?? []).some((item) => item.kind === "user")}
+                fallback={
+                  <p class="text-[12px] text-muted-foreground">No people are excluded.</p>
+                }
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "user")}>
+                    {(exclusion) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                        <span class="min-w-0">
+                          <span class="block truncate text-[12.5px] font-medium text-foreground">
+                            {exclusion.name}
+                          </span>
+                          <Show when={exclusion.email}>
+                            <span class="block truncate text-[11px] text-muted-foreground">
+                              {exclusion.email}
+                            </span>
+                          </Show>
+                        </span>
+                        <Show when={edit()}>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => removeExcludedUser(exclusion.id)}
+                          >
+                            Remove
+                          </Button>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={excludeUserChoice()}
+                    aria-label="Exclude a directory user"
+                    onChange={(event) => setExcludeUserChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a directory person to exclude…</option>
+                    <For each={excludeUserChoices()}>
+                      {(user) => (
+                        <option value={user.id}>
+                          {user.name} ({user.email})
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!excludeUserChoice()}
+                    onClick={addExcludedUser}
+                  >
+                    Exclude person
+                  </Button>
+                </div>
+              </Show>
+              <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                Excluding a person stops this group's user-scoped settings from reaching their
+                Apple user channel and, when this group follows a directory group, stops their
+                devices being added through that membership. A device that is also a member through
+                another person, a rule, a manual assignment or a child group stays in the group and
+                keeps device-scoped policy — remove the device explicitly to take it out entirely.
+              </p>
+            </div>
+          </div>
+        </Panel>
       </Show>
 
       <Show when={tab() === "policies"}>

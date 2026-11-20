@@ -3,6 +3,7 @@ import { DeviceActionName } from "./deviceActions.js";
 import { DeviceAttributeValues } from "./attributes.js";
 import { Schema } from "effect";
 import { AutopilotDeviceInfo } from "./Autopilot.js";
+import { GroupMembershipKind } from "./Group.js";
 import { NullableString } from "./Errors.js";
 import { WindowsActivationStatus } from "./deviceInventory.js";
 
@@ -327,7 +328,12 @@ export const DeviceRow = Schema.Struct({
       Schema.Struct({
         id: Schema.String,
         name: Schema.String,
-        source: Schema.optional(Schema.Literals(["manual", "dynamic", "directory"])),
+        /** `nested` means the device is inherited from a child group. */
+        source: Schema.optional(GroupMembershipKind),
+        /** Child groups that bring an inherited device in, when known. */
+        inheritedFrom: Schema.optional(
+          Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+        ),
       }),
     ),
   ),
