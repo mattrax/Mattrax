@@ -15,6 +15,7 @@ import {
 } from "@mattrax/ui";
 import { ErrorText, QueryError } from "~/components/mdm/common";
 import { MissingDevicesBanner } from "~/components/missing-devices-banner";
+import { OnboardingChecklist } from "~/components/onboarding-checklist";
 import { SoftwareUpdatesBanner } from "~/components/software-updates-banner";
 import {
   DashboardWidgetBatchProvider,
@@ -253,6 +254,7 @@ function LoadedOverview(props: {
       />
       <MissingDevicesBanner tenantId={props.tenantId} />
       <SoftwareUpdatesBanner tenantId={props.tenantId} />
+      <OnboardingChecklist tenantId={props.tenantId} />
       <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
       <Show
         when={(dashboard.data?.widgets.length ?? 0) > 0}
@@ -302,6 +304,7 @@ function PreviewOverview(props: {
       />
       <MissingDevicesBanner tenantId={props.tenantId} />
       <SoftwareUpdatesBanner tenantId={props.tenantId} />
+      <OnboardingChecklist tenantId={props.tenantId} />
       <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
       <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
         <p class="text-[12px] text-muted-foreground">

@@ -4,6 +4,7 @@ import { DEPLOYMENT_ID, DEPLOYMENT_META_NAME } from "~/lib/deployment";
 import { requiresJavaScript } from "~/lib/public-routes";
 import { getPreloadedSession } from "~/lib/session-store";
 import { getPostHogConfig } from "~/lib/posthog-config-store";
+import { getSupportConfig } from "~/lib/support-config-store";
 import { SITE_DEFAULT_ORIGIN, organizationStructuredData } from "~/lib/site";
 import { THEME_COLOURS, themeBootstrapScript } from "~/lib/theme";
 
@@ -30,6 +31,8 @@ export default function Document(props: { children?: JSX.Element }) {
   const serialized = preloaded === undefined ? undefined : JSON.stringify(preloaded);
   const posthog = request ? getPostHogConfig(request) : undefined;
   const serializedPostHog = posthog === undefined ? undefined : JSON.stringify(posthog);
+  const support = request ? getSupportConfig(request) : undefined;
+  const serializedSupport = support === undefined ? undefined : JSON.stringify(support);
 
   return (
     <html lang="en">
@@ -73,6 +76,9 @@ export default function Document(props: { children?: JSX.Element }) {
         <HydrationScript />
         {serializedPostHog !== undefined && (
           <script>{`window.__MATTRAX_POSTHOG__=${serializedPostHog.replace(/</g, "\\u003c")};`}</script>
+        )}
+        {serializedSupport !== undefined && (
+          <script>{`window.__MATTRAX_SUPPORT__=${serializedSupport.replace(/</g, "\\u003c")};`}</script>
         )}
       </head>
 

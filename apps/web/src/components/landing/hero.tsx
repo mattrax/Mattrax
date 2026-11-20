@@ -108,7 +108,11 @@ export function Hero() {
               </div>
 
               <p class="lx-hero__note">
-                Free during alpha. Apple, Windows and Android included.
+                Free during alpha. Apple, Windows and Android included.{" "}
+                <a href="/docs/getting-started/alpha" target="_self" class="underline underline-offset-2">
+                  What alpha means
+                </a>
+                .
               </p>
 
               <p class="lx-proof">

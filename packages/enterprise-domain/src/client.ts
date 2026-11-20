@@ -32,6 +32,8 @@ export * from "./deviceQuery.ts";
 
 export * from "./dashboard.ts";
 
+export * from "./onboarding.ts";
+
 export * from "./storage.ts";
 
 export * from "./stepUp.ts";

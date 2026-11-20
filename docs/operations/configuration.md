@@ -39,6 +39,19 @@ web Worker's environment as restricted as the API Worker's while the key is shar
 Long term the plan is a dedicated `SSR_TOKEN_SECRET` minted by the API and verified by the
 edge, so the web Worker never holds `AUTH_SECRET`; this is not implemented yet.
 
+### Support and calendar link
+
+| Variable      | Default                                                            | Purpose                                      |
+| ------------- | ------------------------------------------------------------------ | -------------------------------------------- |
+| `SUPPORT_URL` | `mailto:hello@mattrax.app?subject=Mattrax%20support`                | Support form or calendar booking URL         |
+
+Set `SUPPORT_URL` on the dashboard Worker (`mattrax`) or in the self-hosted
+container's environment. It is used by the account menu and the overview's "Get
+started" checklist. `https:`, `http:` and `mailto:` values are accepted; anything
+else falls back to the default mailto so a misconfiguration cannot render a dead
+or script link. The value is public: it is injected into the HTML shell like the
+PostHog configuration.
+
 ## Hyperdrive
 
 The API Worker reaches MySQL through Hyperdrive. Query caching must stay disabled:

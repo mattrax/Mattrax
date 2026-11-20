@@ -36,6 +36,7 @@ import {
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseIdentityApi,
+  enterpriseOnboardingApi,
   enterpriseUserApi,
   enterpriseSoftwareUpdateApi,
   enterpriseListApi,
@@ -7971,6 +7972,167 @@ export const createEnterpriseService = ({
           permissions: [...ctx.role.permissions],
           createdAt: iso(ctx.organization.createdAt),
         };
+      }),
+    getTenantOnboarding: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const organizationId = ctx.organization.id;
+
+        // The checklist is one request on the overview, so the aggregates run
+        // as a single concurrent wave instead of one page calling four lists.
+        const [
+          groups,
+          policies,
+          devices,
+          administrators,
+          pendingInvitations,
+          firstPolicy,
+          groupAssignments,
+          deviceAssignments,
+          userAssignments,
+          userGroupAssignments,
+        ] = yield* Effect.all(
+          [
+            queryEffect(
+              db
+                .select({ value: count() })
+                .from(schema.enterpriseGroup)
+                .where(eq(schema.enterpriseGroup.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .select({ value: count() })
+                .from(schema.policy)
+                .where(eq(schema.policy.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .select({ value: count() })
+                .from(schema.device)
+                .where(
+                  and(
+                    eq(schema.device.organizationId, organizationId),
+                    eq(schema.device.status, "enrolled"),
+                  ),
+                ),
+            ),
+            queryEffect(
+              db
+                .select({
+                  role: schema.member.role,
+                  customRoleId: schema.member.customRoleId,
+                })
+                .from(schema.member)
+                .where(eq(schema.member.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .select({
+                  role: schema.invitation.role,
+                  customRoleId: schema.invitation.customRoleId,
+                })
+                .from(schema.invitation)
+                .where(
+                  and(
+                    eq(schema.invitation.organizationId, organizationId),
+                    eq(schema.invitation.status, "pending"),
+                    gt(schema.invitation.expiresAt, now()),
+                  ),
+                ),
+            ),
+            queryEffect(
+              db
+                .select({ id: schema.policy.id })
+                .from(schema.policy)
+                .where(eq(schema.policy.organizationId, organizationId))
+                .orderBy(asc(schema.policy.createdAt))
+                .limit(1),
+            ),
+            // Assignment can happen to a group, a device, a directory user or
+            // a user group; a policy is "assigned" when any of those exists.
+            queryEffect(
+              db
+                .selectDistinct({ policyId: schema.groupPolicy.policyId })
+                .from(schema.groupPolicy)
+                .innerJoin(
+                  schema.enterpriseGroup,
+                  eq(schema.enterpriseGroup.id, schema.groupPolicy.groupId),
+                )
+                .where(eq(schema.enterpriseGroup.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .selectDistinct({ policyId: schema.devicePolicy.policyId })
+                .from(schema.devicePolicy)
+                .innerJoin(schema.policy, eq(schema.policy.id, schema.devicePolicy.policyId))
+                .where(eq(schema.policy.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .selectDistinct({ policyId: schema.userPolicy.policyId })
+                .from(schema.userPolicy)
+                .where(eq(schema.userPolicy.organizationId, organizationId)),
+            ),
+            queryEffect(
+              db
+                .selectDistinct({ policyId: schema.userGroupPolicy.policyId })
+                .from(schema.userGroupPolicy)
+                .where(eq(schema.userGroupPolicy.organizationId, organizationId)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+
+        const assigned = new Set<string>();
+
+        for (const row of [
+          ...groupAssignments,
+          ...deviceAssignments,
+          ...userAssignments,
+          ...userGroupAssignments,
+        ])
+          assigned.add(row.policyId);
+
+        return {
+          dismissedAt: isoOrNull(ctx.member.onboardingDismissedAt),
+          groups: Number(groups[0]?.value ?? 0),
+          policies: Number(policies[0]?.value ?? 0),
+          assignedPolicies: assigned.size,
+          devices: Number(devices[0]?.value ?? 0),
+          // A custom role can administer the tenant, but the built-in owner
+          // and administrator roles are the guarantee the step asks for.
+          administrators: administrators.filter(
+            (member) =>
+              member.customRoleId === null &&
+              member.role
+                .split(",")
+                .map((role) => role.trim())
+                .some((role) => role === "owner" || role === "admin"),
+          ).length,
+          pendingInvitations: pendingInvitations.filter(
+            (invitation) =>
+              invitation.customRoleId !== null ||
+              (invitation.role ?? "")
+                .split(",")
+                .map((role) => role.trim())
+                .some((role) => role === "owner" || role === "admin"),
+          ).length,
+          firstPolicyId: firstPolicy[0]?.id ?? null,
+        };
+      }),
+    patchTenantOnboarding: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        yield* db
+          .update(schema.member)
+          .set({
+            onboardingDismissedAt: payload.dismissed ? now() : null,
+            updatedAt: now(),
+          })
+          .where(eq(schema.member.id, ctx.member.id));
+
+        return { status: "ok" as const };
       }),
     exportTenant: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -22607,6 +22769,21 @@ export const enterpriseDashboardHandlers = (
       service.queryDashboardBatch(request, params.tenantId, payload),
     ),
   );
+
+export const enterpriseOnboardingHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseOnboardingApi>,
+) =>
+  handlers
+    .handle("getTenantOnboarding", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getTenantOnboarding(request, params.tenantId),
+      ),
+    )
+    .handle("patchTenantOnboarding", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchTenantOnboarding(request, params.tenantId, payload),
+      ),
+    );
 
 export const enterpriseUserHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseUserApi>,

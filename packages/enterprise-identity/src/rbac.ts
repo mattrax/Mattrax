@@ -255,6 +255,11 @@ const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenant
 
 const EXPLICIT = {
   getTenant: "tenant.read",
+  // The overview checklist is an aggregate read of data this role may already
+  // see. Dismissing it is a personal preference, not a tenant change, so a
+  // read-only member can still hide their own card.
+  getTenantOnboarding: "tenant.read",
+  patchTenantOnboarding: "tenant.read",
   // Directory lists expose member names and email addresses, so they need the
   // same permission as the member list rather than plain tenant read.
   listDirectory: "members.read",

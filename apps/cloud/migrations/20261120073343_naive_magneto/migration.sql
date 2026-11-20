@@ -1,0 +1,1 @@
+ALTER TABLE `member` ADD `onboarding_dismissed_at` datetime(3);

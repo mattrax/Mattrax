@@ -55,6 +55,7 @@ import {
 import { meQueryOptions } from "~/lib/enterprise";
 import type { Permission } from "@mattrax/enterprise-domain/client";
 import { routes } from "~/lib/routes";
+import { supportUrl } from "~/lib/support-config-store";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
 import {
@@ -351,7 +352,18 @@ function UserMenu(props: {
         <DropdownMenuItem
           as="a"
           role="menuitem"
-          href="mailto:hello@mattrax.app?subject=Mattrax%20support"
+          href="/docs/getting-started/alpha"
+          target="_self"
+        >
+          <BookOpen class="size-3.5 text-muted-foreground" />
+          What alpha means
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          as="a"
+          role="menuitem"
+          href={supportUrl()}
+          target={supportUrl().startsWith("http") ? "_blank" : undefined}
+          rel={supportUrl().startsWith("http") ? "noopener" : undefined}
         >
           <HelpCircle class="size-3.5 text-muted-foreground" />
           Support

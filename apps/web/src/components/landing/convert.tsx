@@ -105,6 +105,15 @@ export function Pricing() {
           </a>
           .
         </p>
+
+        <p class="lx-price__micro">
+          Alpha means best-effort support, nightly backups with up to a day of potential loss,
+          and APIs that can still change. Read{" "}
+          <a href="/docs/getting-started/alpha" target="_self">
+            what alpha means
+          </a>{" "}
+          before you rely on it for production.
+        </p>
       </div>
     </section>
   );

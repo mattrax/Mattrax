@@ -744,6 +744,13 @@ export const member = mysqlTable(
     role: varchar("role", { length: 32 }).notNull(),
     /** Custom RBAC role; when set it replaces the built-in `role` capabilities. */
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
+    /**
+     * When this member dismissed the overview onboarding checklist. Stored on
+     * the membership rather than in the browser so one administrator dismissing
+     * the card does not hide it for the rest of the tenant, and so the choice
+     * follows the account to another browser.
+     */
+    onboardingDismissedAt: timestamp("onboarding_dismissed_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },

@@ -25,6 +25,8 @@ services:
       # Optional integrations, all disabled when unset.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-}
+      # Optional support form or calendar URL shown in the app menu.
+      SUPPORT_URL: ${SUPPORT_URL:-}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
       APNS_RELAY_URL: ${APNS_RELAY_URL:-}
       APNS_RELAY_SECRET: ${APNS_RELAY_SECRET:-}
