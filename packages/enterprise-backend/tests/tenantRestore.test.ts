@@ -158,6 +158,76 @@ const makeContext = () => {
 };
 
 describe("in-place tenant restore", () => {
+  it("restores nested group edges and exclusions", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    db.store.user.push({
+      id: "user-1",
+      organizationId: "org-1",
+      name: "Ada",
+      email: "ada@acme.test",
+      externalId: null,
+      source: "manual",
+      disabled: false,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    });
+
+    const nested = {
+      ...bundle,
+      groups: [
+        {
+          key: "group-child",
+          name: "Child",
+          policyKeys: [],
+          devices: [{ key: "device-1", name: "Laptop", serial: "SERIAL-1" }],
+        },
+        {
+          key: "group-parent",
+          name: "Parent",
+          policyKeys: [],
+          childGroupKeys: ["group-child"],
+          excludedUserEmails: ["ada@acme.test"],
+          excludedDeviceKeys: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(nested));
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    const parent = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Parent",
+    );
+
+    const child = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Child",
+    );
+
+    expect(db.store.group_group).toMatchObject([
+      { parentGroupId: parent.id, childGroupId: child.id },
+    ]);
+
+    // Inherited rows are re-derived from the edge, not trusted from the bundle.
+    expect(db.store.group_device).toContainEqual({
+      groupId: parent.id,
+      deviceId: "device-1",
+      source: "nested",
+    });
+
+    expect(db.store.group_exclusion).toMatchObject([
+      { groupId: parent.id, target: "user", targetId: "user-1" },
+    ]);
+  });
+
   it("replaces configuration, keeps devices, and takes a pinned pre-restore snapshot", async () => {
     const { db, storage, objects, organization } = makeContext();
 

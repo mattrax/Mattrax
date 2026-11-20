@@ -382,6 +382,17 @@ export const syncDynamicGroup = (
     const toAdd = [...desired].filter((deviceId) => !existingDynamic.has(deviceId));
     const toRemove = [...existingDynamic].filter((deviceId) => !desired.has(deviceId));
 
+    // A device that is currently only inherited from a child group may also be
+    // a rule match. Promote the row to `dynamic` so removing the child edge
+    // later does not drop a device the rules still select. Nested rows would
+    // otherwise block the insert through the membership primary key.
+    const nested = new Set(
+      links.filter((link) => link.source === "nested").map((link) => link.deviceId),
+    );
+
+    const toPromote = toAdd.filter((deviceId) => nested.has(deviceId));
+    const toInsert = toAdd.filter((deviceId) => !nested.has(deviceId));
+
     if (toRemove.length > 0)
       yield* db
         .delete(s.groupDevice)
@@ -393,11 +404,23 @@ export const syncDynamicGroup = (
           ),
         );
 
-    if (toAdd.length > 0)
+    if (toPromote.length > 0)
+      yield* db
+        .update(s.groupDevice)
+        .set({ source: "dynamic" })
+        .where(
+          and(
+            eq(s.groupDevice.groupId, groupId),
+            eq(s.groupDevice.source, "nested"),
+            inArray(s.groupDevice.deviceId, toPromote),
+          ),
+        );
+
+    if (toInsert.length > 0)
       yield* db
         .insert(s.groupDevice)
         .ignore()
-        .values(toAdd.map((deviceId) => ({ groupId, deviceId, source: "dynamic" as const })));
+        .values(toInsert.map((deviceId) => ({ groupId, deviceId, source: "dynamic" as const })));
 
     yield* db
       .update(s.enterpriseGroup)
@@ -540,8 +563,17 @@ export const syncDynamicGroupsForDevice = (
       .from(s.groupDevice)
       .where(eq(s.groupDevice.deviceId, deviceId));
 
+    // Manual (and stale directory) rows are explicit exceptions that a rule
+    // recompute must not override. A nested row is not: the device is inherited
+    // and may also match the rules, in which case the row is promoted below.
     const manualGroups = new Set(
-      links.filter((link) => link.source !== "dynamic").map((link) => link.groupId),
+      links
+        .filter((link) => link.source === "manual" || link.source === "directory")
+        .map((link) => link.groupId),
+    );
+
+    const nestedGroups = new Set(
+      links.filter((link) => link.source === "nested").map((link) => link.groupId),
     );
 
     const dynamicGroups = new Set(
@@ -550,6 +582,7 @@ export const syncDynamicGroupsForDevice = (
 
     const results: DynamicGroupSyncResult[] = [];
     const toAdd: string[] = [];
+    const toPromote: string[] = [];
     const toRemove: string[] = [];
     const evaluated: string[] = [];
 
@@ -579,8 +612,10 @@ export const syncDynamicGroupsForDevice = (
         );
 
       const isDynamicMember = dynamicGroups.has(group.id);
+      const isNestedMember = nestedGroups.has(group.id);
 
-      if (matches && !isDynamicMember) toAdd.push(group.id);
+      if (matches && !isDynamicMember)
+        (isNestedMember ? toPromote : toAdd).push(group.id);
 
       if (!matches && isDynamicMember) toRemove.push(group.id);
       results.push({
@@ -600,6 +635,18 @@ export const syncDynamicGroupsForDevice = (
             eq(s.groupDevice.deviceId, deviceId),
             eq(s.groupDevice.source, "dynamic"),
             inArray(s.groupDevice.groupId, toRemove),
+          ),
+        );
+
+    if (toPromote.length > 0)
+      yield* db
+        .update(s.groupDevice)
+        .set({ source: "dynamic" })
+        .where(
+          and(
+            eq(s.groupDevice.deviceId, deviceId),
+            eq(s.groupDevice.source, "nested"),
+            inArray(s.groupDevice.groupId, toPromote),
           ),
         );
 
@@ -623,7 +670,7 @@ export const syncDynamicGroupsForDevice = (
     // Only the groups whose rows changed can move a parent's union. Refreshing
     // the ancestors of each keeps nested membership correct without a full
     // tenant recompute on every device check-in.
-    for (const groupId of new Set([...toAdd, ...toRemove]))
+    for (const groupId of new Set([...toAdd, ...toPromote, ...toRemove]))
       yield* syncGroupInheritance(db, organizationId, groupId);
 
     return results;
