@@ -34,14 +34,14 @@ does not create an account.
 
 The two identities answer different questions:
 
-| Question                                          | Identity |
-| ------------------------------------------------- | -------- |
-| Who may change this tenant's policies?            | Account  |
-| Who is signed in on this Mac, and receives their policies? | User |
-| Who owns this audit entry?                        | Account  |
-| Whose device is this?                             | User     |
-| Who receives this invitation or billing email?    | Account  |
-| Which people are in this Entra group?             | User     |
+| Question                                                   | Identity |
+| ---------------------------------------------------------- | -------- |
+| Who may change this tenant's policies?                     | Account  |
+| Who is signed in on this Mac, and receives their policies? | User     |
+| Who owns this audit entry?                                 | Account  |
+| Whose device is this?                                      | User     |
+| Who receives this invitation or billing email?             | Account  |
+| Which people are in this Entra group?                      | User     |
 
 Conflating them made every directory person a potential dashboard account with a role,
 membership, invitation lifecycle and SSO identity. It also made the `user` table the
@@ -74,6 +74,11 @@ directory data tenant-scoped and read-only, and keeps authentication and RBAC in
    stay meaningful.
 5. SCIM delete removes the directory row; foreign keys cascade its group memberships,
    device links and user policies.
+6. An administrator can merge directory rows that describe the same person. The
+   merge moves device links, group memberships, direct policies, group exclusions
+   and Apple user channels to the target, keeps the target's edge on a collision,
+   and removes the duplicate rows. It never touches accounts or `sso_identity`.
+   See [Merging duplicate directory people](/admin/identity#merging-duplicate-directory-people).
 
 ## Directory sync and SSO
 
@@ -93,31 +98,34 @@ invitations, or the tenant's SSO auto-provision setting.
 
 ## API
 
-| Surface                                  | Identity |
-| ---------------------------------------- | -------- |
-| `GET /v1/me`                             | Returns `{ account, tenants }` |
-| `GET /v1/tenants/:id/accounts`           | Tenant administrators (`TenantAccount` rows) |
-| `PATCH/DELETE /v1/tenants/:id/accounts/:accountId` | Change an administrator's role or remove them |
-| `POST /v1/tenants/:id/invitations`       | Invite an account by email |
-| `GET /v1/tenants/:id/directory`          | `{ users, groups }` directory data |
-| `GET/PUT /v1/tenants/:id/devices/:id/users` | Directory users linked to a device |
-| Policy `assignUsers` / `assignUserGroups` | Directory users and directory groups |
+| Surface                                              | Identity                                      |
+| ---------------------------------------------------- | --------------------------------------------- |
+| `GET /v1/me`                                         | Returns `{ account, tenants }`                |
+| `GET /v1/tenants/:id/accounts`                       | Tenant administrators (`TenantAccount` rows)  |
+| `PATCH/DELETE /v1/tenants/:id/accounts/:accountId`   | Change an administrator's role or remove them |
+| `POST /v1/tenants/:id/invitations`                   | Invite an account by email                    |
+| `GET /v1/tenants/:id/directory`                      | `{ users, groups }` directory data            |
+| `GET/PUT /v1/tenants/:id/devices/:id/users`          | Directory users linked to a device            |
+| `GET /v1/tenants/:id/users/:userId/merge-candidates` | Likely duplicate directory people             |
+| `POST /v1/tenants/:id/users/:userId/merge-preview`   | Dry run of a directory merge                  |
+| `POST /v1/tenants/:id/users/:userId/merge`           | Fold duplicate directory people together      |
+| Policy `assignUsers` / `assignUserGroups`            | Directory users and directory groups          |
 
 An account is identified by `accountId`. A directory user is identified by `userId` on
 device and policy endpoints, and by its `id` in directory responses.
 
 ## Database
 
-| Table | Identity | Notes |
-| ----- | -------- | ----- |
-| `account` | Account | Authentication, MFA, sessions, default tenant |
-| `member` | Account ↔ tenant | `account_id`, role, custom role |
-| `account_*` | Account | Audit, sessions, email change, recovery, API tokens |
-| `sso_identity` | Account ↔ IdP | Links an account to a tenant's SSO object for sign-in |
-| `user` | User | Tenant-scoped directory person; unique `(organization_id, email)` and `(organization_id, external_id)` |
-| `user_group`, `user_group_member` | User | Directory groups and membership |
-| `device_user` | User ↔ device | Linked people on a device |
-| `user_policy`, `user_group_policy` | User | User-scoped policy assignment |
+| Table                              | Identity         | Notes                                                                                                  |
+| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| `account`                          | Account          | Authentication, MFA, sessions, default tenant                                                          |
+| `member`                           | Account ↔ tenant | `account_id`, role, custom role                                                                        |
+| `account_*`                        | Account          | Audit, sessions, email change, recovery, API tokens                                                    |
+| `sso_identity`                     | Account ↔ IdP    | Links an account to a tenant's SSO object for sign-in                                                  |
+| `user`                             | User             | Tenant-scoped directory person; unique `(organization_id, email)` and `(organization_id, external_id)` |
+| `user_group`, `user_group_member`  | User             | Directory groups and membership                                                                        |
+| `device_user`                      | User ↔ device    | Linked people on a device                                                                              |
+| `user_policy`, `user_group_policy` | User             | User-scoped policy assignment                                                                          |
 
 Account-owned tables use `account_id` fields (`subject_account_id`, `actor_account_id`,
 `created_by_account_id`, and so on). Directory-scoped link tables keep `user_id`.
@@ -129,6 +137,9 @@ Account-owned tables use `account_id` fields (`subject_account_id`, `actor_accou
 - Every `user` belongs to exactly one organization.
 - A policy user assignment, device link or directory group member id must be a user in
   the same organization.
+- A directory merge moves only user-scoped rows. It never merges accounts,
+  memberships or SSO identity links, and it is the only directory mutation the
+  user page exposes.
 - Directory sync never creates, promotes, demotes or deletes an account.
 - Removing an account never deletes a directory user, its device links or its user
   policies.

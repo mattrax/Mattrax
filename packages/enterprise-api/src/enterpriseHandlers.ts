@@ -287,6 +287,11 @@ import {
 } from "@mattrax/enterprise-identity";
 import { linkDirectoryUserSso as linkDirectoryUserToSso } from "@mattrax/enterprise-backend";
 import {
+  listDirectoryUserMergeCandidates as listTenantUserMergeCandidates,
+  mergeDirectoryUsers as mergeTenantDirectoryUsers,
+  previewDirectoryUserMerge as previewTenantDirectoryUserMerge,
+} from "@mattrax/enterprise-backend";
+import {
   createScript,
   deleteScript,
   getScriptAssignments,
@@ -18872,6 +18877,91 @@ export const createEnterpriseService = ({
           ...(policies ? { policies } : {}),
         };
       }),
+    /**
+     * Directory rows the target likely duplicates: a shared address, or an
+     * object id/address the target absorbed in an earlier merge. The audit
+     * entry is the alias record, so a provider that recreates the duplicate
+     * makes it visible here again rather than silently undoing the merge.
+     */
+    listUserMergeCandidates: (request, tenantId, userId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const candidates = yield* listTenantUserMergeCandidates(db, {
+          organizationId: ctx.organization.id,
+          targetId: userId,
+        });
+
+        return { candidates };
+      }),
+    /** Dry run of a merge: what moves, what is deduplicated, what needs confirming. */
+    previewDirectoryUserMerge: (request, tenantId, userId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* previewTenantDirectoryUserMerge(db, {
+          organizationId: ctx.organization.id,
+          targetId: userId,
+          sourceIds: payload.sourceIds,
+        });
+      }),
+    /**
+     * Fold duplicate directory rows into one person.
+     *
+     * Directory people are not accounts, so this never merges accounts or
+     * their SSO links. A source with a different directory object id needs the
+     * explicit confirmation, because the whole point of the repair is a
+     * provider that recreated the person with a new id.
+     */
+    mergeDirectoryUsers: (request, tenantId, userId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const result = yield* mergeTenantDirectoryUsers(db, {
+          organizationId: ctx.organization.id,
+          targetId: userId,
+          sourceIds: payload.sourceIds,
+          confirmExternalIdMismatch: payload.confirmExternalIdMismatch,
+        });
+
+        // A retry that finds every source already absorbed changes nothing, so
+        // it must not add a second audit entry.
+        if (result.status === "merged") {
+          // Device links and group memberships moved to the target, so its
+          // linked devices are exactly the set whose policy scope changed.
+          // Directory-linked device groups are re-derived inside.
+          yield* refreshDevicesForDirectoryUsers(ctx.organization.id, [userId]).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                `Directory user merge ${userId} device refresh failed: ${String(cause)}`,
+              ),
+            ),
+          );
+
+          yield* audit(ctx, "directory.users_merged", "directoryUser", userId, {
+            target: {
+              id: result.target.id,
+              name: result.target.name,
+              email: result.target.email,
+              externalId: result.target.externalId ?? null,
+            },
+            sources: result.sources.map((source) => ({
+              id: source.user.id,
+              name: source.user.name,
+              email: source.user.email,
+              externalId: source.user.externalId ?? null,
+              source: source.user.source,
+              disabled: source.user.disabled,
+            })),
+            moved: result.totals,
+            deduplicated: result.deduplicated,
+            ssoIdentitiesRetained: result.ssoIdentitiesRetained,
+            alreadyMerged: result.alreadyMerged,
+          });
+        }
+
+        return result;
+      }),
     getDeviceUsers: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -22527,6 +22617,7 @@ export const enterpriseSoftwareUpdateHandlers = (
       service.getSoftwareUpdateSummary(request, params.tenantId),
     ),
   );
+
 /**
  * Paginated catalogue list handlers. Registered against `enterpriseListApi`, a
  * group separate from `EnterpriseApi` so the generated client types stay
@@ -22571,6 +22662,21 @@ export const enterpriseUserHandlers = (
     .handle("getUser", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getUser(request, params.tenantId, params.userId),
+      ),
+    )
+    .handle("listUserMergeCandidates", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listUserMergeCandidates(request, params.tenantId, params.userId),
+      ),
+    )
+    .handle("previewDirectoryUserMerge", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.previewDirectoryUserMerge(request, params.tenantId, params.userId, payload),
+      ),
+    )
+    .handle("mergeDirectoryUsers", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.mergeDirectoryUsers(request, params.tenantId, params.userId, payload),
       ),
     );
 

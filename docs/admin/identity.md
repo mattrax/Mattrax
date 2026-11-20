@@ -118,6 +118,51 @@ drives user-scoped policy and application reach. Each bulk change wakes the
 affected users' linked devices and writes one audit entry with the requested,
 updated and failed counts and a bounded list of user ids.
 
+### Merging duplicate directory people
+
+A provider can recreate a person's directory object, for example after a delta
+reset or when someone is deleted and re-added externally. The tenant then has
+two directory people for one human, with different object ids. Their device
+links, groups and policy assignments are split across the two rows.
+
+Open the person who should survive and choose **Merge duplicate**. The action
+requires `members.write`. It searches the tenant's directory, previews exactly
+what moves, and asks for confirmation before writing. A merge:
+
+- folds one to ten source records into the target in a single transaction;
+- moves device links, directory-group memberships, direct policy assignments,
+  group exclusions and Apple user channels to the target;
+- keeps the target's row when both records have the same edge, so a direct
+  include on the target wins over an exclude on the duplicate;
+- removes the duplicate directory rows after the edges have moved;
+- leaves SSO links alone. They bind a Mattrax **account** to a provider object,
+  and accounts are never merged by this action;
+- writes one `directory.users_merged` audit entry naming the target, the sources
+  and the number of rows moved or deduplicated.
+
+When a source reports a different directory object id from the target, the
+dialog requires an explicit confirmation. That is the normal case for a
+recreated person, but it is also the only thing that distinguishes a real
+duplicate from two unrelated people.
+
+Nothing prevents the upstream directory from creating the duplicate again on
+the next sync. Mattrax does not rewrite the provider or keep an alias table, so
+the merge is never applied silently and never silently undone:
+
+- Entra matches a person by provider object id first, then by email. SCIM
+  matches by email first, then by its external id. Both stay inside the tenant.
+- If the provider recreates the object, a new `user` row appears with the same
+  object id and/or address.
+- The person's page reads earlier merge audit entries and lists that row under
+  **Likely duplicates**, so **Merge duplicate** can absorb it again.
+- Audit retention bounds how long that suggestion survives. After the entry
+  ages out, search the directory and merge the two records manually.
+
+A retried merge request whose sources were already absorbed returns
+`status: "unchanged"` and writes no second audit entry. The tenant's unique
+indexes on `(organization_id, email)` and `(organization_id, external_id)`
+still apply, so two live rows cannot share either key.
+
 ## SCIM 2.0
 
 SCIM is an alternative to Graph sync and works with any compatible IdP.

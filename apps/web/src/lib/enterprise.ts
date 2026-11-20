@@ -241,6 +241,13 @@ export type {
   UserGroupRef,
   UserListRow,
   UserDeviceRef,
+  DirectoryUserMergeCandidate,
+  DirectoryUserMergeCandidatesResponse,
+  DirectoryUserMergePreview,
+  DirectoryUserMergeResult,
+  DirectoryUserMergeSource,
+  DirectoryUserRef,
+  UserMergeCounts,
   OwnershipTransferPreviewResponse,
   RequestTenantOwnershipTransferResponse,
   AccountInfo,
@@ -296,6 +303,7 @@ type EnterpriseIdentityClient = Effect.Success<
 >["EnterpriseIdentity"];
 
 type EnterpriseUserClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseUser"];
+
 type EnterpriseListClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseList"];
 
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
@@ -467,6 +475,16 @@ export const enterpriseKeys = {
   users: (tenantId: RouteParam) => ["enterprise", "users", keyTenant(tenantId)] as const,
   user: (tenantId: RouteParam, userId: RouteParam) =>
     ["enterprise", "user", keyTenant(tenantId), userId ?? ""] as const,
+  userMergeCandidates: (tenantId: RouteParam, userId: RouteParam) =>
+    ["enterprise", "user-merge-candidates", keyTenant(tenantId), userId ?? ""] as const,
+  userMergePreview: (tenantId: RouteParam, userId: RouteParam, sourceIds: ReadonlyArray<string>) =>
+    [
+      "enterprise",
+      "user-merge-preview",
+      keyTenant(tenantId),
+      userId ?? "",
+      [...sourceIds].sort().join(","),
+    ] as const,
   deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-users", keyTenant(tenantId), id ?? ""] as const,
   deviceAppleUsers: (tenantId: RouteParam, id: RouteParam) =>
@@ -1583,6 +1601,46 @@ export const enterprise = {
         },
       }),
     ),
+  /** Directory people that likely duplicate this one. */
+  listUserMergeCandidates: (tenantId: RouteParam, userId: RouteParam) =>
+    userEndpoint((api) =>
+      api.listUserMergeCandidates({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          userId: required(userId, "userId"),
+        },
+      }),
+    ),
+  /** What a merge would move, deduplicate and need confirmed. */
+  previewDirectoryUserMerge: (
+    tenantId: RouteParam,
+    userId: RouteParam,
+    sourceIds: ReadonlyArray<string>,
+  ) =>
+    userEndpoint((api) =>
+      api.previewDirectoryUserMerge({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          userId: required(userId, "userId"),
+        },
+        payload: { sourceIds: [...sourceIds] },
+      }),
+    ),
+  /** Fold duplicate directory people into this one. Directory people only. */
+  mergeDirectoryUsers: (
+    tenantId: RouteParam,
+    userId: RouteParam,
+    payload: { sourceIds: ReadonlyArray<string>; confirmExternalIdMismatch?: boolean },
+  ) =>
+    userEndpoint((api) =>
+      api.mergeDirectoryUsers({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          userId: required(userId, "userId"),
+        },
+        payload: { ...payload, sourceIds: [...payload.sourceIds] },
+      }),
+    ),
   /** Add selected directory users to one directory (user) group. */
   addUserGroupMembers: (tenantId: RouteParam, groupId: RouteParam, userIds: string[]) =>
     attributeEndpoint((api) =>
@@ -2686,6 +2744,18 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.user(tenantId, userId),
       queryFn: () => enterprise.getUser(tenantId, userId),
       enabled: Boolean(tenantId && userId) && !isServer,
+    }),
+  userMergeCandidates: (tenantId: RouteParam, userId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.userMergeCandidates(tenantId, userId),
+      queryFn: () => enterprise.listUserMergeCandidates(tenantId, userId),
+      enabled: Boolean(tenantId && userId) && !isServer,
+    }),
+  userMergePreview: (tenantId: RouteParam, userId: RouteParam, sourceIds: ReadonlyArray<string>) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.userMergePreview(tenantId, userId, sourceIds),
+      queryFn: () => enterprise.previewDirectoryUserMerge(tenantId, userId, sourceIds),
+      enabled: Boolean(tenantId && userId) && sourceIds.length > 0 && !isServer,
     }),
   deviceUsers: (tenantId: RouteParam, id: RouteParam) =>
     enterpriseQueryOptions({

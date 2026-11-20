@@ -131,6 +131,183 @@ export const UserDetail = Schema.Struct({
 export type UserDetail = typeof UserDetail.Type;
 
 /**
+ * The most directory people one merge can fold into a target.
+ *
+ * Merging is an operator repair for a person the provider recreated, not a
+ * bulk import: a small cap keeps the preview readable and the transaction
+ * bounded.
+ */
+export const USER_MERGE_SOURCE_LIMIT = 10;
+
+/** Why the merge picker offers a directory person as a likely duplicate. */
+export const UserMergeCandidateReason = Schema.Literals(["previously-merged", "same-email"]);
+
+export type UserMergeCandidateReason = typeof UserMergeCandidateReason.Type;
+
+/** The directory rows a merge can move, counted per source and in total. */
+export const UserMergeCounts = Schema.Struct({
+  deviceLinks: Schema.Number,
+  groupMemberships: Schema.Number,
+  directPolicies: Schema.Number,
+  groupExclusions: Schema.Number,
+  appleUserChannels: Schema.Number,
+});
+
+export type UserMergeCounts = typeof UserMergeCounts.Type;
+
+/** The identity of one directory person, without any tenant-reading extras. */
+export const DirectoryUserRef = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  externalId: Schema.optional(NullableString),
+  source: UserSource,
+  disabled: Schema.Boolean,
+  /** True when an SSO identity is bound to this person's external id. */
+  linked: Schema.Boolean,
+});
+
+export type DirectoryUserRef = typeof DirectoryUserRef.Type;
+
+/** A source of a proposed or completed merge. */
+export const DirectoryUserMergeSource = Schema.Struct({
+  user: DirectoryUserRef,
+  /** Rows that move to the target. */
+  counts: UserMergeCounts,
+  /** Rows left on the target because the target already had that edge. */
+  deduplicated: UserMergeCounts,
+});
+
+export type DirectoryUserMergeSource = typeof DirectoryUserMergeSource.Type;
+
+export const PreviewDirectoryUserMergeRequest = Schema.Struct({
+  sourceIds: Schema.Array(Schema.String).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(USER_MERGE_SOURCE_LIMIT),
+  ),
+});
+
+export type PreviewDirectoryUserMergeRequest = typeof PreviewDirectoryUserMergeRequest.Type;
+
+export const MergeDirectoryUsersRequest = Schema.Struct({
+  sourceIds: Schema.Array(Schema.String).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(USER_MERGE_SOURCE_LIMIT),
+  ),
+  /**
+   * Required when a source's non-null directory object id differs from the
+   * target's. The caller is confirming that two provider objects describe the
+   * same person, which is exactly what an external recreation produces.
+   */
+  confirmExternalIdMismatch: Schema.optional(Schema.Boolean),
+});
+
+export type MergeDirectoryUsersRequest = typeof MergeDirectoryUsersRequest.Type;
+
+/**
+ * A dry run of a merge.
+ *
+ * Counts are per source and in total, so the confirmation can name what moves
+ * (device links, group memberships, direct policies, group exclusions and
+ * Apple user channels) before a single row is written.
+ */
+export const DirectoryUserMergePreview = Schema.Struct({
+  target: DirectoryUserRef,
+  sources: Schema.Array(DirectoryUserMergeSource),
+  totals: UserMergeCounts,
+  deduplicated: UserMergeCounts,
+  /** True when a source's non-null external id differs from the target's. */
+  requiresExternalIdConfirmation: Schema.Boolean,
+  /** SSO links that stay on their accounts; merging never moves them. */
+  ssoIdentitiesRetained: Schema.Number,
+  /** Human-readable cautions for the confirmation dialog. */
+  warnings: Schema.Array(Schema.String),
+});
+
+export type DirectoryUserMergePreview = typeof DirectoryUserMergePreview.Type;
+
+export const DirectoryUserMergeResult = Schema.Struct({
+  /**
+   * `merged` when rows moved, `unchanged` when a retry found every source
+   * already folded into this target in an earlier merge.
+   */
+  status: Schema.Literals(["merged", "unchanged"]),
+  target: DirectoryUserRef,
+  sources: Schema.Array(DirectoryUserMergeSource),
+  totals: UserMergeCounts,
+  deduplicated: UserMergeCounts,
+  ssoIdentitiesRetained: Schema.Number,
+  /** Requested sources that a prior merge had already removed. */
+  alreadyMerged: Schema.Array(Schema.String),
+});
+
+export type DirectoryUserMergeResult = typeof DirectoryUserMergeResult.Type;
+
+/** One entry of the dialog's "likely duplicates" list. */
+export const DirectoryUserMergeCandidate = Schema.Struct({
+  user: DirectoryUserRef,
+  reasons: Schema.Array(UserMergeCandidateReason),
+});
+
+export type DirectoryUserMergeCandidate = typeof DirectoryUserMergeCandidate.Type;
+
+export const DirectoryUserMergeCandidatesResponse = Schema.Struct({
+  candidates: Schema.Array(DirectoryUserMergeCandidate),
+});
+
+export type DirectoryUserMergeCandidatesResponse = typeof DirectoryUserMergeCandidatesResponse.Type;
+
+/** Normalise a directory address for comparison, matching sync's own rules. */
+export const directoryEmailKey = (email: string): string => email.trim().toLowerCase();
+
+export type UserMergeCandidateEvidence = {
+  readonly targetEmail: string;
+  readonly candidateEmail: string;
+  readonly candidateExternalId: string | null | undefined;
+  /** Provider object ids this target has absorbed in earlier merges. */
+  readonly mergedExternalIds: ReadonlySet<string>;
+  /** Addresses the absorbed sources reported in earlier merges. */
+  readonly mergedEmails: ReadonlySet<string>;
+};
+
+/**
+ * Why a directory person is a likely duplicate of the target.
+ *
+ * The strongest evidence is a provider object id or address the target already
+ * absorbed: Entra recreates a directory object with a new id, so the row that
+ * comes back is the same duplicate the administrator merged away. Equal
+ * addresses are also reported, although the tenant's unique index means two
+ * live rows can share one only across sources or collations.
+ */
+export const userMergeCandidateReasons = (
+  evidence: UserMergeCandidateEvidence,
+): ReadonlyArray<UserMergeCandidateReason> => {
+  const email = directoryEmailKey(evidence.candidateEmail);
+  const reasons = new Set<UserMergeCandidateReason>();
+
+  if (evidence.candidateExternalId && evidence.mergedExternalIds.has(evidence.candidateExternalId))
+    reasons.add("previously-merged");
+
+  if (email === directoryEmailKey(evidence.targetEmail)) reasons.add("same-email");
+  else if (evidence.mergedEmails.has(email)) reasons.add("previously-merged");
+
+  return (["previously-merged", "same-email"] as const).filter((reason) => reasons.has(reason));
+};
+
+/**
+ * Whether the caller must explicitly confirm that the directory objects
+ * differ. A null external id carries no object identity to contradict, so it
+ * never needs the confirmation on its own.
+ */
+export const userMergeRequiresExternalIdConfirmation = (input: {
+  readonly targetExternalId: string | null | undefined;
+  readonly sourceExternalIds: ReadonlyArray<string | null | undefined>;
+}): boolean =>
+  input.sourceExternalIds.some(
+    (externalId) => externalId != null && externalId !== input.targetExternalId,
+  );
+
+/**
  * The two user-policy edges, normalised for {@link deriveUserPolicies}.
  *
  * The database rows carry a policy id and a mode; the name and priority come
