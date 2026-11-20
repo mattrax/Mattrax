@@ -105,6 +105,9 @@ const APPLICATION_WRITE = new Set([
   "patchApplication",
   "deleteApplications",
   "patchApplicationAssignments",
+  "patchApplicationStorefronts",
+  "refreshApplicationStorefronts",
+  "unlinkApplicationAssignments",
   "installApplication",
   "uploadApplication",
 ]);

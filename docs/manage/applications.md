@@ -46,6 +46,67 @@ Platform-specific identity:
 - **Android** — `bundleId` is the Managed Google Play package name (for example
   `com.google.android.gm`). `manifestUrl` is not used for delivery.
 
+## Regions and availability
+
+The App Store id (Apple's `trackId`, called `adamId` in Apps & Books) is allocated per
+app record, not per storefront: Pages is `361309726` in every storefront. What differs is
+availability — an app can be published in some storefronts and not others — and a vendor
+that publishes separate records for different markets gets a different id in each. The
+catalogue therefore keeps one storefront row per application, holding the id, availability,
+last-seen time and reason.
+
+The id used for a device install is resolved deterministically:
+
+1. the tenant's **App Store region** (Settings → General; empty means the US storefront),
+2. otherwise the US storefront,
+3. otherwise any other available storefront in region order,
+4. otherwise the installer's legacy single `storeId`.
+
+Apple's MDM device information does not expose a reliable device storefront, so resolution
+uses the tenant setting rather than guessing from a device locale.
+
+Record a manual mapping (this replaces the full set; rows omitted are removed):
+
+```bash
+curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/$APP_ID/storefronts" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "storefronts": [
+        { "region": "US", "storeId": "123456789" },
+        { "region": "GB", "storeId": "987654321" }
+      ] }'
+```
+
+Check the live stores (each region is queried through Apple's public lookup API; bundle id
+is preferred because a legacy id from another storefront may not resolve):
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/$APP_ID/storefronts/refresh" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "regions": ["US", "GB"] }'
+```
+
+A lookup that definitively returns no app marks that storefront unavailable and keeps the
+last time the app was seen; a network or HTTP failure leaves the previous state alone. Once
+no storefront carries the app the catalogue entry becomes `unavailable`: it is badged in
+the list, the detail page shows a banner, and installing it queues nothing. Nothing is
+deleted and existing assignments stay in place.
+
+Unlink it explicitly:
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/applications/$APP_ID/unlink" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "reason": "Pulled by the vendor" }'
+```
+
+This removes group, directory-group and direct-device assignments and returns the counts;
+the application row and every device's install history are retained. A tenant can enable
+**Unlink unavailable apps** in Settings → General to do this automatically when a refresh
+finds the app in none of its storefronts.
+
 ## Assign
 
 ```bash
@@ -270,6 +331,11 @@ arrived and whether it is stale. `publisher` is reported by Windows inventory.
   pool.
 - There is no uninstall flow for catalogue apps. Removing an Android assignment removes the
   app from the policy; Windows and Apple installs remain until removed on the device.
+- Unlinking an unavailable app removes assignments but does not uninstall it from devices
+  that already have it, and restoring availability does not re-check devices until the app
+  is installed or assigned again.
+- Tenant export/restore carries application metadata but not the per-storefront mapping;
+  a restored tenant starts with `unknown` availability until the app is refreshed.
 
 ## API endpoints
 
@@ -278,6 +344,9 @@ arrived and whether it is stale. `publisher` is reported by Windows inventory.
 | `GET/POST`         | `/api/v1/tenants/:tenantId/applications`                      | List / create            |
 | `GET/PATCH/DELETE` | `/api/v1/tenants/:tenantId/applications/:id`                  | Detail / update / delete |
 | `PATCH`            | `/api/v1/tenants/:tenantId/applications/:id/assignments`      | Assign                   |
+| `PATCH`            | `/api/v1/tenants/:tenantId/applications/:id/storefronts`      | Storefront mapping       |
+| `POST`             | `/api/v1/tenants/:tenantId/applications/:id/storefronts/refresh` | Check availability    |
+| `POST`             | `/api/v1/tenants/:tenantId/applications/:id/unlink`           | Unlink assignments       |
 | `POST`             | `/api/v1/tenants/:tenantId/applications/:id/install`          | Queue install            |
 | `POST`             | `/api/v1/tenants/:tenantId/applications/:id/upload`           | Upload package           |
 | `GET`              | `/api/v1/tenants/:tenantId/applications/:id/download/:sha256` | Download package         |

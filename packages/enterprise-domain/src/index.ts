@@ -76,6 +76,23 @@ export {
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
 
+export {
+  ApplicationAvailability,
+  DEFAULT_STOREFRONT_REGION,
+  normaliseStorefrontRegion,
+  parseAppleStoreLookup,
+  resolveApplicationStoreId,
+  storefrontUnavailableReason,
+  summariseApplicationAvailability,
+} from "./appleStorefront.js";
+
+export type {
+  AppleStoreLookup,
+  ApplicationAvailabilitySummary,
+  ResolvedStoreId,
+  StorefrontAvailability,
+} from "./appleStorefront.js";
+
 // Entity modules, grouped the way Cap's web-domain exposes them. Consumers can
 // use either the flat named exports above or the namespace form.
 export * as Account from "./Account.ts";

@@ -13,6 +13,7 @@ import {
   Panel,
   PlatformBadge,
   QueryError,
+  relativeTime,
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -59,6 +60,11 @@ const textareaClass =
 
 const selectClass =
   "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+
+type StorefrontDraft = {
+  region: string;
+  storeId: string;
+};
 
 type InstallerDraft = {
   id?: string;
@@ -192,6 +198,9 @@ export default function ApplicationDetailPage() {
   const [bundleId, setBundleId] = createSignal("");
   const [version, setVersion] = createSignal("");
   const [installers, setInstallers] = createSignal<InstallerDraft[]>([]);
+  const [storefronts, setStorefronts] = createSignal<StorefrontDraft[]>([]);
+  const [storefrontNotice, setStorefrontNotice] = createSignal<string | null>(null);
+  const [confirmUnlink, setConfirmUnlink] = createSignal(false);
   const [notes, setNotes] = createSignal("");
   const [groupIds, setGroupIds] = createSignal<Set<string>>(new Set());
   const [userGroupIds, setUserGroupIds] = createSignal<Set<string>>(new Set());
@@ -210,6 +219,12 @@ export default function ApplicationDetailPage() {
       setBundleId(value.bundleId ?? "");
       setVersion(value.version ?? "");
       setInstallers(value.installers.map(installerDraft));
+      setStorefronts(
+        value.storefronts.map((storefront) => ({
+          region: storefront.region,
+          storeId: storefront.storeId ?? "",
+        })),
+      );
       setNotes(value.notes ?? "");
       setGroupIds(new Set(value.groups.map((group) => group.id)));
       setUserGroupIds(new Set(value.userGroups.map((group) => group.id)));
@@ -385,6 +400,69 @@ export default function ApplicationDetailPage() {
       ),
   }));
 
+  const saveStorefronts = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchApplicationStorefronts(params.tenantId, params.applicationId, {
+        storefronts: storefronts().map((storefront) => {
+          const storeId = storefront.storeId.trim();
+
+          return {
+            region: storefront.region.trim().toUpperCase(),
+            storeId: storeId || null,
+            available: Boolean(storeId),
+          };
+        }),
+      }),
+    onSuccess: async (result) => {
+      setStorefrontNotice(
+        result.availability === "unavailable"
+          ? "Storefronts saved. No storefront carries this app, so it is marked unavailable."
+          : "Storefront mapping saved.",
+      );
+      await invalidate();
+    },
+  }));
+
+  const refreshStorefronts = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.refreshApplicationStorefronts(params.tenantId, params.applicationId),
+    onSuccess: async (result) => {
+      const unlinked = result.unlinked
+        ? ` ${result.unlinked.groups + result.unlinked.userGroups + result.unlinked.devices} assignment(s) were unlinked automatically.`
+        : "";
+
+      const errors =
+        result.errors.length > 0
+          ? ` ${result.errors.length} storefront(s) could not be checked.`
+          : "";
+
+      setStorefrontNotice(
+        result.availability === "unavailable"
+          ? `Checked ${result.storefronts.length} storefront(s); the app was not found in any of them.${unlinked}${errors}`
+          : `Checked ${result.storefronts.length} storefront(s); the app is available.${errors}`,
+      );
+      await invalidate();
+    },
+  }));
+
+  const unlink = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.unlinkApplicationAssignments(params.tenantId, params.applicationId, {
+        reason: "Application unavailable in the App Store",
+      }),
+    onSuccess: async (result) => {
+      const total = result.removed.groups + result.removed.userGroups + result.removed.devices;
+
+      setMessage(
+        total === 0
+          ? "There were no assignments to unlink."
+          : `Unlinked ${total} assignment(s). The application and its install history were kept.`,
+      );
+      setConfirmUnlink(false);
+      await invalidate();
+    },
+  }));
+
   const upload = useMutation(() => ({
     mutationFn: async () => {
       const file = await selectFile("*/*");
@@ -448,12 +526,23 @@ export default function ApplicationDetailPage() {
     update(next);
   };
 
+  const updateStorefront = (index: number, patch: Partial<StorefrontDraft>) => {
+    setStorefronts((current) =>
+      current.map((storefront, itemIndex) =>
+        itemIndex === index ? { ...storefront, ...patch } : storefront,
+      ),
+    );
+  };
+
   const platform = () => row()?.platform;
   const canInstall = createMemo(() => installers().length > 0);
   const assignedCount = () => groupIds().size + userGroupIds().size + deviceIds().size;
 
   /** Why the install button is disabled, or undefined when it can be pressed. */
   const installDisabledReason = () => {
+    if (row()?.availability === "unavailable")
+      return "This application is unavailable in its App Store storefronts. Restore availability or unlink it first.";
+
     if (!canInstall()) return "Add at least one installer before installing.";
 
     if (assignedCount() === 0) return "Assign this application to a device or group first.";
@@ -461,9 +550,13 @@ export default function ApplicationDetailPage() {
     return undefined;
   };
 
+  /** Prefer the installer column, then the first available storefront's id. */
   const storeId = () =>
     installers().find((installer) => installer.platform === "apple" && installer.storeId)
-      ?.storeId ?? "";
+      ?.storeId ??
+    row()?.storefronts.find((storefront) => storefront.available && storefront.storeId)
+      ?.storeId ??
+    "";
 
   const vppAsset = createMemo(() =>
     (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
@@ -488,6 +581,11 @@ export default function ApplicationDetailPage() {
               <span class="max-w-[24ch] truncate font-mono text-[11.5px] text-muted-foreground">
                 {row()!.bundleId}
               </span>
+            </Show>
+            <Show when={row()?.availability === "unavailable"}>
+              <Badge variant="destructive" dot="destructive">
+                Unavailable
+              </Badge>
             </Show>
           </Show>
         }
@@ -537,6 +635,44 @@ export default function ApplicationDetailPage() {
         {(application) => (
           <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
             <div class="space-y-5">
+              <Show when={application().availability === "unavailable"}>
+                <section
+                  role="alert"
+                  class="rounded-xl border border-warning/25 bg-warning/[0.07] p-3.5"
+                >
+                  <div class="flex items-start gap-2.5">
+                    <CircleAlert class="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+                    <div class="min-w-0">
+                      <h2 class="text-[13px] font-semibold text-warning-foreground">
+                        Unavailable in the App Store
+                      </h2>
+                      <p class="mt-1 text-[12px] leading-relaxed text-warning-foreground">
+                        {application().availabilityReason ??
+                          "No configured App Store storefront currently lists this app."}
+                        <Show when={application().lastSeenAt}>
+                          {(lastSeen) => <> Last seen {relativeTime(lastSeen())}.</>}
+                        </Show>
+                      </p>
+                      <p class="mt-1 text-[11.5px] leading-relaxed text-warning-foreground/80">
+                        New installs are not queued for assigned devices. Devices that already
+                        installed the app keep their inventory; unlinking only removes the
+                        assignments.
+                      </p>
+                      <Show when={writable()}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          class="mt-2.5"
+                          disabled={unlink.isPending}
+                          onClick={() => setConfirmUnlink(true)}
+                        >
+                          {unlink.isPending ? "Unlinking…" : "Unlink from assignments"}
+                        </Button>
+                      </Show>
+                    </div>
+                  </div>
+                </section>
+              </Show>
               <Panel
                 title="Details"
                 description="Metadata, installer source and the upload attached to this app."
@@ -914,6 +1050,7 @@ export default function ApplicationDetailPage() {
                       upload.error ??
                       uploadInstaller.error ??
                       remove.error ??
+                      unlink.error ??
                       install.error
                     }
                   />
@@ -1108,6 +1245,173 @@ export default function ApplicationDetailPage() {
                   </div>
                 </dl>
               </Panel>
+
+              <Show when={application().platform === "apple" || storefronts().length > 0}>
+                <Panel
+                  title="App Store regions"
+                  description="Storefront-specific ids and availability. The tenant's default region is preferred when resolving an id for a device."
+                  actions={
+                    <Badge variant="secondary" class="tabular-nums">
+                      {storefronts().length}
+                    </Badge>
+                  }
+                >
+                  <div class="space-y-3">
+                    <Show
+                      when={storefronts().length > 0}
+                      fallback={
+                        <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                          No storefronts recorded. Refresh availability to check the tenant's
+                          default storefront, or add a region with its App Store ID.
+                        </p>
+                      }
+                    >
+                      <For each={storefronts()}>
+                        {(draft, index) => {
+                          const server = () =>
+                            application().storefronts.find(
+                              (storefront) => storefront.region === draft.region.trim().toUpperCase(),
+                            );
+
+                          return (
+                            <div class="space-y-2 rounded-lg border border-border bg-surface p-2.5">
+                              <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                  <Show
+                                    when={server()}
+                                    fallback={
+                                      <Badge variant="outline" class="text-muted-foreground">
+                                        Not checked
+                                      </Badge>
+                                    }
+                                  >
+                                    {(storefront) => (
+                                      <Badge
+                                        variant={storefront().available ? "success" : "destructive"}
+                                        dot={storefront().available ? "success" : "destructive"}
+                                      >
+                                        {storefront().available ? "Available" : "Unavailable"}
+                                      </Badge>
+                                    )}
+                                  </Show>
+                                  <Show when={server()}>
+                                    {(storefront) => (
+                                      <span class="font-mono text-[10.5px] text-muted-foreground">
+                                        {storefront().source === "lookup"
+                                          ? "Apple lookup"
+                                          : "Manual"}
+                                      </span>
+                                    )}
+                                  </Show>
+                                </div>
+                                <Show when={writable()}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      setStorefronts((current) =>
+                                        current.filter((_, itemIndex) => itemIndex !== index()),
+                                      )
+                                    }
+                                  >
+                                    Remove
+                                  </Button>
+                                </Show>
+                              </div>
+                              <div class="grid gap-2 sm:grid-cols-[88px_minmax(0,1fr)]">
+                                <Field label="Region">
+                                  <Input
+                                    disabled={!writable()}
+                                    maxlength={2}
+                                    value={draft.region}
+                                    placeholder="US"
+                                    onInput={(event) =>
+                                      updateStorefront(index(), {
+                                        region: event.currentTarget.value
+                                          .replace(/[^a-zA-Z]/g, "")
+                                          .toUpperCase(),
+                                      })
+                                    }
+                                  />
+                                </Field>
+                                <Field label="App Store ID">
+                                  <Input
+                                    disabled={!writable()}
+                                    value={draft.storeId}
+                                    placeholder="361309726"
+                                    onInput={(event) =>
+                                      updateStorefront(index(), {
+                                        storeId: event.currentTarget.value,
+                                      })
+                                    }
+                                  />
+                                </Field>
+                              </div>
+                              <Show when={server()}>
+                                {(storefront) => (
+                                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                                    <Show
+                                      when={storefront().lastSeenAt}
+                                      fallback={<>Not seen in this storefront yet.</>}
+                                    >
+                                      {(lastSeen) => <>Last seen {relativeTime(lastSeen())}. </>}
+                                    </Show>
+                                    Checked {relativeTime(storefront().checkedAt)}.
+                                    <Show when={storefront().reason}>
+                                      {(reason) => <> {reason()}</>}
+                                    </Show>
+                                  </p>
+                                )}
+                              </Show>
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </Show>
+
+                    <Show when={writable()}>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setStorefronts((current) => [...current, { region: "", storeId: "" }])
+                          }
+                        >
+                          Add region
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={saveStorefronts.isPending}
+                          onClick={() => saveStorefronts.mutate()}
+                        >
+                          {saveStorefronts.isPending ? "Saving…" : "Save regions"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={refreshStorefronts.isPending}
+                          onClick={() => refreshStorefronts.mutate()}
+                        >
+                          {refreshStorefronts.isPending ? "Checking…" : "Refresh availability"}
+                        </Button>
+                      </div>
+                    </Show>
+
+                    <Show when={storefrontNotice()}>
+                      {(notice) => (
+                        <p
+                          role="status"
+                          class="rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground"
+                        >
+                          {notice()}
+                        </p>
+                      )}
+                    </Show>
+                    <ErrorText error={saveStorefronts.error ?? refreshStorefronts.error} />
+                  </div>
+                </Panel>
+              </Show>
             </div>
           </div>
         )}
@@ -1122,6 +1426,16 @@ export default function ApplicationDetailPage() {
         destructive
         pending={remove.isPending}
         onConfirm={() => remove.mutate()}
+      />
+
+      <ConfirmDialog
+        open={confirmUnlink()}
+        onOpenChange={setConfirmUnlink}
+        title={`Unlink ${row()?.name ?? "this application"} from its assignments?`}
+        description="Group, directory-group and direct-device assignments are removed. The application record and every device's install history are kept, so you can relink it later."
+        confirmLabel="Unlink assignments"
+        pending={unlink.isPending}
+        onConfirm={() => unlink.mutate()}
       />
     </Page>
   );

@@ -78,6 +78,10 @@ export const TenantDetail = Schema.Struct({
   supportEmail: Schema.optional(NullableString),
   brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(NullableString),
+  /** Default App Store storefront used to resolve a store id for a device. */
+  appStoreRegion: Schema.optional(NullableString),
+  /** Remove assignments automatically when every storefront loses the app. */
+  autoUnlinkUnavailableApplications: Schema.optional(Schema.Boolean),
   createdAt: Schema.String,
 });
 
@@ -194,6 +198,8 @@ export const PatchTenantRequest = Schema.Struct({
   supportEmail: Schema.optional(NullableString),
   brandColor: Schema.optional(NullableString),
   metadata: Schema.optional(Schema.NullOr(JsonRecord)),
+  appStoreRegion: Schema.optional(NullableString),
+  autoUnlinkUnavailableApplications: Schema.optional(Schema.Boolean),
 });
 
 export const TenantListResponse = Schema.Struct({ tenants: Schema.Array(TenantInfo) });
