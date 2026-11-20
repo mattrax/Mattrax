@@ -511,15 +511,9 @@ export type {
   ScheduledEntraSyncResult,
 } from "@mattrax/entra-id";
 
-export {
-  syncDirectoryGroup,
-  syncDirectoryGroupsForTenant,
-} from "@mattrax/mdm-apple";
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
 
-export type {
-  DirectoryGroupSyncOptions,
-  DirectoryGroupSyncResult,
-} from "@mattrax/mdm-apple";
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -654,6 +648,14 @@ export {
   groupDeviceHealthReasons,
   normalizeDeviceHealth,
 } from "./Device/deviceHealth.ts";
+
+export {
+  ENTITY_LIST_DEFAULT_LIMIT,
+  ENTITY_LIST_MAX_LIMIT,
+  normalizeEntityListQuery,
+  type EntityListQuery,
+  type NormalizedEntityListQuery,
+} from "./Search/entityList.ts";
 
 export {
   DEVICE_EXPORT_MAX_ROWS,

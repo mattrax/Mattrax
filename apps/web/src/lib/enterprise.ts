@@ -1,4 +1,9 @@
-import { infiniteQueryOptions, queryOptions, type InfiniteData } from "@tanstack/solid-query";
+import {
+  infiniteQueryOptions,
+  keepPreviousData,
+  queryOptions,
+  type InfiniteData,
+} from "@tanstack/solid-query";
 import type {
   AppleUserActionName,
   MeResponse,
@@ -37,6 +42,8 @@ import {
   type AppleBusinessManagerInfo,
   type AppleBusinessManagerSyncResponse,
   type ApplicationInventoryQuery,
+  type ApplicationSearchQuery,
+  type ApplicationSearchResponse,
   type AuditSearchQuery,
   type AuditSearchResponse,
   type AutopilotImportRequest,
@@ -57,7 +64,11 @@ import {
   type Entity,
   type GroupNode,
   type GroupRow,
+  type GroupSearchQuery,
+  type GroupSearchResponse,
   type PolicyRow,
+  type PolicySearchQuery,
+  type PolicySearchResponse,
   type RowFor,
   type TenantEnrollmentInfo,
   type TenantScepCaInfo,
@@ -98,6 +109,8 @@ export type {
   ApplicationInventoryRow,
   ApplicationNode,
   ApplicationRow,
+  ApplicationSearchQuery,
+  ApplicationSearchResponse,
   ApnsInfo,
   AcceptInvitationResponse,
   AccountAuditEntry,
@@ -189,11 +202,15 @@ export type {
   GroupNode,
   GroupPreviewResponse,
   GroupRow,
+  GroupSearchQuery,
+  GroupSearchResponse,
   MeResponse,
   NodeResponse,
   PlatformEnrollment,
   PolicyApplicationObject,
   PolicyRow,
+  PolicySearchQuery,
+  PolicySearchResponse,
   RowFor,
   ScimTokenInfo,
   SsoConfigResponse,
@@ -261,6 +278,8 @@ type EnterpriseIdentityClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseIdentity"];
 
+type EnterpriseListClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseList"];
+
 type EnterpriseWindowsClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"];
 
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
@@ -284,6 +303,14 @@ export const enterpriseKeys = {
     ["enterprise", "list", keyTenant(tenantId), entity] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
+  /** Every cached page of one entity's server-paginated list. */
+  entitySearchPrefix: (tenantId: RouteParam, entity: Entity | "application") =>
+    ["enterprise", "entity-search", keyTenant(tenantId), entity] as const,
+  entitySearch: (
+    tenantId: RouteParam,
+    entity: Entity | "application",
+    query: GroupSearchQuery | PolicySearchQuery | ApplicationSearchQuery = {},
+  ) => ["enterprise", "entity-search", keyTenant(tenantId), entity, query] as const,
   /** Every cached device search for a tenant, ignoring the active filters. */
   deviceSearchPrefix: (tenantId: RouteParam) =>
     ["enterprise", "device-search", keyTenant(tenantId)] as const,
@@ -564,6 +591,15 @@ function identityEndpoint<A, E>(
   );
 }
 
+function listEndpoint<A, E>(
+  call: (api: EnterpriseListClient) => Effect.Effect<A, E, never>,
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseList),
+    call,
+  );
+}
+
 function windowsEndpoint<A, E>(
   call: (api: EnterpriseWindowsClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
@@ -764,6 +800,21 @@ export const enterprise = {
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Server-paginated group list for the groups table. */
+  searchGroups: (tenantId: RouteParam, query: GroupSearchQuery = {}) =>
+    listEndpoint((api) =>
+      api.searchGroups({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Server-paginated policy list for the policies table. */
+  searchPolicies: (tenantId: RouteParam, query: PolicySearchQuery = {}) =>
+    listEndpoint((api) =>
+      api.searchPolicies({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Server-paginated application catalogue for the applications table. */
+  searchApplications: (tenantId: RouteParam, query: ApplicationSearchQuery = {}) =>
+    listEndpoint((api) =>
+      api.searchApplications({ params: { tenantId: required(tenantId, "tenantId") }, query }),
     ),
   listMcpConnections: () => accountEndpoint((api) => api.listMcpConnections({})),
   revokeMcpConnection: (connectionId: RouteParam) =>
@@ -2542,6 +2593,77 @@ export const enterpriseQueries = {
         enterprise.searchAuditLog(tenantId, { ...filters, cursor: pageParam }),
       initialPageParam: undefined,
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  /**
+   * Server-paginated group list. Pages are offset-based and appended, so the
+   * table can load more without re-reading the rows already on screen.
+   */
+  searchGroups: (tenantId: RouteParam, filters: GroupSearchQuery = {}) =>
+    infiniteQueryOptions<
+      GroupSearchResponse,
+      Error,
+      InfiniteData<GroupSearchResponse>,
+      readonly unknown[],
+      number
+    >({
+      queryKey: enterpriseKeys.entitySearch(tenantId, "group", filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchGroups(tenantId, { ...filters, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (_last, pages) => {
+        const loaded = pages.reduce((count, page) => count + page.groups.length, 0);
+        const total = pages.at(-1)?.total ?? 0;
+
+        return loaded < total ? loaded : undefined;
+      },
+      placeholderData: keepPreviousData,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  /** Server-paginated policy list; see `searchGroups` for the page contract. */
+  searchPolicies: (tenantId: RouteParam, filters: PolicySearchQuery = {}) =>
+    infiniteQueryOptions<
+      PolicySearchResponse,
+      Error,
+      InfiniteData<PolicySearchResponse>,
+      readonly unknown[],
+      number
+    >({
+      queryKey: enterpriseKeys.entitySearch(tenantId, "policy", filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchPolicies(tenantId, { ...filters, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (_last, pages) => {
+        const loaded = pages.reduce((count, page) => count + page.policies.length, 0);
+        const total = pages.at(-1)?.total ?? 0;
+
+        return loaded < total ? loaded : undefined;
+      },
+      placeholderData: keepPreviousData,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  /** Server-paginated application catalogue; see `searchGroups`. */
+  searchApplications: (tenantId: RouteParam, filters: ApplicationSearchQuery = {}) =>
+    infiniteQueryOptions<
+      ApplicationSearchResponse,
+      Error,
+      InfiniteData<ApplicationSearchResponse>,
+      readonly unknown[],
+      number
+    >({
+      queryKey: enterpriseKeys.entitySearch(tenantId, "application", filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchApplications(tenantId, { ...filters, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (_last, pages) => {
+        const loaded = pages.reduce((count, page) => count + page.applications.length, 0);
+        const total = pages.at(-1)?.total ?? 0;
+
+        return loaded < total ? loaded : undefined;
+      },
+      // Keep the previous page visible while the new filter loads so the
+      // table's "filters changed" notice describes what is on screen.
+      placeholderData: keepPreviousData,
       enabled: Boolean(tenantId) && !isServer,
     }),
   roles: (tenantId: RouteParam) =>

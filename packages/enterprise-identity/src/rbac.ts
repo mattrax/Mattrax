@@ -52,7 +52,13 @@ const DEVICE_WRITE = new Set([
   "importDeviceAttributes",
 ]);
 
-const GROUP_READ = new Set(["listGroups", "getGroup", "getGroupScope", "previewGroup"]);
+const GROUP_READ = new Set([
+  "listGroups",
+  "searchGroups",
+  "getGroup",
+  "getGroupScope",
+  "previewGroup",
+]);
 
 const GROUP_WRITE = new Set([
   "createGroup",
@@ -65,6 +71,7 @@ const GROUP_WRITE = new Set([
 
 const POLICY_READ = new Set([
   "listPolicies",
+  "searchPolicies",
   "getPolicy",
   "getPolicyScope",
   "listPolicyDeployments",
@@ -85,6 +92,7 @@ const POLICY_WRITE = new Set([
 
 const APPLICATION_READ = new Set([
   "listApplications",
+  "searchApplications",
   "getApplication",
   "getApplicationInventory",
   "downloadApplication",

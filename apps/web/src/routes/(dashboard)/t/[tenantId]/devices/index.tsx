@@ -94,6 +94,7 @@ const deviceListOverrides = [
   "import",
   "sort",
   "direction",
+  "page",
 ] as const;
 
 export const route = {
@@ -175,6 +176,7 @@ const FILTER_PARAM_KEYS = [
   "sort",
   "direction",
   "query",
+  "page",
 ] as const;
 
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
@@ -366,7 +368,15 @@ export default function DevicesPage() {
   );
 
   const [queryOpen, setQueryOpen] = createSignal(false);
-  const [page, setPage] = createSignal(0);
+
+  // 1-based in the URL so a paged view is shareable; 0-based in state.
+  const initialPage = () => {
+    const value = Number(search().page ?? "1");
+
+    return Number.isInteger(value) && value >= 1 ? value - 1 : 0;
+  };
+
+  const [page, setPage] = createSignal(initialPage());
   const [exporting, setExporting] = createSignal(false);
   const [exportError, setExportError] = createSignal<unknown>();
   const [exportTruncated, setExportTruncated] = createSignal(false);
@@ -510,6 +520,7 @@ export default function DevicesPage() {
       sort: sort()?.id ?? "name",
       direction: sort()?.dir ?? "asc",
       query: formatDeviceQueryText(deviceQuery()),
+      page: page(),
     }),
     (state) => {
       if (!urlInitialised) {
@@ -546,6 +557,8 @@ export default function DevicesPage() {
 
       if (state.query) next.query = state.query;
 
+      if (state.page > 0) next.page = String(state.page + 1);
+
       // Coalesce rapid control changes into one router write. Every
       // `setSearchParams` is a navigation, and a burst of them trips the
       // router's redirect guard.
@@ -571,6 +584,7 @@ export default function DevicesPage() {
     attributeValue: search().attributeValue ?? "",
     sort: initialSort(),
     query: search().query ?? "",
+    page: initialPage(),
   }));
 
   createEffect(
@@ -592,6 +606,7 @@ export default function DevicesPage() {
         attributeValue: attributeValue(),
         sort: sort(),
         deviceQuery: deviceQuery(),
+        page: page(),
       }));
 
       if (filters.q !== local.q) {
@@ -638,6 +653,9 @@ export default function DevicesPage() {
         setDeviceQuery(nextQuery);
         setPage(0);
       }
+
+      // A shared `?page=3` link (or back/forward) restores the page index.
+      if (filters.page !== local.page) setPage(filters.page);
     },
     { defer: true },
   );

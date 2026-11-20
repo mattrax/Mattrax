@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createSignal, Show } from "solid-js";
+import { useInfiniteQuery } from "@tanstack/solid-query";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   EmptyState,
   formatDate,
@@ -14,19 +14,18 @@ import { EntityActions } from "~/components/mdm/entity-actions";
 import {
   EntityQueryBar,
   formatEntityQuery,
-  matchesEntityQuery,
   parseEntityQuery,
   type EntityCondition,
   type EntityField,
 } from "~/components/mdm/entity-query";
-import { MdmTable } from "~/components/mdm/table";
+import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+import { enterprise, type PolicyRow } from "~/lib/enterprise";
 import {
   isPolicyEnabled,
-  policyDeliverySortRank,
   policyRowDeliveryPresentation,
   policyScopePresentation,
   policyStatePresentation,
@@ -36,6 +35,9 @@ import { routes } from "~/lib/routes";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";
+import { collectAllMatching } from "~/lib/bulk-selection";
+
+const PAGE_SIZE = 50;
 
 const configurationCount = (row: PolicyRow) =>
   row.configurationCount ?? Object.keys(row.configurations ?? {}).length;
@@ -113,8 +115,17 @@ export const route = {
 
     if (intent === "initial" || !tenantId) return;
 
+    // The first unfiltered page only; deeper pages follow the offset the
+    // table requests as the operator scrolls.
     return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "policy")),
+      () =>
+        queryClient.ensureInfiniteQueryData(
+          enterpriseQueries.searchPolicies(tenantId, {
+            limit: PAGE_SIZE,
+            sort: "name",
+            direction: "asc",
+          }),
+        ),
     ]);
   },
 };
@@ -144,13 +155,73 @@ export default function PoliciesPage() {
     setSearchParams({ query: formatEntityQuery(next) }, { replace: true });
   };
 
-  const policies = useQuery(() => ({
-    queryKey: enterpriseKeys.list(params.tenantId, "policy"),
-    queryFn: () => enterprise.list(params.tenantId, "policy"),
+  const [q, setQ] = createSignal("");
+  const [debouncedQ, setDebouncedQ] = createSignal("");
+  const [sort, setSort] = createSignal<MdmSortState>({ id: "name", dir: "asc" });
+
+  // Debounce typing so the search endpoint is not hit on every keystroke.
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(settleTimer));
+  createEffect(
+    () => q(),
+    (value) => {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => setDebouncedQ(value), 250);
+    },
+  );
+
+  const SORT_FIELDS = ["name", "priority", "updatedAt", "createdAt"] as const;
+  const sortField = () => SORT_FIELDS.find((field) => field === sort()?.id) ?? ("name" as const);
+
+  const filters = createMemo(() => ({
+    q: debouncedQ().trim() || undefined,
+    query: formatEntityQuery(conditions()) || undefined,
+    limit: PAGE_SIZE,
+    sort: sortField(),
+    direction: sort()?.dir ?? ("asc" as const),
   }));
 
-  const rows = () =>
-    (policies.data?.rows ?? []).filter((row) => matchesEntityQuery(conditions(), row, fields));
+  const policies = useInfiniteQuery(() =>
+    enterpriseQueries.searchPolicies(params.tenantId, filters()),
+  );
+
+  const rows = () => policies.data?.pages.flatMap((page) => page.policies) ?? [];
+  const total = () => policies.data?.pages.at(-1)?.total ?? 0;
+
+  /** Non-blocking notice when the filters change under a load in flight. */
+  const [filtersChanged, setFiltersChanged] = createSignal(false);
+
+  const filterKey = () =>
+    JSON.stringify({ q: debouncedQ(), query: formatEntityQuery(conditions()) });
+
+  let lastFilterKey = filterKey();
+  createEffect(filterKey, (key) => {
+    if (key !== lastFilterKey) {
+      lastFilterKey = key;
+      setFiltersChanged(true);
+    }
+  });
+  createEffect(
+    () => policies.isFetching,
+    (fetching) => {
+      if (!fetching) setFiltersChanged(false);
+    },
+  );
+  const loadingWarning = () => filtersChanged() && policies.isFetching;
+
+  const hasFilters = () => q().trim() !== "" || conditions().length > 0;
+
+  /** Resolve every policy the active filter matches for "select all matching". */
+  const resolveAll = () =>
+    collectAllMatching(async (offset, limit) => {
+      const result = await enterprise.searchPolicies(params.tenantId, {
+        ...filters(),
+        limit,
+        offset,
+      });
+
+      return { rows: result.policies, total: result.total };
+    });
 
   return (
     <Page>
@@ -161,14 +232,12 @@ export default function PoliciesPage() {
         meta={
           <Show when={policies.data}>
             <span class="tabular-nums">
-              {rows().length} {rows().length === 1 ? "policy" : "policies"}
+              {total()} {total() === 1 ? "policy" : "policies"}
             </span>
             <span class="text-muted-foreground/40" aria-hidden="true">
               ·
             </span>
-            <span>
-              {rows().filter((row) => configurationCount(row) > 0).length} with configurations
-            </span>
+            <span class="tabular-nums">{rows().length} loaded</span>
           </Show>
         }
         actions={
@@ -177,7 +246,7 @@ export default function PoliciesPage() {
               <LinkButton variant="outline" href={routes.tenant(params.tenantId).importPolicy()}>
                 Import
               </LinkButton>
-              <Show when={rows().length > 0}>
+              <Show when={total() > 0}>
                 <LinkButton href={routes.tenant(params.tenantId).newPolicy()}>
                   Create policy
                 </LinkButton>
@@ -187,26 +256,82 @@ export default function PoliciesPage() {
         }
       />
       <MdmTable<PolicyRow>
+        mode="server"
         rows={rows()}
+        total={total()}
         selectable={can("policies.write")}
         loading={policies.isPending}
         isFetching={policies.isFetching}
         onRefresh={() => void policies.refetch()}
         error={policies.error}
         storageKey="policies"
+        selectionKey={JSON.stringify(filters())}
+        searchValue={q()}
+        onSearchChange={setQ}
+        searchPlaceholder="Search policies…"
+        sortValue={sort()}
+        onSortChange={setSort}
         toolbar={
-          <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+          <div class="space-y-2">
+            <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
+            <Show when={loadingWarning()}>
+              <p
+                role="status"
+                aria-live="polite"
+                class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+              >
+                Filters changed — loading results. The rows below are from the previous filter until
+                this finishes.
+              </p>
+            </Show>
+          </div>
+        }
+        footer={
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-card">
+            <span
+              role="status"
+              aria-live="polite"
+              class="text-[12px] tabular-nums text-muted-foreground"
+            >
+              {rows().length} of {total()} policy{total() === 1 ? "" : "s"} loaded
+            </span>
+            <Show
+              when={policies.hasNextPage}
+              fallback={
+                <span class="text-[12px] text-muted-foreground">
+                  All matching policies are loaded.
+                </span>
+              }
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={policies.isFetchingNextPage || policies.isPlaceholderData}
+                onClick={() => void policies.fetchNextPage()}
+              >
+                {policies.isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            </Show>
+          </div>
         }
         rowHref={(row) => routes.tenant(params.tenantId).policy(row.id)}
-        actions={(selected, clear, select) => (
-          <EntityActions entity="policy" selected={selected} clear={clear} select={select} />
+        actions={(selected, clear, select, selection) => (
+          <EntityActions
+            entity="policy"
+            selected={selected}
+            clear={clear}
+            select={select}
+            allMatching={selection.allMatching}
+            total={selection.total}
+            resolveAll={resolveAll}
+          />
         )}
         empty={
-          conditions().length > 0 ? (
+          hasFilters() ? (
             <EmptyState
               icon={(props) => <ShieldCheck {...props} />}
               title="No matching policies"
-              description="Adjust the filter or clear it from the query bar."
+              description="Adjust the search or filter, or clear it from the query bar."
             />
           ) : (
             <EmptyState
@@ -260,7 +385,7 @@ export default function PoliciesPage() {
           {
             id: "configurations",
             header: "Configurations",
-            sort: (row) => configurationCount(row),
+            // Derived counts are not sortable across server pages.
             cell: (row) => {
               const count = configurationCount(row);
 
@@ -285,7 +410,6 @@ export default function PoliciesPage() {
           {
             id: "devices",
             header: "Devices",
-            sort: (row) => row.scopedDeviceCount ?? 0,
             cell: (row) => {
               const scope = () =>
                 policyScopePresentation({
@@ -305,7 +429,6 @@ export default function PoliciesPage() {
           {
             id: "users",
             header: "Users",
-            sort: (row) => row.scopedUserCount ?? 0,
             cell: (row) => {
               const scope = () =>
                 policyScopePresentation({
@@ -325,7 +448,6 @@ export default function PoliciesPage() {
           {
             id: "delivery",
             header: "Delivery",
-            sort: (row) => policyDeliverySortRank(row.delivery?.state),
             cell: (row) => <PolicyDeliveryCell row={row} />,
           },
           {
@@ -340,6 +462,7 @@ export default function PoliciesPage() {
             id: "updated",
             header: "Updated",
             sort: (row) => row.updatedAt,
+            sortId: "updatedAt",
             cell: (row) => (
               <span class="block min-w-0">
                 <span class="block whitespace-nowrap text-[12.5px]">
@@ -356,6 +479,7 @@ export default function PoliciesPage() {
             header: "Created",
             defaultHidden: true,
             sort: (row) => row.createdAt,
+            sortId: "createdAt",
             cell: (row) => (
               <span class="whitespace-nowrap text-[12.5px] text-muted-foreground">
                 {formatDate(row.createdAt)}

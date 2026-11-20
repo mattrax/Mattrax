@@ -13,6 +13,7 @@ import {
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseIdentityApi,
+  enterpriseListApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -27,6 +28,7 @@ import {
   enterpriseDashboardHandlers,
   enterpriseHandlers,
   enterpriseIdentityHandlers,
+  enterpriseListHandlers,
   enterpriseWindowsHandlers,
   mcpOAuthRoutes,
   scriptAgentHandlers,
@@ -212,6 +214,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
   .add(enterpriseIdentityApi)
+  .add(enterpriseListApi)
   .add(enterpriseWindowsApi)
   .add(scriptApi)
   .add(scriptAgentApi)
@@ -271,6 +274,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),

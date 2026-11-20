@@ -32,6 +32,8 @@ export * from "./Directory.js";
 
 export * from "./Search.js";
 
+export * from "./entityQuery.js";
+
 export * from "./Android.js";
 
 export * from "./Apple.js";
