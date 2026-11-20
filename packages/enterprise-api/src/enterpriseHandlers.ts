@@ -1443,8 +1443,7 @@ export const createEnterpriseService = ({
   const windowsFailureRetentionDays =
     configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
 
-  const entraConsentRevocationTimeoutMs =
-    configuredEntraConsentRevocationTimeoutMs ?? 20_000;
+  const entraConsentRevocationTimeoutMs = configuredEntraConsentRevocationTimeoutMs ?? 20_000;
 
   const enrollmentProfileTtlSeconds = normalizeEnrollmentProfileTtlSeconds(
     configuredEnrollmentProfileTtlSeconds,
@@ -7246,9 +7245,7 @@ export const createEnterpriseService = ({
                   ...(Object.keys(scopes).length > 0
                     ? { [POLICY_SNAPSHOT_SCOPES_KEY]: scopes }
                     : {}),
-                  ...(policy.enabled === false
-                    ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false }
-                    : {}),
+                  ...(policy.enabled === false ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false } : {}),
                 },
                 createdByAccountId: user.id,
                 createdAt: timestamp,
@@ -13117,7 +13114,10 @@ export const createEnterpriseService = ({
             // by the next sync. Only manual groups accept explicit devices.
             const assignedGroup = groupId ? groupsById.get(groupId) : undefined;
 
-            if (assignedGroup && (assignedGroup.kind !== "manual" || assignedGroup.directoryGroupId))
+            if (
+              assignedGroup &&
+              (assignedGroup.kind !== "manual" || assignedGroup.directoryGroupId)
+            )
               return {
                 serial,
                 status: "error" as const,
@@ -15937,8 +15937,7 @@ export const createEnterpriseService = ({
         );
 
         const entries = Object.entries(snapshot).filter(
-          ([kind]) =>
-            kind !== POLICY_SNAPSHOT_SCOPES_KEY && kind !== POLICY_SNAPSHOT_ENABLED_KEY,
+          ([kind]) => kind !== POLICY_SNAPSHOT_SCOPES_KEY && kind !== POLICY_SNAPSHOT_ENABLED_KEY,
         );
 
         if (entries.length > 0)
@@ -17066,7 +17065,11 @@ export const createEnterpriseService = ({
 
         const body: {
           assign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
-          unassign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
+          unassign?: {
+            groups?: Array<string>;
+            userGroups?: Array<string>;
+            devices?: Array<string>;
+          };
         } = payload;
 
         const groupIds = [...(body.assign?.groups ?? []), ...(body.unassign?.groups ?? [])];
