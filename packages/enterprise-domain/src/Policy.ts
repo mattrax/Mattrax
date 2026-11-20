@@ -146,6 +146,12 @@ export const CreatePolicyRequest = Schema.Struct({
 });
 
 export const PatchPolicyRequest = Schema.Struct({
+  /**
+   * Optimistic concurrency: the policy's `updatedAt` when the caller loaded
+   * it. A mismatch fails with 412 and writes nothing. Omit to keep the legacy
+   * unconditional behaviour.
+   */
+  expectedUpdatedAt: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   priority: Schema.optional(Schema.Number),

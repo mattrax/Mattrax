@@ -1361,7 +1361,10 @@ export const enterprise = {
   patchGroup: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<GroupRow, "name" | "notes" | "kind" | "rules" | "directoryGroupId">>,
+    payload: Partial<Pick<GroupRow, "name" | "notes" | "kind" | "rules" | "directoryGroupId">> & {
+      /** The group's `updatedAt` when the editor loaded it; 412 on a mismatch. */
+      expectedUpdatedAt?: string;
+    },
   ) =>
     endpoint((api) =>
       api.patchGroup({
@@ -1431,7 +1434,10 @@ export const enterprise = {
         PolicyRow,
         "name" | "notes" | "configurations" | "configurationScopes" | "priority" | "enabled"
       >
-    >,
+    > & {
+      /** The policy's `updatedAt` when the editor loaded it; 412 on a mismatch. */
+      expectedUpdatedAt?: string;
+    },
   ) =>
     endpoint((api) =>
       api.patchPolicy({
@@ -1689,6 +1695,8 @@ export const enterprise = {
       storeId?: string | null;
       notes?: string | null;
       installers?: ApplicationInstallerPayload[];
+      /** The application's `updatedAt` when the editor loaded it; 412 on a mismatch. */
+      expectedUpdatedAt?: string;
     },
   ) =>
     endpoint((api) =>

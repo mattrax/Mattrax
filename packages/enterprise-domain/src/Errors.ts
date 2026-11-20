@@ -47,6 +47,35 @@ export class EnterpriseConflict extends Schema.TaggedError<EnterpriseConflict>()
   },
 ) {}
 
+/**
+ * The record a guarded mutation was based on, sent with a 412 so the client
+ * can say what changed without a second request. `record` carries the
+ * endpoint's current representation when it has one; the summary fields are
+ * always present.
+ */
+export const PreconditionCurrent = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  updatedAt: Schema.String,
+  record: Schema.optional(Schema.Json),
+});
+
+export type PreconditionCurrent = typeof PreconditionCurrent.Type;
+
+/**
+ * Optimistic concurrency failed: the client's `expectedUpdatedAt` (or
+ * `If-Unmodified-Since`) no longer matches the stored row. Nothing was
+ * written; the client should re-read before retrying.
+ */
+export class EnterprisePreconditionFailed extends Schema.TaggedError<EnterprisePreconditionFailed>()(
+  "EnterprisePreconditionFailed",
+  {
+    message: Schema.String,
+    expectedUpdatedAt: Schema.optional(Schema.String),
+    current: PreconditionCurrent,
+  },
+) {}
+
 export class EnterpriseNotFound extends Schema.TaggedError<EnterpriseNotFound>()(
   "EnterpriseNotFound",
   {
@@ -164,6 +193,21 @@ export const EnterpriseTenantWriteErrors = [
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+
+/** A guarded mutation was based on a version someone else has replaced. */
+export const EnterprisePreconditionErrors = [
+  EnterprisePreconditionFailed.pipe(HttpApiSchema.status(412)),
+] as const;
+
+/**
+ * Write errors for endpoints that support optimistic concurrency. Only the
+ * guarded endpoints declare 412; mutations that cannot lose data keep the
+ * narrower write set.
+ */
+export const EnterpriseConditionalWriteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  ...EnterprisePreconditionErrors,
 ] as const;
 
 export const EnterpriseTenantDeleteErrors = [
@@ -334,6 +378,7 @@ export const ENTERPRISE_ERROR_CODES = [
   "not_found",
   "validation",
   "conflict",
+  "precondition_failed",
   "rate_limited",
   "not_configured",
   "upstream_error",
@@ -406,6 +451,8 @@ export const defaultErrorCode = (tag: string): EnterpriseErrorCode | undefined =
       return "validation";
     case "EnterpriseConflict":
       return "conflict";
+    case "EnterprisePreconditionFailed":
+      return "precondition_failed";
     case "EnterpriseNotConfigured":
       return "not_configured";
     case "EnterpriseUpstreamError":

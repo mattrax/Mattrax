@@ -73,6 +73,10 @@ const TAGS = {
     message: "That change conflicts with something that already exists.",
     variant: "validation",
   },
+  EnterprisePreconditionFailed: {
+    message: "Someone else changed this. Reload the latest version and try again.",
+    variant: "validation",
+  },
   EnterpriseTenantHasMembers: {
     message: "This tenant still has other members. Remove them before deleting it.",
     variant: "validation",

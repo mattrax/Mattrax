@@ -1,6 +1,7 @@
 import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schema } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
+import { preconditionFailure, preconditionFromRequest } from "./preconditions.js";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -22,6 +23,7 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
+  updatedAtSatisfiesPrecondition,
   credentialPermissions,
   hasAnyWritePermission,
   hasUnrestrictedCredential,
@@ -14691,7 +14693,16 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "script-change");
 
-        const result = yield* updateScript(db, ctx.organization.id, scriptId, payload, now());
+        const precondition = yield* preconditionFromRequest(request, payload.expectedUpdatedAt);
+
+        const result = yield* updateScript(
+          db,
+          ctx.organization.id,
+          scriptId,
+          payload,
+          now(),
+          precondition,
+        );
 
         if ("notFound" in result)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Script not found" }));
@@ -14699,8 +14710,36 @@ export const createEnterpriseService = ({
         if ("problem" in result && result.problem)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: result.problem }));
 
+        if ("stale" in result && result.current)
+          return yield* Effect.fail(
+            preconditionFailure({
+              resource: "script",
+              precondition,
+              current: {
+                id: result.current.id,
+                name: result.current.name,
+                updatedAt: result.current.updatedAt,
+              },
+              record: {
+                id: result.current.id,
+                name: result.current.name,
+                description: result.current.description,
+                language: result.current.language,
+                runAs: result.current.runAs,
+                timeoutSeconds: result.current.timeoutSeconds,
+                environment: result.current.environment,
+                triggerType: result.current.triggerType,
+                intervalSeconds: result.current.intervalSeconds,
+                cronExpression: result.current.cronExpression,
+                enabled: result.current.enabled,
+                createdAt: iso(result.current.createdAt),
+                updatedAt: iso(result.current.updatedAt),
+              },
+            }),
+          );
+
         yield* audit(ctx, "script.updated", "script", scriptId, {
-          fields: Object.keys(payload),
+          fields: Object.keys(payload).filter((field) => field !== "expectedUpdatedAt"),
         });
 
         // A script edit changes the profile an Apple device holds; wake the
@@ -16718,12 +16757,15 @@ export const createEnterpriseService = ({
         const existing = yield* assertTenantGroup(ctx.organization.id, groupId);
 
         const body: {
+          expectedUpdatedAt?: string;
           name?: string;
           notes?: string | null;
           kind?: "manual" | "dynamic";
           rules?: DynamicGroupRules | null;
           directoryGroupId?: string | null;
         } = payload;
+
+        const precondition = yield* preconditionFromRequest(request, body.expectedUpdatedAt);
 
         const kind = body.kind ?? existing.kind ?? "manual";
 
@@ -16779,21 +16821,73 @@ export const createEnterpriseService = ({
         // device check-in.
         const beforeDevices = yield* applePush.deviceIdsInGroups([...affectedIds]);
 
-        yield* db
-          .update(schema.enterpriseGroup)
-          .set({
-            name: body.name,
-            notes: body.notes,
-            kind,
-            rules,
-            directoryGroupId: nextDirectoryGroupId,
-            updatedAt: now(),
-          })
-          .where(
-            and(
-              eq(schema.enterpriseGroup.id, groupId),
-              eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
-            ),
+        // Lock the row, compare the loaded version, then write. The lock makes
+        // the check and the UPDATE one atomic step, and the comparison handles
+        // the second-precision If-Unmodified-Since fallback.
+        const outcome = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [current] = yield* tx
+              .select()
+              .from(schema.enterpriseGroup)
+              .where(
+                and(
+                  eq(schema.enterpriseGroup.id, groupId),
+                  eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                ),
+              )
+              .limit(1)
+              .for("update");
+
+            if (!current) return { notFound: true as const };
+
+            if (!updatedAtSatisfiesPrecondition(current.updatedAt, precondition))
+              return { stale: true as const, current };
+
+            yield* tx
+              .update(schema.enterpriseGroup)
+              .set({
+                name: body.name,
+                notes: body.notes,
+                kind,
+                rules,
+                directoryGroupId: nextDirectoryGroupId,
+                updatedAt: now(),
+              })
+              .where(
+                and(
+                  eq(schema.enterpriseGroup.id, groupId),
+                  eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                ),
+              );
+
+            return { ok: true as const };
+          }),
+        );
+
+        if ("notFound" in outcome)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+
+        if ("stale" in outcome && outcome.current)
+          return yield* Effect.fail(
+            preconditionFailure({
+              resource: "group",
+              precondition,
+              current: {
+                id: outcome.current.id,
+                name: outcome.current.name,
+                updatedAt: outcome.current.updatedAt,
+              },
+              record: {
+                id: outcome.current.id,
+                name: outcome.current.name,
+                notes: outcome.current.notes,
+                kind: outcome.current.kind,
+                rules: outcome.current.rules,
+                directoryGroupId: outcome.current.directoryGroupId,
+                createdAt: iso(outcome.current.createdAt),
+                updatedAt: iso(outcome.current.updatedAt),
+              },
+            }),
           );
 
         if (kind === "dynamic") {
@@ -16832,7 +16926,9 @@ export const createEnterpriseService = ({
         // changed, and that is what its parents read.
         yield* syncGroupInheritance(db, ctx.organization.id, groupId);
 
-        yield* audit(ctx, "group.updated", "group", groupId, { fields: Object.keys(body) });
+        yield* audit(ctx, "group.updated", "group", groupId, {
+          fields: Object.keys(body).filter((field) => field !== "expectedUpdatedAt"),
+        });
 
         // Membership-affecting edits (link, unlink, mode or rule change) can
         // change which devices the group reaches. Wake the union of the old and
@@ -17392,6 +17488,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
 
         const body: {
+          expectedUpdatedAt?: string;
           name?: string;
           notes?: string | null;
           priority?: number;
@@ -17411,6 +17508,8 @@ export const createEnterpriseService = ({
 
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+
+        const precondition = yield* preconditionFromRequest(request, body.expectedUpdatedAt);
 
         const configurations = Object.entries(body.configurations ?? {});
         const escrowFingerprint = yield* tenantEscrowFingerprint(ctx.organization.id);
@@ -17446,43 +17545,94 @@ export const createEnterpriseService = ({
           escrowCertificateFingerprintSha256: escrowFingerprint,
         });
 
-        yield* db
-          .update(schema.policy)
-          .set({
-            name: body.name,
-            notes: body.notes,
-            priority: body.priority,
-            enabled: body.enabled,
-            updatedAt: now(),
-          })
-          .where(eq(schema.policy.id, policyId));
-
-        for (const [kind, data] of configurations) {
-          if (data === null) {
-            yield* db
-              .delete(schema.configuration)
+        // The row write and every configuration write commit together. The
+        // row is locked while its version is compared, so a concurrent edit
+        // cannot slip between the check and the write.
+        const outcome = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [current] = yield* tx
+              .select()
+              .from(schema.policy)
               .where(
                 and(
-                  eq(schema.configuration.policyId, policyId),
-                  eq(schema.configuration.kind, kind),
+                  eq(schema.policy.id, policyId),
+                  eq(schema.policy.organizationId, ctx.organization.id),
+                ),
+              )
+              .limit(1)
+              .for("update");
+
+            if (!current) return { notFound: true as const };
+
+            if (!updatedAtSatisfiesPrecondition(current.updatedAt, precondition))
+              return { stale: true as const, current };
+
+            yield* tx
+              .update(schema.policy)
+              .set({
+                name: body.name,
+                notes: body.notes,
+                priority: body.priority,
+                enabled: body.enabled,
+                updatedAt: now(),
+              })
+              .where(
+                and(
+                  eq(schema.policy.id, policyId),
+                  eq(schema.policy.organizationId, ctx.organization.id),
                 ),
               );
-          } else {
-            const hash = yield* hashJson(data);
-            const scope = scopeFor(kind);
 
-            yield* db
-              .insert(schema.configuration)
-              .values({ policyId, kind, scope, data, hash })
-              .onDuplicateKeyUpdate({ set: { data, hash, scope } });
-          }
+            for (const [kind, data] of configurations) {
+              if (data === null) {
+                yield* tx
+                  .delete(schema.configuration)
+                  .where(
+                    and(
+                      eq(schema.configuration.policyId, policyId),
+                      eq(schema.configuration.kind, kind),
+                    ),
+                  );
+              } else {
+                const hash = yield* hashJson(data);
+                const scope = scopeFor(kind);
+
+                yield* tx
+                  .insert(schema.configuration)
+                  .values({ policyId, kind, scope, data, hash })
+                  .onDuplicateKeyUpdate({ set: { data, hash, scope } });
+              }
+            }
+
+            return { ok: true as const };
+          }),
+        );
+
+        if ("notFound" in outcome)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+
+        if ("stale" in outcome && outcome.current) {
+          const record = yield* rowPolicy(outcome.current, true);
+
+          return yield* Effect.fail(
+            preconditionFailure({
+              resource: "policy",
+              precondition,
+              current: {
+                id: outcome.current.id,
+                name: outcome.current.name,
+                updatedAt: outcome.current.updatedAt,
+              },
+              record,
+            }),
+          );
         }
 
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
         yield* pushPolicyDevices(ctx.organization.id, { policyId }, affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
         yield* audit(ctx, "policy.updated", "policy", policyId, {
-          fields: Object.keys(body),
+          fields: Object.keys(body).filter((field) => field !== "expectedUpdatedAt"),
           ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
           configurations: Object.keys(body.configurations ?? {}),
           userScopedConfigurations: Object.entries(body.configurationScopes ?? {})
@@ -19171,6 +19321,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
         const body: {
+          expectedUpdatedAt?: string;
           name?: string;
           bundleId?: string | null;
           version?: string | null;
@@ -19181,6 +19332,8 @@ export const createEnterpriseService = ({
           installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
+        const precondition = yield* preconditionFromRequest(request, body.expectedUpdatedAt);
+
         if (body.name !== undefined && !body.name.trim())
           return yield* Effect.fail(new EnterpriseBadRequest({ message: "Name is required" }));
 
@@ -19189,18 +19342,90 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "An application needs at least one installer" }),
           );
 
-        yield* db
-          .update(schema.application)
-          .set({
-            name: body.name?.trim() ?? existing.name,
-            notes: body.notes === undefined ? existing.notes : body.notes,
-            updatedAt: now(),
-          })
-          .where(
-            and(
-              eq(schema.application.id, applicationId),
-              eq(schema.application.organizationId, ctx.organization.id),
-            ),
+        // Lock the row, compare the loaded version, then write. Installer
+        // replacement below reads and writes through the same connection, so
+        // the guarded row update commits before it runs.
+        const outcome = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [current] = yield* tx
+              .select()
+              .from(schema.application)
+              .where(
+                and(
+                  eq(schema.application.id, applicationId),
+                  eq(schema.application.organizationId, ctx.organization.id),
+                ),
+              )
+              .limit(1)
+              .for("update");
+
+            if (!current) return { notFound: true as const };
+
+            if (!updatedAtSatisfiesPrecondition(current.updatedAt, precondition))
+              return { stale: true as const, current };
+
+            yield* tx
+              .update(schema.application)
+              .set({
+                name: body.name?.trim() ?? current.name,
+                notes: body.notes === undefined ? current.notes : body.notes,
+                updatedAt: now(),
+              })
+              .where(
+                and(
+                  eq(schema.application.id, applicationId),
+                  eq(schema.application.organizationId, ctx.organization.id),
+                ),
+              );
+
+            return { ok: true as const };
+          }),
+        );
+
+        if ("notFound" in outcome)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        if ("stale" in outcome && outcome.current)
+          return yield* Effect.fail(
+            preconditionFailure({
+              resource: "application",
+              precondition,
+              current: {
+                id: outcome.current.id,
+                name: outcome.current.name,
+                updatedAt: outcome.current.updatedAt,
+              },
+              record: {
+                id: outcome.current.id,
+                name: outcome.current.name,
+                platform: outcome.current.platform,
+                bundleId: outcome.current.bundleId,
+                version: outcome.current.version,
+                source: outcome.current.source,
+                manifestUrl: outcome.current.manifestUrl,
+                storeId: outcome.current.storeId,
+                notes: outcome.current.notes,
+                installers: (yield* applicationInstallers(
+                  ctx.organization.id,
+                  applicationId,
+                )).map((installer) => ({
+                  id: installer.id,
+                  platform: installer.platform,
+                  source: installer.source,
+                  bundleId: installer.bundleId,
+                  version: installer.version,
+                  manifestUrl: installer.manifestUrl,
+                  storeId: installer.storeId,
+                  minOsVersion: installer.minOsVersion,
+                  requiredCapability: installer.requiredCapability,
+                  priority: installer.priority,
+                  createdAt: iso(installer.createdAt),
+                  updatedAt: iso(installer.updatedAt),
+                })),
+                createdAt: iso(outcome.current.createdAt),
+                updatedAt: iso(outcome.current.updatedAt),
+              },
+            }),
           );
 
         if (body.installers !== undefined) {
@@ -19250,7 +19475,7 @@ export const createEnterpriseService = ({
         }
 
         yield* audit(ctx, "application.updated", "application", applicationId, {
-          fields: Object.keys(body),
+          fields: Object.keys(body).filter((field) => field !== "expectedUpdatedAt"),
         });
 
         if (existing.platform === "android") yield* syncAndroidDevices(ctx.organization.id);

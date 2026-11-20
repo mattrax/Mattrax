@@ -40,6 +40,7 @@ import {
   SlidersHorizontal,
   Wifi,
 } from "~/components/ui/icons";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
@@ -67,6 +68,8 @@ import {
   type PolicyScopeCounts,
 } from "~/lib/policy-scope";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   parsePolicyDraft,
@@ -265,6 +268,9 @@ export default function PolicyDetailPage() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
+  /** Bumped by "Reload latest" to reseed the metadata form. */
+  const [reseed, setReseed] = createSignal(0);
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
   const [priority, setPriority] = createSignal("0");
@@ -277,7 +283,7 @@ export default function PolicyDetailPage() {
   const [addOpen, setAddOpen] = createSignal(false);
   const [seeded, setSeeded] = createSignal(false);
   createEffect(
-    () => row()?.id,
+    () => `${row()?.id ?? ""}:${reseed()}`,
     () => {
       const policy = row();
 
@@ -330,12 +336,20 @@ export default function PolicyDetailPage() {
     return () => restores.forEach((restore) => restore());
   };
 
+  const reloadLatest = async () => {
+    await policy.refetch();
+    setReseed((value) => value + 1);
+    guard.acceptLatest();
+  };
+
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () =>
       enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: name(),
         notes: notes() || null,
         priority: Number(priority()) || 0,
+        expectedUpdatedAt: guard.expectedUpdatedAt(),
       }),
     onMutate: async () => {
       const restore = await patchPolicy({
@@ -347,11 +361,20 @@ export default function PolicyDetailPage() {
       return { restore };
     },
     onSuccess: () => {
+      guard.markSaved();
       toast.success("Policy saved");
       void invalidate();
     },
     onError: (error, _payload, context) => {
       context?.restore();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) {
+        // Keep the metadata draft; the banner offers reload or overwrite.
+        guard.markConflict();
+
+        return;
+      }
+
       toast.error("Could not save the policy", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -368,7 +391,10 @@ export default function PolicyDetailPage() {
    */
   const setEnabled = useMutation(() => ({
     mutationFn: (next: boolean) =>
-      enterprise.patchPolicy(params.tenantId, params.policyId, { enabled: next }),
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        enabled: next,
+        expectedUpdatedAt: row()?.updatedAt,
+      }),
     onMutate: async (next) => {
       const restore = await patchPolicy({ enabled: next });
 
@@ -385,6 +411,9 @@ export default function PolicyDetailPage() {
     },
     onError: (error, _next, context) => {
       context?.restore();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) return;
+
       toast.error("Could not change the policy state", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -393,7 +422,10 @@ export default function PolicyDetailPage() {
 
   const addConfigurations = useMutation(() => ({
     mutationFn: (configurations: PolicyConfigurations) =>
-      enterprise.patchPolicy(params.tenantId, params.policyId, { configurations }),
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        configurations,
+        expectedUpdatedAt: row()?.updatedAt,
+      }),
     onMutate: async (configurations) => {
       const restore = await patchPolicy({ configurations });
 
@@ -404,7 +436,10 @@ export default function PolicyDetailPage() {
       return { restore };
     },
     onSuccess: () => void invalidate(),
-    onError: (_error, _payload, context) => context?.restore(),
+    onError: (error, _payload, context) => {
+      context?.restore();
+      handleStaleWriteWithToast(error, { reload: invalidate });
+    },
   }));
 
   const dup = useMutation(() => ({
@@ -517,6 +552,13 @@ export default function PolicyDetailPage() {
     <Page>
       {unsaved.prompt}
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+      <Show when={guard.conflict()}>
+        <StaleWriteBanner
+          reloading={policy.isFetching}
+          onReload={() => void reloadLatest()}
+          onKeepMine={() => guard.acceptLatest()}
+        />
+      </Show>
 
       <PageHeader
         title={row()?.name ?? "Policy"}

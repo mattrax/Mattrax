@@ -14,6 +14,7 @@ import {
   relativeTime,
 } from "~/components/mdm/common";
 import { ScriptEditor, type ScriptDraftValues } from "~/components/mdm/script-editor";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -36,6 +37,8 @@ import {
 } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { ReadOnlyNotice, AccessDenied, useCan } from "~/lib/permissions";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { queryClient } from "~/lib/query-client";
 import { downloadBlob } from "~/lib/download";
 
@@ -91,6 +94,9 @@ export default function ScriptDetailPage() {
   const writable = () => can("scripts.write");
 
   const script = useQuery(() => enterpriseQueries.script(params.tenantId, params.scriptId));
+  const guard = createStaleWriteGuard(() => script.data?.script.updatedAt);
+  /** Bumped by "Reload latest" to remount the editor from the saved script. */
+  const [seedEpoch, setSeedEpoch] = createSignal(0);
 
   const assignments = useQuery(() =>
     enterpriseQueries.scriptAssignments(params.tenantId, params.scriptId),
@@ -159,12 +165,20 @@ export default function ScriptDetailPage() {
     ]);
   };
 
+  const reloadLatest = async () => {
+    await script.refetch();
+    guard.acceptLatest();
+    setSeedEpoch((value) => value + 1);
+  };
+
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (values: ScriptDraftValues) =>
       enterprise.patchScript(params.tenantId, params.scriptId, {
         ...values,
         description: values.description || null,
         environment: values.environment.filter((entry) => entry.name.trim()),
+        expectedUpdatedAt: guard.expectedUpdatedAt(),
       }),
     onMutate: async (values) => {
       const environment = values.environment.filter((entry) => entry.name.trim());
@@ -200,8 +214,21 @@ export default function ScriptDetailPage() {
 
       return combineRestores(restores);
     },
-    onError: (_error, _values, restore) => restore?.(),
-    onSuccess: () => toast.success("Script saved"),
+    onError: (error, _values, restore) => {
+      restore?.();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) {
+        // The editor keeps its body and environment; the banner decides
+        // whether to reload or overwrite.
+        guard.markConflict();
+
+        return;
+      }
+    },
+    onSuccess: () => {
+      guard.markSaved();
+      toast.success("Script saved");
+    },
     onSettled: () => void invalidate(),
   }));
 
@@ -440,6 +467,13 @@ export default function ScriptDetailPage() {
         >
           {(detail) => (
             <>
+              <Show when={guard.conflict()}>
+                <StaleWriteBanner
+                  reloading={script.isFetching}
+                  onReload={() => void reloadLatest()}
+                  onKeepMine={() => guard.acceptLatest()}
+                />
+              </Show>
               <PageHeader
                 eyebrow="Scripts"
                 title={detail().script.name}
@@ -499,15 +533,19 @@ export default function ScriptDetailPage() {
                         </pre>
                       }
                     >
-                      <ScriptEditor
-                        identity={params.scriptId}
-                        initial={draft()}
-                        submitLabel="Save script"
-                        saving={save.isPending}
-                        error={save.error}
-                        disabled={!detail().script.enabled}
-                        onSubmit={(values) => save.mutate(values)}
-                      />
+                      <Show keyed when={`${params.scriptId}:${seedEpoch()}`}>
+                        {(_identity) => (
+                          <ScriptEditor
+                            identity={params.scriptId}
+                            initial={draft()}
+                            submitLabel="Save script"
+                            saving={save.isPending}
+                            error={save.error}
+                            disabled={!detail().script.enabled}
+                            onSubmit={(values) => save.mutate(values)}
+                          />
+                        )}
+                      </Show>
                     </Show>
                   </Panel>
 

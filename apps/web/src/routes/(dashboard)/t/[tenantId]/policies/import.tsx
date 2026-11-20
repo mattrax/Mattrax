@@ -33,6 +33,7 @@ import {
   type PolicyImportTarget,
 } from "~/lib/policy-import";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 
 const ImportTargetSchema = Schema.Struct({
   name: Schema.String,
@@ -269,6 +270,7 @@ export default function ImportPolicyPage() {
       await enterprise.patchPolicy(params.tenantId, targetId()!, {
         configurations: next.payload.configurations,
         configurationScopes: next.payload.configurationScopes,
+        expectedUpdatedAt: target.data?.updatedAt,
       });
 
       return { id: targetId()! };
@@ -281,10 +283,21 @@ export default function ImportPolicyPage() {
       toast.success(row() ? "Configurations imported" : "Policy imported");
       navigate(`/t/${params.tenantId}/policies/${id}`);
     },
-    onError: (cause) =>
+    onError: (cause) => {
+      if (
+        handleStaleWriteWithToast(cause, {
+          reload: () =>
+            qc.invalidateQueries({
+              queryKey: enterpriseKeys.item(params.tenantId, "policy", targetId()!),
+            }),
+        })
+      )
+        return;
+
       toast.error("Could not import", {
         description: errorMessage(raisedFailure(cause), "Try again in a moment."),
-      }),
+      });
+    },
   }));
 
   const counts = createMemo(() => {

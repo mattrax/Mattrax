@@ -15,6 +15,7 @@ import {
   formatDeviceDate,
 } from "~/components/mdm/common";
 import { GroupRuleBuilder } from "~/components/mdm/group-rules";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -38,6 +39,8 @@ import {
   type PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import {
   optimisticallyPatchItem,
   optimisticallyRemoveRows,
@@ -175,6 +178,20 @@ export default function GroupDetailPage() {
   const scope = useQuery(() => enterpriseQueries.groupScope(params.tenantId, params.groupId));
 
   const row = () => Option.getOrUndefined(decodeGroupNode(group.data));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
+
+  /** Begin editing against the version currently shown. */
+  const startEdit = () => {
+    guard.acceptLatest();
+    setEdit(true);
+  };
+
+  /** Discard the draft for the version the server has now. */
+  const reloadLatest = async () => {
+    await group.refetch();
+    guard.acceptLatest();
+    setEdit(false);
+  };
 
   // A read-only role never enters the edit state, even if it was opened before
   // a role change landed.
@@ -345,6 +362,7 @@ export default function GroupDetailPage() {
   };
 
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: async () => {
       // Derived rows (dynamic, directory, nested) are not manual membership and
       // must never be sent as an unassign.
@@ -377,6 +395,7 @@ export default function GroupDetailPage() {
           kind: kind(),
           rules: kind() === "dynamic" ? rules() : null,
           directoryGroupId: directoryGroupId(),
+          expectedUpdatedAt: guard.expectedUpdatedAt(),
         });
       await enterprise.patchGroupMembers(params.tenantId, params.groupId, {
         assign: {
@@ -427,18 +446,28 @@ export default function GroupDetailPage() {
           : { policiesCount: nextPolicies.size }),
       });
 
-      // Leave edit mode on submit; the membership table reconciles from the
-      // background refetch.
-      setEdit(false);
-
+      // Stay in edit mode until the save succeeds: leaving it on submit lets
+      // a refetch reseed the form and discard membership edits on failure.
       return { restore };
     },
     onSuccess: () => {
+      guard.markSaved();
+      setEdit(false);
       toast.success("Group saved");
       void invalidate();
     },
     onError: (error, _payload, context) => {
       context?.restore();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) {
+        // Stay in edit mode with every draft value intact. The banner offers
+        // a reload or an explicit overwrite.
+        guard.markConflict();
+        setEdit(true);
+
+        return;
+      }
+
       toast.error("Could not save the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -632,6 +661,14 @@ export default function GroupDetailPage() {
       {unsaved.prompt}
       <QueryError error={group.error} onRetry={() => void group.refetch()} />
 
+      <Show when={guard.conflict()}>
+        <StaleWriteBanner
+          reloading={group.isFetching}
+          onReload={() => void reloadLatest()}
+          onKeepMine={() => guard.acceptLatest()}
+        />
+      </Show>
+
       <PageHeader
         title={row()?.name ?? "Group"}
         description={
@@ -642,9 +679,8 @@ export default function GroupDetailPage() {
             <>
               <Button
                 variant="outline"
-                onClick={() =>
-                  edit() ? (dirty() ? save.mutate() : setEdit(false)) : setEdit(true)
-                }
+                disabled={save.isPending}
+                onClick={() => (edit() ? (dirty() ? save.mutate() : setEdit(false)) : startEdit())}
               >
                 {!edit() ? "Edit" : dirty() ? "Save" : "Done"}
               </Button>
@@ -789,7 +825,9 @@ export default function GroupDetailPage() {
                   >
                     <option value="manual">Manual — choose devices</option>
                     <option value="dynamic">Dynamic — match device rules</option>
-                    <option value="directory">Linked directory group — follow IdP membership</option>
+                    <option value="directory">
+                      Linked directory group — follow IdP membership
+                    </option>
                   </select>
                 </Field>
               </div>
@@ -1215,7 +1253,9 @@ export default function GroupDetailPage() {
                     }
                   >
                     <div class="divide-y divide-border">
-                      <For each={(row()?.devices ?? []).filter((device) => device.source === "nested")}>
+                      <For
+                        each={(row()?.devices ?? []).filter((device) => device.source === "nested")}
+                      >
                         {(device) => (
                           <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                             <a
@@ -1225,7 +1265,8 @@ export default function GroupDetailPage() {
                               {device.name}
                             </a>
                             <span class="text-[11.5px] text-muted-foreground">
-                              via {(device.inheritedFrom ?? []).map((group) => group.name).join(", ")}
+                              via{" "}
+                              {(device.inheritedFrom ?? []).map((group) => group.name).join(", ")}
                             </span>
                           </div>
                         )}
@@ -1408,9 +1449,7 @@ export default function GroupDetailPage() {
               </p>
               <Show
                 when={(row()?.exclusions ?? []).some((item) => item.kind === "device")}
-                fallback={
-                  <p class="text-[12px] text-muted-foreground">No devices are excluded.</p>
-                }
+                fallback={<p class="text-[12px] text-muted-foreground">No devices are excluded.</p>}
               >
                 <div class="divide-y divide-border/60">
                   <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "device")}>
@@ -1471,9 +1510,7 @@ export default function GroupDetailPage() {
               </p>
               <Show
                 when={(row()?.exclusions ?? []).some((item) => item.kind === "user")}
-                fallback={
-                  <p class="text-[12px] text-muted-foreground">No people are excluded.</p>
-                }
+                fallback={<p class="text-[12px] text-muted-foreground">No people are excluded.</p>}
               >
                 <div class="divide-y divide-border/60">
                   <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "user")}>
@@ -1531,11 +1568,11 @@ export default function GroupDetailPage() {
                 </div>
               </Show>
               <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                Excluding a person stops this group's user-scoped settings from reaching their
-                Apple user channel and, when this group follows a directory group, stops their
-                devices being added through that membership. A device that is also a member through
-                another person, a rule, a manual assignment or a child group stays in the group and
-                keeps device-scoped policy — remove the device explicitly to take it out entirely.
+                Excluding a person stops this group's user-scoped settings from reaching their Apple
+                user channel and, when this group follows a directory group, stops their devices
+                being added through that membership. A device that is also a member through another
+                person, a rule, a manual assignment or a child group stays in the group and keeps
+                device-scoped policy — remove the device explicitly to take it out entirely.
               </p>
             </div>
           </div>

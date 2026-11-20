@@ -6,7 +6,11 @@ import {
   IdResponse,
   IdsRequest,
 } from "../Common.js";
-import { EnterpriseTenantReadErrors, EnterpriseTenantWriteErrors } from "../Errors.js";
+import {
+  EnterpriseConditionalWriteErrors,
+  EnterpriseTenantReadErrors,
+  EnterpriseTenantWriteErrors,
+} from "../Errors.js";
 import {
   CreateGroupRequest,
   GroupNode,
@@ -66,7 +70,7 @@ export const enterpriseGroupApi = HttpApiGroup.make("EnterpriseGroup")
   )
   .add(
     HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
       payload: PatchGroupRequest,
       success: GroupOkResponse,

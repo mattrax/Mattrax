@@ -19,6 +19,7 @@ import { ScriptSettings } from "../scripts.js";
 import { WindowsActivationReportRequest } from "../deviceInventory.js";
 import { WindowsActivationReportResponse } from "../deviceInventory.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
+import { EnterpriseConditionalWriteErrors } from "../Errors.js";
 import { EnterpriseBadRequest } from "../Errors.js";
 import { EnterpriseConflict } from "../Errors.js";
 import { EnterpriseNotFound } from "../Errors.js";
@@ -68,7 +69,7 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.patch("patchScript", "/v1/tenants/:tenantId/scripts/:id", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      error: [...EnterpriseConditionalWriteErrors, ...EnterpriseStepUpRequired],
       params: TenantIdParam,
       payload: PatchScriptRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),

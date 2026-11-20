@@ -4,6 +4,8 @@ import { Match, Option, Schema } from "effect";
 import { ApplicationNode } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { StaleWriteBanner } from "~/components/stale-write-banner";
+import { toast } from "~/components/toast";
 import {
   ErrorText,
   Field,
@@ -37,6 +39,9 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { errorMessage, raisedFailure } from "~/lib/errors";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -187,6 +192,9 @@ export default function ApplicationDetailPage() {
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
 
   const row = () => Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(app.data));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
+  /** Bumped after our own save and by "Reload latest" to reseed the form. */
+  const [seedEpoch, setSeedEpoch] = createSignal(0);
 
   const [name, setName] = createSignal("");
   const [bundleId, setBundleId] = createSignal("");
@@ -199,9 +207,10 @@ export default function ApplicationDetailPage() {
   const [message, setMessage] = createSignal<string | null>(null);
 
   createEffect(
-    // Re-sync after a save assigns ids to newly created installers, not only
-    // when a different application is opened.
-    () => `${row()?.id ?? ""}:${row()?.updatedAt ?? ""}`,
+    // Seed per application, and again after our own save (which assigns ids to
+    // newly created installers) or an explicit reload. A refetch caused by a
+    // 412 must leave the draft alone.
+    () => `${row()?.id ?? ""}:${seedEpoch()}`,
     () => {
       const value = row();
 
@@ -260,11 +269,15 @@ export default function ApplicationDetailPage() {
     return [...deviceIds()].map((id) => ({ id, name: names.get(id) ?? id }));
   };
 
+  let savedThisRun = false;
+
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: async () => {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
         name: name(),
         notes: notes() || null,
+        expectedUpdatedAt: guard.expectedUpdatedAt(),
         installers: installers().map((installer) => ({
           id: installer.id,
           platform: installer.platform,
@@ -353,9 +366,35 @@ export default function ApplicationDetailPage() {
 
       return combineRestores(restores);
     },
-    onSuccess: () => setMessage("Application and assignments saved."),
-    onError: (_error, _variables, restore) => restore?.(),
-    onSettled: () => void invalidate(),
+    onSuccess: () => {
+      guard.markSaved();
+      savedThisRun = true;
+      setMessage("Application and assignments saved.");
+    },
+    onError: (error, _variables, restore) => {
+      restore?.();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) {
+        // Keep every field and installer as typed; the banner resolves the
+        // conflict explicitly.
+        guard.markConflict();
+        setMessage(null);
+
+        return;
+      }
+
+      toast.error("Could not save the application", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+    onSettled: async () => {
+      await invalidate();
+
+      if (savedThisRun) {
+        savedThisRun = false;
+        setSeedEpoch((value) => value + 1);
+      }
+    },
   }));
 
   const [installNotice, setInstallNotice] = createSignal<
@@ -469,8 +508,21 @@ export default function ApplicationDetailPage() {
     (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
   );
 
+  const reloadLatest = async () => {
+    await app.refetch();
+    guard.acceptLatest();
+    setSeedEpoch((value) => value + 1);
+  };
+
   return (
     <Page>
+      <Show when={guard.conflict()}>
+        <StaleWriteBanner
+          reloading={app.isFetching}
+          onReload={() => void reloadLatest()}
+          onKeepMine={() => guard.acceptLatest()}
+        />
+      </Show>
       <PageHeader
         eyebrow="Application"
         title={row()?.name ?? "Application"}
