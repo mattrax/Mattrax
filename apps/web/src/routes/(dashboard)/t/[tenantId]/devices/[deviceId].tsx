@@ -63,6 +63,7 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import {
+  CircleAlert,
   RefreshCw,
   Laptop,
   MonitorSmartphone,
@@ -109,6 +110,12 @@ import {
 } from "~/lib/optimistic";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { SoftwareUpdateTag } from "~/components/software-update-badge";
+import {
+  decodeSoftwareUpdate,
+  isMacOsUpdateTracked,
+  softwareUpdateReason,
+} from "~/lib/software-updates";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -1090,6 +1097,19 @@ export default function DeviceDetailPage() {
     },
   }));
 
+  /** macOS update status carried on the device row; `undefined` on other platforms. */
+  const osUpdate = () => decodeSoftwareUpdate(row()?.osUpdate);
+
+  /** Only a missing security release or a major upgrade is worth a banner. */
+  const osUpdateWarning = () => {
+    const info = osUpdate();
+
+    return info &&
+      (info.status === "security_update_required" || info.status === "update_available")
+      ? info
+      : undefined;
+  };
+
   /**
    * The plain-English inventory table from the legacy device page. A row is
    * only present when Mattrax actually has the value: empty rows made the old
@@ -1136,6 +1156,19 @@ export default function DeviceDetailPage() {
       { label: "Operating system", value: device.osEdition },
       { label: "Version", value: device.osVersion },
       { label: "Build", value: device.osBuild },
+      {
+        label: "OS updates",
+        value: (() => {
+          const info = decodeSoftwareUpdate(device.osUpdate);
+
+          return isMacOsUpdateTracked(info) ? (
+            <span class="flex flex-col items-start gap-1">
+              <SoftwareUpdateTag info={info} />
+              <span class="text-[11px] text-muted-foreground">{softwareUpdateReason(info!)}</span>
+            </span>
+          ) : undefined;
+        })(),
+      },
       { label: "Disk size", value: device.diskTotal },
       { label: "Disk used", value: device.diskUsed },
       {
@@ -1637,6 +1670,9 @@ export default function DeviceDetailPage() {
                       <Badge variant="warning">Awaiting setup</Badge>
                     </Show>
                     <DeviceHealthTag level={health.data?.health.level ?? "unknown"} />
+                    <Show when={isMacOsUpdateTracked(osUpdate())}>
+                      <SoftwareUpdateTag info={osUpdate()} />
+                    </Show>
                   </div>
                 </div>
               </div>
@@ -1693,6 +1729,43 @@ export default function DeviceDetailPage() {
               </div>
             </div>
           </section>
+          <Show when={osUpdateWarning()}>
+            {(info) => (
+              <div
+                role="status"
+                class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-warning-foreground"
+              >
+                <CircleAlert class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <div class="min-w-0 flex-1">
+                  <p class="font-medium">
+                    {info().status === "security_update_required"
+                      ? "Security update required"
+                      : "macOS update available"}
+                  </p>
+                  <p class="mt-0.5 text-muted-foreground">
+                    {softwareUpdateReason(info())}
+                    <Show when={info().latestVersion}>
+                      {" "}
+                      The latest release is macOS {info().latestVersion}
+                      <Show when={info().releaseDate}> ({formatDate(info().releaseDate)})</Show>.
+                    </Show>
+                  </p>
+                  <Show when={info().securityInfoUrl}>
+                    {(href) => (
+                      <a
+                        href={href()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="mt-2 inline-flex text-[12px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
+                      >
+                        Security details
+                      </a>
+                    )}
+                  </Show>
+                </div>
+              </div>
+            )}
+          </Show>
           <Tabs
             value={tab()}
             onValueChange={(value) => {

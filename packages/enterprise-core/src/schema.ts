@@ -1935,6 +1935,25 @@ export const androidPubSubMessage = mysqlTable(
   ],
 );
 
+/**
+ * Cached copy of an external OS-update feed.
+ *
+ * The feed is deployment-wide (not tenant-scoped): SOFA publishes the same
+ * macOS releases for every customer. `payload` is the trimmed catalog this
+ * product compares against, not the raw upstream document, so a cache row
+ * stays small. `checked_at` records the last attempt (success or failure) and
+ * drives both the refresh interval and the failure cooldown; `last_error` is a
+ * stable code so a feed outage never stores or returns upstream HTML.
+ */
+export const softwareUpdateFeed = mysqlTable("software_update_feed", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  payload: json("payload"),
+  fetchedAt: timestamp("fetched_at"),
+  checkedAt: timestamp("checked_at").notNull(),
+  lastError: varchar("last_error", { length: 64 }),
+});
+
 export const device = mysqlTable(
   "device",
   {

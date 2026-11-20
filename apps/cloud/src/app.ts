@@ -13,6 +13,7 @@ import {
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseIdentityApi,
+  enterpriseSoftwareUpdateApi,
   enterpriseWindowsApi,
   scriptAgentApi,
   scriptApi,
@@ -26,6 +27,7 @@ import {
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
   enterpriseHandlers,
+  enterpriseSoftwareUpdateHandlers,
   enterpriseIdentityHandlers,
   enterpriseWindowsHandlers,
   mcpOAuthRoutes,
@@ -212,6 +214,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
   .add(enterpriseIdentityApi)
+  .add(enterpriseSoftwareUpdateApi)
   .add(enterpriseWindowsApi)
   .add(scriptApi)
   .add(scriptAgentApi)
@@ -271,6 +274,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareUpdate", enterpriseSoftwareUpdateHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
@@ -794,6 +798,16 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       // branded address only for invites.
       invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM ?? mailer.sender.email,
       enrollmentProfileTtlSeconds,
+      // The SOFA feed is public and refreshable at most a few times a day.
+      // Failure cooldowns keep an outage from adding a timeout to every
+      // dashboard request; disabling it leaves macOS statuses unknown.
+      softwareUpdateFeedUrl: apiEnv.SOFA_FEED_URL,
+      softwareUpdateCacheTtlMs:
+        (parsePositive(apiEnv.SOFA_FEED_CACHE_SECONDS) ?? 6 * 60 * 60) * 1_000,
+      softwareUpdateRetryMs: (parsePositive(apiEnv.SOFA_FEED_RETRY_SECONDS) ?? 15 * 60) * 1_000,
+      softwareUpdateTimeoutMs: parsePositive(apiEnv.SOFA_FEED_TIMEOUT_MS) ?? 5_000,
+      softwareUpdateSupportedMajors: parsePositive(apiEnv.SOFA_FEED_SUPPORTED_MAJORS) ?? 3,
+      softwareUpdateDisabled: /^(1|true|yes|on)$/i.test(apiEnv.SOFA_FEED_DISABLED ?? ""),
       azureClientId: env.AZURE_CLIENT_ID,
       windowsFederated: windowsFederatedAudience
         ? { audience: windowsFederatedAudience }

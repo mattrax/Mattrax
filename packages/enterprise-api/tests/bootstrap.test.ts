@@ -106,6 +106,7 @@ describe("GET /api/v1/bootstrap", () => {
     expect(permissionForMethod("bootstrap")).toBeUndefined();
     // The tenant endpoints keep their existing mappings.
     expect(permissionForMethod("listDevices")).toBe("devices.read");
+    expect(permissionForMethod("getSoftwareUpdateSummary")).toBe("devices.read");
     expect(permissionForMethod("patchTenant")).toBe("tenant.write");
     // Reverse scope reads enumerate devices, groups and linked users, so they
     // must not fall through to the tenant-wide read permission.

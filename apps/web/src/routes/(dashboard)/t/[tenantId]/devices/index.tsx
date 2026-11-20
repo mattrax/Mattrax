@@ -59,6 +59,8 @@ import {
   type DeviceImportParseResult,
 } from "~/lib/device-import";
 import { healthRank } from "~/lib/device-health";
+import { SoftwareUpdateTag } from "~/components/software-update-badge";
+import { decodeSoftwareUpdate } from "~/lib/software-updates";
 import { readDeviceSearchParams, routes } from "~/lib/routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
@@ -1374,6 +1376,11 @@ export default function DevicesPage() {
                 reasons={row.health?.reasons}
               />
             ),
+          },
+          {
+            id: "osUpdate",
+            header: "OS updates",
+            cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
           },
           {
             id: "platform",

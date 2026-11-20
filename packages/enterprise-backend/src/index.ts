@@ -511,15 +511,9 @@ export type {
   ScheduledEntraSyncResult,
 } from "@mattrax/entra-id";
 
-export {
-  syncDirectoryGroup,
-  syncDirectoryGroupsForTenant,
-} from "@mattrax/mdm-apple";
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
 
-export type {
-  DirectoryGroupSyncOptions,
-  DirectoryGroupSyncResult,
-} from "@mattrax/mdm-apple";
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -654,6 +648,18 @@ export {
   groupDeviceHealthReasons,
   normalizeDeviceHealth,
 } from "./Device/deviceHealth.ts";
+
+export {
+  DEFAULT_SOFTWARE_UPDATE_CACHE_TTL_MS,
+  DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
+  DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
+  MAX_SOFTWARE_UPDATE_FEED_BYTES,
+  SOFA_MACOS_FEED_ID,
+  SOFA_MACOS_FEED_URL,
+  loadSoftwareUpdateCatalog,
+  type LoadSoftwareUpdateCatalogOptions,
+  type SoftwareUpdateCatalogState,
+} from "./Device/softwareUpdates.ts";
 
 export {
   DEVICE_EXPORT_MAX_ROWS,

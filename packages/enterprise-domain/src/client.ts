@@ -22,6 +22,8 @@ export * from "./webhooks.ts";
 
 export * from "./deviceHealth.ts";
 
+export * from "./softwareUpdates.ts";
+
 export * from "./scripts.ts";
 
 export * from "./dynamicGroups.ts";
