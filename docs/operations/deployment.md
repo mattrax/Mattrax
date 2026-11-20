@@ -103,6 +103,46 @@ Limitations worth knowing:
   interleave. Run destructive experiments on a local database instead.
 - Previews are public URLs. Do not register real customer data in them.
 
+## Agent releases
+
+`mattraxd` (the on-device agent) is released independently of the Workers by
+`.github/workflows/release-agent.yml`. The workflow is the only producer of
+agent binaries; `ci.yml` does not build them.
+
+- A pull request touching `apps/mattraxd/**` runs fmt, clippy, unit tests and the
+  macOS/Windows builds. Artifacts are unsigned and are not published.
+- Pushing a tag `mattraxd-v<version>` builds the universal macOS pkg, the
+  signed bare macOS binary, the Windows executable/zip and a signed update
+  manifest, then uploads them to the GitHub release.
+- The nightly schedule publishes `<next patch>-nightly.<date>` as a prerelease and
+  advances the rolling channel pointers in the `agent-channels` release:
+  `latest.json` (newest build) and `nightly.json` (informational pointer). A
+  stable tag advances `stable.json` and `latest.json`.
+- `workflow_dispatch` with `channel=nightly` publishes a nightly by hand;
+  `channel=stable` only builds and tests, so stable releases always go through a
+  tag.
+
+Devices update themselves from those pointers:
+
+```sh
+sudo mattraxd update --channel stable --check
+sudo mattraxd update --channel stable --restart
+```
+
+Verification is fail-closed: HTTPS-only URLs, a manifest version/channel check,
+the Ed25519 manifest signature, the artifact SHA-256 and a downgrade guard. See
+[`apps/mattraxd/README.md`](https://github.com/mattrax/Mattrax/tree/main/apps/mattraxd)
+for the manifest format, the `MATTRAXD_UPDATE_PUBLIC_KEY` variable and the full
+secret list (`DEVELOPER_ID_*`, `NOTARY_*`, `WINDOWS_CERTIFICATE`,
+`MATTRAXD_UPDATE_SIGNING_KEY`). Until those secrets exist the workflow still
+produces unsigned artifacts and warns in the run summary; it does not fail a
+fork or a pull request.
+
+Rolling an agent release back is a `mattraxd update --channel stable --force`
+after re-pointing `stable.json` at the older manifest (or restoring the previous
+release asset). Keep the per-release `mattraxd-manifest.json`: it records the
+exact artifact URLs and checksums that shipped.
+
 ## Rolling back production
 
 `cf` deploys immutable Worker versions. If a production deploy is bad:
