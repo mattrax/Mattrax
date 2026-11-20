@@ -24302,6 +24302,10 @@ export const createEnterpriseService = ({
           email,
           template: "registration_verification",
           recipient: address,
+          // The person is waiting on this code, so try the provider now instead
+          // of leaving it for the cron sweep. A failure still leaves the row for
+          // a retry, and `emailSent` then tells the page to say so.
+          deliverNow: true,
           dedupeKey: `registration-verification:${address}:${codeHash}`,
           message: {
             to: address,

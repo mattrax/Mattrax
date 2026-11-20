@@ -171,16 +171,8 @@ describe("enterprise API tokens", () => {
     );
 
     // A write permission carries its read companion.
-    expect(created.item.scopes).toEqual([
-      "devices.read",
-      "policies.read",
-      "policies.write",
-    ]);
-    expect(created.item.permissions).toEqual([
-      "devices.read",
-      "policies.read",
-      "policies.write",
-    ]);
+    expect(created.item.scopes).toEqual(["devices.read", "policies.read", "policies.write"]);
+    expect(created.item.permissions).toEqual(["devices.read", "policies.read", "policies.write"]);
     expect(db.store.account_api_token[0]).toMatchObject({
       scopes: ["devices.read", "policies.read", "policies.write"],
     });
@@ -447,7 +439,7 @@ describe("email verification", () => {
     expect(db.store.account[0]!.emailVerified).toBe(true);
   });
 
-  it("queues the code in the outbox for a provider transport", async () => {
+  it("tries the provider in the request and keeps a failed code queued", async () => {
     const sent: Array<unknown> = [];
 
     const { db, run } = makeContext(unverified(), {
@@ -458,16 +450,40 @@ describe("email verification", () => {
       }),
     });
 
-    await run((auth) => auth.requestEmailVerification(session()));
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
 
-    // The provider is never called from the request; one row is queued.
-    expect(sent).toHaveLength(0);
+    // A code cannot wait for the sweep, so the request attempts the row once...
+    expect(sent).toHaveLength(1);
+    // ...and the row survives the failure for the cron to retry, which is what
+    // lets the page tell the person the mail did not go out.
+    expect(requested.challenge).toEqual(expect.any(String));
+    expect(requested.emailSent).toBe(false);
     expect(db.store.email_outbox).toHaveLength(1);
     expect(db.store.email_outbox[0]).toMatchObject({
       recipient: "owner@example.com",
       template: "email_verification",
       subjectAccountId: "user-1",
       status: "pending",
+      attempts: 1,
+    });
+  });
+
+  it("reports a delivered verification code as sent", async () => {
+    const sent: Array<unknown> = [];
+
+    const { db, run } = makeContext(unverified(), {
+      email: makeEmailTransport(async (message: any) => void sent.push(message)),
+    });
+
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
+
+    // The address is waiting on this code, so it leaves in the request.
+    expect(sent).toHaveLength(1);
+    expect(requested.emailSent).toBe(true);
+    expect(db.store.email_outbox[0]).toMatchObject({
+      template: "email_verification",
+      status: "sent",
+      attempts: 1,
     });
   });
 

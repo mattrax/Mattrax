@@ -314,6 +314,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         input: {
           readonly template: "email_verification" | "email_change_confirm" | "email_change_notice";
           readonly dedupeKey?: string;
+          /** Send within the request; used for codes, which cannot wait. */
+          readonly deliverNow?: boolean;
           readonly message: {
             readonly to: string;
             readonly subject: string;
@@ -331,6 +333,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           recipient,
           subjectAccountId: accountId,
           dedupeKey: input.dedupeKey,
+          deliverNow: input.deliverNow,
           message: { from: emailFrom, ...input.message },
         });
 
@@ -1158,6 +1161,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const confirmation = yield* deliver(
             {
               template: "email_change_confirm",
+              // The address cannot be confirmed until this link arrives.
+              deliverNow: true,
               dedupeKey: `email_change_confirm:${changeId}`,
               message: {
                 to: newEmail,
@@ -1250,9 +1255,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
 
-          yield* deliver(
+          const delivered = yield* deliver(
             {
               template: "email_verification",
+              // A code the person is staring at a form for must not wait for the
+              // outbox sweep.
+              deliverNow: true,
               message: {
                 to: user.email,
                 subject: "Your Mattrax verification code",
@@ -1264,7 +1272,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             user.id,
           );
 
-          return { status: "ok" as const, challenge };
+          return {
+            status: "ok" as const,
+            challenge,
+            emailSent:
+              delivered === "queued" || delivered === "duplicate" || delivered === "delivered",
+          };
         });
 
       const verifyEmail = (

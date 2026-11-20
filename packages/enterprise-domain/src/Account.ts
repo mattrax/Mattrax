@@ -25,6 +25,12 @@ export const EmailVerificationResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Present when a verification code was issued. */
   challenge: Schema.optional(Schema.String),
+  /**
+   * Whether the code email was accepted for delivery. Absent on flows that send
+   * nothing; `false` lets the page say the mail did not go out instead of
+   * leaving someone waiting for it.
+   */
+  emailSent: Schema.optional(Schema.Boolean),
 });
 
 /**

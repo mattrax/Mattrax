@@ -119,8 +119,15 @@ const describeFailure = (cause: unknown): string => {
   return message.replaceAll(/\s+/g, " ").trim().slice(0, 500) || "delivery failed";
 };
 
+/** The queue write's outcome, plus the row a caller may deliver right away. */
+type EnqueueEmailRecord = {
+  readonly outcome: EnqueueEmailOutcome;
+  /** The row this call created, so the caller can try delivery once. */
+  readonly id: string | null;
+};
+
 /**
- * Insert one message, unless its dedupe key is already present.
+ * Insert one message and keep the row id.
  *
  * A lost response can make a client retry the whole request, so a caller that
  * can claim a message passes a key. The pre-flight select answers the common
@@ -130,10 +137,10 @@ const describeFailure = (cause: unknown): string => {
  * Never fails: a delivery queue problem must not fail the request that
  * triggered it. The caller only loses the `emailSent` claim.
  */
-export const enqueueEmail = (
+const enqueueEmailRecord = (
   db: EnterpriseDb,
   input: EnqueueEmailInput,
-): Effect.Effect<EnqueueEmailOutcome> =>
+): Effect.Effect<EnqueueEmailRecord> =>
   Effect.gen(function* () {
     const now = input.now ?? new Date();
     const dedupeKey = input.dedupeKey?.trim() || null;
@@ -145,12 +152,14 @@ export const enqueueEmail = (
         .where(eq(s.emailOutbox.dedupeKey, dedupeKey))
         .limit(1);
 
-      if (existing.length > 0) return "duplicate" as const;
+      if (existing.length > 0) return { outcome: "duplicate" as const, id: null };
     }
 
-    const register = Effect.gen(function* () {
+    const id = outboxId();
+
+    const register: Effect.Effect<EnqueueEmailRecord> = Effect.gen(function* () {
       yield* db.insert(s.emailOutbox).values({
-        id: outboxId(),
+        id,
         organizationId: input.organizationId ?? null,
         subjectAccountId: input.subjectAccountId ?? null,
         recipient: input.recipient,
@@ -166,16 +175,16 @@ export const enqueueEmail = (
         sentAt: null,
       });
 
-      return "queued" as const;
+      return { outcome: "queued" as const, id };
     }).pipe(
-      Effect.catch((cause) => {
+      Effect.catch((cause): Effect.Effect<EnqueueEmailRecord> => {
         // MySQL reports a lost unique race as ER_DUP_ENTRY on the dedupe key.
         if (dedupeKey !== null && /duplicate entry/i.test(describeFailure(cause)))
-          return Effect.succeed("duplicate" as const);
+          return Effect.succeed({ outcome: "duplicate" as const, id: null });
 
         return Effect.logError("Transactional email could not be queued", {
           template: input.template,
-        }).pipe(Effect.as("failed" as const));
+        }).pipe(Effect.as({ outcome: "failed" as const, id: null }));
       }),
     );
 
@@ -185,9 +194,21 @@ export const enqueueEmail = (
       Effect.logError("Transactional email could not be queued", {
         template: input.template,
         cause,
-      }).pipe(Effect.as("failed" as const)),
+      }).pipe(Effect.as({ outcome: "failed" as const, id: null })),
     ),
   );
+
+/**
+ * Insert one message, unless its dedupe key is already present.
+ *
+ * Prefer {@link sendTransactionalEmail}; this is the raw queue write for callers
+ * that own delivery themselves.
+ */
+export const enqueueEmail = (
+  db: EnterpriseDb,
+  input: EnqueueEmailInput,
+): Effect.Effect<EnqueueEmailOutcome> =>
+  enqueueEmailRecord(db, input).pipe(Effect.map((record) => record.outcome));
 
 export type TransactionalEmailOutcome = "queued" | "delivered" | "duplicate" | "failed" | "skipped";
 
@@ -195,12 +216,23 @@ export type SendTransactionalEmailInput = EnqueueEmailInput & {
   readonly db: EnterpriseDb;
   /** `undefined` when the deployment has no mailer at all. */
   readonly email: EmailTransport | undefined;
+  /**
+   * Try the provider once before answering, instead of waiting for the sweep.
+   *
+   * Verification codes are useless an hour later, so the request that issues one
+   * wants the real answer (`delivered`) and the person gets the mail in seconds.
+   * The row is still the durable record: a failed attempt backs off and the
+   * cron retries, so nothing is lost and the request never fails on the
+   * provider.
+   */
+  readonly deliverNow?: boolean;
 };
 
 /**
  * Route one non-onboarding transactional message.
  *
- * - A real transport queues it in the outbox and answers `queued`.
+ * - A real transport queues it in the outbox; with `deliverNow` the request
+ *   also attempts that row once and answers `delivered` or `failed`.
  * - The local debug mailbox (`email.local`) delivers immediately.
  * - No transport answers `skipped`; callers decide whether that is an error
  *   (verification cannot work without mail) or just a link the admin can copy
@@ -222,7 +254,31 @@ export const sendTransactionalEmail = (
       return "skipped" as const;
     }
 
-    if (!input.email.local) return yield* enqueueEmail(input.db, input);
+    if (!input.email.local) {
+      const queued = yield* enqueueEmailRecord(input.db, input);
+
+      if (queued.outcome !== "queued" || queued.id === null) return queued.outcome;
+
+      if (!input.deliverNow) return "queued" as const;
+
+      const delivery = yield* deliverQueuedEmail(input.db, input.email, queued.id, {
+        now: input.now,
+      });
+
+      if (delivery === "sent") return "delivered" as const;
+
+      // The caller asked for the real answer. A failed attempt is reported as
+      // `failed` even though the row is still pending for the sweep, so a page
+      // can say the mail did not go out instead of leaving someone waiting. The
+      // row's `lastError` carries the provider's reason; the log stays
+      // address-free.
+      yield* Effect.logWarning("Transactional email is queued for retry", {
+        template: input.template,
+        outcome: delivery,
+      });
+
+      return "failed" as const;
+    }
 
     const delivered = yield* input.email.send(input.message).pipe(
       Effect.as(true),
@@ -338,6 +394,143 @@ const recordPermanentFailure = (
     ),
   );
 
+const outboxRowColumns = {
+  id: s.emailOutbox.id,
+  organizationId: s.emailOutbox.organizationId,
+  subjectAccountId: s.emailOutbox.subjectAccountId,
+  recipient: s.emailOutbox.recipient,
+  template: s.emailOutbox.template,
+  attempts: s.emailOutbox.attempts,
+  payload: s.emailOutbox.payload,
+};
+
+type DeliverOutboxRowOptions = {
+  readonly now: Date;
+  readonly maxAttempts: number;
+  readonly staleCutoff: Date;
+};
+
+/**
+ * Claim and deliver one row, recording the outcome on the row itself.
+ *
+ * The claim is a compare-and-set on the attempt count, so a request that tries
+ * a row inline and the cron that later finds it cannot both send it.
+ */
+const deliverOutboxRow = (
+  db: EnterpriseDb,
+  transport: EmailTransport,
+  row: OutboxRow,
+  options: DeliverOutboxRowOptions,
+): Effect.Effect<"sent" | "retried" | "failed" | "skipped"> =>
+  Effect.gen(function* () {
+    const { now, maxAttempts, staleCutoff } = options;
+    const attempts = row.attempts + 1;
+
+    const claimed = yield* db
+      .update(s.emailOutbox)
+      .set({ claimedAt: now, attempts })
+      .where(
+        and(
+          eq(s.emailOutbox.id, row.id),
+          eq(s.emailOutbox.attempts, row.attempts),
+          eq(s.emailOutbox.status, "pending"),
+          or(isNull(s.emailOutbox.claimedAt), lt(s.emailOutbox.claimedAt, staleCutoff)),
+        ),
+      );
+
+    if (claimed.affectedRows !== 1) return "skipped" as const;
+
+    const payload = Option.getOrNull(Schema.decodeUnknownOption(EmailOutboxPayload)(row.payload));
+
+    const failure = payload
+      ? yield* transport.send(payload).pipe(
+          Effect.as(null),
+          Effect.catch((cause) => Effect.succeed(describeFailure(cause))),
+        )
+      : "stored message could not be read";
+
+    if (failure === null) {
+      yield* db
+        .update(s.emailOutbox)
+        .set({
+          status: "sent",
+          claimedAt: null,
+          lastError: null,
+          sentAt: now,
+        })
+        .where(eq(s.emailOutbox.id, row.id));
+
+      return "sent" as const;
+    }
+
+    const exhausted = attempts >= maxAttempts;
+
+    yield* db
+      .update(s.emailOutbox)
+      .set({
+        status: exhausted ? "failed" : "pending",
+        claimedAt: null,
+        lastError: failure,
+        nextAttemptAt: exhausted ? now : new Date(now.getTime() + emailOutboxBackoffMs(attempts)),
+      })
+      .where(eq(s.emailOutbox.id, row.id));
+
+    if (exhausted) yield* recordPermanentFailure(db, row, attempts, now);
+
+    return exhausted ? ("failed" as const) : ("retried" as const);
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logError("Email outbox delivery failed", {
+        template: row.template,
+        cause,
+      }).pipe(Effect.as("retried" as const)),
+    ),
+  );
+
+/**
+ * Try one freshly queued row now.
+ *
+ * A verification code that waits for the sweep is useless, so the request that
+ * issued it attempts delivery before answering. This is not a second delivery
+ * path: the same claim, backoff and audit apply, and a failure simply leaves the
+ * row for the cron.
+ */
+export const deliverQueuedEmail = (
+  db: EnterpriseDb,
+  email: EmailTransport | undefined,
+  id: string,
+  options: { readonly now?: Date; readonly maxAttempts?: number } = {},
+): Effect.Effect<"sent" | "retried" | "failed" | "skipped"> =>
+  Effect.gen(function* () {
+    if (!email) return "skipped" as const;
+
+    const now = options.now ?? new Date();
+
+    const rows = yield* db
+      .select(outboxRowColumns)
+      .from(s.emailOutbox)
+      .where(and(eq(s.emailOutbox.id, id), eq(s.emailOutbox.status, "pending")))
+      .limit(1);
+
+    const row = rows[0];
+
+    if (!row) return "skipped" as const;
+
+    return yield* deliverOutboxRow(db, email, row, {
+      now,
+      maxAttempts: Math.max(1, options.maxAttempts ?? EMAIL_OUTBOX_MAX_ATTEMPTS),
+      staleCutoff: new Date(now.getTime() - EMAIL_OUTBOX_CLAIM_STALE_MS),
+    });
+  }).pipe(
+    // A database hiccup must not fail the request that already queued the
+    // message; the cron still owns the row.
+    Effect.catchCause((cause) =>
+      Effect.logError("Queued email could not be delivered immediately", { cause }).pipe(
+        Effect.as("skipped" as const),
+      ),
+    ),
+  );
+
 /**
  * Drain due rows. Every row is claimed before delivery and every outcome is
  * recorded on the row itself, so a crash costs at most one stale claim.
@@ -382,78 +575,11 @@ export const drainEmailOutbox = (
       .orderBy(asc(s.emailOutbox.nextAttemptAt))
       .limit(limit);
 
-    const send = (row: OutboxRow) =>
-      Effect.gen(function* () {
-        const attempts = row.attempts + 1;
-
-        // Claim with a compare-and-set on the attempt count so two isolates
-        // that read the same row cannot both deliver it.
-        const claimed = yield* db
-          .update(s.emailOutbox)
-          .set({ claimedAt: now, attempts })
-          .where(
-            and(
-              eq(s.emailOutbox.id, row.id),
-              eq(s.emailOutbox.attempts, row.attempts),
-              eq(s.emailOutbox.status, "pending"),
-              or(isNull(s.emailOutbox.claimedAt), lt(s.emailOutbox.claimedAt, staleCutoff)),
-            ),
-          );
-
-        if (claimed.affectedRows !== 1) return "skipped" as const;
-
-        const payload = Option.getOrNull(
-          Schema.decodeUnknownOption(EmailOutboxPayload)(row.payload),
-        );
-
-        const failure = payload
-          ? yield* transport.send(payload).pipe(
-              Effect.as(null),
-              Effect.catch((cause) => Effect.succeed(describeFailure(cause))),
-            )
-          : "stored message could not be read";
-
-        if (failure === null) {
-          yield* db
-            .update(s.emailOutbox)
-            .set({
-              status: "sent",
-              claimedAt: null,
-              lastError: null,
-              sentAt: now,
-            })
-            .where(eq(s.emailOutbox.id, row.id));
-
-          return "sent" as const;
-        }
-
-        const exhausted = attempts >= maxAttempts;
-
-        yield* db
-          .update(s.emailOutbox)
-          .set({
-            status: exhausted ? "failed" : "pending",
-            claimedAt: null,
-            lastError: failure,
-            nextAttemptAt: exhausted
-              ? now
-              : new Date(now.getTime() + emailOutboxBackoffMs(attempts)),
-          })
-          .where(eq(s.emailOutbox.id, row.id));
-
-        if (exhausted) yield* recordPermanentFailure(db, row, attempts, now);
-
-        return exhausted ? ("failed" as const) : ("retried" as const);
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logError("Email outbox delivery failed", {
-            template: row.template,
-            cause,
-          }).pipe(Effect.as("retried" as const)),
-        ),
-      );
-
-    const outcomes = yield* Effect.forEach(rows, send, { concurrency });
+    const outcomes = yield* Effect.forEach(
+      rows,
+      (row) => deliverOutboxRow(db, transport, row, { now, maxAttempts, staleCutoff }),
+      { concurrency },
+    );
 
     return {
       due: rows.length,

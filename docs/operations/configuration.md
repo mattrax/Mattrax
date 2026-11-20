@@ -234,12 +234,19 @@ until a supported update source is added; they are not counted as up to date.
 ## Transactional email
 
 Invitations, verification codes, email-change notices and credential-expiry
-alerts are queued in the `email_outbox` table and delivered by the cron, not
-sent inline. A request writes one row per recipient with the rendered message;
-an outage delays mail instead of failing the request or losing the message.
+alerts are queued in the `email_outbox` table. A request writes one row per
+recipient with the rendered message; an outage delays mail instead of failing
+the request or losing the message.
 
-- The hourly trigger drains the outbox; the daily maintenance run drains and
-  prunes it as well, so a deployment with only one cron still delivers.
+- Verification codes and the email-change confirmation are the exception: the
+  request also attempts that one row immediately, because a code the person is
+  waiting on cannot sit until the next sweep. The row is still the durable
+  record — a failed attempt backs off and is retried like any other — and the
+  response reports `emailSent: false` so the page can say the mail did not go
+  out.
+- Every other message waits for the sweep. The hourly trigger drains the outbox;
+  the daily maintenance run drains and prunes it as well, so a deployment with
+  only one cron still delivers.
 - Attempts back off exponentially from 5 minutes, capped at 6 hours, and a row
   is permanently failed after `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` (default
   5). The failure is written to the tenant audit log as
@@ -273,6 +280,14 @@ is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defau
 only accepts the addresses listed in `apps/cloud/cloudflare.config.ts`
 (`hello@mattrax.cloud`); set `MAIL_TRANSPORT=smtp` to send from
 another verified domain.
+
+Cloudflare refuses recipients with `destination address is not a verified
+address` until the sender's domain is onboarded to Email Sending in that
+account. That failure is recorded on the outbox row (and audited once the
+attempts run out), and the sign-up page reports it as "we couldn't send that
+email", so a binding that deploys but never delivers is visible rather than
+silent. Onboard the domain, or switch to `MAIL_TRANSPORT=smtp`.
+
 `/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
 (the transport is misconfigured or missing), so a typo cannot look healthy.
 
