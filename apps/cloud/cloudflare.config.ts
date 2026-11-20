@@ -137,6 +137,8 @@ export const apiWorker = {
     STRIPE_LICENSE_PRICE_ID: bindings.text(process.env.STRIPE_LICENSE_PRICE_ID ?? ""),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
+    /** Comma-separated verified emails that always hold platform superadmin. */
+    MATTRAX_SUPERADMINS: bindings.secret(),
     /**
      * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
      * One hour by default; deployments can raise it up to one day.

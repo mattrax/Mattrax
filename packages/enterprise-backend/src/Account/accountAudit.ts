@@ -29,6 +29,9 @@ export const ACCOUNT_AUDIT = {
   apiTokenRevoked: "account.api_token_revoked",
   sessionRevoked: "account.session_revoked",
   sessionsRevoked: "account.sessions_revoked",
+  /** A platform operator granted or revoked the target's superadmin flag. */
+  superadminGranted: "account.superadmin_granted",
+  superadminRevoked: "account.superadmin_revoked",
   deleted: "account.deleted",
   recoveryRequested: "account.recovery_requested",
   recoveryApproved: "account.recovery_approved",
@@ -57,6 +60,13 @@ export type AccountAuditInput = {
 const accountAuditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /**
+ * The audit writer only needs `insert`, not the whole database handle. Narrowing
+ * the parameter lets a transaction (which lacks `$client`) append an entry in
+ * the same unit of work as the change it records.
+ */
+export type AccountAuditWriter = Pick<EnterpriseDb, "insert">;
+
+/**
  * Append one account-scoped audit entry.
  *
  * Callers that must not fail a user action because the trail is unavailable
@@ -65,7 +75,7 @@ const accountAuditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24
  * performed without its record.
  */
 export const recordAccountAudit = (
-  db: EnterpriseDb,
+  db: AccountAuditWriter,
   input: AccountAuditInput,
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {

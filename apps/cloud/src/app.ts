@@ -8,6 +8,7 @@ import type { AuthLiveOptions } from "@mattrax/enterprise-backend";
 import {
   AuthApi,
   enterpriseAccountApi,
+  enterpriseAdminApi,
   enterpriseApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
@@ -17,6 +18,7 @@ import {
   enterpriseSoftwareUpdateApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  parseSuperadminEmails,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
@@ -25,6 +27,7 @@ import {
   EnterpriseService,
   androidRoutes,
   enterpriseAccountHandlers,
+  enterpriseAdminHandlers,
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
@@ -150,6 +153,13 @@ const planLimits = parsePlanLimits(apiEnv.MATTRAX_PLAN_LIMITS);
 for (const warning of planLimits.warnings) console.warn(warning);
 
 /**
+ * Platform operators named by the deployment. The allowlist is authoritative
+ * over the stored flag, so it is the bootstrap path for a fresh deployment and
+ * a hard ceiling against a mistaken demotion.
+ */
+const superadmins = parseSuperadminEmails(apiEnv.MATTRAX_SUPERADMINS);
+
+/**
  * Apple enrollment profiles carry a one-time bearer challenge. The default
  * lifetime is one hour; a deployment can choose any whole number of seconds
  * between one minute and one day.
@@ -215,6 +225,7 @@ const authHttps = Http.make(appAuth, {
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAccountApi)
+  .add(enterpriseAdminApi)
   .add(enterpriseApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
@@ -277,6 +288,7 @@ const apiDocsResponse = () => HttpServerResponse.html(apiDocsHtml);
 
 const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAccount", enterpriseAccountHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseAdmin", enterpriseAdminHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
@@ -802,6 +814,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
+      superadmins,
       email,
       // `MAIL_FROM` decides the envelope sender for every provider; the
       // invitation-specific override still wins when an operator wants the

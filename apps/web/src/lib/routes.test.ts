@@ -19,6 +19,11 @@ describe("route builders", () => {
     expect(tenant.user("user/1")).toBe("/t/acme%20corp/users/user%2F1");
   });
 
+  it("keeps platform routes outside every tenant", () => {
+    expect(routes.adminAccounts()).toBe("/admin/accounts");
+    expect(routes.account()).toBe("/account");
+  });
+
   it("builds settings tabs and the general tab", () => {
     const tenant = routes.tenant("acme");
 

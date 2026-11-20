@@ -29,6 +29,7 @@ import {
   EnterpriseUnauthorized,
   EnterpriseService,
   enterpriseAccountApi,
+  enterpriseAdminApi,
   enterpriseApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
@@ -109,6 +110,12 @@ import {
   deriveSoftwareUpdate,
   macOsUpdateBaseline,
   softwareUpdateRank,
+  isEnvManagedSuperadmin,
+  isSuperadmin,
+  normalizeAdminAccountsQuery,
+  superadminSource,
+  type AdminAccountInfo,
+  type AdminAccountMembership,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
@@ -579,6 +586,11 @@ export type EnterpriseHandlersConfig = {
   readonly android?: AndroidDeliveryConfig;
   /** ABM/VPP outbound client overrides (tests use an injected fetch). */
   readonly appleApi?: AppleApiConfig;
+  /**
+   * Deployment-owned platform operators, parsed from `MATTRAX_SUPERADMINS`.
+   * Normalised, case-insensitive addresses; empty when unconfigured.
+   */
+  readonly superadmins?: ReadonlyArray<string>;
   /** Injected fetch for outbound webhook deliveries (tests). */
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Per-attempt webhook delivery deadline. Defaults to 5s. */
@@ -1467,6 +1479,7 @@ export const createEnterpriseService = ({
   apns: apnsService,
   android: androidConfig,
   appleApi,
+  superadmins: configuredSuperadmins,
   email,
   invitationFromEmail,
   azureGraph,
@@ -1489,6 +1502,14 @@ export const createEnterpriseService = ({
   softwareUpdateFetch,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
+  /**
+   * Normalised once per service instance. The environment allowlist is not
+   * request input; it is deployment configuration fixed at boot.
+   */
+  const superadminAllowlist: ReadonlySet<string> = new Set(
+    (configuredSuperadmins ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean),
+  );
 
   const windowsFailureRetentionDays =
     configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
@@ -5870,6 +5891,7 @@ export const createEnterpriseService = ({
     readonly totpEnabled?: boolean | null;
     readonly passkeyEnabled?: boolean | null;
     readonly defaultTenantId?: string | null;
+    readonly superadmin?: boolean | null;
   }) =>
     Effect.gen(function* () {
       // Do not disclose tenant membership to an unverified account. The
@@ -5902,6 +5924,7 @@ export const createEnterpriseService = ({
           passkeyEnabled: user.passkeyEnabled === true,
           mfaRequired,
           defaultTenantId,
+          superadmin: isSuperadmin(user, superadminAllowlist),
         },
         tenants,
       };
@@ -6973,6 +6996,158 @@ export const createEnterpriseService = ({
       );
     });
 
+  /**
+   * Platform authority is never inferred from a tenant membership. The check
+   * reads the caller's own account row (resolved by `requireUser`) and the
+   * deployment allowlist, in that order of trust.
+   */
+  const requirePlatformSuperadmin = (user: {
+    readonly email: string;
+    readonly emailVerified?: boolean | null;
+    readonly superadmin?: boolean | null;
+  }) =>
+    isSuperadmin(user, superadminAllowlist)
+      ? Effect.void
+      : Effect.fail(
+          new EnterpriseForbidden({
+            message: "Platform administrator access is required.",
+          }),
+        );
+
+  type AdminAccountRow = {
+    readonly id: string;
+    readonly name: string;
+    readonly email: string;
+    readonly emailVerified: boolean;
+    readonly disabled: boolean;
+    readonly superadmin: boolean;
+    readonly createdAt: Date;
+  };
+
+  /** Memberships for a page of accounts, resolved in one join per page. */
+  const adminMembershipsFor = (accountIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (accountIds.length === 0) return new Map<string, Array<AdminAccountMembership>>();
+
+      const rows = yield* db
+        .select({
+          accountId: schema.member.accountId,
+          tenantId: schema.organization.id,
+          tenantName: schema.organization.name,
+          tenantSlug: schema.organization.slug,
+          role: schema.member.role,
+          customRoleId: schema.member.customRoleId,
+          customRoleName: schema.tenantRole.name,
+          customRolePermissions: schema.tenantRole.permissions,
+          createdAt: schema.member.createdAt,
+        })
+        .from(schema.member)
+        .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+        .leftJoin(
+          schema.tenantRole,
+          and(
+            eq(schema.tenantRole.id, schema.member.customRoleId),
+            eq(schema.tenantRole.organizationId, schema.member.organizationId),
+          ),
+        )
+        .where(inArray(schema.member.accountId, [...accountIds]));
+
+      const byAccount = new Map<string, Array<AdminAccountMembership>>();
+
+      for (const row of rows) {
+        const role = resolveTenantRoleFrom(
+          { role: row.role, organizationId: row.tenantId, customRoleId: row.customRoleId },
+          row.customRoleId && row.customRoleName
+            ? {
+                id: row.customRoleId,
+                name: row.customRoleName,
+                permissions: row.customRolePermissions,
+              }
+            : undefined,
+        );
+
+        const list = byAccount.get(row.accountId) ?? [];
+
+        list.push({
+          tenantId: row.tenantId,
+          tenantName: row.tenantName,
+          tenantSlug: row.tenantSlug,
+          role: row.role,
+          roleName: role.roleName,
+          roleKind: role.roleKind,
+          createdAt: row.createdAt.toISOString(),
+        });
+        byAccount.set(row.accountId, list);
+      }
+
+      return byAccount;
+    });
+
+  const adminAccountInfos = (rows: ReadonlyArray<AdminAccountRow>) =>
+    Effect.gen(function* () {
+      const memberships = yield* adminMembershipsFor(rows.map((row) => row.id));
+
+      return rows.map(
+        (row): AdminAccountInfo => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          emailVerified: row.emailVerified,
+          disabled: row.disabled,
+          createdAt: row.createdAt.toISOString(),
+          superadmin: isSuperadmin(row, superadminAllowlist),
+          superadminSource: superadminSource(row, superadminAllowlist),
+          memberships: memberships.get(row.id) ?? [],
+        }),
+      );
+    });
+
+  /**
+   * Serialise superadmin mutations on the stored rows. The count that protects
+   * the last operator must be read under the same lock as the write, or two
+   * concurrent demotions could each observe the other and leave none.
+   */
+  const lockStoredSuperadmins = (tx: Pick<EnterpriseDb, "select">) =>
+    tx
+      .select({ id: schema.account.id, disabled: schema.account.disabled })
+      .from(schema.account)
+      .where(eq(schema.account.superadmin, true))
+      .orderBy(asc(schema.account.id))
+      .for("update");
+
+  /**
+   * Effective, enabled superadmins other than `targetId`. Environment entries
+   * are included because they remain operators even when the stored column is
+   * false; disabled accounts are excluded because they cannot sign in.
+   */
+  const otherEffectiveSuperadmins = (
+    tx: Pick<EnterpriseDb, "select">,
+    locked: ReadonlyArray<{ readonly id: string; readonly disabled: boolean }>,
+    targetId: string,
+  ) =>
+    Effect.gen(function* () {
+      const ids = new Set(locked.flatMap((row) => (row.disabled ? [] : [row.id])));
+
+      if (superadminAllowlist.size > 0) {
+        const envRows = yield* tx
+          .select({
+            id: schema.account.id,
+            email: schema.account.email,
+            emailVerified: schema.account.emailVerified,
+            disabled: schema.account.disabled,
+          })
+          .from(schema.account)
+          .where(inArray(schema.account.email, [...superadminAllowlist]));
+
+        for (const row of envRows)
+          if (!row.disabled && isEnvManagedSuperadmin(row, superadminAllowlist)) ids.add(row.id);
+      }
+
+      ids.delete(targetId);
+
+      return ids.size;
+    });
+
   const service = {
     /**
      * The account and tenant shell. Kept as one helper so bootstrap reuses the
@@ -7030,6 +7205,184 @@ export const createEnterpriseService = ({
           permissions: PERMISSIONS.filter((permission) => effective.has(permission)),
           methods,
         };
+      }),
+    /**
+     * Cross-tenant account catalogue for platform operators. Search matches
+     * name or email; the page size and offset are bounded by the contract and
+     * again here so an internal caller cannot ask for the whole table.
+     */
+    listAdminAccounts: (request, query) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+
+        yield* requirePlatformSuperadmin(user);
+        yield* identifyUser(user);
+
+        const { q, limit, offset } = normalizeAdminAccountsQuery(query);
+        const pattern = q ? `%${escapeLike(q)}%` : undefined;
+
+        const where = pattern
+          ? or(like(schema.account.name, pattern), like(schema.account.email, pattern))
+          : undefined;
+
+        const rows = yield* db
+          .select({
+            id: schema.account.id,
+            name: schema.account.name,
+            email: schema.account.email,
+            emailVerified: schema.account.emailVerified,
+            disabled: schema.account.disabled,
+            superadmin: schema.account.superadmin,
+            createdAt: schema.account.createdAt,
+          })
+          .from(schema.account)
+          .where(where)
+          .orderBy(desc(schema.account.createdAt), desc(schema.account.id))
+          .limit(limit)
+          .offset(offset);
+
+        const [totalRow] = yield* db
+          .select({ value: count() })
+          .from(schema.account)
+          .where(where);
+
+        return {
+          accounts: yield* adminAccountInfos(rows),
+          total: Number(totalRow?.value ?? 0),
+          limit,
+          offset,
+        };
+      }),
+    /**
+     * Grant or revoke the stored superadmin flag.
+     *
+     * The environment allowlist is authoritative: an account it names cannot
+     * be demoted. Self-demotion and removing the last effective operator are
+     * refused, and promoting a disabled account would hand authority to an
+     * identity that cannot sign in.
+     */
+    patchAdminAccountSuperadmin: (request, accountId, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+
+        yield* requirePlatformSuperadmin(user);
+        yield* identifyUser(user);
+
+        const next = payload.superadmin;
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            // Take the same lock for promotions and demotions so the last
+            // operator count cannot race with a concurrent grant.
+            const locked = yield* lockStoredSuperadmins(tx);
+
+            const [target] = yield* tx
+              .select({
+                id: schema.account.id,
+                email: schema.account.email,
+                emailVerified: schema.account.emailVerified,
+                disabled: schema.account.disabled,
+                superadmin: schema.account.superadmin,
+              })
+              .from(schema.account)
+              .where(eq(schema.account.id, accountId))
+              .limit(1)
+              .for("update");
+
+            if (!target)
+              return yield* Effect.fail(
+                new EnterpriseNotFound({ message: "Account not found" }),
+              );
+
+            const before = isSuperadmin(target, superadminAllowlist);
+
+            if (next) {
+              if (before) return;
+
+              if (target.disabled)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message: "A disabled account cannot become a platform administrator.",
+                  }),
+                );
+
+              yield* tx
+                .update(schema.account)
+                .set({ superadmin: true, updatedAt: now() })
+                .where(eq(schema.account.id, target.id));
+
+              yield* recordAccountAudit(tx, {
+                subjectAccountId: target.id,
+                subjectEmail: target.email,
+                actorAccountId: user.id,
+                actorEmail: user.email,
+                action: ACCOUNT_AUDIT.superadminGranted,
+                targetType: "account",
+                targetId: target.id,
+                metadata: {
+                  target: { id: target.id, email: target.email },
+                  before: { superadmin: before },
+                  after: { superadmin: true },
+                },
+              });
+
+              return;
+            }
+
+            if (isEnvManagedSuperadmin(target, superadminAllowlist))
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message:
+                    "This account is listed in MATTRAX_SUPERADMINS and cannot be demoted here.",
+                }),
+              );
+
+            if (!before) return;
+
+            // Checked before self-demotion: when the caller is the only
+            // operator, "you cannot demote yourself" and "the last operator
+            // cannot be removed" are the same refusal, and the state conflict
+            // is the more precise answer. Serialised with the lock above, this
+            // also stops two operators demoting each other concurrently.
+            const remaining = yield* otherEffectiveSuperadmins(tx, locked, target.id);
+
+            if (remaining === 0)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "The last platform administrator cannot be demoted.",
+                }),
+              );
+
+            if (target.id === user.id)
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message: "You cannot remove your own platform administrator access.",
+                }),
+              );
+
+            yield* tx
+              .update(schema.account)
+              .set({ superadmin: false, updatedAt: now() })
+              .where(eq(schema.account.id, target.id));
+
+            yield* recordAccountAudit(tx, {
+              subjectAccountId: target.id,
+              subjectEmail: target.email,
+              actorAccountId: user.id,
+              actorEmail: user.email,
+              action: ACCOUNT_AUDIT.superadminRevoked,
+              targetType: "account",
+              targetId: target.id,
+              metadata: {
+                target: { id: target.id, email: target.email },
+                before: { superadmin: before },
+                after: { superadmin: false },
+              },
+            });
+          }),
+        );
+
+        return { status: "ok" as const };
       }),
     bootstrap: (request) =>
       Effect.gen(function* () {
@@ -21643,6 +21996,19 @@ export const enterpriseAccountHandlers = (
     )
     .handle("deleteMe", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.deleteMe(request)),
+    );
+
+export const enterpriseAdminHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseAdminApi>,
+) =>
+  handlers
+    .handle("listAdminAccounts", ({ request, query }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listAdminAccounts(request, query)),
+    )
+    .handle("patchAdminAccountSuperadmin", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchAdminAccountSuperadmin(request, params.accountId, payload),
+      ),
     );
 
 export const enterpriseAdeHandlers = (
