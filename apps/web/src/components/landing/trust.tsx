@@ -118,9 +118,7 @@ function DeploymentSwitch() {
             Self-hosted runs as one Node container against MySQL, with object storage on a local
             volume.
           </p>
-          <p class="lx-deploy__note">
-            Self-hosted deployments are licensed per enrolled device.
-          </p>
+          <p class="lx-deploy__note">Self-hosted deployments are licensed per enrolled device.</p>
         </div>
       </div>
 

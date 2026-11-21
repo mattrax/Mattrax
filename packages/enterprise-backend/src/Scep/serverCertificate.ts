@@ -22,7 +22,7 @@ import type { EnterpriseDb } from "../schema.ts";
  * probe error that hides why.
  */
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -166,11 +166,14 @@ export const probeServerCertificate: ServerCertificateProbe = (options) =>
         if (url.protocol !== "https:")
           throw new Error(`The origin uses ${url.protocol}, not https`);
 
-        const hostname = url.hostname.replace(/^\[|\]$/g, "");
+        const hostname = url.hostname.replaceAll(/^\[|\]$/g, "");
         const port = url.port ? Number(url.port) : 443;
         const timeoutMs = options.timeoutMs ?? SERVER_CERTIFICATE_PROBE_TIMEOUT_MS;
 
         let settled = false;
+        // Assigned once, after the callbacks that read it are defined, so it
+        // cannot be a \`const\` declaration.
+        // oxlint-disable-next-line prefer-const -- assigned after the closures that capture it.
         let timer: ReturnType<typeof setTimeout> | undefined;
 
         const finish = (error: Error | null, peer?: ServerCertificatePeer) => {
@@ -232,8 +235,8 @@ export const probeServerCertificate: ServerCertificateProbe = (options) =>
                   chainLength: countChain(peer),
                 }),
               );
-            } catch (cause) {
-              finish(cause instanceof Error ? cause : new Error(String(cause)));
+            } catch (error) {
+              finish(error instanceof Error ? error : new Error(String(error)));
             }
           })();
         });
@@ -308,8 +311,8 @@ export const runServerCertificateCheck = (
       readonly error: string | null;
     } = yield* probe({ origin: options.origin, timeoutMs: options.timeoutMs }).pipe(
       Effect.map((peer) => ({ peer, error: null })),
-      Effect.catch((cause: Error) =>
-        Effect.succeed({ peer: null, error: cause.message || "TLS probe failed" }),
+      Effect.catch((error: Error) =>
+        Effect.succeed({ peer: null, error: error.message || "TLS probe failed" }),
       ),
     );
 

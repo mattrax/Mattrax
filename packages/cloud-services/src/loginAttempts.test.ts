@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Layer, type Schema } from "effect";
+import { Effect, Layer } from "effect";
+import type { Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { signInFactorForPath } from "@mattrax/enterprise-backend";
@@ -9,7 +10,10 @@ import { normalisePath } from "./rateLimit.js";
 const chrome =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const delay = (millis: number) => new Promise((resolve) => setTimeout(resolve, millis));
+const delay = (millis: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, millis);
+  });
 
 /** The recorder runs detached, so give its fiber a moment to finish. */
 const waitForRows = async (rows: Array<Schema.Json>, expected: number) => {

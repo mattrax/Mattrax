@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
@@ -12,9 +13,8 @@ import {
   TENANT_IMPORT_MAX_BYTES,
   validateTenantBranding,
   TenantImportRequest as TenantImportRequestSchema,
-  type TenantImportRequest,
-  type TenantImportResponse,
 } from "@mattrax/enterprise-domain/client";
+import type { TenantImportRequest, TenantImportResponse } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import {
@@ -463,6 +463,9 @@ export default function GeneralSettingsPage() {
         if (result.status === 403) {
           const body = await result.json().catch(() => null);
 
+          // The body is a schema-validated step-up failure, not an Error; the
+          // caller matches it structurally.
+          // oxlint-disable-next-line typescript/only-throw-error -- typed error body, matched by the caller.
           if (isStepUpFailure(body)) throw body;
         }
 
@@ -713,7 +716,7 @@ export default function GeneralSettingsPage() {
                 pattern="[A-Za-z]{2}"
                 onInput={(e) => {
                   setAppStoreRegion(
-                    e.currentTarget.value.replace(/[^a-zA-Z]/g, "").toUpperCase(),
+                    e.currentTarget.value.replaceAll(/[^a-zA-Z]/g, "").toUpperCase(),
                   );
                 }}
               />
@@ -737,7 +740,7 @@ export default function GeneralSettingsPage() {
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <Show when={tenant.data}>
               <span class="text-xs text-muted-foreground">
-                Created {new Date(tenant.data!.createdAt).toLocaleDateString()}
+                Created {new Date(tenant.data.createdAt).toLocaleDateString()}
               </span>
             </Show>
             <Show when={canWrite()}>

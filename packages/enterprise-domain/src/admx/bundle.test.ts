@@ -55,8 +55,7 @@ const CATALOGUE = buildAdmxCatalogueIndex([
     id: "windows/settings/access-denied-assistance",
     properties: [
       {
-        address:
-          "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
+        address: "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
       },
     ],
   },
@@ -77,7 +76,7 @@ describe("parseAdmxBundle", () => {
     expect(bundle.issues).toEqual([]);
     expect(bundle.policies).toHaveLength(2);
 
-    const device = bundle.policies[0]!;
+    const device = bundle.policies[0];
 
     expect(device.source).toBe("vendor");
     expect(device.appName).toBe("CompanyApp");
@@ -110,7 +109,7 @@ describe("parseAdmxBundle", () => {
 
     expect(bundle.policies).toHaveLength(2);
 
-    const matched = bundle.policies[0]!;
+    const matched = bundle.policies[0];
 
     expect(matched).toMatchObject({
       source: "inbox",
@@ -120,7 +119,7 @@ describe("parseAdmxBundle", () => {
     expect(matched.ingestionUri).toBeUndefined();
     expect(matched.admxPayload).toBeUndefined();
 
-    const unmatched = bundle.policies[1]!;
+    const unmatched = bundle.policies[1];
 
     expect(unmatched.source).toBe("inbox");
     expect(unmatched.omaUri).toBe("");
@@ -128,9 +127,7 @@ describe("parseAdmxBundle", () => {
   });
 
   it("derives the app and file ids from the template name, not its zip path", () => {
-    const bundle = parseAdmxBundle([
-      { name: "templates/admx/contoso.admx", text: VENDOR_ADMX },
-    ]);
+    const bundle = parseAdmxBundle([{ name: "templates/admx/contoso.admx", text: VENDOR_ADMX }]);
 
     expect(bundle.policies[0]).toMatchObject({
       appName: "CompanyApp",
@@ -146,16 +143,15 @@ describe("parseAdmxBundle", () => {
     );
 
     const bundle = parseAdmxBundle([{ name: "contoso.admx", text: admx }]);
-    const policy = bundle.policies[0]!;
+    const policy = bundle.policies[0];
 
     expect(policy.unmappable).toMatch(/Unknown element <frobnicate>/);
   });
 
   it("caps the number of policies and reports the truncation", () => {
-    const bundle = parseAdmxBundle(
-      [{ name: "contoso.admx", text: VENDOR_ADMX }],
-      { maxPolicies: 1 },
-    );
+    const bundle = parseAdmxBundle([{ name: "contoso.admx", text: VENDOR_ADMX }], {
+      maxPolicies: 1,
+    });
 
     expect(bundle.policies).toHaveLength(1);
     expect(bundle.truncated).toBe(true);
@@ -171,7 +167,7 @@ describe("parseAdmxBundle", () => {
 
   it("reports a missing ADML without failing the file", () => {
     const bundle = parseAdmxBundle([{ name: "contoso.admx", text: VENDOR_ADMX }]);
-    const policy = bundle.policies[0]!;
+    const policy = bundle.policies[0];
 
     expect(policy.policy.displayName).toBe("EnableFeature");
     expect(bundle.issues).toEqual(

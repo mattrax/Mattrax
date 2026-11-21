@@ -286,7 +286,7 @@ const routes = ({ priceId }: LicenseBillingConfig) =>
 
         // SAFETY: the summary contains only JSON primitives and arrays/objects
         // built above, so it satisfies Schema.Json at this response boundary.
-        return json((yield* summary(bound, priceId)) as Schema.Json);
+        return json(yield* summary(bound, priceId));
       }).pipe(Effect.catchCause(() => Effect.succeed(upstreamFailure()))),
     ),
 
@@ -314,7 +314,7 @@ const routes = ({ priceId }: LicenseBillingConfig) =>
 
         const session = yield* stripe.billingPortal.sessions.create({
           customer,
-          return_url: safeReturnUrl(bound.origin!, body.returnUrl),
+          return_url: safeReturnUrl(bound.origin, body.returnUrl),
         });
 
         if (!session.url) return upstreamFailure();
@@ -351,7 +351,7 @@ const routes = ({ priceId }: LicenseBillingConfig) =>
 
         if (!customer) return problem("Billing is not configured.", 503);
 
-        const returnUrl = billingReturnUrl(bound.origin!, body.tenantId);
+        const returnUrl = billingReturnUrl(bound.origin, body.tenantId);
 
         const quantity = Math.max(1, bound.deviceCount);
 

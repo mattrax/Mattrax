@@ -1,13 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { Effect, Option, Schema } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import {
-  JsonRecord,
+import type {
   CreatePolicyRequest as CreatePolicyRequestSchema,
   IdResponse as IdResponseSchema,
   PatchPolicyRequest as PatchPolicyRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
   PolicyRow as PolicyRowSchema,
+} from "@mattrax/enterprise-domain/client";
+import {
+  JsonRecord,
   PORTABLE_POLICY_VERSION,
   PortablePolicy as PortablePolicySchema,
   PortablePolicyDocument as PortablePolicyDocumentSchema,

@@ -1,6 +1,7 @@
 import { Data, Effect } from "effect";
 import { deserializeSoapElement, serializeSoapElement } from "@mattrax/soap";
-import { SyncML, type SyncML as SyncMLType } from "./messages.js";
+import { SyncML } from "./messages.js";
+import type { SyncML as SyncMLType } from "./messages.js";
 import type {
   WindowsManagementRequest,
   WindowsManagementResponse,

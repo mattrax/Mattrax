@@ -83,10 +83,10 @@ describe("APNs CSR generation", () => {
     const plist = await decodePlist(result.plist);
     expect(plist.PushCertSignature).not.toBe("");
     expect(plist.PushCertCertificateChain).toContain(
-      APPLE_WORLDWIDE_DEVELOPER_RELATIONS_CERTIFICATION_AUTHORITY.split("\n")[0]!.trim(),
+      APPLE_WORLDWIDE_DEVELOPER_RELATIONS_CERTIFICATION_AUTHORITY.split("\n")[0].trim(),
     );
-    expect(plist.PushCertCertificateChain).toContain(APPLE_ROOT_CA.split("\n")[0]!.trim());
-    expect(plist.PushCertCertificateChain).toContain(vendor.pem.trim().split("\n")[0]!);
+    expect(plist.PushCertCertificateChain).toContain(APPLE_ROOT_CA.split("\n")[0].trim());
+    expect(plist.PushCertCertificateChain).toContain(vendor.pem.trim().split("\n")[0]);
 
     const signature = Uint8Array.from(atob(plist.PushCertSignature), (c) => c.charCodeAt(0));
 

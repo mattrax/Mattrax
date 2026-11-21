@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
-import {
-  resolveEffectivePolicy,
-  type PolicyResolutionInput,
-  type PolicyResolutionPolicy,
-} from "@mattrax/mdm-core";
+import type { Schema } from "effect";
+import { resolveEffectivePolicy } from "@mattrax/mdm-core";
+import type { PolicyResolutionInput, PolicyResolutionPolicy } from "@mattrax/mdm-core";
 
 const policy = (
   id: string,
@@ -75,16 +72,11 @@ describe("policy resolution", () => {
         { groupId: "group-1", policyId: "disabled" },
         { groupId: "group-1", policyId: "enabled" },
       ],
-      policies: [
-        { ...policy("disabled", 100), enabled: false },
-        policy("enabled", 0),
-      ],
+      policies: [{ ...policy("disabled", 100), enabled: false }, policy("enabled", 0)],
       configurations: [configuration("disabled"), configuration("enabled")],
     });
 
-    expect(result.configurations).toEqual([
-      expect.objectContaining({ policyId: "enabled" }),
-    ]);
+    expect(result.configurations).toEqual([expect.objectContaining({ policyId: "enabled" })]);
     expect(result.overridden).toEqual([]);
     expect(result.policies).toEqual([
       expect.objectContaining({ policyId: "enabled", kinds: ["mttx.apple.device"] }),
@@ -103,10 +95,7 @@ describe("policy resolution", () => {
         { groupId: "group-1", policyId: "enabled" },
       ],
       deviceAssignments: [{ policyId: "disabled", mode: "exclude" }],
-      policies: [
-        { ...policy("disabled"), enabled: false },
-        policy("enabled"),
-      ],
+      policies: [{ ...policy("disabled"), enabled: false }, policy("enabled")],
       configurations: [configuration("disabled"), configuration("enabled")],
     });
 
@@ -252,7 +241,7 @@ describe("policy resolution", () => {
       configurations: [configuration("older"), configuration("newer")],
     });
 
-    expect(newest.configurations[0]!.policyId).toBe("newer");
+    expect(newest.configurations[0].policyId).toBe("newer");
 
     const lexical = resolve({
       groups: [{ id: "group-1", name: "Engineering" }],
@@ -267,7 +256,7 @@ describe("policy resolution", () => {
       configurations: [configuration("policy-b"), configuration("policy-a")],
     });
 
-    expect(lexical.configurations[0]!.policyId).toBe("policy-a");
+    expect(lexical.configurations[0].policyId).toBe("policy-a");
     expect(lexical.overridden).toEqual([
       expect.objectContaining({ policyId: "policy-b", reason: "lexicographic-id" }),
     ]);

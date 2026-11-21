@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -8,14 +9,17 @@ import {
   WEBHOOK_EVENT_TYPES,
   WEBHOOK_TEST_EVENT,
   webhookUrlProblem,
-  type WebhookDeliveryDetail,
-  type WebhookDeliveryInfo,
-  type WebhookDeliveryReplayResponse,
-  type WebhookEndpointInfo,
-  type WebhookEventType,
-  type WebhookTestResponse,
 } from "@mattrax/enterprise-domain/client";
-import { FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
+import type {
+  WebhookDeliveryDetail,
+  WebhookDeliveryInfo,
+  WebhookDeliveryReplayResponse,
+  WebhookEndpointInfo,
+  WebhookEventType,
+  WebhookTestResponse,
+} from "@mattrax/enterprise-domain/client";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import {

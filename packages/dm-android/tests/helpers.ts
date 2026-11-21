@@ -32,8 +32,8 @@ export async function makeServiceAccount(): Promise<ServiceAccountFixture> {
 export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const binary = atob(
     input
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
       .padEnd(input.length + ((4 - (input.length % 4)) % 4), "="),
   );
 

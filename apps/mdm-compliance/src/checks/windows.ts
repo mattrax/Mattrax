@@ -16,7 +16,6 @@ import {
 
 const tenantToken = "mttxw-compliance";
 
-
 const withDayN = (result: Check, dayN: boolean): Check =>
   dayN ? { ...result, dayN: true } : result;
 
@@ -42,7 +41,7 @@ const check = (
 
 const provisioningXml = (content: string): string =>
   new TextDecoder().decode(
-    Uint8Array.from(atob(content.replace(/\s/g, "")), (character) => character.charCodeAt(0)),
+    Uint8Array.from(atob(content.replaceAll(/\s/g, "")), (character) => character.charCodeAt(0)),
   );
 
 export const windowsChecks: ReadonlyArray<Check> = [

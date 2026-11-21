@@ -61,8 +61,8 @@ const readMigrations = async (directory: string): Promise<Migration[]> => {
         hash: createHash("sha256").update(sql).digest("hex"),
         createdAt: folderMillis(entry.name),
       });
-    } catch (cause) {
-      if (!hasErrnoCode(cause, "ENOENT")) throw cause;
+    } catch (error) {
+      if (!hasErrnoCode(error, "ENOENT")) throw error;
     }
   }
 
@@ -84,8 +84,8 @@ const connect = async (
         multipleStatements: false,
         timezone: "Z",
       });
-    } catch (cause) {
-      if (attempt >= 10) throw cause;
+    } catch (error) {
+      if (attempt >= 10) throw error;
 
       log(`mattrax self-host: database unavailable (attempt ${attempt}), retrying`);
 

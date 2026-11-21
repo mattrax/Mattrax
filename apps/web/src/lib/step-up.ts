@@ -8,9 +8,8 @@ import {
   STEP_UP_METHODS,
   StepUpActionSchema,
   StepUpMethodSchema,
-  type StepUpAction,
-  type StepUpMethod,
 } from "~/lib/step-up-bus";
+import type { StepUpAction, StepUpMethod } from "~/lib/step-up-bus";
 
 const StepUpGrant = Schema.Struct({
   grant: Schema.String,
@@ -106,8 +105,7 @@ export const performStepUp = async (
   method: StepUpMethod,
   input: { code?: string },
 ): Promise<StepUpGrant> => {
-  if (method === "totp")
-    return call(StepUpGrant, "/totp", { code: input.code ?? "", action });
+  if (method === "totp") return call(StepUpGrant, "/totp", { code: input.code ?? "", action });
 
   const started = await call(PasskeyStarted, "/passkey/begin", { action });
   let response: unknown;

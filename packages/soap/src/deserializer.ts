@@ -1,7 +1,8 @@
-import { DOMParser, type Document, type Element } from "@xmldom/xmldom";
+import { DOMParser } from "@xmldom/xmldom";
+import type { Document, Element } from "@xmldom/xmldom";
 import { Data, Effect, Schema, SchemaAST as AST } from "effect";
 import { getSoapElementName, soapAnnotations } from "./internal/annotations.js";
-import { type SoapObject, type SoapValue } from "./internal/values.js";
+import type { SoapObject, SoapValue } from "./internal/values.js";
 
 export class SoapParseError extends Data.TaggedError("SoapParseError")<{
   message: string;
@@ -14,7 +15,7 @@ function parseXml(xml: string): Document {
   try {
     return parser.parseFromString(xml, "application/xml");
   } catch (error) {
-    throw new Error(`XML parse error: ${String(error)}`);
+    throw new Error(`XML parse error: ${String(error)}`, { cause: error });
   }
 }
 
@@ -57,7 +58,7 @@ function parseNumberText(text: string): number {
 
   if (trimmed === "-Infinity") return -Infinity;
 
-  if (trimmed === "NaN") return NaN;
+  if (trimmed === "NaN") return Number.NaN;
 
   return Number(trimmed);
 }

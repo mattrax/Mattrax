@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { syncGroupInheritance } from "./groupInheritance.ts";
 
 export type DirectoryGroupSyncOptions = {
@@ -93,9 +94,7 @@ const syncDirectoryGroupLocked = (
     if (!directoryGroupId || group.kind !== "manual") {
       const removed = yield* db
         .delete(s.groupDevice)
-        .where(
-          and(eq(s.groupDevice.groupId, groupId), eq(s.groupDevice.source, "directory")),
-        );
+        .where(and(eq(s.groupDevice.groupId, groupId), eq(s.groupDevice.source, "directory")));
 
       // Unlinking can drop members that enclosing groups were inheriting.
       yield* syncGroupInheritance(db, organizationId, groupId);
@@ -202,17 +201,15 @@ const syncDirectoryGroupLocked = (
     const toRemove = [...existingDirectory].filter((deviceId) => !desired.includes(deviceId));
 
     if (staleSources.length > 0)
-      yield* db
-        .delete(s.groupDevice)
-        .where(
-          and(
-            eq(s.groupDevice.groupId, groupId),
-            inArray(
-              s.groupDevice.deviceId,
-              staleSources.map((link) => link.deviceId),
-            ),
+      yield* db.delete(s.groupDevice).where(
+        and(
+          eq(s.groupDevice.groupId, groupId),
+          inArray(
+            s.groupDevice.deviceId,
+            staleSources.map((link) => link.deviceId),
           ),
-        );
+        ),
+      );
 
     if (toRemove.length > 0)
       yield* db
@@ -287,12 +284,7 @@ export const syncDirectoryGroupsForTenant = (
     const directoryRows = yield* db
       .select({ groupId: s.groupDevice.groupId })
       .from(s.groupDevice)
-      .where(
-        and(
-          eq(s.groupDevice.source, "directory"),
-          inArray(s.groupDevice.groupId, ids),
-        ),
-      );
+      .where(and(eq(s.groupDevice.source, "directory"), inArray(s.groupDevice.groupId, ids)));
 
     const orphaned = new Set(directoryRows.map((row) => row.groupId));
 

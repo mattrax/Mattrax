@@ -112,10 +112,7 @@ test.describe("SCIM provisioning", () => {
     expect(result.Resources.some((resource) => resource.id === user.id)).toBe(false);
     expect(result.totalResults).toBe(0);
 
-    const directoryAfter = await api<Directory>(
-      page,
-      `/api/v1/tenants/${tenant.id}/directory`,
-    );
+    const directoryAfter = await api<Directory>(page, `/api/v1/tenants/${tenant.id}/directory`);
 
     expect(directoryAfter.users.some((item) => item.id === user.id)).toBe(false);
   });

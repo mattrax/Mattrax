@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
@@ -100,7 +100,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
     );
 
     expect(policyConfigurations).toHaveLength(1);
-    expect(policyConfigurations[0]!.identifier).toBe(`high:${kind}`);
+    expect(policyConfigurations[0].identifier).toBe(`high:${kind}`);
   });
 
   it("removes a group include when the device directly excludes the policy", async () => {

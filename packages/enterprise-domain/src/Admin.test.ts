@@ -37,7 +37,9 @@ describe("admin account query", () => {
     expect(() => decodeQuery({ q: "a".repeat(ADMIN_ACCOUNT_SEARCH_MAX_LENGTH + 1) })).toThrow();
     // The maximum page size and offset are inclusive.
     expect(decodeQuery({ limit: 1, offset: 0 })).toEqual({ limit: 1, offset: 0 });
-    expect(decodeQuery({ limit: ADMIN_ACCOUNT_PAGE_MAX })).toEqual({ limit: ADMIN_ACCOUNT_PAGE_MAX });
+    expect(decodeQuery({ limit: ADMIN_ACCOUNT_PAGE_MAX })).toEqual({
+      limit: ADMIN_ACCOUNT_PAGE_MAX,
+    });
     expect(() => decodeQuery({ limit: ADMIN_ACCOUNT_PAGE_MAX + 1 })).toThrow();
     expect(() => decodeQuery({ limit: 0 })).toThrow();
     expect(() => decodeQuery({ offset: -1 })).toThrow();

@@ -26,7 +26,9 @@ test.describe("top navigation", () => {
       ["Settings", `${base}/settings`, "General"],
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(path.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
+      await expect(page).toHaveURL(
+        new RegExp(path.replaceAll(/[/\\^$*+?.()|[\]{}]/g, String.raw`\$&`)),
+      );
 
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
     }

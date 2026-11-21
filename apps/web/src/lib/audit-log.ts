@@ -17,9 +17,7 @@ export const formatAuditAction = (action: string) =>
  * Human actor name. The system sentinel is never shown as an address: it is
  * the deployment acting on a device, not a person.
  */
-export const auditActorLabel = (
-  entry: Pick<AuditLogEntry, "actorType" | "actorEmail">,
-): string => {
+export const auditActorLabel = (entry: Pick<AuditLogEntry, "actorType" | "actorEmail">): string => {
   if (entry.actorType === "system" || !entry.actorEmail || entry.actorEmail === SYSTEM_AUDIT_ACTOR)
     return "System";
 

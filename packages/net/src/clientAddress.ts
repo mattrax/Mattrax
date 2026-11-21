@@ -43,7 +43,7 @@ export const headerValue = (headers: HeaderSource, name: string): string | undef
 
   // SAFETY: the caller passed a header record, not a `Headers` instance; the
   // branch above already handled the only other member of `HeaderSource`.
-  const record = headers as Readonly<Record<string, string | string[] | undefined>>;
+  const record = headers;
   const value = record[name] ?? record[name.toLowerCase()];
 
   const text = Array.isArray(value) ? value[0] : value;

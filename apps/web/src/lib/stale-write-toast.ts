@@ -1,6 +1,7 @@
 import { toast } from "~/components/toast";
 import type { RaisedFailure } from "~/lib/errors";
-import { handleStaleWrite, type StaleWriteOptions } from "~/lib/stale-write";
+import { handleStaleWrite } from "~/lib/stale-write";
+import type { StaleWriteOptions } from "~/lib/stale-write";
 
 /**
  * `handleStaleWrite` wired to the dashboard's toast. Pages use this so the

@@ -4,9 +4,10 @@ import {
   AUDIT_CATEGORIES,
   AUDIT_PROTOCOLS,
   EnterpriseBadRequest,
-  type AuditSearchQuery,
 } from "@mattrax/enterprise-domain";
-import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
+import type { AuditSearchQuery } from "@mattrax/enterprise-domain";
+import { and, desc, eq, gte, like, lt, lte, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { EnterpriseSchema } from "../schema.ts";
 import { toCsv } from "../Device/deviceSearch.ts";
 
@@ -105,12 +106,15 @@ const optionalEnum = <const Values extends ReadonlyArray<string>>(
     });
 
   // SAFETY: the membership check above proved `text` is one of `values`.
-  return text as Values[number];
+  return text;
 };
 
 /** Escape `%`, `_` and `\` so a LIKE pattern is matched literally. */
 export const escapeLike = (value: string) =>
-  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+  value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`);
 
 const base64UrlEncode = (value: string) => {
   const bytes = new TextEncoder().encode(value);

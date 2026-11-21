@@ -1,5 +1,6 @@
 import { useLocation, useParams } from "@solidjs/router";
-import { For, type ParentProps } from "solid-js";
+import { For } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 

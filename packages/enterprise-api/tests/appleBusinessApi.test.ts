@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
@@ -163,22 +164,24 @@ const makeContext = async (
     });
   }
 
-  db.store.member.push({
-    id: "member-1",
-    organizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
-  db.store.member.push({
-    id: "member-2",
-    organizationId: otherOrganizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.member.push(
+    {
+      id: "member-1",
+      organizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "member-2",
+      organizationId: otherOrganizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
   db.store.apple_push_certificate.push({
     organizationId,
     email: "owner@example.com",
@@ -279,7 +282,7 @@ describe("Apple Business Manager API flow", () => {
       service.getAbmDeviceProfileUrl(request(headers), organizationId, "SERIAL-1"),
     );
 
-    const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]!);
+    const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]);
     const profile = await runEffect(service.getAdeEnrollmentProfile(token));
     const plist = new TextDecoder().decode(profile.profile);
 
@@ -327,7 +330,7 @@ describe("Apple Business Manager API flow", () => {
       service.patchApplication(request(headers), organizationId, created.id, {
         installers: [
           {
-            id: first.installers[1]!.id,
+            id: first.installers[1].id,
             platform: "apple",
             source: "manifest",
             bundleId: "com.example.multi",
@@ -451,7 +454,7 @@ describe("Apple Business Manager API flow", () => {
 
     // SAFETY: the queued payload is produced by this test's install path and
     // the assertions verify the manifest keys it wrote.
-    const payload = db.store.device_command[0]!.payload as any;
+    const payload = db.store.device_command[0]!.payload;
     expect(payload.Manifest.items[0].metadata["bundle-identifier"]).toBe("com.microsoft.Office");
     expect(payload.Manifest.items[0].assets[0].sha256).toBe("a".repeat(64));
     expect(payload.Manifest.items[0].assets[0].url).toContain(
@@ -664,7 +667,7 @@ describe("Apple Business Manager API flow", () => {
 
     // SAFETY: the InstallApplication payload for a Windows MSI is constructed
     // by windowsMsiInstallPayload, which always returns these fields.
-    const payload = command.payload as any;
+    const payload = command.payload;
     expect(payload.kind).toBe("Exec");
     expect(payload.format).toBe("xml");
     expect(payload.locURI).toContain(encodeURIComponent("{8A69D345-D564-463C-AFF1-A69D9E530F96}"));

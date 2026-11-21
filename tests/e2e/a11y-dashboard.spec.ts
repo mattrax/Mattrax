@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 /**
@@ -22,7 +23,7 @@ type Allow = (target: string, rule: string) => boolean;
  * it is allowlisted until that file is reworked.
  */
 const widgetContrast: Allow = (target, rule) =>
-  rule === "color-contrast" && target.includes("text-muted-foreground\\/70");
+  rule === "color-contrast" && target.includes(String.raw`text-muted-foreground\/70`);
 
 /**
  * The entity query bar's hint label is `text-muted-foreground/70` at 10.5px.
@@ -30,7 +31,7 @@ const widgetContrast: Allow = (target, rule) =>
  * so its contrast fix is tracked separately and allowlisted here.
  */
 const entityQueryContrast: Allow = (target, rule) =>
-  rule === "color-contrast" && target.includes("text-\\[10\\.5px\\]");
+  rule === "color-contrast" && target.includes(String.raw`text-\[10\.5px\]`);
 
 /**
  * The settings page's support mailto link renders muted text on the card
@@ -82,6 +83,7 @@ const expectNoViolations = async (
   } catch (error) {
     throw new Error(
       `${context}: axe could not scan ${options.include ?? "the page"}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 
@@ -160,7 +162,7 @@ test.describe("dashboard accessibility", () => {
     );
 
     if (devices.devices.length > 0) {
-      await gotoHydrated(page, `${base}/devices/${devices.devices[0]!.id}`);
+      await gotoHydrated(page, `${base}/devices/${devices.devices[0].id}`);
       await settle(page);
       await expectNoViolations(page, "device detail");
     } else {

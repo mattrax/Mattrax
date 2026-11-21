@@ -1,13 +1,8 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { PolicyRow } from "@mattrax/enterprise-domain/client";
-import {
-  type PolicyApplyTarget,
-  type PolicyDocumentSource,
-  type PortablePolicy,
-  applyPolicyDocuments,
-  parsePolicyDocument,
-} from "./policyDocument.ts";
+import { applyPolicyDocuments, parsePolicyDocument } from "./policyDocument.ts";
+import type { PolicyApplyTarget, PolicyDocumentSource, PortablePolicy } from "./policyDocument.ts";
 import { CliFailure } from "./settings.ts";
 
 const row = (overrides: Partial<PolicyRow> = {}): PolicyRow => ({

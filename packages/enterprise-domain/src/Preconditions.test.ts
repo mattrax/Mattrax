@@ -61,9 +61,9 @@ describe("updatedAtPrecondition", () => {
     expect(precondition).toMatchObject({ _tag: "At", timestamp: { precision: "second" } });
     // HTTP dates lose the milliseconds, so the comparison is whole seconds.
     expect(updatedAtSatisfiesPrecondition(stored, precondition)).toBe(true);
-    expect(
-      updatedAtSatisfiesPrecondition(new Date("2026-11-20T10:15:31.000Z"), precondition),
-    ).toBe(false);
+    expect(updatedAtSatisfiesPrecondition(new Date("2026-11-20T10:15:31.000Z"), precondition)).toBe(
+      false,
+    );
   });
 
   it("does not fall back when a supplied body value is malformed", () => {
@@ -78,9 +78,7 @@ describe("updatedAtPrecondition", () => {
 
 describe("precondition error contract", () => {
   it("maps a stale write to HTTP 412", () => {
-    expect(
-      EnterprisePreconditionErrors[0].ast.context?.annotations?.httpApiStatus,
-    ).toBe(412);
+    expect(EnterprisePreconditionErrors[0].ast.context?.annotations?.httpApiStatus).toBe(412);
   });
 });
 

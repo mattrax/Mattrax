@@ -35,7 +35,6 @@ const latestSnapshot = (): Snapshot => {
 };
 
 const columnNames = (entry: SnapshotEntry): ReadonlyArray<string> =>
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- snapshot columns are a string-or-object union.
   (entry.columns ?? []).map((column) => (typeof column === "string" ? column : column.value));
 
 const isIndexEntry = (entry: SnapshotEntry): boolean =>
@@ -209,8 +208,7 @@ describe("no redundant index prefixes", () => {
             other.entityType === index.entityType,
         );
 
-        if (covered || duplicated)
-          redundant.push(`${table}.${index.name} (${columns.join(", ")})`);
+        if (covered || duplicated) redundant.push(`${table}.${index.name} (${columns.join(", ")})`);
       }
     }
 

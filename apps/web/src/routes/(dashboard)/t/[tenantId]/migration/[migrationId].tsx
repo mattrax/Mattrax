@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import { useNavigate } from "~/lib/navigation";
@@ -21,13 +22,8 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { toast } from "~/components/toast";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type FleetMigrationDetail,
-  type FleetMigrationEntry,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { FleetMigrationDetail, FleetMigrationEntry } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";
@@ -41,7 +37,7 @@ export const route = {
     return preloadPage([
       () =>
         queryClient.ensureQueryData(
-          enterpriseQueries.fleetMigration(params.tenantId, params.migrationId!),
+          enterpriseQueries.fleetMigration(params.tenantId, params.migrationId),
         ),
     ]);
   },
@@ -345,7 +341,7 @@ export default function MigrationDetailPage() {
           )}
         </Show>
 
-        <Show when={writable() && counts() && counts()!.total > 0}>
+        <Show when={writable() && counts() && counts().total > 0}>
           <Panel
             title="Issue the unenrol handoff"
             description="A batch is bounded so one click cannot touch a whole fleet. Devices only the incumbent can reach get the script back for you to deploy there."

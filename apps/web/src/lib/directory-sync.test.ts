@@ -5,8 +5,8 @@ import {
   directorySyncRunIsStale,
   formatDirectorySyncCounts,
   shouldPollDirectorySync,
-  type DirectorySyncCounts,
 } from "./directory-sync";
+import type { DirectorySyncCounts } from "./directory-sync";
 
 const counts: DirectorySyncCounts = { users: 12, groups: 3, domains: 2 };
 

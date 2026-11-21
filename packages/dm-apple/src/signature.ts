@@ -16,7 +16,7 @@ import * as pkijs from "pkijs";
 
 // ─── PKIjs Crypto Engine Setup ───────────────────────────────────
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -119,7 +119,7 @@ const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
 const decodeBase64 = (value: string, label: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
 
   if (cleaned.length === 0) throw new Error(`${label} is empty`);
 
@@ -144,7 +144,7 @@ const decodePemCertificate = (pem: string): Uint8Array => {
       pem,
     );
 
-  const base64 = match ? match[1]! : pem;
+  const base64 = match ? match[1] : pem;
 
   return decodeBase64(base64, "CA certificate");
 };
@@ -173,7 +173,8 @@ const DN_OID_TO_NAME = new Map<string, string>([
 const normalizeAttributeType = (type: string): string =>
   DN_OID_TO_NAME.get(type) ?? type.toUpperCase();
 
-const normalizeDnValue = (value: string): string => value.replace(/\s+/g, " ").trim().toLowerCase();
+const normalizeDnValue = (value: string): string =>
+  value.replaceAll(/\s+/g, " ").trim().toLowerCase();
 
 const splitDnParts = (dn: string): string[] => {
   const parts: string[] = [];
@@ -181,12 +182,12 @@ const splitDnParts = (dn: string): string[] => {
   let quoted = false;
 
   for (let i = 0; i < dn.length; i++) {
-    const char = dn[i]!;
+    const char = dn[i];
 
     if (char === "\\") {
       current += char;
 
-      if (i + 1 < dn.length) current += dn[++i]!;
+      if (i + 1 < dn.length) current += dn[++i];
       continue;
     }
 
@@ -218,7 +219,7 @@ const unquoteDnValue = (value: string): string => {
       ? trimmed.slice(1, -1)
       : trimmed;
 
-  return unquoted.replace(/\\(.)/g, "$1");
+  return unquoted.replaceAll(/\\(.)/g, "$1");
 };
 
 /**
@@ -320,14 +321,14 @@ const identitySubjectMatches = (
 const normalizeSerial = (value: string): string => {
   const hex = value
     .replace(/^0x/i, "")
-    .replace(/[^0-9a-f]/gi, "")
+    .replaceAll(/[^0-9a-f]/gi, "")
     .toLowerCase();
 
   return hex.replace(/^0+/, "") || "0";
 };
 
 const normalizeFingerprint = (value: string): string =>
-  value.replace(/[^0-9a-f]/gi, "").toLowerCase();
+  value.replaceAll(/[^0-9a-f]/gi, "").toLowerCase();
 
 const certificateSerialHex = (cert: pkijs.Certificate): string => {
   const block: unknown = cert.serialNumber.valueBlock;
@@ -391,8 +392,10 @@ const parseCaCertificates = (pems: readonly string[]): pkijs.Certificate[] =>
   pems.map((pem) => {
     try {
       return pkijs.Certificate.fromBER(toArrayBuffer(decodePemCertificate(pem)));
-    } catch (cause) {
-      throw new Error(`CA certificate could not be parsed: ${errorMessage(cause)}`);
+    } catch (error) {
+      throw new Error(`CA certificate could not be parsed: ${errorMessage(error)}`, {
+        cause: error,
+      });
     }
   });
 
@@ -430,8 +433,8 @@ const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
 
   try {
     contentInfo = pkijs.ContentInfo.fromBER(toArrayBuffer(bytes));
-  } catch (cause) {
-    throw new Error(`signature is not valid CMS: ${errorMessage(cause)}`);
+  } catch (error) {
+    throw new Error(`signature is not valid CMS: ${errorMessage(error)}`, { cause: error });
   }
 
   if (contentInfo.contentType !== SIGNED_DATA_OID) {
@@ -444,8 +447,10 @@ const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
 
   try {
     signedData = new pkijs.SignedData({ schema: contentInfo.content });
-  } catch (cause) {
-    throw new Error(`signature SignedData could not be parsed: ${errorMessage(cause)}`);
+  } catch (error) {
+    throw new Error(`signature SignedData could not be parsed: ${errorMessage(error)}`, {
+      cause: error,
+    });
   }
 
   const certificates = (signedData.certificates ?? []).filter(
@@ -478,8 +483,8 @@ const verifyCmsSignature = async (
 
     try {
       embedded = new Uint8Array(eContent.getValue());
-    } catch (cause) {
-      throw new Error(`CMS eContent could not be read: ${errorMessage(cause)}`);
+    } catch (error) {
+      throw new Error(`CMS eContent could not be read: ${errorMessage(error)}`, { cause: error });
     }
 
     if (body && !bytesEqual(embedded, body)) {
@@ -500,8 +505,8 @@ const verifyCmsSignature = async (
       checkDate: now,
       extendedMode: true,
     });
-  } catch (cause) {
-    throw new Error(`CMS signature is invalid: ${errorMessage(cause)}`);
+  } catch (error) {
+    throw new Error(`CMS signature is invalid: ${errorMessage(error)}`, { cause: error });
   }
 
   if (result.signatureVerified !== true) throw new Error("CMS signature is invalid");
@@ -632,7 +637,7 @@ export async function verifyScepPkcsReqSignature(
   const selfSigned = signer.issuer.isEqual(signer.subject);
 
   if (selfSigned) {
-    let valid = false;
+    let valid: boolean;
 
     try {
       valid = await signer.verify();

@@ -131,7 +131,7 @@ const plistString = (value: PlistValue | undefined) =>
 const MAX_MOBILECONFIG_CHARS = 8 * 1024 * 1024;
 
 const decodeBase64 = (value: string): Uint8Array => {
-  const cleaned = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
+  const cleaned = value.replace(/^data:[^;]+;base64,/, "").replaceAll(/\s/g, "");
 
   if (cleaned.length > MAX_MOBILECONFIG_CHARS)
     throw new Error("The mobileconfig is too large to preview");
@@ -176,7 +176,7 @@ const textFromBytes = async (bytes: Uint8Array): Promise<string> => {
   const pem = /-----BEGIN (?:PKCS7|CMS)-----([\s\S]*?)-----END (?:PKCS7|CMS)-----/.exec(text);
 
   if (pem) {
-    return decoder.decode((await extractSignedContent(decodeBase64(pem[1]!))) ?? new Uint8Array());
+    return decoder.decode((await extractSignedContent(decodeBase64(pem[1]))) ?? new Uint8Array());
   }
 
   if (text.startsWith("<?xml") || text.startsWith("<plist")) return text;

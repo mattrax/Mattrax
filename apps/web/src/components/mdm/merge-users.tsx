@@ -16,15 +16,13 @@ import { Input } from "~/components/ui/input";
 import { GitMerge, Search } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
 import { EmptyState, ErrorText } from "./common";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type DirectoryUserMergeCandidate,
-  type DirectoryUserMergePreview,
-  type DirectoryUserRef,
-  type UserDetail,
-  type UserMergeCounts,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  DirectoryUserMergeCandidate,
+  DirectoryUserMergePreview,
+  DirectoryUserRef,
+  UserDetail,
+  UserMergeCounts,
 } from "~/lib/enterprise";
 
 const SOURCE_LABELS: Record<DirectoryUserRef["source"], string> = {
@@ -269,7 +267,7 @@ export function MergeUsersDialog(props: {
       ]);
 
       for (const id of mergedIds)
-        await qc.removeQueries({ queryKey: enterpriseKeys.user(params.tenantId, id) });
+        qc.removeQueries({ queryKey: enterpriseKeys.user(params.tenantId, id) });
     },
   }));
 

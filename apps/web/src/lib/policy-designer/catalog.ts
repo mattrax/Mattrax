@@ -232,7 +232,7 @@ export const loadAppleOsSupport = () => {
     AppleOsSupportManifest,
     "/catalog/apple-supported-os.json",
     "Apple OS support metadata",
-  ).catch((error) => {
+  ).catch((error: unknown) => {
     osSupportPromise = undefined;
     throw error;
   });
@@ -296,7 +296,7 @@ export const loadManifest = () => {
     CatalogManifest,
     "/catalog/manifest.json",
     "the settings catalogue",
-  ).catch((error) => {
+  ).catch((error: unknown) => {
     manifestPromise = undefined;
     throw error;
   });
@@ -318,7 +318,7 @@ export const loadPlatform = (platform: PlatformId) => {
 
   if (!promise) {
     promise = fetchJson(PlatformData, `/catalog/${platform}.json`, `${platform} settings`).catch(
-      (error) => {
+      (error: unknown) => {
         platformPromises.delete(platform);
         throw error;
       },
@@ -386,7 +386,7 @@ export const loadPlatformIndex = (platform: PlatformId) => {
             collections: file.collections.map((collection) => ({ ...collection, platform })),
           }))
         : loadPlatform(platform).then(summarizePlatform)
-    ).catch((error) => {
+    ).catch((error: unknown) => {
       indexPromises.delete(platform);
       throw error;
     });
@@ -423,7 +423,7 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
 
             return collection;
           })
-    ).catch((error) => {
+    ).catch((error: unknown) => {
       collectionPromises.delete(cacheKey);
       throw error;
     });
@@ -435,8 +435,7 @@ export const loadCollection = (platform: PlatformId, collectionId: string) => {
 
 /** The identity a selection stores for a property; mirrors `valueKey` in `build.ts`. */
 const searchValueKey = (property: Property, platform: PlatformId) =>
-  property.valueKey ??
-  (platform === "windows" ? (property.address ?? property.key) : property.key);
+  property.valueKey ?? (platform === "windows" ? (property.address ?? property.key) : property.key);
 
 const buildSearchIndex = (data: PlatformData): SearchIndex => ({
   platform: data.id,
@@ -459,7 +458,7 @@ export const loadSearchIndex = (platform: PlatformId) => {
       platform === "windows"
         ? fetchJson(SearchIndex, "/catalog/windows/search.json", "the settings search index")
         : loadPlatform(platform).then(buildSearchIndex)
-    ).catch((error) => {
+    ).catch((error: unknown) => {
       searchIndexPromises.delete(platform);
       throw error;
     });
@@ -558,7 +557,7 @@ export const collectionProperties = (collection: {
 export const searchableText = (property: Property) =>
   `${property.name} ${property.key} ${property.address ?? ""} ${property.description ?? ""}`
     .toLowerCase()
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+/g, " ")
     .trim();
 
 export const searchProperties = (collection: Collection, query: string): Property[] => {

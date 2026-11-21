@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { HttpStripeClient, verifyStripeSignature } from "../src/index.js";
 
@@ -40,7 +40,7 @@ describe("HttpStripeClient", () => {
     expect(customer.id).toBe("cus_1");
     expect(requests).toHaveLength(1);
 
-    const init = requests[0]!;
+    const init = requests[0];
     expect(init.method).toBe("POST");
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer sk_test");
     expect(new Headers(init.headers).get("content-type")).toBe("application/x-www-form-urlencoded");
@@ -142,7 +142,7 @@ describe("HttpStripeClient billing operations", () => {
       method: "POST",
       url: "https://stripe.test/v1/customers/cus_1",
     });
-    expect(new URLSearchParams(calls[0]!.body).get("name")).toBe("Acme Holdings");
+    expect(new URLSearchParams(calls[0].body).get("name")).toBe("Acme Holdings");
     expect(calls[1]).toMatchObject({
       method: "GET",
       url: "https://stripe.test/v1/customers/cus_1",
@@ -173,7 +173,7 @@ describe("HttpStripeClient billing operations", () => {
       url: "https://stripe.test/v1/checkout/sessions",
     });
 
-    const body = new URLSearchParams(calls[0]!.body);
+    const body = new URLSearchParams(calls[0].body);
 
     expect(body.get("mode")).toBe("subscription");
     expect(body.get("customer")).toBe("cus_1");
@@ -202,7 +202,7 @@ describe("HttpStripeClient billing operations", () => {
       url: "https://stripe.test/v1/subscriptions/sub_1",
     });
 
-    const body = new URLSearchParams(calls[0]!.body);
+    const body = new URLSearchParams(calls[0].body);
 
     expect(body.get("items[0][id]")).toBe("si_1");
     expect(body.get("items[0][quantity]")).toBe("7");

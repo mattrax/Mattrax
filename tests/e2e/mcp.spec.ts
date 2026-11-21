@@ -57,7 +57,7 @@ test.describe("MCP", () => {
     });
 
     expect(authorize.status()).toBe(302);
-    const location = new URL(authorize.headers()["location"]!);
+    const location = new URL(authorize.headers()["location"]);
     expect(location.searchParams.get("state")).toBe("e2e");
     const code = location.searchParams.get("code")!;
 
@@ -234,7 +234,7 @@ test.describe("MCP", () => {
     });
 
     expect(authorize.status()).toBe(302);
-    const code = new URL(authorize.headers()["location"]!).searchParams.get("code")!;
+    const code = new URL(authorize.headers()["location"]).searchParams.get("code")!;
 
     const tokenResponse = await page.request.post("/api/oauth/token", {
       form: {

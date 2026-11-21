@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import {
   assignVppLicence,
   openVppToken,
@@ -85,26 +85,28 @@ const makeDbWithTenant = () => {
     });
   }
 
-  db.store.device.push({
-    id: "device-1",
-    organizationId,
-    proto: "apple",
-    status: "enrolled",
-    name: "Mac 1",
-    serial: "SERIAL-1",
-    enrolledAt: now,
-    lastSeenAt: now,
-  });
-  db.store.device.push({
-    id: "device-other",
-    organizationId: otherOrganizationId,
-    proto: "apple",
-    status: "enrolled",
-    name: "Other Mac",
-    serial: "OTHER-SERIAL",
-    enrolledAt: now,
-    lastSeenAt: now,
-  });
+  db.store.device.push(
+    {
+      id: "device-1",
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac 1",
+      serial: "SERIAL-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    },
+    {
+      id: "device-other",
+      organizationId: otherOrganizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "Other Mac",
+      serial: "OTHER-SERIAL",
+      enrolledAt: now,
+      lastSeenAt: now,
+    },
+  );
 
   return db;
 };

@@ -1,6 +1,8 @@
 import { Cause, Effect, Layer, Schema } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { WindowsMdmError, WindowsMdmService, type WindowsMdmRequestContext } from "./service.js";
+import type { HttpServerRequest } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
+import { WindowsMdmError, WindowsMdmService } from "./service.js";
+import type { WindowsMdmRequestContext } from "./service.js";
 
 function textRequest(request: HttpServerRequest.HttpServerRequest) {
   return request.arrayBuffer.pipe(Effect.map((buf) => new TextDecoder().decode(buf)));

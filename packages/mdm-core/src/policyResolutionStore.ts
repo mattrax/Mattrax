@@ -1,18 +1,16 @@
 import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
-import {
-  containsPolicyVariables,
-  substitutePolicyVariables,
-  type PolicyVariableContext,
-} from "@mattrax/enterprise-domain";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { containsPolicyVariables, substitutePolicyVariables } from "@mattrax/enterprise-domain";
+import type { PolicyVariableContext } from "@mattrax/enterprise-domain";
 import { policyDataHash } from "./policy.ts";
-import {
-  resolveEffectivePolicy,
-  type EffectivePolicy,
-  type PolicyResolutionGroup,
-  type PolicyResolutionUser,
-  type PolicyResolutionUserGroup,
+import { resolveEffectivePolicy } from "./policyResolution.ts";
+import type {
+  EffectivePolicy,
+  PolicyResolutionGroup,
+  PolicyResolutionUser,
+  PolicyResolutionUserGroup,
 } from "./policyResolution.ts";
 
 const unique = (values: Iterable<string>) => [...new Set(values)];
@@ -64,10 +62,7 @@ export const loadPolicyResolutionInput = (
           })
           .from(s.groupExclusion)
           .where(
-            and(
-              eq(s.groupExclusion.target, "user"),
-              inArray(s.groupExclusion.groupId, groupIds),
-            ),
+            and(eq(s.groupExclusion.target, "user"), inArray(s.groupExclusion.groupId, groupIds)),
           )
       : [];
 

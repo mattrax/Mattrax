@@ -1,4 +1,4 @@
-import { type RoutePreloadFuncArgs } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { queryOptions, useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";

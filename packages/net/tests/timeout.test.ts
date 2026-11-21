@@ -48,7 +48,7 @@ describe("fetchWithTimeout", () => {
           seen = signal;
         }),
       },
-    ).catch((cause: unknown) => cause);
+    ).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(OutboundTimeoutError);
 
@@ -70,7 +70,7 @@ describe("fetchWithTimeout", () => {
     );
 
     controller.abort();
-    const error = await promise.catch((cause: unknown) => cause);
+    const error = await promise.catch((error_: unknown) => error_);
     expect(error).not.toBeInstanceOf(OutboundTimeoutError);
     expect(isAbortError(error)).toBe(true);
   });
@@ -87,7 +87,7 @@ describe("fetchWithTimeout", () => {
           throw failure;
         },
       },
-    ).catch((cause: unknown) => cause);
+    ).catch((error_: unknown) => error_);
 
     expect(error).toBe(failure);
   });

@@ -10,9 +10,7 @@ import { errorPresentation } from "./errors";
 
 describe("errorPresentation", () => {
   it("maps generic backend internals to a stable server message", () => {
-    const presentation = errorPresentation(
-      new EnterpriseInternal({ message: "SQL exploded" }),
-    );
+    const presentation = errorPresentation(new EnterpriseInternal({ message: "SQL exploded" }));
 
     expect(presentation).toMatchObject({ title: "Something went wrong", variant: "server" });
     expect(presentation.message).toContain("Something went wrong on our side");
@@ -20,12 +18,12 @@ describe("errorPresentation", () => {
   });
 
   it("maps conflict and permission tags", () => {
-    expect(
-      errorPresentation(new EnterpriseConflict({ message: "Already exists" })).variant,
-    ).toBe("validation");
-    expect(
-      errorPresentation(new EnterpriseForbidden({ message: "Nope" })).variant,
-    ).toBe("permission");
+    expect(errorPresentation(new EnterpriseConflict({ message: "Already exists" })).variant).toBe(
+      "validation",
+    );
+    expect(errorPresentation(new EnterpriseForbidden({ message: "Nope" })).variant).toBe(
+      "permission",
+    );
     expect(
       errorPresentation(
         new EnterprisePermissionDenied({

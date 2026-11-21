@@ -18,7 +18,11 @@ export const TenantUserParam = { tenantId: Schema.String, userId: Schema.String 
 export const TenantPreRegistrationParam = { tenantId: Schema.String, id: Schema.String };
 
 /** A user channel is addressed by the device plus Apple's opaque user id. */
-export const TenantDeviceUserParam = { tenantId: Schema.String, id: Schema.String, userId: Schema.String };
+export const TenantDeviceUserParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  userId: Schema.String,
+};
 
 export const TenantAttributeParam = { tenantId: Schema.String, attributeId: Schema.String };
 

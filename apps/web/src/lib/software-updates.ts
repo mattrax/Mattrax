@@ -1,5 +1,6 @@
 import { Option, Schema } from "effect";
-import { SoftwareUpdateInfo, type SoftwareUpdateStatus } from "@mattrax/enterprise-domain/client";
+import { SoftwareUpdateInfo } from "@mattrax/enterprise-domain/client";
+import type { SoftwareUpdateStatus } from "@mattrax/enterprise-domain/client";
 
 export { softwareUpdateReason } from "@mattrax/enterprise-domain/client";
 

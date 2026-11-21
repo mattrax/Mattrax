@@ -1,6 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { buildCisAssets, compileSources } from "../../../scripts/generate-cis-templates";
@@ -11,12 +10,13 @@ import {
   applyCisTemplateToSelections,
   cisRequiredCollections,
   compileCisTemplate,
-  type CisCatalogues,
 } from "./cis";
-import { PlatformData, type Collection, type PlatformId, type Property } from "./catalog";
+import type { CisCatalogues } from "./cis";
+import { PlatformData } from "./catalog";
+import type { Collection, PlatformId, Property } from "./catalog";
 import type { Selection } from "./build";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 
 const webRoot = path.resolve(here, "../../..");
 
@@ -171,9 +171,9 @@ describe("CIS template validation", () => {
     );
 
     expect(compiled.stats).toEqual({ controls: 3, mapped: 2, settings: 2 });
-    expect(compiled.controls[0]!.mapped).toBe(true);
-    expect(compiled.controls[1]!.mapped).toBe(false);
-    expect(compiled.controls[0]!.settings[0]).toMatchObject({
+    expect(compiled.controls[0].mapped).toBe(true);
+    expect(compiled.controls[1].mapped).toBe(false);
+    expect(compiled.controls[0].settings[0]).toMatchObject({
       collection: "windows/settings/test",
       setting: "enabled",
       settingName: "Enabled",
@@ -215,7 +215,7 @@ describe("CIS template validation", () => {
       testCatalogue(),
     );
 
-    expect(compiled.controls[0]!.settings[0]!.value).toEqual(["CAMERA"]);
+    expect(compiled.controls[0].settings[0].value).toEqual(["CAMERA"]);
 
     expect(
       problemsOf(() =>
@@ -273,8 +273,8 @@ describe("CIS template validation", () => {
       repeated,
     );
 
-    expect(compiled.controls[0]!.settings[0]!.address).toBe("./Device/two");
-    expect(compiled.controls[0]!.settings[0]!.valueKey).toBe("./Device/two");
+    expect(compiled.controls[0].settings[0].address).toBe("./Device/two");
+    expect(compiled.controls[0].settings[0].valueKey).toBe("./Device/two");
   });
 
   it("rejects an Apple template that mixes profiles and declarations", () => {
@@ -300,9 +300,7 @@ describe("CIS template validation", () => {
     const problems = problemsOf(() =>
       compileCisTemplate(
         source([
-          control("1.1", [
-            { collection: "windows/settings/user", setting: "flag", value: true },
-          ]),
+          control("1.1", [{ collection: "windows/settings/user", setting: "flag", value: true }]),
         ]),
         testCatalogue(),
       ),
@@ -314,7 +312,9 @@ describe("CIS template validation", () => {
   it("rejects a collection from another platform", () => {
     const problems = problemsOf(() =>
       compileCisTemplate(
-        source([control("1.1", [{ collection: "apple/profiles/test", setting: "enabled", value: true }])]),
+        source([
+          control("1.1", [{ collection: "apple/profiles/test", setting: "enabled", value: true }]),
+        ]),
         testCatalogue(),
       ),
     );
@@ -344,7 +344,7 @@ describe("CIS template application", () => {
     expect(result.appliedControls).toBe(1);
     expect(result.appliedSettings).toBe(1);
     expect(result.selections).toHaveLength(1);
-    expect(result.selections[0]!.values).toEqual({
+    expect(result.selections[0].values).toEqual({
       enabled: true,
       count: 12,
       handTuned: "keep me",
@@ -372,7 +372,9 @@ describe("CIS template application", () => {
     });
 
     expect(result.selections).toHaveLength(2);
-    const added = result.selections.find((item) => item.collectionId.startsWith("windows/settings/other"));
+    const added = result.selections.find((item) =>
+      item.collectionId.startsWith("windows/settings/other"),
+    );
     expect(added?.values).toEqual({ flag: true });
     expect(result.collections.map((item) => item.id)).toEqual(["windows/settings/other"]);
   });
@@ -391,7 +393,7 @@ describe("CIS template application", () => {
     });
 
     expect(result.controlIds).toEqual(["1.2"]);
-    expect(result.selections[0]!.values).toEqual({ count: 24 });
+    expect(result.selections[0].values).toEqual({ count: 24 });
   });
 
   it("returns the required collection ids for a control selection", () => {
@@ -451,7 +453,10 @@ describe("committed CIS assets", () => {
     const windows = readCatalogue(path.join(repoRoot, "data/catalog/windows.json"));
 
     return {
-      apple: { platform: "apple", collections: new Map(apple.collections.map((item) => [item.id, item])) },
+      apple: {
+        platform: "apple",
+        collections: new Map(apple.collections.map((item) => [item.id, item])),
+      },
       android: {
         platform: "android",
         collections: new Map(android.collections.map((item) => [item.id, item])),
@@ -468,7 +473,9 @@ describe("committed CIS assets", () => {
       .filter((name) => name.endsWith(".json"))
       .sort((left, right) => left.localeCompare(right))
       .map((name) =>
-        Schema.decodeUnknownSync(Schema.Json)(JSON.parse(readFileSync(path.join(sourceDir, name), "utf8"))),
+        Schema.decodeUnknownSync(Schema.Json)(
+          JSON.parse(readFileSync(path.join(sourceDir, name), "utf8")),
+        ),
       );
 
     const templates = await compileSources(sources, cataloguesFromFiles());
@@ -498,17 +505,14 @@ describe("committed CIS assets", () => {
       expect(template.stats).toEqual({
         controls: template.controls.length,
         mapped: template.controls.filter((control) => control.mapped).length,
-        settings: template.controls.reduce(
-          (total, control) => total + control.settings.length,
-          0,
-        ),
+        settings: template.controls.reduce((total, control) => total + control.settings.length, 0),
       });
       expect(new Set(template.controls.map((control) => control.id)).size).toBe(
         template.controls.length,
       );
-      expect(template.controls.every((control) => control.mapped === control.settings.length > 0)).toBe(
-        true,
-      );
+      expect(
+        template.controls.every((control) => control.mapped === control.settings.length > 0),
+      ).toBe(true);
     }
   });
 });

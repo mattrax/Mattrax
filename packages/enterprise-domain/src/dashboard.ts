@@ -351,12 +351,7 @@ export const DashboardReportFormat = Schema.Literals(["csv", "pdf"]);
 
 export type DashboardReportFormat = typeof DashboardReportFormat.Type;
 
-export const DashboardReportRunStatus = Schema.Literals([
-  "pending",
-  "sending",
-  "queued",
-  "failed",
-]);
+export const DashboardReportRunStatus = Schema.Literals(["pending", "sending", "queued", "failed"]);
 
 export type DashboardReportRunStatus = typeof DashboardReportRunStatus.Type;
 
@@ -484,10 +479,7 @@ export const dashboardQueryForWidget = (widget: {
     readonly userFilter?: DashboardUserFilter;
     readonly dimension?: string;
     readonly limit?: number;
-  } = Option.getOrElse(
-    Schema.decodeUnknownOption(WidgetQueryConfig)(widget.config),
-    () => ({}),
-  );
+  } = Option.getOrElse(Schema.decodeUnknownOption(WidgetQueryConfig)(widget.config), () => ({}));
 
   return {
     dataset: config.dataset ?? "devices",

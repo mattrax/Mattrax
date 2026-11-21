@@ -81,7 +81,7 @@ const queryFor = (condition: any) =>
   });
 
 const camel = (value: string) =>
-  value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
 /** Values the fake orders and compares: everything normalises to one of these. */
 type Comparable = number | string;
@@ -120,7 +120,7 @@ const splitTopLevel = (sql: string, connector: string): string[] => {
   let start = 0;
 
   for (let index = 0; index < sql.length; index++) {
-    const character = sql[index]!;
+    const character = sql[index];
 
     if (character === '"') quoted = !quoted;
     else if (!quoted && character === "(") depth++;
@@ -145,7 +145,7 @@ const stripOuterParens = (sql: string) => {
     let closesAtEnd = false;
 
     for (let index = 0; index < value.length; index++) {
-      const character = value[index]!;
+      const character = value[index];
 
       if (character === "(") depth++;
       else if (character === ")") {
@@ -165,16 +165,16 @@ const stripOuterParens = (sql: string) => {
   return value;
 };
 
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 const likeRegex = (pattern: string) => {
   let source = "^";
 
   for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index]!;
+    const character = pattern[index];
 
     if (character === "\\" && index + 1 < pattern.length) {
-      source += escapeRegex(pattern[++index]!);
+      source += escapeRegex(pattern[++index]);
     } else if (character === "%") source += ".*";
     else if (character === "_") source += ".";
     else source += escapeRegex(character);
@@ -231,8 +231,8 @@ const mysqlDateFormat = (date: Date, format: string) => {
     ["%H", pad(date.getUTCHours())],
     ["%i", pad(date.getUTCMinutes())],
     ["%s", pad(date.getUTCSeconds())],
-    ["%b", MONTHS_SHORT[date.getUTCMonth()]!],
-    ["%M", MONTHS_LONG[date.getUTCMonth()]!],
+    ["%b", MONTHS_SHORT[date.getUTCMonth()]],
+    ["%M", MONTHS_LONG[date.getUTCMonth()]],
   ]);
 
   return format.replaceAll(/%[YymcdeHisbM]/g, (token) => replacements.get(token) ?? token);
@@ -248,7 +248,7 @@ const rowValue = (row: Row, table: string | undefined, column: string) => {
 const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   const isNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+null$/i);
 
-  if (isNull) return rowValue(row, isNull[1], isNull[2]!) == null;
+  if (isNull) return rowValue(row, isNull[1], isNull[2]) == null;
 
   // `date_format("device"."last_seen_at", '%Y-%m-%d') like $1`.
   const dateFormatLike = sql.match(
@@ -256,7 +256,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   );
 
   if (dateFormatLike) {
-    const value = rowValue(row, dateFormatLike[1], dateFormatLike[2]!);
+    const value = rowValue(row, dateFormatLike[1], dateFormatLike[2]);
 
     if (value == null) return false;
 
@@ -266,7 +266,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
     if (!date || Number.isNaN(date.getTime())) return false;
 
     return likeRegex(String(params[Number(dateFormatLike[4]) - 1])).test(
-      mysqlDateFormat(date, dateFormatLike[3]!),
+      mysqlDateFormat(date, dateFormatLike[3]),
     );
   }
 
@@ -277,7 +277,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   if (inParam) {
     const list = params[Number(inParam[4]) - 1];
     const values = Array.isArray(list) ? list.map((entry) => comparable(entry)) : [];
-    const found = values.includes(comparable(rowValue(row, inParam[1], inParam[2]!)));
+    const found = values.includes(comparable(rowValue(row, inParam[1], inParam[2])));
 
     return inParam[3] ? !found : found;
   }
@@ -285,11 +285,9 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   const inList = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+in\s+\(([^)]*)\)$/i);
 
   if (inList) {
-    const values = [...inList[3]!.matchAll(/\$(\d+)/g)].map(
-      (match) => params[Number(match[1]) - 1],
-    );
+    const values = [...inList[3].matchAll(/\$(\d+)/g)].map((match) => params[Number(match[1]) - 1]);
 
-    return values.includes(rowValue(row, inList[1], inList[2]!));
+    return values.includes(rowValue(row, inList[1], inList[2]));
   }
 
   // Column-to-column comparison, which is how drizzle renders a join's ON
@@ -299,8 +297,8 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   );
 
   if (columnComparison) {
-    const left = rowValue(row, columnComparison[1], columnComparison[2]!);
-    const right = rowValue(row, columnComparison[4], columnComparison[5]!);
+    const left = rowValue(row, columnComparison[1], columnComparison[2]);
+    const right = rowValue(row, columnComparison[4], columnComparison[5]);
 
     // SQL comparisons against NULL are never true.
     if (left == null || right == null) return false;
@@ -314,8 +312,8 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
 
   // Unknown leaf (e.g. a generated literal): do not exclude the row.
   if (!comparison) return true;
-  const actual = rowValue(row, comparison[1], comparison[2]!);
-  const operator = comparison[3]!.toLowerCase();
+  const actual = rowValue(row, comparison[1], comparison[2]);
+  const operator = comparison[3].toLowerCase();
   const expected = params[Number(comparison[4]) - 1];
 
   if (operator === "=") {
@@ -436,18 +434,18 @@ const aggregateValue = (field: any, rows: Row[]): RowValue | undefined => {
   const distinct = /^count\(distinct\s+"([^"]+)"\."([^"]+)"\)$/i.exec(sql);
 
   if (distinct)
-    return new Set(rows.map((row) => comparable(rowValue(row, distinct[1], distinct[2]!)))).size;
+    return new Set(rows.map((row) => comparable(rowValue(row, distinct[1], distinct[2])))).size;
 
   const minMax = /^(max|min)\("([^"]+)"\."([^"]+)"\)$/i.exec(sql);
 
   if (!minMax) return undefined;
 
-  const descending = minMax[1]!.toLowerCase() === "max";
+  const descending = minMax[1].toLowerCase() === "max";
   let best: Comparable | undefined;
   let bestValue: RowValue = undefined;
 
   for (const row of rows) {
-    const value = rowValue(row, minMax[2], minMax[3]!);
+    const value = rowValue(row, minMax[2], minMax[3]);
     const normalized = comparable(value);
 
     if (
@@ -623,7 +621,7 @@ class SelectBuilder {
 
   /** Aggregate a bucket of rows for `groupBy`, keeping plain selected columns. */
   private projectGrouped(rows: Row[]) {
-    const projected = project(this.fields, rows[0]!);
+    const projected = project(this.fields, rows[0]);
 
     if (!this.fields) return projected;
 
@@ -913,7 +911,7 @@ export const cookieFrom = (response: any) => header(response, "set-cookie")?.spl
 const defaultStripeClient = () => ({
   customers: {
     search: async () => ({ data: [] }),
-    list: async function* () {},
+    async *list() {},
     create: async () => ({ id: "cus_created" }),
     update: async (id: string, params: { name?: string }) => ({ id, name: params.name ?? null }),
     retrieve: async (id: string) => ({ id, name: null }),

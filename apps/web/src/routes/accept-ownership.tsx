@@ -104,8 +104,8 @@ export default function AcceptOwnershipPage() {
 
     try {
       setPreview(await enterprise.previewOwnershipTransfer(value));
-    } catch (cause) {
-      setPreviewError(cause);
+    } catch (error) {
+      setPreviewError(error);
     } finally {
       setPreviewLoading(false);
     }
@@ -238,8 +238,8 @@ export default function AcceptOwnershipPage() {
       });
       void queryClient.invalidateQueries({ queryKey: enterpriseKeys.accounts(result.tenantId) });
       navigate(`/t/${tenant?.slug ?? result.tenantId}/settings/administrators`, { replace: true });
-    } catch (cause) {
-      const tag = errorTag(raisedFailure(cause));
+    } catch (error) {
+      const tag = errorTag(raisedFailure(error));
 
       if (tag === "EnterpriseUnauthorized") {
         await authClient.signOut();
@@ -251,12 +251,12 @@ export default function AcceptOwnershipPage() {
       }
 
       if (tag === "EnterpriseForbidden") {
-        const message = errorMessage(raisedFailure(cause)).toLowerCase();
+        const message = errorMessage(raisedFailure(error)).toLowerCase();
 
         if (message.includes("verify your email")) setAccountVerified(false);
       }
 
-      setAcceptError(cause);
+      setAcceptError(error);
     } finally {
       setAccepting(false);
     }

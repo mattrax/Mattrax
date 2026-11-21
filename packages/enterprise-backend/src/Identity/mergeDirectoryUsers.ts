@@ -1,11 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
 import {
-  type DirectoryUserMergeCandidate,
-  type DirectoryUserMergePreview,
-  type DirectoryUserMergeResult,
-  type DirectoryUserRef,
-  type UserMergeCounts,
   EnterpriseBadRequest,
   EnterpriseDbError,
   EnterpriseNotFound,
@@ -14,7 +9,15 @@ import {
   userMergeCandidateReasons,
   userMergeRequiresExternalIdConfirmation,
 } from "@mattrax/enterprise-domain";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import type {
+  DirectoryUserMergeCandidate,
+  DirectoryUserMergePreview,
+  DirectoryUserMergeResult,
+  DirectoryUserRef,
+  UserMergeCounts,
+} from "@mattrax/enterprise-domain";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 type MergeError = EnterpriseBadRequest | EnterpriseNotFound | EnterpriseDbError;
 

@@ -15,14 +15,8 @@ import {
 import { Input } from "~/components/ui/input";
 import { ErrorText } from "./common";
 import { useCan } from "~/lib/permissions";
-import {
-  enterprise,
-  enterpriseKeys,
-  type DeviceRow,
-  type Entity,
-  type GroupRow,
-  type PolicyRow,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type { DeviceRow, Entity, GroupRow, PolicyRow } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import {
   bulkEntityNoun,
@@ -30,9 +24,8 @@ import {
   bulkFailureReason,
   bulkNouns,
   bulkReport,
-  type BulkFailure,
-  type BulkOutcome,
 } from "~/lib/bulk-members";
+import type { BulkFailure, BulkOutcome } from "~/lib/bulk-members";
 import { optimisticallyRemoveRows, optimisticallyUpdateDeviceSearch } from "~/lib/optimistic";
 
 type Named = { id: string; name: string };
@@ -58,12 +51,12 @@ const settleRows = async <T,>(
   const worker = async () => {
     while (next < targets.length) {
       const index = next++;
-      const target = targets[index]!;
+      const target = targets[index];
 
       try {
         results[index] = { status: "fulfilled", value: await request(target.id) };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
+      } catch (error) {
+        results[index] = { status: "rejected", reason: error };
       }
     }
   };
@@ -77,7 +70,7 @@ const settleRows = async <T,>(
   results.forEach((result, index) => {
     if (result?.status !== "rejected") return;
 
-    const row = targets[index]!;
+    const row = targets[index];
 
     failed.push({
       id: row.id,
@@ -212,7 +205,7 @@ function ScopeGroupsAction(props: {
       results.forEach((result, index) => {
         if (result.status !== "rejected") return;
 
-        const id = entries[index]![0];
+        const id = entries[index][0];
 
         failed.push({
           id,
@@ -223,7 +216,7 @@ function ScopeGroupsAction(props: {
 
       // Nothing applied: keep the popover open with the inline error so the
       // operator can retry without reselecting anything.
-      if (failed.length === entries.length) throw new Error(failed[0]!.reason);
+      if (failed.length === entries.length) throw new Error(failed[0].reason);
 
       return { total: entries.length, failed };
     },
@@ -453,7 +446,7 @@ export function EntityActions(props: {
 
             if (outcome.failed.length > 0) restore();
 
-            if (outcome.succeeded === 0) throw new Error(outcome.failed[0]!.reason);
+            if (outcome.succeeded === 0) throw new Error(outcome.failed[0].reason);
 
             await invalidate(outcome.failed.map((row) => row.id));
             reportBulk(props.entity, { ok: "unenrolled", fail: "could not unenroll" }, outcome);
@@ -512,7 +505,7 @@ export function EntityActions(props: {
             // The API deletes what it can; nothing deleted is a hard failure and
             // keeps the confirm dialog (and its error) on screen.
             if (result.deleted.length === 0 && failures.length > 0)
-              throw new Error(failures[0]!.reason);
+              throw new Error(failures[0].reason);
 
             await invalidate(failures.map((row) => row.id));
             reportBulk(

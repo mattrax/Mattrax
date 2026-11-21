@@ -78,8 +78,8 @@ test.describe("onboarding email", () => {
 
     expect(welcome).toHaveLength(1);
     expect(welcome[0]).toMatchObject({ replyTo: "oscar@otbeaumont.me" });
-    expect(welcome[0]!.text).toContain("Hey Ada,");
-    expect(welcome[0]!.text).toContain("/dashboard");
+    expect(welcome[0].text).toContain("Hey Ada,");
+    expect(welcome[0].text).toContain("/dashboard");
 
     const verification = afterRegistration.find(
       (item) => item.to === email && item.subject === "Your Mattrax verification code",

@@ -1,10 +1,10 @@
 import { Match, Option, Schema } from "effect";
-import {
-  DASHBOARD_REPORT_MAX_RECIPIENTS,
-  type DashboardQueryResponse,
-  type DashboardReportFormat,
-  type DashboardReportFrequency,
-  type DashboardWidgetType,
+import { DASHBOARD_REPORT_MAX_RECIPIENTS } from "@mattrax/enterprise-domain";
+import type {
+  DashboardQueryResponse,
+  DashboardReportFormat,
+  DashboardReportFrequency,
+  DashboardWidgetType,
 } from "@mattrax/enterprise-domain";
 import { toCsv } from "../Device/deviceSearch.ts";
 
@@ -35,8 +35,7 @@ const utcHour = (hourUtc: number, date: Date) => {
   );
 };
 
-const addDays = (date: Date, days: number) =>
-  new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+const addDays = (date: Date, days: number) => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 
 /** Monday-based week start, in UTC. */
 const startOfUtcWeek = (date: Date) => {
@@ -114,7 +113,15 @@ export const nextScheduledReportSlot = (
   if (frequency === "weekly") return addDays(slot.scheduledFor, 7);
 
   return new Date(
-    Date.UTC(slot.scheduledFor.getUTCFullYear(), slot.scheduledFor.getUTCMonth() + 1, 1, slot.scheduledFor.getUTCHours(), 0, 0, 0),
+    Date.UTC(
+      slot.scheduledFor.getUTCFullYear(),
+      slot.scheduledFor.getUTCMonth() + 1,
+      1,
+      slot.scheduledFor.getUTCHours(),
+      0,
+      0,
+      0,
+    ),
   );
 };
 
@@ -130,9 +137,7 @@ export type ReportEmailNormalization = {
   readonly problem: string | null;
 };
 
-export const normalizeReportEmails = (
-  emails: ReadonlyArray<string>,
-): ReportEmailNormalization => {
+export const normalizeReportEmails = (emails: ReadonlyArray<string>): ReportEmailNormalization => {
   const normalized: string[] = [];
 
   for (const value of emails) {
@@ -424,9 +429,7 @@ export const reportCsv = (document: ReportDocument): string => {
   const lines: string[] = reportHeader(document).map(([key, value]) => meta(key, value));
 
   for (const section of document.sections) {
-    lines.push("");
-    lines.push(meta("Widget", section.title));
-    lines.push(meta("Type", section.kind));
+    lines.push("", meta("Widget", section.title), meta("Type", section.kind));
 
     if (section.kind === "markdown") {
       lines.push(meta("Markdown", markdownToText(section.markdown)));
@@ -489,7 +492,8 @@ export const reportHtml = (document: ReportDocument): string => {
         return `<section>${heading}${total}<p class="caption">${escapeHtml(section.caption)}</p></section>`;
 
       if (section.kind === "buckets") {
-        if (section.buckets.length === 0) return `<section>${heading}${total}<p class="empty">No data to chart.</p></section>`;
+        if (section.buckets.length === 0)
+          return `<section>${heading}${total}<p class="empty">No data to chart.</p></section>`;
 
         const rows = section.buckets
           .map(
@@ -501,15 +505,13 @@ export const reportHtml = (document: ReportDocument): string => {
         return `<section>${heading}${total}<table>${rows}</table></section>`;
       }
 
-      if (section.rows.length === 0) return `<section>${heading}${total}<p class="empty">No rows match this query.</p></section>`;
+      if (section.rows.length === 0)
+        return `<section>${heading}${total}<p class="empty">No rows match this query.</p></section>`;
 
       const head = section.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("");
 
       const body = section.rows
-        .map(
-          (row) =>
-            `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`,
-        )
+        .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`)
         .join("");
 
       return `<section>${heading}${total}<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></section>`;
@@ -556,10 +558,13 @@ const pdfText = (value: string) =>
     .replaceAll("•", "-")
     // Core PDF fonts are WinAnsi; anything else becomes a visible placeholder
     // rather than silently corrupting the text stream.
-    .replaceAll(/[^\x20-\x7e]/g, "?");
+    .replaceAll(/[^\u0020-\u007e]/g, "?");
 
 const pdfEscape = (value: string) =>
-  pdfText(value).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+  pdfText(value)
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("(", String.raw`\(`)
+    .replaceAll(")", String.raw`\)`);
 
 const wrap = (text: string, maxChars: number): string[] => {
   const words = text.split(/\s+/).filter(Boolean);
@@ -593,17 +598,19 @@ type PdfLine = { readonly text: string; readonly size: number; readonly bold: bo
 const pdfLines = (document: ReportDocument): PdfLine[] => {
   const lines: PdfLine[] = [
     { text: document.title, size: 16, bold: true },
-    { text: `${document.tenantName} - generated ${document.generatedAt.toISOString()} (UTC)`, size: 9, bold: false },
+    {
+      text: `${document.tenantName} - generated ${document.generatedAt.toISOString()} (UTC)`,
+      size: 9,
+      bold: false,
+    },
   ];
 
   for (const section of document.sections) {
-    lines.push({ text: "", size: 6, bold: false });
-    lines.push({ text: section.title, size: 12, bold: true });
+    lines.push({ text: "", size: 6, bold: false }, { text: section.title, size: 12, bold: true });
 
     if (section.kind === "markdown") {
       for (const line of markdownToText(section.markdown).split("\n"))
-        for (const wrapped of wrap(line, 100))
-          lines.push({ text: wrapped, size: 9, bold: false });
+        for (const wrapped of wrap(line, 100)) lines.push({ text: wrapped, size: 9, bold: false });
 
       continue;
     }
@@ -617,7 +624,8 @@ const pdfLines = (document: ReportDocument): PdfLine[] => {
     }
 
     if (section.kind === "buckets") {
-      if (section.buckets.length === 0) lines.push({ text: "No data to chart.", size: 9, bold: false });
+      if (section.buckets.length === 0)
+        lines.push({ text: "No data to chart.", size: 9, bold: false });
 
       for (const bucket of section.buckets)
         lines.push({ text: `${bucket.label}: ${bucket.value}`, size: 9, bold: false });
@@ -681,11 +689,12 @@ export const reportPdf = (document: ReportDocument): Uint8Array => {
   objects[0] = "<< /Type /Catalog /Pages 2 0 R >>";
   objects[1] = `<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`;
   objects[2] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
-  objects[3] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
+  objects[3] =
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>";
 
   pages.forEach((page, index) => {
-    const pageId = pageObjectIds[index]!;
-    const contentId = contentIds[index]!;
+    const pageId = pageObjectIds[index];
+    const contentId = contentIds[index];
 
     const body = page
       .map((line, lineIndex) => {
@@ -698,7 +707,8 @@ export const reportPdf = (document: ReportDocument): Uint8Array => {
 
     const stream = `${body}\nBT /F1 8 Tf 1 0 0 1 ${MARGIN} 20 Tm (Page ${index + 1} of ${pages.length}) Tj ET`;
 
-    objects[pageId - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontRegular} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentId} 0 R >>`;
+    objects[pageId - 1] =
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 ${fontRegular} 0 R /F2 ${fontBold} 0 R >> >> /Contents ${contentId} 0 R >>`;
     objects[contentId - 1] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
   });
 

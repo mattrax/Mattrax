@@ -140,9 +140,7 @@ describe("directory-linked device groups", () => {
       { groupId: group.id, deviceId: "device-1", source: "directory" },
     ]);
 
-    const detail = await runEffect(
-      context.service.getGroup(request(headers), tenant.id, group.id),
-    );
+    const detail = await runEffect(context.service.getGroup(request(headers), tenant.id, group.id));
 
     expect(detail).toMatchObject({
       id: group.id,

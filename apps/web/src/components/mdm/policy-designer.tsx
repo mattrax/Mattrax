@@ -15,10 +15,8 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { AdmxImportDialog } from "~/components/mdm/admx-import";
-import {
-  CisTemplateDialog,
-  type CisTemplateOutcome,
-} from "~/components/mdm/cis-template-dialog";
+import { CisTemplateDialog } from "~/components/mdm/cis-template-dialog";
+import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
 import {
   Dialog,
@@ -53,7 +51,8 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import { authClient } from "~/lib/auth";
-import { chord, useCommands, type Command } from "~/lib/commands";
+import { chord, useCommands } from "~/lib/commands";
+import type { Command } from "~/lib/commands";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import {
   collectionProperties,
@@ -66,15 +65,17 @@ import {
   searchIndexProperties,
   appleCollectionManaged,
   appleOsRangeLabel,
-  type AppleOsSupportManifest,
-  type CatalogManifest,
-  type Collection,
-  type CollectionSummary,
-  type PlatformId,
-  type PlatformIndex,
-  type Property,
-  type SearchIndex,
   typeLabel,
+} from "~/lib/policy-designer/catalog";
+import type {
+  AppleOsSupportManifest,
+  CatalogManifest,
+  Collection,
+  CollectionSummary,
+  PlatformId,
+  PlatformIndex,
+  Property,
+  SearchIndex,
 } from "~/lib/policy-designer/catalog";
 import {
   collectionDocumentationUrl,
@@ -95,17 +96,16 @@ import {
   sameValue,
   validateDraft,
   valueKey,
-  type PolicyDraft,
-  type PolicyValue,
-  type Selection,
-  type SelectionTemplate,
-  type ValidationIssue,
 } from "~/lib/policy-designer/build";
-import {
-  admxCollectionFromSelection,
-  isAdmxCollectionId,
-  type AdmxSelection,
-} from "~/lib/policy-designer/admx";
+import type {
+  PolicyDraft,
+  PolicyValue,
+  Selection,
+  SelectionTemplate,
+  ValidationIssue,
+} from "~/lib/policy-designer/build";
+import { admxCollectionFromSelection, isAdmxCollectionId } from "~/lib/policy-designer/admx";
+import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import {
   isThirdPartyCollectionId,
   loadThirdPartyApps,
@@ -114,9 +114,8 @@ import {
   thirdPartyAppsForPlatform,
   thirdPartyCollectionPlatform,
   thirdPartySelectionTemplate,
-  type ThirdPartyApp,
-  type ThirdPartyCatalog,
 } from "~/lib/policy-designer/thirdPartyApps";
+import type { ThirdPartyApp, ThirdPartyCatalog } from "~/lib/policy-designer/thirdPartyApps";
 
 import { cn } from "~/lib/utils";
 
@@ -134,7 +133,7 @@ const savedDrafts = new Map<string, string>();
 /** Selections store `${collection.id}#${collection.name}`; loaders need just the id. */
 const collectionIdOf = (selectionId: string) => selectionId.split("#")[0] ?? selectionId;
 
-const safeId = (value: string) => value.replace(/[^A-Za-z0-9_-]+/g, "-");
+const safeId = (value: string) => value.replaceAll(/[^A-Za-z0-9_-]+/g, "-");
 
 /** DOM ids include platform, scope and the serialized value key, as requested. */
 const fieldId = (platform: PlatformId, property: Property) =>
@@ -450,7 +449,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       });
       void loadCollection(targetPlatform, collectionId)
         .then((collection) => setCollections((current) => ({ ...current, [cacheKey]: collection })))
-        .catch((error) =>
+        .catch((error: unknown) =>
           setCollectionErrors((current) => ({
             ...current,
             [cacheKey]: errorMessage(raisedFailure(error)),
@@ -497,7 +496,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         setIndexes((current) => ({ ...current, [target]: value }));
         ensureDraftCollections(target);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         if (requestIds.get(target) !== id) return;
         setIndexErrors((current) => ({ ...current, [target]: errorMessage(raisedFailure(error)) }));
       });
@@ -509,7 +508,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     if (!manifest())
       void loadManifest()
         .then(setManifest)
-        .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
+        .catch((error: unknown) => setManifestError(errorMessage(raisedFailure(error))));
     const target = platform();
     setIndexes((current) => {
       const next = { ...current };
@@ -568,7 +567,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   onSettled(() => {
     void loadManifest()
       .then(setManifest)
-      .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
+      .catch((error: unknown) => setManifestError(errorMessage(raisedFailure(error))));
 
     // Optional: without it the designer falls back to the catalogue's earliest
     // minimum OS instead of a per-family range.
@@ -578,7 +577,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     void loadThirdPartyApps()
       .then(setThirdParty)
-      .catch((error) => setThirdPartyError(errorMessage(raisedFailure(error))));
+      .catch((error: unknown) => setThirdPartyError(errorMessage(raisedFailure(error))));
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
@@ -688,7 +687,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         if (searchIndexes()[value.platform] || searchIndexErrors()[value.platform]) return;
         void loadSearchIndex(value.platform)
           .then((index) => setSearchIndexes((current) => ({ ...current, [value.platform]: index })))
-          .catch((error) =>
+          .catch((error: unknown) =>
             setSearchIndexErrors((current) => ({
               ...current,
               [value.platform]: errorMessage(raisedFailure(error)),
@@ -1180,7 +1179,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     setCollections((current) => ({ ...current, ...cached }));
     setSelections((current) => [...current, ...additions]);
-    setActiveKey(additions[0]!.collectionId);
+    setActiveKey(additions[0].collectionId);
     setQuery("");
     setFilterQuery("");
     setFilterMode("all");
@@ -1348,9 +1347,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     const first = outcome.collections[0];
 
     const selection = first
-      ? outcome.selections.find(
-          (candidate) => collectionIdOf(candidate.collectionId) === first.id,
-        )
+      ? outcome.selections.find((candidate) => collectionIdOf(candidate.collectionId) === first.id)
       : undefined;
 
     setActiveKey(selection?.collectionId ?? outcome.selections[0]?.collectionId ?? null);
@@ -1360,9 +1357,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setNotice(
       `Applied ${outcome.appliedControls} CIS control${outcome.appliedControls === 1 ? "" : "s"} from ${outcome.template.benchmark.name} (${outcome.appliedSettings} setting${outcome.appliedSettings === 1 ? "" : "s"}).`,
     );
-    setLiveMessage(
-      `${outcome.appliedControls} CIS controls applied to the ${target} policy.`,
-    );
+    setLiveMessage(`${outcome.appliedControls} CIS controls applied to the ${target} policy.`);
     focusEditor();
   };
 
@@ -1684,7 +1679,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           >
             {item.short}
             <Show when={(selectionMap()[item.id]?.length ?? 0) > 0}>
-              <span class="ml-1 tabular-nums opacity-60">{selectionMap()[item.id]!.length}</span>
+              <span class="ml-1 tabular-nums opacity-60">{selectionMap()[item.id].length}</span>
             </Show>
           </button>
         )}
@@ -1855,7 +1850,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       )}
                     >
                       <span>{platformLabel(target)}</span>
-                      <span class="tabular-nums">{selectionMap()[target]!.length}</span>
+                      <span class="tabular-nums">{selectionMap()[target].length}</span>
                     </button>
                     <ul class="space-y-0.5">
                       <For each={selectionMap()[target]}>
@@ -3097,11 +3092,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </DialogContent>
       </Dialog>
 
-      <AdmxImportDialog
-        open={admxOpen()}
-        onOpenChange={setAdmxOpen}
-        onImport={addAdmxImport}
-      />
+      <AdmxImportDialog open={admxOpen()} onOpenChange={setAdmxOpen} onImport={addAdmxImport} />
 
       <CisTemplateDialog
         open={cisOpen()}

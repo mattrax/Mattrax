@@ -1,5 +1,6 @@
 import { Effect, Layer } from "effect";
-import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
+import { HttpServerResponse, HttpRouter } from "effect/http";
 import { ScepServiceTag } from "./service.js";
 import type { ScepCaScope } from "./repository.js";
 import { ScepError } from "./schema.js";

@@ -27,13 +27,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Star } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type DashboardSummary,
-  type DashboardWidget,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { DashboardSummary, DashboardWidget } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 import { preloadPage } from "~/lib/page-data";

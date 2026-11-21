@@ -7,16 +7,10 @@ import {
   GoogleAuthError,
   GoogleAuthLive,
   buildServiceAccountJwt,
-  type ServiceAccountConfig,
 } from "../src/index.js";
-import {
-  decodeJwt,
-  jsonResponse,
-  makeServiceAccount,
-  mockFetch,
-  verifyJwt,
-  type ServiceAccountFixture,
-} from "./helpers.js";
+import type { ServiceAccountConfig } from "../src/index.js";
+import { decodeJwt, jsonResponse, makeServiceAccount, mockFetch, verifyJwt } from "./helpers.js";
+import type { ServiceAccountFixture } from "./helpers.js";
 
 const tokenUri = "https://oauth.test/token";
 
@@ -65,7 +59,7 @@ describe("google service account auth", () => {
     const jwt = await Effect.runPromise(
       buildServiceAccountJwt({
         clientEmail: account.clientEmail,
-        privateKeyPem: account.privateKeyPem.replace(/\n/g, "\\n"),
+        privateKeyPem: account.privateKeyPem.replaceAll("\n", String.raw`\n`),
         audience: tokenUri,
       }),
     );
@@ -96,7 +90,7 @@ describe("google service account auth", () => {
     const tokenRequests = mock.requests.filter((request) => request.pathname === "/token");
     expect(tokenRequests).toHaveLength(1);
 
-    const body = new URLSearchParams(tokenRequests[0]!.body);
+    const body = new URLSearchParams(tokenRequests[0].body);
     expect(body.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
     const assertion = body.get("assertion");
     expect(assertion?.split(".")).toHaveLength(3);

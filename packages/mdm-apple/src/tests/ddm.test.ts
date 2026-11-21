@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DEVICE_INFORMATION_STATUS_ITEMS, deviceInformationConfigurationToken } from "@mattrax/mdm-apple";
+import {
+  DEVICE_INFORMATION_STATUS_ITEMS,
+  deviceInformationConfigurationToken,
+} from "@mattrax/mdm-apple";
 
 describe("DDM status subscription token", () => {
   it("is stable for the same item list", async () => {

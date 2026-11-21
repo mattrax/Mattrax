@@ -1,24 +1,14 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildAdmxCatalogueIndex,
-  parseAdmxBundle,
-  type AdmxDiscoveredPolicy,
-} from "@mattrax/enterprise-domain/admx";
+import { buildAdmxCatalogueIndex, parseAdmxBundle } from "@mattrax/enterprise-domain/admx";
+import type { AdmxDiscoveredPolicy } from "@mattrax/enterprise-domain/admx";
 import {
   admxCollectionFromSelection,
   admxPolicyCollection,
   admxPolicySelection,
   isAdmxCollectionId,
 } from "./admx";
-import {
-  ADMX_STATE_KEY,
-  buildWindowsNodes,
-  defaultValues,
-  validateDraft,
-  type Draft,
-  type PolicyValueMap,
-  type Selection,
-} from "./build";
+import { ADMX_STATE_KEY, buildWindowsNodes, defaultValues, validateDraft } from "./build";
+import type { Draft, PolicyValueMap, Selection } from "./build";
 import { collectionProperties } from "./catalog";
 
 const VENDOR_ADMX = `<policyDefinitions revision="1.0" schemaVersion="1.0">
@@ -87,8 +77,7 @@ const catalogue = buildAdmxCatalogueIndex([
     id: "windows/settings/access-denied-assistance",
     properties: [
       {
-        address:
-          "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
+        address: "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
       },
     ],
   },
@@ -103,13 +92,13 @@ const discover = (): AdmxDiscoveredPolicy => {
     { catalogue },
   );
 
-  return bundle.policies[0]!;
+  return bundle.policies[0];
 };
 
 const discoverInbox = (): AdmxDiscoveredPolicy => {
   const bundle = parseAdmxBundle([{ name: "srmfci.admx", text: INBOX_ADMX }], { catalogue });
 
-  return bundle.policies[0]!;
+  return bundle.policies[0];
 };
 
 const selectionFor = (policy: AdmxDiscoveredPolicy, values: PolicyValueMap) => {
@@ -151,7 +140,7 @@ describe("admxPolicyCollection", () => {
       "./Device/Vendor/MSFT/Policy/Config/CompanyApp~Policy~Root~Child/EnableFeature",
     );
 
-    const state = collection.properties[0]!;
+    const state = collection.properties[0];
 
     expect(state).toMatchObject({
       key: "admxState",
@@ -193,7 +182,7 @@ describe("admxPolicyCollection", () => {
       { catalogue },
     );
 
-    expect(admxPolicyCollection(bundle.policies[0]!)).toBeNull();
+    expect(admxPolicyCollection(bundle.policies[0])).toBeNull();
   });
 });
 

@@ -42,7 +42,10 @@ const makeZip = async (entries: Entry[]) => {
     return offset + 4;
   };
 
-  const localSize = files.reduce((total, file) => total + 30 + file.name.length + file.data.length, 0);
+  const localSize = files.reduce(
+    (total, file) => total + 30 + file.name.length + file.data.length,
+    0,
+  );
   const centralSize = files.reduce((total, file) => total + 46 + file.name.length, 0);
   const output = new Uint8Array(localSize + centralSize + 22);
   const view = new DataView(output.buffer);
@@ -87,7 +90,7 @@ const makeZip = async (entries: Entry[]) => {
     offset = write16(view, offset, 0);
     offset = write16(view, offset, 0);
     offset = write32(view, offset, 0);
-    offset = write32(view, offset, central[index]!);
+    offset = write32(view, offset, central[index]);
     output.set(file.name, offset);
     offset += file.name.length;
   });

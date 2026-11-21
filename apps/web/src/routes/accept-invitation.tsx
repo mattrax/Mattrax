@@ -107,8 +107,8 @@ export default function AcceptInvitationPage() {
 
     try {
       setPreview(await enterprise.previewInvitation(value));
-    } catch (cause) {
-      setPreviewError(cause);
+    } catch (error) {
+      setPreviewError(error);
     } finally {
       setPreviewLoading(false);
     }
@@ -241,8 +241,8 @@ export default function AcceptInvitationPage() {
       void queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
       void queryClient.invalidateQueries({ queryKey: enterpriseKeys.tenants() });
       navigate(`/t/${tenant?.slug ?? result.tenantId}/devices`, { replace: true });
-    } catch (cause) {
-      const tag = errorTag(raisedFailure(cause));
+    } catch (error) {
+      const tag = errorTag(raisedFailure(error));
 
       if (tag === "EnterpriseUnauthorized") {
         // The local session is gone (expired or revoked). Drop the cached
@@ -257,11 +257,11 @@ export default function AcceptInvitationPage() {
       }
 
       if (tag === "EnterpriseForbidden") {
-        const message = errorMessage(raisedFailure(cause)).toLowerCase();
+        const message = errorMessage(raisedFailure(error)).toLowerCase();
 
         if (message.includes("verify your email")) {
           setAccountVerified(false);
-          setAcceptError(cause);
+          setAcceptError(error);
         } else {
           setMismatch(true);
         }
@@ -269,7 +269,7 @@ export default function AcceptInvitationPage() {
         return;
       }
 
-      setAcceptError(cause);
+      setAcceptError(error);
     } finally {
       setAccepting(false);
     }

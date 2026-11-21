@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Match, Option, Schema } from "effect";
 import { ApplicationNode } from "@mattrax/enterprise-domain/client";
@@ -22,14 +23,8 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { CircleAlert } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type ApplicationRow,
-  type DeviceRow,
-  type GroupRow,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { ApplicationRow, DeviceRow, GroupRow } from "~/lib/enterprise";
 import {
   combineRestores,
   optimisticallyRemoveCollectionItems,
@@ -599,8 +594,7 @@ export default function ApplicationDetailPage() {
   const storeId = () =>
     installers().find((installer) => installer.platform === "apple" && installer.storeId)
       ?.storeId ??
-    row()?.storefronts.find((storefront) => storefront.available && storefront.storeId)
-      ?.storeId ??
+    row()?.storefronts.find((storefront) => storefront.available && storefront.storeId)?.storeId ??
     "";
 
   const vppAsset = createMemo(() =>
@@ -1328,7 +1322,8 @@ export default function ApplicationDetailPage() {
                         {(draft, index) => {
                           const server = () =>
                             application().storefronts.find(
-                              (storefront) => storefront.region === draft.region.trim().toUpperCase(),
+                              (storefront) =>
+                                storefront.region === draft.region.trim().toUpperCase(),
                             );
 
                           return (
@@ -1386,7 +1381,7 @@ export default function ApplicationDetailPage() {
                                     onInput={(event) =>
                                       updateStorefront(index(), {
                                         region: event.currentTarget.value
-                                          .replace(/[^a-zA-Z]/g, "")
+                                          .replaceAll(/[^a-zA-Z]/g, "")
                                           .toUpperCase(),
                                       })
                                     }

@@ -1,6 +1,7 @@
 import { Data, Effect, Match, Option, Schema } from "effect";
 import { and, eq, lte, or } from "drizzle-orm";
-import { schema, type R2Bucket, type TenantDeletionStep } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { R2Bucket, TenantDeletionStep } from "@mattrax/enterprise-core";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
 /** Object prefixes owned by a tenant; see `@mattrax/enterprise-domain/storage`. */
@@ -365,22 +366,22 @@ export const teardownTenant = (
     // deployment without billing configured).
     if (deps.preflight)
       yield* deps.preflight().pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.gen(function* () {
             return yield* fail(
               "subscription",
-              `Teardown preflight failed: ${describeTeardownError(cause)}`,
+              `Teardown preflight failed: ${describeTeardownError(error)}`,
             );
           }),
         ),
       );
 
     const devices = yield* deps.unenrollDevices(organizationId).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "devices",
-            `Could not send unenroll requests: ${describeTeardownError(cause)}`,
+            `Could not send unenroll requests: ${describeTeardownError(error)}`,
           );
         }),
       ),
@@ -396,11 +397,11 @@ export const teardownTenant = (
     yield* persist({ status: "pending" });
 
     const subscription = yield* deps.cancelSubscription(organization).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "subscription",
-            `Could not cancel billing: ${describeTeardownError(cause)}`,
+            `Could not cancel billing: ${describeTeardownError(error)}`,
           );
         }),
       ),
@@ -428,11 +429,11 @@ export const teardownTenant = (
       try: () => deleteTenantObjects(storage, organizationId),
       catch: (cause) => cause,
     }).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "storage",
-            `Could not delete tenant objects: ${describeTeardownError(cause)}`,
+            `Could not delete tenant objects: ${describeTeardownError(error)}`,
           );
         }),
       ),
@@ -517,8 +518,8 @@ const describeSubscription = (subscription: SubscriptionReclamation): string => 
 /** Bounded, secret-free error text for the support journal. */
 const describeTeardownError = (cause: unknown): string =>
   (cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause))
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, 500);
 
 /** Age after which a completed teardown journal entry may be pruned. */

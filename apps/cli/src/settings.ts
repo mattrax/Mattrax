@@ -133,7 +133,7 @@ export const redactToken = (token: string | undefined): string => {
  * request they rejected.
  */
 export const redactSecrets = (text: string): string =>
-  text.replace(/mtx_[A-Za-z0-9_-]{6,}/gu, (match) => redactToken(match));
+  text.replaceAll(/mtx_[A-Za-z0-9_-]{6,}/gu, (match) => redactToken(match));
 
 const parseJson = (text: string, label: string): Effect.Effect<Schema.Json, CliFailure> =>
   Effect.try({

@@ -16,7 +16,7 @@ import { Schema } from "effect";
 export const normalizeReportedName = (value: string | null | undefined): string | undefined => {
   const trimmed = value?.trim();
 
-  return trimmed ? trimmed.replace(/\s+/g, " ") : undefined;
+  return trimmed ? trimmed.replaceAll(/\s+/g, " ") : undefined;
 };
 
 export type ReportedDeviceNameInput = {

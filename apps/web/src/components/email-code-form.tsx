@@ -77,8 +77,8 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
             : "A verification code is on its way.",
       );
       startCooldown();
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "Could not send a verification code."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "Could not send a verification code."));
     } finally {
       setSending(false);
     }
@@ -118,8 +118,8 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
       }
 
       await props.onVerified();
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "That code is invalid or has expired."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "That code is invalid or has expired."));
     } finally {
       setPending(false);
     }

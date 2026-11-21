@@ -1,10 +1,11 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 /**
  * Node entry for the self-host target: `dist/server/node.js`.
@@ -25,7 +26,7 @@ type ServerModule = { default: ServerEntry };
 
 type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 
 const clientRoot = path.resolve(here, "../client");
 
@@ -178,11 +179,7 @@ const staticFiles = (pathname: string): string[] => {
   // Dotfiles are never assets (and keep `..` out of the join below). The
   // `.well-known` directory is the exception: ARD and security.txt are public
   // discovery documents.
-  if (
-    decoded
-      .split("/")
-      .some((segment) => segment.startsWith(".") && segment !== ".well-known")
-  )
+  if (decoded.split("/").some((segment) => segment.startsWith(".") && segment !== ".well-known"))
     return [];
 
   // Drop trailing slashes so `/docs/` and `/docs` produce the same candidates;
@@ -270,8 +267,8 @@ export const listener = async (
     const server = await loadEntry();
 
     await writeResponse(response, await server.default.fetch(toRequest(request, url, response)));
-  } catch (cause) {
-    console.error("[selfhost] dashboard request failed", cause);
+  } catch (error) {
+    console.error("[selfhost] dashboard request failed", error);
 
     if (response.headersSent) {
       response.destroy();

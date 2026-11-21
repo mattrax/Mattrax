@@ -63,10 +63,7 @@ test.describe("account", () => {
       .click();
     const dialog = page.getByRole("dialog");
     await dialog.locator("#token-name").fill("Read only tenant token");
-    await dialog
-      .getByRole("button", { name: "Read", exact: true })
-      .first()
-      .click();
+    await dialog.getByRole("button", { name: "Read", exact: true }).first().click();
     await dialog.locator("#token-tenant").selectOption(tenant.id);
     await dialog.locator("#token-expiry").selectOption("never");
     await dialog.getByRole("button", { name: /create token/i }).click();

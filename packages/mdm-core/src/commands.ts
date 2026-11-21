@@ -2,8 +2,8 @@ import { Schema } from "effect";
 import {
   DEVICE_COMMAND_ACTIVE_STATUSES,
   normalizeDeviceCommandStatus,
-  type DeviceCommandStatus,
 } from "@mattrax/enterprise-domain";
+import type { DeviceCommandStatus } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;
 

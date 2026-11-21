@@ -1,12 +1,8 @@
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { R2Bucket } from "@mattrax/enterprise-core";
-import {
-  deleteBackupRun,
-  readTenantBackup,
-  setBackupRetention,
-  type BackupActionError,
-} from "../src/Tenant/backup.ts";
+import { deleteBackupRun, readTenantBackup, setBackupRetention } from "../src/Tenant/backup.ts";
+import type { BackupActionError } from "../src/Tenant/backup.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | null) => failure?.reason;

@@ -1,18 +1,18 @@
 import { useQueries, useQuery } from "@tanstack/solid-query";
-import {
-  dashboardQueryForWidget,
+import type {
   DashboardQueryRequest,
   DashboardQueryResponse,
   DashboardQueryRow,
-  DeviceQuery,
 } from "@mattrax/enterprise-domain/client";
+import { dashboardQueryForWidget, DeviceQuery } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
 import { For, Show, createContext, createMemo, useContext } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
 import { Markdown } from "~/components/dashboard/markdown";
-import { enterprise, enterpriseKeys, type DashboardWidget } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type { DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 
@@ -274,7 +274,9 @@ export function DashboardWidgetBatchProvider(props: {
     };
   };
 
-  return <DashboardWidgetBatchContext value={batchFor}>{props.children}</DashboardWidgetBatchContext>;
+  return (
+    <DashboardWidgetBatchContext value={batchFor}>{props.children}</DashboardWidgetBatchContext>
+  );
 }
 
 /** The shared batch lookup; present only inside the provider. */
@@ -434,7 +436,7 @@ function PieBuckets(props: {
       offset += bucket.value;
       const end = (offset / total) * 100;
 
-      return { ...bucket, start, end, color: CHART_COLORS[index % CHART_COLORS.length]! };
+      return { ...bucket, start, end, color: CHART_COLORS[index % CHART_COLORS.length] };
     });
   });
 

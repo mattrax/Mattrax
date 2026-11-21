@@ -10,7 +10,8 @@ import {
   PolicyList,
   SignupUrl,
 } from "./schema.js";
-import { GoogleAuth, GoogleAuthLive, type GoogleError } from "./google.js";
+import { GoogleAuth, GoogleAuthLive } from "./google.js";
+import type { GoogleError } from "./google.js";
 
 export const DEFAULT_ANDROID_MANAGEMENT_BASE_URL = "https://androidmanagement.googleapis.com/v1";
 
@@ -214,7 +215,7 @@ function resourceName(
   field: string,
 ): Effect.Effect<string, AndroidManagementValidationError> {
   return Effect.gen(function* () {
-    const trimmed = value.trim().replace(/^\/+|\/+$/g, "");
+    const trimmed = value.trim().replaceAll(/^\/+|\/+$/g, "");
 
     if (trimmed === "") {
       return yield* Effect.fail(invalid(field, `${field} must not be empty`));

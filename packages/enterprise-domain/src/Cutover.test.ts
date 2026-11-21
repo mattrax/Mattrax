@@ -1,12 +1,12 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import type { CutoverPayload } from "./Cutover.js";
 import {
   CUTOVER_FORMAT,
   CUTOVER_KDF_ITERATIONS,
   CUTOVER_MAX_ARCHIVE_BYTES,
   CutoverArchiveError,
   CutoverEnvelope,
-  CutoverPayload,
   decodeCutoverArchive,
   decodeCutoverEnvelope,
   deriveDeploymentId,
@@ -89,9 +89,7 @@ const payload = (): CutoverPayload => ({
   needsReissue: [],
 });
 
-const reason = async <A>(
-  run: () => Promise<A>,
-): Promise<CutoverArchiveError["reason"]> => {
+const reason = async <A>(run: () => Promise<A>): Promise<CutoverArchiveError["reason"]> => {
   try {
     await run();
   } catch (error) {

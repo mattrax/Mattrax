@@ -107,7 +107,7 @@ const tokenFrom = (sent: Sent[], to: string, param = "token") => {
   const text = sent.find((message) => message.to === to)?.text ?? "";
   const match = text.match(new RegExp(`${param}=([^\\s]+)`));
 
-  return match ? decodeURIComponent(match[1]!) : "";
+  return match ? decodeURIComponent(match[1]) : "";
 };
 
 /** A solo account completes on email proof alone. */

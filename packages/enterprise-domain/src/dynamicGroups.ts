@@ -1,11 +1,6 @@
 import { Schema } from "effect";
-import {
-  compareVersionStrings,
-  DeviceCondition,
-  evaluateDeviceQuery,
-  type DeviceQueryDevice,
-  type DeviceQueryEvaluationOptions,
-} from "./deviceQuery.ts";
+import { compareVersionStrings, DeviceCondition, evaluateDeviceQuery } from "./deviceQuery.ts";
+import type { DeviceQueryDevice, DeviceQueryEvaluationOptions } from "./deviceQuery.ts";
 
 export { compareVersionStrings };
 

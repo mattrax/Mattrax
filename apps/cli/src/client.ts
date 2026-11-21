@@ -1,21 +1,23 @@
 import { Effect, Option, Schema } from "effect";
-import {
+import type {
   CreateGroupRequest as CreateGroupRequestSchema,
   CreatePolicyRequest as CreatePolicyRequestSchema,
   DeviceActionRequest as DeviceActionRequestSchema,
+  DeviceSearchQuery as DeviceSearchQuerySchema,
+  PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
+  PatchGroupRequest as PatchGroupRequestSchema,
+  PatchPolicyRequest as PatchPolicyRequestSchema,
+} from "@mattrax/enterprise-domain/client";
+import {
   DeviceActionResponse as DeviceActionResponseSchema,
   DeviceHealthResponse as DeviceHealthResponseSchema,
   DeviceListResponse as DeviceListResponseSchema,
   DeviceRow as DeviceRowSchema,
-  DeviceSearchQuery as DeviceSearchQuerySchema,
   DeviceSearchResponse as DeviceSearchResponseSchema,
   GroupListResponse as GroupListResponseSchema,
   GroupNode as GroupNodeSchema,
   IdResponse as IdResponseSchema,
   MeResponse as MeResponseSchema,
-  PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
-  PatchGroupRequest as PatchGroupRequestSchema,
-  PatchPolicyRequest as PatchPolicyRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
   PolicyRow as PolicyRowSchema,
   TenantEnrollmentInfo as TenantEnrollmentInfoSchema,

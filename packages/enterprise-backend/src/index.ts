@@ -510,23 +510,13 @@ export {
 
 export type { TenantCutoverExport } from "./Tenant/cutover.ts";
 
-export {
-  importTenantCutover,
-  previewTenantCutover,
-} from "./Tenant/cutoverImport.ts";
+export { importTenantCutover, previewTenantCutover } from "./Tenant/cutoverImport.ts";
 
-export type {
-  CutoverActor,
-  CutoverImportOptions,
-  CutoverTarget,
-} from "./Tenant/cutoverImport.ts";
+export type { CutoverActor, CutoverImportOptions, CutoverTarget } from "./Tenant/cutoverImport.ts";
 
 export { applyTenantBundle } from "./Tenant/tenantRestore.ts";
 
-export type {
-  TenantRestoreApplied,
-  TenantRestoreTransaction,
-} from "./Tenant/tenantRestore.ts";
+export type { TenantRestoreApplied, TenantRestoreTransaction } from "./Tenant/tenantRestore.ts";
 
 export {
   ENTRA_GRAPH_NOT_CONFIGURED,

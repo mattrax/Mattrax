@@ -1,8 +1,5 @@
-import {
-  APPLE_DECLARATIVE_PROTOCOL_SUPPORT,
-  APPLE_SUPPORTED_OS,
-  type AppleSupportedOs,
-} from "./generated/supportedOs.js";
+import { APPLE_DECLARATIVE_PROTOCOL_SUPPORT, APPLE_SUPPORTED_OS } from "./generated/supportedOs.js";
+import type { AppleSupportedOs } from "./generated/supportedOs.js";
 
 /**
  * Apple payload/declaration OS support.

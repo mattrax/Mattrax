@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
@@ -80,22 +81,24 @@ const makeContext = async (overrides: { lookup?: LookupHandler; autoUnlink?: boo
     });
   }
 
-  db.store.member.push({
-    id: "member-1",
-    organizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
-  db.store.member.push({
-    id: "member-2",
-    organizationId: otherOrganizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.member.push(
+    {
+      id: "member-1",
+      organizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "member-2",
+      organizationId: otherOrganizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
 
   db.store.device.push({
     id: "device-1",

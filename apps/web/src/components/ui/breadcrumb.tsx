@@ -1,4 +1,3 @@
-
 import { splitProps } from "~/lib/solid";
 import type { ComponentProps } from "@solidjs/web";
 import { ChevronRight, Ellipsis } from "~/components/ui/icons";
@@ -52,11 +51,7 @@ function BreadcrumbPage(props: ComponentProps<"span">) {
   const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <span
-      aria-current="page"
-      class={cn("truncate text-foreground", local.class)}
-      {...others}
-    />
+    <span aria-current="page" class={cn("truncate text-foreground", local.class)} {...others} />
   );
 }
 

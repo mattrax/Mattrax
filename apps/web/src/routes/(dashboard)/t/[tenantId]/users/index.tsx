@@ -1,10 +1,13 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { EmptyState, LinkButton, Page, PageHeader } from "~/components/mdm/common";
-import { MdmTable, type MdmColumn } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmColumn } from "~/components/mdm/table";
 import { User } from "~/components/ui/icons";
-import { enterpriseQueries, type UserListRow } from "~/lib/enterprise";
+import { enterpriseQueries } from "~/lib/enterprise";
+import type { UserListRow } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";

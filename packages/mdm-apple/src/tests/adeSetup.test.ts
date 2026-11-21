@@ -16,13 +16,13 @@ const now = new Date("2026-11-11T10:00:00.000Z");
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
-const AuthenticateEvent = AppleDeviceEvent.members[0]!;
+const AuthenticateEvent = AppleDeviceEvent.members[0];
 
-const TokenUpdateEvent = AppleDeviceEvent.members[2]!;
+const TokenUpdateEvent = AppleDeviceEvent.members[2];
 
-const CommandResultEvent = AppleDeviceEvent.members[5]!;
+const CommandResultEvent = AppleDeviceEvent.members[5];
 
-const DeclarationStatusEvent = AppleDeviceEvent.members[6]!;
+const DeclarationStatusEvent = AppleDeviceEvent.members[6];
 
 const setup = () => {
   const db = makeDb({
@@ -76,10 +76,10 @@ const commands = (db: ReturnType<typeof setup>["db"]) =>
 const commandByType = (db: ReturnType<typeof setup>["db"], requestType: string) =>
   commands(db).find((row) => row.requestType === requestType);
 
-const deviceRow = (db: ReturnType<typeof setup>["db"]) => dbRows(db, tableName(schema.device))[0]!;
+const deviceRow = (db: ReturnType<typeof setup>["db"]) => dbRows(db, tableName(schema.device))[0];
 
 const appleRow = (db: ReturnType<typeof setup>["db"]) =>
-  dbRows(db, tableName(schema.deviceApple))[0]!;
+  dbRows(db, tableName(schema.deviceApple))[0];
 
 /** Assign one non-application configuration so the setup report is expected. */
 const assignPolicy = (db: ReturnType<typeof setup>["db"], deviceId: string) => {

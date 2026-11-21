@@ -112,7 +112,7 @@ const signingClient = <Client extends { ManagementWebhook: Record<string, unknow
           );
       },
     }),
-  }) as Client;
+  });
 
 export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptions) =>
   Layer.effect(

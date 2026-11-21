@@ -18,7 +18,10 @@ test.describe("policy designer", () => {
 
     // A selection gives the editor a live subtree; switching platforms then
     // changes the active selection identity, which used to desync hydration.
-    await page.getByRole("button", { name: /BitLocker/ }).first().click();
+    await page
+      .getByRole("button", { name: /BitLocker/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Add to policy$/ }).click();
     await expect(
       page.getByRole("button", { name: "Remove BitLocker from policy", exact: true }),
@@ -56,7 +59,7 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /^Export$/ }).click();
     const file = await download;
     expect(file.suggestedFilename()).toContain("Windows-baseline.syncml.xml");
-    const contents = await readFile((await file.path())!, "utf8");
+    const contents = await readFile(await file.path(), "utf8");
     // Numeric and boolean settings keep their SyncML type instead of being
     // stringified by the catalogue's enum values.
     expect(contents).toContain('<Format xmlns="syncml:metinf">int</Format>');
@@ -169,7 +172,7 @@ test.describe("policy designer", () => {
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: /^Export$/ }).click();
     const file = await download;
-    const policy = JSON.parse(await readFile((await file.path())!, "utf8"));
+    const policy = JSON.parse(await readFile(await file.path(), "utf8"));
     expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
   });
 

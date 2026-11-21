@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, For, Show } from "solid-js";

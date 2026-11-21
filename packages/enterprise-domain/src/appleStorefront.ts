@@ -71,8 +71,7 @@ export const resolveApplicationStoreId = (input: {
   readonly preferredRegion?: string | null;
   readonly legacyStoreId?: string | null;
 }): ResolvedStoreId | undefined => {
-  const preferred =
-    normaliseStorefrontRegion(input.preferredRegion) ?? DEFAULT_STOREFRONT_REGION;
+  const preferred = normaliseStorefrontRegion(input.preferredRegion) ?? DEFAULT_STOREFRONT_REGION;
 
   const available = new Map(
     input.storefronts.flatMap((storefront) => {

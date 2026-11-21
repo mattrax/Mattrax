@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
-import { sendSmtpMail, type SmtpTransportOptions } from "./smtp.ts";
+import { sendSmtpMail } from "./smtp.ts";
+import type { SmtpTransportOptions } from "./smtp.ts";
 
 /**
  * Shared transactional-email contract.
@@ -115,12 +116,12 @@ export const parseEmailSender = (value: string | null | undefined): EmailAddress
   const angled = /^(.*)<([^<>]+)>$/.exec(raw);
 
   if (angled) {
-    const email = angled[2]!.trim();
+    const email = angled[2].trim();
 
-    const name = angled[1]!
+    const name = angled[1]
       .trim()
       .replace(/^"(.*)"$/, "$1")
-      .replaceAll('\\"', '"');
+      .replaceAll(String.raw`\"`, '"');
 
     if (!EMAIL_ADDRESS.test(email)) return null;
 
@@ -142,7 +143,7 @@ export const formatEmailAddress = (address: EmailAddress): string => {
 
   if (!name) return `<${address.email}>`;
 
-  return `"${name.replaceAll(/(["\\])/g, "\\$1")}" <${address.email}>`;
+  return `"${name.replaceAll(/(["\\])/g, String.raw`\$1`)}" <${address.email}>`;
 };
 
 /** Normalise Reply-To into the bare or named form provider APIs accept. */

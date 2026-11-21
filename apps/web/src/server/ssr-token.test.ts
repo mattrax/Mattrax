@@ -123,14 +123,14 @@ describe("edge SSR token verification", () => {
   it("rejects a tampered signature or body", async () => {
     const token = await bound();
     const [body, signature] = token.split(".");
-    const tamperedSignature = `${body}.${signature!.startsWith("A") ? "B" : "A"}${signature!.slice(1)}`;
+    const tamperedSignature = `${body}.${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
     const tamperedPayload = await bound({ sub: "user-2" });
 
     expect(await verifySsrToken(secret, tamperedSignature, sessionCookie)).toBeUndefined();
     expect(
       await verifySsrToken(secret, `${tamperedPayload.split(".")[0]}.${signature}`, sessionCookie),
     ).toBeUndefined();
-    expect(await verifySsrToken(secret, body!, sessionCookie)).toBeUndefined();
+    expect(await verifySsrToken(secret, body, sessionCookie)).toBeUndefined();
   });
 
   it("rejects a token minted for another purpose", async () => {
@@ -184,7 +184,7 @@ describe("edge SSR revision verification", () => {
     const token = await sign(revision());
     const [body, signature] = token.split(".");
     const tampered = await sign(revision({ ver: "revision-2" }));
-    const tamperedSignature = `${body}.${signature!.startsWith("A") ? "B" : "A"}${signature!.slice(1)}`;
+    const tamperedSignature = `${body}.${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
 
     expect(await verifySsrRevision(secret, tamperedSignature)).toBeUndefined();
     expect(

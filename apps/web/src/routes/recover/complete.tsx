@@ -49,10 +49,10 @@ export default function CompleteRecoveryPage() {
         }
 
         navigate("/account", { replace: true });
-      } catch (cause) {
+      } catch (error_) {
         setError(
           errorMessage(
-            raisedFailure(cause),
+            raisedFailure(error_),
             "That recovery link is invalid, expired or has already been used.",
           ),
         );

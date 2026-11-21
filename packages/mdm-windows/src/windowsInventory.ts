@@ -612,7 +612,7 @@ const childPath = (
   return { key: parts.slice(0, -1).join("/"), field: parts.at(-1)! };
 };
 
-const queryless = (uri: string) => uri.split("?")[0]!;
+const queryless = (uri: string) => uri.split("?")[0];
 
 /**
  * Parse the installed-application inventory from a device's `<Results>`.

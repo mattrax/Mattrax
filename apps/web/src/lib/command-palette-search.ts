@@ -30,7 +30,9 @@ export const SEARCH_GROUP_ORDER = [
 export type SearchGroup = (typeof SEARCH_GROUP_ORDER)[number];
 
 export const groupRank = (group: string) => {
-  const index = SEARCH_GROUP_ORDER.findIndex((value) => value === group);
+  // SAFETY: the caller passes one of the groups this module defines; unknown
+  // values have no rank and fall through to the length.
+  const index = SEARCH_GROUP_ORDER.indexOf(group as SearchGroup);
 
   return index === -1 ? SEARCH_GROUP_ORDER.length : index;
 };

@@ -1,12 +1,7 @@
-import { FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
-import {
-  defaultFor,
-  joinEntityValues,
-  opsFor,
-  splitEntityValues,
-  type EntityCondition,
-  type EntityField,
-} from "./entity-query-engine";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterCondition, FilterField } from "@mattrax/ui";
+import { defaultFor, joinEntityValues, opsFor, splitEntityValues } from "./entity-query-engine";
+import type { EntityCondition, EntityField } from "./entity-query-engine";
 
 export {
   formatEntityQuery,

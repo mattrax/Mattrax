@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { DeviceQuery } from "@mattrax/enterprise-domain/client";
@@ -30,9 +31,8 @@ import {
   enterprise,
   enterpriseKeys,
   enterpriseQueries,
-  type DashboardWidget,
-  type DashboardWidgetType,
 } from "~/lib/enterprise";
+import type { DashboardWidget, DashboardWidgetType } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";

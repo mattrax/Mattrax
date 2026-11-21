@@ -1,15 +1,16 @@
 import { Match, Option, Schema } from "effect";
+import type { DeviceProtocol, DeviceStatus } from "@mattrax/enterprise-domain";
 import {
   EnterpriseBadRequest,
-  DeviceProtocol,
-  DeviceStatus,
   deviceQueryProblem,
   parseDeviceQueryText,
-  type DeviceQuery,
-  type DeviceSearchQuery,
-  type DeviceSearchSort,
-  type SortDirection,
-  type WindowsActivationStatus,
+} from "@mattrax/enterprise-domain";
+import type {
+  DeviceQuery,
+  DeviceSearchQuery,
+  DeviceSearchSort,
+  SortDirection,
+  WindowsActivationStatus,
 } from "@mattrax/enterprise-domain";
 import { decodeAttributeFilter } from "../Policy/attributes.ts";
 
@@ -125,9 +126,9 @@ export const normalizeDeviceSearchQuery = (
 
   try {
     attributes = decodeAttributeFilter(query.attributes);
-  } catch (cause) {
+  } catch (error) {
     throw new EnterpriseBadRequest({
-      message: cause instanceof Error ? cause.message : "Invalid attribute filter",
+      message: error instanceof Error ? error.message : "Invalid attribute filter",
     });
   }
 

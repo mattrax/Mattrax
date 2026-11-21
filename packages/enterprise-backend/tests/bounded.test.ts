@@ -19,7 +19,12 @@ describe("forEachBounded", () => {
           Effect.gen(function* () {
             active++;
             peak = Math.max(peak, active);
-            yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 2)));
+            yield* Effect.promise(
+              () =>
+                new Promise((resolve) => {
+                  setTimeout(resolve, 2);
+                }),
+            );
             seen.push(item);
             active--;
           }),
@@ -48,7 +53,12 @@ describe("APNs fan-out", () => {
     let peak = 0;
 
     const sleep = (ms: number) =>
-      Effect.promise(() => new Promise((resolve) => setTimeout(resolve, ms)));
+      Effect.promise(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, ms);
+          }),
+      );
 
     const db = {
       query: {
@@ -106,7 +116,7 @@ describe("APNs fan-out", () => {
       db: db as never,
       // SAFETY: the core schema and the backend's generated schema are distinct
       // nominal objects over the same tables.
-      schema: schema as never,
+      schema,
       apns,
       authSecret,
       pushTimeoutMs: 5_000,

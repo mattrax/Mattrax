@@ -10,9 +10,9 @@ import {
 
 const pemToPkcs8 = (pem: string): ArrayBuffer => {
   const base64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s/g, "");
+    .replaceAll("-----BEGIN PRIVATE KEY-----", "")
+    .replaceAll("-----END PRIVATE KEY-----", "")
+    .replaceAll(/\s/g, "");
 
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -123,7 +123,7 @@ describe("Apple profile signing", () => {
     });
 
     expect(result.signatureVerified).toBe(true);
-    expect(result.signerCertificate?.subject.isEqual(certificates[0]!.subject)).toBe(true);
+    expect(result.signerCertificate?.subject.isEqual(certificates[0].subject)).toBe(true);
   });
 
   it("includes a supplied certificate chain", async () => {

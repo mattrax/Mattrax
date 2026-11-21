@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { HttpApiBuilder } from "effect/http-api";
+import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
@@ -8,7 +8,7 @@ import {
   InternalServerError,
   ManagementBackend,
 } from "@mattrax/management-backend";
-import { managementWebhookGroup } from "./http.ts";
+import type { managementWebhookGroup } from "./http.ts";
 
 const encoder = new TextEncoder();
 
@@ -44,7 +44,7 @@ const timingSafeEqual = (left: string, right: string) => {
   if (a.length !== b.length) return false;
   let difference = 0;
 
-  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
 
   return difference === 0;
 };

@@ -333,7 +333,7 @@ describe("unenrol handoff", () => {
     );
 
     expect(result!.results[0]).toMatchObject({ delivery: "manual", executionId: null });
-    expect(result!.results[0]!.instructions).toContain("Access work or school");
+    expect(result!.results[0].instructions).toContain("Access work or school");
     expect(entryFor(db, created.id, "WIN123").lastEvidence).toContain("Manual unenrol required");
   });
 });
@@ -369,10 +369,10 @@ describe("return detection", () => {
       deviceName: "Device device-returned",
       actions: ["unenrol", "confirm"],
     });
-    expect(detail!.entries[0]!.lastEvidence).toContain("(C02RETURN)");
+    expect(detail!.entries[0].lastEvidence).toContain("(C02RETURN)");
 
     const confirmed = await runEffect(
-      confirmFleetMigrationEntry(db, orgId, created.id, detail!.entries[0]!.id, "user-1", now),
+      confirmFleetMigrationEntry(db, orgId, created.id, detail!.entries[0].id, "user-1", now),
     );
 
     expect(confirmed).toEqual({
@@ -387,7 +387,7 @@ describe("return detection", () => {
     // A confirmed row is terminal, even if the device re-enrols again.
     expect(
       await runEffect(
-        confirmFleetMigrationEntry(db, orgId, created.id, detail!.entries[0]!.id, "user-1", now),
+        confirmFleetMigrationEntry(db, orgId, created.id, detail!.entries[0].id, "user-1", now),
       ),
     ).toMatchObject({ problem: expect.stringMatching(/cannot move/i) });
   });
@@ -413,7 +413,7 @@ describe("return detection", () => {
     const detail = await runEffect(getFleetMigration(db, orgId, created.id, origin, now));
 
     expect(detail!.entries[0]).toMatchObject({ status: "awaiting-enrolment" });
-    expect(detail!.entries[0]!.lastEvidence).toContain("succeeded");
+    expect(detail!.entries[0].lastEvidence).toContain("succeeded");
   });
 
   it("marks a device stuck after its window and lets the operator re-issue", async () => {
@@ -432,7 +432,7 @@ describe("return detection", () => {
     const stuck = await runEffect(getFleetMigration(db, orgId, created.id, origin, now));
 
     expect(stuck!.entries[0]).toMatchObject({ status: "stuck", actions: ["unenrol"] });
-    expect(stuck!.entries[0]!.lastEvidence).toContain("No return within 7 days");
+    expect(stuck!.entries[0].lastEvidence).toContain("No return within 7 days");
     expect(stuck!.migration.counts.stuck).toBe(1);
 
     const reissued = await runEffect(

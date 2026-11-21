@@ -27,7 +27,7 @@ const pemToPkcs8 = (pem: string): ArrayBuffer => {
 
   if (!match) throw new Error("The service-account key is not a PKCS#8 PEM private key.");
 
-  const binary = atob(match[1]!.replace(/\s+/g, ""));
+  const binary = atob(match[1].replaceAll(/\s+/g, ""));
   const buffer = new ArrayBuffer(binary.length);
   const bytes = new Uint8Array(buffer);
 

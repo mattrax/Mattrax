@@ -11,8 +11,8 @@ import {
   makeTelemetry,
   metricsRequestAuthorised,
   resolveMetricsExposure,
-  type MetricsExposure,
 } from "@mattrax/cloud-services";
+import type { MetricsExposure } from "@mattrax/cloud-services";
 import { env as apiEnv } from "./env.js";
 
 const enabled = apiEnv.MATTRAX_TELEMETRY?.trim().toLowerCase() !== "off";

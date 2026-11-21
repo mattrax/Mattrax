@@ -9,8 +9,8 @@ import {
   TenantImportRequest,
   isSupportedDynamicGroupRulesVersion,
   validateTenantBranding,
-  type TenantExportGroup,
 } from "@mattrax/enterprise-domain";
+import type { TenantExportGroup } from "@mattrax/enterprise-domain";
 import {
   syncDirectoryGroupsForTenant,
   syncGroupInheritance,
@@ -18,12 +18,8 @@ import {
 } from "@mattrax/mdm-apple";
 import { schema } from "@mattrax/enterprise-core";
 import { loadTenantEscrowKey } from "../Device/fdeEscrow.ts";
-import {
-  readTenantBackup,
-  runTenantBackup,
-  type BackupActionError,
-  type BackupActor,
-} from "./backup.ts";
+import { readTenantBackup, runTenantBackup } from "./backup.ts";
+import type { BackupActionError, BackupActor } from "./backup.ts";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
 /** Restore obeys the same bundle size limit as a fresh import. */
@@ -646,7 +642,6 @@ export const parseTenantRestoreBundle = (
   }).pipe(
     // `text()` bounds string fields by throwing; turn only that validation
     // failure into a typed error so unexpected defects still surface.
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Effect defects are untyped by contract.
     Effect.catchDefect((defect) =>
       defect instanceof TenantRestoreError ? Effect.fail(defect) : Effect.die(defect),
     ),

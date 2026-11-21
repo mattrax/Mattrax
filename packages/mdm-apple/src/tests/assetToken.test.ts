@@ -4,7 +4,8 @@ import { schema } from "@mattrax/enterprise-core";
 import { appleAssetTokenExpiresAt, signAppleAssetToken } from "@mattrax/dm-apple";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import { configurationAssetIdentifier } from "@mattrax/mdm-core";
-import { makeDb, tableName, type Store } from "./fake-db.js";
+import { makeDb, tableName } from "./fake-db.js";
+import type { Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -164,7 +165,7 @@ describe("DDM asset URLs", () => {
 
     // The signed URL stays well-formed and the device stays enrolled; only
     // the policy's enabled state withdraws the content.
-    db.store[tableName(schema.policy)][0]!.enabled = false;
+    db.store[tableName(schema.policy)][0].enabled = false;
 
     await expect(run(backend.getAppleAsset(undefined, identifier, token))).resolves.toBeNull();
     await expect(

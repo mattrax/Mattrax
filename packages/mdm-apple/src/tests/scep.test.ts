@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { describeScepCa, generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { issueScepChallenge, ScepRepositoryLive } from "@mattrax/mdm-core";
-import { dbRows, makeDb as makeStoreDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb as makeStoreDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const authSecret = "scep-test-secret";
 
@@ -127,7 +128,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     // A long lifetime keeps the signed expiry valid, so only the persisted
     // row's `expiresAt` guard can reject it.
     const { challenge } = await issueChallenge(db);
-    db.store[tableName(schema.scepChallenge)]![0]!.expiresAt = new Date(Date.now() - 1_000);
+    db.store[tableName(schema.scepChallenge)][0].expiresAt = new Date(Date.now() - 1_000);
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
@@ -141,7 +142,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
-    expect(challengeRows(db)[0]!.consumedAt).toBeNull();
+    expect(challengeRows(db)[0].consumedAt).toBeNull();
   });
 
   it("allows only one of two concurrent uses of the same challenge", async () => {
@@ -162,7 +163,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     );
 
     expect(results.filter(Boolean)).toHaveLength(1);
-    expect(challengeRows(db)[0]!.consumedAt).toBeInstanceOf(Date);
+    expect(challengeRows(db)[0].consumedAt).toBeInstanceOf(Date);
   });
 
   it("rejects a challenge for an unknown enrollment", async () => {
@@ -301,7 +302,7 @@ describe("ScepRepositoryLive identity revocation", () => {
 });
 
 const seedDevice = (db: ReturnType<typeof makeStoreDb>, overrides: Row = {}) =>
-  db.store[tableName(schema.device)]!.push({
+  db.store[tableName(schema.device)].push({
     id: "internal-device-1",
     organizationId: "tenant-1",
     proto: "win",
@@ -398,8 +399,8 @@ describe("ScepRepositoryLive certificate recording", () => {
     const repository = makeRepository(db);
     await Effect.runPromise(repository.recordIssuedCertificate!(certificate()));
     const [row] = dbRows(db, tableName(schema.scepIssuedCertificate));
-    expect(row!.revokedAt).toEqual(revokedAt);
-    expect(row!.notAfter).toBeInstanceOf(Date);
+    expect(row.revokedAt).toEqual(revokedAt);
+    expect(row.notAfter).toBeInstanceOf(Date);
   });
 
   it("refuses a colliding serial that belongs to another identity", async () => {

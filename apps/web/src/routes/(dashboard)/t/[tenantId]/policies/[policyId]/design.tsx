@@ -21,8 +21,8 @@ import {
   emptyPolicyDraft,
   parsePolicyDraft,
   policyToConfigurations,
-  type PolicyDraft,
 } from "~/lib/policy-designer/build";
+import type { PolicyDraft } from "~/lib/policy-designer/build";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";

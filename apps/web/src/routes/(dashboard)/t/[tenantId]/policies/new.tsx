@@ -2,17 +2,16 @@ import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
-import {
-  CisTemplateDialog,
-  type CisTemplateOutcome,
-} from "~/components/mdm/cis-template-dialog";
+import { CisTemplateDialog } from "~/components/mdm/cis-template-dialog";
+import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { policyToConfigurations, type PolicyDraft } from "~/lib/policy-designer/build";
+import { policyToConfigurations } from "~/lib/policy-designer/build";
+import type { PolicyDraft } from "~/lib/policy-designer/build";
 
 const textareaClass =
   "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";

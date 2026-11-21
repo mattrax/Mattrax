@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { SYSTEM_AUDIT_ACTIONS, writeSystemAudit } from "./audit.js";
 
 /**

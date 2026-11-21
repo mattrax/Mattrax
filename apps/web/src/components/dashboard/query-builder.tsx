@@ -1,10 +1,7 @@
-import { DeviceCondition, DeviceQuery } from "@mattrax/enterprise-domain/client";
-import {
-  FilterBar,
-  type FilterCondition,
-  type FilterField,
-  type FilterOperator,
-} from "@mattrax/ui";
+import type { DeviceQuery } from "@mattrax/enterprise-domain/client";
+import { DeviceCondition } from "@mattrax/enterprise-domain/client";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterCondition, FilterField, FilterOperator } from "@mattrax/ui";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, Show } from "solid-js";
 import { Activity, Laptop, RefreshCw, ShieldCheck, SlidersHorizontal } from "~/components/ui/icons";
@@ -279,7 +276,7 @@ export const USER_QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
 ];
 
 const fieldById = (id: string, fields: ReadonlyArray<FieldDefinition> = QUERY_FIELDS) =>
-  fields.find((field) => field.id === id) ?? fields[0]!;
+  fields.find((field) => field.id === id) ?? fields[0];
 
 type Draft = { field: string; op: string; value: string };
 

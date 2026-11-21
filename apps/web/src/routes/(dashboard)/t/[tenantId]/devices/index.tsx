@@ -17,16 +17,11 @@ import {
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
-import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
-import {
-  Badge,
-  EmptyState,
-  FilterBar,
-  type FilterCondition,
-  type FilterField,
-  NativeSelect,
-} from "@mattrax/ui";
+import { Badge, EmptyState, FilterBar, NativeSelect } from "@mattrax/ui";
+import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
   Laptop,
@@ -51,16 +46,14 @@ import {
   enterpriseQueries,
   formatDeviceQueryText,
   parseDeviceQueryText,
-  type DeviceHealthFilter,
-  type DeviceQuery,
-  type DeviceRow,
 } from "~/lib/enterprise";
+import type { DeviceHealthFilter, DeviceQuery, DeviceRow } from "~/lib/enterprise";
 import {
   DEVICE_IMPORT_MAX_ROWS,
   parseDeviceImportCsv,
   toDeviceImportPayload,
-  type DeviceImportParseResult,
 } from "~/lib/device-import";
+import type { DeviceImportParseResult } from "~/lib/device-import";
 import { healthRank } from "~/lib/device-health";
 import { SoftwareUpdateTag } from "~/components/software-update-badge";
 import { decodeSoftwareUpdate } from "~/lib/software-updates";

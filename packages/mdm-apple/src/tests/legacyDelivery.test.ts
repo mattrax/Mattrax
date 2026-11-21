@@ -51,7 +51,7 @@ describe("buildLegacyProfiles", () => {
     ]);
 
     const devicePlist = await Effect.runPromise(
-      parsePlist(unsign(installProfilePayload(built.profiles[0]!).Payload)),
+      parsePlist(unsign(installProfilePayload(built.profiles[0]).Payload)),
     );
 
     expect(devicePlist).toMatchObject({ PayloadType: "Configuration" });
@@ -79,7 +79,7 @@ describe("buildLegacyProfiles", () => {
     expect(built.profiles).toHaveLength(1);
 
     const plist = await Effect.runPromise(
-      parsePlist(unsign(installProfilePayload(built.profiles[0]!).Payload)),
+      parsePlist(unsign(installProfilePayload(built.profiles[0]).Payload)),
     );
 
     const content = Schema.decodeUnknownSync(

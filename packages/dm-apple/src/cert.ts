@@ -10,7 +10,7 @@ interface Asn1Node {
 }
 
 function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
-  let length = der[offset]!;
+  let length = der[offset];
   let headerLen = 1;
 
   if (length & 0x80) {
@@ -18,7 +18,7 @@ function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
     length = 0;
 
     for (let i = 0; i < numBytes; i++) {
-      length = (length << 8) | der[offset + 1 + i]!;
+      length = (length << 8) | der[offset + 1 + i];
     }
 
     headerLen = 1 + numBytes;
@@ -28,7 +28,7 @@ function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
 }
 
 function parseNode(der: Uint8Array, offset: number): ParsedAsn1Node {
-  const tag = der[offset]!;
+  const tag = der[offset];
   const [length, headerLen] = readAsn1Length(der, offset + 1);
   const contentStart = offset + 1 + headerLen;
   const endOffset = contentStart + length;
@@ -59,14 +59,14 @@ function parseNode(der: Uint8Array, offset: number): ParsedAsn1Node {
 
 function decodeOid(content: Uint8Array): string {
   if (content.length === 0) return "";
-  const first = content[0]!;
+  const first = content[0];
   const parts = [Math.floor(first / 40), first % 40];
   let value = 0;
 
   for (let i = 1; i < content.length; i++) {
-    value = (value << 7) | (content[i]! & 0x7f);
+    value = (value << 7) | (content[i] & 0x7f);
 
-    if ((content[i]! & 0x80) === 0) {
+    if ((content[i] & 0x80) === 0) {
       parts.push(value);
       value = 0;
     }

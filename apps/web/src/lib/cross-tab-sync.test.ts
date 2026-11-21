@@ -8,9 +8,8 @@ import {
   keyTouchesTenant,
   mergeInvalidationKeys,
   queryKeyId,
-  type CrossTabCache,
-  type CrossTabMessage,
 } from "./cross-tab-sync";
+import type { CrossTabCache, CrossTabMessage } from "./cross-tab-sync";
 
 const envelope = () => ({
   v: 1 as const,

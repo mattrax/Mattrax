@@ -146,4 +146,3 @@ export function EyeOff(props: SvgProps) {
     </Icon>
   );
 }
-

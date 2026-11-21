@@ -44,9 +44,7 @@ const ClientSessionGlobal = Schema.Struct({
  * `window.__MATTRAX_SESSION__`) so a client-side query can seed from it too.
  */
 export function readClientPreloadedMe(): MeResponse | undefined {
-  const stored = Option.getOrUndefined(
-    Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis),
-  );
+  const stored = Option.getOrUndefined(Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis));
 
   return stored?.__MATTRAX_SESSION__?.me ?? undefined;
 }

@@ -260,7 +260,7 @@ export const parseSofaFeed = (input: Schema.Json): MacOsUpdateCatalog | null => 
     }
 
     const sorted = sortReleases([...unique.values()]);
-    const newest = sorted[0]!;
+    const newest = sorted[0];
     const major = majorOf(newest.version);
 
     if (major === null) continue;

@@ -26,7 +26,8 @@ const CRC_TABLE = (() => {
   for (let index = 0; index < 256; index += 1) {
     let value = index;
 
-    for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    for (let bit = 0; bit < 8; bit += 1)
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
     table[index] = value >>> 0;
   }
 
@@ -36,7 +37,7 @@ const CRC_TABLE = (() => {
 export const crc32 = (bytes: Uint8Array) => {
   let crc = 0xffffffff;
 
-  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
 
   return (crc ^ 0xffffffff) >>> 0;
 };

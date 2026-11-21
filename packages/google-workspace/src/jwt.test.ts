@@ -43,8 +43,8 @@ describe("Google service-account assertions", () => {
     );
 
     const [header, payload, signature] = result.assertion.split(".");
-    expect(JSON.parse(base64UrlDecode(header!))).toEqual({ alg: "RS256", typ: "JWT" });
-    expect(JSON.parse(base64UrlDecode(payload!))).toEqual({
+    expect(JSON.parse(base64UrlDecode(header))).toEqual({ alg: "RS256", typ: "JWT" });
+    expect(JSON.parse(base64UrlDecode(payload))).toEqual({
       iss: "sync@project.iam.gserviceaccount.com",
       sub: "admin@example.com",
       scope: GOOGLE_DIRECTORY_SCOPES,
@@ -56,7 +56,7 @@ describe("Google service-account assertions", () => {
     const valid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       pair.publicKey,
-      Buffer.from(signature!.replaceAll("-", "+").replaceAll("_", "/"), "base64"),
+      Buffer.from(signature.replaceAll("-", "+").replaceAll("_", "/"), "base64"),
       new TextEncoder().encode(`${header}.${payload}`),
     );
 

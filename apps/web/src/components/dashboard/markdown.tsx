@@ -33,7 +33,7 @@ const inline = (text: string): JSX.Element[] => {
 
     if (token.startsWith("![")) {
       const parts = token.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-      const src = parts ? safeImage(parts[2]!) : null;
+      const src = parts ? safeImage(parts[2]) : null;
       nodes.push(
         src ? (
           <img
@@ -50,7 +50,7 @@ const inline = (text: string): JSX.Element[] => {
       );
     } else if (token.startsWith("[")) {
       const parts = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      const href = parts ? safeHref(parts[2]!) : null;
+      const href = parts ? safeHref(parts[2]) : null;
       nodes.push(
         href ? (
           <a
@@ -96,7 +96,7 @@ export function Markdown(props: { content: string }) {
     let index = 0;
 
     while (index < lines.length) {
-      const line = lines[index]!;
+      const line = lines[index];
 
       if (!line.trim()) {
         index++;
@@ -107,8 +107,8 @@ export function Markdown(props: { content: string }) {
         const body: string[] = [];
         index++;
 
-        while (index < lines.length && !lines[index]!.startsWith("```")) {
-          body.push(lines[index]!);
+        while (index < lines.length && !lines[index].startsWith("```")) {
+          body.push(lines[index]);
           index++;
         }
 
@@ -124,8 +124,8 @@ export function Markdown(props: { content: string }) {
       const heading = /^(#{1,4})\s+(.*)$/.exec(line);
 
       if (heading) {
-        const level = heading[1]!.length;
-        const content = inline(heading[2]!);
+        const level = heading[1].length;
+        const content = inline(heading[2]);
         output.push(() =>
           Match.value(level).pipe(
             Match.when(1, () => (
@@ -158,8 +158,8 @@ export function Markdown(props: { content: string }) {
       if (/^\s*[-*+]\s+/.test(line)) {
         const items: string[] = [];
 
-        while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index]!)) {
-          items.push(lines[index]!.replace(/^\s*[-*+]\s+/, ""));
+        while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+          items.push(lines[index].replace(/^\s*[-*+]\s+/, ""));
           index++;
         }
 
@@ -174,8 +174,8 @@ export function Markdown(props: { content: string }) {
       if (/^\s*\d+\.\s+/.test(line)) {
         const items: string[] = [];
 
-        while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index]!)) {
-          items.push(lines[index]!.replace(/^\s*\d+\.\s+/, ""));
+        while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+          items.push(lines[index].replace(/^\s*\d+\.\s+/, ""));
           index++;
         }
 
@@ -190,8 +190,8 @@ export function Markdown(props: { content: string }) {
       if (line.startsWith("> ")) {
         const quoted: string[] = [];
 
-        while (index < lines.length && lines[index]!.startsWith("> ")) {
-          quoted.push(lines[index]!.slice(2));
+        while (index < lines.length && lines[index].startsWith("> ")) {
+          quoted.push(lines[index].slice(2));
           index++;
         }
 
@@ -208,10 +208,10 @@ export function Markdown(props: { content: string }) {
 
       while (
         index < lines.length &&
-        lines[index]!.trim() &&
-        !/^(#{1,4})\s|^\s*[-*+]\s+|^\s*\d+\.\s+|^```|^> /.test(lines[index]!)
+        lines[index].trim() &&
+        !/^(#{1,4})\s|^\s*[-*+]\s+|^\s*\d+\.\s+|^```|^> /.test(lines[index])
       ) {
-        paragraph.push(lines[index]!);
+        paragraph.push(lines[index]);
         index++;
       }
 

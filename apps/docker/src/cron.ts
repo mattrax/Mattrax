@@ -109,10 +109,10 @@ export const startCronScheduler = ({
   for (const expression of expressions) {
     try {
       schedules.push({ expression, matches: parseCron(expression) });
-    } catch (cause) {
+    } catch (error) {
       console.error(
         `mattrax self-host: ignoring cron "${expression}"`,
-        cause instanceof Error ? cause.message : cause,
+        error instanceof Error ? error.message : error,
       );
     }
   }
@@ -138,8 +138,8 @@ export const startCronScheduler = ({
 
         try {
           await trigger(schedule.expression);
-        } catch (cause) {
-          console.error(`mattrax self-host: cron ${schedule.expression} failed`, cause);
+        } catch (error) {
+          console.error(`mattrax self-host: cron ${schedule.expression} failed`, error);
         }
       }
     } finally {

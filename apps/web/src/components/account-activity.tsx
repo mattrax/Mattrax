@@ -1,16 +1,16 @@
 import { isServer } from "@solidjs/web";
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/solid-query";
+import { useInfiniteQuery } from "@tanstack/solid-query";
+import type { InfiniteData } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  enterprise,
-  enterpriseKeys,
-  type AccountAuditEntry,
-  type AccountAuditSearchResponse,
-  type AuditSearchQuery,
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type {
+  AccountAuditEntry,
+  AccountAuditSearchResponse,
+  AuditSearchQuery,
 } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
 import { downloadBlob } from "~/lib/download";

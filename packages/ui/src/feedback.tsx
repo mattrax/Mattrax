@@ -19,7 +19,10 @@ function Breadcrumb(props: { items: Crumb[]; class?: string }) {
               <Show when={index() > 0}>
                 <ChevronRight class="size-3 shrink-0 text-subtle-foreground/70" />
               </Show>
-              <Show when={item.href} fallback={<span class="truncate text-foreground">{item.label}</span>}>
+              <Show
+                when={item.href}
+                fallback={<span class="truncate text-foreground">{item.label}</span>}
+              >
                 {(href) => (
                   <a
                     href={href()}
@@ -88,7 +91,14 @@ function Alert(
     action?: JSX.Element;
   },
 ) {
-  const [local, others] = splitProps(props, ["class", "tone", "icon", "title", "action", "children"]);
+  const [local, others] = splitProps(props, [
+    "class",
+    "tone",
+    "icon",
+    "title",
+    "action",
+    "children",
+  ]);
 
   return (
     <div

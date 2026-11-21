@@ -64,7 +64,10 @@ const webhookDocument = OpenApi.fromApi(managementApi);
 
 /** Escape text for a GFM table cell or prose line. */
 const text = (value: string | undefined): string =>
-  (value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ").trim();
+  (value ?? "")
+    .replaceAll("|", String.raw`\|`)
+    .replaceAll("\n", " ")
+    .trim();
 
 const isJson = Schema.is(Schema.Json);
 
@@ -89,13 +92,13 @@ const schemaType = (schema: JsonSchema): string => {
   if (isArray(variants)) {
     const types = variants.filter(isRecord).map(schemaType);
 
-    return types.length > 0 ? types.join(" \\| ") : "value";
+    return types.length > 0 ? types.join(String.raw` \| `) : "value";
   }
 
   const literalValues = schema.enum;
 
   if (isJsonArray(literalValues) && literalValues.length > 0)
-    return literalValues.map(literal).join(" \\| ");
+    return literalValues.map(literal).join(String.raw` \| `);
 
   if (isJson(schema.const)) return literal(schema.const);
 
@@ -188,17 +191,22 @@ const renderOperation = (
 
   if (operation.deprecated) lines.push("> **Deprecated.**", "");
 
-  lines.push(...parameterRows(operation, pathParameters));
-  lines.push(...schemaSection("Request body", requestSchema(operation)));
+  lines.push(
+    ...parameterRows(operation, pathParameters),
+    ...schemaSection("Request body", requestSchema(operation)),
+  );
 
   const statuses = Object.keys(operation.responses).sort(
     (left, right) => Number(left) - Number(right),
   );
 
   if (statuses.length > 0) {
-    lines.push("| Status | Response |", "| --- | --- |");
-    lines.push(...statuses.map((status) => `| ${status} | ${responseSchema(operation, status)} |`));
-    lines.push("");
+    lines.push(
+      "| Status | Response |",
+      "| --- | --- |",
+      ...statuses.map((status) => `| ${status} | ${responseSchema(operation, status)} |`),
+      "",
+    );
   }
 
   return lines;

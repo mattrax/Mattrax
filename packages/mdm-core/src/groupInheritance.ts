@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 /**
  * Nested group membership.
@@ -185,10 +186,7 @@ export const groupHierarchyProblem = (
  * Tenant-scoped edges. Loading them all is bounded by the number of groups in
  * the tenant and keeps the depth/cycle checks free of recursive SQL.
  */
-export const loadGroupHierarchyEdges = (
-  db: GroupInheritanceDb,
-  organizationId: string,
-) =>
+export const loadGroupHierarchyEdges = (db: GroupInheritanceDb, organizationId: string) =>
   Effect.gen(function* () {
     // Two plain reads rather than a join: the tenant's group ids are bounded by
     // the tenant, and filtering edges by a parent set is the same predicate the
@@ -213,7 +211,7 @@ export const loadGroupHierarchyEdges = (
 
     // SAFETY: the select projects exactly the parent and child id columns,
     // which is the entire shape of GroupHierarchyEdge.
-    return rows as ReadonlyArray<GroupHierarchyEdge>;
+    return rows;
   });
 
 /** The group plus every enclosing group, bounded and cycle-safe. */
@@ -263,12 +261,7 @@ export const syncGroupInheritance = (
       if (childIds.length === 0) {
         const result = yield* db
           .delete(s.groupDevice)
-          .where(
-            and(
-              eq(s.groupDevice.groupId, current),
-              eq(s.groupDevice.source, "nested"),
-            ),
-          );
+          .where(and(eq(s.groupDevice.groupId, current), eq(s.groupDevice.source, "nested")));
 
         removed += Array.isArray(result) ? result.length : 0;
         continue;
@@ -284,9 +277,7 @@ export const syncGroupInheritance = (
       const exclusionRows = yield* db
         .select({ targetId: s.groupExclusion.targetId })
         .from(s.groupExclusion)
-        .where(
-          and(eq(s.groupExclusion.groupId, current), eq(s.groupExclusion.target, "device")),
-        );
+        .where(and(eq(s.groupExclusion.groupId, current), eq(s.groupExclusion.target, "device")));
 
       const existingRows = yield* db
         .select({ deviceId: s.groupDevice.deviceId, source: s.groupDevice.source })
@@ -302,9 +293,7 @@ export const syncGroupInheritance = (
       );
 
       const existingAll = new Set(
-        existingRows
-          .filter((row) => !excluded.has(row.deviceId))
-          .map((row) => row.deviceId),
+        existingRows.filter((row) => !excluded.has(row.deviceId)).map((row) => row.deviceId),
       );
 
       const existingNested = new Set(
@@ -339,7 +328,9 @@ export const syncGroupInheritance = (
         yield* db
           .insert(s.groupDevice)
           .ignore()
-          .values(toAdd.map((deviceId) => ({ groupId: current, deviceId, source: "nested" as const })));
+          .values(
+            toAdd.map((deviceId) => ({ groupId: current, deviceId, source: "nested" as const })),
+          );
         added += toAdd.length;
       }
 
@@ -350,11 +341,7 @@ export const syncGroupInheritance = (
   });
 
 /** Direct child group ids, tenant-scoped through the edge loader. */
-export const childGroupIds = (
-  db: GroupInheritanceDb,
-  organizationId: string,
-  groupId: string,
-) =>
+export const childGroupIds = (db: GroupInheritanceDb, organizationId: string, groupId: string) =>
   Effect.gen(function* () {
     const edges = yield* loadGroupHierarchyEdges(db, organizationId);
 

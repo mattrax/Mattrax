@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
@@ -18,15 +19,13 @@ import {
   ShieldCheck,
   Smartphone,
 } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type AndroidEnterpriseInfo,
-  type AppleBusinessManagerInfo,
-  type AutopilotDeviceInfo,
-  type AutopilotProfileInfo,
-  type VppInfo,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  AndroidEnterpriseInfo,
+  AppleBusinessManagerInfo,
+  AutopilotDeviceInfo,
+  AutopilotProfileInfo,
+  VppInfo,
 } from "~/lib/enterprise";
 import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
@@ -514,15 +513,15 @@ export default function ManagementSettingsPage() {
           </Show>
           <Show when={apns.data?.topic}>
             <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {apns.data!.topic}
+              {apns.data.topic}
             </span>
           </Show>
           <Show when={apns.data?.email}>
-            <span class="text-xs text-muted-foreground">· {apns.data!.email}</span>
+            <span class="text-xs text-muted-foreground">· {apns.data.email}</span>
           </Show>
           <Show when={apns.data?.expiresAt}>
             <span class="text-xs text-muted-foreground">
-              · expires {new Date(apns.data!.expiresAt!).toLocaleDateString()}
+              · expires {new Date(apns.data.expiresAt!).toLocaleDateString()}
             </span>
           </Show>
         </div>
@@ -1136,7 +1135,7 @@ export default function ManagementSettingsPage() {
           </Show>
           <Show when={autopilot.data?.azureTenantId}>
             <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {autopilot.data!.azureTenantId}
+              {autopilot.data.azureTenantId}
             </span>
           </Show>
           <Show when={autopilot.data?.federatedEnrollment.enabled}>

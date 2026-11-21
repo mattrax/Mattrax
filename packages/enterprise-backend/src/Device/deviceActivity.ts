@@ -3,8 +3,8 @@ import {
   EnterpriseBadRequest,
   deviceCommandStatusLabel,
   normalizeDeviceCommandStatus,
-  type DeviceActivityEntry,
 } from "@mattrax/enterprise-domain";
+import type { DeviceActivityEntry } from "@mattrax/enterprise-domain";
 
 export const DEVICE_ACTIVITY_DEFAULT_LIMIT = 50;
 
@@ -211,7 +211,7 @@ const trimmed = (value: Schema.Json | null | undefined, limit = 200) => {
   const text = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value));
 
   if (text === undefined) return null;
-  const normalized = text.replace(/\s+/g, " ").trim();
+  const normalized = text.replaceAll(/\s+/g, " ").trim();
 
   return normalized ? normalized.slice(0, limit) : null;
 };
@@ -277,9 +277,7 @@ const auditDetail = (row: AuditRow) => {
 
   const channels = Array.isArray(metadata.channels)
     ? metadata.channels
-        .flatMap((channel) =>
-          Schema.is(Schema.String)(channel) ? [channel.slice(0, 16)] : [],
-        )
+        .flatMap((channel) => (Schema.is(Schema.String)(channel) ? [channel.slice(0, 16)] : []))
         .slice(0, 4)
     : [];
 

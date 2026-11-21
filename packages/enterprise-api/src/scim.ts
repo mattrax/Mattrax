@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
 
@@ -120,7 +121,7 @@ const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: st
     const match = /^Bearer\s+(.+)$/i.exec(Array.isArray(header) ? header[0]! : header);
 
     if (!match) return yield* Effect.fail(scimError(401, "Missing SCIM bearer token"));
-    const tokenHash = yield* sha256(match[1]!);
+    const tokenHash = yield* sha256(match[1]);
     const db = yield* Db;
 
     const [token] = yield* db
@@ -161,7 +162,7 @@ const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
   const match = /^\/scim\/v2\/([^/]+)(?:\/(Users|Groups)(?:\/([^/]+))?)?$/.exec(path);
 
   return match
-    ? { tenantId: decodeURIComponent(match[1]!), resource: match[2], id: match[3] }
+    ? { tenantId: decodeURIComponent(match[1]), resource: match[2], id: match[3] }
     : null;
 };
 
@@ -244,10 +245,7 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
 
     const suppliedName =
       body.name?.formatted?.trim() ||
-      [body.name?.givenName, body.name?.familyName]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
+      [body.name?.givenName, body.name?.familyName].filter(Boolean).join(" ").trim();
 
     const name = suppliedName || email;
 
@@ -279,9 +277,7 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
 
       const existing = yield* findUser(ctx, user.id);
 
-      return existing
-        ? json(userResource(existing))
-        : scimError(500, "Could not resolve the user");
+      return existing ? json(userResource(existing)) : scimError(500, "Could not resolve the user");
     }
 
     const userId = id();
@@ -355,9 +351,7 @@ const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type
       yield* db
         .update(schema.user)
         .set({ name, email, disabled, updatedAt: now() })
-        .where(
-          and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
-        );
+        .where(and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)));
 
       // Match Entra removal semantics: a disabled directory person must not
       // stay in directory groups, where a later re-enable would silently
@@ -531,10 +525,7 @@ const replaceGroupMembers = (
         .select({ userId: schema.user.id })
         .from(schema.user)
         .where(
-          and(
-            eq(schema.user.organizationId, ctx.organizationId),
-            inArray(schema.user.id, ids),
-          ),
+          and(eq(schema.user.organizationId, ctx.organizationId), inArray(schema.user.id, ids)),
         );
 
       const allowed = new Set(valid.map((row) => row.userId));
@@ -847,9 +838,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
       const db = yield* Db;
 
       yield* syncDirectoryGroupsForTenant(db, ctx.organizationId).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("SCIM directory group refresh failed", cause),
-        ),
+        Effect.catch((error) => Effect.logWarning("SCIM directory group refresh failed", error)),
       );
 
       const notifier = yield* Effect.serviceOption(ScimMembershipNotifier);
@@ -858,7 +847,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
         yield* notifier
           .value(db, ctx.organizationId, [...ctx.changedUserIds], [...ctx.changedDeviceIds])
           .pipe(
-            Effect.catch((cause) => Effect.logWarning("SCIM membership refresh failed", cause)),
+            Effect.catch((error) => Effect.logWarning("SCIM membership refresh failed", error)),
           );
       }
     }

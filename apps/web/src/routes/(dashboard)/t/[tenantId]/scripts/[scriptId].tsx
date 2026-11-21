@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -13,21 +14,20 @@ import {
   formatDate,
   relativeTime,
 } from "~/components/mdm/common";
-import { ScriptEditor, type ScriptDraftValues } from "~/components/mdm/script-editor";
+import { ScriptEditor } from "~/components/mdm/script-editor";
+import type { ScriptDraftValues } from "~/components/mdm/script-editor";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { ChevronDown } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type ScriptAssignmentsResponse,
-  type ScriptDetail,
-  type ScriptExecutionInfo,
-  type ScriptInfo,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  ScriptAssignmentsResponse,
+  ScriptDetail,
+  ScriptExecutionInfo,
+  ScriptInfo,
 } from "~/lib/enterprise";
 import {
   combineRestores,

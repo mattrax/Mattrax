@@ -9,8 +9,8 @@ import {
   AzureGraphLive,
   AzureGraphNotFound,
   AzureGraphRequestFailed,
-  type AzureGraphConfig,
 } from "../src/index.js";
+import type { AzureGraphConfig } from "../src/index.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
 
@@ -125,7 +125,7 @@ describe("AzureGraph", () => {
     );
 
     expect(tokenMethod).toBe("POST");
-    const tokenBody = new URLSearchParams(tokenBodies[0]!);
+    const tokenBody = new URLSearchParams(tokenBodies[0]);
     expect(tokenBody.get("grant_type")).toBe("client_credentials");
     expect(tokenBody.get("client_id")).toBe("client-id");
     expect(tokenBody.get("client_secret")).toBe("client-secret");
@@ -216,7 +216,7 @@ describe("AzureGraph", () => {
     );
 
     expect(requestedUrls).toHaveLength(2);
-    expect(decodeURIComponent(requestedUrls[0]!)).toContain(
+    expect(decodeURIComponent(requestedUrls[0])).toContain(
       "/v1.0/users/delta?$select=id,displayName,mail,userPrincipalName,accountEnabled,givenName,surname,userType",
     );
     expect(result.first.items).toEqual([
@@ -463,7 +463,7 @@ describe("AzureGraph outbound timeouts", () => {
       domains,
       (url, init) => (isTokenRequest(url) ? tokenResponse() : hangingResponse(url, init)),
       { timeoutMs: 50 },
-    ).catch((cause: unknown) => cause);
+    ).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(AzureGraphRequestFailed);
     expect(error instanceof Error ? error.message : "").toContain("timed out after 50ms");
@@ -472,7 +472,7 @@ describe("AzureGraph outbound timeouts", () => {
 
   it("bounds the token request too", async () => {
     const error = await runWithConfig(domains, hangingResponse, { timeoutMs: 50 }).catch(
-      (cause: unknown) => cause,
+      (error_: unknown) => error_,
     );
 
     expect(error).toBeInstanceOf(AzureGraphRequestFailed);
@@ -546,12 +546,12 @@ describe("AzureGraph Autopilot", () => {
     );
 
     expect(requests).toHaveLength(1);
-    expect(decodeURIComponent(requests[0]!.url)).toContain(
+    expect(decodeURIComponent(requests[0].url)).toContain(
       "/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities",
     );
-    expect(requests[0]!.method).toBe("POST");
-    expect(requests[0]!.auth).toBe("Bearer graph-token");
-    expect(requests[0]!.body).toMatchObject({
+    expect(requests[0].method).toBe("POST");
+    expect(requests[0].auth).toBe("Bearer graph-token");
+    expect(requests[0].body).toMatchObject({
       "@odata.type": "#microsoft.graph.importedWindowsAutopilotDeviceIdentity",
       serialNumber: "ABC123",
       hardwareIdentifier: "aGFzaA==",
@@ -606,7 +606,7 @@ describe("AzureGraph Autopilot", () => {
       },
     );
 
-    expect(decodeURIComponent(urls[0]!)).toContain(
+    expect(decodeURIComponent(urls[0])).toContain(
       "/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$top=100",
     );
     expect(result.first.items).toHaveLength(1);
@@ -658,22 +658,22 @@ describe("AzureGraph Autopilot", () => {
       },
     );
 
-    expect(decodeURIComponent(requests[0]!.url)).toContain(
+    expect(decodeURIComponent(requests[0].url)).toContain(
       "/v1.0/deviceManagement/windowsAutopilotDeploymentProfiles",
     );
-    expect(requests[0]!.method).toBe("POST");
-    expect(requests[0]!.body).toMatchObject({
+    expect(requests[0].method).toBe("POST");
+    expect(requests[0].body).toMatchObject({
       "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfile",
       displayName: "Standard",
       deploymentMode: "userDriven",
       joinType: "azureADJoin",
       enableWhiteGlove: true,
     });
-    expect(requests[1]!.method).toBe("PATCH");
-    expect(requests[1]!.body).toMatchObject({ displayName: "Standard v2" });
-    expect(requests[1]!.body["@odata.type"]).toBeUndefined();
-    expect(requests[2]!.url).toContain("/profile-1/assign");
-    expect(requests[2]!.body).toMatchObject({
+    expect(requests[1].method).toBe("PATCH");
+    expect(requests[1].body).toMatchObject({ displayName: "Standard v2" });
+    expect(requests[1].body["@odata.type"]).toBeUndefined();
+    expect(requests[2].url).toContain("/profile-1/assign");
+    expect(requests[2].body).toMatchObject({
       "@odata.type": "#microsoft.graph.windowsAutopilotDeploymentProfileAssignment",
       target: {
         "@odata.type": "#microsoft.graph.groupAssignmentTarget",
@@ -714,7 +714,8 @@ describe("AzureGraph Autopilot", () => {
 
 describe("AzureGraph delegated consent revocation", () => {
   const servicePrincipalId = "sp-1";
-  const nextGrantsLink = "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?$skiptoken=grants-2";
+  const nextGrantsLink =
+    "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?$skiptoken=grants-2";
 
   it("finds our service principal and deletes only our delegated grants", async () => {
     const requested: Array<{ url: string; method?: string }> = [];
@@ -939,7 +940,7 @@ describe("AzureGraph delegated consent revocation", () => {
           ? new Response(null, { status: 204 })
           : json({ error: "server error" }, 500);
       },
-    ).catch((cause: unknown) => cause);
+    ).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(AzureGraphConsentRevocationFailed);
     expect(error).toMatchObject({ grantsRemoved: 1, status: 500 });

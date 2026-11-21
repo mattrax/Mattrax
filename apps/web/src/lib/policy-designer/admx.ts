@@ -4,18 +4,16 @@ import {
   AdmxImportError,
   decodeText,
   readAdmxZip,
-  type AdmxCatalogueIndex,
-  type AdmxDiscoveredPolicy,
-  type AdmxElement,
-  type AdmxInputFile,
+} from "@mattrax/enterprise-domain/admx";
+import type {
+  AdmxCatalogueIndex,
+  AdmxDiscoveredPolicy,
+  AdmxElement,
+  AdmxInputFile,
 } from "@mattrax/enterprise-domain/admx";
 import type { Collection, Property, PropertyType } from "./catalog";
-import {
-  ADMX_STATE_KEY,
-  type AdmxSelectionTemplate,
-  type Selection,
-  type SelectionTemplate,
-} from "./build";
+import { ADMX_STATE_KEY } from "./build";
+import type { AdmxSelectionTemplate, Selection, SelectionTemplate } from "./build";
 
 /**
  * The designer's view of an imported ADMX policy.
@@ -128,7 +126,7 @@ const elementProperty = (policy: AdmxDiscoveredPolicy, element: AdmxElement): Pr
   }
 
   if (element.kind === "longDecimal") {
-    property.pattern = "^-?\\d+$";
+    property.pattern = String.raw`^-?\d+$`;
 
     if (element.defaultValue !== undefined) property.defaultValue = element.defaultValue;
   }
@@ -178,11 +176,15 @@ export const admxPolicyCollection = (policy: AdmxDiscoveredPolicy): Collection |
     description:
       policy.policy.description ||
       `${policy.source === "inbox" ? "Microsoft in-box" : "Vendor"} ADMX policy ${policy.policy.name}.`,
-    group: policy.source === "inbox" ? `ADMX · ${policy.appName}` : `Imported ADMX · ${policy.appName}`,
+    group:
+      policy.source === "inbox" ? `ADMX · ${policy.appName}` : `Imported ADMX · ${policy.appName}`,
     // The catalogue's Microsoft link is wrong for vendor templates; point at
     // the ingestion reference instead.
     source: policy.source === "inbox" ? undefined : ADMX_INGESTION_DOCS,
-    properties: [stateProperty(policy), ...properties.map((element) => elementProperty(policy, element))],
+    properties: [
+      stateProperty(policy),
+      ...properties.map((element) => elementProperty(policy, element)),
+    ],
   };
 };
 
@@ -252,7 +254,7 @@ export const loadAdmxCatalogueIndex = () => {
 
       return parseCatalogueIndex(await response.json());
     })
-    .catch((error) => {
+    .catch((error: unknown) => {
       cataloguePromise = undefined;
       throw error;
     });

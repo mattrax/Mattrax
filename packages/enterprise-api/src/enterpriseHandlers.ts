@@ -1,7 +1,22 @@
 import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schema } from "effect";
-import { HttpApiBuilder } from "effect/http-api";
+import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import { preconditionFailure, preconditionFromRequest } from "./preconditions.js";
+import type {
+  enterpriseAccountApi,
+  enterpriseAdminApi,
+  enterpriseCutoverApi,
+  enterpriseAdeApi,
+  enterpriseDashboardApi,
+  enterpriseIdentityApi,
+  enterpriseOnboardingApi,
+  enterpriseUserApi,
+  enterpriseListApi,
+  enterpriseWindowsApi,
+  fleetMigrationApi,
+  scriptAgentApi,
+  scriptApi,
+} from "@mattrax/enterprise-domain";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -30,34 +45,15 @@ import {
   PERMISSIONS,
   EnterpriseUnauthorized,
   EnterpriseService,
-  enterpriseAccountApi,
-  enterpriseAdminApi,
   enterpriseApi,
-  enterpriseCutoverApi,
   enterpriseGroupApi,
-  enterpriseAdeApi,
   enterpriseAttributeApi,
-  enterpriseDashboardApi,
-  enterpriseIdentityApi,
-  enterpriseOnboardingApi,
-  enterpriseUserApi,
   enterpriseSoftwareUpdateApi,
   enterpriseOsPolicyApi,
-  enterpriseListApi,
-  enterpriseWindowsApi,
-  fleetMigrationApi,
-  scriptAgentApi,
-  scriptApi,
   deriveDeploymentId,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
   TENANT_IMPORT_MAX_BYTES,
-  type DevicePreRegistrationImportResponse,
-  type Permission,
-  type EnterpriseAuth,
-  type DevicePreRegistrationImportRow,
-  type TenantImportRequest,
-  type TenantImportResponse,
   policyApplicationKey,
   normalizeBrandColor,
   resolveTenantBranding,
@@ -79,7 +75,6 @@ import {
   evaluateDeviceQuery,
   compareVersionStrings,
   normalizeDeviceCommandStatus,
-  type DashboardQueryBatchRequest,
   DeviceActionName,
   DashboardWidgetType,
   DashboardReportFrequency,
@@ -87,17 +82,7 @@ import {
   webhookUrlProblem,
   DynamicGroupRules,
   DeviceManagementApp,
-  type StepUpAction,
-  type TenantScepCaInfo,
   verifyScriptAgentToken,
-  type BillingCheckoutRequest,
-  type WebhookDeliveryQuery,
-  type WebhookDeliveryReplayResponse,
-  type WebhookDeliveriesResponse,
-  type WebhookDeliveryDetail,
-  type WebhookTestResponse,
-  type SetDeviceAttributesRequest,
-  type PolicyDeliveryInfo,
   POLICY_SNAPSHOT_ENABLED_KEY,
   POLICY_SNAPSHOT_SCOPES_KEY,
   POLICY_VARIABLE_NOTES,
@@ -107,15 +92,11 @@ import {
   APPLICATION_LIST_SORTS,
   GROUP_LIST_SORTS,
   POLICY_LIST_SORTS,
-  type EntityCondition,
-  type EntityQueryField,
   validateAttributeValue,
   windowsActivationStatusFromLicenseStatus,
   windowsLicenseStatusValue,
   deriveDevicePresence,
   deriveUserPolicies,
-  type UserGroupPolicyEdge,
-  type UserPolicyEdge,
   countSoftwareUpdates,
   deriveSoftwareUpdate,
   macOsUpdateBaseline,
@@ -131,21 +112,44 @@ import {
   osPolicyDeferralEndsAt,
   osPolicyPlatformForDevice,
   osPolicyRuleFromRow,
-  type AppleOsUpdateInstallAction,
-  type OsComplianceInfo,
-  type OsPolicyPlatform,
-  type OsPolicyRule,
-  type UpdateTenantOsPolicyEntry,
   isEnvManagedSuperadmin,
   isSuperadmin,
   normalizeAdminAccountsQuery,
   superadminSource,
-  type AdminAccountInfo,
-  type AdminAccountMembership,
   DEFAULT_STOREFRONT_REGION,
   normaliseStorefrontRegion,
   resolveApplicationStoreId,
   summariseApplicationAvailability,
+} from "@mattrax/enterprise-domain";
+import type {
+  DevicePreRegistrationImportResponse,
+  Permission,
+  EnterpriseAuth,
+  DevicePreRegistrationImportRow,
+  TenantImportRequest,
+  TenantImportResponse,
+  DashboardQueryBatchRequest,
+  StepUpAction,
+  TenantScepCaInfo,
+  BillingCheckoutRequest,
+  WebhookDeliveryQuery,
+  WebhookDeliveryReplayResponse,
+  WebhookDeliveriesResponse,
+  WebhookDeliveryDetail,
+  WebhookTestResponse,
+  SetDeviceAttributesRequest,
+  PolicyDeliveryInfo,
+  EntityCondition,
+  EntityQueryField,
+  UserGroupPolicyEdge,
+  UserPolicyEdge,
+  AppleOsUpdateInstallAction,
+  OsComplianceInfo,
+  OsPolicyPlatform,
+  OsPolicyRule,
+  UpdateTenantOsPolicyEntry,
+  AdminAccountInfo,
+  AdminAccountMembership,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { lookupAppStoreApplication } from "./appStore.js";
@@ -165,9 +169,8 @@ import {
   R2_IMMUTABLE_CACHE_CONTROL,
   tenantLimitForAccount,
   WINDOWS_FAILURE_RETENTION_DAYS,
-  type PlanLimitsConfig,
-  type WindowsFailureRow,
 } from "@mattrax/enterprise-core";
+import type { PlanLimitsConfig, WindowsFailureRow } from "@mattrax/enterprise-core";
 import {
   and,
   asc,
@@ -235,15 +238,15 @@ import {
   planCommandQueueing,
   WebhookPayload,
   writeSystemAudit,
-  type CommandPayload,
 } from "@mattrax/mdm-apple";
+import type { CommandPayload } from "@mattrax/mdm-apple";
 import {
   LOGIN_ATTEMPT_LIST_LIMIT,
   listLoginAttempts,
   loginAttemptEntry,
   normalizeEntityListQuery,
-  type NormalizedEntityListQuery,
 } from "@mattrax/enterprise-backend";
+import type { NormalizedEntityListQuery, AndroidDeliveryError } from "@mattrax/enterprise-backend";
 import {
   AUTOPILOT_IMPORT_MAX_BYTES,
   AUTOPILOT_IMPORT_MAX_ROWS,
@@ -260,8 +263,8 @@ import {
   syncAutopilotDevices,
   updateAutopilotProfile,
   validateAutopilotProfileInput,
-  type AutopilotProfileValues,
 } from "@mattrax/enterprise-backend";
+import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
 import {
   ScepRepositoryLive,
   isApplicationKind,
@@ -276,8 +279,8 @@ import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 import { cookieValue, signSsrRevision, signSsrToken } from "@mattrax/enterprise-backend";
 import { headerValue } from "@mattrax/net";
+import type { ApnsService } from "@mattrax/apns";
 import {
-  ApnsService,
   NoopPushTransport,
   buildApnsCsr,
   generateApnsKeyPair,
@@ -303,8 +306,8 @@ import {
   deviceActivityPage,
   deviceActivitySourceKeyset,
   normalizeDeviceActivityLimit,
-  type DeviceActivitySourceKeyset,
 } from "@mattrax/enterprise-backend";
+import type { DeviceActivitySourceKeyset } from "@mattrax/enterprise-backend";
 import {
   clearTenantAccountDirectoryState,
   hasOwnerRole,
@@ -384,8 +387,8 @@ import {
   normaliseAdminEmail,
   normaliseCustomer,
   runGoogleDirectorySyncForTenant,
-  type GoogleWorkspaceCredentials,
 } from "@mattrax/google-workspace";
+import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
@@ -394,8 +397,8 @@ import {
   normalizeDeviceSearchQuery,
   platformLabel,
   toCsv,
-  type DeviceSearchFilters,
 } from "@mattrax/enterprise-backend";
+import type { DeviceSearchFilters } from "@mattrax/enterprise-backend";
 import {
   attributeCsvCells,
   attributeCsvHeaders,
@@ -419,17 +422,18 @@ import {
   encodeAuditCursor,
   encodeAuditOffsetCursor,
   normalizeAuditSearchQuery,
-  type AuditExportEntry,
-  type AuditSearchFilters,
 } from "@mattrax/enterprise-backend";
+import type { AuditExportEntry, AuditSearchFilters } from "@mattrax/enterprise-backend";
 import {
   compareInstallerPreference,
   installerSkipReason,
   selectInstaller,
 } from "@mattrax/enterprise-domain";
 import { reconcileSubscriptionQuantity } from "@mattrax/enterprise-billing";
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- this is the composition fallback for a deployment with a Stripe client but no remote billing layer.
-import { makeStripeBillingService, type BillingOperations } from "@mattrax/enterprise-billing";
+// The composition fallback for a deployment with a Stripe client but no remote
+// billing layer.
+import { makeStripeBillingService } from "@mattrax/enterprise-billing";
+import type { BillingOperations } from "@mattrax/enterprise-billing";
 import {
   listWebhookDeliveries as listStoredWebhookDeliveries,
   loadWebhookDelivery as loadStoredWebhookDelivery,
@@ -454,7 +458,6 @@ import {
 } from "@mattrax/enterprise-backend";
 import { canEnrollDevice } from "@mattrax/enterprise-backend";
 import {
-  AndroidDeliveryError,
   androidEnterpriseInfo,
   createAndroidEnrollmentToken,
   createAndroidSignup,
@@ -468,18 +471,20 @@ import {
   setAndroidProvisioningMode,
   syncAndroidPoliciesForTenant,
   unenrollAndroidDevice,
-  type AndroidDeliveryConfig,
 } from "@mattrax/enterprise-backend";
+import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
 import {
   detectEnrollmentPlatform,
   ENROLLMENT_ATTEMPT_DEDUPE_MS,
   ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT,
   evaluateEnrollmentAttempt,
-  type EnrollmentAttemptOutcome,
-  type EnrollmentAttemptPlatform,
 } from "@mattrax/enterprise-backend";
+import type {
+  EnrollmentAttemptOutcome,
+  EnrollmentAttemptPlatform,
+} from "@mattrax/enterprise-backend";
+import type { AppleBusinessManagerError } from "@mattrax/apple-business-manager";
 import {
-  AppleBusinessManagerError,
   appleBusinessManagerInfo,
   assignAppleBusinessManagerDevice,
   clearAppleBusinessManagerToken,
@@ -490,10 +495,10 @@ import {
   readAdeProfileToken,
   saveAppleBusinessManagerToken,
   syncAppleBusinessManagerDevices,
-  type AppleApiConfig,
 } from "@mattrax/apple-business-manager";
+import type { AppleApiConfig } from "@mattrax/apple-business-manager";
+import type { VppError } from "@mattrax/apple-business-manager";
 import {
-  VppError,
   assignVppLicence,
   clearVppToken,
   findVppAsset,
@@ -518,7 +523,8 @@ import {
   apnsCredentialHealth,
   loadCredentialHealth,
 } from "@mattrax/enterprise-backend";
-import { loadScepCaState, type ScepCaState } from "@mattrax/enterprise-backend";
+import { loadScepCaState } from "@mattrax/enterprise-backend";
+import type { ScepCaState } from "@mattrax/enterprise-backend";
 import {
   listTenantBackups as listTenantBackupRuns,
   runTenantBackup as runTenantBackupForTenant,
@@ -526,13 +532,9 @@ import {
   deleteBackupRun,
   BackupActionError,
 } from "@mattrax/enterprise-backend";
-import {
-  teardownTenant,
-  TenantTeardownStepFailed,
-  type DeviceUnenrollSummary,
-  type UnreachableDevice,
-} from "@mattrax/enterprise-backend";
-import { restoreTenantFromBackup, TenantRestoreError } from "@mattrax/enterprise-backend";
+import { teardownTenant, TenantTeardownStepFailed } from "@mattrax/enterprise-backend";
+import type { DeviceUnenrollSummary, UnreachableDevice } from "@mattrax/enterprise-backend";
+import { restoreTenantFromBackup } from "@mattrax/enterprise-backend";
 import {
   isMsiInstaller,
   isMsiProductCode,
@@ -547,8 +549,8 @@ import {
   preflightTenantOriginSwitch,
   previewTenantCutover,
   TenantCutoverError,
-  type CutoverTarget,
 } from "@mattrax/enterprise-backend";
+import type { CutoverTarget } from "@mattrax/enterprise-backend";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
@@ -561,8 +563,8 @@ import {
   parseAppleAdeMachineInfo,
   signAppleAssetToken,
   signAppleProfilePlist,
-  type AppleProfileSigningConfig,
 } from "@mattrax/dm-apple";
+import type { AppleProfileSigningConfig } from "@mattrax/dm-apple";
 import { ensureScepCa, importScepCa, replaceScepCa, rotateScepCa, ScepError } from "@mattrax/scep";
 import {
   listUserSessions,
@@ -576,7 +578,7 @@ import {
   bytesToBase64,
   storageSha256Hex as sha256Hex,
 } from "@mattrax/enterprise-backend";
-import type { R2Bucket } from "@mattrax/enterprise-backend";
+import type { R2Bucket, TenantRestoreError } from "@mattrax/enterprise-backend";
 import type {
   EnterpriseConfiguration,
   EnterpriseDb,
@@ -1176,8 +1178,8 @@ const registrationGrant = () =>
 const safeFilename = (value: string) =>
   value
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9._-]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
 
 /** Slug candidates are derived from tenant input and bounded for MySQL indexes. */
@@ -1185,8 +1187,8 @@ const slugBase = (value: string) =>
   value
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 240);
 
 /** Compact bundle validation helper; mirrors the limits used by write handlers. */
@@ -1221,7 +1223,7 @@ export const appleEnrollmentProfileResponse = (result: {
 const capabilityText = (value: Schema.Json | undefined): string => {
   if (value == null) return "";
 
-  if (Array.isArray(value)) return value.map((entry) => String(entry)).join("; ");
+  if (Array.isArray(value)) return value.map(String).join("; ");
 
   if (Schema.is(Schema.String)(value)) return value;
 
@@ -4748,9 +4750,7 @@ export const createEnterpriseService = ({
           bundleId: optionalText(storefront.bundleId) ?? current?.bundleId ?? null,
           version: optionalText(storefront.version) ?? current?.version ?? null,
           source: "manual",
-          lastSeenAt: available
-            ? (current?.lastSeenAt ?? at)
-            : (current?.lastSeenAt ?? null),
+          lastSeenAt: available ? (current?.lastSeenAt ?? at) : (current?.lastSeenAt ?? null),
           reason: available
             ? null
             : (optionalText(storefront.reason) ?? `Not available in the ${region} App Store`),
@@ -5000,7 +5000,7 @@ export const createEnterpriseService = ({
   const getOrCreateEnrollment = (organizationId: string) =>
     Effect.gen(function* () {
       const existing = yield* db.query.enterpriseEnrollment.findFirst({
-        where: { organizationId: organizationId },
+        where: { organizationId },
       });
 
       if (existing) return existing;
@@ -5010,7 +5010,7 @@ export const createEnterpriseService = ({
 
       return (
         (yield* db.query.enterpriseEnrollment.findFirst({
-          where: { organizationId: organizationId },
+          where: { organizationId },
         })) ?? {
           ...enrollment,
           code: null,
@@ -5139,7 +5139,10 @@ export const createEnterpriseService = ({
     });
 
   const escapeLike = (value: string) =>
-    value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    value
+      .replaceAll("\\", String.raw`\\`)
+      .replaceAll("%", String.raw`\%`)
+      .replaceAll("_", String.raw`\_`);
 
   const compareText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
 
@@ -5286,7 +5289,9 @@ export const createEnterpriseService = ({
           ),
         );
 
-        // Attribute values are visible as extra table columns.
+        // Attribute values are visible as extra table columns. The two column
+        // subqueries stay in separate push calls so each reads on its own.
+        // oxlint-disable-next-line unicorn/prefer-single-call -- one push per searchable column.
         search.push(
           inArray(
             schema.device.id,
@@ -5757,12 +5762,12 @@ export const createEnterpriseService = ({
         return yield* Effect.tryPromise({
           try: () => appleProfileSigner.sign(plist),
           catch: (cause) => cause,
-        }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+        }).pipe(Effect.catch((error) => appleProfileSigningFailed(error)));
       }
 
       const ca = yield* ensureScepCa(ScepRepositoryLive.make(db, { authSecret }), {
         organizationId,
-      }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+      }).pipe(Effect.catch((error) => appleProfileSigningFailed(error)));
 
       return yield* Effect.tryPromise({
         try: () =>
@@ -5771,7 +5776,7 @@ export const createEnterpriseService = ({
             privateKey: ca.privateKey,
           }),
         catch: (cause) => cause,
-      }).pipe(Effect.catch((cause) => appleProfileSigningFailed(cause)));
+      }).pipe(Effect.catch((error) => appleProfileSigningFailed(error)));
     });
 
   /**
@@ -5983,8 +5988,7 @@ export const createEnterpriseService = ({
         )
         .limit(1);
 
-      if (!row)
-        return yield* Effect.fail(new EnterpriseNotFound({ message: "Report not found" }));
+      if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Report not found" }));
 
       return row;
     });
@@ -7824,7 +7828,7 @@ export const createEnterpriseService = ({
         let nextCursor: string | null = null;
 
         if (hasMore && page.length > 0) {
-          const last = page[page.length - 1]!;
+          const last = page.at(-1)!;
 
           nextCursor = filters.offsetPaging
             ? encodeAuditOffsetCursor(filters.offset + filters.limit)
@@ -10731,7 +10735,7 @@ export const createEnterpriseService = ({
         let nextCursor: string | null = null;
 
         if (hasMore && page.length > 0) {
-          const last = page[page.length - 1]!;
+          const last = page.at(-1)!;
           nextCursor = filters.offsetPaging
             ? encodeAuditOffsetCursor(filters.offset + filters.limit)
             : encodeAuditCursor({ createdAt: last.createdAt, id: last.id });
@@ -12554,7 +12558,7 @@ export const createEnterpriseService = ({
           ctx,
           "member.roles_changed",
           "user",
-          updated.length === 1 ? updated[0]! : null,
+          updated.length === 1 ? updated[0] : null,
           auditMetadata,
         );
 
@@ -13555,7 +13559,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row!);
+        return attributeDefinitionRow(row);
       }),
     patchAttribute: (request, tenantId, attributeId, payload) =>
       Effect.gen(function* () {
@@ -13615,7 +13619,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row!);
+        return attributeDefinitionRow(row);
       }),
     deleteAttribute: (request, tenantId, attributeId) =>
       Effect.gen(function* () {
@@ -14177,7 +14181,7 @@ export const createEnterpriseService = ({
             enrollmentState: device.enrollmentState,
             assignedServerId: device.assignedServerId,
             lastSeenAt: iso(device.lastSeenAt),
-            updatedAt: iso(device.updatedAt)!,
+            updatedAt: iso(device.updatedAt),
           })),
         };
       }),
@@ -14204,7 +14208,7 @@ export const createEnterpriseService = ({
           enrollmentState: device.enrollmentState,
           assignedServerId: device.assignedServerId,
           lastSeenAt: iso(device.lastSeenAt),
-          updatedAt: iso(device.updatedAt)!,
+          updatedAt: iso(device.updatedAt),
         };
       }),
     assignAppleBusinessManagerDevice: (request, tenantId, serial) =>
@@ -14436,7 +14440,7 @@ export const createEnterpriseService = ({
             state: assignment.state,
             eventId: assignment.eventId,
             lastError: assignment.lastError,
-            updatedAt: iso(assignment.updatedAt)!,
+            updatedAt: iso(assignment.updatedAt),
           })),
         };
       }),
@@ -15099,7 +15103,7 @@ export const createEnterpriseService = ({
                     status: "error" as const,
                     error: `Group name "${requestedName}" is ambiguous; import a group id instead.`,
                   };
-                groupId = matches[0]!.id;
+                groupId = matches[0].id;
               } else {
                 groupId = null;
               }
@@ -17072,7 +17076,7 @@ export const createEnterpriseService = ({
         const attention = devices
           .map((device: EnterpriseDevice, index: number) => ({
             device,
-            summary: summaries[index]!,
+            summary: summaries[index],
           }))
           .filter((row) => row.summary.level !== "healthy")
           .sort(
@@ -17587,7 +17591,7 @@ export const createEnterpriseService = ({
           .map((row) => ({
             deviceId: row.deviceId,
             deviceName: names.get(row.deviceId) ?? row.deviceId,
-            at: iso(row.lastPushAt)!,
+            at: iso(row.lastPushAt),
             error: row.lastPushError ?? null,
             errorCode: row.lastPushErrorCode ?? null,
             consecutiveFailures: row.consecutivePushFailures ?? 0,
@@ -19033,7 +19037,7 @@ export const createEnterpriseService = ({
           Schema.decodeUnknownOption(
             Schema.Record(Schema.String, Schema.Literals(["device", "user"])),
           )(snapshot[POLICY_SNAPSHOT_SCOPES_KEY]),
-          () => ({}) as Record<string, "device" | "user">,
+          () => ({}) as Record<string, Schema.Json>,
         );
 
         const entries = Object.entries(snapshot).filter(
@@ -19167,7 +19171,7 @@ export const createEnterpriseService = ({
           Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(
             deployment.snapshot,
           ),
-          () => ({}) as Record<string, Schema.Json>,
+          () => ({}) as Record<string, "device" | "user">,
         );
 
         // SAFETY: an empty record has no values to mistype, so it is a valid
@@ -20373,36 +20377,37 @@ export const createEnterpriseService = ({
         if (!app)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
-        const [groupLinks, deviceLinks, installers, userGroupLinks, storefronts] = yield* Effect.all(
-          [
-            queryEffect(
-              db
-                .select()
-                .from(schema.applicationGroup)
-                .where(eq(schema.applicationGroup.applicationId, applicationId)),
-            ),
-            queryEffect(
-              db
-                .select()
-                .from(schema.applicationDevice)
-                .where(eq(schema.applicationDevice.applicationId, applicationId)),
-            ),
-            queryEffect(applicationInstallers(ctx.organization.id, applicationId)),
-            queryEffect(
-              db
-                .select({ groupId: schema.userGroupApplication.groupId })
-                .from(schema.userGroupApplication)
-                .where(
-                  and(
-                    eq(schema.userGroupApplication.organizationId, ctx.organization.id),
-                    eq(schema.userGroupApplication.applicationId, applicationId),
+        const [groupLinks, deviceLinks, installers, userGroupLinks, storefronts] =
+          yield* Effect.all(
+            [
+              queryEffect(
+                db
+                  .select()
+                  .from(schema.applicationGroup)
+                  .where(eq(schema.applicationGroup.applicationId, applicationId)),
+              ),
+              queryEffect(
+                db
+                  .select()
+                  .from(schema.applicationDevice)
+                  .where(eq(schema.applicationDevice.applicationId, applicationId)),
+              ),
+              queryEffect(applicationInstallers(ctx.organization.id, applicationId)),
+              queryEffect(
+                db
+                  .select({ groupId: schema.userGroupApplication.groupId })
+                  .from(schema.userGroupApplication)
+                  .where(
+                    and(
+                      eq(schema.userGroupApplication.organizationId, ctx.organization.id),
+                      eq(schema.userGroupApplication.applicationId, applicationId),
+                    ),
                   ),
-                ),
-            ),
-            queryEffect(applicationStorefronts(ctx.organization.id, applicationId)),
-          ],
-          { concurrency: "unbounded" },
-        );
+              ),
+              queryEffect(applicationStorefronts(ctx.organization.id, applicationId)),
+            ],
+            { concurrency: "unbounded" },
+          );
 
         const groupIds = groupLinks.map((link: { groupId: string }) => link.groupId);
         const deviceIds = deviceLinks.map((link: { deviceId: string }) => link.deviceId);
@@ -20492,7 +20497,7 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Add at least one installer" }),
           );
 
-        const primary = yield* normaliseInstaller(inputs[0]!);
+        const primary = yield* normaliseInstaller(inputs[0]);
         const applicationId = id();
         const at = now();
 
@@ -20621,23 +20626,22 @@ export const createEnterpriseService = ({
                 manifestUrl: outcome.current.manifestUrl,
                 storeId: outcome.current.storeId,
                 notes: outcome.current.notes,
-                installers: (yield* applicationInstallers(
-                  ctx.organization.id,
-                  applicationId,
-                )).map((installer) => ({
-                  id: installer.id,
-                  platform: installer.platform,
-                  source: installer.source,
-                  bundleId: installer.bundleId,
-                  version: installer.version,
-                  manifestUrl: installer.manifestUrl,
-                  storeId: installer.storeId,
-                  minOsVersion: installer.minOsVersion,
-                  requiredCapability: installer.requiredCapability,
-                  priority: installer.priority,
-                  createdAt: iso(installer.createdAt),
-                  updatedAt: iso(installer.updatedAt),
-                })),
+                installers: (yield* applicationInstallers(ctx.organization.id, applicationId)).map(
+                  (installer) => ({
+                    id: installer.id,
+                    platform: installer.platform,
+                    source: installer.source,
+                    bundleId: installer.bundleId,
+                    version: installer.version,
+                    manifestUrl: installer.manifestUrl,
+                    storeId: installer.storeId,
+                    minOsVersion: installer.minOsVersion,
+                    requiredCapability: installer.requiredCapability,
+                    priority: installer.priority,
+                    createdAt: iso(installer.createdAt),
+                    updatedAt: iso(installer.updatedAt),
+                  }),
+                ),
                 createdAt: iso(outcome.current.createdAt),
                 updatedAt: iso(outcome.current.updatedAt),
               },
@@ -20853,10 +20857,7 @@ export const createEnterpriseService = ({
           });
         }
 
-        const summary = yield* recomputeApplicationAvailability(
-          ctx.organization.id,
-          applicationId,
-        );
+        const summary = yield* recomputeApplicationAvailability(ctx.organization.id, applicationId);
 
         const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
 
@@ -20872,10 +20873,7 @@ export const createEnterpriseService = ({
           summary.availability === "unavailable" &&
           ctx.organization.autoUnlinkUnavailableApplications
         ) {
-          const removed = yield* removeApplicationAssignments(
-            ctx.organization.id,
-            applicationId,
-          );
+          const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
 
           if (removed.groups + removed.userGroups + removed.devices > 0) {
             unlinked = removed;
@@ -20900,10 +20898,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
-        const removed = yield* removeApplicationAssignments(
-          ctx.organization.id,
-          applicationId,
-        );
+        const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
 
         const total = removed.groups + removed.userGroups + removed.devices;
 
@@ -22567,7 +22562,7 @@ export const createEnterpriseService = ({
           .from(schema.dashboardWidget)
           .where(eq(schema.dashboardWidget.id, widgetId));
 
-        return dashboardWidgetRow(created!);
+        return dashboardWidgetRow(created);
       }),
     patchDashboardWidget: (request, tenantId, dashboardId, widgetId, payload) =>
       Effect.gen(function* () {
@@ -22647,7 +22642,7 @@ export const createEnterpriseService = ({
           .from(schema.dashboardWidget)
           .where(eq(schema.dashboardWidget.id, existing.id));
 
-        return dashboardWidgetRow(updated!);
+        return dashboardWidgetRow(updated);
       }),
     deleteDashboardWidget: (request, tenantId, dashboardId, widgetId) =>
       Effect.gen(function* () {
@@ -22767,19 +22762,12 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Add at least one recipient" }),
           );
 
-        const validated = yield* validateReportRecipients(
-          db,
-          ctx.organization.id,
-          body.recipients,
-        );
+        const validated = yield* validateReportRecipients(db, ctx.organization.id, body.recipients);
 
         if (!validated.ok)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: validated.problem }));
 
-        if (
-          validated.recipients.emails.length > 0 &&
-          !canEmailExternalReportRecipients(ctx.member)
-        )
+        if (validated.recipients.emails.length > 0 && !canEmailExternalReportRecipients(ctx.member))
           return yield* Effect.fail(
             new EnterpriseForbidden({
               message: "Only a tenant owner or admin can send a report to an external address.",
@@ -22861,9 +22849,7 @@ export const createEnterpriseService = ({
         if (scheduleProblem)
           return yield* Effect.fail(new EnterpriseBadRequest({ message: scheduleProblem }));
 
-        let recipients:
-          | { memberAccountIds: string[]; emails: string[] }
-          | undefined;
+        let recipients: { memberAccountIds: string[]; emails: string[] } | undefined;
 
         if (body.recipients) {
           const validated = yield* validateReportRecipients(
@@ -22890,8 +22876,7 @@ export const createEnterpriseService = ({
           )
             return yield* Effect.fail(
               new EnterpriseForbidden({
-                message:
-                  "Only a tenant owner or admin can send a report to an external address.",
+                message: "Only a tenant owner or admin can send a report to an external address.",
               }),
             );
 
@@ -23431,7 +23416,7 @@ export const createEnterpriseService = ({
           );
 
         const password = yield* Effect.tryPromise(() =>
-          openSecret(authSecret!, secret.sealedValue),
+          openSecret(authSecret, secret.sealedValue),
         ).pipe(
           Effect.mapError(
             () =>
@@ -24632,7 +24617,9 @@ export const createEnterpriseService = ({
         );
 
         if (!result)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration device not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Migration device not found" }),
+          );
 
         if ("problem" in result)
           return yield* Effect.fail(
@@ -24661,7 +24648,9 @@ export const createEnterpriseService = ({
         );
 
         if (!result)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Migration device not found" }));
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Migration device not found" }),
+          );
 
         if ("problem" in result)
           return yield* Effect.fail(
@@ -24818,12 +24807,7 @@ export const enterpriseDashboardHandlers = (
     .handleRaw("exportDashboardReport", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         Effect.map(
-          service.exportDashboardReport(
-            request,
-            params.tenantId,
-            params.dashboardId,
-            query,
-          ),
+          service.exportDashboardReport(request, params.tenantId, params.dashboardId, query),
           (result: { bytes: Uint8Array; filename: string; contentType: string }) =>
             HttpServerResponse.uint8Array(result.bytes, {
               contentType: result.contentType,

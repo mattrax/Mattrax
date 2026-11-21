@@ -1,9 +1,11 @@
 import { Effect } from "effect";
 import type { DeviceRow, GroupRow, PolicyRow, TenantInfo } from "@mattrax/enterprise-domain/client";
 import type { MattraxApi } from "../client.ts";
-import { type GlobalFlags, rootCommand } from "../global.ts";
+import { rootCommand } from "../global.ts";
+import type { GlobalFlags } from "../global.ts";
 import { CliRuntime } from "../runtime.ts";
-import { CliFailure, type ResolvedSettings } from "../settings.ts";
+import { CliFailure } from "../settings.ts";
+import type { ResolvedSettings } from "../settings.ts";
 
 export interface CommandContext {
   readonly flags: GlobalFlags;

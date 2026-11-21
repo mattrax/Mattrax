@@ -1,4 +1,5 @@
-import { DOMParser, XMLSerializer, type Element } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
+import type { Element } from "@xmldom/xmldom";
 import { escapeXml, escapeAttr } from "./serializer.js";
 
 export interface SoapHeader {

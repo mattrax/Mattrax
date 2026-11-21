@@ -39,7 +39,10 @@ function SelectValueBox(props: ComponentProps<typeof SelectValue> & { class?: st
 
   return (
     <SelectValue
-      class={cn("min-w-0 flex-1 truncate text-left data-placeholder:text-subtle-foreground", local.class)}
+      class={cn(
+        "min-w-0 flex-1 truncate text-left data-placeholder:text-subtle-foreground",
+        local.class,
+      )}
       {...others}
     />
   );
@@ -86,7 +89,9 @@ function SelectItemBox(props: ComponentProps<typeof SelectItem> & { class?: stri
 function SelectLabelBox(props: ComponentProps<typeof SelectLabel> & { class?: string }) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return <SelectLabel class={cn("label-caps flex h-7 items-center px-2", local.class)} {...others} />;
+  return (
+    <SelectLabel class={cn("label-caps flex h-7 items-center px-2", local.class)} {...others} />
+  );
 }
 
 function SelectChevron() {

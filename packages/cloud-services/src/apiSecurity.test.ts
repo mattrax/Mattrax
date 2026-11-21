@@ -8,7 +8,10 @@ const response = () =>
 
 describe("API security headers", () => {
   it("hardens a response served straight from the API route", () => {
-    const hardened = withApiSecurityHeaders(new Request("https://e.mattrax.app/api/ready"), response());
+    const hardened = withApiSecurityHeaders(
+      new Request("https://e.mattrax.app/api/ready"),
+      response(),
+    );
 
     expect(hardened.headers.get("x-content-type-options")).toBe("nosniff");
     expect(hardened.headers.get("x-frame-options")).toBe("DENY");
@@ -21,7 +24,10 @@ describe("API security headers", () => {
   });
 
   it("does not advertise HSTS over plain HTTP", () => {
-    const hardened = withApiSecurityHeaders(new Request("http://localhost:9050/api/ready"), response());
+    const hardened = withApiSecurityHeaders(
+      new Request("http://localhost:9050/api/ready"),
+      response(),
+    );
 
     expect(hardened.headers.get("strict-transport-security")).toBeNull();
   });

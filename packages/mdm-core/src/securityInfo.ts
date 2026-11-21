@@ -17,9 +17,8 @@ import {
   isPlistObject,
   plistStatusBoolean,
   plistText,
-  type PlistInput,
-  type PlistObject,
 } from "./internal/plistValue.js";
+import type { PlistInput, PlistObject } from "./internal/plistValue.js";
 
 export type FileVaultStatus = "enabled" | "disabled" | "unknown";
 

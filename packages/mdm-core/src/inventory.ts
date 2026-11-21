@@ -15,8 +15,8 @@ import {
   isPlistObject,
   plistStatusBoolean,
   plistText,
-  type PlistInput,
 } from "./internal/plistValue.js";
+import type { PlistInput } from "./internal/plistValue.js";
 
 export type DeviceInventory = {
   readonly serial?: string;
@@ -137,7 +137,7 @@ export const normalizeBatteryHealth = (value: PlistInput): string | undefined =>
   const raw = text(value);
 
   if (!raw) return undefined;
-  const collapsed = raw.replace(/\s+/g, " ").trim();
+  const collapsed = raw.replaceAll(/\s+/g, " ").trim();
   const canonical = BATTERY_LABELS.get(collapsed.toLowerCase());
 
   if (canonical) return canonical;

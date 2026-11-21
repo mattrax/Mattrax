@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { Layer, Schema } from "effect";
+import type { Schema } from "effect";
+import { Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import {
@@ -143,7 +144,7 @@ const deliverEvent = (
  * matching both the tagged class and the HTTP status it maps to.
  */
 const expectWebhookFailure = async (run: Promise<unknown>, statusCode: number) => {
-  const failure = await run.catch((cause: unknown) => cause);
+  const failure = await run.catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(BillingWebhookError);
   expect(failure).toMatchObject({ statusCode });

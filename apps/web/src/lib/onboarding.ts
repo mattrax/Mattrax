@@ -51,25 +51,26 @@ export function deriveOnboardingSteps(
     });
 
   if (can("policies.write")) {
-    steps.push({
-      key: "policy",
-      title: "Create a policy",
-      description: "Start from the catalogue, a template or an empty policy.",
-      href: state.policies > 0 ? tenant.policies() : tenant.newPolicy(),
-      done: state.policies > 0,
-      permission: "policies.write",
-    });
-
-    steps.push({
-      key: "assignment",
-      title: "Assign a policy",
-      description: "Assign it to a group, a device or a directory user.",
-      href: state.firstPolicyId
-        ? tenant.policyAssignments(state.firstPolicyId)
-        : tenant.policies(),
-      done: state.assignedPolicies > 0,
-      permission: "policies.write",
-    });
+    steps.push(
+      {
+        key: "policy",
+        title: "Create a policy",
+        description: "Start from the catalogue, a template or an empty policy.",
+        href: state.policies > 0 ? tenant.policies() : tenant.newPolicy(),
+        done: state.policies > 0,
+        permission: "policies.write",
+      },
+      {
+        key: "assignment",
+        title: "Assign a policy",
+        description: "Assign it to a group, a device or a directory user.",
+        href: state.firstPolicyId
+          ? tenant.policyAssignments(state.firstPolicyId)
+          : tenant.policies(),
+        done: state.assignedPolicies > 0,
+        permission: "policies.write",
+      },
+    );
   }
 
   if (can("enrollment.write"))

@@ -14,7 +14,10 @@ function Table(props: ComponentProps<"table"> & { containerClass?: string }) {
   return (
     <div
       data-slot="table-container"
-      class={cn("relative w-full overflow-x-auto rounded-xl border border-border bg-card", local.containerClass)}
+      class={cn(
+        "relative w-full overflow-x-auto rounded-xl border border-border bg-card",
+        local.containerClass,
+      )}
     >
       <table
         data-slot="table"
@@ -79,7 +82,9 @@ function TableCell(props: ComponentProps<"td">) {
 function TableCaption(props: ComponentProps<"caption">) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return <caption class={cn("mt-3 text-[11.5px] text-muted-foreground", local.class)} {...others} />;
+  return (
+    <caption class={cn("mt-3 text-[11.5px] text-muted-foreground", local.class)} {...others} />
+  );
 }
 
 export { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow };

@@ -1,16 +1,15 @@
 import { Effect, Layer, Option, Schema } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq } from "drizzle-orm";
 import { AzureOidc } from "@mattrax/azure-oidc";
-import { Db, authCredentials, schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { settlePendingInvitations } from "@mattrax/enterprise-identity";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 import type { SsoFailureCode } from "@mattrax/enterprise-domain";
-import {
-  loginAttemptClient,
-  recordLoginAttempt,
-  type LoginAttemptFailure,
-} from "@mattrax/enterprise-backend";
+import { loginAttemptClient, recordLoginAttempt } from "@mattrax/enterprise-backend";
+import type { LoginAttemptFailure } from "@mattrax/enterprise-backend";
 
 const TokenResponse = Schema.Struct({ id_token: Schema.optional(Schema.String) });
 
@@ -442,7 +441,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
 
       const identity = yield* db.query.ssoIdentity.findFirst({
-        where: { organizationId: tenantId!, objectId: objectId! },
+        where: { organizationId: tenantId, objectId },
       });
 
       let user = identity

@@ -5,10 +5,12 @@ import {
   parseEmailSender,
   replyToAddress,
   smtpEmailTransport,
-  type EmailAddress,
-  type EmailReplyTo,
-  type EmailTransport,
-  type SmtpTransportOptions,
+} from "@mattrax/email";
+import type {
+  EmailAddress,
+  EmailReplyTo,
+  EmailTransport,
+  SmtpTransportOptions,
 } from "@mattrax/email";
 import { isDevMailboxEnabled, recordDevEmail } from "./devMailbox.js";
 

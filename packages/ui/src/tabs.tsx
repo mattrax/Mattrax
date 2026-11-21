@@ -61,4 +61,10 @@ function TabsPanelBox(props: ComponentProps<typeof TabsPanel> & { class?: string
   return <TabsPanel class={cn("outline-none", local.class)} {...others} />;
 }
 
-export { Tabs, TabsIndicator, TabsListBox as TabsList, TabsPanelBox as TabsPanel, TabsTabItem as TabsTab };
+export {
+  Tabs,
+  TabsIndicator,
+  TabsListBox as TabsList,
+  TabsPanelBox as TabsPanel,
+  TabsTabItem as TabsTab,
+};

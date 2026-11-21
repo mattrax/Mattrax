@@ -10,7 +10,7 @@ import {
   pemEncode,
 } from "@mattrax/scep";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -356,9 +356,7 @@ export const buildPkcsReq = async (options: {
   const innerContent =
     options.encryptCsr === false ? csrDer : await encryptEnvelopedData(csrDer, options.caCert);
 
-  const innerDigest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", innerContent),
-  );
+  const innerDigest = new Uint8Array(await crypto.subtle.digest("SHA-256", innerContent));
 
   const signedData = new pkijs.SignedData({
     version: 1,
@@ -407,7 +405,9 @@ export const buildPkcsReq = async (options: {
         }),
         new pkijs.Attribute({
           type: "2.16.840.1.113733.1.9.5",
-          values: [new asn1js.OctetString({ valueHex: new Uint8Array(options.senderNonce).buffer })],
+          values: [
+            new asn1js.OctetString({ valueHex: new Uint8Array(options.senderNonce).buffer }),
+          ],
         }),
       ],
     }),

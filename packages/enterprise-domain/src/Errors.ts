@@ -326,7 +326,10 @@ export const EnterpriseAutopilotWriteErrors = [
   EnterpriseUpstreamError.pipe(HttpApiSchema.status(502)),
 ] as const;
 
-export const EnterpriseStepUpErrors = [...EnterpriseAccountErrors, ...EnterpriseStepUpRequired] as const;
+export const EnterpriseStepUpErrors = [
+  ...EnterpriseAccountErrors,
+  ...EnterpriseStepUpRequired,
+] as const;
 
 export const EnterpriseStepUpFactorErrors = [
   ...EnterpriseStepUpErrors,

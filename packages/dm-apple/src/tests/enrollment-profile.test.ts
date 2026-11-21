@@ -108,8 +108,8 @@ describe("Apple enrollment profile", () => {
     expect(second.PayloadUUID).toBe(first.PayloadUUID);
 
     for (let index = 0; index < first.PayloadContent.length; index++) {
-      expect(second.PayloadContent[index]!.PayloadUUID).toBe(
-        first.PayloadContent[index]!.PayloadUUID,
+      expect(second.PayloadContent[index].PayloadUUID).toBe(
+        first.PayloadContent[index].PayloadUUID,
       );
     }
 
@@ -159,7 +159,7 @@ describe("Apple enrollment profile", () => {
     });
 
     expect(
-      Schema.decodeUnknownSync(Schema.JsonObject)(profile.PayloadContent[0]!.PayloadContent)["URL"],
+      Schema.decodeUnknownSync(Schema.JsonObject)(profile.PayloadContent[0].PayloadContent)["URL"],
     ).toBe("https://scep.example.com/acme");
   });
 

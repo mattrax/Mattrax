@@ -1,6 +1,7 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
-import { type EnterpriseDb, authSessions } from "@mattrax/enterprise-core";
+import { authSessions } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { ClientDescriptor } from "./accountAudit.ts";
 import { schema } from "../schema.ts";
 
@@ -46,7 +47,7 @@ const SessionRecord = Schema.Struct({
  */
 export const SESSION_CONTEXT_REFRESH_MILLIS = 5 * 60 * 1000;
 
-const asMillis = (value: bigint | number) => Number(value);
+const asMillis: (value: bigint | number) => number = Number;
 
 const asDate = (value: Date | string | number | null | undefined): Date | undefined => {
   if (value == null) return undefined;

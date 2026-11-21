@@ -1,5 +1,5 @@
 import { Match, Schema } from "effect";
-import { type Collection, type PlatformId, type Property, type PropertyType } from "./catalog";
+import type { Collection, PlatformId, Property, PropertyType } from "./catalog";
 
 /**
  * Third-party application templates.
@@ -104,7 +104,7 @@ export const loadThirdPartyApps = () => {
     if (!response.ok) throw new Error(`Could not load third-party apps (${response.status})`);
 
     return Schema.decodeUnknownSync(ThirdPartyCatalog)(await response.json());
-  })().catch((error) => {
+  })().catch((error: unknown) => {
     catalogPromise = undefined;
     throw error;
   });

@@ -15,8 +15,8 @@ import {
   policyPlatforms,
   policySelectionCount,
   policyToConfigurations,
-  type PolicyDraft,
 } from "~/lib/policy-designer/build";
+import type { PolicyDraft } from "~/lib/policy-designer/build";
 
 const parseDraft = (value: string | null): PolicyDraft | undefined => parsePolicyDraft(value);
 
@@ -127,7 +127,7 @@ export default function DashboardRedirectPage() {
               <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                 {current().name} ·{" "}
                 {policyPlatforms(current())
-                  .map((platform) => platform[0]!.toUpperCase() + platform.slice(1))
+                  .map((platform) => platform[0].toUpperCase() + platform.slice(1))
                   .join(", ")}{" "}
                 · {policySelectionCount(current())} collections ·{" "}
                 {Object.values(current().platforms)

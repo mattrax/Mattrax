@@ -11,7 +11,8 @@ import {
   pushInvalidTokenTransition,
   writeSystemAudit,
 } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -146,7 +147,7 @@ describe("system audit device lifecycle", () => {
     await run(backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate));
     expect(rowsFor(db, "device.enrolled")).toHaveLength(1);
     expect(rowsFor(db, "mdm.checkin")).toHaveLength(1);
-    expect(rowsFor(db, "mdm.checkin")[0]!.metadata).toMatchObject({ checkIns: 2 });
+    expect(rowsFor(db, "mdm.checkin")[0].metadata).toMatchObject({ checkIns: 2 });
   });
 
   it("never coalesces check-ins from two devices", async () => {
@@ -160,10 +161,7 @@ describe("system audit device lifecycle", () => {
       rowsFor(db, "mdm.checkin")
         .map((row) => String(row.organizationId))
         .sort((left, right) => left.localeCompare(right)),
-    ).toEqual([
-      "org-1",
-      "org-2",
-    ]);
+    ).toEqual(["org-1", "org-2"]);
   });
 
   it("records a device check-out once and keeps it tenant scoped", async () => {
@@ -221,7 +219,7 @@ describe("system audit device lifecycle", () => {
       deviceId: "device-1",
       ip: "203.0.113.9",
     });
-    expect(JSON.stringify(rows[0]!.metadata)).not.toContain("secret-looking");
+    expect(JSON.stringify(rows[0].metadata)).not.toContain("secret-looking");
   });
 
   it("records a successful command result once", async () => {
@@ -279,7 +277,7 @@ describe("system audit device lifecycle", () => {
 
     await run(backend.appleDeviceEvent(scope("udid-device-1"), declarationStatus("invalid")));
     expect(declarationRows()).toHaveLength(2);
-    expect(declarationRows()[1]!.metadata).toMatchObject({
+    expect(declarationRows()[1].metadata).toMatchObject({
       previousValid: "valid",
       valid: "invalid",
     });
@@ -409,7 +407,6 @@ describe("system audit transition helpers", () => {
   });
 });
 
-
 describe("fixed-window check-in coalescing", () => {
   const windowMs = 15 * 60 * 1_000;
 
@@ -448,17 +445,17 @@ describe("fixed-window check-in coalescing", () => {
 
     const rows = auditRows(db);
     expect(rows).toHaveLength(2);
-    expect(rows[0]!.createdAt).toEqual(base);
-    expect(rows[1]!.createdAt).toEqual(new Date(base.getTime() + 15 * 60_000));
-    expect(rows[0]!.metadata).toMatchObject({ checkIns: 2 });
-    expect(rows[1]!.metadata).toMatchObject({ checkIns: 1 });
+    expect(rows[0].createdAt).toEqual(base);
+    expect(rows[1].createdAt).toEqual(new Date(base.getTime() + 15 * 60_000));
+    expect(rows[0].metadata).toMatchObject({ checkIns: 2 });
+    expect(rows[1].metadata).toMatchObject({ checkIns: 1 });
 
     // A repeat in the second bucket updates that row; the first bucket's
     // timestamp never moves.
     await checkin(db, new Date(base.getTime() + 21 * 60_000));
     expect(auditRows(db)).toHaveLength(2);
-    expect(auditRows(db)[0]!.createdAt).toEqual(base);
-    expect(auditRows(db)[1]!.metadata).toMatchObject({ checkIns: 2 });
+    expect(auditRows(db)[0].createdAt).toEqual(base);
+    expect(auditRows(db)[1].metadata).toMatchObject({ checkIns: 2 });
   });
 
   it("keeps two devices in separate rows", async () => {
@@ -520,7 +517,7 @@ describe("Apple user-channel coalescing", () => {
 
   it("never folds two users on one Shared iPad into one row", async () => {
     const { db, backend } = setup();
-    db.store[tableName(schema.device)]![0]!.osEdition = "iOS";
+    db.store[tableName(schema.device)][0].osEdition = "iOS";
 
     await run(backend.appleDeviceEvent(userScope("user-a"), userTokenUpdate("user-a")));
     await run(backend.appleDeviceEvent(userScope("user-b"), userTokenUpdate("user-b")));
@@ -532,13 +529,13 @@ describe("Apple user-channel coalescing", () => {
 
   it("starts a new row when the certificate rotates", async () => {
     const { db, backend } = setup();
-    db.store[tableName(schema.device)]![0]!.osEdition = "iOS";
+    db.store[tableName(schema.device)][0].osEdition = "iOS";
 
     await run(backend.appleDeviceEvent(userScope("user-a"), userTokenUpdate("user-a")));
 
     // Simulate a renewed identity: the device row now trusts the new
     // certificate, so the check-in is accepted and must start a new row.
-    db.store[tableName(schema.device)]![0]!.dmIdentityFingerprint = "fingerprint-2";
+    db.store[tableName(schema.device)][0].dmIdentityFingerprint = "fingerprint-2";
 
     await run(
       backend.appleDeviceEvent(
@@ -563,7 +560,7 @@ describe("Apple user-channel coalescing", () => {
 describe("Apple status-report diffs", () => {
   it("records one status report for identical inventory reports", async () => {
     const { db, backend } = setup();
-    db.store[tableName(schema.device)]![0]!.serial = "OLD-SERIAL";
+    db.store[tableName(schema.device)][0].serial = "OLD-SERIAL";
 
     const report = {
       _tag: "DeclarationStatus" as const,
@@ -574,7 +571,7 @@ describe("Apple status-report diffs", () => {
     await run(backend.appleDeviceEvent(scope("udid-device-1"), report));
 
     expect(rowsFor(db, "mdm.status_report")).toHaveLength(1);
-    expect(rowsFor(db, "mdm.status_report")[0]!.metadata).toMatchObject({
+    expect(rowsFor(db, "mdm.status_report")[0].metadata).toMatchObject({
       inventoryChanged: true,
     });
   });
@@ -612,7 +609,7 @@ describe("failure attribution", () => {
 
     // A second device in the same tenant owns the certificate the request
     // presents.
-    db.store[tableName(schema.device)]!.push({
+    db.store[tableName(schema.device)].push({
       __table: tableName(schema.device),
       ...device("device-3", "org-1"),
     });
@@ -646,7 +643,7 @@ describe("failure attribution", () => {
       deviceId: "device-3",
       metadata: { attribution: "bound" },
     });
-    expect(JSON.stringify(rows[0]!.metadata)).toContain('"attribution":"bound"');
+    expect(JSON.stringify(rows[0].metadata)).toContain('"attribution":"bound"');
   });
 
   it("falls back to the asserted device id when no identity is bound", async () => {

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
-import { isSealedCaPrivateKey, sealCaPrivateKey, type SealedCaPrivateKey } from "@mattrax/scep";
+import { isSealedCaPrivateKey, sealCaPrivateKey } from "@mattrax/scep";
+import type { SealedCaPrivateKey } from "@mattrax/scep";
 import { ScepRepositoryLive } from "@mattrax/mdm-core";
-import { dbRows, makeDb, tableName, jsonValue, type Store } from "./fake-db.js";
+import { dbRows, makeDb, tableName, jsonValue } from "./fake-db.js";
+import type { Store } from "./fake-db.js";
 
 const authSecret = "scep-ca-test-secret";
 
@@ -89,11 +91,11 @@ describe("ScepRepositoryLive CA key protection", () => {
     expect(ca?.privateKeyJwk).toEqual(jwk);
 
     const [row] = dbRows(db, tableName(schema.scepCa));
-    expect(row!.organizationId).toBe(scope.organizationId);
-    expect(isSealedCaPrivateKey(jsonValue(row!.privateKeyJwk))).toBe(true);
-    expect(JSON.stringify(row!.privateKeyJwk)).not.toContain(jwk.d!);
+    expect(row.organizationId).toBe(scope.organizationId);
+    expect(isSealedCaPrivateKey(jsonValue(row.privateKeyJwk))).toBe(true);
+    expect(JSON.stringify(row.privateKeyJwk)).not.toContain(jwk.d!);
     // The certificate is untouched by migration.
-    expect(row!.certPem).toBe("-----BEGIN CERTIFICATE-----ca");
+    expect(row.certPem).toBe("-----BEGIN CERTIFICATE-----ca");
   });
 
   it("opens an already sealed key", async () => {
@@ -104,7 +106,7 @@ describe("ScepRepositoryLive CA key protection", () => {
 
     const ca = await Effect.runPromise(repository.getCa(scope));
     expect(ca?.privateKeyJwk).toEqual(jwk);
-    expect(dbRows(db, tableName(schema.scepCa))[0]!.privateKeyJwk).toEqual(sealed);
+    expect(dbRows(db, tableName(schema.scepCa))[0].privateKeyJwk).toEqual(sealed);
   });
 
   it("fails closed without a secret and never regenerates the CA", async () => {
@@ -123,7 +125,7 @@ describe("ScepRepositoryLive CA key protection", () => {
 
       // The plaintext row is left as-is rather than being overwritten.
       const [row] = dbRows(db, tableName(schema.scepCa));
-      expect(row!.privateKeyJwk).toEqual(jwk);
+      expect(row.privateKeyJwk).toEqual(jwk);
     });
   });
 
@@ -138,7 +140,7 @@ describe("ScepRepositoryLive CA key protection", () => {
     expect(error).toMatchObject({ _tag: "ScepError" as const });
     expect(error.message).toContain("Failed to decrypt");
     expect(error.message).not.toContain(jwk.d!);
-    expect(dbRows(db, tableName(schema.scepCa))[0]!.privateKeyJwk).toEqual(tampered);
+    expect(dbRows(db, tableName(schema.scepCa))[0].privateKeyJwk).toEqual(tampered);
   });
 
   it("accepts a plaintext value sealed by @mattrax/crypto directly", async () => {
@@ -182,10 +184,10 @@ describe("ScepRepositoryLive CA key protection", () => {
     expect(saved.privateKeyJwk).toEqual(jwk);
 
     const [row] = dbRows(db, tableName(schema.scepCa));
-    expect(row!.certPem).toBe("PEM");
-    expect(row!.organizationId).toBe(scope.organizationId);
-    expect(isSealedCaPrivateKey(jsonValue(row!.privateKeyJwk))).toBe(true);
-    expect(JSON.stringify(row!.privateKeyJwk)).not.toContain(jwk.d!);
+    expect(row.certPem).toBe("PEM");
+    expect(row.organizationId).toBe(scope.organizationId);
+    expect(isSealedCaPrivateKey(jsonValue(row.privateKeyJwk))).toBe(true);
+    expect(JSON.stringify(row.privateKeyJwk)).not.toContain(jwk.d!);
 
     // And the repository can read its own write back.
     const ca = await Effect.runPromise(repository.getCa(scope));

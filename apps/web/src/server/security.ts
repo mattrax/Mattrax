@@ -60,7 +60,7 @@ export function normalisePath(pathname: string): string {
   }
 
   const withoutParameters = decoded.split(";")[0] ?? decoded;
-  const collapsed = withoutParameters.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+  const collapsed = withoutParameters.replaceAll(/\/{2,}/g, "/").replace(/\/+$/, "");
 
   return (collapsed === "" ? "/" : collapsed).toLowerCase();
 }
@@ -124,7 +124,8 @@ export function guardPath(pathname: string): PathDecision {
   return "allow";
 }
 
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (value: string): string =>
+  value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 /**
  * Compile one route pattern from the filesystem manifest into a matcher.
@@ -135,7 +136,7 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
  * produce a 404 status, so it must not count as an existing page.
  */
 export function compilePagePattern(pattern: string): RegExp | undefined {
-  const collapsed = pattern.replace(/\/\([^)/]+\)/g, "");
+  const collapsed = pattern.replaceAll(/\/\([^)/]+\)/g, "");
   const segments = collapsed.split("/").filter((segment) => segment !== "");
 
   if (segments.some((segment) => segment.startsWith("*404"))) return undefined;

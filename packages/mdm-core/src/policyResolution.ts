@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 
 /**
  * Policy precedence resolution.
@@ -494,7 +494,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
 
     const sorted = [...candidates].sort(compareCandidates);
 
-    const winner = sorted[0]!;
+    const winner = sorted[0];
     resolved.push({
       kind,
       policyId: winner.policy.id,
@@ -699,7 +699,7 @@ export const resolveEffectivePolicy = (input: PolicyResolutionInput): EffectiveP
 
     const sorted = [...candidates].sort(compareCandidates);
 
-    const winner = sorted[0]!;
+    const winner = sorted[0];
 
     const result: ResolvedConfiguration = {
       kind,

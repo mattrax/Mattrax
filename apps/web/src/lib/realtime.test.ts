@@ -313,7 +313,7 @@ describe("startTenantRealtime", () => {
 
   it("connects to the tenant path and resumes from the newest cursor", () => {
     const { realtime } = start();
-    const first = FakeEventSource.instances[0]!;
+    const first = FakeEventSource.instances[0];
 
     expect(first.url).toBe("/api/v1/tenants/tenant-1/realtime");
 
@@ -339,13 +339,13 @@ describe("startTenantRealtime", () => {
   it("backs off and falls back to polling after repeated failures", () => {
     const { realtime, client } = start();
 
-    FakeEventSource.instances[0]!.fail();
+    FakeEventSource.instances[0].fail();
     expect(realtime.status()).toBe("reconnecting");
 
     vi.advanceTimersByTime(1_000);
     expect(FakeEventSource.instances).toHaveLength(2);
 
-    FakeEventSource.instances[1]!.fail();
+    FakeEventSource.instances[1].fail();
     expect(realtime.status()).toBe("polling");
 
     vi.advanceTimersByTime(1_000);
@@ -361,13 +361,13 @@ describe("startTenantRealtime", () => {
     const document = fakeDocument();
     const { realtime } = start(document);
 
-    FakeEventSource.instances[0]!.open();
+    FakeEventSource.instances[0].open();
 
     document.hidden = true;
     document.emit("visibilitychange");
 
     expect(realtime.status()).toBe("paused");
-    expect(FakeEventSource.instances[0]!.closed).toBe(true);
+    expect(FakeEventSource.instances[0].closed).toBe(true);
 
     document.hidden = false;
     document.emit("visibilitychange");

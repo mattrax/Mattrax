@@ -55,15 +55,17 @@ export const policyDeliveryState = (input: {
     input.declarations.map((declaration) => [declaration.identifier, declaration]),
   );
 
-  const states = input.kinds.map((kind) =>
-    declarationState(byIdentifier.get(policyDeclarationIdentifier(input.policyId, kind))),
+  const states = new Set(
+    input.kinds.map((kind) =>
+      declarationState(byIdentifier.get(policyDeclarationIdentifier(input.policyId, kind))),
+    ),
   );
 
-  if (states.includes("failed")) return "failed";
+  if (states.has("failed")) return "failed";
 
-  if (states.includes("inactive")) return "inactive";
+  if (states.has("inactive")) return "inactive";
 
-  if (states.includes("pending")) return "pending";
+  if (states.has("pending")) return "pending";
 
   return "delivered";
 };

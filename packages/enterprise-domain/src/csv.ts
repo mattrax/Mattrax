@@ -14,7 +14,7 @@ export const parseCsvRecords = (input: string): string[][] => {
   let quoted = false;
 
   for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
+    const character = text[index];
 
     if (quoted) {
       if (character === '"') {

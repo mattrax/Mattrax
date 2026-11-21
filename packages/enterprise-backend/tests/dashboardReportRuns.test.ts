@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { makeEmailTransport, type OutboundEmailMessage } from "@mattrax/email";
+import { makeEmailTransport } from "@mattrax/email";
+import type { OutboundEmailMessage } from "@mattrax/email";
 import {
   resolveReportRecipients,
   runScheduledReports,

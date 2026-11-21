@@ -1,6 +1,7 @@
 import type { ComponentProps } from "@solidjs/web";
 import { splitProps } from "./lib/solid";
-import { cva, type VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
 import { cn } from "./lib/cn";
 
 const badgeVariants = cva(

@@ -1,10 +1,12 @@
 import { eq, lt } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Redacted, Schema } from "effect";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
-import { AuthCredentialCommandCollector, type AuthInvocation } from "@yielded/auth/Operations";
+import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
+import type { AuthInvocation } from "@yielded/auth/Operations";
 import type { StrategyDefinition } from "@yielded/auth/Auth";
 import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
-import { AuthClaims, SsoRejected } from "@mattrax/enterprise-domain";
+import type { AuthClaims } from "@mattrax/enterprise-domain";
+import { SsoRejected } from "@mattrax/enterprise-domain";
 import { verifyToken } from "@mattrax/enterprise-tokens";
 
 type SsoServices = {
@@ -161,7 +163,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
               proofs: [
                 {
                   method: "sso-oidc",
-                  credentialId: active[0]!.credentialId,
+                  credentialId: active[0].credentialId,
                   factors: ["possession"],
                   userVerified: true,
                   phishingResistant: false,

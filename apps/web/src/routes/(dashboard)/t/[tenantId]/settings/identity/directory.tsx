@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { Match, Option, Schema } from "effect";
 import { BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -10,12 +11,8 @@ import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import {
-  bulkFailureReason,
-  bulkReport,
-  runBulkBatches,
-  type BulkFailure,
-} from "~/lib/bulk-members";
+import { bulkFailureReason, bulkReport, runBulkBatches } from "~/lib/bulk-members";
+import type { BulkFailure } from "~/lib/bulk-members";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { directorySyncProgress, shouldPollDirectorySync } from "~/lib/directory-sync";
 import { preloadPage } from "~/lib/page-data";
@@ -827,7 +824,7 @@ export default function DirectorySyncPage() {
                   fallback={
                     <p>
                       Last successful {triggerLabel(value().lastRunTrigger)}{" "}
-                      {formatDate(value().lastSyncedAt!)}
+                      {formatDate(value().lastSyncedAt)}
                     </p>
                   }
                 >

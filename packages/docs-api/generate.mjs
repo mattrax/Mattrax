@@ -1,6 +1,5 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Application } from "typedoc";
 import { load } from "typedoc-plugin-markdown";
 
@@ -18,7 +17,7 @@ import { load } from "typedoc-plugin-markdown";
  * depth cap keeps Effect's generic types from being expanded into an
  * unreadable page.
  */
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 
 const repoRoot = path.resolve(here, "..", "..");
 

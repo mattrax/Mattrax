@@ -251,7 +251,7 @@ describe("login attempt recording", () => {
     const rows = await runEffect(listLoginAttempts(db, "account-1"));
 
     expect(rows).toHaveLength(50);
-    expect(rows[0]!.createdAt.getSeconds()).toBe(59);
+    expect(rows[0].createdAt.getSeconds()).toBe(59);
   });
 
   it("prunes only attempts older than the cutoff", async () => {

@@ -1,6 +1,7 @@
 import { AuthPersistence } from "@yielded/auth-persistence-drizzle/Mysql2";
 import { requiredPasskeyPersistenceConstraints } from "@yielded/auth-persistence-drizzle";
-import { Schema as AuthSchema, Sessions } from "@yielded/auth";
+import type { Sessions } from "@yielded/auth";
+import { Schema as AuthSchema } from "@yielded/auth";
 import {
   AuthDefinition,
   LOGIN_ATTEMPT_FACTORS,
@@ -13,7 +14,8 @@ import {
   authenticationRequirement,
 } from "@mattrax/enterprise-domain";
 import type { DynamicGroupRules } from "@mattrax/enterprise-domain";
-import { defineRelations, sql, type SQL } from "drizzle-orm";
+import { defineRelations, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -28,7 +30,8 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
-import { Effect, Schema as EffectSchema } from "effect";
+import type { Schema as EffectSchema } from "effect";
+import { Effect } from "effect";
 
 /**
  * MySQL stores indexes as key prefixes. Every column that participates in a
@@ -3222,7 +3225,9 @@ export const dashboardReport = mysqlTable(
     frequency: varchar("frequency", { length: 16, enum: ["daily", "weekly", "monthly"] }).notNull(),
     /** UTC hour the digest is scheduled for, 0-23. */
     hourUtc: int("hour_utc").notNull().default(7),
-    format: varchar("format", { length: 8, enum: ["csv", "pdf"] }).notNull().default("csv"),
+    format: varchar("format", { length: 8, enum: ["csv", "pdf"] })
+      .notNull()
+      .default("csv"),
     enabled: boolean("enabled").notNull().default(true),
     /** Tenant member account ids that receive the report. */
     memberAccountIds: json("member_account_ids").$type<string[]>().notNull(),

@@ -107,8 +107,8 @@ export function Pricing() {
         </p>
 
         <p class="lx-price__micro">
-          Alpha means best-effort support, nightly backups with up to a day of potential loss,
-          and APIs that can still change. Read{" "}
+          Alpha means best-effort support, nightly backups with up to a day of potential loss, and
+          APIs that can still change. Read{" "}
           <a href="/docs/getting-started/alpha" target="_self">
             what alpha means
           </a>{" "}
@@ -165,7 +165,7 @@ export const FAQ_ITEMS: readonly FaqItem[] = [
   },
 ];
 
-const faqJson = JSON.stringify(faqStructuredData(FAQ_ITEMS)).replace(/</g, "\\u003c");
+const faqJson = JSON.stringify(faqStructuredData(FAQ_ITEMS)).replaceAll("<", String.raw`\u003c`);
 
 export function Faq() {
   return (

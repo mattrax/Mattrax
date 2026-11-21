@@ -11,16 +11,19 @@ import {
 } from "~/components/ui/dialog";
 import { Check, Info, ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import { loadCollection, type Collection, type PlatformId } from "~/lib/policy-designer/catalog";
+import { loadCollection } from "~/lib/policy-designer/catalog";
+import type { Collection, PlatformId } from "~/lib/policy-designer/catalog";
 import {
   applyCisTemplateToSelections,
   cisControlIds,
   cisRequiredCollections,
   loadCisTemplate,
   loadCisTemplateIndex,
-  type CisApplyResult,
-  type CisTemplateSummary,
-  type CompiledCisTemplate,
+} from "~/lib/policy-designer/cis";
+import type {
+  CisApplyResult,
+  CisTemplateSummary,
+  CompiledCisTemplate,
 } from "~/lib/policy-designer/cis";
 import type { Selection } from "~/lib/policy-designer/build";
 import { cn } from "~/lib/utils";
@@ -119,7 +122,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
         setTemplate(loaded);
         setSelected(new Set(cisControlIds(loaded)));
       })
-      .catch((error) =>
+      .catch((error: unknown) =>
         setTemplateError(error instanceof Error ? error.message : "Could not load the template."),
       )
       .finally(() => setBusy(false));
@@ -150,8 +153,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
           if (first) choose(first);
         })
-        .catch((error) =>
-          setIndexError(error instanceof Error ? error.message : "Could not load the CIS templates."),
+        .catch((error: unknown) =>
+          setIndexError(
+            error instanceof Error ? error.message : "Could not load the CIS templates.",
+          ),
         )
         .finally(() => setBusy(false));
     },
@@ -226,7 +231,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
         <Show when={indexError()}>
           {(error) => (
-            <p role="alert" class="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+            <p
+              role="alert"
+              class="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
+            >
               Could not load the CIS templates: {error()}
             </p>
           )}
@@ -292,8 +300,8 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                         />
                       </div>
                       <p class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
-                        {current().stats.settings} settings across{" "}
-                        {current().stats.mapped} mapped controls.
+                        {current().stats.settings} settings across {current().stats.mapped} mapped
+                        controls.
                       </p>
                     </div>
 
@@ -354,7 +362,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
               <Show when={templateError()}>
                 {(error) => (
-                  <p role="alert" class="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                  <p
+                    role="alert"
+                    class="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive"
+                  >
                     {error()}
                   </p>
                 )}
@@ -415,11 +426,14 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                                         </Badge>
                                       )}
                                     </Show>
-                                    <Show when={control.mapped} fallback={
-                                      <Badge variant="secondary" class="h-4 px-1 text-[9px]">
-                                        Not mapped
-                                      </Badge>
-                                    }>
+                                    <Show
+                                      when={control.mapped}
+                                      fallback={
+                                        <Badge variant="secondary" class="h-4 px-1 text-[9px]">
+                                          Not mapped
+                                        </Badge>
+                                      }
+                                    >
                                       <Badge variant="success" class="h-4 px-1 text-[9px]">
                                         <Check class="mr-0.5 size-2.5" />
                                         {control.settings.length}
@@ -473,7 +487,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
         <Show when={applyError()}>
           {(error) => (
-            <p role="alert" class="mt-3 whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+            <p
+              role="alert"
+              class="mt-3 whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive"
+            >
               {error()}
             </p>
           )}

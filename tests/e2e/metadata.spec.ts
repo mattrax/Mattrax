@@ -49,7 +49,7 @@ function isArdManifest(value: unknown): value is ArdManifest {
 }
 
 function metaTags(html: string) {
-  return [...html.matchAll(/<meta\b[^>]*>/gi)].map((match) => match[0]!);
+  return [...html.matchAll(/<meta\b[^>]*>/gi)].map((match) => match[0]);
 }
 
 function metaContent(tags: string[], attribute: "name" | "property", key: string) {
@@ -88,7 +88,7 @@ test.describe("social metadata", () => {
     // The landing page carries FAQPage data for the six questions it renders.
     const structuredData = [
       ...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g),
-    ].map((match) => JSON.parse(match[1]!));
+    ].map((match) => JSON.parse(match[1]));
 
     const faq = structuredData.find((entry) => entry["@type"] === "FAQPage");
 
@@ -157,7 +157,7 @@ test.describe("social metadata", () => {
     expect(body).not.toContain("<html");
 
     const origin = new URL(response.url()).origin;
-    const urls = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]!);
+    const urls = [...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 
     expect(urls.length).toBeGreaterThan(3);
 

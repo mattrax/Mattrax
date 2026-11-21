@@ -2,7 +2,8 @@ import { Effect, Exit, Schema } from "effect";
 import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { isDirectorySyncDue, nextDirectorySyncAt, syncDirectory } from "@mattrax/directory-sync";
 import type { AzureGraphService } from "@mattrax/azure-graph";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { entraDirectoryUserDirectory } from "./provider.js";
 
 const now = () => new Date();
@@ -214,7 +215,7 @@ export const syncEntraDirectory = (options: {
       counts.domains++;
     }
 
-    const knownDomains = verified.map((domain) => domain.id);
+    const knownDomains = new Set(verified.map((domain) => domain.id));
 
     const staleDomains = yield* db
       .select()
@@ -228,7 +229,7 @@ export const syncEntraDirectory = (options: {
 
     const stale = staleDomains
       .map((row: { domain: string }) => row.domain)
-      .filter((domain: string) => !knownDomains.includes(domain));
+      .filter((domain: string) => !knownDomains.has(domain));
 
     if (stale.length)
       yield* db.delete(schema.ssoDomain).where(inArray(schema.ssoDomain.domain, stale));
@@ -444,9 +445,9 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
 
     if (result.changedUserIds.length > 0 && options.onMembershipsChanged)
       yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
-            console.error("Entra directory membership refresh failed", organizationId, cause);
+            console.error("Entra directory membership refresh failed", organizationId, error);
           }),
         ),
       );
@@ -479,13 +480,13 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
       groupsDelta: result.groupsDelta,
     } as const;
   }).pipe(
-    Effect.catch((cause) =>
+    Effect.catch((error) =>
       Effect.sync(() => {
-        console.error("Entra directory sync failed", options.organizationId, cause);
+        console.error("Entra directory sync failed", options.organizationId, error);
 
         return {
           status: "error",
-          message: String(cause).slice(0, 2000),
+          message: String(error).slice(0, 2000),
         } as const;
       }),
     ),
@@ -554,11 +555,11 @@ export const runScheduledEntraSync = <R = never>(options: {
           now: timestamp,
           onMembershipsChanged: options.onMembershipsChanged,
         }).pipe(
-          Effect.catch((cause) =>
+          Effect.catch((error) =>
             Effect.sync(() => {
-              console.error("Scheduled Entra directory sync failed", row.organizationId, cause);
+              console.error("Scheduled Entra directory sync failed", row.organizationId, error);
 
-              return { status: "error", message: String(cause) } as const;
+              return { status: "error", message: String(error) } as const;
             }),
           ),
         ),

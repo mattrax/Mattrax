@@ -427,7 +427,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
     expect(requested.challenge).toEqual(expect.any(String));
 
@@ -510,7 +510,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
 
     await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
@@ -522,7 +522,7 @@ describe("email verification", () => {
       from: { name: "Oscar from Mattrax", email: "hello@mattrax.cloud" },
       replyTo: "oscar@otbeaumont.me",
     });
-    expect(welcome[0]!.text).toContain("Hey Owner,");
+    expect(welcome[0].text).toContain("Hey Owner,");
     expect(db.store.account[0]!.welcomeEmailSentAt).toBeInstanceOf(Date);
 
     // A retried verification (or a duplicate hook) must not send again.
@@ -539,7 +539,7 @@ describe("email verification", () => {
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
-    const token = sent[0]!.text.match(/verify-email\?token=([^\s]+)/)?.[1];
+    const token = sent[0].text.match(/verify-email\?token=([^\s]+)/)?.[1];
     expect(token).toBeTruthy();
 
     await run((auth) => auth.verifyEmail(session(), { token: decodeURIComponent(token!) }));
@@ -556,7 +556,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
     const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
     await expect(
       run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),

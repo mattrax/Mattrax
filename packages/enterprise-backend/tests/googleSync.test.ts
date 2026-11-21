@@ -5,9 +5,8 @@ import {
   loadGoogleDirectoryConfig,
   runGoogleDirectorySyncForTenant,
   runScheduledGoogleSync,
-  type GoogleWorkspaceCredentials,
-  type GoogleWorkspaceService,
 } from "@mattrax/google-workspace";
+import type { GoogleWorkspaceCredentials, GoogleWorkspaceService } from "@mattrax/google-workspace";
 import { EnterpriseBadRequest } from "@mattrax/enterprise-domain";
 import { linkDirectoryUserSso } from "@mattrax/enterprise-backend";
 import { makeDb } from "./helpers.js";
@@ -36,7 +35,7 @@ const user = (
 ) => ({
   id,
   primaryEmail: email,
-  name: email.split("@")[0]!,
+  name: email.split("@")[0],
   suspended: options.suspended ?? false,
   archived: false,
   deleted: options.deleted ?? false,

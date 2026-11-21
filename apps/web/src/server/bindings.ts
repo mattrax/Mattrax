@@ -20,7 +20,9 @@ export interface DeploymentBindings {
   readonly API: { fetch(request: Request): Promise<Response> };
 }
 
-export class Bindings extends Context.Service<Bindings, DeploymentBindings>()("mattraxe/web/Bindings") {}
+export class Bindings extends Context.Service<Bindings, DeploymentBindings>()(
+  "mattraxe/web/Bindings",
+) {}
 
 const text = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
@@ -74,11 +76,11 @@ const nodeBindings = (): DeploymentBindings => {
       async fetch(request) {
         try {
           return await forward(apiUrl, request);
-        } catch (cause) {
+        } catch (error) {
           // A down API must not take the dashboard down with it. Bootstrap
           // already treats a failed call as a signed-out render; proxied
           // endpoints answer with a gateway error instead.
-          console.error("[selfhost] API request failed", cause);
+          console.error("[selfhost] API request failed", error);
 
           return new Response("Bad Gateway", {
             status: 502,

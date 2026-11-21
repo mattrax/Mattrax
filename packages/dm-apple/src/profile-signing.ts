@@ -16,7 +16,7 @@ import * as pkijs from "pkijs";
 
 // ─── PKIjs Crypto Engine Setup ───────────────────────────────────
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -80,7 +80,7 @@ const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
 const decodeBase64 = (value: string, label: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
 
   if (cleaned.length === 0) {
     throw new AppleProfileSigningError({ message: `${label} is empty` });
@@ -115,10 +115,10 @@ const parsePemCertificates = (pem: string, label: string): pkijs.Certificate[] =
 
     try {
       certificates.push(pkijs.Certificate.fromBER(toArrayBuffer(der)));
-    } catch (cause) {
+    } catch (error) {
       throw new AppleProfileSigningError({
-        message: `${label} could not be parsed: ${errorMessage(cause)}`,
-        cause,
+        message: `${label} could not be parsed: ${errorMessage(error)}`,
+        cause: error,
       });
     }
   }
@@ -146,10 +146,10 @@ const importPrivateKeyPem = async (pem: string): Promise<CryptoKey> => {
       false,
       ["sign"],
     );
-  } catch (cause) {
+  } catch (error) {
     throw new AppleProfileSigningError({
-      message: `Profile signing key could not be imported as an RSA PKCS#8 key: ${errorMessage(cause)}`,
-      cause,
+      message: `Profile signing key could not be imported as an RSA PKCS#8 key: ${errorMessage(error)}`,
+      cause: error,
     });
   }
 };
@@ -266,12 +266,12 @@ export async function signAppleProfilePlist(
       : material.privateKey;
 
     return await encodeSignedProfile(plist, signerCertificate, chain, privateKey);
-  } catch (cause) {
-    if (cause instanceof AppleProfileSigningError) throw cause;
+  } catch (error) {
+    if (error instanceof AppleProfileSigningError) throw error;
 
     throw new AppleProfileSigningError({
-      message: `Apple profile signing failed: ${errorMessage(cause)}`,
-      cause,
+      message: `Apple profile signing failed: ${errorMessage(error)}`,
+      cause: error,
     });
   }
 }

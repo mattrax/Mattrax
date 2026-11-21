@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -15,7 +16,8 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Search } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, enterpriseQueries, type DeviceRow } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { DeviceRow } from "~/lib/enterprise";
 import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";

@@ -1,12 +1,10 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { deriveSoftwareUpdate, parseSofaFeed } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import {
-  loadSoftwareUpdateCatalog,
-  SOFA_MACOS_FEED_ID,
-  type LoadSoftwareUpdateCatalogOptions,
-} from "../src/Device/softwareUpdates.ts";
+import { loadSoftwareUpdateCatalog, SOFA_MACOS_FEED_ID } from "../src/Device/softwareUpdates.ts";
+import type { LoadSoftwareUpdateCatalogOptions } from "../src/Device/softwareUpdates.ts";
 import { createEnterpriseSchema } from "../src/schema.ts";
 import { runEffect } from "./helpers.js";
 
@@ -190,9 +188,15 @@ describe("software update feed cache", () => {
       return new Promise<Response>((_, reject) => {
         const abort = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
 
-        if (!signal) return reject(new Error("missing abort signal"));
+        if (!signal) {
+          reject(new Error("missing abort signal"));
+          return;
+        }
 
-        if (signal.aborted) return abort();
+        if (signal.aborted) {
+          abort();
+          return;
+        }
 
         signal.addEventListener("abort", abort, { once: true });
       });
@@ -277,7 +281,9 @@ describe("software update feed cache", () => {
     });
 
     const fetch = countingFetch(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
 
       return jsonResponse(feedBody("26.7.3"));
     });

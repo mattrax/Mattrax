@@ -3,12 +3,12 @@ import { Effect, Layer, Predicate, Schema } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
-import {
+import type {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
-  ManagementManifest,
 } from "@mattrax/management-backend";
+import { ManagementManifest } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
 import { parsePlist, PlistValue } from "@mattrax/plist";
 import { mockManagementBackend } from "./helpers.js";

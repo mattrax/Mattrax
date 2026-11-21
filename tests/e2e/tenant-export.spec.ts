@@ -32,7 +32,7 @@ test.describe("tenant export and import", () => {
     const bundle: {
       version: number;
       tenant: { name: string; slug: string };
-    } = JSON.parse(await readFile(path!, "utf8"));
+    } = JSON.parse(await readFile(path, "utf8"));
 
     expect(bundle.version).toBe(1);
     expect(bundle.tenant.slug).toBe(tenant.slug);

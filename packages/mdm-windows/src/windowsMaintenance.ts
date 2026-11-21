@@ -1,6 +1,7 @@
 import { and, inArray, lt } from "drizzle-orm";
 import { Effect } from "effect";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { WINDOWS_STATE_COMMAND_REQUEST_TYPES } from "./windowsCommands.ts";
 
 /**

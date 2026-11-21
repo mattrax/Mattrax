@@ -64,7 +64,6 @@ export type CrossTabMessage = typeof CrossTabMessage.Type;
 const decode = Schema.decodeUnknownOption(CrossTabMessage);
 
 /** Decode an untrusted payload from a channel or `storage` event. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- this is the decode boundary for channel/storage payloads.
 export const decodeCrossTabMessage = (value: unknown): CrossTabMessage | undefined =>
   Option.getOrUndefined(decode(value));
 
@@ -87,10 +86,8 @@ const currentTabId = (): string => {
 export const crossTabTabId = (): string => currentTabId();
 
 /** A tab never applies its own message; the local cache already changed. */
-export const isOwnMessage = (
-  message: CrossTabMessage,
-  self: string = currentTabId(),
-): boolean => message.tabId === self;
+export const isOwnMessage = (message: CrossTabMessage, self: string = currentTabId()): boolean =>
+  message.tabId === self;
 
 /** Stable key identity for dedupe inside a flush window. */
 export const queryKeyId = (key: readonly unknown[]): string => JSON.stringify(key);
@@ -280,7 +277,6 @@ export const installCrossTabSync = (target: QueryClient): void => {
 
   installed = true;
 
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- channel/storage payloads are decoded here.
   const receive = (value: unknown) => {
     const message = decodeCrossTabMessage(value);
 

@@ -3,12 +3,8 @@ import { Effect, Layer } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { ScepService, ScepServiceTag } from "../service.js";
-import {
-  ScepRepository,
-  type ScepCaScope,
-  type ScepIssuedCertificate,
-  type ScepStoredCa,
-} from "../repository.js";
+import type { ScepRepository } from "../repository.js";
+import type { ScepCaScope, ScepIssuedCertificate, ScepStoredCa } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import { describeScepCa } from "../ca.js";
@@ -21,7 +17,7 @@ import {
   mockScepRepository,
 } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -73,7 +69,7 @@ const caCertDer = (certPem: string) => {
   const base64 = certPem
     .replace(/-----BEGIN CERTIFICATE-----/, "")
     .replace(/-----END CERTIFICATE-----/, "")
-    .replace(/\s/g, "");
+    .replaceAll(/\s/g, "");
 
   return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
 };
@@ -359,7 +355,7 @@ describe("ScepService", () => {
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
       const attributes = new Map(
-        signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+        signedData.signerInfos[0].signedAttrs!.attributes.map((attribute) => [
           attribute.type,
           attribute,
         ]),
@@ -692,7 +688,7 @@ describe("ScepService", () => {
         const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
         const attributes = new Map(
-          signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+          signedData.signerInfos[0].signedAttrs!.attributes.map((attribute) => [
             attribute.type,
             attribute,
           ]),
@@ -734,7 +730,7 @@ describe("ScepService", () => {
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
 
       const attributes = new Map(
-        signedData.signerInfos[0]!.signedAttrs!.attributes.map((attribute) => [
+        signedData.signerInfos[0].signedAttrs!.attributes.map((attribute) => [
           attribute.type,
           attribute,
         ]),

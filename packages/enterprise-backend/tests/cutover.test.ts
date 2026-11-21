@@ -26,11 +26,7 @@ const now = new Date("2026-11-20T00:00:00.000Z");
 
 type Db = ReturnType<typeof makeDb>;
 
-const organization = (input: {
-  id: string;
-  slug: string;
-  name?: string;
-}): EnterpriseOrganization =>
+const organization = (input: { id: string; slug: string; name?: string }): EnterpriseOrganization =>
   // SAFETY: the fake store only compares the fields below; every other column
   // is optional at the type level and unused by the cutover code under test.
   ({
@@ -451,8 +447,7 @@ describe("cutover import", () => {
     ).toBe(true);
     expect(
       target.store.audit_log.some(
-        (row) =>
-          row.organizationId === result.tenantId && row.action === "tenant.cutover_imported",
+        (row) => row.organizationId === result.tenantId && row.action === "tenant.cutover_imported",
       ),
     ).toBe(true);
 

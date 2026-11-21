@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
@@ -137,8 +138,8 @@ export default function DashboardsPage() {
         meta={
           <Show when={dashboards.data}>
             <span class="tabular-nums">
-              {dashboards.data!.dashboards.length} dashboard
-              {dashboards.data!.dashboards.length === 1 ? "" : "s"}
+              {dashboards.data.dashboards.length} dashboard
+              {dashboards.data.dashboards.length === 1 ? "" : "s"}
             </span>
           </Show>
         }
@@ -202,7 +203,7 @@ export default function DashboardsPage() {
         }
       >
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <For each={dashboards.data!.dashboards}>
+          <For each={dashboards.data.dashboards}>
             {(dashboard) => (
               <article class="group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:shadow-card">
                 <div class="flex items-start justify-between gap-2">

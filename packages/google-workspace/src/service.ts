@@ -1,6 +1,6 @@
 import { Data, Effect, Option, Schema } from "effect";
-import type { GoogleWorkspaceCredentials } from "./config.js";
-import { GoogleWorkspaceConfigError, redactGoogleCredentials } from "./config.js";
+import type { GoogleWorkspaceCredentials, GoogleWorkspaceConfigError } from "./config.js";
+import { redactGoogleCredentials } from "./config.js";
 import { GOOGLE_TOKEN_URL, signServiceAccountAssertion } from "./jwt.js";
 
 /** A failed Google Directory/token request. Messages never contain credentials. */
@@ -201,7 +201,7 @@ const errorCode = (body: string): string | undefined => {
 
 const errorMessage = (body: string, status: number): string => {
   const code = errorCode(body);
-  const snippet = body.replace(/\s+/g, " ").trim().slice(0, 300);
+  const snippet = body.replaceAll(/\s+/g, " ").trim().slice(0, 300);
 
   if (code) return `Google Workspace rejected the request (HTTP ${status}): ${code}`;
 

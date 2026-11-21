@@ -11,19 +11,16 @@ import {
 } from "~/components/mdm/common";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
-import {
-  EntityQueryBar,
-  formatEntityQuery,
-  parseEntityQuery,
-  type EntityCondition,
-  type EntityField,
-} from "~/components/mdm/entity-query";
-import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
+import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { enterprise, type PolicyRow } from "~/lib/enterprise";
+import { enterprise } from "~/lib/enterprise";
+import type { PolicyRow } from "~/lib/enterprise";
 import {
   isPolicyEnabled,
   policyRowDeliveryPresentation,

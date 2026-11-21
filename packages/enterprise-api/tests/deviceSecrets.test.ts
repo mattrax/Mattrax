@@ -294,8 +294,11 @@ describe("installed application inventory", () => {
     );
 
     const now = new Date();
-    db.store.device.push(deviceRow("device-1", first.id), deviceRow("device-2", first.id));
-    db.store.device.push(deviceRow("device-3", second.id));
+    db.store.device.push(
+      deviceRow("device-1", first.id),
+      deviceRow("device-2", first.id),
+      deviceRow("device-3", second.id),
+    );
 
     const app = (deviceId: string, organizationId: string, bundleId: string) => ({
       deviceId,

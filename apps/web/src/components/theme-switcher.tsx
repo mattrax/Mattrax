@@ -1,12 +1,7 @@
 import { For, Show } from "solid-js";
 import { cn } from "~/lib/utils";
-import {
-  resolvedTheme,
-  setThemePreference,
-  themePreference,
-  THEME_PREFERENCES,
-  type ThemePreference,
-} from "~/lib/theme";
+import { resolvedTheme, setThemePreference, themePreference, THEME_PREFERENCES } from "~/lib/theme";
+import type { ThemePreference } from "~/lib/theme";
 import { Monitor, Moon, Sun } from "~/components/ui/icons";
 
 const LABELS: Record<ThemePreference, string> = {

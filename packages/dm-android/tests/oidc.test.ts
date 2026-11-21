@@ -1,11 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
-import {
-  base64UrlEncode,
-  clearJwksCache,
-  verifyPubSubOidcToken,
-  type PubSubOidcVerifierConfig,
-} from "../src/index.js";
+import type { Schema } from "effect";
+import { Effect } from "effect";
+import { base64UrlEncode, clearJwksCache, verifyPubSubOidcToken } from "../src/index.js";
+import type { PubSubOidcVerifierConfig } from "../src/index.js";
 
 const audience = "https://mattrax.test/api/v1/android/pubsub";
 
@@ -139,8 +136,8 @@ describe("verifyPubSubOidcToken", () => {
     const [header, payload, signature] = token.split(".");
     // Change a byte unconditionally: replacing the last two characters can be
     // a no-op when they already are "AA", which is why this test flaked.
-    const replacement = signature![0] === "A" ? "B" : "A";
-    const tampered = `${header}.${payload}.${replacement}${signature!.slice(1)}`;
+    const replacement = signature[0] === "A" ? "B" : "A";
+    const tampered = `${header}.${payload}.${replacement}${signature.slice(1)}`;
     const error = await rejection(tampered);
     expect(error.message).toContain("signature");
   });

@@ -1,12 +1,9 @@
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
 import { Effect, Ref, Schema } from "effect";
-import { schema as s, type EnterpriseDb } from "../schema.ts";
-import {
-  onboardingFollowUpEmail,
-  welcomeEmail,
-  type OnboardingFollowUpEmailInput,
-  type WelcomeEmailInput,
-} from "./onboardingEmail.ts";
+import { schema as s } from "../schema.ts";
+import type { EnterpriseDb } from "../schema.ts";
+import { onboardingFollowUpEmail, welcomeEmail } from "./onboardingEmail.ts";
+import type { OnboardingFollowUpEmailInput, WelcomeEmailInput } from "./onboardingEmail.ts";
 import { loadTenantAdminRecipients } from "./maintenance.ts";
 import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
 
@@ -483,25 +480,27 @@ export const runOnboardingEmails = (
         ? options.since
         : windowFloor;
 
-    const organizations = yield* db
-      .select({
-        id: s.organization.id,
-        name: s.organization.name,
-        displayName: s.organization.displayName,
-        supportEmail: s.organization.supportEmail,
-        createdAt: s.organization.createdAt,
-      })
-      .from(s.organization)
-      .where(
-        and(
-          isNull(s.organization.onboardingFollowUpSentAt),
-          lte(s.organization.createdAt, upper),
-          gte(s.organization.createdAt, floor),
-        ),
-      )
-      .orderBy(asc(s.organization.createdAt))
-      // Bounded: a backlog is drained over successive daily runs, not one tick.
-      .limit(limit);
+    const organizations = yield* (
+      db
+        .select({
+          id: s.organization.id,
+          name: s.organization.name,
+          displayName: s.organization.displayName,
+          supportEmail: s.organization.supportEmail,
+          createdAt: s.organization.createdAt,
+        })
+        .from(s.organization)
+        .where(
+          and(
+            isNull(s.organization.onboardingFollowUpSentAt),
+            lte(s.organization.createdAt, upper),
+            gte(s.organization.createdAt, floor),
+          ),
+        )
+        .orderBy(asc(s.organization.createdAt))
+        // Bounded: a backlog is drained over successive daily runs, not one tick.
+        .limit(limit)
+    );
 
     /**
      * Users contacted within the cooldown, loaded once per run. They are

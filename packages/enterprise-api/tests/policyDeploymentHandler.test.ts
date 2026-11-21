@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,

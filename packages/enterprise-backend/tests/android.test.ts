@@ -1,12 +1,13 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import {
   AndroidManagement,
   base64UrlEncode,
   clearJwksCache,
   GoogleApiError,
-  type AndroidManagementService,
 } from "@mattrax/dm-android";
+import type { AndroidManagementService } from "@mattrax/dm-android";
 import {
   AndroidDeliveryError,
   DEFAULT_ANDROID_POLICY_ID,
@@ -27,8 +28,8 @@ import {
   syncAndroidPoliciesForTenant,
   unenrollAndroidDevice,
   withStatusReporting,
-  type AndroidDeliveryConfig,
 } from "../src/Device/android.ts";
+import type { AndroidDeliveryConfig } from "../src/Device/android.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";
@@ -339,7 +340,7 @@ describe("Android Enterprise delivery", () => {
   beforeAll(async () => {
     // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
     // asked to generate; the DOM runtime type is wider than that overload.
-    const pair = (await crypto.subtle.generateKey(
+    const pair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -348,7 +349,7 @@ describe("Android Enterprise delivery", () => {
       },
       true,
       ["sign", "verify"],
-    )) as CryptoKeyPair;
+    );
 
     privateKey = pair.privateKey;
     publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
@@ -414,7 +415,7 @@ describe("Android Enterprise delivery", () => {
 
     expect(signup.url).toBe("https://enterprise.google.test/signup");
     expect(calls.signupUrls).toHaveLength(1);
-    const callback = new URL(calls.signupUrls[0]!.callbackUrl);
+    const callback = new URL(calls.signupUrls[0].callbackUrl);
     expect(callback.pathname).toBe("/api/v1/android/signup/callback");
     const state = callback.searchParams.get("state");
     expect(state).toBeTruthy();
@@ -475,7 +476,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    const callback = new URL(calls.signupUrls[0]!.callbackUrl);
+    const callback = new URL(calls.signupUrls[0].callbackUrl);
     const state = callback.searchParams.get("state")!;
 
     const error = await Effect.runPromise(
@@ -536,7 +537,7 @@ describe("Android Enterprise delivery", () => {
     });
     expect(db.store.android_device).toHaveLength(1);
     expect(calls.devices[0]).toMatchObject({ deviceName });
-    const assigned = calls.policies[0]!;
+    const assigned = calls.policies[0];
     expect(assigned.enterpriseName).toBe(enterpriseName);
     expect(assigned.policyId).toMatch(/^mattrax-/);
 
@@ -679,7 +680,7 @@ describe("Android Enterprise delivery", () => {
 
     const validToken = await sign();
     const [header, payload, signature] = validToken.split(".");
-    const tampered = `${header}.${payload}.${signature!.slice(0, -2)}AA`;
+    const tampered = `${header}.${payload}.${signature.slice(0, -2)}AA`;
 
     const badSignature = await Effect.runPromise(
       Effect.flip(
@@ -777,7 +778,7 @@ describe("Android Enterprise delivery", () => {
 
     expect(first).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
     expect(calls.policies).toHaveLength(1);
-    expect(calls.policies[0]!.policy).toEqual({
+    expect(calls.policies[0].policy).toEqual({
       applications: [{ packageName: "com.example.app", installType: "FORCE_INSTALLED" }],
       cameraDisabled: true,
       statusReportingSettings: {
@@ -787,10 +788,10 @@ describe("Android Enterprise delivery", () => {
         networkInfoEnabled: true,
       },
     });
-    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
+    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0].policyId }]);
     expect(db.store.android_device![0]).toMatchObject({
       deviceId: "device-1",
-      policyId: calls.policies[0]!.policyId,
+      policyId: calls.policies[0].policyId,
     });
 
     const second = await provideAndroid(
@@ -825,7 +826,7 @@ describe("Android Enterprise delivery", () => {
     );
 
     expect(result).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
-    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
+    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0].policyId }]);
   });
 
   it("adds assigned Managed Google Play apps and removes unassigned ones", async () => {
@@ -892,7 +893,7 @@ describe("Android Enterprise delivery", () => {
 
     await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
 
-    expect(calls.policies[0]!.policy.applications).toEqual([
+    expect(calls.policies[0].policy.applications).toEqual([
       // The explicit policy fragment keeps its install type.
       { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
       // The direct assignment is added as a required install. The Apple entry
@@ -910,7 +911,7 @@ describe("Android Enterprise delivery", () => {
 
     await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
 
-    expect(calls.policies[1]!.policy.applications).toEqual([
+    expect(calls.policies[1].policy.applications).toEqual([
       { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
     ]);
   });
@@ -1015,7 +1016,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    const state = new URL(calls.signupUrls[0]!.callbackUrl).searchParams.get("state")!;
+    const state = new URL(calls.signupUrls[0].callbackUrl).searchParams.get("state")!;
 
     await provideAndroid(
       completeAndroidSignup({
@@ -1027,7 +1028,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    expect(db.store.android_enterprise!).toHaveLength(1);
+    expect(db.store.android_enterprise).toHaveLength(1);
     expect(db.store.android_enterprise![0]!.organizationId).toBe(organizationId);
     expect(db.store.android_enterprise![0]!.organizationId).not.toBe(otherOrganizationId);
   });
@@ -1294,7 +1295,7 @@ describe("Android remote actions", () => {
       },
     });
     // A blocked package is in the policy but was never installed.
-    expect(calls.commands[3]!.clearAppsDataParams?.packageNames).not.toContain(
+    expect(calls.commands[3].clearAppsDataParams?.packageNames).not.toContain(
       "com.example.blocked",
     );
   });
@@ -1346,7 +1347,7 @@ describe("Android remote actions", () => {
       service,
     );
 
-    const sent = calls.commands[0]!;
+    const sent = calls.commands[0];
 
     expect(sent).toMatchObject({ deviceName, type: "RESET_PASSWORD" });
     expect(sent.resetPasswordFlags).toEqual(["REQUIRE_ENTRY", "LOCK_NOW"]);

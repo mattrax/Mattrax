@@ -49,7 +49,7 @@ const UNKNOWN_KID_NEGATIVE_CACHE_MS = 60 * 1000;
 const textDecoder = new TextDecoder();
 
 function decodeBase64Url(input: string): Uint8Array<ArrayBuffer> {
-  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const normalized = input.replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
 
@@ -65,8 +65,8 @@ function decodeJsonPart(input: string, label: string): Schema.JsonObject {
     if (!Schema.is(Schema.JsonObject)(value)) throw new Error(`${label} is not an object`);
 
     return value;
-  } catch (cause) {
-    throw new PubSubAuthError({ message: `OIDC token ${label} is not valid JSON`, cause });
+  } catch (error) {
+    throw new PubSubAuthError({ message: `OIDC token ${label} is not valid JSON`, cause: error });
   }
 }
 
@@ -281,7 +281,9 @@ export function verifyPubSubOidcToken(
     const email = stringClaim(claims["email"]);
 
     const rawEmailVerified = claims["email_verified"];
-    const emailVerified = Schema.is(Schema.Boolean)(rawEmailVerified) ? rawEmailVerified : undefined;
+    const emailVerified = Schema.is(Schema.Boolean)(rawEmailVerified)
+      ? rawEmailVerified
+      : undefined;
 
     if (config.serviceAccountEmail) {
       if (!email || email.toLowerCase() !== config.serviceAccountEmail.toLowerCase())

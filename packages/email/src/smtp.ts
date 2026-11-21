@@ -256,13 +256,13 @@ const formatAddress = (
 
   if (!name) return `<${email}>`;
 
-  return `"${name.replaceAll(/(["\\])/g, "\\$1")}" <${email}>`;
+  return `"${name.replaceAll(/(["\\])/g, String.raw`\$1`)}" <${email}>`;
 };
 
 const encodeSubject = (value: string | undefined): string => {
   const subject = sanitizeHeader(value);
 
-  if (/^[\x20-\x7e]*$/.test(subject)) return subject;
+  if (/^[\u0020-\u007e]*$/.test(subject)) return subject;
 
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 };
@@ -359,8 +359,7 @@ export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new 
 
   const attachments = message.attachments ?? [];
 
-  if (attachments.length === 0)
-    return [...headers, "", bodyEntity()].join(CRLF);
+  if (attachments.length === 0) return [...headers, "", bodyEntity()].join(CRLF);
 
   // A report is body + one attachment, so the MIME tree is mixed(alternative,
   // attachment...). Anything that does not understand the attachment still

@@ -1,9 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { Effect, Schema } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import {
-  DynamicGroupKind,
-  DynamicGroupRules,
+import type {
   CreateGroupRequest as CreateGroupRequestSchema,
   DeviceListResponse as DeviceListResponseSchema,
   GroupListResponse as GroupListResponseSchema,
@@ -11,18 +9,12 @@ import {
   PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
   PatchGroupRequest as PatchGroupRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
-  type DeviceRow,
-  type GroupNode,
-  type GroupRow,
-  type PolicyRow,
 } from "@mattrax/enterprise-domain/client";
+import { DynamicGroupKind, DynamicGroupRules } from "@mattrax/enterprise-domain/client";
+import type { DeviceRow, GroupNode, GroupRow, PolicyRow } from "@mattrax/enterprise-domain/client";
 import { CliFailure } from "./settings.ts";
-import {
-  type PolicyDocumentFormat,
-  type PolicyDocumentIssue,
-  formatPolicyIssues,
-  stableJson,
-} from "./policyDocument.ts";
+import { formatPolicyIssues, stableJson } from "./policyDocument.ts";
+import type { PolicyDocumentFormat, PolicyDocumentIssue } from "./policyDocument.ts";
 
 type GroupList = typeof GroupListResponseSchema.Type;
 

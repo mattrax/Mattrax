@@ -18,7 +18,7 @@
  * `Command` body, never the outer `CommandUUID` envelope or the plist.
  */
 
-import { Schema } from "effect";
+import type { Schema } from "effect";
 
 /**
  * How long a package URL embedded in an install command stays valid.
@@ -119,7 +119,7 @@ export const buildInstallEnterpriseApplicationPayload = (input: {
   const entries: Array<[string, Schema.Json]> = [
     // SAFETY: AppleManifest is a JSON-compatible dictionary of strings and
     // arrays of dictionaries; Schema.Json accepts exactly that shape.
-    ["Manifest", input.manifest as Schema.Json],
+    ["Manifest", input.manifest],
     ["InstallAsManaged", true],
   ];
 

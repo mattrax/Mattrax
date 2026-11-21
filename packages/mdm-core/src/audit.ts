@@ -1,6 +1,8 @@
 import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
-import { Db, schema as s } from "@mattrax/enterprise-core";
+import { and, desc, eq, sql } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
+import type { Db } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
 import { publishRealtimeEvent } from "./realtime.ts";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
 
@@ -144,11 +146,7 @@ export type SystemAuditOptions = {
  * `system`.
  */
 export const defaultAuditCategory = (action: string): AuditCategory => {
-  if (
-    action.startsWith("device.") ||
-    action.startsWith("mdm.") ||
-    action.startsWith("enrollment.")
-  )
+  if (action.startsWith("device.") || action.startsWith("mdm.") || action.startsWith("enrollment."))
     return "mdm";
 
   return "system";
@@ -292,8 +290,7 @@ export const writeSystemAudit = (
     const coalesceTargetId =
       event.coalesce === true && window > 0 && event.targetId ? event.targetId : null;
 
-    const bucketStart =
-      coalesceTargetId === null ? now : auditCoalesceBucketStart(now, window);
+    const bucketStart = coalesceTargetId === null ? now : auditCoalesceBucketStart(now, window);
 
     const ip = bound(event.ip, AUDIT_TEXT_LIMITS.ip);
 
@@ -329,9 +326,9 @@ export const writeSystemAudit = (
       createdAt: bucketStart,
     };
 
-    const previous = coalesceTargetId !== null
-      ? (
-          yield* db
+    const previous =
+      coalesceTargetId !== null
+        ? (yield* db
             .select()
             .from(s.auditLog)
             .where(
@@ -351,9 +348,8 @@ export const writeSystemAudit = (
               ),
             )
             .orderBy(desc(s.auditLog.id))
-            .limit(1)
-        )[0]
-      : undefined;
+            .limit(1))[0]
+        : undefined;
 
     if (previous) {
       const previousMetadata = Option.getOrUndefined(
@@ -378,9 +374,7 @@ export const writeSystemAudit = (
         id: id(),
         ...values,
         metadata:
-          coalesceTargetId === null
-            ? values.metadata
-            : initialCheckInMetadata(event.metadata, now),
+          coalesceTargetId === null ? values.metadata : initialCheckInMetadata(event.metadata, now),
       });
     }
 
@@ -474,8 +468,8 @@ export const commandFailureTransition = (
  */
 export const describeAuditFailure = (message: string, limit = 300): string =>
   message
-    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[redacted]")
-    .replace(/\b[A-Za-z0-9+/=_-]{64,}\b/g, "[redacted]")
-    .replace(/\s+/g, " ")
+    .replaceAll(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[redacted]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{64,}\b/g, "[redacted]")
+    .replaceAll(/\s+/g, " ")
     .trim()
     .slice(0, limit);

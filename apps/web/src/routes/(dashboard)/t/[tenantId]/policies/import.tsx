@@ -27,10 +27,12 @@ import {
   planMobileconfigImport,
   planPolicyImport,
   policyImportActionLabel,
-  type PolicyImportAction,
-  type PolicyImportConflict,
-  type PolicyImportPlan,
-  type PolicyImportTarget,
+} from "~/lib/policy-import";
+import type {
+  PolicyImportAction,
+  PolicyImportConflict,
+  PolicyImportPlan,
+  PolicyImportTarget,
 } from "~/lib/policy-import";
 import { AccessDenied, useCan } from "~/lib/permissions";
 import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
@@ -179,8 +181,8 @@ export default function ImportPolicyPage() {
           conflict: conflict(),
         }),
       );
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "This is not a valid .mobileconfig profile."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "This is not a valid .mobileconfig profile."));
     } finally {
       setBusy(false);
     }
@@ -195,8 +197,8 @@ export default function ImportPolicyPage() {
 
       setParsed({ kind: "document", policy });
       seed(planPolicyImport({ policy, existing: row(), conflict: conflict() }));
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "This is not a valid policy document."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "This is not a valid policy document."));
     } finally {
       setBusy(false);
     }
@@ -221,11 +223,11 @@ export default function ImportPolicyPage() {
       const bytes = new Uint8Array(await file.arrayBuffer());
 
       if (MOBILECONFIG_EXTENSION.test(file.name))
-        return previewMobileconfig(mobileconfigFromBytes(bytes, file.name), file.name);
+        return await previewMobileconfig(mobileconfigFromBytes(bytes, file.name), file.name);
 
-      return previewDocument(new TextDecoder().decode(bytes), file.name);
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "Could not read that file."));
+      return await previewDocument(new TextDecoder().decode(bytes), file.name);
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "Could not read that file."));
     }
   };
 
@@ -267,7 +269,7 @@ export default function ImportPolicyPage() {
           configurationScopes: next.payload.configurationScopes,
         });
 
-      await enterprise.patchPolicy(params.tenantId, targetId()!, {
+      await enterprise.patchPolicy(params.tenantId, targetId(), {
         configurations: next.payload.configurations,
         configurationScopes: next.payload.configurationScopes,
         expectedUpdatedAt: target.data?.updatedAt,
@@ -288,7 +290,7 @@ export default function ImportPolicyPage() {
         handleStaleWriteWithToast(cause, {
           reload: () =>
             qc.invalidateQueries({
-              queryKey: enterpriseKeys.item(params.tenantId, "policy", targetId()!),
+              queryKey: enterpriseKeys.item(params.tenantId, "policy", targetId()),
             }),
         })
       )

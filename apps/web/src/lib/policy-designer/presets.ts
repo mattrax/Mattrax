@@ -1,5 +1,6 @@
 import { Match } from "effect";
-import { serializePlist, type PolicyValueMap } from "./build";
+import { serializePlist } from "./build";
+import type { PolicyValueMap } from "./build";
 
 const uuid = () => crypto.randomUUID();
 
@@ -45,7 +46,7 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
 
   const payload: PolicyValueMap = {
     PayloadType: "com.apple.wifi.managed",
-    PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replace(/[^A-Za-z0-9]+/g, "-")}`,
+    PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replaceAll(/[^A-Za-z0-9]+/g, "-")}`,
     PayloadUUID: uuid(),
     PayloadVersion: 1,
     PayloadDisplayName: `Wi-Fi: ${preset.ssid}`,
@@ -60,7 +61,7 @@ export const appleWifiConfiguration = (preset: WifiPreset): PresetConfiguration 
   const profile = {
     PayloadContent: [payload],
     PayloadDisplayName: `Wi-Fi: ${preset.ssid}`,
-    PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replace(/[^A-Za-z0-9]+/g, "-")}`,
+    PayloadIdentifier: `app.mattrax.wifi.${preset.ssid.replaceAll(/[^A-Za-z0-9]+/g, "-")}`,
     PayloadOrganization: "Mattrax",
     PayloadType: "Configuration",
     PayloadUUID: uuid(),

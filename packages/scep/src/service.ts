@@ -1,7 +1,8 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
-import { ScepRepository, type ScepCaScope, type ScepIssuedCertificate } from "./repository.js";
+import { ScepRepository } from "./repository.js";
+import type { ScepCaScope, ScepIssuedCertificate } from "./repository.js";
 import { randomCertificateSerial } from "./crypto.js";
 import { certificateFingerprintSha256, ensureScepCa } from "./ca.js";
 import {
@@ -117,8 +118,7 @@ export const ScepService = Layer.effect(
         // The tenant is authenticated before issuance and must match the tenant
         // in the SCEP URL. A challenge minted for tenant A can never issue an
         // identity from tenant B's CA, even if an attacker swaps the URL.
-        let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
-          undefined;
+        let authentication: { organizationalUnit?: string; enrollmentId?: string } | void;
 
         let issued: ScepIssuedCertificate | null = null;
 

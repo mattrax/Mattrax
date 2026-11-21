@@ -98,7 +98,7 @@ const BLOCKED_HOST_SUFFIXES = [
 
 const BLOCKED_HOSTS = new Set(["localhost", "localhost.localdomain", "ip6-localhost"]);
 
-const ipv4Parts = (value: string) => value.split(".").map((part) => Number(part));
+const ipv4Parts = (value: string) => value.split(".").map(Number);
 
 /** RFC 1918 plus loopback, link-local, CGNAT, documentation and multicast. */
 const isBlockedIpv4 = (value: string): boolean => {

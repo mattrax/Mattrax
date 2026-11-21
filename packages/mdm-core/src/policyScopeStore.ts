@@ -1,8 +1,10 @@
 import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { PolicyResolutionConfiguration } from "./policyResolution.ts";
-import { MAX_SCOPE_DEVICES, type PolicyScopeResolutionInput } from "./policyScope.ts";
+import { MAX_SCOPE_DEVICES } from "./policyScope.ts";
+import type { PolicyScopeResolutionInput } from "./policyScope.ts";
 
 /**
  * Load the tenant-wide assignment graph one scope question needs.
@@ -144,11 +146,9 @@ export const loadPolicyScopeResolutionInput = (
             )
         : [];
 
-    const excludedFromTargetGroup = new Set(
-      targetGroupDeviceExclusions.map((row) => row.targetId),
-    );
+    const excludedFromTargetGroup = new Set(targetGroupDeviceExclusions.map((row) => row.targetId));
 
-    let candidateDeviceIds: Array<string> = [];
+    let candidateDeviceIds: Array<string>;
 
     if (targetGroupId !== "") {
       candidateDeviceIds = unique(targetGroupMembers.map((row) => row.deviceId)).filter(
@@ -254,61 +254,58 @@ export const loadPolicyScopeResolutionInput = (
       appleUserChannelRows,
       deviceExclusionRows,
     ] = yield* Effect.all(
-        [
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select()
-              .from(s.deviceUser)
-              .where(
-                and(
-                  eq(s.deviceUser.organizationId, organizationId),
-                  inArray(s.deviceUser.deviceId, loadedDeviceIds),
-                ),
+      [
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select()
+            .from(s.deviceUser)
+            .where(
+              and(
+                eq(s.deviceUser.organizationId, organizationId),
+                inArray(s.deviceUser.deviceId, loadedDeviceIds),
               ),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db.select().from(s.groupDevice).where(inArray(s.groupDevice.deviceId, loadedDeviceIds)),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select()
-              .from(s.devicePolicy)
-              .where(inArray(s.devicePolicy.deviceId, loadedDeviceIds)),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select({
-                deviceId: s.deviceAppleUser.deviceId,
-                directoryUserId: s.deviceAppleUser.directoryUserId,
-                userLongName: s.deviceAppleUser.userLongName,
-                userShortName: s.deviceAppleUser.userShortName,
-              })
-              .from(s.deviceAppleUser)
-              .where(
-                and(
-                  inArray(s.deviceAppleUser.deviceId, loadedDeviceIds),
-                  isNotNull(s.deviceAppleUser.directoryUserId),
-                  isNotNull(s.deviceAppleUser.identityVerifiedAt),
-                ),
+            ),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db.select().from(s.groupDevice).where(inArray(s.groupDevice.deviceId, loadedDeviceIds)),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db.select().from(s.devicePolicy).where(inArray(s.devicePolicy.deviceId, loadedDeviceIds)),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select({
+              deviceId: s.deviceAppleUser.deviceId,
+              directoryUserId: s.deviceAppleUser.directoryUserId,
+              userLongName: s.deviceAppleUser.userLongName,
+              userShortName: s.deviceAppleUser.userShortName,
+            })
+            .from(s.deviceAppleUser)
+            .where(
+              and(
+                inArray(s.deviceAppleUser.deviceId, loadedDeviceIds),
+                isNotNull(s.deviceAppleUser.directoryUserId),
+                isNotNull(s.deviceAppleUser.identityVerifiedAt),
               ),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select({
-                groupId: s.groupExclusion.groupId,
-                targetId: s.groupExclusion.targetId,
-              })
-              .from(s.groupExclusion)
-              .where(
-                and(
-                  eq(s.groupExclusion.target, "device"),
-                  inArray(s.groupExclusion.targetId, loadedDeviceIds),
-                ),
+            ),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select({
+              groupId: s.groupExclusion.groupId,
+              targetId: s.groupExclusion.targetId,
+            })
+            .from(s.groupExclusion)
+            .where(
+              and(
+                eq(s.groupExclusion.target, "device"),
+                inArray(s.groupExclusion.targetId, loadedDeviceIds),
               ),
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
+            ),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
 
     // A device exclusion removes the device from that group. Filter at read
     // time too so a row that outlived a membership write cannot grant policy.

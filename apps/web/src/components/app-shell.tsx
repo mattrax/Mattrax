@@ -95,7 +95,7 @@ function initials(name: string | undefined | null) {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
 
-  if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
 
   return parts[0]?.[0]?.toUpperCase() ?? "?";
 }
@@ -349,12 +349,7 @@ function UserMenu(props: {
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
         </DropdownMenuItem>
-        <DropdownMenuItem
-          as="a"
-          role="menuitem"
-          href="/docs/getting-started/alpha"
-          target="_self"
-        >
+        <DropdownMenuItem as="a" role="menuitem" href="/docs/getting-started/alpha" target="_self">
           <BookOpen class="size-3.5 text-muted-foreground" />
           What alpha means
         </DropdownMenuItem>

@@ -18,23 +18,12 @@ import {
   HTTP_DURATION_BUCKETS,
   MetricRegistry,
   SPAN_DURATION_BUCKETS,
-  type Counter,
-  type Histogram,
 } from "./metrics.js";
-import {
-  mdmEventFor,
-  statusClass,
-  type MdmEvent,
-  type RouteClass,
-  type StatusClass,
-} from "./route.js";
-import {
-  currentTimeNanos,
-  noopTracer,
-  recordingTracer,
-  type FinishedSpan,
-  type SpanStatus,
-} from "./tracer.js";
+import type { Counter, Histogram } from "./metrics.js";
+import { mdmEventFor, statusClass } from "./route.js";
+import type { MdmEvent, RouteClass, StatusClass } from "./route.js";
+import { currentTimeNanos, noopTracer, recordingTracer } from "./tracer.js";
+import type { FinishedSpan, SpanStatus } from "./tracer.js";
 import { parseTraceparent } from "./traceContext.js";
 
 const DEFAULT_MAX_TRACES = 128;

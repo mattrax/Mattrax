@@ -132,7 +132,7 @@ describe("directory user merge endpoints", () => {
     expect(preview.requiresExternalIdConfirmation).toBe(true);
     expect(preview.totals.deviceLinks).toBe(0);
     expect(preview.deduplicated.deviceLinks).toBe(1);
-    expect(preview.sources[0]!.user.id).toBe("source");
+    expect(preview.sources[0].user.id).toBe("source");
     expect(context.db.store.user).toHaveLength(2);
   });
 

@@ -1,6 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, createUniqueId, Show } from "solid-js";
-import { Badge, HoverCard, HoverCardContent, HoverCardTrigger, type BadgeProps } from "@mattrax/ui";
+import { Badge, HoverCard, HoverCardContent, HoverCardTrigger } from "@mattrax/ui";
+import type { BadgeProps } from "@mattrax/ui";
 import { formatDate, formatDeviceDate, relativeTime } from "~/components/mdm/common";
 import {
   Laptop,

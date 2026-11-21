@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { compareVersionStrings } from "./deviceQuery.js";
 import {
@@ -7,8 +7,8 @@ import {
   macOsUpdateBaseline,
   parseSofaFeed,
   softwareUpdateReason,
-  type MacOsUpdateCatalog,
 } from "./softwareUpdates.js";
+import type { MacOsUpdateCatalog } from "./softwareUpdates.js";
 
 const release = (version: string, overrides: Record<string, Schema.Json> = {}) => ({
   ProductVersion: version,

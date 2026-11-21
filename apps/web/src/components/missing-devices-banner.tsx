@@ -10,8 +10,8 @@ import {
   readMiaBannerDismissed,
   shouldShowMiaBanner,
   writeMiaBannerDismissed,
-  type MiaBannerStorage,
 } from "~/lib/mia-banner";
+import type { MiaBannerStorage } from "~/lib/mia-banner";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 

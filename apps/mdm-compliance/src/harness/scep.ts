@@ -1,15 +1,10 @@
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
-import {
-  ScepRepository,
-  ScepService,
-  scepRoutes,
-  type ScepAuthentication,
-  type ScepIssuedCertificate,
-  type ScepPkcsReq,
-} from "@mattrax/scep";
-import { ScepError } from "@mattrax/scep";
-import { createCaFixture, type ScepCaFixture } from "../fixtures/pki.ts";
+import { ScepRepository, ScepService, scepRoutes } from "@mattrax/scep";
+import type { ScepAuthentication, ScepIssuedCertificate, ScepPkcsReq } from "@mattrax/scep";
+import type { ScepError } from "@mattrax/scep";
+import { createCaFixture } from "../fixtures/pki.ts";
+import type { ScepCaFixture } from "../fixtures/pki.ts";
 
 let sharedCa: Promise<ScepCaFixture> | undefined;
 

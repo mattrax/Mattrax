@@ -4,8 +4,8 @@ import {
   readMiaBannerDismissed,
   shouldShowMiaBanner,
   writeMiaBannerDismissed,
-  type MiaBannerStorage,
 } from "./mia-banner";
+import type { MiaBannerStorage } from "./mia-banner";
 
 const fakeStorage = (initial: Record<string, string> = {}): MiaBannerStorage => {
   const values = new Map(Object.entries(initial));

@@ -1,17 +1,15 @@
 import { Effect, Option, Schema } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
-import {
-  DynamicGroupRules,
-  CreateGroupRequest as CreateGroupRequestSchema,
-} from "@mattrax/enterprise-domain/client";
+import type { CreateGroupRequest as CreateGroupRequestSchema } from "@mattrax/enterprise-domain/client";
+import { DynamicGroupRules } from "@mattrax/enterprise-domain/client";
 import { formatJson, formatKeyValues, formatTable, line } from "../output.ts";
 import {
-  type GroupApplyTarget,
   applyGroupDocuments,
   formatGroupIssues,
   readGroupDocument,
   validateGroupDocuments,
 } from "../groupDocument.ts";
+import type { GroupApplyTarget } from "../groupDocument.ts";
 import { CliFailure } from "../settings.ts";
 import {
   commandContext,

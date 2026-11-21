@@ -53,6 +53,8 @@ describe("crypto boundaries", () => {
 
     const tampered = Buffer.from(sealed, "base64");
 
+    // `.at()` returns the value, so it cannot be an assignment target.
+    // oxlint-disable-next-line unicorn/prefer-at -- the array index is assigned through.
     tampered[tampered.length - 1]! ^= 0xff;
     await expect(openSecret("application-secret", tampered.toString("base64"))).rejects.toThrow();
     // A payload shorter than the 12-byte IV is malformed, not a decryption

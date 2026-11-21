@@ -19,8 +19,8 @@ describe("quoteFilterValue", () => {
   it("quotes whitespace, commas, quotes and backslashes", () => {
     expect(quoteFilterValue("Alpha Beta")).toBe('"Alpha Beta"');
     expect(quoteFilterValue("a,b")).toBe('"a,b"');
-    expect(quoteFilterValue('say "hi"')).toBe('"say \\"hi\\""');
-    expect(quoteFilterValue("C:\\Users\\Admin")).toBe('"C:\\\\Users\\\\Admin"');
+    expect(quoteFilterValue('say "hi"')).toBe(String.raw`"say \"hi\""`);
+    expect(quoteFilterValue(String.raw`C:\Users\Admin`)).toBe(String.raw`"C:\\Users\\Admin"`);
   });
 });
 
@@ -30,12 +30,12 @@ describe("unquoteFilterValue", () => {
   });
 
   it("resolves escaped quotes and backslashes", () => {
-    expect(unquoteFilterValue('"say \\"hi\\""')).toBe('say "hi"');
-    expect(unquoteFilterValue('"C:\\\\Temp"')).toBe("C:\\Temp");
+    expect(unquoteFilterValue(String.raw`"say \"hi\""`)).toBe('say "hi"');
+    expect(unquoteFilterValue(String.raw`"C:\\Temp"`)).toBe(String.raw`C:\Temp`);
   });
 
   it("keeps unknown escapes literal instead of eating the value", () => {
-    expect(unquoteFilterValue('"C:\\Temp"')).toBe("C:\\Temp");
+    expect(unquoteFilterValue(String.raw`"C:\Temp"`)).toBe(String.raw`C:\Temp`);
   });
 });
 
@@ -49,15 +49,18 @@ describe("splitFilterValues", () => {
   });
 
   it("does not let an escaped quote swallow the rest of the list", () => {
-    expect(splitFilterValues('"say \\"hi\\"", Beta')).toEqual(['say "hi"', "Beta"]);
+    expect(splitFilterValues(String.raw`"say \"hi\"", Beta`)).toEqual(['say "hi"', "Beta"]);
   });
 
   it("keeps a Windows path as one value", () => {
-    expect(splitFilterValues('"C:\\\\Users\\\\Admin", Beta')).toEqual(["C:\\Users\\Admin", "Beta"]);
+    expect(splitFilterValues(String.raw`"C:\\Users\\Admin", Beta`)).toEqual([
+      String.raw`C:\Users\Admin`,
+      "Beta",
+    ]);
   });
 
   it("keeps a trailing backslash", () => {
-    expect(splitFilterValues('"C:\\\\Temp\\\\", Beta')).toEqual(["C:\\Temp\\", "Beta"]);
+    expect(splitFilterValues(String.raw`"C:\\Temp\\", Beta`)).toEqual(["C:\\Temp\\", "Beta"]);
   });
 
   it("drops empty entries", () => {
@@ -68,7 +71,7 @@ describe("splitFilterValues", () => {
 
 describe("round-trips", () => {
   it("preserves paths, commas, quotes and spaces", () => {
-    const values = ["C:\\Users\\Admin", "Alpha Beta", "a,b", 'say "hi"', "ends\\"];
+    const values = [String.raw`C:\Users\Admin`, "Alpha Beta", "a,b", 'say "hi"', "ends\\"];
 
     expect(splitFilterValues(formatFilterValues(values))).toEqual(values);
   });

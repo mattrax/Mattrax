@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Schema } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import type { HttpServerRequest } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import {
@@ -8,8 +9,8 @@ import {
   PERMISSIONS,
   normalizeCredentialPermissions,
   isPermission,
-  type Permission,
 } from "@mattrax/enterprise-domain";
+import type { Permission } from "@mattrax/enterprise-domain";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>

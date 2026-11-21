@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, createScimClient, gotoHydrated, uniqueEmail } from "./helpers";
 
 type Directory = {
@@ -100,9 +101,7 @@ test.describe("per-user policy assignment", () => {
     await gotoHydrated(page, `/t/${tenant.id}/policies/${policy.id}/assignments`);
 
     // The warning explains that a user policy reaches every user of a linked device.
-    await expect(
-      page.getByText(/applies it to\s+every device linked to that user/i),
-    ).toBeVisible();
+    await expect(page.getByText(/applies it to\s+every device linked to that user/i)).toBeVisible();
 
     const userRow = page.locator("label").filter({ hasText: directoryUser.email });
     await expect(userRow).toHaveCount(1);
@@ -163,9 +162,7 @@ test.describe("per-user policy assignment", () => {
 
     expect(missingDevice.status()).toBe(404);
 
-    const missingDirectory = await page.request.get(
-      `/api/v1/tenants/not-a-tenant/directory`,
-    );
+    const missingDirectory = await page.request.get(`/api/v1/tenants/not-a-tenant/directory`);
 
     expect(missingDirectory.status()).toBe(404);
   });

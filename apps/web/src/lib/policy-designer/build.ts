@@ -1,17 +1,8 @@
 import { Option, Schema } from "effect";
-import {
-  admxInstallOmaUri,
-  translateAdmxPolicy,
-  type AdmxElementKind,
-  type AdmxElementValue,
-} from "@mattrax/enterprise-domain/admx";
-import {
-  collectionProperties,
-  Property as PropertySchema,
-  type Collection,
-  type PlatformId,
-  type Property,
-} from "./catalog";
+import { admxInstallOmaUri, translateAdmxPolicy } from "@mattrax/enterprise-domain/admx";
+import type { AdmxElementKind, AdmxElementValue } from "@mattrax/enterprise-domain/admx";
+import { collectionProperties, Property as PropertySchema } from "./catalog";
+import type { Collection, PlatformId, Property } from "./catalog";
 import { buildZip } from "./zip";
 
 /** A JSON value stored in a policy draft. */
@@ -125,7 +116,7 @@ const isPlistObject = (value: PlistValue): value is { readonly [key: string]: Pl
 const plistValue = (value: PlistValue): string => {
   if (value === null || value === undefined) return "<string></string>";
 
-  if (isPlistData(value)) return `<data>${escapeXml(value.base64.replace(/\s/g, ""))}</data>`;
+  if (isPlistData(value)) return `<data>${escapeXml(value.base64.replaceAll(/\s/g, ""))}</data>`;
 
   if (isBoolean(value)) return value ? "<true/>" : "<false/>";
 
@@ -153,7 +144,7 @@ export const serializePlist = (value: PlistValue) =>
 
 const uuid = () => crypto.randomUUID();
 
-const identifierSafe = (value: string) => value.replace(/[^A-Za-z0-9._-]+/g, "-");
+const identifierSafe = (value: string) => value.replaceAll(/[^A-Za-z0-9._-]+/g, "-");
 
 /**
  * Windows vector/CSP settings are identified by OMA-URI, not just the key.
@@ -368,7 +359,7 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
       if (property.type === "data") {
         if (!isString(value)) {
           add("error", "Expected a base64-encoded string.");
-        } else if (value.trim() !== "" && !BASE64.test(value.replace(/\s/g, ""))) {
+        } else if (value.trim() !== "" && !BASE64.test(value.replaceAll(/\s/g, ""))) {
           add("warning", "This value does not look like base64 data.");
         }
 
@@ -429,7 +420,7 @@ export const validateDraft = (draft: Draft): ValidationIssue[] => {
     draft.selections.length > 0 &&
     buildWindowsNodes(draft).length === 0
   ) {
-    const first = draft.selections[0]!;
+    const first = draft.selections[0];
     issues.push({
       severity: "error",
       collectionId: first.collectionId,
@@ -1123,7 +1114,7 @@ export const buildPolicyBundle = (policy: PolicyDraft): PolicyBundle | null => {
   if (artifacts.length === 0) return null;
 
   if (artifacts.length === 1) {
-    const artifact = artifacts[0]!;
+    const artifact = artifacts[0];
 
     return {
       fileName: artifact.fileName,

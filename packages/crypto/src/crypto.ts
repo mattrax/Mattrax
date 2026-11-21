@@ -51,7 +51,7 @@ export function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = "";
 
   for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]!);
+    binary += String.fromCharCode(bytes[i]);
   }
 
   return btoa(binary);
@@ -95,7 +95,7 @@ export function pemDecode(label: string, pem: string): ArrayBuffer {
     throw new Error(`PEM ${label} not found`);
   }
 
-  const base64 = pem.slice(start + header.length, end).replace(/\s/g, "");
+  const base64 = pem.slice(start + header.length, end).replaceAll(/\s/g, "");
 
   return base64ToArrayBuffer(base64);
 }
@@ -133,7 +133,7 @@ export function constantTimeEqual(left: string, right: string): boolean {
   if (a.length !== b.length) return false;
   let difference = 0;
 
-  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
 
   return difference === 0;
 }
@@ -174,7 +174,7 @@ const sealKey = async (secret: string): Promise<CryptoKey> => {
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
 
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
 
   return btoa(binary);
 };

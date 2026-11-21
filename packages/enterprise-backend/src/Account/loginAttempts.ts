@@ -6,9 +6,11 @@ import {
   LOGIN_ATTEMPT_FACTORS,
   LOGIN_ATTEMPT_METHODS,
   normalisePath,
-  type LoginAttemptFactor,
-  type LoginAttemptFailure,
-  type LoginAttemptMethod,
+} from "@mattrax/enterprise-domain";
+import type {
+  LoginAttemptFactor,
+  LoginAttemptFailure,
+  LoginAttemptMethod,
 } from "@mattrax/enterprise-domain";
 import { schema } from "../schema.ts";
 import { clientAddress, parseUserAgent } from "./accountAudit.ts";
@@ -88,8 +90,8 @@ export const approximateNetwork = (address: string | null | undefined): string |
   const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(value);
 
   if (mappedHex) {
-    const high = Number.parseInt(mappedHex[1]!, 16);
-    const low = Number.parseInt(mappedHex[2]!, 16);
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
     const octets = [high >> 8, high & 0xff, low >> 8, low & 0xff].map((part) => part & 0xff);
 
     return `${octets[0]}.${octets[1]}.${octets[2]}.0/24`;
@@ -107,7 +109,7 @@ export const approximateNetwork = (address: string | null | undefined): string |
   }
 
   // A zone id (`fe80::1%en0`) is local interface metadata, not part of the address.
-  const withoutZone = value.split("%")[0]!;
+  const withoutZone = value.split("%")[0];
 
   if (!withoutZone.includes(":")) return null;
 

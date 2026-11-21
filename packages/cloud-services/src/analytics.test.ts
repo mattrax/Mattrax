@@ -10,10 +10,8 @@ import {
   safeAnalyticsPath,
   shouldReportError,
   shouldTrackApiRequest,
-  type AnalyticsClient,
-  type AnalyticsConfig,
-  type AnalyticsProperties,
 } from "./analytics.js";
+import type { AnalyticsClient, AnalyticsConfig, AnalyticsProperties } from "./analytics.js";
 
 const sessionId = "0193f0b2-6f2a-7c3e-8b1d-2c4a5e6f7a8b";
 
@@ -206,11 +204,11 @@ describe("PostHog analytics", () => {
 
     expect(fake.exceptions).toHaveLength(1);
     const [captured] = fake.exceptions;
-    expect(captured!.cause).toBeInstanceOf(Error);
+    expect(captured.cause).toBeInstanceOf(Error);
 
-    if (captured!.cause instanceof Error) {
-      expect(captured!.cause.message).toContain("[email]");
-      expect(captured!.cause.message).toContain("[redacted]");
+    if (captured.cause instanceof Error) {
+      expect(captured.cause.message).toContain("[email]");
+      expect(captured.cause.message).toContain("[redacted]");
     }
 
     expect(captured?.distinctId).toBe("anon-1");

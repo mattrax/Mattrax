@@ -73,10 +73,10 @@ const stringify = (cause: unknown): string => {
  */
 export const describeWindowsFailure = (cause: unknown): string =>
   stringify(cause)
-    .replace(PEM_BLOCK, "[certificate]")
-    .replace(EMAIL_ADDRESS, "[email]")
-    .replace(OPAQUE_VALUE, "[redacted]")
-    .replace(WHITESPACE, " ")
+    .replaceAll(PEM_BLOCK, "[certificate]")
+    .replaceAll(EMAIL_ADDRESS, "[email]")
+    .replaceAll(OPAQUE_VALUE, "[redacted]")
+    .replaceAll(WHITESPACE, " ")
     .trim();
 
 const bound = (value: string | null | undefined, limit: number): string | null => {
@@ -91,7 +91,7 @@ const bound = (value: string | null | undefined, limit: number): string | null =
 
 const boundCode = (value: string): string =>
   value
-    .replace(/[^A-Za-z0-9_.-]/g, "_")
+    .replaceAll(/[^A-Za-z0-9_.-]/g, "_")
     .slice(0, CODE_LIMIT)
     .trim() || "request_failed";
 

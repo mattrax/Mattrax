@@ -1,10 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import {
-  EnterpriseNotFound,
-  EnterprisePreconditionFailed,
-  EnterpriseUnauthorized,
-} from "@mattrax/enterprise-domain";
+import type { EnterpriseNotFound, EnterprisePreconditionFailed } from "@mattrax/enterprise-domain";
+import { EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 

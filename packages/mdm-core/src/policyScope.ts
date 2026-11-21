@@ -3,26 +3,23 @@ import {
   applePayloadOsVersions,
   applePayloadRemovedIn,
   compareOsVersion,
-  type AppleOsFamily,
 } from "@mattrax/dm-apple";
-import {
-  configurationPayloadTypes,
-  parseConfigurationKind,
-  type ConfigurationKind,
-} from "./policy.ts";
-import {
-  resolveEffectivePolicy,
-  type ConfigurationScope,
-  type EffectivePolicy,
-  type PolicyChannel,
-  type PolicyResolutionConfiguration,
-  type PolicyResolutionGroup,
-  type PolicyResolutionGroupAssignment,
-  type PolicyResolutionPolicy,
-  type PolicyResolutionUser,
-  type PolicyResolutionUserAssignment,
-  type PolicyResolutionUserGroup,
-  type PolicyResolutionUserGroupAssignment,
+import type { AppleOsFamily } from "@mattrax/dm-apple";
+import { configurationPayloadTypes, parseConfigurationKind } from "./policy.ts";
+import type { ConfigurationKind } from "./policy.ts";
+import { resolveEffectivePolicy } from "./policyResolution.ts";
+import type {
+  ConfigurationScope,
+  EffectivePolicy,
+  PolicyChannel,
+  PolicyResolutionConfiguration,
+  PolicyResolutionGroup,
+  PolicyResolutionGroupAssignment,
+  PolicyResolutionPolicy,
+  PolicyResolutionUser,
+  PolicyResolutionUserAssignment,
+  PolicyResolutionUserGroup,
+  PolicyResolutionUserGroupAssignment,
 } from "./policyResolution.ts";
 import { scopeConfigurationsToDevice, windowsConfigurationMinimumBuild } from "./policySupport.ts";
 
@@ -576,7 +573,7 @@ const resolutionFor = (
   if (cached) return cached;
 
   const result = resolveEffectivePolicy(
-    resolutionInput(input, facts, channel, (forUserId ? { forUserId } : {})),
+    resolutionInput(input, facts, channel, forUserId ? { forUserId } : {}),
   );
 
   facts.results.set(key, result);

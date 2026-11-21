@@ -14,14 +14,10 @@ import {
   RequestSecurityToken,
   RequestSecurityTokenResponseCollection,
   SoapFault,
-  type SyncML as SyncMLType,
 } from "./messages.js";
-import {
-  ManagementBackend,
-  MdmOrigin,
-  type WindowsFailurePhase,
-  type WindowsManagementScope,
-} from "@mattrax/management-backend";
+import type { SyncML as SyncMLType } from "./messages.js";
+import { ManagementBackend, MdmOrigin } from "@mattrax/management-backend";
+import type { WindowsFailurePhase, WindowsManagementScope } from "@mattrax/management-backend";
 import {
   buildProvisioningDoc,
   encodeProvisioningDoc,
@@ -110,7 +106,7 @@ function extractBinarySecurityToken(xml: string): string | null {
     /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
   );
 
-  return match?.[1]?.replace(/\s/g, "") ?? null;
+  return match?.[1]?.replaceAll(/\s/g, "") ?? null;
 }
 
 function contextMap(request: RequestSecurityToken) {

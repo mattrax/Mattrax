@@ -1,18 +1,18 @@
 import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import type { AttributeDefinitionRow, EnrollmentQuestion } from "@mattrax/enterprise-domain";
 import {
   ATTRIBUTE_LABEL_MAX,
   ATTRIBUTE_OPTIONS_MAX,
-  AttributeDefinitionRow,
-  EnrollmentQuestion,
   attributeKeyProblem,
   isEmptyAttributeValue,
   parseCsvRecords,
   reservedAttributeKeyProblem,
   validateAttributeValue,
-  type AttributeType,
 } from "@mattrax/enterprise-domain";
+import type { AttributeType } from "@mattrax/enterprise-domain";
 import { writeSystemAudit } from "@mattrax/mdm-apple";
 
 /**
@@ -260,7 +260,7 @@ const normalizeHeader = (value: string) =>
   value
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, "_");
+    .replaceAll(/[\s-]+/g, "_");
 
 /**
  * Parse a device-attribute CSV.
@@ -280,7 +280,7 @@ export const parseAttributeCsv = (
 
   if (records.length === 0) return { rows: [], issues: [{ row: 0, message: "The CSV is empty." }] };
 
-  const header = records[0]!.map(normalizeHeader);
+  const header = records[0].map(normalizeHeader);
   const serialIndex = header.findIndex((cell) => SERIAL_HEADERS.has(cell));
 
   if (serialIndex === -1)
@@ -304,7 +304,7 @@ export const parseAttributeCsv = (
     if (!definition) {
       issues.push({
         row: 0,
-        message: `Column "${records[0]![index]!.trim()}" is not a registered attribute key.`,
+        message: `Column "${records[0][index].trim()}" is not a registered attribute key.`,
       });
 
       continue;

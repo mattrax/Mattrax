@@ -10,7 +10,7 @@
 export const env: Record<string, string | undefined> = process.env;
 
 export const waitUntil = (promise: Promise<unknown>): void => {
-  void promise.catch((cause) => console.error("Background task failed", cause));
+  void promise.catch((error: unknown) => console.error("Background task failed", error));
 };
 
 export const passThroughOnException = (): void => {};

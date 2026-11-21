@@ -86,8 +86,8 @@ import {
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
-  type CredentialExpiryNotification,
 } from "@mattrax/enterprise-backend";
+import type { CredentialExpiryNotification } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
@@ -100,10 +100,8 @@ import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
-import {
-  decodeDeploymentCredentials,
-  type GoogleWorkspaceCredentials,
-} from "@mattrax/google-workspace";
+import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
+import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import {
@@ -142,9 +140,8 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
-  type AnalyticsProperties,
-  type SendEmail,
 } from "@mattrax/cloud-services";
+import type { AnalyticsProperties, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
@@ -461,12 +458,12 @@ const resolveGoogleCredentials = (db: EnterpriseDb, env: Env) => (organizationId
     deployment: googleCredentials,
   }).pipe(
     Effect.map((loaded) => loaded?.credentials ?? null),
-    Effect.catch((cause) =>
+    Effect.catch((error) =>
       Effect.sync(() => {
         console.error(
           "Google Workspace credentials unavailable",
           organizationId,
-          cause instanceof Error ? cause.message : "unknown error",
+          error instanceof Error ? error.message : "unknown error",
         );
 
         return null;
@@ -640,8 +637,7 @@ const dashboardReportsJob = (env: Env) =>
     const db = yield* Db;
     const mailer = resolveMailer(env);
 
-    if (!mailer.transport)
-      return { due: 0, queued: 0, skipped: 0, failed: 0 };
+    if (!mailer.transport) return { due: 0, queued: 0, skipped: 0, failed: 0 };
 
     return yield* runScheduledReports({
       db,
@@ -1198,7 +1194,7 @@ const reportMissingPostHogKey = (): void => {
  */
 const checkStorageReady = async (env: Env): Promise<"ok"> => {
   const key = `__readiness/${crypto.randomUUID()}`;
-  let failure: unknown;
+  let failure: Error | undefined;
 
   try {
     const object = await env.STORAGE.put(key, "ok", {
@@ -1213,14 +1209,14 @@ const checkStorageReady = async (env: Env): Promise<"ok"> => {
     const head = await env.STORAGE.head(key);
 
     if (!head) throw new Error("storage probe object is not readable");
-  } catch (cause) {
-    failure = cause;
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
   }
 
   try {
     await env.STORAGE.delete(key);
-  } catch (cause) {
-    failure ??= cause;
+  } catch (error) {
+    failure ??= error instanceof Error ? error : new Error(String(error));
   }
 
   if (failure) throw failure;
@@ -1289,8 +1285,8 @@ const describeError = (cause: unknown): string => {
   const text = error ? `${error.name}: ${error.message}` : String(cause);
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, 500);
 };
 
@@ -1443,8 +1439,8 @@ export const createApiRuntime = (
             Context.makeUnsafe(requestServices),
           );
         }
-      } catch (cause) {
-        uncaught = cause;
+      } catch (error) {
+        uncaught = error;
         response = errorResponse(500, requestId, {
           error: "internal_error",
           message: "Internal Server Error",
@@ -1612,35 +1608,42 @@ export const createApiRuntime = (
               else if (exit.value.checked)
                 console.log("Scheduled origin certificate check complete", exit.value.state.level);
             },
-            (cause) => console.error("Scheduled origin certificate check job failed", cause),
+            (error: unknown) =>
+              console.error("Scheduled origin certificate check job failed", error),
           ),
         );
 
         ctx.waitUntil(
-          Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(logOutboxResult, (cause) =>
-            console.error("Scheduled email outbox job failed", cause),
+          Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(
+            logOutboxResult,
+            (error: unknown) => console.error("Scheduled email outbox job failed", error),
           ),
         );
 
         ctx.waitUntil(
-          Effect.runPromise(Effect.exit(dashboardReportsJob(env))).then((exit) => {
-            if (Exit.isFailure(exit))
-              console.error("Scheduled dashboard reports failed", exit.cause);
-            else if (exit.value.queued > 0 || exit.value.failed > 0)
-              console.log("Scheduled dashboard reports complete", exit.value);
-          }, (cause) => console.error("Scheduled dashboard reports job failed", cause)),
+          Effect.runPromise(Effect.exit(dashboardReportsJob(env))).then(
+            (exit) => {
+              if (Exit.isFailure(exit))
+                console.error("Scheduled dashboard reports failed", exit.cause);
+              else if (exit.value.queued > 0 || exit.value.failed > 0)
+                console.log("Scheduled dashboard reports complete", exit.value);
+            },
+            (error: unknown) => console.error("Scheduled dashboard reports job failed", error),
+          ),
         );
 
         if (graphConfigured)
           ctx.waitUntil(
-            Effect.runPromise(Effect.exit(entraSyncJob(env))).then(logEntraResult, (cause) =>
-              console.error("Scheduled Entra directory sync job failed", cause),
+            Effect.runPromise(Effect.exit(entraSyncJob(env))).then(
+              logEntraResult,
+              (error: unknown) => console.error("Scheduled Entra directory sync job failed", error),
             ),
           );
 
         ctx.waitUntil(
-          Effect.runPromise(Effect.exit(googleSyncJob(env))).then(logGoogleResult, (cause) =>
-            console.error("Scheduled Google directory sync job failed", cause),
+          Effect.runPromise(Effect.exit(googleSyncJob(env))).then(
+            logGoogleResult,
+            (error: unknown) => console.error("Scheduled Google directory sync job failed", error),
           ),
         );
 
@@ -1710,8 +1713,8 @@ export const createApiRuntime = (
         const db = yield* Db;
 
         yield* reportLicenseUsage(db, env).pipe(
-          Effect.catch((cause) =>
-            Effect.logWarning("Scheduled licence usage report failed", { cause }),
+          Effect.catch((error) =>
+            Effect.logWarning("Scheduled licence usage report failed", { error }),
           ),
         );
 
@@ -1842,7 +1845,7 @@ export const createApiRuntime = (
             logEntraResult(entra);
             logGoogleResult(google);
           },
-          (cause) => console.error("Scheduled daily job failed", cause),
+          (error: unknown) => console.error("Scheduled daily job failed", error),
         ),
       );
     },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { serializePlist } from "@mattrax/plist";
@@ -133,20 +134,22 @@ const makeFetch = (
 const makeDbWithTenant = () => {
   const db = makeDb();
   const now = new Date();
-  db.store.organization.push({
-    id: organizationId,
-    name: "Acme",
-    slug: "acme",
-    createdAt: now,
-    updatedAt: now,
-  });
-  db.store.organization.push({
-    id: otherOrganizationId,
-    name: "Other",
-    slug: "other",
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.organization.push(
+    {
+      id: organizationId,
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: otherOrganizationId,
+      name: "Other",
+      slug: "other",
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
 
   return db;
 };
@@ -295,22 +298,24 @@ describe("Apple Business Manager sync", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
-    db.store.abm_device.push({
-      organizationId: otherOrganizationId,
-      serial: "OTHER-SERIAL",
-      enrollmentState: "UNASSIGNED",
-      profileStatus: "unassigned",
-      createdAt: now,
-      updatedAt: now,
-    });
-    db.store.abm_device.push({
-      organizationId,
-      serial: "SERIAL-REMOVED",
-      enrollmentState: "UNASSIGNED",
-      profileStatus: "unassigned",
-      createdAt: now,
-      updatedAt: now,
-    });
+    db.store.abm_device.push(
+      {
+        organizationId: otherOrganizationId,
+        serial: "OTHER-SERIAL",
+        enrollmentState: "UNASSIGNED",
+        profileStatus: "unassigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        organizationId,
+        serial: "SERIAL-REMOVED",
+        enrollmentState: "UNASSIGNED",
+        profileStatus: "unassigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
 
     const { fetchImpl, calls } = makeFetch({
       devices: [

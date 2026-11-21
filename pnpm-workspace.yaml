@@ -4,13 +4,14 @@ packages:
 
 catalog:
   "@axe-core/playwright": ^4.14.0
+  "@cloudflare/oxlint-config": 0.1.0
   "@cloudflare/vite-plugin": 2.0.0-rc.1
   "@effect/platform-node": ^4.1.4
+  "@effect/tsgo": 0.73.2
   "@effect/sql-mysql2": ^4.1.4
   "@fontsource-variable/geist": ^5.3.0
   "@kobalte/core": 2.0.0-alpha.4
   "@lhci/cli": ^0.16.1
-  "@oxlint/plugins": 1.94.0
   "@paralleldrive/cuid2": ^3.3.0
   "@playwright/test": 1.65.1
   "@rolldown/perf-kit": ^0.1.0
@@ -44,6 +45,7 @@ catalog:
   filesystem-routing: ^0.5.0
   mysql2: ^3.24.6
   oxlint: 1.94.0
+  oxlint-tsgolint: 7.0.2007
   pkijs: ^4.0.1
   posthog-js: ^1.450.1
   react: ^19.3.1

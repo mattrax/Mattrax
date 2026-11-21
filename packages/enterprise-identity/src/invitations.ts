@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Effect } from "effect";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 type InvitationDatabase = Pick<EnterpriseDb, "select" | "update">;
 

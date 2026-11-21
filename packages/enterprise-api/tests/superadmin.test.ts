@@ -64,11 +64,13 @@ const memberRow = (accountId: string, organizationId: string, role: string) => (
   updatedAt: now,
 });
 
-const makeContext = (options: {
-  readonly actor?: Partial<TestAccount>;
-  readonly accounts?: ReadonlyArray<Partial<TestAccount>>;
-  readonly allowlist?: ReadonlyArray<string>;
-} = {}) => {
+const makeContext = (
+  options: {
+    readonly actor?: Partial<TestAccount>;
+    readonly accounts?: ReadonlyArray<Partial<TestAccount>>;
+    readonly allowlist?: ReadonlyArray<string>;
+  } = {},
+) => {
   const db = makeDb();
   const actor = accountRow(options.actor);
   const others = (options.accounts ?? []).map((row) => accountRow(row));
@@ -337,7 +339,10 @@ describe("superadmin promotion and demotion", () => {
         ),
     };
 
-    const effect = listHandler!({ request: request({ cookie: "mattrax_session=test" }), query: {} });
+    const effect = listHandler!({
+      request: request({ cookie: "mattrax_session=test" }),
+      query: {},
+    });
 
     // SAFETY: the fake service implements only the method this handler calls.
     await expect(

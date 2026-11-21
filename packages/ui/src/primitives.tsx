@@ -35,7 +35,9 @@ function Skeleton(props: Omit<ComponentProps<"div">, "style">) {
   );
 }
 
-function Separator(props: Omit<ComponentProps<"div">, "style"> & { orientation?: "horizontal" | "vertical" }) {
+function Separator(
+  props: Omit<ComponentProps<"div">, "style"> & { orientation?: "horizontal" | "vertical" },
+) {
   const [local, others] = splitProps(props, ["class", "orientation"]);
 
   return (

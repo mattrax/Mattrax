@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  type AuditExportEntry,
   AUDIT_EXPORT_MAX_ROWS,
   AUDIT_SEARCH_DEFAULT_LIMIT,
   AUDIT_SEARCH_MAX_LIMIT,
@@ -11,6 +10,7 @@ import {
   escapeLike,
   normalizeAuditSearchQuery,
 } from "../src/Account/auditLog.ts";
+import type { AuditExportEntry } from "../src/Account/auditLog.ts";
 
 describe("normalizeAuditSearchQuery", () => {
   it("applies bounded defaults", () => {
@@ -145,7 +145,7 @@ describe("audit cursors", () => {
 
 describe("escapeLike", () => {
   it("escapes wildcards and the escape character", () => {
-    expect(escapeLike("100%_done\\now")).toBe("100\\%\\_done\\\\now");
+    expect(escapeLike(String.raw`100%_done\now`)).toBe(String.raw`100\%\_done\\now`);
   });
 });
 
@@ -200,7 +200,9 @@ describe("audit export", () => {
 
     const [, row] = csv.split("\r\n");
 
-    expect(row).toContain(",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,");
+    expect(row).toContain(
+      ",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,",
+    );
     expect(row).toContain(",0a1b,,MDM/1.0,");
   });
 

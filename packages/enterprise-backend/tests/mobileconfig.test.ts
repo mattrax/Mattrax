@@ -3,7 +3,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { parseMobileconfigPreview, payloadCategory } from "../src/Policy/mobileconfig.ts";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -94,7 +94,7 @@ describe("mobileconfig preview", () => {
   it("extracts the embedded plist from a PKCS#7 signed mobileconfig", async () => {
     // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
     // asked to generate; the DOM runtime type is wider than that overload.
-    const keyPair = (await crypto.subtle.generateKey(
+    const keyPair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -103,7 +103,7 @@ describe("mobileconfig preview", () => {
       } satisfies RsaHashedKeyGenParams,
       true,
       ["sign", "verify"],
-    )) as CryptoKeyPair;
+    );
 
     const name = new pkijs.RelativeDistinguishedNames({
       typesAndValues: [

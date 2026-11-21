@@ -3,9 +3,8 @@ import {
   deriveUserPolicies,
   userMergeCandidateReasons,
   userMergeRequiresExternalIdConfirmation,
-  type UserGroupPolicyEdge,
-  type UserPolicyEdge,
 } from "./User.js";
+import type { UserGroupPolicyEdge, UserPolicyEdge } from "./User.js";
 
 const direct = (
   policyId: string,

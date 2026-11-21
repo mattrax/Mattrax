@@ -11,11 +11,13 @@ import {
   resetPlatformCache,
   searchCollections,
   searchIndexProperties,
-  type CatalogManifest,
-  type Collection,
-  type PlatformData,
-  type PlatformIndex,
-  type SearchIndex,
+} from "./catalog";
+import type {
+  CatalogManifest,
+  Collection,
+  PlatformData,
+  PlatformIndex,
+  SearchIndex,
 } from "./catalog";
 
 const windowsCollection = (id: string, name: string): Collection => ({

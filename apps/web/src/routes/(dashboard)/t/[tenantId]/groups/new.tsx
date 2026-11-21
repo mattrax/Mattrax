@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -8,13 +9,8 @@ import { GroupRuleBuilder } from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type DynamicGroupKind,
-  type DynamicGroupRules,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { DynamicGroupKind, DynamicGroupRules } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";
@@ -83,8 +79,7 @@ export default function NewGroupPage() {
   const devicesDescription = () => {
     if (membershipMode() === "dynamic") return "Membership is computed from the rules.";
 
-    if (membershipMode() === "directory")
-      return "Membership is derived from the directory group.";
+    if (membershipMode() === "directory") return "Membership is derived from the directory group.";
 
     return "Pick devices to include now.";
   };
@@ -138,9 +133,7 @@ export default function NewGroupPage() {
                     } else if (value === "directory") {
                       setKind("manual");
                       setDevices(new Set<string>());
-                      setDirectoryGroupId(
-                        (directory.data?.groups ?? [])[0]?.id ?? "",
-                      );
+                      setDirectoryGroupId((directory.data?.groups ?? [])[0]?.id ?? "");
                     } else if (value === "manual") {
                       setDirectoryGroupId(null);
                       setKind("manual");
@@ -194,8 +187,7 @@ export default function NewGroupPage() {
                 <Button
                   type="submit"
                   disabled={
-                    create.isPending ||
-                    (membershipMode() === "directory" && !directoryGroupId())
+                    create.isPending || (membershipMode() === "directory" && !directoryGroupId())
                   }
                 >
                   {create.isPending ? "Creating…" : "Create group"}

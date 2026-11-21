@@ -12,7 +12,8 @@ import {
   GOOGLE_ADMIN_USERS_URL,
 } from "./provider.js";
 import type { GoogleWorkspaceService } from "./service.js";
-import { googleDirectorySyncStatus, type GoogleDirectorySyncRow } from "./sync.js";
+import { googleDirectorySyncStatus } from "./sync.js";
+import type { GoogleDirectorySyncRow } from "./sync.js";
 
 const serviceAccountJson = (
   overrides: Partial<{ type: string; client_email: string; private_key: string }> = {},

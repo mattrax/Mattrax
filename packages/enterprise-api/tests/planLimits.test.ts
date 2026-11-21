@@ -7,7 +7,7 @@ import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.
 
 /** Assert a service call rejected with the forbidden tag and message fragment. */
 const expectForbidden = async (run: Promise<unknown>, message?: string) => {
-  const failure = await run.catch((cause: unknown) => cause);
+  const failure = await run.catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(EnterpriseForbidden);
 

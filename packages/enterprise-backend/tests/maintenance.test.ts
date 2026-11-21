@@ -258,24 +258,26 @@ describe("maintenance directory-linked groups", () => {
       updatedAt: now,
     });
     db.store.user_group_member.push({ groupId: "directory-1", userId: "user-1" });
-    db.store.device.push({
-      id: "device-1",
-      organizationId: "org-1",
-      proto: "apple",
-      status: "enrolled",
-      name: "Ada's Mac",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
-    db.store.device.push({
-      id: "device-2",
-      organizationId: "org-1",
-      proto: "apple",
-      status: "enrolled",
-      name: "Old Mac",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
+    db.store.device.push(
+      {
+        id: "device-1",
+        organizationId: "org-1",
+        proto: "apple",
+        status: "enrolled",
+        name: "Ada's Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "device-2",
+        organizationId: "org-1",
+        proto: "apple",
+        status: "enrolled",
+        name: "Old Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+    );
     db.store.device_user.push({
       organizationId: "org-1",
       deviceId: "device-1",
