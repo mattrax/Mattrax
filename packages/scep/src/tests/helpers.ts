@@ -2,19 +2,19 @@ import { Layer, Effect } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { publicEncrypt, constants } from "node:crypto";
-import {
-  ScepRepository,
-  type ScepAuthentication,
-  type ScepCaScope,
-  type ScepIssuedCertificate,
-  type ScepPkcsReq,
-  type ScepRetiredCa,
-  type ScepStoredCa,
+import { ScepRepository } from "../repository.js";
+import type {
+  ScepAuthentication,
+  ScepCaScope,
+  ScepIssuedCertificate,
+  ScepPkcsReq,
+  ScepRetiredCa,
+  ScepStoredCa,
 } from "../repository.js";
-import { ScepError } from "../schema.js";
+import type { ScepError } from "../schema.js";
 import { pemEncode } from "../crypto.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {

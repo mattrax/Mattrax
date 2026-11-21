@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { R2, type R2Bucket, type R2ObjectBody, type R2PutOptions } from "@mattrax/enterprise-core";
+import { R2 } from "@mattrax/enterprise-core";
+import type { R2Bucket, R2ObjectBody, R2PutOptions } from "@mattrax/enterprise-core";
 
 export type { R2Bucket, R2ObjectBody, R2PutOptions };
 

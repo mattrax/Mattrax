@@ -17,13 +17,15 @@ import {
   graphGroupFromWire,
   graphUserFromWire,
   importedAutopilotDevices,
-  type GraphAutopilotDevice,
-  type GraphAutopilotProfile,
-  type GraphDeltaPage,
-  type GraphDomain,
-  type GraphGroup,
-  type GraphPage,
-  type GraphUser,
+} from "./schema.js";
+import type {
+  GraphAutopilotDevice,
+  GraphAutopilotProfile,
+  GraphDeltaPage,
+  GraphDomain,
+  GraphGroup,
+  GraphPage,
+  GraphUser,
 } from "./schema.js";
 
 /** 401 from Graph or the token endpoint. */
@@ -90,9 +92,7 @@ export type AzureGraphError =
   | AzureGraphRequestFailed
   | AzureGraphInvalidResponse;
 
-export type AzureGraphConsentRevocationError =
-  | AzureGraphError
-  | AzureGraphConsentRevocationFailed;
+export type AzureGraphConsentRevocationError = AzureGraphError | AzureGraphConsentRevocationFailed;
 
 export type AzureGraphConfig = {
   readonly clientId: string;
@@ -305,9 +305,7 @@ function isSuccess(status: number): boolean {
   return status >= 200 && status <= 299;
 }
 
-function jsonObject(
-  fields: Readonly<Record<string, Schema.Json | undefined>>,
-): Schema.JsonObject {
+function jsonObject(fields: Readonly<Record<string, Schema.Json | undefined>>): Schema.JsonObject {
   const result: Record<string, Schema.Json> = {};
 
   for (const [key, value] of Object.entries(fields)) {
@@ -791,8 +789,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
        * is indistinguishable from an already-revoked consent for our purpose.
        */
       const tenantGone = (body: string | undefined) =>
-        body !== undefined &&
-        (body.includes("AADSTS700016") || body.includes("AADSTS90002"));
+        body !== undefined && (body.includes("AADSTS700016") || body.includes("AADSTS90002"));
 
       const revokeDelegatedConsent = (
         tenantId: string,

@@ -1,13 +1,10 @@
 import { Effect, Exit, Schema } from "effect";
 import { and, eq, gt, lt, ne } from "drizzle-orm";
 import { openSecret } from "@mattrax/crypto";
-import {
-  isDirectorySyncDue,
-  nextDirectorySyncAt,
-  syncDirectory,
-  type DirectorySyncScheduleState,
-} from "@mattrax/directory-sync";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { isDirectorySyncDue, nextDirectorySyncAt, syncDirectory } from "@mattrax/directory-sync";
+import type { DirectorySyncScheduleState } from "@mattrax/directory-sync";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   decodeServiceAccountJson,
   GoogleWorkspaceConfigError,
@@ -15,11 +12,11 @@ import {
   normaliseAdminEmail,
   normaliseCustomer,
   redactGoogleCredentials,
-  type GoogleWorkspaceCredentials,
 } from "./config.js";
+import type { GoogleWorkspaceCredentials } from "./config.js";
 import { googleWorkspaceDirectoryUserDirectory, GOOGLE_ADMIN_USERS_URL } from "./provider.js";
-import { GoogleWorkspaceError, type GoogleWorkspaceService } from "./service.js";
-// oxlint-disable-next-line anti-slop-effect/no-service-constructor-imports -- each tenant's sealed credentials build their own client; a single deployment-wide Layer cannot represent per-tenant keys.
+import { GoogleWorkspaceError } from "./service.js";
+import type { GoogleWorkspaceService } from "./service.js";
 import { makeGoogleWorkspaceService } from "./service.js";
 
 const now = () => new Date();
@@ -364,9 +361,9 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
 
     if (result.changedUserIds.length > 0 && options.onMembershipsChanged)
       yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
-            console.error("Google directory membership refresh failed", organizationId, cause);
+            console.error("Google directory membership refresh failed", organizationId, error);
           }),
         ),
       );
@@ -386,13 +383,13 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
 
     return { status: "ok", users: result.users, groups: result.groups } as const;
   }).pipe(
-    Effect.catch((cause) =>
+    Effect.catch((error) =>
       Effect.sync(() => {
-        console.error("Google directory sync failed", options.organizationId, cause);
+        console.error("Google directory sync failed", options.organizationId, error);
 
         return {
           status: "error",
-          message: redactGoogleCredentials(String(cause), options.credentials ?? undefined).slice(
+          message: redactGoogleCredentials(String(error), options.credentials ?? undefined).slice(
             0,
             2000,
           ),
@@ -462,11 +459,11 @@ export const runScheduledGoogleSync = <R = never>(options: {
             onMembershipsChanged: options.onMembershipsChanged,
           });
         }).pipe(
-          Effect.catch((cause) =>
+          Effect.catch((error) =>
             Effect.sync(() => {
-              console.error("Scheduled Google directory sync failed", row.organizationId, cause);
+              console.error("Scheduled Google directory sync failed", row.organizationId, error);
 
-              return { status: "error", message: String(cause) } as const;
+              return { status: "error", message: String(error) } as const;
             }),
           ),
         ),

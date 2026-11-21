@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { sanitizePostHogCapture } from "./posthog-sanitize";
 
@@ -54,7 +54,9 @@ describe("PostHog capture sanitisation", () => {
     );
 
     expect(event.properties?.$exception_values).toEqual(["Error: failed for [email]"]);
-    expect(event.properties?.$exception_list).toMatchObject([{ value: "Error: failed for [email]" }]);
+    expect(event.properties?.$exception_list).toMatchObject([
+      { value: "Error: failed for [email]" },
+    ]);
     expect(event.properties?.$set).toEqual({ email: "owner@example.com" });
   });
 });

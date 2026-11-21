@@ -153,7 +153,7 @@ const cronFieldProblem = (field: string, min: number, max: number, label: string
 
     if (range === "*") continue;
 
-    const bounds = range!.split("-").map(Number);
+    const bounds = range.split("-").map(Number);
 
     if (bounds.some((value) => !Number.isInteger(value))) return `${label} has an invalid value`;
 
@@ -208,10 +208,10 @@ export const scriptProblem = (draft: ScriptDraft): string | null => {
   if ((draft.description ?? "").length > SCRIPT_DESCRIPTION_MAX_LENGTH)
     return `Description must be at most ${SCRIPT_DESCRIPTION_MAX_LENGTH} characters`;
 
-  if (!SCRIPT_LANGUAGES.find((language) => language === draft.language))
+  if (!SCRIPT_LANGUAGES.some((language) => language === draft.language))
     return "Shell must be bash, zsh, sh or pwsh";
 
-  if (!SCRIPT_RUN_AS.find((runAs) => runAs === draft.runAs)) return "Run-as must be root or user";
+  if (!SCRIPT_RUN_AS.some((runAs) => runAs === draft.runAs)) return "Run-as must be root or user";
 
   if (!draft.body.trim()) return "Script body is required";
 
@@ -492,7 +492,7 @@ const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
 
   let difference = 0;
 
-  for (let index = 0; index < left.length; index++) difference |= left[index]! ^ right[index]!;
+  for (let index = 0; index < left.length; index++) difference |= left[index] ^ right[index];
 
   return difference === 0;
 };

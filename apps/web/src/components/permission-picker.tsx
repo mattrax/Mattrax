@@ -1,5 +1,6 @@
 import { For } from "solid-js";
-import { PERMISSIONS, PERMISSION_GROUPS, type Permission } from "@mattrax/enterprise-domain/client";
+import { PERMISSIONS, PERMISSION_GROUPS } from "@mattrax/enterprise-domain/client";
+import type { Permission } from "@mattrax/enterprise-domain/client";
 import { cn } from "~/lib/utils";
 
 type Level = "none" | "read" | "write";

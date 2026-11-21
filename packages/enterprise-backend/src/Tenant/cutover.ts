@@ -1,28 +1,32 @@
 import { Data, Effect, Schema } from "effect";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
-import {
-  CUTOVER_MAX_AUDIT_ROWS,
-  CUTOVER_MAX_DEVICES,
-  CUTOVER_MAX_MEMBERS,
+import type {
   CutoverPreflightReport,
   CutoverPayload,
   CutoverSectionSelection,
   CutoverSource,
+} from "@mattrax/enterprise-domain";
+import {
+  CUTOVER_MAX_AUDIT_ROWS,
+  CUTOVER_MAX_DEVICES,
+  CUTOVER_MAX_MEMBERS,
   encodeCutoverArchive,
   normalizeOrigin,
   originHostname,
   selectedCutoverSections,
-  type CutoverCounts,
-  type CutoverDevice,
-  type CutoverDeviceSecret,
-  type CutoverEscrowKey,
-  type CutoverInvitation,
-  type CutoverMember,
-  type CutoverNeedsReissue,
-  type CutoverScepCa,
-  type CutoverScepCertificate,
-  type CutoverScepTrustAnchor,
+} from "@mattrax/enterprise-domain";
+import type {
+  CutoverCounts,
+  CutoverDevice,
+  CutoverDeviceSecret,
+  CutoverEscrowKey,
+  CutoverInvitation,
+  CutoverMember,
+  CutoverNeedsReissue,
+  CutoverScepCa,
+  CutoverScepCertificate,
+  CutoverScepTrustAnchor,
 } from "@mattrax/enterprise-domain";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import { describeScepCa, openCaPrivateKey } from "@mattrax/scep";
@@ -42,8 +46,8 @@ const iso = (date: Date | null | undefined) => (date ? date.toISOString() : null
 const safeFilename = (value: string) =>
   value
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9._-]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
 
 const MAX_NEEDS_REISSUE = 500;
@@ -150,7 +154,11 @@ export const buildTenantCutover = (
 
       const accounts = accountIds.length
         ? yield* db
-            .select({ id: schema.account.id, name: schema.account.name, email: schema.account.email })
+            .select({
+              id: schema.account.id,
+              name: schema.account.name,
+              email: schema.account.email,
+            })
             .from(schema.account)
             .where(inArray(schema.account.id, accountIds))
         : [];
@@ -158,7 +166,9 @@ export const buildTenantCutover = (
       const accountById = new Map(accounts.map((account) => [account.id, account]));
 
       const customRoleIds = [
-        ...new Set(memberRows.flatMap((member) => (member.customRoleId ? [member.customRoleId] : []))),
+        ...new Set(
+          memberRows.flatMap((member) => (member.customRoleId ? [member.customRoleId] : [])),
+        ),
       ];
 
       const customRoles = customRoleIds.length
@@ -174,9 +184,7 @@ export const buildTenantCutover = (
         const account = accountById.get(member.accountId);
 
         if (!account) {
-          needsReissue.push(
-            issue("member", member.accountId, "The account row no longer exists."),
-          );
+          needsReissue.push(issue("member", member.accountId, "The account row no longer exists."));
 
           return [];
         }
@@ -358,7 +366,7 @@ export const buildTenantCutover = (
           {
             // SAFETY: the database enum constrains this column to the same
             // literal union the archive schema uses.
-            kind: row.kind as CutoverDeviceSecret["kind"],
+            kind: row.kind,
             value,
             format: row.format,
           },
@@ -380,7 +388,8 @@ export const buildTenantCutover = (
           device.status === "enrolled" &&
           (!apple?.token || !apple.pushMagic)
         )
-          needsReissue = needsReissue ?? "No Apple push token was stored; the device must report one.";
+          needsReissue =
+            needsReissue ?? "No Apple push token was stored; the device must report one.";
 
         if ((secretFailures.get(device.id) ?? 0) > 0)
           needsReissue =
@@ -864,27 +873,28 @@ export const preflightTenantOriginSwitch = (
       .where(eq(schema.scimToken.organizationId, organizationId))
       .limit(1);
 
-    items.push({
-      id: "integrations",
-      severity: abm || vpp || android || scim.length > 0 ? "warning" : "info",
-      title: "Platform integrations need re-authorisation",
-      detail:
-        "Apple Business Manager, Apps and Books, Android Enterprise and SCIM tokens are issued to a specific server. Re-create them on the target; the archive reports each one as a re-issuance item.",
-      affected: [abm, vpp, android, ...scim].filter(Boolean).length,
-    });
-
-    items.push({
-      id: "webauthn",
-      severity: hostnameChanged ? "warning" : "info",
-      title: "Passkeys are bound to the origin",
-      detail: hostnameChanged
-        ? `WebAuthn relying-party id follows the hostname (${originHostname(
-            currentOrigin,
-          )}). Existing passkeys will not work at ${originHostname(
-            targetOrigin,
-          )}; TOTP and recovery codes still do, so keep one of those available for every administrator.`
-        : "The WebAuthn relying-party id is unchanged, so enrolled passkeys keep working.",
-    });
+    items.push(
+      {
+        id: "integrations",
+        severity: abm || vpp || android || scim.length > 0 ? "warning" : "info",
+        title: "Platform integrations need re-authorisation",
+        detail:
+          "Apple Business Manager, Apps and Books, Android Enterprise and SCIM tokens are issued to a specific server. Re-create them on the target; the archive reports each one as a re-issuance item.",
+        affected: [abm, vpp, android, ...scim].filter(Boolean).length,
+      },
+      {
+        id: "webauthn",
+        severity: hostnameChanged ? "warning" : "info",
+        title: "Passkeys are bound to the origin",
+        detail: hostnameChanged
+          ? `WebAuthn relying-party id follows the hostname (${originHostname(
+              currentOrigin,
+            )}). Existing passkeys will not work at ${originHostname(
+              targetOrigin,
+            )}; TOTP and recovery codes still do, so keep one of those available for every administrator.`
+          : "The WebAuthn relying-party id is unchanged, so enrolled passkeys keep working.",
+      },
+    );
 
     const pendingInvitations = yield* db
       .select({ id: schema.invitation.id })

@@ -169,23 +169,17 @@ These looked like wins and were not, so the code stays simpler:
 
 ## Static guards
 
-`packages/config/oxlint` runs through `pnpm lint` (and `vp lint`). Two rules
-target the layout-shift and jank sources directly:
+`pnpm lint` runs Oxlint with the Cloudflare preset plus the Effect rules. The
+layout-shift sources below are not automated any more, so they stay review
+rules of thumb:
 
-- `anti-slop/no-layout-animating-transition` rejects `transition-all`,
-  `transition-[...]` property lists that include width, height, inset, margin,
-  padding or gap, and `animate-[...]` values that begin with one of those
-  properties. Animate `transform` and `opacity` instead
-  (`transition-transform`, `transition-[transform,opacity]`, `animate-spin`).
-  `transition-colors` and `transition-shadow` are valid and are not flagged.
-- `anti-slop/require-media-dimensions` requires `<img>`, `<video>` and
-  `<iframe>` to reserve their box with explicit `width`/`height` attributes, an
-  `aspect-ratio` style or `aspect-*` class, or fixed `h-`/`w-`/`size-` classes.
-  Empty or spread-only media is ignored because the values cannot be proven
-  statically.
-
-Both rules have table-driven tests under
-`packages/config/oxlint/rules/*.test.ts`; `pnpm test` includes them.
+- Animate `transform` and `opacity` instead of `transition-all`,
+  `transition-[...]` lists that include width, height, inset, margin, padding or
+  gap, and `animate-[...]` values that begin with one of those properties.
+  `transition-colors` and `transition-shadow` are valid.
+- Reserve the box of `<img>`, `<video>` and `<iframe>` with explicit
+  `width`/`height` attributes, an `aspect-ratio` style or `aspect-*` class, or
+  fixed `h-`/`w-`/`size-` classes.
 
 ### Accessibility rules
 

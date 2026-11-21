@@ -68,7 +68,7 @@ export type NotificationLike = {
 };
 
 function decodeBase64Utf8(data: string): string {
-  const normalized = data.replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  const normalized = data.replaceAll(/\s/g, "").replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);

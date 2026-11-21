@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type {
   DirectoryGroupRecord,
   DirectoryProviderGroupSource,

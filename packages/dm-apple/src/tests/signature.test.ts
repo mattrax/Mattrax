@@ -232,7 +232,7 @@ const buildCms = async (options: {
 
   for (let index = 0; index < options.signers.length; index++) {
     await signedData.sign(
-      options.signers[index]!.certificate.keyPair.privateKey,
+      options.signers[index].certificate.keyPair.privateKey,
       index,
       "SHA-256",
       toArrayBuffer(options.body),

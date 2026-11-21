@@ -50,9 +50,7 @@ describe("onboarding step derivation", () => {
     expect(stepFor(steps, "group")?.href).toBe("/t/tenant-1/groups/new");
     expect(stepFor(steps, "policy")?.href).toBe("/t/tenant-1/policies/new");
     expect(stepFor(steps, "device")?.href).toBe("/t/tenant-1/settings/enrollment");
-    expect(stepFor(steps, "administrator")?.href).toBe(
-      "/t/tenant-1/settings/administrators",
-    );
+    expect(stepFor(steps, "administrator")?.href).toBe("/t/tenant-1/settings/administrators");
   });
 
   it("marks the group step done from a real group and links to the list", () => {
@@ -77,9 +75,7 @@ describe("onboarding step derivation", () => {
 
     expect(stepFor(created, "policy")?.done).toBe(true);
     expect(stepFor(created, "assignment")?.done).toBe(false);
-    expect(stepFor(created, "assignment")?.href).toBe(
-      "/t/tenant-1/policies/policy-1/assignments",
-    );
+    expect(stepFor(created, "assignment")?.href).toBe("/t/tenant-1/policies/policy-1/assignments");
     expect(stepFor(assigned, "assignment")?.done).toBe(true);
   });
 

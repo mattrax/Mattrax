@@ -11,10 +11,12 @@ import {
   scheduledReportSlot,
 } from "../src/Dashboard/report.ts";
 
-const document = (options: {
-  generatedAt?: Date;
-  results?: Parameters<typeof buildReportDocument>[0]["results"];
-} = {}) =>
+const document = (
+  options: {
+    generatedAt?: Date;
+    results?: Parameters<typeof buildReportDocument>[0]["results"];
+  } = {},
+) =>
   buildReportDocument({
     title: "Fleet digest",
     tenantName: "Acme",

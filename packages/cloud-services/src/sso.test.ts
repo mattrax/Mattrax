@@ -4,7 +4,8 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
-import { ssoRoutes, type SsoRoutesOptions } from "./sso.js";
+import { ssoRoutes } from "./sso.js";
+import type { SsoRoutesOptions } from "./sso.js";
 
 const origin = "https://app.test";
 
@@ -205,7 +206,7 @@ const stateToken = (overrides: Row = {}) =>
       purpose: "sso-state",
       nonce: "nonce-1",
       ...overrides,
-    } as never),
+    }),
   );
 
 const cookie = (state: string) => `__Host-sso_state=${state}`;
@@ -764,7 +765,7 @@ describe("Entra SSO callback success and replay", () => {
       ],
     });
 
-    for (const unsafe of ["/\\evil.example", "//evil.example"]) {
+    for (const unsafe of [String.raw`/\evil.example`, "//evil.example"]) {
       const { response } = await successfulRequest(db, unsafe);
       const url = new URL(response.headers.get("location")!);
 

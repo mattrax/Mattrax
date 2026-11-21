@@ -15,9 +15,8 @@ import {
   scriptProblem,
   scriptTriggerLabel,
   verifyScriptAgentToken,
-  type ScriptDraft,
-  type ScriptAssignmentRow,
 } from "./scripts.ts";
+import type { ScriptDraft, ScriptAssignmentRow } from "./scripts.ts";
 
 const now = new Date("2026-11-16T12:00:00.000Z");
 

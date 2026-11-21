@@ -5,7 +5,8 @@ import type {
   AzureGraphService,
   GraphAutopilotDevice,
 } from "@mattrax/azure-graph";
-import { schema, type EnterpriseDb } from "../schema.ts";
+import { schema } from "../schema.ts";
+import type { EnterpriseDb } from "../schema.ts";
 
 /** Upper bound for a single hardware-hash import request. */
 export const AUTOPILOT_IMPORT_MAX_ROWS = 500;
@@ -43,10 +44,10 @@ export type AutopilotCsvParseResult = {
 };
 
 export const normalizeAutopilotSerial = (value: string): string =>
-  value.trim().replace(/^"|"$/g, "").toUpperCase();
+  value.trim().replaceAll(/^"|"$/g, "").toUpperCase();
 
 const normalizeHardwareHash = (value: string): string =>
-  value.trim().replace(/^"|"$/g, "").replace(/\s+/g, "");
+  value.trim().replaceAll(/^"|"$/g, "").replaceAll(/\s+/g, "");
 
 const HARDWARE_HASH_PATTERN = /^[A-Za-z0-9+/=_-]+$/;
 
@@ -57,7 +58,7 @@ const splitCsvLine = (line: string): string[] => {
   let quoted = false;
 
   for (let index = 0; index < line.length; index++) {
-    const character = line[index]!;
+    const character = line[index];
 
     if (quoted) {
       if (character === '"') {
@@ -89,7 +90,7 @@ const headerKey = (value: string): string =>
   value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
+    .replaceAll(/[^a-z0-9]/g, "");
 
 const SERIAL_HEADERS = new Set([
   "serial",
@@ -131,7 +132,7 @@ export const parseAutopilotCsv = (
 
   if (lines.length === 0) return { rows, errors, skipped, truncated };
 
-  const firstFields = splitCsvLine(lines[0]!);
+  const firstFields = splitCsvLine(lines[0]);
   const headers = firstFields.map(headerKey);
   const serialIndex = headerIndex(headers, SERIAL_HEADERS);
   const hashIndex = headerIndex(headers, HASH_HEADERS);
@@ -144,7 +145,7 @@ export const parseAutopilotCsv = (
 
   for (let index = 0; index < body.length; index++) {
     const lineNumber = index + (hasHeader ? 2 : 1);
-    const fields = splitCsvLine(body[index]!);
+    const fields = splitCsvLine(body[index]);
     const serial = normalizeAutopilotSerial(fields[serialColumn] ?? "");
     const hardwareHash = normalizeHardwareHash(fields[hashColumn] ?? "");
     const groupTag = (fields[groupTagColumn] ?? "").trim();

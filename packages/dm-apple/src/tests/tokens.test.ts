@@ -50,7 +50,7 @@ describe("Apple asset URL tokens", () => {
     // The payload's device id is covered by the HMAC: rewriting it invalidates
     // the token instead of re-binding it to another device.
     const [payload, signature] = token.split(".");
-    const decoded = atob(payload!.replaceAll("-", "+").replaceAll("_", "/"));
+    const decoded = atob(payload.replaceAll("-", "+").replaceAll("_", "/"));
 
     const tamperedPayload = btoa(decoded.replace("device-1", "device-2"))
       .replaceAll("+", "-")
@@ -65,7 +65,7 @@ describe("Apple asset URL tokens", () => {
   it("rejects a tampered token and a token signed with another secret", async () => {
     const token = await signAppleAssetToken(SECRET, contextAt(NOW));
     const [payload, signature] = token.split(".");
-    const flipped = `${signature!.slice(0, -2)}aa`;
+    const flipped = `${signature.slice(0, -2)}aa`;
 
     await expect(
       verifyAppleAssetToken(SECRET, `${payload}.${flipped}`, expected, NOW),

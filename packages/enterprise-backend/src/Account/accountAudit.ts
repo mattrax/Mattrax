@@ -1,7 +1,9 @@
 import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, like, lt, lte, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import { type AuditExportEntry, type AuditSearchFilters, escapeLike } from "./auditLog.ts";
+import { escapeLike } from "./auditLog.ts";
+import type { AuditExportEntry, AuditSearchFilters } from "./auditLog.ts";
 import type { EnterpriseSchema } from "../schema.ts";
 import { schema } from "../schema.ts";
 

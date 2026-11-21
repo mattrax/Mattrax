@@ -181,8 +181,8 @@ const fetchFeed = async (
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch (cause) {
-    return { ok: false, error: classifyFetchFailure(cause) };
+  } catch (error) {
+    return { ok: false, error: classifyFetchFailure(error) };
   }
 
   if (!response.ok) {
@@ -206,7 +206,7 @@ const fetchFeed = async (
 
   if (!read.ok) return read;
 
-  let json: Schema.Json | null = null;
+  let json: Schema.Json | null;
 
   try {
     json = Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(read.body)));
@@ -480,5 +480,5 @@ export const loadSoftwareUpdateCatalog = (
   // service is already resolved by the caller's layer. The requirement channel
   // inferred from the Drizzle Effect client is therefore `never` at runtime;
   // this annotation keeps it out of every API handler's error type.
-  return load as Effect.Effect<SoftwareUpdateCatalogState>;
+  return load;
 };

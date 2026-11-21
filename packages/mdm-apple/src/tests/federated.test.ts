@@ -8,8 +8,8 @@ import {
   isFederatedToken,
   unverifiedFederatedTenantId,
   validateFederatedEntraToken,
-  type FederatedJsonWebKeySet,
 } from "@mattrax/mdm-windows";
+import type { FederatedJsonWebKeySet } from "@mattrax/mdm-windows";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
 

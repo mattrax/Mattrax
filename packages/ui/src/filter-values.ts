@@ -16,7 +16,7 @@ export const quoteFilterValue = (value: string): string => {
 
   if (!needsQuotes.test(trimmed)) return trimmed;
 
-  return `"${trimmed.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `"${trimmed.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`)}"`;
 };
 
 /** Remove the outer quotes of a quoted value and resolve `\\` / `\"`. */
@@ -27,10 +27,10 @@ export const unquoteFilterValue = (value: string): string => {
   let result = "";
 
   for (let index = 0; index < inner.length; index++) {
-    const character = inner[index]!;
+    const character = inner[index];
 
     if (character === "\\" && (inner[index + 1] === "\\" || inner[index + 1] === '"')) {
-      result += inner[index + 1]!;
+      result += inner[index + 1];
       index += 1;
       continue;
     }

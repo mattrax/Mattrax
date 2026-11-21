@@ -26,14 +26,14 @@ const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
     // Accept both the PKCS#10 "CERTIFICATE REQUEST" and legacy "NEW
     // CERTIFICATE REQUEST" PEM labels.
     const base64 = input
-      .replace(/-----BEGIN [^-]+-----/g, "")
-      .replace(/-----END [^-]+-----/g, "")
-      .replace(/\s/g, "");
+      .replaceAll(/-----BEGIN [^-]+-----/g, "")
+      .replaceAll(/-----END [^-]+-----/g, "")
+      .replaceAll(/\s/g, "");
 
     return base64ToArrayBuffer(base64);
   }
 
-  return base64ToArrayBuffer(input.replace(/\s/g, ""));
+  return base64ToArrayBuffer(input.replaceAll(/\s/g, ""));
 };
 
 type AttributeValueBlock = { readonly value?: unknown };

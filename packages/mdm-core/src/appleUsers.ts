@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect";
-import { PlistValue } from "@mattrax/plist";
+import type { PlistValue } from "@mattrax/plist";
 
 /**
  * Shared iPad reports this sentinel user id because it never authenticates the

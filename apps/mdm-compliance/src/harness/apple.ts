@@ -1,10 +1,10 @@
-import { Effect, Layer, Predicate, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect, Layer, Predicate } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, appleMdmRoutes } from "@mattrax/dm-apple";
 import type { AppleMdmTrustService } from "@mattrax/dm-apple";
+import type { DdmDeclarationItems, DdmTokens } from "@mattrax/management-backend";
 import {
-  DdmDeclarationItems,
-  DdmTokens,
   ManagementBackend,
   InternalServerError,
   ManagementManifest,
@@ -12,10 +12,10 @@ import {
   ServerInitiatedUnenrollment,
   UnknownDevice,
   MdmOrigin,
-  type AppleDeviceEvent,
-  type CheckinScope,
 } from "@mattrax/management-backend";
-import { parsePlist, PlistValue, serializePlist } from "@mattrax/plist";
+import type { AppleDeviceEvent, CheckinScope } from "@mattrax/management-backend";
+import type { PlistValue } from "@mattrax/plist";
+import { parsePlist, serializePlist } from "@mattrax/plist";
 
 export type RecordedAppleEvent = {
   readonly scope: CheckinScope;

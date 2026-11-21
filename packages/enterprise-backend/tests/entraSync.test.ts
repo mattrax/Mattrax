@@ -380,7 +380,9 @@ describe("syncEntraDirectory directory users", () => {
         ...baseOptions,
         db,
         graph: singlePageGraph({
-          users: [{ id: "graph-1", mail: "ada@acme.com", displayName: "Ada", accountEnabled: true }],
+          users: [
+            { id: "graph-1", mail: "ada@acme.com", displayName: "Ada", accountEnabled: true },
+          ],
           groups: [
             {
               id: "graph-group-1",
@@ -397,9 +399,7 @@ describe("syncEntraDirectory directory users", () => {
       }),
     );
 
-    const engineers = db.store.user_group.find(
-      (row: any) => row.externalId === "graph-group-2",
-    );
+    const engineers = db.store.user_group.find((row: any) => row.externalId === "graph-group-2");
 
     expect(engineers).toMatchObject({ organizationId: "org-1", source: "graph" });
     // The member was added to the new group and removed from the old one, and

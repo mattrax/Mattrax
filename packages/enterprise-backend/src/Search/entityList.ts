@@ -1,11 +1,6 @@
 import { Option, Schema } from "effect";
-import {
-  EnterpriseBadRequest,
-  parseEntityQuery,
-  type EntityCondition,
-  type EntityQueryField,
-  type SortDirection,
-} from "@mattrax/enterprise-domain";
+import { EnterpriseBadRequest, parseEntityQuery } from "@mattrax/enterprise-domain";
+import type { EntityCondition, EntityQueryField, SortDirection } from "@mattrax/enterprise-domain";
 
 /**
  * Normalisation for the server-paginated entity lists (groups, policies and

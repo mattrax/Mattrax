@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { Match } from "effect";
 import { useInfiniteQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
@@ -11,18 +12,15 @@ import {
   PlatformBadge,
   relativeTime,
 } from "~/components/mdm/common";
-import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
-import {
-  EntityQueryBar,
-  formatEntityQuery,
-  parseEntityQuery,
-  type EntityCondition,
-  type EntityField,
-} from "~/components/mdm/entity-query";
+import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
+import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { Badge } from "~/components/ui/badge";
 import { Package } from "~/components/ui/icons";
-import { enterpriseQueries, type ApplicationRow } from "~/lib/enterprise";
+import { enterpriseQueries } from "~/lib/enterprise";
+import type { ApplicationRow } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";
 import { queryClient } from "~/lib/query-client";

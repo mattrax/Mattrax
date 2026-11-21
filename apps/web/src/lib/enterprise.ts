@@ -1,9 +1,5 @@
-import {
-  infiniteQueryOptions,
-  keepPreviousData,
-  queryOptions,
-  type InfiniteData,
-} from "@tanstack/solid-query";
+import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/solid-query";
+import type { InfiniteData } from "@tanstack/solid-query";
 import type {
   AdminAccountsQuery,
   AppleUserActionName,
@@ -24,8 +20,8 @@ import {
   stepUpGrant,
   StepUpActionSchema,
   StepUpMethodSchema,
-  type StepUpAction,
 } from "~/lib/step-up-bus";
+import type { StepUpAction } from "~/lib/step-up-bus";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
@@ -34,75 +30,77 @@ import {
   scriptHttpApi,
   formatDeviceQueryText,
   parseDeviceQueryText,
-  type AndroidEnterpriseInfo,
-  type AndroidProvisioningMode,
-  type AndroidSignupResponse,
-  type AndroidSyncResponse,
-  type AbmAssignDeviceResponse,
-  type AbmDeviceInfo,
-  type AbmDevicesResponse,
-  type AbmProfileUrlResponse,
-  type AppleBusinessManagerInfo,
-  type AppleBusinessManagerSyncResponse,
-  type ApplicationInventoryQuery,
-  type ApplicationSearchQuery,
-  type ApplicationSearchResponse,
-  type AuditSearchQuery,
-  type AuditSearchResponse,
-  type AutopilotImportRequest,
-  type CutoverExportRequest,
-  type CutoverImportRequest,
-  type CutoverPreviewRequest,
-  type CutoverPreflightQuery,
-  type CreateAttributeRequest,
-  type CreateFleetMigrationRequest,
-  type IssueFleetMigrationUnenrolRequest,
-  type PatchAttributeRequest,
-  type PatchEnrollmentQuestionsRequest,
-  type SetDeviceAttributesRequest,
-  type CreateAutopilotProfileRequest,
-  type DevicePreRegistrationImportRequest,
-  type DeviceRow,
-  type DeviceSearchQuery,
-  type DashboardQueryRequest,
-  type DashboardReportFormat,
-  type CreateDashboardReportRequest,
-  type PatchDashboardReportRequest,
-  type DashboardSummary,
-  type PatchDashboardWidgetRequest,
-  type DashboardWidgetType,
-  type DynamicGroupKind,
-  type DynamicGroupRules,
-  type Entity,
-  type GroupNode,
-  type GroupRow,
-  type GroupSearchQuery,
-  type GroupSearchResponse,
-  type PolicyRow,
-  type PolicySearchQuery,
-  type PolicySearchResponse,
-  type RowFor,
-  type TenantEnrollmentInfo,
-  type TenantScepCaInfo,
-  type TenantImportRequest,
-  type TenantInfo,
-  type BackupRestoreResponse,
-  type CreateTenantRoleRequest,
-  type ListTenantInvitationsQuery,
-  type PatchTenantRoleRequest,
-  type UpdateAutopilotProfileRequest,
-  type VppAssetsResponse,
-  type VppInfo,
-  type VppInstallResponse,
-  type VppReleaseResponse,
-  type VppSyncResponse,
-  type WebhookEndpointInfo,
-  type WebhookDeliveryQuery,
-  type CreateScriptRequest,
-  type PatchScriptRequest,
-  type PatchScriptAssignmentsRequest,
-  type RunScriptRequest,
-  type ScriptSettings,
+} from "@mattrax/enterprise-domain/client";
+import type {
+  AndroidEnterpriseInfo,
+  AndroidProvisioningMode,
+  AndroidSignupResponse,
+  AndroidSyncResponse,
+  AbmAssignDeviceResponse,
+  AbmDeviceInfo,
+  AbmDevicesResponse,
+  AbmProfileUrlResponse,
+  AppleBusinessManagerInfo,
+  AppleBusinessManagerSyncResponse,
+  ApplicationInventoryQuery,
+  ApplicationSearchQuery,
+  ApplicationSearchResponse,
+  AuditSearchQuery,
+  AuditSearchResponse,
+  AutopilotImportRequest,
+  CutoverExportRequest,
+  CutoverImportRequest,
+  CutoverPreviewRequest,
+  CutoverPreflightQuery,
+  CreateAttributeRequest,
+  CreateFleetMigrationRequest,
+  IssueFleetMigrationUnenrolRequest,
+  PatchAttributeRequest,
+  PatchEnrollmentQuestionsRequest,
+  SetDeviceAttributesRequest,
+  CreateAutopilotProfileRequest,
+  DevicePreRegistrationImportRequest,
+  DeviceRow,
+  DeviceSearchQuery,
+  DashboardQueryRequest,
+  DashboardReportFormat,
+  CreateDashboardReportRequest,
+  PatchDashboardReportRequest,
+  DashboardSummary,
+  PatchDashboardWidgetRequest,
+  DashboardWidgetType,
+  DynamicGroupKind,
+  DynamicGroupRules,
+  Entity,
+  GroupNode,
+  GroupRow,
+  GroupSearchQuery,
+  GroupSearchResponse,
+  PolicyRow,
+  PolicySearchQuery,
+  PolicySearchResponse,
+  RowFor,
+  TenantEnrollmentInfo,
+  TenantScepCaInfo,
+  TenantImportRequest,
+  TenantInfo,
+  BackupRestoreResponse,
+  CreateTenantRoleRequest,
+  ListTenantInvitationsQuery,
+  PatchTenantRoleRequest,
+  UpdateAutopilotProfileRequest,
+  VppAssetsResponse,
+  VppInfo,
+  VppInstallResponse,
+  VppReleaseResponse,
+  VppSyncResponse,
+  WebhookEndpointInfo,
+  WebhookDeliveryQuery,
+  CreateScriptRequest,
+  PatchScriptRequest,
+  PatchScriptAssignmentsRequest,
+  RunScriptRequest,
+  ScriptSettings,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -338,9 +336,7 @@ type EnterpriseOsPolicyClient = Effect.Success<
   ReturnType<typeof clientEffect>
 >["EnterpriseOsPolicy"];
 
-type EnterpriseCutoverClient = Effect.Success<
-  ReturnType<typeof clientEffect>
->["EnterpriseCutover"];
+type EnterpriseCutoverClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseCutover"];
 
 type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["ScriptApi"];
 
@@ -646,8 +642,8 @@ function endpointWith<Client, A, E>(
   const attempt = (grant?: string) => {
     const effect = makeClient(requestHeaders(grant)).pipe(Effect.flatMap(call));
 
-    // SAFETY: `Effect.runPromise` resolves with the effect's success value `A`;
-    // the assertion restores the generic success type the client erases.
+    // SAFETY: Effect.runPromise resolves with the effect success value A; the
+    // assertion restores the generic success type the client erases.
     return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
   };
 
@@ -676,7 +672,7 @@ function endpointWith<Client, A, E>(
 
   // SAFETY: `EndpointPromise` only adds the phantom `__error` field that carries
   // the endpoint error type; the runtime value is the plain promise from `run`.
-  return run() as EndpointPromise<A, E | EnterpriseBadRequest>;
+  return run();
 }
 
 function endpoint<A, E>(
@@ -1239,11 +1235,7 @@ export const enterprise = {
         payload,
       }),
     ),
-  deleteDashboardReport: (
-    tenantId: RouteParam,
-    dashboardId: RouteParam,
-    reportId: RouteParam,
-  ) =>
+  deleteDashboardReport: (tenantId: RouteParam, dashboardId: RouteParam, reportId: RouteParam) =>
     dashboardEndpoint((api) =>
       api.deleteDashboardReport({
         params: {
@@ -1263,11 +1255,7 @@ export const enterprise = {
         },
       }),
     ),
-  listDashboardReportRuns: (
-    tenantId: RouteParam,
-    dashboardId: RouteParam,
-    reportId: RouteParam,
-  ) =>
+  listDashboardReportRuns: (tenantId: RouteParam, dashboardId: RouteParam, reportId: RouteParam) =>
     dashboardEndpoint((api) =>
       api.listDashboardReportRuns({
         params: {

@@ -25,10 +25,9 @@ describe("trusted client address", () => {
 
   it("uses the last forwarded hop, not the caller-chosen first hop", () => {
     expect(
-      clientAddress(
-        headers({ "x-forwarded-for": "198.51.100.9, 10.0.0.1, 203.0.113.4" }),
-        { trustForwarded: true },
-      ),
+      clientAddress(headers({ "x-forwarded-for": "198.51.100.9, 10.0.0.1, 203.0.113.4" }), {
+        trustForwarded: true,
+      }),
     ).toBe("203.0.113.4");
   });
 
@@ -41,9 +40,9 @@ describe("trusted client address", () => {
   it("keeps a valid IPv6 address and rejects a header that is not an IP", () => {
     const ipv6 = "2001:db8:85a3::8a2e:370:7334";
 
-    expect(
-      boundedClientAddress(headers({ "cf-connecting-ip": ipv6 }), { cloudflare: true }),
-    ).toBe(ipv6);
+    expect(boundedClientAddress(headers({ "cf-connecting-ip": ipv6 }), { cloudflare: true })).toBe(
+      ipv6,
+    );
     expect(
       clientAddress(headers({ "cf-connecting-ip": "not-an-ip" }), { cloudflare: true }),
     ).toBeNull();

@@ -25,8 +25,8 @@ import {
   EnterpriseUpstreamError,
   StepUpRequired,
   scriptAgentToken,
-  type DeviceSearchQuery,
 } from "@mattrax/enterprise-domain";
+import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
 import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
@@ -35,7 +35,7 @@ import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -431,9 +431,7 @@ describe("enterprise service tenant flow", () => {
     ]);
 
     // Batching must not change how a single-widget request behaves.
-    const single = await runEffect(
-      service.queryDashboard(request(headers), tenant.id, queries[2]!),
-    );
+    const single = await runEffect(service.queryDashboard(request(headers), tenant.id, queries[2]));
 
     expect(single).toEqual(batch.results[2]);
   });
@@ -1078,11 +1076,11 @@ describe("enterprise service tenant flow", () => {
       from: { name: "Acme <Corp>", email: "hello@mattrax.cloud" },
       subject: "Join Acme <Corp> on Mattrax",
     });
-    expect(sent[0]!.text).toContain("Acme <Corp>");
-    expect(sent[0]!.text).toContain("help@acme.test");
+    expect(sent[0].text).toContain("Acme <Corp>");
+    expect(sent[0].text).toContain("help@acme.test");
     // Tenant names are escaped before entering the HTML body.
-    expect(sent[0]!.html).toContain("Acme &lt;Corp&gt;");
-    expect(sent[0]!.html).not.toContain("Acme <Corp>");
+    expect(sent[0].html).toContain("Acme &lt;Corp&gt;");
+    expect(sent[0].html).not.toContain("Acme <Corp>");
   });
 
   it("supports tenant user role updates and removal while protecting the last user", async () => {
@@ -1142,24 +1140,26 @@ describe("enterprise service billing flow", () => {
       createdAt: now,
       updatedAt: now,
     });
-    db.store.device.push({
-      id: "device-1",
-      organizationId: tenant.id,
-      proto: "apple",
-      status: "enrolled",
-      name: "Mac",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
-    db.store.device.push({
-      id: "device-2",
-      organizationId: tenant.id,
-      proto: "apple",
-      status: "unenrolled",
-      name: "Old Mac",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
+    db.store.device.push(
+      {
+        id: "device-1",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "device-2",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "unenrolled",
+        name: "Old Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+    );
 
     await expect(runEffect(service.billing(request(headers), tenant.id))).resolves.toEqual({
       plan: "business",
@@ -1450,24 +1450,26 @@ describe("enterprise service group flow", () => {
     );
 
     const now = new Date();
-    db.store.device.push({
-      id: "device-1",
-      organizationId: tenant.id,
-      proto: "apple",
-      status: "enrolled",
-      name: "Mac",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
-    db.store.device.push({
-      id: "device-2",
-      organizationId: tenant.id,
-      proto: "apple",
-      status: "enrolled",
-      name: "Mac 2",
-      enrolledAt: now,
-      lastSeenAt: now,
-    });
+    db.store.device.push(
+      {
+        id: "device-1",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Mac",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "device-2",
+        organizationId: tenant.id,
+        proto: "apple",
+        status: "enrolled",
+        name: "Mac 2",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+    );
 
     const group = await runEffect(
       service.createGroup(request(headers), tenant.id, {
@@ -3606,7 +3608,7 @@ describe("enterprise service APNs", () => {
         profiles: [{ identifier: "com.acme.wifi", displayName: "Acme Wi-Fi", managed: true }],
       },
     ]);
-    expect(result.users[0]!.actions).toEqual(["sync", "refresh-profiles"]);
+    expect(result.users[0].actions).toEqual(["sync", "refresh-profiles"]);
 
     // Another tenant cannot read this device's users.
     const other = await runEffect(
@@ -3648,7 +3650,7 @@ describe("enterprise service APNs", () => {
       service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
     );
 
-    expect(bound.users[0]!.identity).toMatchObject({
+    expect(bound.users[0].identity).toMatchObject({
       userId: "dir-1",
       name: "dir-1",
       email: "dir-1@example.com",
@@ -3663,7 +3665,7 @@ describe("enterprise service APNs", () => {
       service.listDeviceAppleUsers(request(headers), tenant.id, "device-1"),
     );
 
-    expect(unbound.users[0]!.identity).toBeNull();
+    expect(unbound.users[0].identity).toBeNull();
   });
 
   it("rejects a directory user from another tenant", async () => {
@@ -4804,7 +4806,7 @@ describe("device command lifecycle", () => {
       status: "expired",
       statusLabel: "Expired",
     });
-    expect(history.commands[0]!.expiresAt).toBe(stale.toISOString());
+    expect(history.commands[0].expiresAt).toBe(stale.toISOString());
   });
 
   it("cancels queued commands when the device is unenrolled", async () => {
@@ -5822,7 +5824,7 @@ describe("device pre-registration", () => {
     expect(otherList.rows).toEqual([]);
     await expect(
       runEffect(
-        service.deleteDevicePreRegistration(request(headers), second.id, listed.rows[0]!.id),
+        service.deleteDevicePreRegistration(request(headers), second.id, listed.rows[0].id),
       ),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
@@ -6802,7 +6804,7 @@ describe("Windows activation reporting", () => {
 
     const exported = await runEffect(service.exportDevices(request(headers), tenantId, {}));
     const lines = exported.csv.trim().split("\r\n");
-    const header = lines[0]!.split(",");
+    const header = lines[0].split(",");
     const activation = header.indexOf("Activation");
 
     expect(activation).toBeGreaterThanOrEqual(0);

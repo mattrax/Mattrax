@@ -260,7 +260,7 @@ export function compileAndroidPolicy(
 export function androidPolicyIdForHash(hash: string): string {
   const suffix = hash
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, "")
+    .replaceAll(/[^a-z0-9]/g, "")
     .slice(0, 24);
 
   return `mattrax-${suffix || "default"}`;

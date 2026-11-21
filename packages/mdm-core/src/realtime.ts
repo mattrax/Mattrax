@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { type Db, schema as s } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { Db } from "@mattrax/enterprise-core";
 import { realtimeEventInsertForAudit } from "@mattrax/enterprise-domain";
 
 export type RealtimePublishSource = {

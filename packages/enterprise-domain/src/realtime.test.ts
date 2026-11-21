@@ -10,8 +10,8 @@ import {
   realtimeEventsPath,
   realtimeKindForAuditAction,
   realtimeEventFromRow,
-  type RealtimeEvent,
 } from "./realtime.ts";
+import type { RealtimeEvent } from "./realtime.ts";
 
 const at = new Date("2026-06-01T12:00:00.000Z");
 

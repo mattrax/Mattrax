@@ -7,7 +7,8 @@ import fs from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Plugin, defineConfig } from "vite";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 import { apiWorker } from "../cloud/cloudflare.config.ts";
 import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/public-routes.ts";
 

@@ -11,10 +11,8 @@ import {
   scepChallengeExpiresAt,
   sealCaPrivateKey,
   verifyScepChallenge,
-  type ScepAuthentication,
-  type ScepCaScope,
-  type ScepPkcsReq,
 } from "@mattrax/scep";
+import type { ScepAuthentication, ScepCaScope, ScepPkcsReq } from "@mattrax/scep";
 
 const databaseError =
   (message: string) =>
@@ -48,7 +46,7 @@ const processEnvSecret = (): string | undefined => {
 export const normalizeIssuedCertificateSerial = (value: string): string => {
   const hex = value
     .replace(/^0x/i, "")
-    .replace(/[^0-9a-f]/gi, "")
+    .replaceAll(/[^0-9a-f]/gi, "")
     .toLowerCase();
 
   return hex.replace(/^0+(?=.)/, "");

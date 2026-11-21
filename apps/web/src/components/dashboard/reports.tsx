@@ -22,14 +22,12 @@ import { ArrowUpRight, BookOpen, Download, Plus, X } from "~/components/ui/icons
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { downloadBlob } from "~/lib/download";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type DashboardReport,
-  type DashboardReportFormat,
-  type DashboardReportFrequency,
-  type DashboardReportRun,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  DashboardReport,
+  DashboardReportFormat,
+  DashboardReportFrequency,
+  DashboardReportRun,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { useTenantPermissions } from "~/lib/permissions";
@@ -43,10 +41,7 @@ import { cn } from "~/lib/utils";
  * dashboard; writers manage schedules; only built-in owners/admins may add an
  * external address (the API enforces the same rule).
  */
-export function DashboardReportsPanel(props: {
-  tenantId: string;
-  dashboardId: string;
-}) {
+export function DashboardReportsPanel(props: { tenantId: string; dashboardId: string }) {
   const queryClient = useQueryClient();
   const permissions = useTenantPermissions();
   const writable = () => permissions.can("dashboards.write");
@@ -148,18 +143,13 @@ export function DashboardReportsPanel(props: {
       const existing = editing();
 
       if (existing)
-        return enterprise.patchDashboardReport(
-          props.tenantId,
-          props.dashboardId,
-          existing.id,
-          {
-            name: title,
-            frequency: frequency(),
-            hourUtc: hour(),
-            format: format(),
-            recipients,
-          },
-        );
+        return enterprise.patchDashboardReport(props.tenantId, props.dashboardId, existing.id, {
+          name: title,
+          frequency: frequency(),
+          hourUtc: hour(),
+          format: format(),
+          recipients,
+        });
 
       return enterprise.createDashboardReport(props.tenantId, props.dashboardId, {
         name: title,
@@ -175,7 +165,8 @@ export function DashboardReportsPanel(props: {
       invalidate();
       toast.success(editing() ? "Report updated" : "Report created");
     },
-    onError: (cause) => setFormError(errorMessage(raisedFailure(cause), "Could not save the report.")),
+    onError: (cause) =>
+      setFormError(errorMessage(raisedFailure(cause), "Could not save the report.")),
   }));
 
   const toggleEnabled = useMutation(() => ({
@@ -216,11 +207,7 @@ export function DashboardReportsPanel(props: {
       setExpanded(report.id);
       invalidate();
       void queryClient.invalidateQueries({
-        queryKey: enterpriseKeys.dashboardReportRuns(
-          props.tenantId,
-          props.dashboardId,
-          report.id,
-        ),
+        queryKey: enterpriseKeys.dashboardReportRuns(props.tenantId, props.dashboardId, report.id),
       });
 
       if (run.status === "failed")
@@ -251,8 +238,8 @@ export function DashboardReportsPanel(props: {
       // SAFETY: the API returns the response bytes for this endpoint, and
       // Blob accepts a typed array as a buffer source.
       downloadBlob(new Blob([bytes as BlobPart], { type }), name);
-    } catch (cause) {
-      setDownloadError(cause);
+    } catch (error) {
+      setDownloadError(error);
     }
   };
 
@@ -309,13 +296,15 @@ export function DashboardReportsPanel(props: {
         }
       >
         <ul class="divide-y divide-border">
-          <For each={reports.data!.reports}>
+          <For each={reports.data.reports}>
             {(report) => (
               <li class="py-3 first:pt-0 last:pb-0">
                 <div class="flex flex-wrap items-start justify-between gap-2">
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
-                      <p class="truncate text-[12.5px] font-medium text-foreground">{report.name}</p>
+                      <p class="truncate text-[12.5px] font-medium text-foreground">
+                        {report.name}
+                      </p>
                       <Badge variant={report.enabled ? "secondary" : "outline"}>
                         {report.enabled ? "Active" : "Paused"}
                       </Badge>
@@ -325,25 +314,18 @@ export function DashboardReportsPanel(props: {
                     </div>
                     <p class="mt-1 text-[11.5px] text-muted-foreground">
                       {scheduleLabel(report)} ·{" "}
-                      {report.recipients.memberAccountIds.length +
-                        report.recipients.emails.length}{" "}
+                      {report.recipients.memberAccountIds.length + report.recipients.emails.length}{" "}
                       recipient
                       {report.recipients.memberAccountIds.length +
                         report.recipients.emails.length ===
                       1
                         ? ""
                         : "s"}
-                      <Show when={report.nextRunAt}>
-                        {" "}
-                        · next {relativeTime(report.nextRunAt!)}
-                      </Show>
+                      <Show when={report.nextRunAt}> · next {relativeTime(report.nextRunAt)}</Show>
                     </p>
                     <p class="mt-0.5 text-[10.5px] text-muted-foreground">
-                      <Show
-                        when={report.lastRunAt}
-                        fallback="Not sent yet"
-                      >
-                        Last run {relativeTime(report.lastRunAt!)}
+                      <Show when={report.lastRunAt} fallback="Not sent yet">
+                        Last run {relativeTime(report.lastRunAt)}
                       </Show>
                     </p>
                   </div>
@@ -351,7 +333,9 @@ export function DashboardReportsPanel(props: {
                     <Button
                       size="xs"
                       variant="ghost"
-                      onClick={() => setExpanded((current) => (current === report.id ? null : report.id))}
+                      onClick={() =>
+                        setExpanded((current) => (current === report.id ? null : report.id))
+                      }
                     >
                       {expanded() === report.id ? "Hide history" : "History"}
                     </Button>
@@ -501,7 +485,7 @@ export function DashboardReportsPanel(props: {
                     </p>
                   }
                 >
-                  <For each={accounts.data!.accounts}>
+                  <For each={accounts.data.accounts}>
                     {(account) => (
                       <label class="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[12px] hover:bg-hover">
                         <input
@@ -589,7 +573,7 @@ function ReportRuns(props: {
         fallback={<p class="text-[11.5px] text-muted-foreground">No runs recorded yet.</p>}
       >
         <ul class="space-y-1.5">
-          <For each={runs.data!.runs}>
+          <For each={runs.data.runs}>
             {(run) => (
               <li class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11.5px]">
                 <span

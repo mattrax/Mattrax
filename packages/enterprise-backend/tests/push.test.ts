@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { makeApplePush } from "../src/Device/push.ts";
@@ -197,7 +198,7 @@ describe("makeApplePush outbound backstop", () => {
       db: db as never,
       // SAFETY: the core schema and the backend's generated schema are distinct
       // nominal objects over the same tables.
-      schema: schema as never,
+      schema,
       apns: makeApns(push),
       authSecret,
       pushTimeoutMs,

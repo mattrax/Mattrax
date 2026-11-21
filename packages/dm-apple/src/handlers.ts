@@ -1,6 +1,7 @@
 import { Effect, Layer, Schema } from "effect";
-import { HttpApiBuilder } from "effect/http-api";
-import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/http";
+import type { HttpApiBuilder } from "effect/http-api";
+import type { HttpServerRequest } from "effect/http";
+import { HttpServerResponse, HttpRouter } from "effect/http";
 import { AppleMdmService, appleCheckinScope } from "./service.js";
 import { MDM_ASSET_CACHE_CONTROL, MDM_PROFILE_CACHE_CONTROL } from "./cache.js";
 import { parsePlist, serializePlist, PlistValue } from "@mattrax/plist";
@@ -18,8 +19,8 @@ import {
   ReturnToServicePlist,
   resolveCheckinChannel,
 } from "./schema.js";
-import { appleMdmApi } from "./domain.js";
-import { CheckinScope } from "@mattrax/management-backend";
+import type { appleMdmApi } from "./domain.js";
+import type { CheckinScope } from "@mattrax/management-backend";
 
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
@@ -38,7 +39,7 @@ function plistString(value: PlistValue, key: string): string | undefined {
 }
 
 const decodeBase64 = (value: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
   const binary = atob(padded);
 
@@ -117,9 +118,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
   // The verified signature is authoritative when trust is wired; the forwarded
   // header is the fallback. Both are captured so the failure recorder can name
   // the identity certificate even when the payload never parsed.
-  let identityFingerprint = headerString(
-    request.headers["x-device-identity-certificate-sha256"],
-  );
+  let identityFingerprint = headerString(request.headers["x-device-identity-certificate-sha256"]);
 
   let identitySerial = identityCertificateSerial;
 
@@ -340,9 +339,9 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           case "GetBootstrapToken": {
             fail("bootstrap_token", "invalid_bootstrap_token");
 
-            const bootstrap = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(
-              plist,
-            ).pipe(Effect.mapError((err) => new Error(String(err))));
+            const bootstrap = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(plist).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
 
             if (channel?.kind === "user") return HttpServerResponse.empty({ status: 400 });
 
@@ -496,8 +495,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         onSuccess: (value) => Effect.succeed(value),
         onFailure: (err) =>
           Effect.gen(function* () {
-            if (err instanceof DeviceUnenrolled)
-              return HttpServerResponse.empty({ status: 410 });
+            if (err instanceof DeviceUnenrolled) return HttpServerResponse.empty({ status: 410 });
 
             // A rejected check-in is a security event: record which device,
             // which protocol step and why. The write is best effort and never

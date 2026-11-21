@@ -13,8 +13,7 @@ import type { AdmxCatalogueEntry, AdmxCatalogueIndex, AdmxCatalogueMatch } from 
  * administrative-template collection just to import one file.
  */
 
-const ADMX_OMA_URI =
-  /^\.\/(Device|User)\/Vendor\/MSFT\/Policy\/Config\/([^/]+)\/([^/]+)$/i;
+const ADMX_OMA_URI = /^\.\/(Device|User)\/Vendor\/MSFT\/Policy\/Config\/([^/]+)\/([^/]+)$/i;
 
 /** Bumped if the generated lookup shape changes incompatibly. */
 export const ADMX_CATALOGUE_INDEX_VERSION = 1;
@@ -53,7 +52,7 @@ export const buildAdmxCatalogueIndex = (
 
       if (!match) continue;
 
-      const area = match[2]!;
+      const area = match[2];
 
       if (!/^ADMX_/i.test(area) && collection.group !== "Administrative Templates") continue;
 
@@ -64,9 +63,9 @@ export const buildAdmxCatalogueIndex = (
 
       const entry: AdmxCatalogueEntry = {
         area,
-        scope: match[1]!.toLowerCase() === "user" ? "user" : "device",
+        scope: match[1].toLowerCase() === "user" ? "user" : "device",
         collectionId: collection.id,
-        policyName: match[3]!,
+        policyName: match[3],
       };
 
       const key = entry.policyName.toLowerCase();
@@ -105,7 +104,7 @@ const hintsFor = (policy: {
 }) => {
   const hints = new Set<string>();
   const namespace = policy.namespace?.split(".").filter(Boolean).pop();
-  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalize = (value: string) => value.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
 
   if (namespace) hints.add(normalize(namespace));
 
@@ -158,17 +157,20 @@ export const matchAdmxCataloguePolicy = (
       reason: `The catalogue exposes this policy as ${candidates.map((entry) => entry.scope).join("/")} scope, but the template is ${scope} scope.`,
     };
 
-  if (scoped.length === 1) return { status: "matched", entry: scoped[0]! };
+  if (scoped.length === 1) return { status: "matched", entry: scoped[0] };
 
   const hints = hintsFor(policy);
 
   const preferred = scoped.filter((entry) => {
-    const area = entry.area.toLowerCase().replace(/^admx_/, "").replace(/[^a-z0-9]/g, "");
+    const area = entry.area
+      .toLowerCase()
+      .replace(/^admx_/, "")
+      .replaceAll(/[^a-z0-9]/g, "");
 
     return [...hints].some((hint) => hint !== "" && (area === hint || area.includes(hint)));
   });
 
-  if (preferred.length === 1) return { status: "matched", entry: preferred[0]! };
+  if (preferred.length === 1) return { status: "matched", entry: preferred[0] };
 
   return {
     status: "unmatched",

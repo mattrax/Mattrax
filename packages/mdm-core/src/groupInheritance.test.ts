@@ -3,8 +3,8 @@ import {
   GROUP_NESTING_MAX_DEPTH,
   ancestorGroupIds,
   groupHierarchyProblem,
-  type GroupHierarchyEdge,
 } from "./groupInheritance.ts";
+import type { GroupHierarchyEdge } from "./groupInheritance.ts";
 
 const edge = (parentId: string, childId: string): GroupHierarchyEdge => ({ parentId, childId });
 
@@ -49,9 +49,9 @@ describe("groupHierarchyProblem", () => {
 
     // The existing chain already has the maximum number of groups; adding a
     // child below the deepest group would make it one too many.
-    expect(
-      groupHierarchyProblem(edges, `g${GROUP_NESTING_MAX_DEPTH - 1}`, "extra"),
-    ).toContain("levels deep");
+    expect(groupHierarchyProblem(edges, `g${GROUP_NESTING_MAX_DEPTH - 1}`, "extra")).toContain(
+      "levels deep",
+    );
   });
 
   it("allows a chain exactly at the cap", () => {
@@ -61,7 +61,11 @@ describe("groupHierarchyProblem", () => {
       edges.push(edge(`g${index}`, `g${index + 1}`));
 
     expect(
-      groupHierarchyProblem(edges, `g${GROUP_NESTING_MAX_DEPTH - 2}`, `g${GROUP_NESTING_MAX_DEPTH - 1}`),
+      groupHierarchyProblem(
+        edges,
+        `g${GROUP_NESTING_MAX_DEPTH - 2}`,
+        `g${GROUP_NESTING_MAX_DEPTH - 1}`,
+      ),
     ).toBeNull();
   });
 });

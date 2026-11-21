@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  compareVersions,
-  installerSkipReason,
-  selectInstaller,
-} from "@mattrax/enterprise-domain";
+import { compareVersions, installerSkipReason, selectInstaller } from "@mattrax/enterprise-domain";
 
 const installer = (overrides: {
   id: string;

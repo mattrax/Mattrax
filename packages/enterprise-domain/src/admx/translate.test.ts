@@ -7,8 +7,8 @@ import {
   admxInstallOmaUri,
   admxVendorPolicyOmaUri,
   translateAdmxPolicy,
-  type AdmxPolicySpec,
 } from "./index.js";
+import type { AdmxPolicySpec } from "./index.js";
 
 const spec: AdmxPolicySpec = {
   elements: [

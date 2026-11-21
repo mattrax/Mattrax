@@ -163,7 +163,7 @@ describe("Windows MDM handlers", () => {
     )?.[1];
 
     const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
+      Uint8Array.from(atob(encoded!.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
     );
 
     expect(provisioning).toContain(`${config.origin}/mdm/windows/management?tenant=mttxw1.abc`);
@@ -202,7 +202,7 @@ describe("Windows MDM handlers", () => {
     expect(encoded).toBeTruthy();
 
     const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
+      Uint8Array.from(atob(encoded!.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
     );
 
     expect(provisioning).toContain("wap-provisioningdoc");

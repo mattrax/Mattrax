@@ -7,13 +7,17 @@ import {
   superadminSource,
 } from "./superadmin.js";
 
-const allowlist = new Set(parseSuperadminEmails("Ops@Example.com, , owner@example.com,ops@example.com"));
+const allowlist = new Set(
+  parseSuperadminEmails("Ops@Example.com, , owner@example.com,ops@example.com"),
+);
 
-const account = (overrides: {
-  email?: string;
-  emailVerified?: boolean;
-  superadmin?: boolean;
-} = {}) => ({
+const account = (
+  overrides: {
+    email?: string;
+    emailVerified?: boolean;
+    superadmin?: boolean;
+  } = {},
+) => ({
   email: overrides.email ?? "someone@example.com",
   emailVerified: overrides.emailVerified ?? true,
   superadmin: overrides.superadmin ?? false,
@@ -21,10 +25,9 @@ const account = (overrides: {
 
 describe("MATTRAX_SUPERADMINS parsing", () => {
   it("trims, lowercases, drops blanks and de-duplicates", () => {
-    expect(parseSuperadminEmails(" Ops@Example.com ,, owner@example.com , OPS@example.com ")).toEqual([
-      "ops@example.com",
-      "owner@example.com",
-    ]);
+    expect(
+      parseSuperadminEmails(" Ops@Example.com ,, owner@example.com , OPS@example.com "),
+    ).toEqual(["ops@example.com", "owner@example.com"]);
   });
 
   it("treats absent and blank configuration as empty", () => {

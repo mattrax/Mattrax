@@ -1,4 +1,4 @@
-import { type RoutePreloadFuncArgs } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { PolicyConfigurationEditor } from "~/components/mdm/editor";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";

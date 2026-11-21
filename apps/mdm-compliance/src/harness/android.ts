@@ -5,18 +5,17 @@ import {
   base64UrlEncode,
   clearJwksCache,
   verifyPubSubOidcToken,
-  type AndroidManagementService,
-  type CreateEnterpriseInput,
-  type PubSubOidcClaims,
-  type PubSubOidcVerifierConfig,
 } from "@mattrax/dm-android";
-import { Db, schema, type EnterpriseDb } from "@mattrax/enterprise-core";
-import {
-  createAndroidSignup,
-  handleAndroidPubSub,
-  type AndroidDeliveryConfig,
-  type AndroidPubSubResult,
-} from "@mattrax/enterprise-backend";
+import type {
+  AndroidManagementService,
+  CreateEnterpriseInput,
+  PubSubOidcClaims,
+  PubSubOidcVerifierConfig,
+} from "@mattrax/dm-android";
+import { Db, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { createAndroidSignup, handleAndroidPubSub } from "@mattrax/enterprise-backend";
+import type { AndroidDeliveryConfig, AndroidPubSubResult } from "@mattrax/enterprise-backend";
 import { androidRoutes } from "@mattrax/enterprise-api";
 
 type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;
@@ -95,7 +94,7 @@ class FakeInsert implements Iterable<Effect.Effect<Row[]>> {
   values(value: Row | Row[]): this {
     this.rows.push(...(Array.isArray(value) ? value : [value]));
 
-    for (const row of this.rows) this.store[this.table]!.push({ ...row });
+    for (const row of this.rows) this.store[this.table].push({ ...row });
 
     return this;
   }
@@ -125,7 +124,7 @@ class FakeUpdate implements Iterable<Effect.Effect<Row[]>> {
     return this;
   }
   where(): this {
-    for (const row of this.store[this.table]!) Object.assign(row, this.patch);
+    for (const row of this.store[this.table]) Object.assign(row, this.patch);
 
     return this;
   }
@@ -191,9 +190,9 @@ export const createFakeDb = (seed: Record<string, Row[]> = {}): FakeDb => {
 
     query[key] = {
       findFirst: ({ where }: { where?: Schema.JsonObject } = {}) =>
-        Effect.succeed(store[table]!.find((row) => matches(row, where))),
+        Effect.succeed(store[table].find((row) => matches(row, where))),
       findMany: ({ where }: { where?: Schema.JsonObject } = {}) =>
-        Effect.succeed(store[table]!.filter((row) => matches(row, where))),
+        Effect.succeed(store[table].filter((row) => matches(row, where))),
     };
   }
 

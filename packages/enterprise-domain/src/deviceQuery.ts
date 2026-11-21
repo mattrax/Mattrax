@@ -558,10 +558,12 @@ export const evaluateDeviceQuery = (
 
 /** The URL/search representation used by the device table. */
 const quoteValue = (value: string) =>
-  /[\s"]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+  /[\s"]/u.test(value) ? `"${value.replaceAll('"', String.raw`\"`)}"` : value;
 
 const unquoteValue = (value: string) =>
-  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
+  value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1).replaceAll(String.raw`\"`, '"')
+    : value;
 
 const operatorText = (condition: DeviceCondition): string => {
   const op = condition.op;
@@ -761,7 +763,7 @@ const splitAnd = (text: string): string[] => {
   let quoted = false;
 
   for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
+    const character = text[index];
 
     if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
 
@@ -796,7 +798,7 @@ export const parseDeviceQueryText = (text: string | null | undefined): DeviceQue
     );
 
     if (!match) continue;
-    const condition = parseOperator(match[1]!, match[2]!, unquoteValue(match[3]!.trim()));
+    const condition = parseOperator(match[1], match[2], unquoteValue(match[3].trim()));
 
     if (condition) conditions.push(condition);
   }

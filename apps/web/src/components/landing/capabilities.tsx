@@ -58,11 +58,7 @@ function clockTime(): string {
 
 export function Capabilities() {
   return (
-    <section
-      id="capabilities"
-      class="lx-section"
-      aria-labelledby="capabilities-title"
-    >
+    <section id="capabilities" class="lx-section" aria-labelledby="capabilities-title">
       <div class="lx-shell">
         <Eyebrow>Capabilities</Eyebrow>
         <h2 id="capabilities-title" class="lx-h2">

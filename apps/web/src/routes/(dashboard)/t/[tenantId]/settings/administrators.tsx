@@ -1,14 +1,17 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { PERMISSION_GROUPS, BULK_MEMBER_LIMIT, type Permission } from "@mattrax/enterprise-domain/client";
+import { PERMISSION_GROUPS, BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
+import type { Permission } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError, formatDate, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { errorMessage } from "~/lib/errors";
-import { bulkFailureReason, bulkReport, runBulkBatches, type BulkFailure, rolePatch } from "~/lib/bulk-members";
+import { bulkFailureReason, bulkReport, runBulkBatches, rolePatch } from "~/lib/bulk-members";
+import type { BulkFailure } from "~/lib/bulk-members";
 import { Button } from "~/components/ui/button";
-import { FilterBar, type FilterField } from "@mattrax/ui";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterField } from "@mattrax/ui";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -22,15 +25,13 @@ import { Input } from "~/components/ui/input";
 import { UsersRound } from "~/components/ui/icons";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { authClient } from "~/lib/auth";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type RequestTenantOwnershipTransferResponse,
-  type TenantAccount,
-  type TenantInvitation,
-  type TenantOwnershipTransfer,
-  type TenantRole,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  RequestTenantOwnershipTransferResponse,
+  TenantAccount,
+  TenantInvitation,
+  TenantOwnershipTransfer,
+  TenantRole,
 } from "~/lib/enterprise";
 import { ReadOnlyNotice, useTenantPermissions } from "~/lib/permissions";
 import {
@@ -661,15 +662,15 @@ export default function AdministratorsSettingsPage() {
   );
 
   const selectedAccounts = createMemo(() =>
-    (accounts.data?.accounts ?? []).filter((account) => selectedAccountIds().has(account.accountId)),
+    (accounts.data?.accounts ?? []).filter((account) =>
+      selectedAccountIds().has(account.accountId),
+    ),
   );
 
   const allSelectableSelected = () =>
-    selectableAccounts().length > 0 &&
-    selectedAccounts().length === selectableAccounts().length;
+    selectableAccounts().length > 0 && selectedAccounts().length === selectableAccounts().length;
 
-  const someSelectableSelected = () =>
-    selectedAccounts().length > 0 && !allSelectableSelected();
+  const someSelectableSelected = () => selectedAccounts().length > 0 && !allSelectableSelected();
 
   const toggleAccount = (accountId: string, selected: boolean) =>
     setSelectedAccountIds((current) => {
@@ -743,9 +744,7 @@ export default function AdministratorsSettingsPage() {
       );
     },
     onSuccess: (result) => {
-      const names = new Map(
-        selectedAccounts().map((account) => [account.accountId, account.name]),
-      );
+      const names = new Map(selectedAccounts().map((account) => [account.accountId, account.name]));
 
       const failures: BulkFailure[] = result.failed.map((row) => ({
         id: row.id,

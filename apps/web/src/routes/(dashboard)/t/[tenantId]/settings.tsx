@@ -1,5 +1,6 @@
 import { useLocation, useParams } from "@solidjs/router";
-import { createEffect, For, type ParentProps } from "solid-js";
+import { createEffect, For } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { PageHeader } from "~/components/mdm/common";
 import { settingsTabPermission, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
@@ -50,7 +51,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
   const section = () => {
     const id = active();
 
-    return tabs.find((tab) => tab.id === id) ?? tabs[0]!;
+    return tabs.find((tab) => tab.id === id) ?? tabs[0];
   };
 
   let tabNav: HTMLElement | undefined;

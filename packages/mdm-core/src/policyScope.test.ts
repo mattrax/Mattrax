@@ -1,17 +1,14 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   derivePolicyPlatformSupport,
   MAX_SCOPE_DEVICES,
   resolveGroupScope,
   resolvePolicyScope,
-  type PolicyScopeResolutionInput,
 } from "./policyScope.ts";
-import {
-  resolveEffectivePolicy,
-  type PolicyResolutionConfiguration,
-  type PolicyResolutionPolicy,
-} from "./policyResolution.ts";
+import type { PolicyScopeResolutionInput } from "./policyScope.ts";
+import { resolveEffectivePolicy } from "./policyResolution.ts";
+import type { PolicyResolutionConfiguration, PolicyResolutionPolicy } from "./policyResolution.ts";
 
 const policy = (
   id: string,
@@ -122,7 +119,7 @@ describe("resolvePolicyScope", () => {
       reason: "device-exclude",
       kinds: [],
     });
-    expect(scope.devices[0]!.exclusions[0]).toMatchObject({
+    expect(scope.devices[0].exclusions[0]).toMatchObject({
       reason: "device-exclude",
       effective: true,
     });
@@ -154,7 +151,7 @@ describe("resolvePolicyScope", () => {
       status: "excluded",
       reason: "group-exclude",
     });
-    expect(scope.devices[0]!.exclusions[0]).toMatchObject({
+    expect(scope.devices[0].exclusions[0]).toMatchObject({
       groupName: "Contractors",
       effective: true,
     });
@@ -505,7 +502,7 @@ describe("resolveGroupScope", () => {
     );
 
     expect(scope.policies[0]).toMatchObject({ policyId: "policy-a", mode: "exclude" });
-    expect(scope.policies[0]!.devices[0]).toMatchObject({ status: "excluded" });
+    expect(scope.policies[0].devices[0]).toMatchObject({ status: "excluded" });
   });
 
   it("keeps a group's policies visible when the group has no members", async () => {

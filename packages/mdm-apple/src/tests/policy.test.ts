@@ -14,9 +14,8 @@ import {
   splitConfigurationDeclarationIdentifier,
   validateConfiguration,
   windowsPolicyNodes,
-  type DeclarationContext,
-  type PolicyConfigurationRow,
 } from "@mattrax/mdm-core";
+import type { DeclarationContext, PolicyConfigurationRow } from "@mattrax/mdm-core";
 
 const context: DeclarationContext = {
   origin: "https://mdm.example.com",
@@ -169,7 +168,7 @@ describe("enterprise policy compiler", () => {
       context.authSecret,
       token,
       { policyId: "policy-1", kind: "mttx.apple.certificate.root" },
-      context.now!,
+      context.now,
     );
 
     await expect(expiry).resolves.not.toBeNull();

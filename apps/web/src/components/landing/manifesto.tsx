@@ -37,10 +37,7 @@ export function Manifesto() {
                 <For each={qualifierWords}>
                   {(word, index) => (
                     <>
-                      <span
-                        class="lx-w"
-                        style={`--i:${Math.min(claimWords.length + index(), 8)}`}
-                      >
+                      <span class="lx-w" style={`--i:${Math.min(claimWords.length + index(), 8)}`}>
                         {word}
                       </span>{" "}
                     </>

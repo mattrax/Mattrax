@@ -67,12 +67,12 @@ test.describe("authenticator MFA", () => {
     await expect(page).toHaveURL(/\/login/);
     await signIn(page, email);
     await page.getByRole("button", { name: /recovery code/i }).click();
-    await page.locator("#mfa-code").fill(recoveryCodes[0]!);
+    await page.locator("#mfa-code").fill(recoveryCodes[0]);
     await page.getByRole("button", { name: /^continue$/i }).click();
     await page.waitForTimeout(600);
 
     if (page.url().includes("/login")) {
-      await page.locator("#mfa-code").fill(recoveryCodes[1]!);
+      await page.locator("#mfa-code").fill(recoveryCodes[1]);
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
 

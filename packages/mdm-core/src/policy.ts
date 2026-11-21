@@ -8,9 +8,10 @@ import {
   signAppleAssetToken,
   signAppleProfileToken,
   verifyAppleAssetToken,
-  type VerifiedAppleAssetToken,
 } from "@mattrax/dm-apple";
-import { isPlistObject, plistText, type PlistObject } from "./internal/plistValue.js";
+import type { VerifiedAppleAssetToken } from "@mattrax/dm-apple";
+import { isPlistObject, plistText } from "./internal/plistValue.js";
+import type { PlistObject } from "./internal/plistValue.js";
 
 /**
  * Apple policy compiler for the enterprise management backend.
@@ -122,17 +123,17 @@ export const parseConfigurationKind = (kind: string): ConfigurationKind => {
   if (!match) return { type: "unknown" };
   const [, group, id] = match;
 
-  if (!IDENTIFIER_PATTERN.test(id!)) return { type: "unknown" };
+  if (!IDENTIFIER_PATTERN.test(id)) return { type: "unknown" };
 
   switch (group) {
     case "custom":
-      return { type: "custom", id: id! };
+      return { type: "custom", id };
     case "certificate":
-      return { type: "certificate", id: id! };
+      return { type: "certificate", id };
     case "declaration":
-      return { type: "declaration", id: id! };
+      return { type: "declaration", id };
     case "application":
-      return { type: "application", id: id! };
+      return { type: "application", id };
     default:
       return { type: "unknown" };
   }
@@ -370,7 +371,7 @@ const isJsonObject = Schema.is(Schema.JsonObject);
 const JsonArray = Schema.Array(Schema.Json);
 
 const decodeBase64 = (value: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
   const binary = atob(cleaned);
 
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -1077,8 +1078,8 @@ const stableUuid = async (value: string): Promise<string> => {
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
   ).slice(0, 16);
 
-  digest[6] = (digest[6]! & 0x0f) | 0x50;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  digest[6] = (digest[6] & 0x0f) | 0x50;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
   const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;

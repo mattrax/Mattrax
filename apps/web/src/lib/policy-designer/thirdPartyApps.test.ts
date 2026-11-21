@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { collectionProperties } from "./catalog";
-import { buildAndroidPolicy, buildAppleProfile, buildWindowsNodes, type Draft } from "./build";
+import { buildAndroidPolicy, buildAppleProfile, buildWindowsNodes } from "./build";
+import type { Draft } from "./build";
 import {
   ThirdPartyCatalog,
   thirdPartyAppCollection,

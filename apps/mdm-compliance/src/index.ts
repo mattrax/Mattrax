@@ -3,13 +3,8 @@ import { Command, Flag } from "effect/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { allChecks } from "./checks/index.ts";
 import { SUITE_VERSION, filterChecks, formatReport, runChecks } from "./runner.ts";
-import {
-  PLATFORMS,
-  isCheckCategory,
-  isPlatform,
-  type CheckCategory,
-  type Platform,
-} from "./types.ts";
+import { PLATFORMS, isCheckCategory, isPlatform } from "./types.ts";
+import type { CheckCategory, Platform } from "./types.ts";
 
 const write = (stream: "stdout" | "stderr", text: string) =>
   Effect.sync(() => {

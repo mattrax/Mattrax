@@ -42,9 +42,9 @@ export function OsComplianceSummary(props: { tenantId: string }) {
                 when={configured()}
                 fallback="No minimum version is configured yet. Set one to see who is behind."
               >
-                {totals()!.compliant} {plural(totals()!.compliant, "device")} compliant
+                {totals().compliant} {plural(totals().compliant, "device")} compliant
                 {attention() > 0 ? ` · ${attention()} need attention` : ""}
-                {totals()!.unknown > 0 ? ` · ${totals()!.unknown} unknown` : ""}
+                {totals().unknown > 0 ? ` · ${totals().unknown} unknown` : ""}
               </Show>
             </p>
           </div>
@@ -60,13 +60,13 @@ export function OsComplianceSummary(props: { tenantId: string }) {
 
         <div class="mt-3 grid grid-cols-3 gap-2">
           {[
-            { label: "Compliant", value: totals()!.compliant, tone: "text-success" },
+            { label: "Compliant", value: totals().compliant, tone: "text-success" },
             {
               label: "Below minimum",
-              value: totals()!.belowMinimum,
-              tone: totals()!.belowMinimum > 0 ? "text-warning" : undefined,
+              value: totals().belowMinimum,
+              tone: totals().belowMinimum > 0 ? "text-warning" : undefined,
             },
-            { label: "Unknown", value: totals()!.unknown },
+            { label: "Unknown", value: totals().unknown },
           ].map((item) => (
             <div class="rounded-lg border border-border/70 px-2.5 py-1.5">
               <p class="text-[10px] font-medium uppercase tracking-[0.04em] text-muted-foreground">

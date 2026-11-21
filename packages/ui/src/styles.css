@@ -12,10 +12,8 @@
 @custom-variant dark (&:is(.dark, .dark *));
 
 @theme inline {
-  --font-sans:
-    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:
-    "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -96,7 +94,7 @@
   --muted: #f1f1ed;
   --muted-foreground: #5f5f58;
   --subtle-foreground: #696961;
-  --accent: #ededE7;
+  --accent: #edede7;
   --accent-foreground: #1a1a18;
   --destructive: #b4382e;
   --destructive-foreground: #ffffff;
@@ -137,7 +135,7 @@
   --card-foreground: #ecece6;
   --popover: #1c1c1a;
   --popover-foreground: #ecece6;
-  --primary: #eeeeE8;
+  --primary: #eeeee8;
   --primary-foreground: #151514;
   --secondary: #222220;
   --secondary-foreground: #ecece6;
@@ -170,10 +168,8 @@
   --brand-muted: #241f3a;
 
   --shadow-card-value: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.02);
-  --shadow-popover-value:
-    0 16px 40px -16px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
-  --shadow-panel-value:
-    0 32px 80px -32px rgb(0 0 0 / 0.7), 0 12px 32px -16px rgb(0 0 0 / 0.5);
+  --shadow-popover-value: 0 16px 40px -16px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --shadow-panel-value: 0 32px 80px -32px rgb(0 0 0 / 0.7), 0 12px 32px -16px rgb(0 0 0 / 0.5);
 }
 
 @layer base {
@@ -303,8 +299,16 @@
 
 @utility hairline-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--border) 70%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--border) 70%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 56px 56px;
 }
 

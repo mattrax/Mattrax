@@ -1,6 +1,7 @@
 import { useLocation } from "@solidjs/router";
 import { raisedFailure } from "~/lib/errors";
-import { Errored, type ParentProps, Show } from "solid-js";
+import { Errored, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { BrandLogo } from "~/components/brand-logo";
 import { PageErrorFallback } from "~/components/error-boundary";

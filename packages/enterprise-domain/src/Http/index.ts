@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import { HttpApi } from "effect/http-api";
 import { HttpApiClient } from "effect/http-api";
 import type { HttpClient } from "effect/http";

@@ -60,7 +60,10 @@ const boundLabelValue = (value: string | number | boolean | undefined): string =
 };
 
 const escapeLabelValue = (value: string): string =>
-  value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll('"', '\\"');
+  value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("\n", String.raw`\n`)
+    .replaceAll('"', String.raw`\"`);
 
 const formatNumber = (value: number): string => {
   if (!Number.isFinite(value)) return "0";
@@ -225,8 +228,8 @@ export class Histogram extends Metric {
     // Non-cumulative counts per bucket; `renderSeries` accumulates them, so
     // one observation must only increment the first bucket it fits.
     for (let index = 0; index < this.bucketBounds.length; index++)
-      if (value <= this.bucketBounds[index]!) {
-        buckets[index]! += 1;
+      if (value <= this.bucketBounds[index]) {
+        buckets[index] += 1;
         break;
       }
 
@@ -252,7 +255,7 @@ export class Histogram extends Metric {
 
     for (let index = 0; index < this.bucketBounds.length; index++) {
       cumulative += series.buckets?.[index] ?? 0;
-      const bound = formatNumber(this.bucketBounds[index]!);
+      const bound = formatNumber(this.bucketBounds[index]);
 
       lines.push(
         `${this.name}_bucket${renderLabels(this.labelNames, series.labels, ["le", bound])} ${cumulative}`,

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  resolveEffectivePolicy,
-  type PolicyResolutionInput,
-} from "./policyResolution.ts";
+import { resolveEffectivePolicy } from "./policyResolution.ts";
+import type { PolicyResolutionInput } from "./policyResolution.ts";
 
 const updatedAt = "2026-01-01T00:00:00.000Z";
 

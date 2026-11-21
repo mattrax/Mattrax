@@ -102,6 +102,9 @@ export function NodePushTransport(defaults?: {
           return new Promise<void>((resolve, reject) => {
             let status = 0;
             let settled = false;
+            // Assigned once, after the callbacks that read it are defined, so
+            // it cannot be a \`const\` declaration.
+            // oxlint-disable-next-line prefer-const -- assigned after the closures that capture it.
             let timer: ReturnType<typeof setTimeout> | undefined;
 
             const timeoutError = () =>
@@ -112,11 +115,15 @@ export function NodePushTransport(defaults?: {
               // the socket (and any in-flight TLS handshake) is released.
               try {
                 client.close();
-              } catch {}
+              } catch {
+                // The socket may already be closed; destroy still releases it.
+              }
 
               try {
                 client.destroy();
-              } catch {}
+              } catch {
+                // Already destroyed by a concurrent failure path.
+              }
             };
 
             const fail = (cause: unknown) => {
@@ -184,8 +191,7 @@ export function MtlsPushTransport(options: {
 }): ApnsPushTransport {
   const timeoutMs = options.timeoutMs ?? OUTBOUND_TIMEOUTS.apns;
 
-  const fetch: typeof globalThis.fetch = (input, init) =>
-    options.fetch(new Request(input, init));
+  const fetch: typeof globalThis.fetch = (input, init) => options.fetch(new Request(input, init));
 
   return {
     name: "mtls",

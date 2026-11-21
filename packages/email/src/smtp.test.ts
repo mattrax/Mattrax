@@ -1,4 +1,5 @@
-import { createServer, type Server } from "node:net";
+import { createServer } from "node:net";
+import type { Server } from "node:net";
 import { describe, expect, it } from "vitest";
 import type { OutboundEmailMessage } from "./email.ts";
 import { buildMimeMessage, dotStuff, sendSmtpMail } from "./smtp.ts";
@@ -85,11 +86,12 @@ const startSmtpServer = async (options: SmtpServerOptions = {}): Promise<Running
     });
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
 
   const address = server.address();
 
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- address() returns a string only for pipe/net servers; this test always listens on TCP.
   if (address === null || typeof address === "string")
     throw new Error("expected the test server to listen on a TCP port");
 
@@ -97,7 +99,10 @@ const startSmtpServer = async (options: SmtpServerOptions = {}): Promise<Running
     server,
     port: address.port,
     captured,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
   };
 };
 
@@ -184,12 +189,8 @@ describe("mail relay MIME rendering", () => {
 
     expect(rendered).toContain('Content-Type: multipart/mixed; boundary="mattrax-');
     expect(rendered).toContain('Content-Type: multipart/alternative; boundary="mattrax-');
-    expect(rendered).toContain(
-      'Content-Disposition: attachment; filename="fleet-digest.csv"',
-    );
-    expect(rendered).toContain(
-      'Content-Type: text/csv; charset=utf-8; name="fleet-digest.csv"',
-    );
+    expect(rendered).toContain('Content-Disposition: attachment; filename="fleet-digest.csv"');
+    expect(rendered).toContain('Content-Type: text/csv; charset=utf-8; name="fleet-digest.csv"');
     expect(rendered).toContain(contentBase64);
   });
 
@@ -198,7 +199,7 @@ describe("mail relay MIME rendering", () => {
       ...message,
       attachments: [
         {
-          filename: 'report\r\nBcc: evil@example.com.csv',
+          filename: "report\r\nBcc: evil@example.com.csv",
           contentType: "text/csv",
           contentBase64: Buffer.from("x").toString("base64"),
         },

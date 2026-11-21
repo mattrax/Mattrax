@@ -1,7 +1,7 @@
 import { fetchApi } from "./api";
 import { getBindings } from "./bindings";
 import type { StartMiddleware } from "@solidjs/vite-plugin";
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
@@ -202,7 +202,7 @@ const middleware: StartMiddleware = async (event, next) => {
     (event.request.headers.get("accept") ?? "").includes("text/html") &&
     tenantSegment
   ) {
-    const key = tenantSegment[1]!;
+    const key = tenantSegment[1];
     const tenant = outcome.session?.me?.tenants.find((entry) => entry.id === key);
 
     if (tenant && tenant.slug && tenant.slug !== key)

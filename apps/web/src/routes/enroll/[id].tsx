@@ -1,5 +1,6 @@
 import { Meta, Title } from "@solidjs/meta";
-import { query, type RouteProps } from "@solidjs/router";
+import { query } from "@solidjs/router";
+import type { RouteProps } from "@solidjs/router";
 import { defineFileRoute } from "@solidjs/router/fs";
 import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain/client";
 import { Match as EffectMatch, Schema } from "effect";
@@ -12,19 +13,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Input } from "~/components/ui/input";
 import { PasswordInput } from "~/components/ui/password-input";
 import { Label } from "~/components/ui/label";
-import {
-  type AndroidEnrollment,
-  type EnrollmentResponse,
-  type PlatformEnrollment,
-  type WindowsEnrollment,
+import type {
+  AndroidEnrollment,
+  EnrollmentResponse,
+  PlatformEnrollment,
+  WindowsEnrollment,
 } from "~/lib/enterprise";
 import {
   ENROLLMENT_PLATFORMS,
   ENROLLMENT_PLATFORM_ATTRIBUTE,
   ENROLLMENT_PLATFORM_PAGE_ATTRIBUTE,
   resolveInitialEnrollmentPlatform,
-  type EnrollmentPlatform,
 } from "~/lib/enrollment-platform";
+import type { EnrollmentPlatform } from "~/lib/enrollment-platform";
 import { lookupPublicEnrollment, submitPublicEnrollmentAnswers } from "~/lib/enrollment.server";
 import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 

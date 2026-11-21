@@ -23,11 +23,7 @@ function TooltipTrigger(props: TooltipTriggerProps) {
 
   return (
     <TooltipTriggerPrimitive
-      render={
-        local.as === "span"
-          ? (partProps) => <span {...partProps} />
-          : undefined
-      }
+      render={local.as === "span" ? (partProps) => <span {...partProps} /> : undefined}
       {...others}
     />
   );

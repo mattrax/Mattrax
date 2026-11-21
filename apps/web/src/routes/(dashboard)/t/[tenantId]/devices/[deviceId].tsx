@@ -1,17 +1,11 @@
 import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
-import {
-  type InfiniteData,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/solid-query";
-import {
-  DeviceRow,
-  EffectivePolicyResponse,
-  type AttributeDefinitionRow,
-  type DeviceActivityResponse,
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import type { InfiniteData } from "@tanstack/solid-query";
+import { DeviceRow, EffectivePolicyResponse } from "@mattrax/enterprise-domain/client";
+import type {
+  AttributeDefinitionRow,
+  DeviceActivityResponse,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, Errored, For, Show } from "solid-js";
@@ -74,12 +68,8 @@ import {
   Settings as SettingsIcon,
   Smartphone,
 } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type DeviceApplication,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { DeviceApplication } from "~/lib/enterprise";
 import {
   appleUserBindingLabel,
   appleUserDisplayName,
@@ -96,11 +86,8 @@ import {
   isActiveCommandStatus,
   mergeActivityPages,
 } from "~/lib/device-activity";
-import {
-  policyDeliveryLabel,
-  policyDeliveryState,
-  type PolicyDeliveryState,
-} from "~/lib/device-scope";
+import { policyDeliveryLabel, policyDeliveryState } from "~/lib/device-scope";
+import type { PolicyDeliveryState } from "~/lib/device-scope";
 import {
   appleDeviceArtworkUrl,
   appleWarrantyUrl,
@@ -1425,7 +1412,7 @@ export default function DeviceDetailPage() {
 
     if (value == null) return [];
 
-    if (Array.isArray(value)) return value.map((entry) => String(entry));
+    if (Array.isArray(value)) return value.map(String);
 
     if (isString(value)) return [value];
 
@@ -2243,7 +2230,7 @@ export default function DeviceDetailPage() {
                           </MetaRow>
                           <MetaRow label="Last Autopilot sync">
                             {autopilot().lastSyncedAt
-                              ? formatDate(autopilot().lastSyncedAt!)
+                              ? formatDate(autopilot().lastSyncedAt)
                               : "Never"}
                           </MetaRow>
                         </dl>
@@ -2442,21 +2429,20 @@ export default function DeviceDetailPage() {
                         <div class="space-y-4">
                           <div class="space-y-2">
                             <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-                              Last seen {formatDeviceDate(health.data!.health.lastSeenAt)}
-                              <Show when={health.data!.health.level === "missing"}>
+                              Last seen {formatDeviceDate(health.data.health.lastSeenAt)}
+                              <Show when={health.data.health.level === "missing"}>
                                 <Chip tone="brand">MIA</Chip>
                               </Show>
                               <Show
                                 when={
-                                  health.data!.health.stale &&
-                                  health.data!.health.level !== "missing"
+                                  health.data.health.stale && health.data.health.level !== "missing"
                                 }
                               >
                                 <Chip tone="warning">Stale</Chip>
                               </Show>
                             </p>
                             <Show
-                              when={health.data!.health.reasons.length > 0}
+                              when={health.data.health.reasons.length > 0}
                               fallback={
                                 <p class="text-[12.5px] text-success">
                                   No compliance or inventory issues detected.
@@ -2464,7 +2450,7 @@ export default function DeviceDetailPage() {
                               }
                             >
                               <ul class="space-y-1.5">
-                                <For each={health.data!.health.reasons}>
+                                <For each={health.data.health.reasons}>
                                   {(reason) => (
                                     <li class="flex items-start gap-2 text-[12.5px]">
                                       <span
@@ -2622,24 +2608,24 @@ export default function DeviceDetailPage() {
                             </div>
                             <dl class="grid">
                               <MetaRow label="Last attempt">
-                                {relativeTime(health.data!.push.lastAttemptAt)}
+                                {relativeTime(health.data.push.lastAttemptAt)}
                               </MetaRow>
                               <MetaRow label="Last success">
-                                {relativeTime(health.data!.push.lastSuccessAt)}
+                                {relativeTime(health.data.push.lastSuccessAt)}
                               </MetaRow>
                               <MetaRow label="Consecutive failures">
-                                {health.data!.push.consecutiveFailures}
+                                {health.data.push.consecutiveFailures}
                               </MetaRow>
                               <MetaRow label="Push credentials">
-                                {health.data!.push.configured ? "Present" : "Missing"}
+                                {health.data.push.configured ? "Present" : "Missing"}
                               </MetaRow>
                             </dl>
-                            <Show when={health.data!.push.lastError}>
+                            <Show when={health.data.push.lastError}>
                               <p class="rounded-lg bg-destructive/[0.07] p-2 text-[11.5px] text-destructive">
-                                {health.data!.push.lastError}
+                                {health.data.push.lastError}
                               </p>
                             </Show>
-                            <Show when={health.data!.push.invalidToken}>
+                            <Show when={health.data.push.invalidToken}>
                               <p class="text-[11.5px] text-destructive">
                                 Apple rejected this device token. The device must re-enroll before
                                 it can receive pushes again.
@@ -2695,10 +2681,7 @@ export default function DeviceDetailPage() {
                         }
                       >
                         <Show
-                          when={
-                            (directory.data?.users ?? []).filter((user) => !user.disabled).length >
-                            0
-                          }
+                          when={(directory.data?.users ?? []).some((user) => !user.disabled)}
                           fallback={
                             <p class="text-[12.5px] text-muted-foreground">
                               No directory users. Sync Entra or SCIM first.
@@ -2763,7 +2746,7 @@ export default function DeviceDetailPage() {
                             <span class="label-caps">Apple user channels</span>
                             <Show when={appleUsers.data}>
                               <Badge variant="outline" class="shrink-0 text-[10px]">
-                                {appleUserEnrollmentLabel(appleUsers.data!.enrollmentMode)}
+                                {appleUserEnrollmentLabel(appleUsers.data.enrollmentMode)}
                               </Badge>
                             </Show>
                           </div>
@@ -2786,7 +2769,7 @@ export default function DeviceDetailPage() {
                             }
                           >
                             <Show
-                              when={appleUsers.data!.users.length > 0}
+                              when={appleUsers.data.users.length > 0}
                               fallback={
                                 <p class="text-[12.5px] text-muted-foreground">
                                   No user channels yet. A channel appears after the next user signs
@@ -2795,7 +2778,7 @@ export default function DeviceDetailPage() {
                               }
                             >
                               <div class="divide-y divide-border">
-                                <For each={appleUsers.data!.users}>
+                                <For each={appleUsers.data.users}>
                                   {(user) => (
                                     <div class="flex flex-wrap items-start gap-2 px-2.5 py-2">
                                       <div class="min-w-0 flex-1">

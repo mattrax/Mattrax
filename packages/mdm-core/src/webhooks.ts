@@ -1,6 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
-import { Db, schema as s } from "@mattrax/enterprise-core";
+import type { Db } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
 import {
   WEBHOOK_DELIVERY_HEADER,
   WEBHOOK_EVENT_HEADER,
@@ -11,9 +12,8 @@ import {
   parseWebhookSignatureHeader,
   webhookSignatureMessage,
   webhookUrlProblem,
-  type WebhookDeliveryStatus,
-  type WebhookEventType,
 } from "@mattrax/enterprise-domain";
+import type { WebhookDeliveryStatus, WebhookEventType } from "@mattrax/enterprise-domain";
 import { constantTimeEqual, hmacSha256Hex, openSecret } from "@mattrax/crypto";
 import { fetchWithTimeout } from "@mattrax/net";
 
@@ -279,11 +279,11 @@ const attemptDelivery = async (input: {
       error: ok ? null : `Endpoint responded with HTTP ${responseStatus}`,
       durationMs: Date.now() - startedAt,
     };
-  } catch (cause) {
+  } catch (error) {
     return {
       status: "failed",
       responseStatus: null,
-      error: errorText(cause),
+      error: errorText(error),
       durationMs: Date.now() - startedAt,
     };
   }
@@ -687,6 +687,7 @@ export const webhookEventForAuditAction = (action: string): WebhookEventType | n
     case "device.checked_out":
     // Administrative deletion is a removal from the tenant's fleet even
     // though no checkout was received.
+    // falls through
     case "device.deleted":
       return "device.unenrolled";
     case "device.command_failed":

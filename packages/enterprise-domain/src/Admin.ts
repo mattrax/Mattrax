@@ -35,7 +35,12 @@ export type NormalizedAdminAccountsQuery = {
   readonly offset: number;
 };
 
-const wholeNumber = (value: number | undefined, fallback: number, minimum: number, maximum: number) =>
+const wholeNumber = (
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) =>
   value === undefined || !Number.isInteger(value)
     ? fallback
     : Math.min(Math.max(value, minimum), maximum);

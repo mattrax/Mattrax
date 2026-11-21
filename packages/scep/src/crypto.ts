@@ -99,7 +99,7 @@ export const sha256 = (data: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError>
  */
 export const randomCertificateSerial = (): ArrayBuffer => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[0] = bytes[0]! & 0x7f;
+  bytes[0] = bytes[0] & 0x7f;
 
   // X.509 serials must be positive and non-zero.
   if (bytes.every((byte) => byte === 0)) bytes[bytes.length - 1] = 1;

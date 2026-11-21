@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams, useSearchParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import type { PolicyDeploymentDevice } from "@mattrax/enterprise-domain/client";
 import { useQuery } from "@tanstack/solid-query";
@@ -14,7 +15,8 @@ import {
   SkeletonRows,
 } from "~/components/mdm/common";
 import { PolicyProgressBar } from "~/components/mdm/policy-progress";
-import { MdmTable, type MdmColumn } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmColumn } from "~/components/mdm/table";
 import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";

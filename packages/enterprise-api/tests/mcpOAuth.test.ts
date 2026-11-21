@@ -434,10 +434,7 @@ describe("MCP OAuth authorization request", () => {
     });
 
     expect(tokenResponse.status).toBe(200);
-    expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual([
-      "devices.read",
-      "devices.write",
-    ]);
+    expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual(["devices.read", "devices.write"]);
   });
 
   it("rejects a cross-origin consent decision", async () => {

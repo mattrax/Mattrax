@@ -47,7 +47,4 @@ function SegmentedControlItemBox(props: SegmentedControlItemProps) {
   );
 }
 
-export {
-  SegmentedControl,
-  SegmentedControlItemBox as SegmentedControlItem,
-};
+export { SegmentedControl, SegmentedControlItemBox as SegmentedControlItem };

@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { scepRoutes } from "../routes.js";
 import { ScepService } from "../service.js";
-import { ScepRepository } from "../repository.js";
+import type { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certToPem } from "../pkcs7.js";
 import {

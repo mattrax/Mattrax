@@ -1,10 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import { parse as parseYaml } from "yaml";
-import {
-  PortablePolicy,
-  PortablePolicyDocument,
-  type PolicyRow,
-} from "@mattrax/enterprise-domain/client";
+import { PortablePolicy, PortablePolicyDocument } from "@mattrax/enterprise-domain/client";
+import type { PolicyRow } from "@mattrax/enterprise-domain/client";
 
 /**
  * Policy import: turn a portable policy document or a `.mobileconfig` into the
@@ -151,7 +148,7 @@ export const parsePolicyImportText = (
           `${source} contains ${document.policies.length} policies. Import one at a time, for example \`mattrax policies export --id <policy-id> --format json\`.`,
         );
 
-      return document.policies[0]!;
+      return document.policies[0];
     }
 
     const policy = decodePolicy(decoded);
@@ -252,7 +249,7 @@ export const normalizeMobileconfig = (input: {
   // A PEM-wrapped CMS signature is signed content the validator cannot read.
   if (looksLikePem(raw)) throw new Error(PEM_SIGNED_ERROR);
 
-  const content = raw.replace(base64Prefix, "").replace(/\s/g, "");
+  const content = raw.replace(base64Prefix, "").replaceAll(/\s/g, "");
 
   if (!base64Body.test(content) || content.length === 0)
     throw new Error("This file is not a .mobileconfig profile.");

@@ -8,9 +8,8 @@ import {
   normalizeMinimumVersion,
   osPolicyDeferralEndsAt,
   windowsOsUpdatePolicyNodes,
-  type MacOsUpdateCatalog,
-  type OsPolicyRule,
 } from "./index.js";
+import type { MacOsUpdateCatalog, OsPolicyRule } from "./index.js";
 
 const now = new Date("2026-11-20T12:00:00.000Z");
 

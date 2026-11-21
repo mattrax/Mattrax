@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import {
   PolicyMergeError,
   androidPolicyHash,
@@ -358,7 +359,7 @@ export const androidChecks: ReadonlyArray<Check> = [
 
       assertOkResult(result, "ENROLLMENT");
       assert.ok(
-        harness.db.store.device!.some(
+        harness.db.store.device.some(
           (row) => row.dmIdentifier === `${enterpriseName}/devices/device-2`,
         ),
       );
@@ -396,7 +397,7 @@ export const androidChecks: ReadonlyArray<Check> = [
       assertOkResult(first, "ENROLLMENT");
       assertResult(second, "duplicate", "ENROLLMENT");
       assert.equal(
-        harness.db.store.device!.filter(
+        harness.db.store.device.filter(
           (row) => row.dmIdentifier === `${enterpriseName}/devices/device-3`,
         ).length,
         1,
@@ -438,7 +439,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     "A suspended tenant must not have devices or policies mutated by a stray notification.",
     async () => {
       const harness = await createAndroidHarness();
-      harness.db.store.android_enterprise![0]!.status = "disabled";
+      harness.db.store.android_enterprise[0].status = "disabled";
       const token = await harness.signToken();
 
       const body = harness.pushBody(
@@ -505,7 +506,7 @@ export const androidChecks: ReadonlyArray<Check> = [
       harness.db.store.android_enterprise = [];
       await harness.createSignup({ id: "org-compliance", name: "Compliance Test" });
       assert.equal(harness.calls.signupUrls.length, 1);
-      const callback = new URL(harness.calls.signupUrls[0]!.callbackUrl);
+      const callback = new URL(harness.calls.signupUrls[0].callbackUrl);
       const state = callback.searchParams.get("state");
       assert.ok(state);
       const completion = new URL(callback.toString());
@@ -518,7 +519,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         /\/t\/org-compliance\/settings\/management\?android=connected/,
       );
       assert.equal(harness.calls.enterprises.length, 1);
-      const enterprise = harness.db.store.android_enterprise![0]!;
+      const enterprise = harness.db.store.android_enterprise[0];
       assert.equal(enterprise.status, "active");
       assert.equal(enterprise.enterpriseName, enterpriseName);
       const replay = await harness.routeHandler(new Request(completion));
@@ -599,7 +600,7 @@ export const androidChecks: ReadonlyArray<Check> = [
         }),
         "invalid_payload",
       );
-      assert.equal(harness.db.store.device!.length, 0);
+      assert.equal(harness.db.store.device.length, 0);
     },
   ),
   check(
@@ -609,7 +610,7 @@ export const androidChecks: ReadonlyArray<Check> = [
     "A terminal DELETED state must not leave the device eligible for policy or commands.",
     async () => {
       const harness = await createAndroidHarness();
-      harness.db.store.device!.push({
+      harness.db.store.device.push({
         id: "device-1",
         organizationId: "org-compliance",
         proto: "android",
@@ -636,8 +637,8 @@ export const androidChecks: ReadonlyArray<Check> = [
       });
 
       assertOkResult(result, "ENROLLMENT");
-      assert.equal(harness.db.store.device![0]?.status, "unenrolled");
-      assert.equal(harness.db.store.android_device![0]?.state, "DELETED");
+      assert.equal(harness.db.store.device[0]?.status, "unenrolled");
+      assert.equal(harness.db.store.android_device[0]?.state, "DELETED");
     },
     true,
   ),

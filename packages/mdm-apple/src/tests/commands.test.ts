@@ -23,8 +23,8 @@ import {
   shouldRetryInstall,
   shouldRetryInstallBundle,
   supersededRequestTypes,
-  type CommandRow,
 } from "@mattrax/mdm-core";
+import type { CommandRow } from "@mattrax/mdm-core";
 import { makeDb, tableName, stringValue } from "./fake-db.js";
 
 const origin = "https://policies.test";
@@ -391,7 +391,7 @@ describe("command reconciliation", () => {
           id: "install",
           requestType: "InstallApplication",
           status: "sent",
-          updatedAt: new Date(device.applicationsUpdatedAt!.getTime() - 60 * 1000),
+          updatedAt: new Date(device.applicationsUpdatedAt.getTime() - 60 * 1000),
           targetBundleIds: ["com.example.missing"],
         }),
       ],
@@ -724,10 +724,10 @@ describe("Apple check-in delivery loop", () => {
 
     expect(manifest._tag).not.toBe("Command");
 
-    const [stale] = db.store[tableName(schema.deviceCommand)]!;
+    const [stale] = db.store[tableName(schema.deviceCommand)];
 
-    expect(stringValue(stale!.status)).toBe("expired");
-    expect(stringValue(stale!.resultStatus)).toBe("Reconciled");
+    expect(stringValue(stale.status)).toBe("expired");
+    expect(stringValue(stale.resultStatus)).toBe("Reconciled");
   });
 
   it("still delivers a command inside its budget", async () => {
@@ -752,9 +752,9 @@ describe("Apple check-in delivery loop", () => {
       requestType: "DeviceLock",
     });
 
-    const [delivered] = db.store[tableName(schema.deviceCommand)]!;
+    const [delivered] = db.store[tableName(schema.deviceCommand)];
 
-    expect(stringValue(delivered!.status)).toBe("sent");
+    expect(stringValue(delivered.status)).toBe("sent");
   });
 });
 

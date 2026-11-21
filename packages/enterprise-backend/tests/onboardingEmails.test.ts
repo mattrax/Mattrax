@@ -177,8 +177,8 @@ describe("welcome email", () => {
       replyTo: DEFAULT_ONBOARDING_REPLY_TO,
       subject: "Welcome to Mattrax",
     });
-    expect(transport.sent[0]!.text).toContain("Hey Ada,");
-    expect(transport.sent[0]!.text).toContain(`${origin}/dashboard`);
+    expect(transport.sent[0].text).toContain("Hey Ada,");
+    expect(transport.sent[0].text).toContain(`${origin}/dashboard`);
     expect(db.store.account[0]!.welcomeEmailSentAt).toEqual(now);
 
     const second = await runEffect(
@@ -296,8 +296,8 @@ describe("welcome email", () => {
     );
 
     expect(outcome).toBe("sent");
-    expect(transport.sent[0]!.replyTo).toBe(DEFAULT_ONBOARDING_REPLY_TO);
-    expect(transport.sent[0]!.text).not.toContain("not-an-address");
+    expect(transport.sent[0].replyTo).toBe(DEFAULT_ONBOARDING_REPLY_TO);
+    expect(transport.sent[0].text).not.toContain("not-an-address");
   });
 
   it("sweeps recent verified manual accounts with no marker", async () => {
@@ -349,9 +349,9 @@ describe("one-week onboarding follow-up", () => {
       from: ONBOARDING_EMAIL_FROM,
       replyTo: DEFAULT_ONBOARDING_REPLY_TO,
     });
-    expect(transport.sent[0]!.text).toContain("It's been 8 days");
-    expect(transport.sent[0]!.text).toContain("Acme Devices");
-    expect(transport.sent[0]!.text).toContain(`${origin}/t/tenant-1/enrollment`);
+    expect(transport.sent[0].text).toContain("It's been 8 days");
+    expect(transport.sent[0].text).toContain("Acme Devices");
+    expect(transport.sent[0].text).toContain(`${origin}/t/tenant-1/enrollment`);
     expect(db.store.organization[0]!.onboardingFollowUpSentAt).toEqual(now);
   });
 
@@ -539,7 +539,7 @@ describe("one-week onboarding follow-up", () => {
 
     expect(result).toMatchObject({ candidates: 2, sent: 1, noRecipients: 1 });
     expect(transport.sent).toHaveLength(1);
-    expect(transport.sent[0]!.text).toContain("Tenant tenant-1");
+    expect(transport.sent[0].text).toContain("Tenant tenant-1");
     expect(
       db.store.audit_log.filter((row) => row.action === ONBOARDING_FOLLOW_UP_AUDIT_ACTION),
     ).toHaveLength(1);
@@ -619,9 +619,7 @@ describe("one-week onboarding follow-up", () => {
     expect(result).toMatchObject({ candidates: 1, sent: 1 });
     expect(transport.sent).toHaveLength(2);
 
-    const byAddress = new Map(
-      transport.sent.map((message) => [recipientsOf(message)[0]!, message]),
-    );
+    const byAddress = new Map(transport.sent.map((message) => [recipientsOf(message)[0], message]));
 
     expect([...byAddress.keys()].sort()).toEqual(["ada@example.com", "grace@example.com"]);
 
@@ -657,7 +655,7 @@ describe("one-week onboarding follow-up", () => {
     expect(result).toMatchObject({ sent: 1, failed: 0 });
     expect(transport.attempts).toHaveLength(2);
     expect(transport.sent).toHaveLength(1);
-    expect(recipientsOf(transport.sent[0]!)).toEqual(["ada@example.com"]);
+    expect(recipientsOf(transport.sent[0])).toEqual(["ada@example.com"]);
     expect(db.store.organization[0]!.onboardingFollowUpSentAt).toEqual(now);
     expect(
       db.store.audit_log.filter((row) => row.action === ONBOARDING_FOLLOW_UP_AUDIT_ACTION),
@@ -720,6 +718,6 @@ describe("one-week onboarding follow-up", () => {
 
     expect(result).toMatchObject({ sent: 1 });
     expect(transport.sent).toHaveLength(1);
-    expect(recipientsOf(transport.sent[0]!)).toEqual(["ada@example.com"]);
+    expect(recipientsOf(transport.sent[0])).toEqual(["ada@example.com"]);
   });
 });

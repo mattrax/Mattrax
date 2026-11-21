@@ -5,9 +5,8 @@ import {
   SsrRevisionPayload,
   SsrTokenPayload,
   ssrSessionFingerprint,
-  type SsrTokenTenant,
-  type SsrTokenAccount,
 } from "@mattrax/enterprise-domain";
+import type { SsrTokenTenant, SsrTokenAccount } from "@mattrax/enterprise-domain";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {

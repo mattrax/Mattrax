@@ -77,7 +77,7 @@ export default function Document(props: { children?: JSX.Element }) {
             organisation; docs pages carry their own BreadcrumbList. */}
         {pathname === "/" && (
           <script type="application/ld+json">
-            {JSON.stringify(organizationStructuredData(origin)).replace(/</g, "\\u003c")}
+            {JSON.stringify(organizationStructuredData(origin)).replaceAll("<", String.raw`\u003c`)}
           </script>
         )}
         {/* The dashboard's no-JavaScript notice is an ordinary element, not a
@@ -100,10 +100,10 @@ export default function Document(props: { children?: JSX.Element }) {
         {/* Must run before the async client entry injected into this head. */}
         <HydrationScript />
         {serializedPostHog !== undefined && (
-          <script>{`window.__MATTRAX_POSTHOG__=${serializedPostHog.replace(/</g, "\\u003c")};`}</script>
+          <script>{`window.__MATTRAX_POSTHOG__=${serializedPostHog.replaceAll("<", String.raw`\u003c`)};`}</script>
         )}
         {serializedSupport !== undefined && (
-          <script>{`window.__MATTRAX_SUPPORT__=${serializedSupport.replace(/</g, "\\u003c")};`}</script>
+          <script>{`window.__MATTRAX_SUPPORT__=${serializedSupport.replaceAll("<", String.raw`\u003c`)};`}</script>
         )}
       </head>
 
@@ -222,7 +222,7 @@ export default function Document(props: { children?: JSX.Element }) {
             snapshot (the signed-in user's own personal data) into private HTML
             that the Worker serves `private, no-store; vary: cookie`. */}
         {serialized !== undefined && (
-          <script>{`window.__MATTRAX_SESSION__=${serialized.replace(/</g, "\\u003c")};`}</script>
+          <script>{`window.__MATTRAX_SESSION__=${serialized.replaceAll("<", String.raw`\u003c`)};`}</script>
         )}
       </body>
     </html>

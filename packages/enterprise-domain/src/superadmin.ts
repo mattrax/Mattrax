@@ -25,9 +25,7 @@ export const normalizeSuperadminEmail = (value: string): string => value.trim().
  * account, while rejecting the whole value at boot would lock the operator out
  * of their own deployment.
  */
-export const parseSuperadminEmails = (
-  raw: string | null | undefined,
-): ReadonlyArray<string> => {
+export const parseSuperadminEmails = (raw: string | null | undefined): ReadonlyArray<string> => {
   if (!raw) return [];
 
   return [...new Set(raw.split(",").map(normalizeSuperadminEmail).filter(Boolean))];

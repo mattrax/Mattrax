@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, like, lt, or } from "drizzle-orm";
 import { Effect } from "effect";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { isMacOsDevice } from "@mattrax/enterprise-domain";
 import { commandDedupeKey, deviceCommandExpiresAt } from "./commands.ts";
 
@@ -151,24 +152,26 @@ export const refreshAppleSecurityInfo = (
     const dedupeKey = yield* Effect.promise(() => commandDedupeKey("SecurityInfo", payload));
 
     for (const device of due)
-      yield* db
-        .insert(s.deviceCommand)
-        .values({
-          id: crypto.randomUUID(),
-          organizationId: device.organizationId,
-          deviceId: device.id,
-          requestType: "SecurityInfo",
-          payload,
-          status: "queued",
-          dedupeKey,
-          expiresAt: deviceCommandExpiresAt("SecurityInfo", now),
-          resultStatus: null,
-          resultDetail: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        // A check-in may have queued the same request first; leave it alone.
-        .onDuplicateKeyUpdate({ set: { requestType: "SecurityInfo" } });
+      yield* (
+        db
+          .insert(s.deviceCommand)
+          .values({
+            id: crypto.randomUUID(),
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            requestType: "SecurityInfo",
+            payload,
+            status: "queued",
+            dedupeKey,
+            expiresAt: deviceCommandExpiresAt("SecurityInfo", now),
+            resultStatus: null,
+            resultDetail: null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          // A check-in may have queued the same request first; leave it alone.
+          .onDuplicateKeyUpdate({ set: { requestType: "SecurityInfo" } })
+      );
 
     if (due.length > 0)
       yield* db

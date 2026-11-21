@@ -215,7 +215,7 @@ export const describeSkippedConfigurations = (
 ): string | null => {
   if (skipped.length === 0) return null;
 
-  const first = skipped[0]!;
+  const first = skipped[0];
 
   return skipped.length === 1
     ? `1 configuration is not delivered because ${first.reason}.`

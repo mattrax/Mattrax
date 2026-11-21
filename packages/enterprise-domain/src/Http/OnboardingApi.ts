@@ -1,10 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
-import {
-  PatchTenantOnboardingRequest,
-  TenantOnboardingState,
-} from "../onboarding.js";
+import { PatchTenantOnboardingRequest, TenantOnboardingState } from "../onboarding.js";
 import { TenantParam } from "./Params.js";
 
 /**

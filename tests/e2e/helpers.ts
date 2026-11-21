@@ -1,4 +1,5 @@
-import { expect, type Page } from "@playwright/test";
+import { expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
 type DebugEmail = { readonly to: string; readonly text: string };
@@ -18,13 +19,10 @@ export function totpCode(secret: string, offset = 0) {
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(step));
   const mac = createHmac("sha1", bytes).update(counter).digest();
-  const start = mac[mac.length - 1]! & 15;
+  const start = mac.at(-1)! & 15;
 
   const binary =
-    ((mac[start]! & 127) << 24) |
-    (mac[start + 1]! << 16) |
-    (mac[start + 2]! << 8) |
-    mac[start + 3]!;
+    ((mac[start] & 127) << 24) | (mac[start + 1] << 16) | (mac[start + 2] << 8) | mac[start + 3];
 
   return String(binary % 1_000_000).padStart(6, "0");
 }
@@ -34,7 +32,9 @@ export async function freshTotpCode(secret: string) {
   const step = Math.floor(Date.now() / 30_000);
 
   while (Math.floor(Date.now() / 30_000) === step)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 500);
+    });
 
   return totpCode(secret);
 }
@@ -230,8 +230,8 @@ export async function signIn(page: Page, email: string) {
 export async function createTenant(page: Page, name: string) {
   const baseSlug = name
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-|-$/g, "");
 
   const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -408,7 +408,7 @@ export async function stepUpGrant(page: Page, action: string): Promise<string> {
     const started = await startedResponse.json();
     // SAFETY: the step-up endpoint returns @simplewebauthn request options,
     // which the browser WebAuthn API accepts with this field shape.
-    const options = started.options as any;
+    const options = started.options;
 
     // SAFETY: `publicKey` is the browser WebAuthn request shape; the cast
     // narrows the DOM union returned by `navigator.credentials.get`.

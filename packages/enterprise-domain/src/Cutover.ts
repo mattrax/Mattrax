@@ -771,9 +771,7 @@ export const decodeCutoverEnvelope = (archive: string): CutoverEnvelope => {
 
   // Report a future version distinctly instead of as a malformed file: the
   // operator can then upgrade rather than hunt for corruption.
-  const claimedVersion = Schema.decodeUnknownOption(
-    Schema.Struct({ version: Schema.Number }),
-  )(raw);
+  const claimedVersion = Schema.decodeUnknownOption(Schema.Struct({ version: Schema.Number }))(raw);
 
   if (Option.isSome(claimedVersion) && claimedVersion.value.version !== CUTOVER_VERSION)
     throw new CutoverArchiveError({
@@ -924,9 +922,7 @@ export const deriveDeploymentId = async (input: {
 
   if (configured) return configured.slice(0, 128);
 
-  return `dp_${await sha256Text(
-    `mattrax.deployment.v1\u0000${normalizeOrigin(input.origin)}`,
-  )}`;
+  return `dp_${await sha256Text(`mattrax.deployment.v1\u0000${normalizeOrigin(input.origin)}`)}`;
 };
 
 /** Canonical origin: scheme + host, no trailing slash, lower-case host. */

@@ -255,9 +255,7 @@ describe("nested groups", () => {
       }),
     );
 
-    await runEffect(
-      context.service.deleteGroups(request(headers), tenant.id, [child.id]),
-    );
+    await runEffect(context.service.deleteGroups(request(headers), tenant.id, [child.id]));
 
     expect(context.db.store.group_group).toEqual([]);
     expect(groupDevices(context, child.id)).toEqual([]);
@@ -484,10 +482,11 @@ describe("group exclusions", () => {
       }),
     );
 
-    expect(groupDevices(context, group.id).map((row) => row.deviceId).sort()).toEqual([
-      "shared",
-      "single",
-    ]);
+    expect(
+      groupDevices(context, group.id)
+        .map((row) => row.deviceId)
+        .sort(),
+    ).toEqual(["shared", "single"]);
 
     await runEffect(
       context.service.patchGroupMembers(request(headers), tenant.id, group.id, {
@@ -497,10 +496,11 @@ describe("group exclusions", () => {
 
     // Ada's devices are no longer derived through her. The shared Mac stays
     // because Grace still maps it; Grace's own Mac is unaffected.
-    expect(groupDevices(context, group.id).map((row) => row.deviceId).sort()).toEqual([
-      "shared",
-      "single",
-    ]);
+    expect(
+      groupDevices(context, group.id)
+        .map((row) => row.deviceId)
+        .sort(),
+    ).toEqual(["shared", "single"]);
 
     await runEffect(
       context.service.patchGroupMembers(request(headers), tenant.id, group.id, {
@@ -570,10 +570,11 @@ describe("user conditions in dynamic groups", () => {
       }),
     );
 
-    expect(groupDevices(context, group.id).map((row) => row.deviceId).sort()).toEqual([
-      "nouser",
-      "staff-device",
-    ]);
+    expect(
+      groupDevices(context, group.id)
+        .map((row) => row.deviceId)
+        .sort(),
+    ).toEqual(["nouser", "staff-device"]);
   });
 
   it("ignores an excluded person when evaluating this group's rules", async () => {

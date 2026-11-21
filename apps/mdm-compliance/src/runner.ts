@@ -1,5 +1,13 @@
 import { Schema } from "effect";
-import type { Check, CheckResult, CheckStatus, Platform, RunOptions, RunReport, RunSummary } from "./types.ts";
+import type {
+  Check,
+  CheckResult,
+  CheckStatus,
+  Platform,
+  RunOptions,
+  RunReport,
+  RunSummary,
+} from "./types.ts";
 import { PLATFORMS } from "./types.ts";
 
 export const SUITE_VERSION = "1.0.0";
@@ -120,9 +128,9 @@ export async function runChecks(
 
     try {
       await withTimeout(check.run(), options.timeoutMs, check.id);
-    } catch (cause) {
+    } catch (error_) {
       status = "failed";
-      error = describeFailure(cause);
+      error = describeFailure(error_);
     } finally {
       console.error = originalConsoleError;
     }

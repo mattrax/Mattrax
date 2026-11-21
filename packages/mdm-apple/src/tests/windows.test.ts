@@ -15,7 +15,8 @@ import {
   verifyWindowsTenantTokenDetailed,
   windowsTenantTokenExpiresAt,
 } from "@mattrax/mdm-windows";
-import { dbRows, makeDb, tableName, type Store, dateValue } from "./fake-db.js";
+import { dbRows, makeDb, tableName, dateValue } from "./fake-db.js";
+import type { Store } from "./fake-db.js";
 import {
   WINDOWS_APPLICATION_INVENTORY_REQUESTS,
   WINDOWS_APPLICATION_INVENTORY_URI,
@@ -37,7 +38,7 @@ import {
 } from "@mattrax/enterprise-core";
 import type { Row } from "./fake-db.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -360,7 +361,7 @@ describe("Windows enterprise backend", () => {
 
     const certificate = pemToCert(result.signedCertificate);
     expect(await certificate.verify(pemToCert(ca.certPem))).toBe(true);
-    expect(certificate.subject.typesAndValues[0]!.value.valueBlock.value).toBe("device-1");
+    expect(certificate.subject.typesAndValues[0].value.valueBlock.value).toBe("device-1");
     const extensionIds = certificate.extensions?.map((extension) => extension.extnID) ?? [];
     // ExtendedKeyUsage (clientAuth) and the Microsoft DeviceID extension.
     expect(extensionIds.filter((id) => id === "2.5.29.37")).toHaveLength(1);
@@ -389,14 +390,14 @@ describe("Windows enterprise backend", () => {
     // row id, not the Windows DeviceID, or revocation/health/renewal miss it.
     const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
     expect(certificates).toHaveLength(1);
-    expect(certificates[0]!.deviceId).toBe(devices[0]!.id);
-    expect(certificates[0]!.deviceId).not.toBe(devices[0]!.dmIdentifier);
-    expect(certificates[0]!.organizationId).toBe("org-early");
+    expect(certificates[0].deviceId).toBe(devices[0].id);
+    expect(certificates[0].deviceId).not.toBe(devices[0].dmIdentifier);
+    expect(certificates[0].organizationId).toBe("org-early");
 
     // Wide, positive ASN.1 serial from the CSR signer.
     const serialBytes = certificate.serialNumber.valueBlock.valueHexView;
     expect(serialBytes.byteLength).toBeGreaterThanOrEqual(8);
-    expect(serialBytes[0]! & 0x80).toBe(0);
+    expect(serialBytes[0] & 0x80).toBe(0);
   });
 
   it("rejects a new Windows device when the plan device limit is reached", async () => {
@@ -477,12 +478,12 @@ describe("Windows enterprise backend", () => {
 
     const devices = dbRows(db, tableName(schema.device));
     expect(devices).toHaveLength(1);
-    expect(devices[0]!.name).toBe("DESKTOP-TEST");
+    expect(devices[0].name).toBe("DESKTOP-TEST");
     const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
     expect(certificates).toHaveLength(2);
 
-    for (const certificate of certificates) expect(certificate.deviceId).toBe(devices[0]!.id);
-    expect(certificates[0]!.serial).not.toBe(certificates[1]!.serial);
+    for (const certificate of certificates) expect(certificate.deviceId).toBe(devices[0].id);
+    expect(certificates[0].serial).not.toBe(certificates[1].serial);
   });
 
   it("rejects forged and expired enrollment tokens", async () => {
@@ -540,7 +541,7 @@ describe("Windows enterprise backend", () => {
     suppressInventory(db);
 
     const old = new Date("2020-01-01T00:00:00Z");
-    db.store[tableName(schema.device)]![0]!.lastSeenAt = old;
+    db.store[tableName(schema.device)][0].lastSeenAt = old;
 
     const response = await run(
       backend.windowsManagementCheckin(
@@ -557,7 +558,7 @@ describe("Windows enterprise backend", () => {
     );
 
     expect(response).toEqual({ commands: [] });
-    const device = db.store[tableName(schema.device)]![0]!;
+    const device = db.store[tableName(schema.device)][0];
     expect(dateValue(device.lastSeenAt).getTime()).toBeGreaterThan(old.getTime());
   });
 
@@ -593,12 +594,12 @@ describe("Windows enterprise backend", () => {
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.osVersion);
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.serial);
     expect(gets.map((command) => command.locURI)).toContain(WINDOWS_INVENTORY_URI.model);
-    expect(dateValue(db.store[tableName(schema.device)]![0]!.inventoryRequestedAt)).toBeInstanceOf(
+    expect(dateValue(db.store[tableName(schema.device)][0].inventoryRequestedAt)).toBeInstanceOf(
       Date,
     );
-    expect(
-      dateValue(db.store[tableName(schema.device)]![0]!.applicationsRequestedAt),
-    ).toBeInstanceOf(Date);
+    expect(dateValue(db.store[tableName(schema.device)][0].applicationsRequestedAt)).toBeInstanceOf(
+      Date,
+    );
 
     // The same check-in cycle must not re-ask. Only a report (or the refresh
     // interval) can make inventory due again.
@@ -688,7 +689,7 @@ describe("Windows enterprise backend", () => {
       WINDOWS_APPLICATION_INVENTORY_REQUESTS.map((request) => request.cmdID),
     );
 
-    const device = dbRows(db, tableName(schema.device))[0]!;
+    const device = dbRows(db, tableName(schema.device))[0];
     expect(device).toMatchObject({
       model: "Surface Laptop 5",
       modelIdentifier: "Surface_Laptop_5",
@@ -782,7 +783,7 @@ describe("Windows enterprise backend", () => {
       isManaged: true,
     });
 
-    const device = dbRows(db, tableName(schema.device))[0]!;
+    const device = dbRows(db, tableName(schema.device))[0];
     expect(dateValue(device.applicationsUpdatedAt)).toBeInstanceOf(Date);
     // The app inventory was just reported, so it is not requested again.
     expect(response.commands.filter((command) => command.locURI?.includes("AppInventory"))).toEqual(
@@ -794,7 +795,7 @@ describe("Windows enterprise backend", () => {
     const { backend, db } = await setup();
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
-    db.store[tableName(schema.device)]![0]!.name = "device-1";
+    db.store[tableName(schema.device)][0].name = "device-1";
 
     await run(
       backend.windowsManagementCheckin(
@@ -820,7 +821,7 @@ describe("Windows enterprise backend", () => {
       ),
     );
 
-    expect(dbRows(db, tableName(schema.device))[0]!.name).toBe("DESKTOP-ABC");
+    expect(dbRows(db, tableName(schema.device))[0].name).toBe("DESKTOP-ABC");
   });
 
   it("does not reuse another device's serial", async () => {
@@ -954,14 +955,14 @@ describe("Windows enterprise backend", () => {
     });
 
     const old = new Date("2020-01-01T00:00:00Z");
-    db.store[tableName(schema.device)]![0]!.lastSeenAt = old;
+    db.store[tableName(schema.device)][0].lastSeenAt = old;
     await run(
       backend.windowsDeviceEvent(
         { deviceId: "device-2", mdmOrigin },
         { _tag: "CommandResult" as const, deviceId: "device-2", status: "200" },
       ),
     );
-    expect(dateValue(db.store[tableName(schema.device)]![0]!.lastSeenAt).getTime()).toBeGreaterThan(
+    expect(dateValue(db.store[tableName(schema.device)][0].lastSeenAt).getTime()).toBeGreaterThan(
       old.getTime(),
     );
   });
@@ -971,7 +972,7 @@ describe("Windows enterprise backend", () => {
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
-    expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
+    expect(dbRows(db, tableName(schema.device))[0].organizationId).toBe("org-late");
   });
 
   it("fails closed when neither a tenant token nor a pin is present", async () => {
@@ -1056,7 +1057,7 @@ describe("Windows tenant enrollment tokens", () => {
         tenantToken: token,
       }),
     );
-    expect(dbRows(db, tableName(schema.device))[0]!.organizationId).toBe("org-late");
+    expect(dbRows(db, tableName(schema.device))[0].organizationId).toBe("org-late");
   });
 
   it("removes a previous tenant's Windows device when the same DeviceID enrolls", async () => {
@@ -1238,8 +1239,8 @@ describe("Windows identity lifecycle", () => {
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
     suppressInventory(db);
 
-    const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0]!;
-    const storedCertificate = db.store[tableName(schema.scepIssuedCertificate)]![0]!;
+    const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0];
+    const storedCertificate = db.store[tableName(schema.scepIssuedCertificate)][0];
 
     const scope = {
       deviceId: "device-1",
@@ -1552,7 +1553,7 @@ describe("Windows command history and desired-state policy", () => {
 
     await run(result.backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
-    const device = dbRows(result.db, table(schema.device))[0]!;
+    const device = dbRows(result.db, table(schema.device))[0];
 
     return { ...result, device };
   };
@@ -1592,7 +1593,7 @@ describe("Windows command history and desired-state policy", () => {
     });
 
     expect(second.commands).toEqual([]);
-    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyApplied).toContain(replace.locURI);
+    expect(dbRows(db, table(schema.device))[0].windowsPolicyApplied).toContain(replace.locURI);
     expect(
       dbRows(db, table(schema.deviceCommand)).find((row) => row.id === replace.cmdID),
     ).toMatchObject({ status: "succeeded", resultStatus: "200" });
@@ -1619,7 +1620,7 @@ describe("Windows command history and desired-state policy", () => {
       status: "failed",
       resultStatus: "400",
     });
-    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyFailures).toEqual([
+    expect(dbRows(db, table(schema.device))[0].windowsPolicyFailures).toEqual([
       expect.objectContaining({
         uri: replace.locURI,
         resultStatus: "400",
@@ -1656,11 +1657,11 @@ describe("Windows command history and desired-state policy", () => {
     expect(
       dbRows(db, table(schema.deviceCommand)).find((row) => row.id === remove.cmdID),
     ).toMatchObject({ requestType: WINDOWS_POLICY_DELETE_REQUEST_TYPE, status: "sent" });
-    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyReverting).toEqual([replace.locURI]);
+    expect(dbRows(db, table(schema.device))[0].windowsPolicyReverting).toEqual([replace.locURI]);
 
     await checkin(backend, { statuses: [{ cmdRef: remove.cmdID, data: "200" }] });
 
-    const reverted = dbRows(db, table(schema.device))[0]!;
+    const reverted = dbRows(db, table(schema.device))[0];
 
     expect(reverted.windowsPolicyApplied).toEqual([]);
     expect(reverted.windowsPolicyDelivered).toEqual([]);
@@ -1694,7 +1695,7 @@ describe("Windows command history and desired-state policy", () => {
 
     // Disabling keeps the assignment and configuration but removes the
     // policy from resolution, so every delivered OMA-URI must be deleted.
-    db.store[table(schema.policy)][0]!.enabled = false;
+    db.store[table(schema.policy)][0].enabled = false;
 
     const removed = await checkin(backend);
     const deletes = removed.commands.filter((command) => command.kind === "Delete");
@@ -1703,7 +1704,7 @@ describe("Windows command history and desired-state policy", () => {
       replaces.map((command) => command.locURI).sort(),
     );
     expect(deletes.every((command) => command.cmdID.startsWith("winp-d-"))).toBe(true);
-    expect(dbRows(db, table(schema.device))[0]!.windowsPolicyReverting).toHaveLength(2);
+    expect(dbRows(db, table(schema.device))[0].windowsPolicyReverting).toHaveLength(2);
 
     // Until the device acknowledges a delete, a check-in re-issues the same
     // command rather than creating a second delete row for the URI.
@@ -1720,7 +1721,7 @@ describe("Windows command history and desired-state policy", () => {
       statuses: repeatedDeletes.map((command) => ({ cmdRef: command.cmdID, data: "200" })),
     });
 
-    const reverted = dbRows(db, table(schema.device))[0]!;
+    const reverted = dbRows(db, table(schema.device))[0];
 
     expect(reverted.windowsPolicyApplied).toEqual([]);
     expect(reverted.windowsPolicyDelivered).toEqual([]);
@@ -1768,7 +1769,7 @@ describe("Windows command history and desired-state policy", () => {
         (row) => commandPayload(row)?.cmdID === "windows-inventory-serial",
       ),
     ).toMatchObject({ status: "succeeded", resultStatus: "200" });
-    expect(dbRows(db, table(schema.device))[0]!.serial).toBe("SERIAL-999");
+    expect(dbRows(db, table(schema.device))[0].serial).toBe("SERIAL-999");
   });
 
   it("delivers a queued unenroll Exec and completes when the device acknowledges it", async () => {
@@ -1809,7 +1810,7 @@ describe("Windows command history and desired-state policy", () => {
 
     await checkin(backend, { statuses: [{ cmdRef: "unenroll-1", data: "200" }] });
 
-    expect(dbRows(db, table(schema.device))[0]!.status).toBe("unenrolled");
+    expect(dbRows(db, table(schema.device))[0].status).toBe("unenrolled");
     expect(
       dbRows(db, table(schema.deviceCommand)).find((row) => row.id === "unenroll-1"),
     ).toMatchObject({ status: "succeeded" });
@@ -1826,7 +1827,7 @@ describe("Windows command history and desired-state policy", () => {
 
     await checkin(backend, { alerts: [{ cmdID: "9", data: "1226" }] });
 
-    expect(dbRows(db, table(schema.device))[0]!.status).toBe("unenrolled");
+    expect(dbRows(db, table(schema.device))[0].status).toBe("unenrolled");
     expect(
       dbRows(db, table(schema.scepIssuedCertificate)).find((row) => row.deviceId === device.id)
         ?.revokedAt,
@@ -1840,7 +1841,7 @@ describe("Windows partial application inventory", () => {
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
 
-    const device = dbRows(db, tableName(schema.device))[0]!;
+    const device = dbRows(db, tableName(schema.device))[0];
     const reportedAt = new Date("2024-01-01T00:00:00Z");
 
     const application = (bundleId: string, isManaged: boolean) => ({
@@ -1949,7 +1950,7 @@ describe("Windows failure history", () => {
   it("records a rejected enrollment when Windows is disabled for the tenant", async () => {
     const { backend, db } = await setup();
 
-    const enrollment = db.store[tableName(schema.enterpriseEnrollment)]!.find(
+    const enrollment = db.store[tableName(schema.enterpriseEnrollment)].find(
       (row) => row.organizationId === "org-early",
     )!;
 
@@ -2187,14 +2188,14 @@ describe("Windows failure history", () => {
 
     const [row] = failures(db);
 
-    expect(row!.code).toBe("certificate_signing_failed_");
-    expect(String(row!.message)).toHaveLength(500);
-    expect(row!.detail).toContain("[certificate]");
-    expect(row!.detail).toContain("[email]");
-    expect(row!.detail).toContain("[redacted]");
-    expect(row!.detail).not.toContain("BEGIN CERTIFICATE");
-    expect(row!.detail).not.toContain("admin@example.com");
-    expect(String(row!.detail).length).toBeLessThanOrEqual(1_000);
+    expect(row.code).toBe("certificate_signing_failed_");
+    expect(String(row.message)).toHaveLength(500);
+    expect(row.detail).toContain("[certificate]");
+    expect(row.detail).toContain("[email]");
+    expect(row.detail).toContain("[redacted]");
+    expect(row.detail).not.toContain("BEGIN CERTIFICATE");
+    expect(row.detail).not.toContain("admin@example.com");
+    expect(String(row.detail).length).toBeLessThanOrEqual(1_000);
   });
 
   it("never throws when the diagnostic insert fails", async () => {
@@ -2251,8 +2252,7 @@ describe("Windows failure history", () => {
 });
 
 describe("Windows MDM activity in the organisation event log", () => {
-  const auditRows = (db: ReturnType<typeof makeDb>) =>
-    dbRows(db, tableName(schema.auditLog));
+  const auditRows = (db: ReturnType<typeof makeDb>) => dbRows(db, tableName(schema.auditLog));
 
   const rowsFor = (db: ReturnType<typeof makeDb>, action: string) =>
     auditRows(db).filter((row) => row.action === action);
@@ -2359,7 +2359,7 @@ describe("Windows MDM activity in the organisation event log", () => {
       metadata: { phase: "command", code: "invalid_syncml" },
     });
     // SAFETY: the failure recorder stores a JSON object with a string reason.
-    expect((failures[0]!.metadata as Row & { reason?: string }).reason).toContain(
+    expect((failures[0].metadata as Row & { reason?: string }).reason).toContain(
       "Invalid SyncML request",
     );
   });
@@ -2370,7 +2370,7 @@ describe("Windows MDM activity in the organisation event log", () => {
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
     suppressInventory(db);
 
-    const deviceRow = db.store[tableName(schema.device)]![0]!;
+    const deviceRow = db.store[tableName(schema.device)][0];
     const commandTable = tableName(schema.deviceCommand);
 
     (db.store[commandTable] ??= []).push({
@@ -2408,7 +2408,7 @@ describe("Windows MDM activity in the organisation event log", () => {
     await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
     suppressInventory(db);
 
-    const deviceRow = db.store[tableName(schema.device)]![0]!;
+    const deviceRow = db.store[tableName(schema.device)][0];
     const commandTable = tableName(schema.deviceCommand);
 
     (db.store[commandTable] ??= []).push({

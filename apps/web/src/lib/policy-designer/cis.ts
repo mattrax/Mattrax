@@ -1,15 +1,8 @@
 import { Schema } from "effect";
-import {
-  collectionProperties,
-  type Collection,
-  type PlatformId,
-  type Property,
-} from "./catalog";
-import {
-  valueKey as storageValueKey,
-  type PolicyValue,
-  type Selection,
-} from "./build";
+import { collectionProperties } from "./catalog";
+import type { Collection, PlatformId, Property } from "./catalog";
+import { valueKey as storageValueKey } from "./build";
+import type { PolicyValue, Selection } from "./build";
 
 /**
  * CIS benchmark templates.
@@ -210,10 +203,7 @@ const decodeSource = (input: Schema.Json): CisTemplateSource => {
  */
 type ResolvedProperty = { readonly property: Property } | { readonly problem: string };
 
-const resolveProperty = (
-  collection: Collection,
-  mapping: CisMappingSource,
-): ResolvedProperty => {
+const resolveProperty = (collection: Collection, mapping: CisMappingSource): ResolvedProperty => {
   const matches = collectionProperties(collection).filter(
     (property) => property.key === mapping.setting,
   );
@@ -237,7 +227,7 @@ const resolveProperty = (
       problem: `Setting "${mapping.setting}" in "${collection.id}" is ambiguous; add "address".`,
     };
 
-  return { property: matches[0]! };
+  return { property: matches[0] };
 };
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -284,9 +274,7 @@ const validateValue = (property: Property, value: PolicyValue): string | undefin
 
   switch (property.type) {
     case "boolean":
-      return Schema.is(Schema.Boolean)(value)
-        ? undefined
-        : `"${property.key}" must be a boolean.`;
+      return Schema.is(Schema.Boolean)(value) ? undefined : `"${property.key}" must be a boolean.`;
     case "integer": {
       if (!Schema.is(Schema.Number)(value) || !Number.isInteger(value))
         return `"${property.key}" must be a whole number.`;
@@ -301,9 +289,7 @@ const validateValue = (property: Property, value: PolicyValue): string | undefin
     }
 
     case "real":
-      return Schema.is(Schema.Number)(value)
-        ? undefined
-        : `"${property.key}" must be a number.`;
+      return Schema.is(Schema.Number)(value) ? undefined : `"${property.key}" must be a number.`;
     case "string": {
       if (!Schema.is(Schema.String)(value)) return `"${property.key}" must be a string.`;
 
@@ -320,7 +306,7 @@ const validateValue = (property: Property, value: PolicyValue): string | undefin
     }
 
     case "data":
-      return Schema.is(Schema.String)(value) && BASE64.test(value.replace(/\s/g, ""))
+      return Schema.is(Schema.String)(value) && BASE64.test(value.replaceAll(/\s/g, ""))
         ? undefined
         : `"${property.key}" must be a base64 string.`;
     case "date":
@@ -370,8 +356,7 @@ export const compileCisTemplate = (
   const controls = source.controls.map((control): CompiledCisControl => {
     const controlProblems: string[] = [];
 
-    if (seenIds.has(control.id))
-      controlProblems.push(`Duplicate control id "${control.id}".`);
+    if (seenIds.has(control.id)) controlProblems.push(`Duplicate control id "${control.id}".`);
     seenIds.add(control.id);
 
     const settings: CompiledCisSetting[] = [];
@@ -486,7 +471,9 @@ export const cisTemplateSummary = (template: CompiledCisTemplate): CisTemplateSu
 });
 
 /** Build the index every CIS picker loads first. */
-export const cisTemplateIndex = (templates: ReadonlyArray<CompiledCisTemplate>): CisTemplateIndex => ({
+export const cisTemplateIndex = (
+  templates: ReadonlyArray<CompiledCisTemplate>,
+): CisTemplateIndex => ({
   format: CIS_SOURCE_FORMAT,
   templates: [...templates]
     .sort((left, right) => left.id.localeCompare(right.id))
@@ -699,7 +686,7 @@ const templatePromises = new Map<string, Promise<CompiledCisTemplate>>();
 
 export const loadCisTemplateIndex = () => {
   indexPromise ??= fetchJson(CisTemplateIndex, "/catalog/cis/index.json", "CIS templates").catch(
-    (error) => {
+    (error: unknown) => {
       indexPromise = undefined;
       throw error;
     },
@@ -721,7 +708,7 @@ export const loadCisTemplate = (summary: CisTemplateSummary) => {
       CompiledCisTemplate,
       `/catalog/cis/${file}`,
       `${summary.benchmark.name} ${summary.benchmark.version}`,
-    ).catch((error) => {
+    ).catch((error: unknown) => {
       templatePromises.delete(summary.id);
       throw error;
     });

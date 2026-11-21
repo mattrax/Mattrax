@@ -1,13 +1,14 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   deriveDeviceHealth,
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
   hasDynamicGroupConditions,
-  type DeviceQueryUser,
 } from "@mattrax/enterprise-domain";
+import type { DeviceQueryUser } from "@mattrax/enterprise-domain";
 import { syncGroupInheritance } from "./groupInheritance.ts";
 
 export type DynamicGroupSyncOptions = {
@@ -614,8 +615,7 @@ export const syncDynamicGroupsForDevice = (
       const isDynamicMember = dynamicGroups.has(group.id);
       const isNestedMember = nestedGroups.has(group.id);
 
-      if (matches && !isDynamicMember)
-        (isNestedMember ? toPromote : toAdd).push(group.id);
+      if (matches && !isDynamicMember) (isNestedMember ? toPromote : toAdd).push(group.id);
 
       if (!matches && isDynamicMember) toRemove.push(group.id);
       results.push({

@@ -26,8 +26,7 @@ const isError = Schema.is(Schema.instanceOf(Error));
 
 const isJson = Schema.is(Schema.Json);
 
-const isRaisedFailure = (cause: unknown): cause is RaisedFailure =>
-  isError(cause) || isJson(cause);
+const isRaisedFailure = (cause: unknown): cause is RaisedFailure => isError(cause) || isJson(cause);
 
 /** Decode an arbitrary catch binding into the failure domain. */
 export const raisedFailure = (cause: unknown): RaisedFailure | undefined =>
@@ -377,7 +376,8 @@ export const errorPresentation = (
   fallback = "Something went wrong. Try again.",
 ): ErrorPresentation => {
   const directTag = errorTag(error);
-  const rawMessage = (error === undefined ? undefined : messageOf(error)) ?? (isString(error) ? error : undefined);
+  const rawMessage =
+    (error === undefined ? undefined : messageOf(error)) ?? (isString(error) ? error : undefined);
   const parsed = rawMessage ? parseJson(rawMessage) : undefined;
   const tag = directTag ?? errorTag(parsed) ?? (rawMessage ? errorTag(rawMessage) : undefined);
 
@@ -387,7 +387,10 @@ export const errorPresentation = (
     const message = Match.value(reason).pipe(
       Match.when("too-short", () => "Use at least 15 characters for your password."),
       Match.when("too-long", () => "That password is too long. Use a shorter passphrase."),
-      Match.when("compromised", () => "This password has appeared in a data breach. Choose another."),
+      Match.when(
+        "compromised",
+        () => "This password has appeared in a data breach. Choose another.",
+      ),
       Match.when("common", () => "This password is too common. Choose something less predictable."),
       Match.orElse(() => "Choose a stronger, less predictable password."),
     );

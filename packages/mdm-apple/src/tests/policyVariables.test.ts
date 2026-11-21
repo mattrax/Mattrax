@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { substitutePolicyVariables } from "@mattrax/enterprise-domain";
-import { buildConfigurationDeclaration, policyDataHash, windowsPolicyNodes } from "@mattrax/mdm-core";
+import {
+  buildConfigurationDeclaration,
+  policyDataHash,
+  windowsPolicyNodes,
+} from "@mattrax/mdm-core";
 
 /**
  * Variables are resolved before the platform compilers see a payload, so these

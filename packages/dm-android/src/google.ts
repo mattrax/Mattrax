@@ -56,9 +56,9 @@ export type BuildJwtOptions = {
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
 
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
 
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll(/=+$/g, "");
 }
 
 /** Base64url-encode a string or raw bytes (no padding), as JWT requires. */
@@ -73,7 +73,7 @@ export function base64UrlEncode(input: string | Uint8Array | ArrayBuffer): strin
 }
 
 function normalizePem(pem: string): string {
-  return pem.includes("\\n") ? pem.replace(/\\n/g, "\n") : pem;
+  return pem.includes(String.raw`\n`) ? pem.replaceAll(String.raw`\n`, "\n") : pem;
 }
 
 /** Import a service account PKCS#8 RSA private key for RS256 signing. */

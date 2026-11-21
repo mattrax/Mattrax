@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { scriptTriggerLabel } from "@mattrax/enterprise-domain/client";
@@ -16,7 +17,8 @@ import {
 import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { enterprise, enterpriseKeys, enterpriseQueries, type ScriptInfo } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { ScriptInfo } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { AccessDenied, ReadOnlyNotice, useCan } from "~/lib/permissions";
@@ -249,9 +251,9 @@ export default function ScriptsPage() {
 
         <p class="text-[11.5px] leading-relaxed text-muted-foreground">
           Apple devices receive scripts as <code class="font-mono">com.mattrax.script</code>{" "}
-          profiles executed by mattraxd. Windows uses the same binary because Windows MDM
-          has no arbitrary-script channel. Android Management API exposes no script command, so
-          Android devices are never targeted.
+          profiles executed by mattraxd. Windows uses the same binary because Windows MDM has no
+          arbitrary-script channel. Android Management API exposes no script command, so Android
+          devices are never targeted.
         </p>
       </Page>
     </Show>

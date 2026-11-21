@@ -31,9 +31,8 @@ import {
   registeredCommands,
   sequence,
   shortcutLabel,
-  type Command,
-  type CommandShortcut,
 } from "~/lib/commands";
+import type { Command, CommandShortcut } from "~/lib/commands";
 import { groupRank, matchesSearchTerm, searchRowCommand } from "~/lib/command-palette-search";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
@@ -583,7 +582,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       const days = /^(\d+)d$/.exec(token);
 
       if (days) {
-        params.set("staleDays", days[1]!);
+        params.set("staleDays", days[1]);
         continue;
       }
 
@@ -1031,7 +1030,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
   };
 
   const groupDomId = (group: string) =>
-    `command-palette-group-${group.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    `command-palette-group-${group.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}`;
 
   return (
     <>

@@ -1,9 +1,11 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { Page, PageHeader, Panel } from "~/components/mdm/common";
-import { ScriptEditor, type ScriptDraftValues } from "~/components/mdm/script-editor";
+import { ScriptEditor } from "~/components/mdm/script-editor";
+import type { ScriptDraftValues } from "~/components/mdm/script-editor";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";

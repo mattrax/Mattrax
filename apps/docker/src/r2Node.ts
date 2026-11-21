@@ -251,9 +251,7 @@ export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
       return {
         objects: page.map(toObject),
         truncated,
-        cursor: truncated
-          ? Buffer.from(page[page.length - 1]!.key, "utf8").toString("base64url")
-          : undefined,
+        cursor: truncated ? Buffer.from(page.at(-1)!.key, "utf8").toString("base64url") : undefined,
         delimitedPrefixes: [...delimitedPrefixes],
       };
     },

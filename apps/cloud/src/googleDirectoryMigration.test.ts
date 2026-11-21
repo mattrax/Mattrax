@@ -37,7 +37,7 @@ describe("Google Workspace directory sync migration", () => {
   });
 
   it("seals the service account and keeps sync state on the tenant row", () => {
-    const sql = readMigration(googleMigrations[0]!);
+    const sql = readMigration(googleMigrations[0]);
 
     expect(sql).toContain("CREATE TABLE `google_directory_sync`");
     expect(sql).toContain("PRIMARY KEY");

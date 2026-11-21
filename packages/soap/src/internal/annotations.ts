@@ -1,4 +1,5 @@
-import { Schema, type SchemaAST as AST } from "effect";
+import { Schema } from "effect";
+import type { SchemaAST as AST } from "effect";
 
 /** SOAP annotations read from a schema node, with their effective values resolved. */
 export interface SoapAnnotations {
@@ -25,7 +26,7 @@ function stringAnnotation(
 export function resolveAnnotations(ast: AST.AST): Schema.Annotations.Annotations | undefined {
   const typeAnnotations = ast.annotations;
   const keyAnnotations = ast.context?.annotations;
-  const lastCheck = ast.checks?.[ast.checks.length - 1];
+  const lastCheck = ast.checks?.at(-1);
   const checkAnnotations = lastCheck?.annotations;
 
   const merged: Schema.Annotations.Annotations = {

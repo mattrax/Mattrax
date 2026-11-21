@@ -1,11 +1,6 @@
 import type { InfiniteData, QueryClient } from "@tanstack/solid-query";
-import {
-  enterpriseKeys,
-  type DeviceRow,
-  type Entity,
-  type MeResponse,
-  type RowFor,
-} from "~/lib/enterprise";
+import { enterpriseKeys } from "~/lib/enterprise";
+import type { DeviceRow, Entity, MeResponse, RowFor } from "~/lib/enterprise";
 
 /** The shape every entity list endpoint returns. */
 type RowsResponse<T> = { rows: T[] };
@@ -228,7 +223,7 @@ export const optimisticallyUpdateCollection = <K extends string, T>(
 
     // SAFETY: spread preserves every other property of `current`; the computed
     // key is `K`, so the result still satisfies `Record<K, T[]>`.
-    return next as Record<K, T[]>;
+    return next;
   });
 
 /** Drop rows from a cached collection response such as `{ endpoints: [...] }`. */

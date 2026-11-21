@@ -34,7 +34,9 @@ type QueryColumn = { readonly name?: string };
 
 type Fields = { readonly [key: string]: QueryColumn };
 
-const tableSymbol = (description: string) => (value: {}) =>
+// Test tables are arbitrary Drizzle mocks; the helper only reads their symbols.
+// oxlint-disable-next-line quality/no-object-parameters -- test helper receives arbitrary table mocks.
+const tableSymbol = (description: string) => (value: object) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
 
 const nameSymbol = tableSymbol("drizzle:Name");
@@ -80,7 +82,7 @@ const queryFor = (condition: any) =>
   });
 
 const camel = (value: string) =>
-  value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
 /**
  * Primary keys for the tables whose upserts these tests depend on. Values are
@@ -117,7 +119,7 @@ const matchesQuery = (condition: any, row: Row) => {
   const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
 
   for (const match of query.sql.matchAll(regex)) {
-    const column = camel(match[2]!);
+    const column = camel(match[2]);
     const key = match[1] ? `${match[1]}.${column}` : column;
     const actual = key in row ? row[key] : (row[column] ?? row[match[2]!]);
     const operator = match[3]!.toLowerCase();
@@ -230,7 +232,7 @@ class SelectBuilder {
     const matched = rows.filter((row) => matches(this.condition, row));
 
     for (let index = this.order.length - 1; index >= 0; index--) {
-      const column = this.order[index]!;
+      const column = this.order[index];
       matched.sort((left, right) => {
         const a = comparable(left[column] ?? left[camel(column)] ?? null);
         const b = comparable(right[column] ?? right[camel(column)] ?? null);
@@ -385,7 +387,7 @@ class DeleteBuilder {
     const rows = this.rows();
 
     for (let index = rows.length - 1; index >= 0; index--) {
-      const row = rows[index]!;
+      const row = rows[index];
 
       if (row.__table === this.table && matches(condition, row)) rows.splice(index, 1);
     }

@@ -4,15 +4,19 @@ import {
   DashboardReportFrequency,
   DashboardWidgetType,
   dashboardQueryForWidget,
-  type DashboardQueryResponse,
-  type DashboardReport,
-  type DashboardReportFormat,
-  type DashboardReportRecipients,
-  type DashboardReportRun as DashboardReportRunInfo,
-  type DashboardReportRunStatus,
 } from "@mattrax/enterprise-domain";
-import { DEFAULT_EMAIL_FROM, type EmailAddress, type EmailTransport } from "@mattrax/email";
-import { schema as s, type EnterpriseDb } from "../schema.ts";
+import type {
+  DashboardQueryResponse,
+  DashboardReport,
+  DashboardReportFormat,
+  DashboardReportRecipients,
+  DashboardReportRun as DashboardReportRunInfo,
+  DashboardReportRunStatus,
+} from "@mattrax/enterprise-domain";
+import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
+import type { EmailAddress, EmailTransport } from "@mattrax/email";
+import { schema as s } from "../schema.ts";
+import type { EnterpriseDb } from "../schema.ts";
 import { runDashboardQueryBatch } from "./dashboardQuery.ts";
 import {
   buildReportDocument,
@@ -24,8 +28,8 @@ import {
   reportEmailText,
   reportHtml,
   scheduledReportSlot,
-  type ReportDocument,
 } from "./report.ts";
+import type { ReportDocument } from "./report.ts";
 import { sendTransactionalEmail } from "../Mail/emailOutbox.ts";
 
 /**
@@ -49,8 +53,7 @@ const reportId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const frequencyOf = (value: string): DashboardReportFrequency =>
   Schema.is(DashboardReportFrequency)(value) ? value : "daily";
 
-const formatOf = (value: string): DashboardReportFormat =>
-  value === "pdf" ? "pdf" : "csv";
+const formatOf = (value: string): DashboardReportFormat => (value === "pdf" ? "pdf" : "csv");
 
 const statusOf = (value: string): DashboardReportRunStatus =>
   value === "sending" || value === "queued" || value === "failed" ? value : "pending";
@@ -128,8 +131,7 @@ export const validateReportRecipients = (
 
     const normalized = normalizeReportEmails(input.emails);
 
-    if (normalized.problem)
-      return { ok: false as const, problem: normalized.problem };
+    if (normalized.problem) return { ok: false as const, problem: normalized.problem };
 
     if (memberAccountIds.length + normalized.emails.length === 0)
       return { ok: false as const, problem: "Add at least one recipient" };
@@ -486,11 +488,7 @@ const deliverRun = (context: ReportRunContext, run: DashboardReportRunRow) =>
         .set({
           lastPeriod: period,
           lastRunAt: now,
-          nextRunAt: nextScheduledReportSlot(
-            frequencyOf(report.frequency),
-            report.hourUtc,
-            now,
-          ),
+          nextRunAt: nextScheduledReportSlot(frequencyOf(report.frequency), report.hourUtc, now),
           updatedAt: now,
         })
         .where(eq(s.dashboardReport.id, report.id));

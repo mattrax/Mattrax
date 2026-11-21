@@ -2,11 +2,8 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { R2Bucket } from "@mattrax/enterprise-core";
 import type { BackupActionError } from "../src/Tenant/backup.ts";
-import {
-  parseTenantRestoreBundle,
-  restoreTenantFromBackup,
-  type TenantRestoreError,
-} from "../src/Tenant/tenantRestore.ts";
+import { parseTenantRestoreBundle, restoreTenantFromBackup } from "../src/Tenant/tenantRestore.ts";
+import type { TenantRestoreError } from "../src/Tenant/tenantRestore.ts";
 import { buildTenantExport } from "../src/Tenant/tenantExport.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
@@ -550,7 +547,9 @@ describe("in-place tenant restore", () => {
       ]),
     );
     expect(exported.bundle.applications).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "app-1", userGroupIds: ["directory-1"] })]),
+      expect.arrayContaining([
+        expect.objectContaining({ key: "app-1", userGroupIds: ["directory-1"] }),
+      ]),
     );
 
     objects.set("backups/org-1/run-2.json", exported.body);

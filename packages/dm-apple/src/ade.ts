@@ -18,7 +18,7 @@ import * as pkijs from "pkijs";
 import { Effect, Schema } from "effect";
 import { parsePlist, PlistValue } from "@mattrax/plist";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -106,7 +106,7 @@ const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).
 
 const decodePem = (pem: string): Uint8Array => {
   const match = /-----BEGIN (?:TRUSTED )?CERTIFICATE-----([\s\S]*?)-----END/.exec(pem);
-  const binary = atob((match?.[1] ?? "").replace(/\s/g, ""));
+  const binary = atob((match?.[1] ?? "").replaceAll(/\s/g, ""));
 
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };

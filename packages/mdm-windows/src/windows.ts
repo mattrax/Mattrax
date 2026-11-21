@@ -5,12 +5,8 @@ import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
-import {
-  SYSTEM_AUDIT_ACTIONS,
-  describeAuditFailure,
-  writeSystemAudit,
-  type SystemAuditOptions,
-} from "@mattrax/mdm-core";
+import { SYSTEM_AUDIT_ACTIONS, describeAuditFailure, writeSystemAudit } from "@mattrax/mdm-core";
+import type { SystemAuditOptions } from "@mattrax/mdm-core";
 import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
@@ -35,18 +31,16 @@ import {
   windowsPolicyRejectionDetail,
   windowsSyncMLData,
   windowsSyncMLLocURI,
-  type WindowsDeliveredPolicyNode,
-  type WindowsPolicyFailure,
 } from "./windowsCommands.ts";
+import type { WindowsDeliveredPolicyNode, WindowsPolicyFailure } from "./windowsCommands.ts";
 import {
   describeWindowsFailure,
   deviceLimitForOrganization,
   recordWindowsFailure,
   replaceDeviceApplications,
   schema as s,
-  type Db,
-  type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
+import type { Db, PlanLimitsConfig } from "@mattrax/enterprise-core";
 import { certificateSerialHex, ensureScepCa, signScepCsr } from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial, ScepRepositoryLive } from "@mattrax/mdm-core";
 import {
@@ -68,26 +62,27 @@ import {
   isFederatedToken,
   unverifiedFederatedTenantId,
   validateFederatedEntraToken,
-  type FederatedEntraClaims,
-  type FederatedJsonWebKeySet,
-  type FederatedTokenValidation,
-  type ValidateFederatedEntraTokenOptions,
 } from "./federated.ts";
-import {
-  InternalServerError,
-  UnknownDevice,
-  type ManagementBackend,
-  type WindowsDeviceEvent,
-  type WindowsDiscoveryRequest,
-  type WindowsDiscoveryResponse,
-  type WindowsEnrollmentPolicy,
-  type WindowsEnrollmentRequest,
-  type WindowsEnrollmentResult,
-  type WindowsFailurePhase,
-  type WindowsFailureReport,
-  type WindowsManagementRequest,
-  type WindowsManagementResponse,
-  type WindowsManagementScope,
+import type {
+  FederatedEntraClaims,
+  FederatedJsonWebKeySet,
+  FederatedTokenValidation,
+  ValidateFederatedEntraTokenOptions,
+} from "./federated.ts";
+import { InternalServerError, UnknownDevice } from "@mattrax/management-backend";
+import type {
+  ManagementBackend,
+  WindowsDeviceEvent,
+  WindowsDiscoveryRequest,
+  WindowsDiscoveryResponse,
+  WindowsEnrollmentPolicy,
+  WindowsEnrollmentRequest,
+  WindowsEnrollmentResult,
+  WindowsFailurePhase,
+  WindowsFailureReport,
+  WindowsManagementRequest,
+  WindowsManagementResponse,
+  WindowsManagementScope,
 } from "@mattrax/management-backend";
 
 const encoder = new TextEncoder();
@@ -206,7 +201,7 @@ const timingSafeEqual = (left: string, right: string): boolean => {
   if (a.length !== b.length) return false;
   let difference = 0;
 
-  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
 
   return difference === 0;
 };
@@ -626,7 +621,7 @@ const certificateSerialCandidates = (value: string): string[] => {
   const normalized = normalizeIssuedCertificateSerial(value);
 
   if (normalized) candidates.add(normalized);
-  const compact = value.trim().replace(/[\s:]/g, "");
+  const compact = value.trim().replaceAll(/[\s:]/g, "");
 
   if (/^\d+$/.test(compact)) {
     try {

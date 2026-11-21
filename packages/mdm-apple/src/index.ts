@@ -1,11 +1,7 @@
 import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
-import {
-  Db,
-  deviceLimitForOrganization,
-  schema as s,
-  type PlanLimitsConfig,
-} from "@mattrax/enterprise-core";
+import { Db, deviceLimitForOrganization, schema as s } from "@mattrax/enterprise-core";
+import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   DeviceHealthManagementApp,
   deriveDeviceHealth,
@@ -14,7 +10,7 @@ import {
   selectInstaller,
   shouldApplyReportedName,
 } from "@mattrax/enterprise-domain";
-import { ApnsService } from "@mattrax/apns";
+import type { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
 import { PlistValue, serializePlist } from "@mattrax/plist";
 import {
@@ -39,17 +35,20 @@ import {
   ManagementBackend,
   ServerInitiatedUnenrollment,
   UnknownDevice,
-  type AppleDeviceEvent,
-  type AppleReturnToServiceConfiguration,
-  type CheckinScope,
-  type DdmDeclarationItems,
-  type DdmTokens,
-  type ManagementManifest,
+} from "@mattrax/management-backend";
+import type {
+  AppleDeviceEvent,
+  AppleReturnToServiceConfiguration,
+  CheckinScope,
+  DdmDeclarationItems,
+  DdmTokens,
+  ManagementManifest,
 } from "@mattrax/management-backend";
 import { certificateDeviceIdsFor, createWindowsBackend } from "@mattrax/mdm-windows";
 import { assignedApplicationIdsForDevice } from "@mattrax/mdm-core";
 import { normalizeIssuedCertificateSerial } from "@mattrax/mdm-core";
-import { isPlistObject, type PlistInput, type PlistObject } from "@mattrax/mdm-core";
+import { isPlistObject } from "@mattrax/mdm-core";
+import type { PlistInput, PlistObject } from "@mattrax/mdm-core";
 import { parseDeviceInventory } from "@mattrax/mdm-core";
 import {
   parseActivationLockBypassCode,
@@ -74,15 +73,12 @@ import {
   declarationFailedTransition,
   describeAuditFailure,
   writeSystemAudit,
-  type SystemAuditOptions,
 } from "@mattrax/mdm-core";
+import type { SystemAuditOptions } from "@mattrax/mdm-core";
 import { DEVICE_INFORMATION_BASE_STATUS_ITEMS, appleStatusItemsForDevice } from "@mattrax/mdm-core";
 import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core";
-import {
-  describeSkippedConfigurations,
-  scopeConfigurationsToDevice,
-  type SkippedConfiguration,
-} from "@mattrax/mdm-core";
+import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
+import type { SkippedConfiguration } from "@mattrax/mdm-core";
 import {
   buildLegacyProfiles,
   installProfilePayload,
@@ -90,11 +86,8 @@ import {
   planLegacyProfileChanges,
   profileDigest,
 } from "@mattrax/mdm-core";
-import {
-  isScriptProfileIdentifier,
-  planScriptProfileChanges,
-  type DesiredScriptProfile,
-} from "@mattrax/mdm-core";
+import { isScriptProfileIdentifier, planScriptProfileChanges } from "@mattrax/mdm-core";
+import type { DesiredScriptProfile } from "@mattrax/mdm-core";
 import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
@@ -110,8 +103,8 @@ import {
   reconcileDeviceCommands,
   shouldRetryInstall,
   shouldRetryInstallBundle,
-  type CommandPayload,
 } from "@mattrax/mdm-core";
+import type { CommandPayload } from "@mattrax/mdm-core";
 import { parseAppleUserProfiles } from "@mattrax/mdm-core";
 import {
   applyEscrowCertificate,
@@ -134,9 +127,11 @@ import {
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
   verifyAssetRequestToken,
-  type AppleApplicationConfiguration,
-  type DeclarationContext,
-  type PolicyConfigurationRow,
+} from "@mattrax/mdm-core";
+import type {
+  AppleApplicationConfiguration,
+  DeclarationContext,
+  PolicyConfigurationRow,
 } from "@mattrax/mdm-core";
 
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
@@ -727,7 +722,10 @@ const updateUserDeclarationsFromStatus = (
       .select()
       .from(s.deviceUserDeclaration)
       .where(
-        and(eq(s.deviceUserDeclaration.deviceId, deviceId), eq(s.deviceUserDeclaration.userId, userId)),
+        and(
+          eq(s.deviceUserDeclaration.deviceId, deviceId),
+          eq(s.deviceUserDeclaration.userId, userId),
+        ),
       );
 
     const previous = new Map(previousRows.map((row) => [row.identifier, row]));
@@ -1460,7 +1458,7 @@ const base64EncodeBytes = (bytes: Uint8Array): string => {
 
 const base64DecodeBytes = (value: string): Uint8Array => {
   const binary = atob(
-    value.replace(/\s/g, "").padEnd(Math.ceil(value.replace(/\s/g, "").length / 4) * 4, "="),
+    value.replaceAll(/\s/g, "").padEnd(Math.ceil(value.replaceAll(/\s/g, "").length / 4) * 4, "="),
   );
 
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
@@ -2345,9 +2343,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       deviceId: string,
       applicationId: string,
     ) =>
-      Effect.map(
-        assignedApplicationIdsForDevice(db, { organizationId, deviceId }),
-        (ids) => ids.includes(applicationId),
+      Effect.map(assignedApplicationIdsForDevice(db, { organizationId, deviceId }), (ids) =>
+        ids.includes(applicationId),
       );
 
     type CatalogueApplication = typeof s.application.$inferSelect;
@@ -2823,7 +2820,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           // A policy-owned install may target a catalogue app that is not
           // assigned through the catalogue. The policy check-in re-queues that
           // install, so only catalogue-assigned work is retried here.
-          if (!(yield* applicationAssignedToDevice(device.organizationId, device.id, application.id)))
+          if (
+            !(yield* applicationAssignedToDevice(device.organizationId, device.id, application.id))
+          )
             continue;
 
           if (!shouldRetryInstall(history, { ...install, now: at })) continue;
@@ -3019,9 +3018,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           let device: DeviceRow | undefined;
           let attribution: "bound" | "asserted" | undefined;
 
-          const serial = normalizeIssuedCertificateSerial(
-            report.identityCertificateSerial ?? "",
-          );
+          const serial = normalizeIssuedCertificateSerial(report.identityCertificateSerial ?? "");
 
           if (serial) {
             const [certificate] = yield* db
@@ -4311,7 +4308,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                           targetId: device.id,
                           deviceId: device.id,
                           protocol: "apple",
-                                                    ip: scope.clientIp ?? null,
+                          ip: scope.clientIp ?? null,
                           userAgent: scope.userAgent ?? null,
                           certificateFingerprint:
                             scope.identityCertificateFingerprintSha256 ?? null,
@@ -4349,7 +4346,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       targetId: device.id,
                       deviceId: device.id,
                       protocol: "apple",
-                                            ip: scope.clientIp ?? null,
+                      ip: scope.clientIp ?? null,
                       userAgent: scope.userAgent ?? null,
                       certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
                       certificateSerial: scope.identityCertificateSerial ?? null,
@@ -4569,7 +4566,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     targetId: device.id,
                     deviceId: device.id,
                     protocol: "apple",
-                                        ip: scope.clientIp ?? null,
+                    ip: scope.clientIp ?? null,
                     userAgent: scope.userAgent ?? null,
                     certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
                     certificateSerial: scope.identityCertificateSerial ?? null,
@@ -4887,7 +4884,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     targetId: device.id,
                     deviceId: device.id,
                     protocol: "apple",
-                                        ip: scope.clientIp ?? null,
+                    ip: scope.clientIp ?? null,
                     userAgent: scope.userAgent ?? null,
                     certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
                     certificateSerial: scope.identityCertificateSerial ?? null,
@@ -4951,7 +4948,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   targetId: device.id,
                   deviceId: device.id,
                   protocol: "apple",
-                                    ip: scope.clientIp ?? null,
+                  ip: scope.clientIp ?? null,
                   userAgent: scope.userAgent ?? null,
                   certificateFingerprint: scope.identityCertificateFingerprintSha256 ?? null,
                   certificateSerial: scope.identityCertificateSerial ?? null,

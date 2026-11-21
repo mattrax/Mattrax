@@ -43,19 +43,15 @@ describe("bulk entity copy", () => {
   });
 
   it("formats one detail line per failed row", () => {
-    expect(
-      bulkFailureDetails([{ id: "user-1", name: "Ada", reason: "No longer exists" }]),
-    ).toEqual(["Ada: No longer exists"]);
+    expect(bulkFailureDetails([{ id: "user-1", name: "Ada", reason: "No longer exists" }])).toEqual(
+      ["Ada: No longer exists"],
+    );
   });
 });
 
 describe("bulk batching", () => {
   it("splits ids into endpoint-sized batches", () => {
-    expect(chunkIds(["a", "b", "c", "d", "e"], 2)).toEqual([
-      ["a", "b"],
-      ["c", "d"],
-      ["e"],
-    ]);
+    expect(chunkIds(["a", "b", "c", "d", "e"], 2)).toEqual([["a", "b"], ["c", "d"], ["e"]]);
   });
 
   it("merges updated and failed rows from every batch", async () => {
@@ -99,10 +95,14 @@ describe("bulkReport", () => {
 
   it("reports a clean success", () => {
     expect(
-      bulkReport(noun, { ok: "changed the role for", fail: "could not change the role for" }, {
-        succeeded: 2,
-        failed: [],
-      }),
+      bulkReport(
+        noun,
+        { ok: "changed the role for", fail: "could not change the role for" },
+        {
+          succeeded: 2,
+          failed: [],
+        },
+      ),
     ).toEqual({
       tone: "success",
       title: "Changed the role for 2 administrators",
@@ -112,10 +112,14 @@ describe("bulkReport", () => {
 
   it("reports a partial failure with the failed rows", () => {
     expect(
-      bulkReport(noun, { ok: "added", fail: "could not add" }, {
-        succeeded: 1,
-        failed: [{ id: "user-2", name: "Ada", reason: "No longer exists" }],
-      }),
+      bulkReport(
+        noun,
+        { ok: "added", fail: "could not add" },
+        {
+          succeeded: 1,
+          failed: [{ id: "user-2", name: "Ada", reason: "No longer exists" }],
+        },
+      ),
     ).toEqual({
       tone: "warning",
       title: "Added 1 of 2 administrators",
@@ -126,13 +130,17 @@ describe("bulkReport", () => {
 
   it("reports a total failure as an error", () => {
     expect(
-      bulkReport(noun, { ok: "added", fail: "could not add" }, {
-        succeeded: 0,
-        failed: [
-          { id: "user-1", name: "Ada", reason: "No longer exists" },
-          { id: "user-2", name: "Grace", reason: "Forbidden" },
-        ],
-      }),
+      bulkReport(
+        noun,
+        { ok: "added", fail: "could not add" },
+        {
+          succeeded: 0,
+          failed: [
+            { id: "user-1", name: "Ada", reason: "No longer exists" },
+            { id: "user-2", name: "Grace", reason: "Forbidden" },
+          ],
+        },
+      ),
     ).toEqual({
       tone: "error",
       title: "Could not add 2 administrators",

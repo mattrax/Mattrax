@@ -14,8 +14,8 @@ import {
   normalizeMigrationSerial,
   normalizeMigrationSerials,
   observeMigrationEntry,
-  type FleetMigrationEntryStatus,
 } from "./fleetMigration.js";
+import type { FleetMigrationEntryStatus } from "./fleetMigration.js";
 
 const now = new Date("2026-11-20T12:00:00.000Z");
 

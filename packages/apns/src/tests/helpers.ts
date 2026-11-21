@@ -3,7 +3,7 @@ import * as pkijs from "pkijs";
 import { pemEncode } from "@mattrax/crypto";
 import { generateApnsKeyPair } from "../csr.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {

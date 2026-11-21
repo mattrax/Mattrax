@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
-import { antiSlopLint } from "./oxlint.config.ts";
+import { lintConfig } from "./oxlint.config.ts";
 
 /** Workspace commands run from the repository root, not this package. */
 const repository = fileURLToPath(new URL("../..", import.meta.url));
@@ -17,13 +17,12 @@ export default defineConfig({
       "**/playwright-report/**",
       "pnpm-lock.yaml",
       "apps/web/public/catalog/windows/**",
-      "packages/config/oxlint/**",
     ],
   },
   lint: {
-    ...antiSlopLint,
+    ...lintConfig,
     ignorePatterns: [
-      ...antiSlopLint.ignorePatterns,
+      ...(lintConfig.ignorePatterns ?? []),
       "**/dist/**",
       "**/.cloudflare/**",
       "**/doc_build/**",
@@ -41,7 +40,6 @@ export default defineConfig({
     projects: [
       `${repository}/apps/*/vitest.config.ts`,
       `${repository}/packages/*/vitest.config.ts`,
-      `${repository}/packages/config/oxlint/vitest.config.ts`,
     ],
   },
 });

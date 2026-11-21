@@ -22,7 +22,7 @@ const CRC_TABLE = (() => {
 const crc32 = (bytes: Uint8Array) => {
   let crc = 0xffffffff;
 
-  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff]! ^ (crc >>> 8);
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
 
   return (crc ^ 0xffffffff) >>> 0;
 };
@@ -118,7 +118,7 @@ export const buildZip = (entries: ZipEntry[]): Uint8Array<ArrayBuffer> => {
     offset = writeU16(view, offset, 0); // disk
     offset = writeU16(view, offset, 0); // internal attrs
     offset = writeU32(view, offset, 0); // external attrs
-    offset = writeU32(view, offset, central[index]!);
+    offset = writeU32(view, offset, central[index]);
     output.set(file.name, offset);
     offset += file.name.length;
   });

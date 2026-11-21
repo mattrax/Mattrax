@@ -1,16 +1,13 @@
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
-import { AuthCredentialCommandCollector, type AuthInvocation } from "@yielded/auth/Operations";
+import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
+import type { AuthInvocation } from "@yielded/auth/Operations";
 import type { StrategyDefinition } from "@yielded/auth/Auth";
 import { Context, DateTime, Effect, Layer, Schema } from "effect";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import {
-  Db,
-  type EnterpriseDb,
-  authCredentials,
-  authRequirementForSubject,
-  schema,
-} from "@mattrax/enterprise-core";
-import { AuthClaims, RecoveryRejected } from "@mattrax/enterprise-domain";
+import { Db, authCredentials, authRequirementForSubject, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import type { AuthClaims } from "@mattrax/enterprise-domain";
+import { RecoveryRejected } from "@mattrax/enterprise-domain";
 import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
 import type { EmailTransport } from "@mattrax/email";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
@@ -677,7 +674,7 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
               proofs: [
                 {
                   method: "account-recovery",
-                  credentialId: active[0]!.credentialId,
+                  credentialId: active[0].credentialId,
                   factors: ["possession"],
                   userVerified: true,
                   phishingResistant: false,

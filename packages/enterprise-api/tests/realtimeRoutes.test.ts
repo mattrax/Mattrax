@@ -1,6 +1,7 @@
 import { Effect, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-import { EnterpriseUnauthorized, type EnterpriseAuth } from "@mattrax/enterprise-domain";
+import { EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
+import type { EnterpriseAuth } from "@mattrax/enterprise-domain";
 import {
   authorizeRealtimeTenant,
   latestRealtimeSeq,

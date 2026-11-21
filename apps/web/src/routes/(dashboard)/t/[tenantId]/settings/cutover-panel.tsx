@@ -15,7 +15,8 @@ import {
 import { Input } from "~/components/ui/input";
 import { CircleAlert, CheckCircle2, Download, ShieldCheck } from "~/components/ui/icons";
 import { useNavigate } from "~/lib/navigation";
-import { enterprise, enterpriseKeys, type TenantDetail } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type { TenantDetail } from "~/lib/enterprise";
 import { downloadBlob } from "~/lib/download";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
@@ -25,8 +26,7 @@ const MIN_PASSPHRASE = 12;
 
 const origin = () => (typeof window === "undefined" ? "" : window.location.origin);
 
-const bytes = (value: number) =>
-  value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`;
+const bytes = (value: number) => (value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`);
 
 const severityClass = {
   ok: "border-success/25 bg-success/[0.06] text-success-foreground",
@@ -419,7 +419,9 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
               </Show>
               <Button
                 variant="outline"
-                disabled={!canExport() || exporting() || Boolean(passphraseProblem()) || !passphrase()}
+                disabled={
+                  !canExport() || exporting() || Boolean(passphraseProblem()) || !passphrase()
+                }
                 onClick={() => void download()}
               >
                 <Download class="size-4" />
@@ -464,9 +466,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
               Import archive
             </Button>
             <Show when={!canImport()}>
-              <p class="mt-2 text-xs text-muted-foreground">
-                Your role cannot import tenant data.
-              </p>
+              <p class="mt-2 text-xs text-muted-foreground">Your role cannot import tenant data.</p>
             </Show>
           </div>
         </section>
@@ -496,7 +496,9 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                   {archiveName() ? "Choose another archive" : "Choose archive"}
                 </Button>
                 <Show when={archiveName()}>
-                  <span class="min-w-0 break-all text-xs text-muted-foreground">{archiveName()}</span>
+                  <span class="min-w-0 break-all text-xs text-muted-foreground">
+                    {archiveName()}
+                  </span>
                 </Show>
               </div>
               <label class="block">
@@ -539,13 +541,18 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                     <div class="rounded-lg border border-border bg-surface p-3">
                       <p class="text-[13px] font-medium text-foreground">
                         {value().source.name}
-                        <span class="font-normal text-muted-foreground"> ({value().source.slug})</span>
+                        <span class="font-normal text-muted-foreground">
+                          {" "}
+                          ({value().source.slug})
+                        </span>
                       </p>
                       <p class="mt-1 text-xs text-muted-foreground">
                         Exported {new Date(value().manifest.createdAt).toLocaleString()} from{" "}
                         {value().source.origin}
                       </p>
-                      <p class="mt-1 text-xs text-muted-foreground">{previewCounts()?.join(" · ")}</p>
+                      <p class="mt-1 text-xs text-muted-foreground">
+                        {previewCounts()?.join(" · ")}
+                      </p>
                       <Show when={value().crossDeployment}>
                         <p class="mt-2 text-xs text-warning-foreground">
                           Different deployment ({value().source.deploymentId.slice(0, 16)}…).
@@ -609,7 +616,9 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                             type="checkbox"
                             class="mt-0.5 size-3.5 shrink-0 accent-brand"
                             checked={allowCrossDeployment()}
-                            onChange={(event) => setAllowCrossDeployment(event.currentTarget.checked)}
+                            onChange={(event) =>
+                              setAllowCrossDeployment(event.currentTarget.checked)
+                            }
                           />
                           I confirm this archive comes from a different deployment.
                         </label>
@@ -620,12 +629,16 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                             type="checkbox"
                             class="mt-0.5 size-3.5 shrink-0 accent-brand"
                             checked={replaceConfiguration()}
-                            onChange={(event) => setReplaceConfiguration(event.currentTarget.checked)}
+                            onChange={(event) =>
+                              setReplaceConfiguration(event.currentTarget.checked)
+                            }
                           />
                           Replace this tenant's existing groups, policies and applications.
                         </label>
                       </Show>
-                      <Show when={value().conflicts.some((conflict) => conflict.kind === "scep_ca")}>
+                      <Show
+                        when={value().conflicts.some((conflict) => conflict.kind === "scep_ca")}
+                      >
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
                           <input
                             type="checkbox"
@@ -636,7 +649,9 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                           Make the source SCEP CA the signing CA (the target CA stays trusted).
                         </label>
                       </Show>
-                      <Show when={value().conflicts.some((conflict) => conflict.kind === "escrow_key")}>
+                      <Show
+                        when={value().conflicts.some((conflict) => conflict.kind === "escrow_key")}
+                      >
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
                           <input
                             type="checkbox"
@@ -647,7 +662,11 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                           Replace this tenant's FileVault escrow key with the archive's key.
                         </label>
                       </Show>
-                      <Show when={value().conflicts.some((conflict) => conflict.kind === "device_serial")}>
+                      <Show
+                        when={value().conflicts.some(
+                          (conflict) => conflict.kind === "device_serial",
+                        )}
+                      >
                         <label class="flex items-center gap-2 text-xs text-muted-foreground">
                           <input
                             type="checkbox"
@@ -662,7 +681,8 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                       </Show>
                       <label class="block">
                         <span class="mb-1 block text-xs text-muted-foreground">
-                          Type <span class="font-mono font-medium">{value().confirm}</span> to confirm
+                          Type <span class="font-mono font-medium">{value().confirm}</span> to
+                          confirm
                         </span>
                         <Input
                           value={confirm()}
@@ -693,8 +713,8 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                   </p>
                   <p class="mt-1 text-xs text-muted-foreground">
                     Skipped: {value().skipped.devices} devices, {value().skipped.members} members,{" "}
-                    {value().skipped.certificates} certificates, {value().skipped.auditEntries} audit
-                    entries.
+                    {value().skipped.certificates} certificates, {value().skipped.auditEntries}{" "}
+                    audit entries.
                   </p>
                 </div>
                 <Show when={value().needsReissue.length > 0}>

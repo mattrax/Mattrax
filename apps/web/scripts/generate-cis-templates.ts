@@ -60,9 +60,7 @@ const loadCatalogues = async (): Promise<CisCatalogues> => {
   const catalogues = {} as Record<keyof CisCatalogues, CisCatalogues[keyof CisCatalogues]>;
 
   for (const platform of ["apple", "android", "windows"] as const) {
-    const data = Schema.decodeUnknownSync(PlatformData)(
-      await readJson(CATALOGUE_FILES[platform]),
-    );
+    const data = Schema.decodeUnknownSync(PlatformData)(await readJson(CATALOGUE_FILES[platform]));
 
     if (data.id !== platform)
       throw new Error(
@@ -118,10 +116,7 @@ export const buildCisAssets = (templates: ReadonlyArray<CompiledCisTemplate>): G
   for (const template of templates)
     files.set(`${template.id}.json`, `${JSON.stringify(template)}\n`);
 
-  files.set(
-    "index.json",
-    `${JSON.stringify(cisTemplateIndex(templates))}\n`,
-  );
+  files.set("index.json", `${JSON.stringify(cisTemplateIndex(templates))}\n`);
 
   return { files, templates: [...templates] };
 };
@@ -166,8 +161,7 @@ export const checkCisAssets = async (options: GenerateOptions = {}): Promise<str
       continue;
     }
 
-    if ((await readFile(path.join(out, name), "utf8")) !== contents)
-      problems.push(`stale ${name}`);
+    if ((await readFile(path.join(out, name), "utf8")) !== contents) problems.push(`stale ${name}`);
   }
 
   for (const name of existing) if (!assets.files.has(name)) problems.push(`unexpected ${name}`);

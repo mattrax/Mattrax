@@ -65,23 +65,20 @@ import {
   policyScopeStatusLabel,
   policyScopeStatusTone,
   policyScopeWarnings,
-  type PolicyScopeCounts,
 } from "~/lib/policy-scope";
+import type { PolicyScopeCounts } from "~/lib/policy-scope";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { createStaleWriteGuard } from "~/lib/stale-write";
 import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
-import {
-  parsePolicyDraft,
-  type PolicyConfiguration,
-  type PolicyConfigurations,
-} from "~/lib/policy-designer/build";
+import { parsePolicyDraft } from "~/lib/policy-designer/build";
+import type { PolicyConfiguration, PolicyConfigurations } from "~/lib/policy-designer/build";
 import {
   applePasscodeConfiguration,
   appleWifiConfiguration,
   windowsWifiConfiguration,
-  type WifiSecurity,
 } from "~/lib/policy-designer/presets";
+import type { WifiSecurity } from "~/lib/policy-designer/presets";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";

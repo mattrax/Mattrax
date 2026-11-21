@@ -9,8 +9,8 @@ import {
   TenantRouteParams,
   UserRouteParams,
   decodeDeviceSearchParams,
-  type DeviceSearchParams,
 } from "./routes";
+import type { DeviceSearchParams } from "./routes";
 
 /**
  * The tenant segment of the current URL, read from the committed location.

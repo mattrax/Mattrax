@@ -162,7 +162,7 @@ const makeContext = (role = "owner") => {
     stripeClient: makeStripeClient(),
     // SAFETY: the fake exposes the R2 methods backups call; it is not a full
     // `R2Bucket` (no signing, no metadata).
-    storage: storage,
+    storage,
     // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret: "backup-test-secret",

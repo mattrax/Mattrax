@@ -3,8 +3,8 @@ import {
   SCRIPT_PROFILE_IDENTIFIER_PREFIX,
   isScriptProfileIdentifier,
   planScriptProfileChanges,
-  type DesiredScriptProfile,
 } from "@mattrax/mdm-core";
+import type { DesiredScriptProfile } from "@mattrax/mdm-core";
 
 const profile = (scriptId: string, digest: string): DesiredScriptProfile => ({
   scriptId,

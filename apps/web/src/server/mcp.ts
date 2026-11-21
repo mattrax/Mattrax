@@ -2,17 +2,16 @@ import { fetchApi } from "./api";
 import { Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
+import type { DashboardQueryRequest } from "@mattrax/enterprise-domain/client";
 import {
   DashboardDataset,
-  DashboardQueryRequest,
   DeviceQuery,
   enterpriseAccountApi,
   enterpriseApi,
   enterpriseAttributeApi,
   McpContextResponse as McpContextResponseSchema,
-  type McpContextResponse,
-  type MeResponse,
 } from "@mattrax/enterprise-domain/client";
+import type { McpContextResponse, MeResponse } from "@mattrax/enterprise-domain/client";
 
 const API_BASE = "https://api.mattrax.internal";
 
@@ -139,7 +138,7 @@ const failureMessage = (operation: string, status: number, data: Schema.Json) =>
 
   const summary =
     isString(description) && description.trim()
-      ? description.trim().replace(/\s+/g, " ").slice(0, 200)
+      ? description.trim().replaceAll(/\s+/g, " ").slice(0, 200)
       : statusMessage(status);
 
   return `${operation} failed (${status}): ${summary}`;
@@ -231,8 +230,8 @@ const recordActivity = async (
     );
 
     if (!response.ok) console.error(`MCP activity recording failed with status ${response.status}`);
-  } catch (cause) {
-    console.error("MCP activity recording failed", cause);
+  } catch (error) {
+    console.error("MCP activity recording failed", error);
   }
 };
 
@@ -254,8 +253,8 @@ const queryString = (value: Schema.Json | undefined) => {
 
 const toolName = (identifier: string) => {
   const name = identifier
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]/g, "_")
+    .replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replaceAll(/[^A-Za-z0-9_]/g, "_")
     .toLowerCase();
 
   if (name.length <= 64) return name;
@@ -269,7 +268,7 @@ const toolName = (identifier: string) => {
 };
 
 const pathParameters = (path: string) =>
-  [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!);
+  [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]);
 
 const shouldExpose = (path: string) => {
   if (path.includes("/account")) return false;
@@ -385,7 +384,7 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
 
     tools.push(
       Tool.make(name, {
-        description: `${identifier.replace(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
+        description: `${identifier.replaceAll(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
         parameters,
         success: Schema.Unknown,
       })
@@ -485,7 +484,7 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
     handlers.set(name, (params) =>
       Effect.tryPromise({
         try: async () => {
-          const path = endpoint.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
+          const path = endpoint.path.replaceAll(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
             encodeURIComponent(String(params[key] ?? "")),
           );
 
@@ -574,8 +573,8 @@ const handleMcp = async (request: Request): Promise<Response> => {
         },
       }),
     );
-  } catch (cause) {
-    console.error("MCP context lookup failed", cause);
+  } catch (error) {
+    console.error("MCP context lookup failed", error);
 
     return unavailable(request);
   }
@@ -599,8 +598,8 @@ const handleMcp = async (request: Request): Promise<Response> => {
     if (body === undefined) throw new Error("Unexpected context response");
 
     context = body;
-  } catch (cause) {
-    console.error("MCP context response could not be read", cause);
+  } catch (error) {
+    console.error("MCP context response could not be read", error);
 
     return unavailable(request);
   }
@@ -619,7 +618,7 @@ const handleMcp = async (request: Request): Promise<Response> => {
   try {
     return withCors(await web.handler(request), request);
   } finally {
-    await web.dispose().catch((cause) => console.error("MCP layer dispose failed", cause));
+    await web.dispose().catch((error: unknown) => console.error("MCP layer dispose failed", error));
   }
 };
 

@@ -11,7 +11,9 @@ const credentialsFromUrl = (value: string) => {
   const url = new URL(value);
 
   const sslMode =
-    url.searchParams.get("ssl-mode") ?? url.searchParams.get("ssl_mode") ?? url.searchParams.get("ssl");
+    url.searchParams.get("ssl-mode") ??
+    url.searchParams.get("ssl_mode") ??
+    url.searchParams.get("ssl");
 
   if (!sslMode) {
     return { url: value };

@@ -156,7 +156,9 @@ export default function LoginPage() {
     // first assertions while the credential settles. Retry only that transient
     // rejection: a dismissed prompt must not open another sheet.
     for (let attempt = 0; result.error?.tag === "PasskeyRejected" && attempt < 10; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 400);
+      });
       result = await authClient.passkeySignIn();
     }
 

@@ -4,9 +4,8 @@ import {
   matchesEntityQuery,
   parseEntityQuery,
   splitEntityValues,
-  type EntityCondition,
-  type EntityField,
 } from "./entity-query-engine";
+import type { EntityCondition, EntityField } from "./entity-query-engine";
 
 type Row = {
   id: string;
@@ -75,30 +74,34 @@ describe("parseEntityQuery with in", () => {
   });
 
   it("round-trips Windows paths instead of swallowing the list", () => {
-    const text = 'name in "C:\\\\Users\\\\Admin", Beta';
+    const text = String.raw`name in "C:\\Users\\Admin", Beta`;
     const conditions = parseEntityQuery(text, fields);
 
     expect(conditions).toEqual([
-      { field: "name", op: "in", value: '"C:\\\\Users\\\\Admin", Beta' },
+      { field: "name", op: "in", value: String.raw`"C:\\Users\\Admin", Beta` },
     ]);
     expect(formatEntityQuery(conditions)).toBe(text);
-    expect(matchesEntityQuery(conditions, row({ name: "C:\\Users\\Admin" }), fields)).toBe(true);
+    expect(matchesEntityQuery(conditions, row({ name: String.raw`C:\Users\Admin` }), fields)).toBe(
+      true,
+    );
   });
 
   it("round-trips escaped quotes", () => {
-    const text = 'name in "say \\"hi\\"", Beta';
+    const text = String.raw`name in "say \"hi\"", Beta`;
     const conditions = parseEntityQuery(text, fields);
 
-    expect(conditions).toEqual([{ field: "name", op: "in", value: '"say \\"hi\\"", Beta' }]);
+    expect(conditions).toEqual([
+      { field: "name", op: "in", value: String.raw`"say \"hi\"", Beta` },
+    ]);
     expect(formatEntityQuery(conditions)).toBe(text);
     expect(matchesEntityQuery(conditions, row({ name: 'say "hi"' }), fields)).toBe(true);
   });
 
   it("still splits conditions after a value ending in a backslash", () => {
-    const text = 'name in "ends\\\\", Beta and devices at least 2';
+    const text = String.raw`name in "ends\\", Beta and devices at least 2`;
 
     expect(parseEntityQuery(text, fields)).toEqual([
-      { field: "name", op: "in", value: '"ends\\\\", Beta' },
+      { field: "name", op: "in", value: String.raw`"ends\\", Beta` },
       { field: "devices", op: "at least", value: "2" },
     ]);
   });

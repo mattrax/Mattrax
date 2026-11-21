@@ -1,12 +1,11 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   compareVersionStrings,
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
-  type DeviceQueryDevice,
-  type DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
+import type { DeviceQueryDevice, DynamicGroupRules } from "@mattrax/enterprise-domain";
 import {
   previewDynamicGroup,
   syncDynamicGroup,

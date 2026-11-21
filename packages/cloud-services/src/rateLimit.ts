@@ -319,13 +319,13 @@ export const createRateLimiter = ({
               limit: rule.limit,
               retryAfterSeconds: rule.windowSeconds,
             };
-      } catch (cause) {
+      } catch (error) {
         // Credential endpoints fail closed: the per-isolate counter is only
         // meaningful for a single isolate, so a shared-limiter outage must not
         // turn a global limit into N independent limits for a credential
         // guessing window. Other buckets keep their bounded local fallback.
         if (rule.failClosedWhenUnavailable) {
-          warn(`Cloudflare rate limiter failed for bucket ${rule.bucket}; failing closed`, cause);
+          warn(`Cloudflare rate limiter failed for bucket ${rule.bucket}; failing closed`, error);
 
           return {
             limited: true,
@@ -340,7 +340,7 @@ export const createRateLimiter = ({
         // visible.
         warn(
           `Cloudflare rate limiter failed for bucket ${rule.bucket}; using local fallback`,
-          cause,
+          error,
         );
       }
     }

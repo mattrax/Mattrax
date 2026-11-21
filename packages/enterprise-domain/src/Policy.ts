@@ -1,7 +1,7 @@
 import { Schema } from "effect";
-import { DeviceRow } from "./Device.js";
+import type { DeviceRow } from "./Device.js";
 import { GroupPolicyRelation } from "./Group.js";
-import { GroupRow } from "./Group.js";
+import type { GroupRow } from "./Group.js";
 import { JsonRecord } from "./Errors.js";
 import { NullableString } from "./Errors.js";
 import { EnterprisePolicyApplicationDownloadErrors } from "./Errors.js";

@@ -109,14 +109,20 @@ export function Hero() {
 
               <p class="lx-hero__note">
                 Free during alpha. Apple, Windows and Android included.{" "}
-                <a href="/docs/getting-started/alpha" target="_self" class="underline underline-offset-2">
+                <a
+                  href="/docs/getting-started/alpha"
+                  target="_self"
+                  class="underline underline-offset-2"
+                >
                   What alpha means
                 </a>
                 .
               </p>
 
               <p class="lx-proof">
-                <For each={proofPoints}>{(point) => <span class="lx-proof__item">{point}</span>}</For>
+                <For each={proofPoints}>
+                  {(point) => <span class="lx-proof__item">{point}</span>}
+                </For>
               </p>
             </div>
 

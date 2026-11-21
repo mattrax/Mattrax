@@ -17,13 +17,12 @@ import {
   hasUnrestrictedCredential,
   normalizeCredentialPermissions,
   diagnoseError,
-  type Permission,
-  type StepUpAction,
-  type StepUpMethod,
 } from "@mattrax/enterprise-domain";
+import type { Permission, StepUpAction, StepUpMethod } from "@mattrax/enterprise-domain";
 import { Db, authIdentifiers, schema } from "@mattrax/enterprise-core";
 import { ACCOUNT_AUDIT, clientDescriptor, recordAccountAudit } from "../Account/accountAudit.ts";
-import { sessionCookie, type AppAuthService } from "../Account/auth.ts";
+import { sessionCookie } from "../Account/auth.ts";
+import type { AppAuthService } from "../Account/auth.ts";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
@@ -246,7 +245,7 @@ const emailChangeCancelLinkFor = (origin: string, token: string) =>
 export const generateEmailCode = () => {
   const bytes = crypto.getRandomValues(new Uint32Array(1));
 
-  return String(bytes[0]! % 1_000_000).padStart(6, "0");
+  return String(bytes[0] % 1_000_000).padStart(6, "0");
 };
 
 export const emailCodeHash = (authSecret: string, subjectId: string, code: string) =>

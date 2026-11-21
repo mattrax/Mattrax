@@ -3,13 +3,12 @@ import { Effect, Layer, Predicate } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
-import {
+import type {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
-  ManagementManifest,
-  UnknownDevice,
 } from "@mattrax/management-backend";
+import { ManagementManifest, UnknownDevice } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
 import { buildAuthenticatePlist, mockManagementBackend } from "./helpers.js";
 
@@ -125,7 +124,7 @@ describe("Apple MDM handlers", () => {
 
       expect(match).not.toBeNull();
 
-      const decoded = Uint8Array.from(atob(match![1]!), (char) => char.charCodeAt(0));
+      const decoded = Uint8Array.from(atob(match![1]), (char) => char.charCodeAt(0));
       expect(new TextDecoder().decode(decoded)).toContain("com.mattrax.ade.profile-1");
     });
 
@@ -741,7 +740,7 @@ describe("Apple MDM handlers", () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () =>
           Effect.succeed(
-            ManagementManifest.members[1]!.make({
+            ManagementManifest.members[1].make({
               commandUUID: "cmd-rts",
               requestType: "EraseDevice",
               payload: {

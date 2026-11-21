@@ -197,7 +197,7 @@ export const scepChecks: ReadonlyArray<Check> = [
       const validDer = csr.toSchema().toBER(false);
       const corrupted = new Uint8Array(validDer.slice(0));
       // Corrupt the CSR signature while keeping the outer CMS signature valid.
-      corrupted[corrupted.length - 1] = corrupted[corrupted.length - 1]! ^ 0xff;
+      corrupted[corrupted.length - 1] = corrupted.at(-1)! ^ 0xff;
 
       const request = await buildPkcsReq({
         csr,

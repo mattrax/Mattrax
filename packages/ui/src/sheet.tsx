@@ -72,7 +72,10 @@ function SheetFooter(props: Omit<ComponentProps<"div">, "style">) {
 
   return (
     <div
-      class={cn("mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4", local.class)}
+      class={cn(
+        "mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4",
+        local.class,
+      )}
       {...others}
     />
   );

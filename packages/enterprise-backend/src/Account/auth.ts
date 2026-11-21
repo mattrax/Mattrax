@@ -1,12 +1,12 @@
 import { Auth, Hooks, Passkey, Sessions, Totp } from "@yielded/auth";
 import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
+import type { makeAppAuth } from "@mattrax/enterprise-domain";
 import {
   appSessionConfiguration,
-  makeAppAuth,
   PASSKEY_MODULE_ID,
   TOTP_MODULE_ID,
-  type AuthClaims,
 } from "@mattrax/enterprise-domain";
+import type { AuthClaims } from "@mattrax/enterprise-domain";
 import {
   Database,
   makePasskeyRegistrationServices,

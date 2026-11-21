@@ -12,16 +12,14 @@ import {
   isAndroidPackageName,
   mergeAssignedAndroidApplications,
   verifyPubSubOidcToken,
-  type AndroidPolicyConfiguration,
-  type IssueCommandParams,
 } from "@mattrax/dm-android";
+import type { AndroidPolicyConfiguration, IssueCommandParams } from "@mattrax/dm-android";
 import {
   deviceLimitForOrganization,
   replaceDeviceApplications,
   schema,
-  type EnterpriseDb,
-  type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
+import type { EnterpriseDb, PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   ANDROID_OS_UPDATE_CONFIGURATION_KIND,
   androidSystemUpdatePolicy,
@@ -196,8 +194,8 @@ export const describeAndroidError = (cause: unknown): string => {
           })();
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\s+/g, " ")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\s+/g, " ")
     .slice(0, 500);
 };
 
@@ -2873,7 +2871,7 @@ const PASSWORD_ALPHABET = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_DIGITS}`
 const randomCharacter = (alphabet: string): string => {
   const [value] = crypto.getRandomValues(new Uint32Array(1));
 
-  return alphabet[value! % alphabet.length]!;
+  return alphabet[value % alphabet.length];
 };
 
 /**
@@ -2895,8 +2893,8 @@ const generateAndroidPassword = (length = 16): string => {
   while (characters.length < length) characters.push(randomCharacter(PASSWORD_ALPHABET));
 
   for (let index = characters.length - 1; index > 0; index--) {
-    const swap = Number(crypto.getRandomValues(new Uint32Array(1))[0]! % (index + 1));
-    [characters[index], characters[swap]] = [characters[swap]!, characters[index]!];
+    const swap = Number(crypto.getRandomValues(new Uint32Array(1))[0] % (index + 1));
+    [characters[index], characters[swap]] = [characters[swap], characters[index]];
   }
 
   return characters.join("");

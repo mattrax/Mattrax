@@ -75,7 +75,10 @@ function DialogFooter(props: ComponentProps<"div">) {
 
   return (
     <div
-      class={cn("-mx-5 -mb-5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t border-border bg-surface px-5 py-3", local.class)}
+      class={cn(
+        "-mx-5 -mb-5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t border-border bg-surface px-5 py-3",
+        local.class,
+      )}
       {...others}
     />
   );

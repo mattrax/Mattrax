@@ -11,7 +11,10 @@ import type { Element } from "@xmldom/xmldom";
 type DomParserConstructor = new (options?: {
   onError?: (level: string, message: string) => void;
 }) => {
-  parseFromString(input: string, type: string): {
+  parseFromString(
+    input: string,
+    type: string,
+  ): {
     readonly documentElement: Element | null;
     getElementsByTagName?(name: string): { readonly length: number };
   };
@@ -35,10 +38,7 @@ const domParser = (): DomParserConstructor => {
   const Parser: unknown = globalThis.DOMParser;
 
   if (!isDomParser(Parser))
-    throw new AdmxImportError(
-      "malformed-xml",
-      "No XML parser is available in this environment.",
-    );
+    throw new AdmxImportError("malformed-xml", "No XML parser is available in this environment.");
 
   return Parser;
 };
@@ -180,7 +180,8 @@ export const parseXml = (xml: string, options: ParseXmlOptions = {}): XmlElement
       throw new Error("The document contains a parser error.");
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 200) : "";
+    const detail =
+      error instanceof Error ? error.message.replaceAll(/\s+/g, " ").slice(0, 200) : "";
 
     throw new AdmxImportError(
       "malformed-xml",

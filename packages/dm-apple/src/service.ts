@@ -1,34 +1,36 @@
 import { Context, Effect, Layer, Option, Predicate, Schema } from "effect";
-import {
-  type AuthenticatePlist,
-  type CheckOutPlist,
-  type CommandResultPlist,
-  type DDMStatusReport,
-  type TokenUpdatePlist,
-  type UserAuthenticatePlist,
-  DeviceUnenrolled,
-  MdmError,
-  resolveCheckinChannel,
+import { DeviceUnenrolled, MdmError, resolveCheckinChannel } from "./schema.js";
+import type {
+  AuthenticatePlist,
+  CheckOutPlist,
+  CommandResultPlist,
+  DDMStatusReport,
+  TokenUpdatePlist,
+  UserAuthenticatePlist,
 } from "./schema.js";
 import {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
   MdmOrigin,
-  type AppleDeviceEventResult,
-  type AppleFailureReport,
-  type AppleReturnToServiceConfiguration,
+} from "@mattrax/management-backend";
+import type {
+  AppleDeviceEventResult,
+  AppleFailureReport,
+  AppleReturnToServiceConfiguration,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
 import { PlistValue, serializePlist } from "@mattrax/plist";
 import { verifyAppleProfileToken } from "./tokens.js";
-import { verifyMdmSignature, type VerifiedMdmSignature } from "./signature.js";
-import { AppleMdmTrust, type AppleMdmTrustService } from "./trust.js";
+import { verifyMdmSignature } from "./signature.js";
+import type { VerifiedMdmSignature } from "./signature.js";
+import { AppleMdmTrust } from "./trust.js";
+import type { AppleMdmTrustService } from "./trust.js";
 
 function base64ToHex(base64: string): string {
-  const cleaned = base64.replace(/\s/g, "");
+  const cleaned = base64.replaceAll(/\s/g, "");
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
   const binary = atob(padded);
 
@@ -655,7 +657,7 @@ const makeAppleMdmService = (
       // copying it into a mutable record cannot change the value's shape.
       const copy = Object.assign({} as Record<string, PlistValue>, value);
 
-      copy[head] = setDataAt(value[head]!, rest);
+      copy[head] = setDataAt(value[head], rest);
 
       return copy;
     }
@@ -666,7 +668,7 @@ const makeAppleMdmService = (
       if (!Number.isInteger(index) || index < 0 || index >= value.length) return value;
       const copy = [...value];
 
-      copy[index] = setDataAt(copy[index]!, rest);
+      copy[index] = setDataAt(copy[index], rest);
 
       return copy;
     }
@@ -981,11 +983,13 @@ const makeAppleMdmService = (
    */
   const recordFailure = (report: AppleFailureReport): Effect.Effect<void> =>
     backend.appleRecordFailure
-      ? backend.appleRecordFailure(report).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
-          ),
-        )
+      ? backend
+          .appleRecordFailure(report)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
+            ),
+          )
       : Effect.void;
 
   return AppleMdmService.of({

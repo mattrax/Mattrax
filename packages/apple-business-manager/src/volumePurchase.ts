@@ -3,7 +3,8 @@ import { Data, Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { parsePlist } from "@mattrax/plist";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
 
 /**
@@ -73,7 +74,7 @@ const record = (value: Schema.Json | undefined): Record<string, Schema.Json> | u
   Schema.is(JsonObject)(value) ? value : undefined;
 
 const base64ToBytes = (value: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
   const binary = atob(cleaned);
 
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -157,7 +158,7 @@ export const parseVppTokenUpload = async (input: {
 
       if (value) {
         decoded = value;
-        contentToken = candidate.replace(/\s/g, "");
+        contentToken = candidate.replaceAll(/\s/g, "");
         break;
       }
     } catch {
@@ -217,11 +218,11 @@ export const openVppToken = async (
 
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
-  } catch (cause) {
+  } catch (error) {
     throw fail(
       "invalid_token",
       "The stored Apps and Books token could not be decrypted. Re-upload the token.",
-      cause,
+      error,
     );
   }
 
@@ -335,8 +336,8 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         { ...init, headers },
         { fetch: doFetch, timeoutMs },
       );
-    } catch (cause) {
-      throw fail("upstream", `Apple VPP request failed: ${describeAppleError(cause)}`, cause);
+    } catch (error) {
+      throw fail("upstream", `Apple VPP request failed: ${describeAppleError(error)}`, error);
     }
 
     if (!response.ok) {
@@ -356,8 +357,8 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
     try {
       return await response.json();
-    } catch (cause) {
-      throw fail("invalid_response", "Apple Apps and Books returned invalid JSON.", cause);
+    } catch (error) {
+      throw fail("invalid_response", "Apple Apps and Books returned invalid JSON.", error);
     }
   };
 
@@ -369,7 +370,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
   ): Promise<T[]> => {
     const items: T[] = [];
     let pageIndex = 0;
-    let totalPages = 1;
+    let totalPages: number;
 
     do {
       const page = await request<Record<string, Schema.Json>>(

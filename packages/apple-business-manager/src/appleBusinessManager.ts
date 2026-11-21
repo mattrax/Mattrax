@@ -2,8 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { Data, Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
-import { PlistValue, parsePlist } from "@mattrax/plist";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import type { PlistValue } from "@mattrax/plist";
+import { parsePlist } from "@mattrax/plist";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 /**
@@ -60,8 +62,8 @@ export const describeAppleError = (cause: unknown): string => {
           })();
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\s+/g, " ")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\s+/g, " ")
     .slice(0, 500);
 };
 
@@ -157,7 +159,7 @@ export const parseAppleDate = (value: CredentialValue): Date | null => {
 };
 
 const base64ToBytes = (value: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
   const binary = atob(cleaned);
 
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -176,8 +178,8 @@ const decodeUpload = (upload: AbmTokenUpload): string => {
 
   try {
     return new TextDecoder().decode(base64ToBytes(upload.content));
-  } catch (cause) {
-    throw fail("invalid_token", "The uploaded token is not valid base64.", cause);
+  } catch (error) {
+    throw fail("invalid_token", "The uploaded token is not valid base64.", error);
   }
 };
 
@@ -194,7 +196,7 @@ const tryJson = (value: string): Schema.Json | undefined => {
 };
 
 const tryBase64Json = (value: string): Schema.Json | undefined => {
-  const trimmed = value.replace(/\s/g, "");
+  const trimmed = value.replaceAll(/\s/g, "");
 
   if (!/^[A-Za-z0-9+/=]+$/.test(trimmed) || trimmed.length < 8) return undefined;
 
@@ -229,11 +231,11 @@ export const validateAbmPrivateKey = async (pem: string): Promise<void> => {
     const body = pem
       .replace(/-----BEGIN PRIVATE KEY-----/, "")
       .replace(/-----END PRIVATE KEY-----/, "")
-      .replace(/\s/g, "");
+      .replaceAll(/\s/g, "");
 
     der = base64ToBytes(body);
-  } catch (cause) {
-    throw fail("invalid_token", "The ABM private key is not valid PEM.", cause);
+  } catch (error) {
+    throw fail("invalid_token", "The ABM private key is not valid PEM.", error);
   }
 
   try {
@@ -244,11 +246,11 @@ export const validateAbmPrivateKey = async (pem: string): Promise<void> => {
       false,
       ["sign"],
     );
-  } catch (cause) {
+  } catch (error) {
     throw fail(
       "invalid_token",
       "The ABM private key is not an EC P-256 key Apple can use for ES256 client assertions.",
-      cause,
+      error,
     );
   }
 };
@@ -276,11 +278,11 @@ const extractPkcs7Plist = async (bytes: Uint8Array): Promise<CredentialRecord> =
     if (!result) throw new Error("The token content is not a dictionary");
 
     return result;
-  } catch (cause) {
+  } catch (error) {
     throw fail(
       "invalid_token",
       "Could not read the legacy DEP .p7m server token. Download a fresh token from Apple Business Manager, or upload the current API private key with its Client ID and Key ID.",
-      cause,
+      error,
     );
   }
 };
@@ -488,11 +490,11 @@ export const openAbmCredential = async (
 
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
-  } catch (cause) {
+  } catch (error) {
     throw fail(
       "invalid_token",
       "The stored Apple Business Manager credential could not be decrypted. Re-upload the token.",
-      cause,
+      error,
     );
   }
 
@@ -580,7 +582,7 @@ const importAbmSigningKey = async (pem: string): Promise<CryptoKey> => {
   const body = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, "")
     .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s/g, "");
+    .replaceAll(/\s/g, "");
 
   const der = base64ToBytes(body);
 
@@ -748,11 +750,11 @@ export const createAbmClient = (
 
     try {
       response = await fetchWithTimeout(url, { ...init, headers }, { fetch: doFetch, timeoutMs });
-    } catch (cause) {
+    } catch (error) {
       throw fail(
         "upstream",
-        `Apple Business API request failed: ${describeAppleError(cause)}`,
-        cause,
+        `Apple Business API request failed: ${describeAppleError(error)}`,
+        error,
       );
     }
 
@@ -769,8 +771,8 @@ export const createAbmClient = (
 
     try {
       return await response.json();
-    } catch (cause) {
-      throw fail("invalid_response", "Apple Business API returned invalid JSON.", cause);
+    } catch (error) {
+      throw fail("invalid_response", "Apple Business API returned invalid JSON.", error);
     }
   };
 
@@ -840,8 +842,8 @@ export const createAbmClient = (
           },
           { fetch: doFetch, timeoutMs },
         );
-      } catch (cause) {
-        throw fail("upstream", `Apple OAuth request failed: ${describeAppleError(cause)}`, cause);
+      } catch (error) {
+        throw fail("upstream", `Apple OAuth request failed: ${describeAppleError(error)}`, error);
       }
 
       if (!response.ok) {
@@ -961,7 +963,7 @@ export const createAbmClient = (
       const certificate = input.certificatePem
         .replace(/-----BEGIN CERTIFICATE-----/, "")
         .replace(/-----END CERTIFICATE-----/, "")
-        .replace(/\s/g, "");
+        .replaceAll(/\s/g, "");
 
       const response = await request<{
         data?: { id?: string; attributes?: Record<string, Schema.Json> };

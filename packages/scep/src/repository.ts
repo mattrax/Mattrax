@@ -1,6 +1,7 @@
-import { Context, Effect } from "effect";
-import * as pkijs from "pkijs";
-import { ScepError } from "./schema.js";
+import type { Effect } from "effect";
+import { Context } from "effect";
+import type * as pkijs from "pkijs";
+import type { ScepError } from "./schema.js";
 
 export interface ScepPkcsReq {
   readonly csr: pkijs.CertificationRequest;

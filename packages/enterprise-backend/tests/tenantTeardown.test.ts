@@ -5,9 +5,11 @@ import {
   deleteTenantObjects,
   teardownTenant,
   TenantTeardownInProgress,
-  type DeviceUnenrollSummary,
-  type TenantTeardownDependencies,
-  type TenantTeardownStepFailed,
+} from "../src/Tenant/tenantTeardown.ts";
+import type {
+  DeviceUnenrollSummary,
+  TenantTeardownDependencies,
+  TenantTeardownStepFailed,
 } from "../src/Tenant/tenantTeardown.ts";
 import { makeDb, runEffect, schema } from "./helpers.js";
 

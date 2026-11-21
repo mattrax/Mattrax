@@ -3,8 +3,8 @@ import {
   OsComplianceInfo,
   osComplianceLabel,
   osComplianceReasonText,
-  type OsComplianceStatus,
 } from "@mattrax/enterprise-domain/client";
+import type { OsComplianceStatus } from "@mattrax/enterprise-domain/client";
 
 export { osComplianceLabel, osComplianceReasonText };
 

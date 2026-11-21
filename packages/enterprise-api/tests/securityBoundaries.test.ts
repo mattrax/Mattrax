@@ -1436,7 +1436,7 @@ describe("owner removal", () => {
       user: { id: "user-owner-2", name: "Second Owner", email: "owner2@example.com" },
     });
 
-    const secondOwnerMember = addMember(owner.db, tenant.id, secondOwner.user, "owner");
+    addMember(owner.db, tenant.id, secondOwner.user, "owner");
 
     const remaining = await makeContext({
       db: owner.db,
@@ -1451,10 +1451,6 @@ describe("owner removal", () => {
     );
 
     // ...but the last owner cannot remove themselves while other members remain.
-    const ownerMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
-    );
-
     await expect(
       runEffect(
         owner.service.removeTenantAccount(request(owner.headers), tenant.id, owner.user.id),
@@ -1567,7 +1563,7 @@ describe("tenant member removal", () => {
     const owner = await makeContext();
     const tenant = await createTenant(owner, "acme");
 
-    const membership = owner.db.store.member.find(
+    owner.db.store.member.find(
       (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 

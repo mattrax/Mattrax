@@ -1,11 +1,6 @@
 import { Match, Option, Schema } from "effect";
-import {
-  DeviceQuery,
-  deviceQueryProblem,
-  EnterpriseBadRequest,
-  type DashboardQueryBucket,
-  type DashboardWidgetType,
-} from "@mattrax/enterprise-domain";
+import { DeviceQuery, deviceQueryProblem, EnterpriseBadRequest } from "@mattrax/enterprise-domain";
+import type { DashboardQueryBucket, DashboardWidgetType } from "@mattrax/enterprise-domain";
 
 const decodeQuery = Schema.decodeUnknownSync(DeviceQuery);
 

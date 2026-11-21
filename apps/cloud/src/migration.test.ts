@@ -55,7 +55,7 @@ describe("device inventory migration", () => {
   });
 
   it("adds every inventory column to the device table", () => {
-    const sql = readMigration(inventoryMigrations[0]!);
+    const sql = readMigration(inventoryMigrations[0]);
     expect(sql).toContain("ALTER TABLE `device`");
 
     for (const column of DEVICE_INVENTORY_COLUMNS) expect(sql).toContain(`\`${column}\``);
@@ -90,7 +90,7 @@ describe("device inventory migration", () => {
   it("does not leave the device inventory columns in a later migration", () => {
     const [inventoryMigration] = inventoryMigrations;
 
-    for (const name of names.filter((candidate) => candidate > inventoryMigration!))
+    for (const name of names.filter((candidate) => candidate > inventoryMigration))
       for (const column of DEVICE_INVENTORY_COLUMNS)
         expect(readMigration(name)).not.toContain(`\`${column}\``);
   });
@@ -105,7 +105,7 @@ describe("tenant branding migration", () => {
   });
 
   it("adds nullable branding columns to the organization table", () => {
-    const sql = readMigration(brandingMigrations[0]!);
+    const sql = readMigration(brandingMigrations[0]);
     expect(sql).toContain("ALTER TABLE `organization`");
 
     for (const column of ["display_name", "support_email", "brand_color"])
@@ -139,7 +139,7 @@ describe("tenant branding migration", () => {
   it("does not leave the branding columns in a later migration", () => {
     const [brandingMigration] = brandingMigrations;
 
-    for (const name of names.filter((candidate) => candidate > brandingMigration!))
+    for (const name of names.filter((candidate) => candidate > brandingMigration))
       for (const column of ["`display_name`", "`support_email`", "`brand_color`"])
         expect(readMigration(name)).not.toContain(column);
   });
@@ -159,7 +159,7 @@ describe("APNs push telemetry migration", () => {
   });
 
   it("adds every telemetry column with a failure counter default", () => {
-    const sql = readMigration(pushMigrations[0]!);
+    const sql = readMigration(pushMigrations[0]);
     expect(sql).toContain("ALTER TABLE `device_apple`");
 
     for (const column of [
@@ -212,7 +212,7 @@ describe("scoped API token migration", () => {
   });
 
   it("adds nullable tenant and scope columns and backfills legacy tokens", () => {
-    const sql = readMigration(tokenMigrations[0]!);
+    const sql = readMigration(tokenMigrations[0]);
     expect(sql).toContain("ALTER TABLE `account_api_token`");
     expect(sql).toContain("`tenant_id`");
     expect(sql).toContain("`scopes` json");
@@ -255,7 +255,7 @@ describe("MFA migration", () => {
   });
 
   it("adds the factor table and subject/tenant flags", () => {
-    const sql = readMigration(mfaMigrations[0]!);
+    const sql = readMigration(mfaMigrations[0]);
     expect(sql).toContain("`scope` varchar(191) PRIMARY KEY");
     expect(sql).toContain("`state` text NOT NULL");
     expect(sql).toContain("`version` text NOT NULL");
@@ -301,7 +301,7 @@ describe("SCEP challenge migration", () => {
   });
 
   it("creates a tenant-scoped one-time challenge table", () => {
-    const sql = readMigration(challengeMigrations[0]!);
+    const sql = readMigration(challengeMigrations[0]);
     expect(sql).toContain("`id` varchar(255) PRIMARY KEY");
     expect(sql).toContain("`organization_id` varchar(255) NOT NULL");
     expect(sql).toContain("`enrollment_id` varchar(255) NOT NULL");
@@ -339,7 +339,7 @@ describe("dynamic groups migration", () => {
   });
 
   it("adds group kind/rules/evaluation and membership source columns", () => {
-    const sql = readMigration(dynamicMigrations[0]!);
+    const sql = readMigration(dynamicMigrations[0]);
     expect(sql).toContain("ALTER TABLE `enterprise_group`");
     expect(sql).toContain("`kind` varchar(16) DEFAULT 'manual' NOT NULL");
     expect(sql).toContain("`rules` json");
@@ -392,7 +392,7 @@ describe("onboarding email marker migration", () => {
   });
 
   it("adds nullable one-time markers to user and organization", () => {
-    const sql = readMigration(markerMigrations[0]!);
+    const sql = readMigration(markerMigrations[0]);
     expect(sql).toContain("ALTER TABLE `user` ADD `welcome_email_sent_at` datetime(3)");
     expect(sql).toContain(
       "ALTER TABLE `organization` ADD `onboarding_follow_up_sent_at` datetime(3)",
@@ -432,7 +432,7 @@ describe("ownership transfer migration", () => {
   });
 
   it("creates a tenant-scoped transfer with a single-use token", () => {
-    const sql = readMigration(transferMigrations[0]!);
+    const sql = readMigration(transferMigrations[0]);
     expect(sql).toContain("`id` varchar(255) PRIMARY KEY");
     expect(sql).toContain("`organization_id` varchar(255) NOT NULL");
     expect(sql).toContain("`requested_by_user_id` varchar(255) NOT NULL");
@@ -502,7 +502,7 @@ describe("account/user split migration", () => {
 
   it("renames the dashboard identity exactly once", () => {
     expect(splitMigrations).toHaveLength(1);
-    const sql = readMigration(splitMigrations[0]!);
+    const sql = readMigration(splitMigrations[0]);
     expect(sql).toContain("RENAME TABLE `user` TO `account`");
     expect(sql).toContain("CREATE TABLE `user`");
   });
@@ -589,7 +589,6 @@ describe("account/user split migration", () => {
           entry.entityType === "fks" &&
           entry.table === table &&
           (entry.columns ?? []).some((column) =>
-            // oxlint-disable-next-line anti-slop/no-runtime-typeof -- snapshot columns are a string-or-object union.
             typeof column === "string" ? column === "user_id" : column.value === "user_id",
           ),
       );
@@ -601,7 +600,7 @@ describe("account/user split migration", () => {
   });
 
   it("maps existing directory-provisioned accounts into the new user table", () => {
-    const sql = readMigration(splitMigrations[0]!);
+    const sql = readMigration(splitMigrations[0]);
 
     // Only Graph/SCIM accounts become directory users; normal accounts keep
     // signing in and must not be duplicated into the directory.
@@ -633,7 +632,7 @@ describe("Windows activation migration", () => {
   });
 
   it("adds nullable activation columns to the device table", () => {
-    const sql = readMigration(activationMigrations[0]!);
+    const sql = readMigration(activationMigrations[0]);
     expect(sql).toContain("ALTER TABLE `device`");
 
     for (const column of WINDOWS_ACTIVATION_COLUMNS) expect(sql).toContain(`\`${column}\``);
@@ -669,7 +668,7 @@ describe("Windows activation migration", () => {
   it("does not leave the activation columns in a later migration", () => {
     const [activationMigration] = activationMigrations;
 
-    for (const name of names.filter((candidate) => candidate > activationMigration!))
+    for (const name of names.filter((candidate) => candidate > activationMigration))
       for (const column of WINDOWS_ACTIVATION_COLUMNS)
         expect(readMigration(name)).not.toContain(`\`${column}\``);
   });

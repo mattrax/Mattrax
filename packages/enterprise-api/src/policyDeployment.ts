@@ -6,12 +6,8 @@ import type {
   PolicyDeliveryState,
 } from "@mattrax/enterprise-domain";
 import { splitConfigurationDeclarationIdentifier } from "@mattrax/mdm-apple";
-import {
-  isDeclarableAppleKind,
-  resolveAppleDeviceDelivery,
-  type PolicyDeclarationReport,
-  type PolicyDeliveryConfiguration,
-} from "./policyList.js";
+import { isDeclarableAppleKind, resolveAppleDeviceDelivery } from "./policyList.js";
+import type { PolicyDeclarationReport, PolicyDeliveryConfiguration } from "./policyList.js";
 
 /**
  * Per-device deployment progress for one saved policy version.

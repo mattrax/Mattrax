@@ -25,11 +25,8 @@
 import { Schema } from "effect";
 import { isMacOsDevice } from "./deviceHealth.js";
 import { compareVersionStrings } from "./deviceQuery.js";
-import {
-  deriveSoftwareUpdate,
-  SoftwareUpdateFeedInfo,
-  type MacOsUpdateCatalog,
-} from "./softwareUpdates.js";
+import { deriveSoftwareUpdate, SoftwareUpdateFeedInfo } from "./softwareUpdates.js";
+import type { MacOsUpdateCatalog } from "./softwareUpdates.js";
 
 /**
  * The platform families a tenant policy can target.

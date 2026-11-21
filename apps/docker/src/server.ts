@@ -1,4 +1,5 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -70,8 +71,8 @@ const web = (await import(pathToFileURL(path.join(root, "web/server/node.js")).h
  */
 const context: RuntimeContext = {
   waitUntil: (promise) => {
-    void promise.catch((cause) =>
-      console.error("mattrax self-host: background work failed", cause),
+    void promise.catch((error: unknown) =>
+      console.error("mattrax self-host: background work failed", error),
     );
   },
   passThroughOnException: () => {},
@@ -163,8 +164,8 @@ const server = createServer((request, response) => {
       const result = await api.fetch(toRequest(request), context);
 
       await writeResponse(result, response);
-    } catch (cause) {
-      console.error("mattrax self-host: API request failed", cause);
+    } catch (error) {
+      console.error("mattrax self-host: API request failed", error);
 
       if (!response.headersSent) {
         response.statusCode = 500;

@@ -65,11 +65,7 @@ describe("applyRangeSelection", () => {
   });
 
   it("falls back to a single toggle when the anchor is no longer visible", () => {
-    const result = select(["a"], "a", "d", true, true, [
-      { id: "b" },
-      { id: "c" },
-      { id: "d" },
-    ]);
+    const result = select(["a"], "a", "d", true, true, [{ id: "b" }, { id: "c" }, { id: "d" }]);
 
     expect([...result.ids].sort()).toEqual(["a", "d"]);
     expect(result.anchorId).toBe("d");

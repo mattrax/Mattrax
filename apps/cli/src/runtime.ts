@@ -1,14 +1,9 @@
 import { Context, Effect, Layer } from "effect";
-import { type MattraxApi, createHttpApi } from "./client.ts";
-import {
-  type ResolvedSettings,
-  type SettingsFlags,
-  CliFailure,
-  configPath,
-  readStoredSettings,
-  requireToken,
-  resolveSettings,
-} from "./settings.ts";
+import { createHttpApi } from "./client.ts";
+import type { MattraxApi } from "./client.ts";
+import type { CliFailure } from "./settings.ts";
+import { configPath, readStoredSettings, requireToken, resolveSettings } from "./settings.ts";
+import type { ResolvedSettings, SettingsFlags } from "./settings.ts";
 
 export interface CliRuntimeContract {
   readonly resolveSettings: (flags: SettingsFlags) => Effect.Effect<ResolvedSettings, CliFailure>;

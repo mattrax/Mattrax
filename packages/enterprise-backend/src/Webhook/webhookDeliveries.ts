@@ -5,9 +5,11 @@ import {
   EnterpriseNotFound,
   WEBHOOK_EVENT_TYPES,
   WEBHOOK_TEST_EVENT,
-  type WebhookDeliveryDetail,
-  type WebhookDeliveryInfo,
-  type WebhookDeliveryQuery,
+} from "@mattrax/enterprise-domain";
+import type {
+  WebhookDeliveryDetail,
+  WebhookDeliveryInfo,
+  WebhookDeliveryQuery,
 } from "@mattrax/enterprise-domain";
 import { WEBHOOK_DELIVERY_RETENTION_DAYS } from "@mattrax/mdm-apple";
 // The audit log and delivery history share the same `(createdAt, id)` keyset
@@ -156,7 +158,7 @@ export const listWebhookDeliveries = (input: ListWebhookDeliveriesInput) =>
 
     const hasMore = rows.length > filters.limit;
     const page = hasMore ? rows.slice(0, filters.limit) : rows;
-    const last = page[page.length - 1];
+    const last = page.at(-1);
 
     return {
       deliveries: page.map(webhookDeliveryInfo),

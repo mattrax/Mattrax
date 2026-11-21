@@ -1,11 +1,7 @@
 import { Effect, Schema } from "effect";
 import { parse as fastPlistParse } from "fast-plist";
-import {
-  PlistParseError,
-  PlistSerializeError,
-  PlistValue,
-  type PlistValue as PlistValueType,
-} from "./schema.js";
+import { PlistParseError, PlistSerializeError, PlistValue } from "./schema.js";
+import type { PlistValue as PlistValueType } from "./schema.js";
 
 export * from "./schema.js";
 
@@ -25,11 +21,11 @@ export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistPars
 
 function escapeXml(value: string): string {
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
 }
 
 function serializeValue(value: PlistValueType): string {
@@ -82,9 +78,7 @@ function serializeValue(value: PlistValueType): string {
   return `<string>${escapeXml(String(value))}</string>`;
 }
 
-export const serializePlist = (
-  value: PlistValueType,
-): Effect.Effect<string, PlistSerializeError> =>
+export const serializePlist = (value: PlistValueType): Effect.Effect<string, PlistSerializeError> =>
   Effect.try({
     try: () => {
       const body = serializeValue(value);

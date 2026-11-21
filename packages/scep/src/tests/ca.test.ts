@@ -14,9 +14,10 @@ import {
   scepCaHealth,
 } from "../ca.js";
 import { pemToCert } from "../pkcs7.js";
-import { ScepRepository, type ScepCaScope, type ScepStoredCa } from "../repository.js";
+import { ScepRepository } from "../repository.js";
+import type { ScepCaScope, ScepStoredCa } from "../repository.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -162,7 +163,7 @@ describe("rotateScepCa", () => {
 
     expect(saved).toHaveLength(1);
     expect(rotated).toBe(0);
-    expect(loaded.certPem).toBe(saved[0]!.certPem);
+    expect(loaded.certPem).toBe(saved[0].certPem);
   });
 
   it("refuses to open an expired CA for issuance", async () => {

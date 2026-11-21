@@ -39,9 +39,7 @@ const runAsHint = (runAs: "root" | "user") =>
     : "Runs as the logged-in console user. Timer and install triggers run without a console user and are skipped.";
 
 const languageHint = (language: ScriptDraftValues["language"]) =>
-  language === "pwsh"
-    ? "PowerShell requires mattraxd on Windows."
-    : `Uses /bin/${language}.`;
+  language === "pwsh" ? "PowerShell requires mattraxd on Windows." : `Uses /bin/${language}.`;
 
 /**
  * Shared script editor. The new page and the detail page submit the same shape,

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  onboardingFollowUpEmail,
-  welcomeEmail,
-  type OnboardingFollowUpEmailInput,
-  type WelcomeEmailInput,
+import { onboardingFollowUpEmail, welcomeEmail } from "../src/Tenant/onboardingEmail.ts";
+import type {
+  OnboardingFollowUpEmailInput,
+  WelcomeEmailInput,
 } from "../src/Tenant/onboardingEmail.ts";
 
 const welcome: WelcomeEmailInput = {

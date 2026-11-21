@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
-import { parseAppleStoreLookup, type AppleStoreLookup } from "@mattrax/enterprise-domain";
+import { parseAppleStoreLookup } from "@mattrax/enterprise-domain";
+import type { AppleStoreLookup } from "@mattrax/enterprise-domain";
 
 /**
  * iTunes Search API lookup for one App Store storefront.
@@ -38,7 +39,8 @@ export const lookupAppStoreApplication = async (input: {
 
   if (bundleId) params.set("bundleId", bundleId);
   else if (input.storeId?.trim()) params.set("id", input.storeId.trim());
-  else return { ok: false, error: "Add an App Store ID or bundle ID before checking availability." };
+  else
+    return { ok: false, error: "Add an App Store ID or bundle ID before checking availability." };
 
   const baseUrl = (input.config?.baseUrl ?? APP_STORE_LOOKUP_BASE_URL).replace(/\/+$/, "");
   const url = `${baseUrl}/lookup?${params.toString()}`;
@@ -52,8 +54,8 @@ export const lookupAppStoreApplication = async (input: {
       { headers: { accept: "application/json" } },
       { fetch: doFetch, timeoutMs: input.config?.timeoutMs ?? 10_000 },
     );
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
 
     return { ok: false, error: `The App Store lookup failed: ${message}` };
   }
@@ -72,8 +74,7 @@ export const lookupAppStoreApplication = async (input: {
     body = undefined;
   }
 
-  const payload =
-    Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(body)) ?? null;
+  const payload = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(body)) ?? null;
 
   return { ok: true, lookup: parseAppleStoreLookup(payload, input.region) };
 };

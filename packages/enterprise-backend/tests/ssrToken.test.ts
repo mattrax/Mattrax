@@ -8,7 +8,8 @@ import {
   ssrTenantPermissions,
 } from "@mattrax/enterprise-domain";
 import { describe, expect, it } from "vitest";
-import { signSsrToken, verifySsrToken, type SignSsrTokenInput } from "../src/Account/ssrToken.ts";
+import { signSsrToken, verifySsrToken } from "../src/Account/ssrToken.ts";
+import type { SignSsrTokenInput } from "../src/Account/ssrToken.ts";
 import { signToken } from "@mattrax/enterprise-tokens";
 
 const secret = "ssr-test-secret-that-is-long-enough-for-hmac";
@@ -75,7 +76,7 @@ describe("SSR bootstrap token", () => {
     });
     expect(payload.tenants?.map((tenant) => tenant.id)).toEqual(["tenant-1"]);
     expect(payload.tenants?.[0]?.permissions).toBeUndefined();
-    expect([...ssrTenantPermissions(payload.tenants![0]!)]).toEqual([
+    expect([...ssrTenantPermissions(payload.tenants![0])]).toEqual([
       ...BUILT_IN_ROLE_PERMISSIONS.owner,
     ]);
   });
@@ -117,7 +118,7 @@ describe("SSR bootstrap token", () => {
   it("rejects a tampered signature", async () => {
     const signed = await run(signSsrToken(secret, input()));
     const [body, signature] = signed!.token.split(".");
-    const tampered = `${body}.${signature!.startsWith("A") ? "B" : "A"}${signature!.slice(1)}`;
+    const tampered = `${body}.${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
 
     await expect(run(verifySsrToken(secret, tampered))).rejects.toThrow();
   });
@@ -137,7 +138,7 @@ describe("SSR bootstrap token", () => {
 
   it("signs no token when the tenant list exceeds the cookie budget", async () => {
     const tenants = Array.from({ length: 20 }, (_, index) => ({
-      ...input().tenants[0]!,
+      ...input().tenants[0],
       id: `tenant-${index}`,
       name: `Tenant ${index}`,
       permissions: PERMISSIONS,
@@ -152,7 +153,7 @@ describe("SSR bootstrap token", () => {
 
   it("keeps three owner tenants warm by omitting built-in permissions", async () => {
     const tenants = Array.from({ length: 3 }, (_, index) => ({
-      ...input().tenants[0]!,
+      ...input().tenants[0],
       id: `tenant-${index}`,
       name: `Tenant ${index}`,
       slug: `tenant-${index}`,
@@ -178,7 +179,7 @@ describe("SSR bootstrap token", () => {
 
   it("keeps explicit permissions for a custom role", async () => {
     const custom = {
-      ...input().tenants[0]!,
+      ...input().tenants[0],
       role: "custom",
       roleId: "role-1",
       roleName: "Auditor plus devices",
@@ -190,10 +191,7 @@ describe("SSR bootstrap token", () => {
     const payload = await run(verifySsrToken(secret, signed!.token));
 
     expect([...(payload.tenants?.[0]?.permissions ?? [])]).toEqual(["tenant.read", "devices.read"]);
-    expect([...ssrTenantPermissions(payload.tenants![0]!)]).toEqual([
-      "tenant.read",
-      "devices.read",
-    ]);
+    expect([...ssrTenantPermissions(payload.tenants![0])]).toEqual(["tenant.read", "devices.read"]);
   });
 
   it("signs no token when even the tenant-bearing payload is over budget", async () => {

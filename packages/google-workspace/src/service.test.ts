@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import type { GoogleWorkspaceCredentials } from "./config.js";
 import { makeGoogleWorkspaceService } from "./service.js";
@@ -42,7 +43,7 @@ const tokenResponse = () => json({ access_token: "test-token", expires_in: 3600 
 
 /** SAFETY: the stub implements the fetch call shape the service uses (a URL and optional init) and returns real Response objects. */
 const fetchStub = (implementation: (input: RequestInfo | URL) => Promise<Response>): typeof fetch =>
-  implementation as typeof fetch;
+  implementation;
 
 const collector = () => {
   const requests: Array<{ url: string; authorization: string | null }> = [];

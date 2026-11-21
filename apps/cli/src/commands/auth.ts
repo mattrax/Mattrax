@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { Command } from "effect/cli";
-import { type GlobalFlags, rootCommand } from "../global.ts";
+import { rootCommand } from "../global.ts";
+import type { GlobalFlags } from "../global.ts";
 import { line, formatJson } from "../output.ts";
 import { CliRuntime } from "../runtime.ts";
 import {

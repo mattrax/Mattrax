@@ -53,7 +53,7 @@ const timingSafeEqual = (left: string, right: string): boolean => {
   if (a.length !== b.length) return false;
   let difference = 0;
 
-  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
 
   return difference === 0;
 };

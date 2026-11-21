@@ -1,6 +1,7 @@
 import { Data, Effect, Schema, SchemaAST as AST } from "effect";
 import { getSoapElementName, soapAnnotations } from "./internal/annotations.js";
-import { isSoapArray, isSoapObject, SoapValueSchema, type SoapValue } from "./internal/values.js";
+import { isSoapArray, isSoapObject, SoapValueSchema } from "./internal/values.js";
+import type { SoapValue } from "./internal/values.js";
 
 export class SoapSerializeError extends Data.TaggedError("SoapSerializeError")<{
   message: string;
@@ -20,11 +21,11 @@ interface SoapTag {
 }
 
 export function escapeXml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 export function escapeAttr(value: string): string {
-  return escapeXml(value).replace(/"/g, "&quot;");
+  return escapeXml(value).replaceAll('"', "&quot;");
 }
 
 function indentLine(depth: number, text: string, options: SerializeOptions): string {

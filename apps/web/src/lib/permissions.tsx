@@ -5,10 +5,8 @@ import {
   BUILT_IN_ROLE_LABELS,
   builtInRolePermissions,
   isBuiltInTenantRole,
-  type Permission,
-  type TenantDetail,
-  type TenantInfo,
 } from "@mattrax/enterprise-domain/client";
+import type { Permission, TenantDetail, TenantInfo } from "@mattrax/enterprise-domain/client";
 import { createMemo, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { authClient } from "~/lib/auth";

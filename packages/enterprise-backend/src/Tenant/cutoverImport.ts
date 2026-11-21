@@ -5,23 +5,18 @@ import {
   CUTOVER_MAX_AUDIT_ROWS,
   decodeCutoverArchive,
   normalizeOrigin,
-  type CutoverConflict,
-  type CutoverImportResponse,
-  type CutoverNeedsReissue,
-  type CutoverPayload,
-  type CutoverPreview,
+} from "@mattrax/enterprise-domain";
+import type {
+  CutoverConflict,
+  CutoverImportResponse,
+  CutoverNeedsReissue,
+  CutoverPayload,
+  CutoverPreview,
 } from "@mattrax/enterprise-domain";
 import { sealSecret } from "@mattrax/crypto";
-import {
-  describeScepCa,
-  importScepCa,
-  sealCaPrivateKey,
-} from "@mattrax/scep";
-import {
-  applyTenantBundle,
-  parseTenantRestoreBundle,
-  type TenantRestoreTransaction,
-} from "./tenantRestore.ts";
+import { describeScepCa, importScepCa, sealCaPrivateKey } from "@mattrax/scep";
+import { applyTenantBundle, parseTenantRestoreBundle } from "./tenantRestore.ts";
+import type { TenantRestoreTransaction } from "./tenantRestore.ts";
 import { TenantCutoverError } from "./cutover.ts";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
@@ -76,8 +71,8 @@ const slugBase = (value: string) =>
   value
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 240);
 
 type UniqueSlug = { readonly slug: string; readonly conflicted: boolean };
@@ -161,7 +156,9 @@ const loadExistingState = (
       : null;
 
     const [escrowRow] = yield* db
-      .select({ certificateFingerprintSha256: schema.appleFdeEscrowKey.certificateFingerprintSha256 })
+      .select({
+        certificateFingerprintSha256: schema.appleFdeEscrowKey.certificateFingerprintSha256,
+      })
       .from(schema.appleFdeEscrowKey)
       .where(eq(schema.appleFdeEscrowKey.organizationId, organizationId))
       .limit(1);
@@ -364,7 +361,9 @@ const analyze = (
         resolution: "auto",
       });
 
-    const existingMemberEmails = new Set(existing.members.map((member) => member.email.toLowerCase()));
+    const existingMemberEmails = new Set(
+      existing.members.map((member) => member.email.toLowerCase()),
+    );
 
     const memberConflicts = (payload.members ?? []).filter((member) =>
       existingMemberEmails.has(member.email.toLowerCase()),
@@ -374,7 +373,8 @@ const analyze = (
       conflicts.push({
         kind: "member",
         item: `${memberConflicts} member(s)`,
-        detail: "Those accounts are already members of the target tenant and keep their current role.",
+        detail:
+          "Those accounts are already members of the target tenant and keep their current role.",
         resolution: "auto",
       });
 
@@ -392,8 +392,7 @@ const analyze = (
     if (
       escrowKey &&
       existing.escrowKey &&
-      existing.escrowKey.certificateFingerprintSha256 !==
-        escrowKey.certificateFingerprintSha256 &&
+      existing.escrowKey.certificateFingerprintSha256 !== escrowKey.certificateFingerprintSha256 &&
       !options.replaceEscrowKey
     )
       needsReissue.push({
@@ -508,7 +507,8 @@ const roleForMember = (
     options.needsReissue.push({
       kind: "member_role",
       item: entry.email,
-      reason: "The source role is not a built-in role. The member was imported with the member role.",
+      reason:
+        "The source role is not a built-in role. The member was imported with the member role.",
     });
 
     return { role: "member", customRoleId: null };
@@ -597,9 +597,7 @@ export const importTenantCutover = (
 
     const parsed = yield* parseTenantRestoreBundle(JSON.stringify(configuration), {
       escrowCertificateFingerprintSha256: escrowFingerprint,
-    }).pipe(
-      Effect.mapError((error) => fail("invalid", error.message)),
-    );
+    }).pipe(Effect.mapError((error) => fail("invalid", error.message)));
 
     const written = yield* db
       .transaction((tx) =>
@@ -624,7 +622,10 @@ export const importTenantCutover = (
 
             if (claimed)
               return yield* Effect.fail(
-                fail("conflict", `The tenant URL "${slug}" was claimed by another import. Try again.`),
+                fail(
+                  "conflict",
+                  `The tenant URL "${slug}" was claimed by another import. Try again.`,
+                ),
               );
 
             yield* tx.insert(schema.organization).values({
@@ -700,7 +701,8 @@ export const importTenantCutover = (
               needsReissue.push({
                 kind: "device",
                 item: serial ?? device.name,
-                reason: "A device with this serial already exists in the target and was left untouched.",
+                reason:
+                  "A device with this serial already exists in the target and was left untouched.",
               });
               continue;
             }
@@ -852,13 +854,7 @@ export const importTenantCutover = (
           }
 
           // ─── Configuration ───────────────────────────────────────
-          const applied = yield* applyTenantBundle(
-            tx,
-            organization,
-            parsed,
-            options.actor,
-            now,
-          );
+          const applied = yield* applyTenantBundle(tx, organization, parsed, options.actor, now);
 
           // Full device membership/assignment set, including devices that the
           // configuration bundle did not reference.
@@ -922,7 +918,7 @@ export const importTenantCutover = (
 
           let scepImported = false;
           let certificatesImported = 0;
-          let certificatesSkipped = 0;
+          const certificatesSkipped = 0;
 
           if (payload.scepCa) {
             const sourceDescription = yield* describeScepCa(payload.scepCa.certPem).pipe(
@@ -952,19 +948,16 @@ export const importTenantCutover = (
               );
 
               if (previous)
-                yield* tx
-                  .insert(schema.scepCaTrust)
-                  .ignore()
-                  .values({
-                    id: newId(),
-                    organizationId,
-                    certPem: existingCa.certPem,
-                    fingerprintSha256: previous.fingerprintSha256,
-                    source: existingCa.source,
-                    retiredAt: now,
-                    trustUntil: previous.notAfter,
-                    createdAt: now,
-                  });
+                yield* tx.insert(schema.scepCaTrust).ignore().values({
+                  id: newId(),
+                  organizationId,
+                  certPem: existingCa.certPem,
+                  fingerprintSha256: previous.fingerprintSha256,
+                  source: existingCa.source,
+                  retiredAt: now,
+                  trustUntil: previous.notAfter,
+                  createdAt: now,
+                });
             }
 
             if (caMaterial && authSecret) {
@@ -974,8 +967,7 @@ export const importTenantCutover = (
               });
 
               if (sealed) {
-                const current =
-                  !existingCa || sameAsExisting || Boolean(options.replaceScepCa);
+                const current = !existingCa || sameAsExisting || Boolean(options.replaceScepCa);
 
                 if (current) {
                   const updated = yield* tx
@@ -1006,19 +998,16 @@ export const importTenantCutover = (
             if (!scepImported && sourceDescription && existingCa && !sameAsExisting) {
               // Keep the target CA signing, but trust the source CA so every
               // imported identity still authenticates on check-in and renewal.
-              yield* tx
-                .insert(schema.scepCaTrust)
-                .ignore()
-                .values({
-                  id: newId(),
-                  organizationId,
-                  certPem: payload.scepCa.certPem,
-                  fingerprintSha256: sourceDescription.fingerprintSha256,
-                  source: payload.scepCa.source,
-                  retiredAt: now,
-                  trustUntil: sourceDescription.notAfter,
-                  createdAt: now,
-                });
+              yield* tx.insert(schema.scepCaTrust).ignore().values({
+                id: newId(),
+                organizationId,
+                certPem: payload.scepCa.certPem,
+                fingerprintSha256: sourceDescription.fingerprintSha256,
+                source: payload.scepCa.source,
+                retiredAt: now,
+                trustUntil: sourceDescription.notAfter,
+                createdAt: now,
+              });
 
               needsReissue.push({
                 kind: "scep_ca",
@@ -1031,19 +1020,16 @@ export const importTenantCutover = (
             if (!scepImported && sourceDescription && !existingCa) {
               // No signing CA is available, but the certificate alone is
               // enough to validate every imported identity's mTLS connection.
-              yield* tx
-                .insert(schema.scepCaTrust)
-                .ignore()
-                .values({
-                  id: newId(),
-                  organizationId,
-                  certPem: payload.scepCa.certPem,
-                  fingerprintSha256: sourceDescription.fingerprintSha256,
-                  source: payload.scepCa.source,
-                  retiredAt: now,
-                  trustUntil: sourceDescription.notAfter,
-                  createdAt: now,
-                });
+              yield* tx.insert(schema.scepCaTrust).ignore().values({
+                id: newId(),
+                organizationId,
+                certPem: payload.scepCa.certPem,
+                fingerprintSha256: sourceDescription.fingerprintSha256,
+                source: payload.scepCa.source,
+                retiredAt: now,
+                trustUntil: sourceDescription.notAfter,
+                createdAt: now,
+              });
 
               needsReissue.push({
                 kind: "scep_ca",
@@ -1119,8 +1105,7 @@ export const importTenantCutover = (
                   organizationId,
                   certificatePem: escrow.certificatePem,
                   sealedPrivateKey,
-                  certificateFingerprintSha256:
-                    escrow.certificateFingerprintSha256,
+                  certificateFingerprintSha256: escrow.certificateFingerprintSha256,
                   subject: escrow.subject ?? null,
                   certificateNotAfter: escrow.certificateNotAfter
                     ? new Date(escrow.certificateNotAfter)
@@ -1133,8 +1118,7 @@ export const importTenantCutover = (
                   set: {
                     certificatePem: escrow.certificatePem,
                     sealedPrivateKey,
-                    certificateFingerprintSha256:
-                      escrow.certificateFingerprintSha256,
+                    certificateFingerprintSha256: escrow.certificateFingerprintSha256,
                     subject: escrow.subject ?? null,
                     certificateNotAfter: escrow.certificateNotAfter
                       ? new Date(escrow.certificateNotAfter)
@@ -1264,7 +1248,11 @@ export const importTenantCutover = (
             invitedEmails.add(email);
 
             const resolved = roleForMember(
-              { email: invitation.email, role: invitation.role ?? "member", customRoleName: invitation.customRoleName },
+              {
+                email: invitation.email,
+                role: invitation.role ?? "member",
+                customRoleName: invitation.customRoleName,
+              },
               {
                 mode,
                 customRoleId: invitation.customRoleName
@@ -1376,8 +1364,7 @@ export const importTenantCutover = (
               devices: devicesSkipped,
               deviceSecrets: secretsSkipped,
               certificates: certificatesSkipped,
-              auditEntries:
-                auditSkipped + (payload.auditTruncated ? CUTOVER_MAX_AUDIT_ROWS : 0),
+              auditEntries: auditSkipped + (payload.auditTruncated ? CUTOVER_MAX_AUDIT_ROWS : 0),
             },
           };
         }),

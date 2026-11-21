@@ -1,10 +1,6 @@
 import { Option, Schema } from "effect";
-import {
-  applyEscrowCertificate,
-  buildLegacyProfile,
-  inspectMobileconfig,
-  type PolicyConfigurationRow,
-} from "./policy.ts";
+import { applyEscrowCertificate, buildLegacyProfile, inspectMobileconfig } from "./policy.ts";
+import type { PolicyConfigurationRow } from "./policy.ts";
 import type { SkippedConfiguration } from "./policySupport.ts";
 
 /**
@@ -175,7 +171,7 @@ export const installedProfiles = async (
     let bytes: Uint8Array;
 
     try {
-      bytes = Uint8Array.from(atob(payload.Payload.replace(/\s/g, "")), (char) =>
+      bytes = Uint8Array.from(atob(payload.Payload.replaceAll(/\s/g, "")), (char) =>
         char.charCodeAt(0),
       );
     } catch {

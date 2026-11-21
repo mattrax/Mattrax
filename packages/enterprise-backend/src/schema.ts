@@ -1,4 +1,5 @@
-import { schema as coreSchema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as coreSchema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 /**
  * The enterprise schema is owned by `@mattrax/enterprise-core` so that the

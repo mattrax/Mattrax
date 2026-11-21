@@ -3,9 +3,11 @@ import {
   RealtimeEvent as RealtimeEventSchema,
   invalidationScopesForKind,
   realtimeEventsPath,
-  type RealtimeEvent,
-  type RealtimeEventKind,
-  type RealtimeInvalidationScope,
+} from "@mattrax/enterprise-domain/client";
+import type {
+  RealtimeEvent,
+  RealtimeEventKind,
+  RealtimeInvalidationScope,
 } from "@mattrax/enterprise-domain/client";
 import { enterpriseKeys } from "~/lib/enterprise";
 

@@ -162,7 +162,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       const response = await harness.handler(await appleMdmRequest(authenticate()));
       assert.equal(response.status, 200);
       assert.equal(harness.state.events.length, 1);
-      const recorded = harness.state.events[0]!;
+      const recorded = harness.state.events[0];
       assert.ok(Predicate.isTagged(recorded.event, "Authenticate"));
       assert.equal(recorded.scope._tag, "device");
       assert.equal(recorded.scope.udid, udid);
@@ -203,7 +203,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "TokenUpdate"));
 
       if (!Predicate.isTagged(event, "TokenUpdate")) return;
@@ -235,7 +235,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const recorded = harness.state.events[0]!;
+      const recorded = harness.state.events[0];
       assert.ok(Predicate.isTagged(recorded.scope, "user"));
 
       if (Predicate.isTagged(recorded.scope, "user")) assert.equal(recorded.scope.userId, "user-1");
@@ -284,7 +284,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      assert.equal(harness.state.events[0]!.event._tag, "CheckOut");
+      assert.equal(harness.state.events[0].event._tag, "CheckOut");
     },
   ),
   check(
@@ -305,8 +305,8 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      assert.equal(harness.state.events[0]!.scope._tag, "user");
-      const event = harness.state.events[0]!.event;
+      assert.equal(harness.state.events[0].scope._tag, "user");
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "CheckOut"));
 
       if (Predicate.isTagged(event, "CheckOut")) assert.equal(event.userId, "user-1");
@@ -378,7 +378,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "CommandResult"));
 
       if (Predicate.isTagged(event, "CommandResult")) {
@@ -413,7 +413,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "CommandResult"));
 
       if (Predicate.isTagged(event, "CommandResult"))
@@ -453,7 +453,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "CommandResult"));
 
       if (Predicate.isTagged(event, "CommandResult")) {
@@ -596,7 +596,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "DeclarationStatus"));
 
       if (Predicate.isTagged(event, "DeclarationStatus")) {
@@ -653,7 +653,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       );
 
       assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
+      const event = harness.state.events[0].event;
       assert.ok(Predicate.isTagged(event, "BootstrapToken"));
 
       if (Predicate.isTagged(event, "BootstrapToken"))
@@ -728,7 +728,7 @@ export const appleChecks: ReadonlyArray<Check> = [
       assert.equal(plist.DigestChallenge, "");
       assert.equal(plist.AuthToken, undefined);
 
-      const recorded = harness.state.events[0]!;
+      const recorded = harness.state.events[0];
       assert.equal(recorded.scope._tag, "user");
       assert.equal(
         Predicate.isTagged(recorded.scope, "user") ? recorded.scope.userId : null,

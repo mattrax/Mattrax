@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Context, Effect, Exit, Layer, Option, Tracer } from "effect";
-import { Telemetry, type RequestTrace } from "./telemetry.js";
+import { Telemetry } from "./telemetry.js";
+import type { RequestTrace } from "./telemetry.js";
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
 
@@ -39,7 +40,7 @@ describe("request spans", () => {
       kind: "internal",
       status: "ok",
     });
-    expect(children[0]!.durationMs).toBeGreaterThanOrEqual(0);
+    expect(children[0].durationMs).toBeGreaterThanOrEqual(0);
   });
 
   it("starts a new trace when there is no header", () => {

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer } from "effect";
+import type { Effect } from "effect";
+import { Context, Layer } from "effect";
 import * as MysqlDrizzle from "drizzle-orm/effect-mysql2";
 import { relations } from "./schema.ts";
 

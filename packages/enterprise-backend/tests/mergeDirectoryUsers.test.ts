@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  EnterpriseBadRequest,
-  EnterpriseNotFound,
-  type UserMergeCounts,
-} from "@mattrax/enterprise-domain";
+import { EnterpriseBadRequest, EnterpriseNotFound } from "@mattrax/enterprise-domain";
+import type { UserMergeCounts } from "@mattrax/enterprise-domain";
 import {
   listDirectoryUserMergeCandidates,
   mergeDirectoryUsers,
@@ -429,7 +426,7 @@ describe("merging duplicate directory users", () => {
       appleUserChannels: 1,
     });
     expect(preview.ssoIdentitiesRetained).toBe(1);
-    expect(preview.sources[0]!.user.id).toBe("source");
+    expect(preview.sources[0].user.id).toBe("source");
 
     // A preview is a dry run.
     expect(db.store.user).toHaveLength(2);

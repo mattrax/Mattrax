@@ -1,11 +1,11 @@
-import { Effect, Match, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect, Match } from "effect";
 import {
   EnterpriseBadRequest,
   EnterprisePreconditionFailed,
   updatedAtPrecondition,
-  type PreconditionCurrent,
-  type UpdatedAtPrecondition,
 } from "@mattrax/enterprise-domain";
+import type { PreconditionCurrent, UpdatedAtPrecondition } from "@mattrax/enterprise-domain";
 
 /** Platform or Effect `Headers`: both expose a callable `get`. */
 type HeaderGetter = { readonly get: (name: string) => string | null | undefined };
@@ -18,8 +18,9 @@ type HeaderSource = HeaderGetter | HeaderRecord;
 /** The part of an HTTP request this module reads. */
 export type PreconditionRequest = { readonly headers?: HeaderSource };
 
+// Transport boundary: the platform Headers and Effect's Headers both expose a
+// callable `get`.
 const isHeaderGetter = (headers: HeaderSource): headers is HeaderGetter =>
-  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- transport boundary: the platform Headers and Effect's Headers both expose a callable get.
   typeof headers["get"] === "function";
 
 /**

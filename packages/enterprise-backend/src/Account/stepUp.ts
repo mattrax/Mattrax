@@ -7,9 +7,8 @@ import {
   StepUpUnavailable,
   TOTP_MODULE_ID,
   TOTP_POLICY,
-  type StepUpAction,
-  type StepUpMethod,
 } from "@mattrax/enterprise-domain";
+import type { StepUpAction, StepUpMethod } from "@mattrax/enterprise-domain";
 import { Data, DateTime, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { Schema as AuthSchema } from "@yielded/auth";
 import { and, eq, lt } from "drizzle-orm";

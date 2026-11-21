@@ -15,10 +15,11 @@ import {
   parseCertificateNotAfter,
   summarizeDeviceCertificates,
 } from "../src/Device/credentialHealth.ts";
-import { runMaintenance, type CredentialExpiryNotifier } from "../src/Tenant/maintenance.ts";
+import { runMaintenance } from "../src/Tenant/maintenance.ts";
+import type { CredentialExpiryNotifier } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -164,20 +165,22 @@ describe("summarizeDeviceCertificates", () => {
 const build = async () => {
   const db = makeDb();
   db.store.organization.push({ id: "org-a", name: "Acme A" }, { id: "org-b", name: "Acme B" });
-  db.store.apple_push_certificate.push({
-    organizationId: "org-a",
-    email: "a@example.com",
-    topic: "com.apple.mgmt.External.a",
-    certPem: await makeCertificate(daysFromNow(10)),
-    updatedAt: now,
-  });
-  db.store.apple_push_certificate.push({
-    organizationId: "org-b",
-    email: "b@example.com",
-    topic: "com.apple.mgmt.External.b",
-    certPem: await makeCertificate(daysFromNow(90)),
-    updatedAt: now,
-  });
+  db.store.apple_push_certificate.push(
+    {
+      organizationId: "org-a",
+      email: "a@example.com",
+      topic: "com.apple.mgmt.External.a",
+      certPem: await makeCertificate(daysFromNow(10)),
+      updatedAt: now,
+    },
+    {
+      organizationId: "org-b",
+      email: "b@example.com",
+      topic: "com.apple.mgmt.External.b",
+      certPem: await makeCertificate(daysFromNow(90)),
+      updatedAt: now,
+    },
+  );
   db.store.scep_ca.push(
     {
       id: 1,

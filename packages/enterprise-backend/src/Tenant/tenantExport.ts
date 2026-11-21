@@ -5,20 +5,22 @@ import {
   JsonRecord,
   TENANT_EXPORT_MAX_ROWS,
   TENANT_EXPORT_VERSION,
-  type TenantExportApplication,
-  type TenantExportAuditEntry,
-  type TenantExportCertificate,
-  type TenantExportDeviceAssignment,
-  type TenantExportDirectoryUser,
-  type TenantExportEnvelope,
-  type TenantExportEnrollment,
-  type TenantExportGroup,
-  type TenantExportMember,
-  type TenantExportPolicy,
-  type TenantExportPreRegistration,
-  type TenantExportProfile,
-  type TenantExportUserAssignment,
-  type TenantExportUserGroupAssignment,
+} from "@mattrax/enterprise-domain";
+import type {
+  TenantExportApplication,
+  TenantExportAuditEntry,
+  TenantExportCertificate,
+  TenantExportDeviceAssignment,
+  TenantExportDirectoryUser,
+  TenantExportEnvelope,
+  TenantExportEnrollment,
+  TenantExportGroup,
+  TenantExportMember,
+  TenantExportPolicy,
+  TenantExportPreRegistration,
+  TenantExportProfile,
+  TenantExportUserAssignment,
+  TenantExportUserGroupAssignment,
 } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
@@ -47,8 +49,8 @@ const iso = (date: Date | number | null | undefined) => {
 const safeFilename = (value: string) =>
   value
     .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[^a-z0-9._-]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
 
 /**

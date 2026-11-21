@@ -35,12 +35,7 @@ export type GroupRow = typeof GroupRow.Type;
  * `nested` is inherited from a child group; `directory` is derived from the
  * linked directory group.
  */
-export const GroupMembershipKind = Schema.Literals([
-  "manual",
-  "dynamic",
-  "directory",
-  "nested",
-]);
+export const GroupMembershipKind = Schema.Literals(["manual", "dynamic", "directory", "nested"]);
 
 export type GroupMembershipKind = typeof GroupMembershipKind.Type;
 

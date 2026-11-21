@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 type DebugEmail = {
@@ -180,11 +181,11 @@ test.describe("invitations", () => {
     const link = await latestInvitationLink(page, email);
 
     expect(message).toBeDefined();
-    expect(message!.subject).toBe(`Join ${name} on Mattrax`);
-    expect(message!.text).toContain("invited you to join");
-    expect(message!.text).toContain("as Member");
-    expect(message!.text).toContain(link);
-    expect(message!.html).toContain(name);
+    expect(message.subject).toBe(`Join ${name} on Mattrax`);
+    expect(message.text).toContain("invited you to join");
+    expect(message.text).toContain("as Member");
+    expect(message.text).toContain(link);
+    expect(message.html).toContain(name);
 
     const inviteeContext = await browser.newContext();
     const invitee = await inviteeContext.newPage();

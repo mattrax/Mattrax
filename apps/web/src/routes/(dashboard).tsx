@@ -2,15 +2,8 @@ import { useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import {
-  createEffect,
-  createSignal,
-  Errored,
-  lazy,
-  type ParentProps,
-  onSettled,
-  Show,
-} from "solid-js";
+import { createEffect, createSignal, Errored, lazy, onSettled, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
@@ -129,7 +122,8 @@ function DashboardLayout(props: ParentProps) {
     me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
 
   const shellUser = () =>
-    session().data?.user ?? (session().isPending && presenceActive() ? me.data?.account : undefined);
+    session().data?.user ??
+    (session().isPending && presenceActive() ? me.data?.account : undefined);
 
   createEffect(
     () => ({

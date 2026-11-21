@@ -1,9 +1,5 @@
-import {
-  useNavigate as useRouterNavigate,
-  type NavigateOptions,
-  type Navigator,
-  type TypedPath,
-} from "@solidjs/router";
+import { useNavigate as useRouterNavigate } from "@solidjs/router";
+import type { NavigateOptions, Navigator, TypedPath } from "@solidjs/router";
 
 /**
  * Programmatic navigation that survives a same-tick state write.

@@ -244,8 +244,8 @@ async function loadJwks(
     jwksCache.set(uri, { value: body, expiresAt: Date.now() + JWKS_CACHE_TTL_MS });
 
     return body;
-  } catch (cause) {
-    return failure("jwks", `Entra JWKS request failed: ${String(cause)}`);
+  } catch (error) {
+    return failure("jwks", `Entra JWKS request failed: ${String(error)}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -342,7 +342,7 @@ export async function validateFederatedEntraToken(
   if (jwk.alg && jwk.alg !== decoded.header.alg)
     return failure("signature", "The Entra signing key algorithm does not match the token");
 
-  let valid = false;
+  let valid: boolean;
 
   try {
     const key = await crypto.subtle.importKey(
@@ -360,7 +360,7 @@ export async function validateFederatedEntraToken(
       // DOM libs model the buffer backing separately from the view.
       decoded.signature as BufferSource,
       // SAFETY: Same WebCrypto BufferSource representation as above.
-      textEncoder.encode(decoded.signingInput) as BufferSource,
+      textEncoder.encode(decoded.signingInput),
     );
   } catch {
     return failure("signature", "The token signature could not be verified");

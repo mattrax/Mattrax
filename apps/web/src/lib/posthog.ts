@@ -226,7 +226,7 @@ const installFetchHeaders = (): void => {
   const originalFetch = window.fetch.bind(window);
   // SAFETY: the wrapper accepts the same `(input, init)` arguments and forwards
   // every request unchanged to the bound native fetch.
-  window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
     let url: URL;
 
@@ -252,7 +252,7 @@ const installFetchHeaders = (): void => {
       input instanceof Request ? new Request(input, { ...init, headers }) : input,
       input instanceof Request ? undefined : { ...init, headers },
     );
-  }) as typeof window.fetch;
+  };
 };
 
 const stackFrames = (stack: string | undefined) => {
@@ -416,10 +416,7 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
 };
 
 /** Group pageviews and interactions by the active tenant. */
-export const syncPostHogTenant = (
-  tenantId?: string | null,
-  tenantName?: string | null,
-): void => {
+export const syncPostHogTenant = (tenantId?: string | null, tenantName?: string | null): void => {
   start();
 
   if (!config) return;

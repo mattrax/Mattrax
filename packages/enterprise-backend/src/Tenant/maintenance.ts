@@ -14,16 +14,13 @@ import {
 } from "@mattrax/mdm-apple";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
 import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
-import { loadCredentialHealth, type CredentialHealth } from "../Device/credentialHealth.ts";
-import {
-  sweepCredentialIssuance,
-  type DomainCertificateRequester,
-} from "../Device/credentialIssuance.ts";
+import { loadCredentialHealth } from "../Device/credentialHealth.ts";
+import type { CredentialHealth } from "../Device/credentialHealth.ts";
+import { sweepCredentialIssuance } from "../Device/credentialIssuance.ts";
+import type { DomainCertificateRequester } from "../Device/credentialIssuance.ts";
 import { purgeExpiredScepCaTrust, rotateDueScepCas } from "../Scep/scepLifecycle.ts";
-import {
-  runServerCertificateCheck,
-  type ServerCertificateProbe,
-} from "../Scep/serverCertificate.ts";
+import { runServerCertificateCheck } from "../Scep/serverCertificate.ts";
+import type { ServerCertificateProbe } from "../Scep/serverCertificate.ts";
 import { reconcileSubscriptionSweep } from "@mattrax/enterprise-billing";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
@@ -772,9 +769,9 @@ export const runMaintenance = (
         now,
         authSecret: options.authSecret,
       }).pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
-            console.error("SCEP CA rotation sweep failed", cause);
+            console.error("SCEP CA rotation sweep failed", error);
 
             return { checked: 0, rotated: 0, failed: 0 };
           }),
@@ -799,9 +796,9 @@ export const runMaintenance = (
         intervalMinutes: options.serverCertificateIntervalMinutes,
         probe: options.serverCertificateProbe,
       }).pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
-            console.error("Origin TLS certificate check failed", cause);
+            console.error("Origin TLS certificate check failed", error);
 
             return { checked: false, state: null };
           }),

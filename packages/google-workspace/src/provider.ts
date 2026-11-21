@@ -1,9 +1,9 @@
 import { Effect } from "effect";
-import {
-  defineDirectoryProvider,
-  type DirectoryGroupRecord,
-  type DirectoryUserDirectory,
-  type DirectoryUserRecord,
+import { defineDirectoryProvider } from "@mattrax/directory-sync";
+import type {
+  DirectoryGroupRecord,
+  DirectoryUserDirectory,
+  DirectoryUserRecord,
 } from "@mattrax/directory-sync";
 import type { GoogleDirectoryUser, GoogleWorkspaceService } from "./service.js";
 

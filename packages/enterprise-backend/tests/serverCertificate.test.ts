@@ -2,7 +2,8 @@ import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { createServer, type Server } from "node:https";
+import { createServer } from "node:https";
+import type { Server } from "node:https";
 import type { AddressInfo } from "node:net";
 import { generateCaKeyPair, pemEncode } from "@mattrax/crypto";
 import {
@@ -13,7 +14,7 @@ import {
 import { serverCertificateInfo } from "../src/Device/credentialHealth.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -275,7 +276,9 @@ describe("probeServerCertificate", () => {
       response.end("ok"),
     );
 
-    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => {
+      server!.listen(0, "127.0.0.1", resolve);
+    });
 
     // SAFETY: a listening Node server always reports a bound socket address.
     const port = (server.address() as AddressInfo).port;

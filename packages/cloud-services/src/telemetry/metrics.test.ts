@@ -123,7 +123,7 @@ describe("label bounding", () => {
 
     counter.increment({ value: 'a"b\\c\nd' });
 
-    expect(registry.render()).toContain('mattrax_test_total{value="a\\"b\\\\c\\nd"} 1');
+    expect(registry.render()).toContain(String.raw`mattrax_test_total{value="a\"b\\c\nd"} 1`);
   });
 
   it("truncates long values so two ids cannot mint separate series", () => {

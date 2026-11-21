@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   FLEET_MIGRATION_LIST_MAX,
   FLEET_MIGRATION_MAX_DEVICES,
@@ -19,17 +20,19 @@ import {
   normalizeMigrationSerials,
   observeMigrationEntry,
   platformLabel,
-  type CreateFleetMigrationRequest,
-  type CreateFleetMigrationResponse,
-  type FleetMigrationCounts,
-  type FleetMigrationDetail,
-  type FleetMigrationEntry,
-  type FleetMigrationEntryStatus,
-  type FleetMigrationPlatform,
-  type FleetMigrationSummary,
-  type FleetMigrationUnenrolResult,
-  type IssueFleetMigrationUnenrolRequest,
-  type IssueFleetMigrationUnenrolResponse,
+} from "@mattrax/enterprise-domain";
+import type {
+  CreateFleetMigrationRequest,
+  CreateFleetMigrationResponse,
+  FleetMigrationCounts,
+  FleetMigrationDetail,
+  FleetMigrationEntry,
+  FleetMigrationEntryStatus,
+  FleetMigrationPlatform,
+  FleetMigrationSummary,
+  FleetMigrationUnenrolResult,
+  IssueFleetMigrationUnenrolRequest,
+  IssueFleetMigrationUnenrolResponse,
 } from "@mattrax/enterprise-domain";
 import { queueScriptRun } from "../Policy/scripts.ts";
 import { toCsv } from "./deviceSearch.ts";
@@ -556,7 +559,7 @@ export const createFleetMigration = (
       }
 
       // SAFETY: the device proto column is the same SQL enum as the cohort.
-      const devicePlatform = device?.proto as FleetMigrationPlatform | undefined;
+      const devicePlatform = device?.proto;
 
       if (device && devicePlatform && !platforms.includes(devicePlatform)) {
         skipped.push({
@@ -576,7 +579,7 @@ export const createFleetMigration = (
         serial,
         // SAFETY: the branch above rejected a device whose proto is not a cohort
         // platform, and the platform list is non-empty (validated above).
-        platform: device ? (device.proto as FleetMigrationPlatform) : platforms[0]!,
+        platform: device ? device.proto : platforms[0],
         status: "pending",
         deviceId: device?.id ?? null,
         executionId: null,

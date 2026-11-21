@@ -1,6 +1,7 @@
 import { Cause, Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { ApnsError, ApnsService } from "@mattrax/apns";
+import type { ApnsService } from "@mattrax/apns";
+import { ApnsError } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
@@ -69,7 +70,7 @@ export const classifyApplePushFailure = (error: ApplePushFailure): ApplePushFail
 
 /** Condense an error into the short, secret-free string stored on the device. */
 export const describeApplePushFailure = (error: ApplePushFailure, limit = 255) => {
-  const text = apnsErrorText(error).replace(/\s+/g, " ").trim();
+  const text = apnsErrorText(error).replaceAll(/\s+/g, " ").trim();
 
   return (text || "APNs push failed").slice(0, limit);
 };
@@ -450,6 +451,7 @@ export const applePushService = ({
           pushAppleDeviceInternal(deviceId).pipe(
             Effect.map((outcome) => {
               outcomes[index] = outcome;
+              return undefined;
             }),
           ),
       );

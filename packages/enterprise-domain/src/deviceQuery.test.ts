@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  evaluateDeviceQuery,
-  formatDeviceQueryText,
-  parseDeviceQueryText,
-  type DeviceQuery,
-  type DeviceQueryDevice,
-} from "./deviceQuery.ts";
+import { evaluateDeviceQuery, formatDeviceQueryText, parseDeviceQueryText } from "./deviceQuery.ts";
+import type { DeviceQuery, DeviceQueryDevice } from "./deviceQuery.ts";
 
 const now = new Date("2026-05-20T12:00:00.000Z");
 

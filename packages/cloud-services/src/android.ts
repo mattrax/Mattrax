@@ -1,10 +1,6 @@
 import { Effect, Layer, Schema } from "effect";
-import {
-  AndroidManagement,
-  AndroidManagementFetchLive,
-  GoogleApiError,
-  type GoogleError,
-} from "@mattrax/dm-android";
+import { AndroidManagement, AndroidManagementFetchLive, GoogleApiError } from "@mattrax/dm-android";
+import type { GoogleError } from "@mattrax/dm-android";
 import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
 
 /** Deployment bindings needed to construct Android Management delivery. */

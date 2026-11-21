@@ -1,8 +1,16 @@
 import { Head, Link, Meta, Title } from "@solidjs/meta";
-import { createRouter, intentPreload, pendingLinks, tapPreload, useLocation, viewportPreload } from "@solidjs/router";
+import {
+  createRouter,
+  intentPreload,
+  pendingLinks,
+  tapPreload,
+  useLocation,
+  viewportPreload,
+} from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
-import { createEffect, Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
+import { createEffect, Errored, Loading, onSettled, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { GlobalErrorBanner } from "~/components/global-error-banner";

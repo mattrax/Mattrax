@@ -6,7 +6,8 @@ import {
   ManagementBackendEnterpriseLive,
   configurationDeclarationIdentifier,
 } from "@mattrax/mdm-apple";
-import { makeDb, tableName, type Row } from "./fake-db.js";
+import { makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://user-policies.test";
 

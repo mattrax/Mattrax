@@ -1,6 +1,8 @@
-import { Passkey, Sessions } from "@yielded/auth";
-import { Context, Schema, type Effect } from "effect";
-import { StepUpMethods, StepUpUnavailable } from "./stepUp.ts";
+import type { Sessions } from "@yielded/auth";
+import { Passkey } from "@yielded/auth";
+import { Context, Schema } from "effect";
+import type { Effect } from "effect";
+import type { StepUpMethods, StepUpUnavailable } from "./stepUp.ts";
 
 /**
  * Server-side result of starting a step-up ceremony. The runtime keeps the

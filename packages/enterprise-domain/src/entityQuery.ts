@@ -86,7 +86,7 @@ export const quoteFilterValue = (value: string): string => {
 
   if (!needsQuotes.test(trimmed)) return trimmed;
 
-  return `"${trimmed.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `"${trimmed.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`)}"`;
 };
 
 /** Remove the outer quotes of a quoted value and resolve `\\` / `\"`. */
@@ -97,10 +97,10 @@ export const unquoteFilterValue = (value: string): string => {
   let result = "";
 
   for (let index = 0; index < inner.length; index++) {
-    const character = inner[index]!;
+    const character = inner[index];
 
     if (character === "\\" && (inner[index + 1] === "\\" || inner[index + 1] === '"')) {
-      result += inner[index + 1]!;
+      result += inner[index + 1];
       index += 1;
       continue;
     }
@@ -230,7 +230,7 @@ const splitAnd = (text: string): string[] => {
   let escaped = false;
 
   for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
+    const character = text[index];
 
     if (escaped) {
       current += character;
@@ -285,10 +285,10 @@ export const parseEntityQuery = (
     );
 
     if (!match) continue;
-    const field = fields.find((item) => item.id === match[1]!.toLowerCase());
+    const field = fields.find((item) => item.id === match[1].toLowerCase());
 
     if (!field) continue;
-    const op = match[2]!.toLowerCase();
+    const op = match[2].toLowerCase();
 
     if (!opsFor(field).some((option) => option.value === op)) continue;
 
@@ -296,14 +296,14 @@ export const parseEntityQuery = (
       // Keep an empty list as a real, matches-nothing predicate so a shared
       // `field in ""` link cannot degrade into an unfiltered table. Numeric
       // lists drop junk here so the chip and the predicate always agree.
-      const values = splitEntityValues(match[3]!.trim());
+      const values = splitEntityValues(match[3].trim());
       const normalised = field.kind === "number" ? normaliseNumericFilterValues(values) : values;
 
       conditions.push({ field: field.id, op, value: joinEntityValues(normalised) });
       continue;
     }
 
-    conditions.push({ field: field.id, op, value: unquoteFilterValue(match[3]!.trim()) });
+    conditions.push({ field: field.id, op, value: unquoteFilterValue(match[3].trim()) });
   }
 
   return conditions;

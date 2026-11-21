@@ -1,7 +1,8 @@
 import { and, asc, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
 import { ACCOUNT_AUDIT } from "../Account/accountAudit.ts";
-import { schema as s, type EnterpriseDb } from "../schema.ts";
+import { schema as s } from "../schema.ts";
+import type { EnterpriseDb } from "../schema.ts";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 
 /**
@@ -177,9 +178,9 @@ const enqueueEmailRecord = (
 
       return { outcome: "queued" as const, id };
     }).pipe(
-      Effect.catch((cause): Effect.Effect<EnqueueEmailRecord> => {
+      Effect.catch((error): Effect.Effect<EnqueueEmailRecord> => {
         // MySQL reports a lost unique race as ER_DUP_ENTRY on the dedupe key.
-        if (dedupeKey !== null && /duplicate entry/i.test(describeFailure(cause)))
+        if (dedupeKey !== null && /duplicate entry/i.test(describeFailure(error)))
           return Effect.succeed({ outcome: "duplicate" as const, id: null });
 
         return Effect.logError("Transactional email could not be queued", {
@@ -445,7 +446,7 @@ const deliverOutboxRow = (
     const failure = payload
       ? yield* transport.send(payload).pipe(
           Effect.as(null),
-          Effect.catch((cause) => Effect.succeed(describeFailure(cause))),
+          Effect.catch((error) => Effect.succeed(describeFailure(error))),
         )
       : "stored message could not be read";
 

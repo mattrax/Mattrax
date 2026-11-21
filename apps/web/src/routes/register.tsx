@@ -176,8 +176,8 @@ export default function RegisterPage() {
       // The field only exists now; move the caret there so the code can be typed
       // or autofilled without reaching for the mouse.
       queueMicrotask(() => codeInput?.focus());
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "Could not send a verification code."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "Could not send a verification code."));
     } finally {
       setPending(null);
     }
@@ -259,8 +259,8 @@ export default function RegisterPage() {
       }
 
       await finishRegistration(Schema.decodeUnknownSync(Schema.String)(result.data?.grant));
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "That code is invalid or has expired."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "That code is invalid or has expired."));
     } finally {
       setPending(null);
     }

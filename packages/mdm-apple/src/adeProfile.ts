@@ -1,7 +1,9 @@
 import { Effect, Schema } from "effect";
 import { eq } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
-import { PlistValue, serializePlist, type PlistSerializeError } from "@mattrax/plist";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { PlistValue, serializePlist } from "@mattrax/plist";
+import type { PlistSerializeError } from "@mattrax/plist";
 import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
 import { issueScepChallenge } from "@mattrax/mdm-core";
 import { ScepError } from "@mattrax/scep";

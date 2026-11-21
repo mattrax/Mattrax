@@ -2,18 +2,16 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import {
-  MeResponse,
-  type Permission,
-  type UpdateMeRequest,
-} from "@mattrax/enterprise-domain/client";
+import { MeResponse } from "@mattrax/enterprise-domain/client";
+import type { Permission, UpdateMeRequest } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
 import { errorMessage, errorTag, raisedFailure } from "~/lib/errors";
 import { requireStepUpGrant, withStepUp } from "~/lib/step-up";
-import { getPreloadedSession, type PreloadedSession as Session } from "~/lib/session-store";
+import { getPreloadedSession } from "~/lib/session-store";
+import type { PreloadedSession as Session } from "~/lib/session-store";
 import { capturePostHog } from "~/lib/posthog";
 import { clearMeCache } from "~/lib/me-cache";
 import { clearSessionPresence } from "~/lib/session-presence";
@@ -479,8 +477,8 @@ export const authClient = {
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
         response = await startRegistration({ optionsJSON: started.options });
-      } catch (cause) {
-        throw new Error(passkeyCreationFailure(cause));
+      } catch (error) {
+        throw new Error(passkeyCreationFailure(error), { cause: error });
       }
 
       await request("/completePasskeyRegistration", {
@@ -513,7 +511,9 @@ export const authClient = {
           // The registration sheet has just closed, so the follow-up prompt
           // can be dismissed or find the credential before the browser is
           // ready. The ceremony is idempotent; this loop is not user-driven.
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await new Promise((resolve) => {
+            setTimeout(resolve, 500);
+          });
         }
       }
 
@@ -673,8 +673,8 @@ export const authClient = {
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
         response = await startRegistration({ optionsJSON: started.options });
-      } catch (cause) {
-        throw new Error(passkeyCreationFailure(cause));
+      } catch (error) {
+        throw new Error(passkeyCreationFailure(error), { cause: error });
       }
 
       return request<{

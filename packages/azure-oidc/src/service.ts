@@ -1,12 +1,7 @@
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import {
-  AzureJwtClaims,
-  AzureOidcDiscovery,
-  JsonWebKeySet,
-  JwtHeader,
-  type JsonWebKey,
-} from "./schema.js";
+import { AzureJwtClaims, AzureOidcDiscovery, JsonWebKeySet, JwtHeader } from "./schema.js";
+import type { JsonWebKey } from "./schema.js";
 
 export class AzureOidcError extends Data.TaggedError("AzureOidcError")<{
   message: string;
@@ -71,8 +66,8 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 function base64UrlToBytes(input: string): Uint8Array {
   const padded = input
-    .replace(/-/g, "+")
-    .replace(/_/g, "/")
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
     .padEnd(input.length + ((4 - (input.length % 4)) % 4), "=");
 
   const binary = atob(padded);
@@ -97,13 +92,13 @@ function parseJwt(token: string): Effect.Effect<DecodedJwt, AzureOidcError> {
       );
     }
 
-    const header = yield* Schema.decodeUnknownEffect(JwtHeader)(
-      base64UrlJson(parts[0]),
-    ).pipe(Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT header", cause })));
+    const header = yield* Schema.decodeUnknownEffect(JwtHeader)(base64UrlJson(parts[0])).pipe(
+      Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT header", cause })),
+    );
 
-    const claims = yield* Schema.decodeUnknownEffect(AzureJwtClaims)(
-      base64UrlJson(parts[1]),
-    ).pipe(Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT claims", cause })));
+    const claims = yield* Schema.decodeUnknownEffect(AzureJwtClaims)(base64UrlJson(parts[1])).pipe(
+      Effect.mapError((cause) => new AzureOidcError({ message: "Invalid JWT claims", cause })),
+    );
 
     return {
       header,

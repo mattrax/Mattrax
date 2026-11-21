@@ -8,8 +8,8 @@ const isRecord = (value: Schema.Json | undefined): value is Record<string, Schem
 /** Remove emails and long opaque tokens from text a person did not type as a message. */
 export const redactPostHogText = (value: string): string =>
   value
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]");
 
 const withoutQuery = (value: Schema.Json): Schema.Json => {
   if (!isString(value)) return value;
@@ -49,6 +49,9 @@ const sanitizeElement = (value: Schema.Json): Schema.Json => {
 
   // SAFETY: the predicate only proves the shape, not mutability; capture
   // properties are plain objects assembled by posthog-js.
+  // SAFETY: posthog-js builds these captures as plain mutable objects; the
+  // readonly Schema.Json index signature is the decoder shape, not the
+  // object shape.
   const element = value as { [key: string]: Schema.Json };
 
   for (const key of ELEMENT_TEXT_KEYS) {
@@ -83,8 +86,7 @@ export const sanitizePostHogCapture = <T>(
     if (key in properties) properties[key] = withoutQuery(properties[key]);
   }
 
-  if (isString(properties.$el_text))
-    properties.$el_text = redactPostHogText(properties.$el_text);
+  if (isString(properties.$el_text)) properties.$el_text = redactPostHogText(properties.$el_text);
 
   if (Array.isArray(properties.$elements))
     properties.$elements = properties.$elements.map(sanitizeElement);

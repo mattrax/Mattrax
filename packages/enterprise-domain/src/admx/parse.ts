@@ -17,8 +17,8 @@ import {
   childrenNamed,
   firstChildNamed,
   parseXml,
-  type XmlElement,
 } from "./xml.js";
+import type { XmlElement } from "./xml.js";
 
 /**
  * ADMX/ADML parsing.
@@ -132,11 +132,15 @@ const readPresentationTable = (root: XmlElement): PresentationTable => {
             ...(refId ? { refId } : {}),
             ...(label ? { label } : {}),
             ...(child.text ? { text: child.text } : {}),
-            ...(kind === "checkBox" ? { defaultChecked: boolAttribute(child, "defaultChecked") } : {}),
+            ...(kind === "checkBox"
+              ? { defaultChecked: boolAttribute(child, "defaultChecked") }
+              : {}),
             ...(attribute(child, "defaultValue") !== undefined
               ? { defaultValue: attribute(child, "defaultValue") }
               : {}),
-            ...(itemIndex !== undefined && Number.isFinite(itemIndex) ? { defaultItem: itemIndex } : {}),
+            ...(itemIndex !== undefined && Number.isFinite(itemIndex)
+              ? { defaultItem: itemIndex }
+              : {}),
             ...(items.length > 0 ? { items } : {}),
           });
 
@@ -206,7 +210,7 @@ const resolveString = (
   const match = STRING_REF.exec(raw.trim());
 
   if (!match) return raw.trim();
-  const id = match[1]!;
+  const id = match[1];
   const value = strings.get(id);
 
   if (value !== undefined) return value;
@@ -232,7 +236,7 @@ const presentationParts = (policy: XmlElement, presentations: PresentationTable)
   const seen = new Set<string>();
 
   for (const match of raw.matchAll(PRESENTATION_REF)) {
-    const id = match[1]!;
+    const id = match[1];
 
     if (seen.has(id)) continue;
     seen.add(id);
@@ -357,7 +361,7 @@ const parseElements = (
         const displayName =
           attribute(item, "displayName") !== undefined
             ? displayNameFor(item, strings, unresolved, `Item ${index + 1}`)
-            : part?.items?.[index] ?? `Item ${index + 1}`;
+            : (part?.items?.[index] ?? `Item ${index + 1}`);
 
         const valueElement = firstChildNamed(item, "value");
 
@@ -394,7 +398,10 @@ const parseElements = (
       if (parsed.length > 0) items = parsed;
     }
 
-    if (kind === "boolean" && (firstChildNamed(child, "trueList") || firstChildNamed(child, "falseList")))
+    if (
+      kind === "boolean" &&
+      (firstChildNamed(child, "trueList") || firstChildNamed(child, "falseList"))
+    )
       elementUnsupported.push(
         `Boolean element "${id}" uses <trueList>/<falseList>, which is not supported`,
       );
@@ -513,10 +520,7 @@ export const parseAdmxFile = (
     );
   }
 
-  const namespaceElement = firstChildNamed(
-    firstChildNamed(admx, "policyNamespaces"),
-    "target",
-  );
+  const namespaceElement = firstChildNamed(firstChildNamed(admx, "policyNamespaces"), "target");
 
   const categories = new Map<string, { name: string; displayName: string; parent?: string }>();
 
@@ -558,12 +562,7 @@ export const parseAdmxFile = (
     const className = parseClass(policy, warnings);
     const displayName = displayNameFor(policy, strings, unresolved, name);
 
-    const description = resolveString(
-      attribute(policy, "explainText"),
-      strings,
-      unresolved,
-      "",
-    );
+    const description = resolveString(attribute(policy, "explainText"), strings, unresolved, "");
 
     const parts = presentationParts(policy, presentationTable);
     const { elements, unsupported } = parseElements(policy, parts, strings, unresolved, warnings);
@@ -600,7 +599,10 @@ export const parseAdmxFile = (
         return parsed ? [parsed] : [];
       });
 
-      if (items.length !== childrenNamed(container, "item").length && warnings.length < MAX_WARNINGS)
+      if (
+        items.length !== childrenNamed(container, "item").length &&
+        warnings.length < MAX_WARNINGS
+      )
         warnings.push(`<${containerName}> contains an item this importer cannot display.`);
 
       return items.length > 0 ? items : undefined;

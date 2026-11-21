@@ -6,7 +6,8 @@ import {
   EnterpriseForbidden,
   EnterpriseNotFound,
 } from "@mattrax/enterprise-domain";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { directoryProviderRegistry } from "../Directory/registry.ts";
 
 export type LinkDirectoryUserSsoInput = {

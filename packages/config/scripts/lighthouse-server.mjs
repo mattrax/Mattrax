@@ -31,7 +31,9 @@ const api = createServer((request, response) => {
   response.end("null");
 });
 
-await new Promise((resolve) => api.listen(API_PORT, "127.0.0.1", resolve));
+await new Promise((resolve) => {
+  api.listen(API_PORT, "127.0.0.1", resolve);
+});
 
 const { listener } = await import(
   pathToFileURL(`${process.cwd()}/apps/web/dist/server/node.js`).href
@@ -39,11 +41,21 @@ const { listener } = await import(
 
 const web = createServer((request, response) => void listener(request, response));
 
-await new Promise((resolve) => web.listen(WEB_PORT, "127.0.0.1", resolve));
+await new Promise((resolve) => {
+  web.listen(WEB_PORT, "127.0.0.1", resolve);
+});
 
 // Warm the SSR bundle and the discovery documents so Lighthouse never races
 // the first render (its metadata fetches are short-lived).
-for (const path of ["/", "/login", "/register", "/designer", "/robots.txt", "/llms.txt", "/.well-known/ard.json"]) {
+for (const path of [
+  "/",
+  "/login",
+  "/register",
+  "/designer",
+  "/robots.txt",
+  "/llms.txt",
+  "/.well-known/ard.json",
+]) {
   await fetch(`http://127.0.0.1:${WEB_PORT}${path}`).then((response) => response.arrayBuffer());
 }
 

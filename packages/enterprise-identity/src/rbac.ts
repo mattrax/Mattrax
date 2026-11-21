@@ -1,13 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { Context, Effect } from "effect";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   builtInRolePermissions,
   BUILT_IN_ROLE_LABELS,
   isBuiltInTenantRole,
   PERMISSION_SET,
-  type Permission,
 } from "@mattrax/enterprise-domain";
+import type { Permission } from "@mattrax/enterprise-domain";
 
 /** Ambient permission attached by the service proxy to one method invocation. */
 export class RequiredPermission extends Context.Service<

@@ -16,8 +16,8 @@ import {
   admxPolicySelection,
   loadAdmxCatalogueIndex,
   readAdmxFiles,
-  type AdmxSelection,
 } from "~/lib/policy-designer/admx";
+import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
@@ -78,9 +78,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
       void loadAdmxCatalogueIndex()
         .then(setCatalogue)
-        .catch((cause) =>
+        .catch((error_: unknown) =>
           setCatalogueError(
-            errorMessage(raisedFailure(cause), "The in-box ADMX lookup could not be loaded."),
+            errorMessage(raisedFailure(error_), "The in-box ADMX lookup could not be loaded."),
           ),
         );
     },
@@ -101,9 +101,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
         try {
           index = await loadAdmxCatalogueIndex();
           setCatalogue(index);
-        } catch (cause) {
+        } catch (error_) {
           setCatalogueError(
-            errorMessage(raisedFailure(cause), "The in-box ADMX lookup could not be loaded."),
+            errorMessage(raisedFailure(error_), "The in-box ADMX lookup could not be loaded."),
           );
         }
       }
@@ -112,12 +112,10 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
       setBundle(next);
       setSelected(
-        new Set(
-          next.policies.flatMap((policy, index) => (blockedReason(policy) ? [] : [index])),
-        ),
+        new Set(next.policies.flatMap((policy, index) => (blockedReason(policy) ? [] : [index]))),
       );
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "The template could not be read."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "The template could not be read."));
     } finally {
       setBusy(false);
     }
@@ -137,7 +135,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
     (bundle()?.policies ?? []).filter((policy) => !blockedReason(policy)).length;
 
   const chosen = () =>
-    (bundle()?.policies ?? []).filter((policy, index) => selected().has(index) && !blockedReason(policy));
+    (bundle()?.policies ?? []).filter(
+      (policy, index) => selected().has(index) && !blockedReason(policy),
+    );
 
   const add = () => {
     const selections = (bundle()?.policies ?? []).flatMap((policy, index) => {
@@ -168,8 +168,8 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
             <div class="mt-3 space-y-2 text-[12px]">
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
                 <span>
-                  <span class="font-medium text-foreground">{loaded().policies.length}</span>{" "}
-                  polic{loaded().policies.length === 1 ? "y" : "ies"} found
+                  <span class="font-medium text-foreground">{loaded().policies.length}</span> polic
+                  {loaded().policies.length === 1 ? "y" : "ies"} found
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>
@@ -214,8 +214,8 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
                 Drop an .admx/.adml pair or a .zip here
               </p>
               <p class="max-w-sm text-[11px] leading-relaxed text-muted-foreground">
-                Files are parsed in your browser. Nothing is executed, and templates larger than
-                1 MiB per file or 4 MiB in total are refused.
+                Files are parsed in your browser. Nothing is executed, and templates larger than 1
+                MiB per file or 4 MiB in total are refused.
               </p>
               <input
                 ref={fileInput}

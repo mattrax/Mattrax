@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
@@ -111,7 +112,7 @@ export default function DeliverySettingsPage() {
           </Badge>
           <Show when={apns.data?.topic}>
             <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {apns.data!.topic}
+              {apns.data.topic}
             </span>
           </Show>
         </div>

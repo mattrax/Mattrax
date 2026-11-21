@@ -4,7 +4,8 @@ import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import { parseAppleUserProfiles } from "@mattrax/mdm-core";
-import { dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row, Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 

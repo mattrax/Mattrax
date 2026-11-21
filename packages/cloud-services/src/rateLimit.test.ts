@@ -5,8 +5,8 @@ import {
   rateLimitBindingsFromEnv,
   rateLimitResponse,
   rateLimitRuleFor,
-  type RateLimitBindings,
 } from "./rateLimit.js";
+import type { RateLimitBindings } from "./rateLimit.js";
 
 const request = (path: string, init: RequestInit = {}) =>
   new Request(`https://e.mattrax.app${path}`, init);

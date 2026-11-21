@@ -25,7 +25,7 @@ describe("session presence cookie", () => {
     expect(cookies).toHaveLength(3);
     expect(cookies[0]).toContain("__Host-mattrax_session=abc123");
     expect(cookies[1]).toBe("other=value; Path=/");
-    const presence = cookies[2]!;
+    const presence = cookies[2];
     expect(presence).toContain(`${SESSION_PRESENCE_COOKIE}=v1.`);
     expect(presence).toContain("Path=/");
     expect(presence).toContain("SameSite=Lax");

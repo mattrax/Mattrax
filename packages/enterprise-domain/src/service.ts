@@ -1,4 +1,5 @@
-import { Context, type Effect } from "effect";
+import { Context } from "effect";
+import type { Effect } from "effect";
 
 /* oxlint-disable-next-line typescript/no-explicit-any -- The resolved session,
  * API token and step-up values are produced by the `@yielded/auth` service

@@ -1,12 +1,12 @@
 import { isServer } from "@solidjs/web";
 import { useQuery } from "@tanstack/solid-query";
-import {
-  LOGIN_ATTEMPT_FAILURES,
-  type LoginAttemptFactor,
-  type LoginAttemptFailure,
-  type LoginAttemptInfo,
-  type LoginAttemptMethod,
-  type LoginAttemptsResponse,
+import { LOGIN_ATTEMPT_FAILURES } from "@mattrax/enterprise-domain/client";
+import type {
+  LoginAttemptFactor,
+  LoginAttemptFailure,
+  LoginAttemptInfo,
+  LoginAttemptMethod,
+  LoginAttemptsResponse,
 } from "@mattrax/enterprise-domain/client";
 import { For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";

@@ -245,7 +245,10 @@ const withMetadata = (
   return search;
 };
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 /**
  * A very small Stripe REST client.
@@ -314,8 +317,8 @@ export class HttpStripeClient implements StripeClientLike {
           // the timeout budget of its retries.
           signal: AbortSignal.timeout(this.#timeout),
         });
-      } catch (cause) {
-        lastError = cause instanceof Error ? cause : new Error(String(cause));
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt === this.#retries) throw lastError;
 

@@ -10,8 +10,8 @@ import {
   deviceActivitySourceKeyset,
   encodeDeviceActivityCursor,
   normalizeDeviceActivityLimit,
-  type DeviceActivityPage,
 } from "../src/Device/deviceActivity.ts";
+import type { DeviceActivityPage } from "../src/Device/deviceActivity.ts";
 
 const at = (value: string) => new Date(value);
 

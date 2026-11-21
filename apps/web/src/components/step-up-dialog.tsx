@@ -8,8 +8,8 @@ import {
   pendingStepUp,
   rememberStepUpGrant,
   stepUpActionLabel,
-  type StepUpMethod,
 } from "~/lib/step-up-bus";
+import type { StepUpMethod } from "~/lib/step-up-bus";
 
 const inputClass =
   "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
@@ -71,8 +71,8 @@ export function StepUpDialog() {
       rememberStepUpGrant(current.action, grant.grant, grant.expiresAtMillis);
       completeStepUp(grant.grant);
       setCode("");
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "We couldn't confirm that action. Try again."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "We couldn't confirm that action. Try again."));
     } finally {
       setPending(false);
     }

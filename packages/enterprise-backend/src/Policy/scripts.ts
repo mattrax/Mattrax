@@ -21,16 +21,18 @@ import {
   scriptProblem,
   scriptSecretValues,
   updatedAtSatisfiesPrecondition,
-  type UpdatedAtPrecondition,
-  type CreateScriptRequest,
-  type PatchScriptAssignmentsRequest,
-  type PatchScriptRequest,
-  type RunScriptTarget,
-  type ScriptAgentResultRequest,
-  type ScriptAgentScript,
-  type ScriptExecutionInfo,
-  type ScriptInfo,
-  type ScriptSettings,
+} from "@mattrax/enterprise-domain";
+import type {
+  UpdatedAtPrecondition,
+  CreateScriptRequest,
+  PatchScriptAssignmentsRequest,
+  PatchScriptRequest,
+  RunScriptTarget,
+  ScriptAgentResultRequest,
+  ScriptAgentScript,
+  ScriptExecutionInfo,
+  ScriptInfo,
+  ScriptSettings,
 } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "../schema.ts";
 
@@ -313,7 +315,7 @@ export const getScriptDetail = (db: EnterpriseDb, organizationId: string, script
 
     const [info] = yield* scriptSummaries(db, organizationId, [row]);
 
-    return { script: info!, body: row.body };
+    return { script: info, body: row.body };
   });
 
 type ScriptDraftInput = {
@@ -444,9 +446,7 @@ export const updateScript = (
         yield* tx
           .update(s.script)
           .set({ ...built.values, updatedAt: now })
-          .where(
-            and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)),
-          );
+          .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)));
 
         return { status: "ok" as const };
       }),
@@ -711,7 +711,7 @@ export const queueScriptRun = (
       return {
         queued: true as const,
         target: {
-          executionId: existing[0]!.id,
+          executionId: existing[0].id,
           deviceId: device.id,
           deviceName: device.name,
           skippedReason: null,
@@ -1074,11 +1074,11 @@ export const recordScriptAgentResult = (
 
     if (existing.length > 0)
       return {
-        executionId: existing[0]!.id,
+        executionId: existing[0].id,
         duplicate: true,
         status:
-          existing[0]!.status === "succeeded" || existing[0]!.status === "failed"
-            ? existing[0]!.status
+          existing[0].status === "succeeded" || existing[0].status === "failed"
+            ? existing[0].status
             : status,
         scriptId: script.id,
       };

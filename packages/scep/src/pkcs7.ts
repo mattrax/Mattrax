@@ -7,7 +7,7 @@ import { pemEncode, pemDecode } from "./crypto.js";
 
 // ─── PKIjs Crypto Engine Setup ───────────────────────────────────
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -540,7 +540,7 @@ function extractOctetStringContent(node: Asn1Node | undefined): ArrayBuffer {
 
 // Manual ASN.1 length reader for fallback extraction.
 function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
-  let length = der[offset]!;
+  let length = der[offset];
   let headerLen = 1;
 
   if (length & 0x80) {
@@ -548,7 +548,7 @@ function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
     length = 0;
 
     for (let i = 0; i < numBytes; i++) {
-      length = (length << 8) | der[offset + 1 + i]!;
+      length = (length << 8) | der[offset + 1 + i];
     }
 
     headerLen = 1 + numBytes;
@@ -741,7 +741,7 @@ function extractChallengePassword(csr: pkijs.CertificationRequest): string | und
 function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
   try {
     return pkijs.CertificationRequest.fromBER(bytes);
-  } catch (err) {
+  } catch (error) {
     // Some implementations wrap the CSR in an OCTET STRING inside the EnvelopedData
     try {
       const parsed = asn1js.fromBER(bytes);
@@ -754,9 +754,9 @@ function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
         return pkijs.CertificationRequest.fromBER(inner);
       }
 
-      throw err;
+      throw error;
     } catch {
-      throw err;
+      throw error;
     }
   }
 }
@@ -862,9 +862,11 @@ export function parseScepPkcsReq(
           const envelopedData = new pkijs.EnvelopedData({ schema: innerContentInfo.content });
           csrBytes = await decryptEnvelopedData(envelopedData, caPrivateKeyJwk);
         }
-      } catch (decryptErr) {
+      } catch (error) {
         if (isEnveloped) {
-          throw new Error(`EnvelopedData decryption failed: ${errorMessage(decryptErr)}`);
+          throw new Error(`EnvelopedData decryption failed: ${errorMessage(error)}`, {
+            cause: error,
+          });
         }
         // Not EnvelopedData — innerBytes is already the CSR (or unencrypted)
       }
@@ -880,9 +882,10 @@ export function parseScepPkcsReq(
           challengePassword: extractChallengePassword(csr),
           renewal: messageType === MSG_TYPE_RENEWAL,
         };
-      } catch (csrErr) {
+      } catch (error) {
         throw new Error(
-          `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${errorMessage(csrErr)}`,
+          `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${errorMessage(error)}`,
+          { cause: error },
         );
       }
     },

@@ -20,12 +20,7 @@ import { ShieldCheck, UsersRound } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
 import { AccessDenied } from "~/lib/permissions";
 import { authClient } from "~/lib/auth";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  meQueryOptions,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 const PAGE_SIZE = 25;
@@ -80,10 +75,9 @@ export default function AdminAccountsPage() {
 
     try {
       await enterprise.patchAdminAccountSuperadmin(account.id, next);
-      toast.success(
-        next ? "Platform administrator granted" : "Platform administrator removed",
-        { description: account.email },
-      );
+      toast.success(next ? "Platform administrator granted" : "Platform administrator removed", {
+        description: account.email,
+      });
       setTarget(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: enterpriseKeys.adminAccounts(query()) }),
@@ -154,10 +148,7 @@ export default function AdminAccountsPage() {
             {accounts.isPending ? (
               <PageSkeleton rows={5} />
             ) : accounts.isError ? (
-              <QueryError
-                error={accounts.error}
-                onRetry={() => void accounts.refetch()}
-              />
+              <QueryError error={accounts.error} onRetry={() => void accounts.refetch()} />
             ) : (
               <DataTable
                 rows={accounts.data ? [...accounts.data.accounts] : undefined}
@@ -205,9 +196,7 @@ export default function AdminAccountsPage() {
                         <Badge variant={account.emailVerified ? "success" : "warning"}>
                           {account.emailVerified ? "Verified" : "Unverified"}
                         </Badge>
-                        {account.disabled ? (
-                          <Badge variant="destructive">Disabled</Badge>
-                        ) : null}
+                        {account.disabled ? <Badge variant="destructive">Disabled</Badge> : null}
                       </div>
                     ),
                   },
@@ -314,8 +303,8 @@ export default function AdminAccountsPage() {
           </Panel>
 
           <p class="px-1 text-[11px] leading-relaxed text-muted-foreground">
-            Platform administrator access is separate from tenant roles. It never grants access
-            to a tenant's devices, policies or members, and a tenant owner is not a platform
+            Platform administrator access is separate from tenant roles. It never grants access to a
+            tenant's devices, policies or members, and a tenant owner is not a platform
             administrator.
           </p>
         </>

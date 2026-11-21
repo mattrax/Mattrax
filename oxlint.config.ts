@@ -1,7 +1,21 @@
+import config from "./packages/config/oxlint.config.ts";
+
 /**
  * Repository oxlint config.
  *
  * The rules live in `@mattrax/config` so every app, package and tooling script
  * shares one policy; this file remains the root entry point oxlint discovers.
+ * Type-aware rules stay on; compiler diagnostics are already covered by the
+ * repository `tsc -b` build, and linting test fixtures through a production
+ * tsconfig produces false errors.
  */
-export { antiSlopLint, default } from "./packages/config/oxlint.config.ts";
+export default {
+  ...config,
+  options: {
+    reportUnusedDisableDirectives: "error",
+    typeAware: true,
+    typeCheck: false,
+  },
+};
+
+export { lintConfig } from "./packages/config/oxlint.config.ts";

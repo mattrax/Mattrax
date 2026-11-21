@@ -4,17 +4,14 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-j
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
-import {
-  EntityQueryBar,
-  formatEntityQuery,
-  parseEntityQuery,
-  type EntityCondition,
-  type EntityField,
-} from "~/components/mdm/entity-query";
-import { MdmTable, type MdmSortState } from "~/components/mdm/table";
+import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
+import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
+import { MdmTable } from "~/components/mdm/table";
+import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
 import { UsersRound } from "~/components/ui/icons";
-import { enterprise, type GroupRow } from "~/lib/enterprise";
+import { enterprise } from "~/lib/enterprise";
+import type { GroupRow } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 import { preloadPage } from "~/lib/page-data";

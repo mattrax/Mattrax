@@ -24,7 +24,7 @@ function base64Url(data: ArrayBuffer | Uint8Array | string): string {
 
   for (const byte of bytes) binary += String.fromCharCode(byte);
 
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll(/=+$/g, "");
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -38,8 +38,8 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 function base64UrlToBytes(input: string): Uint8Array {
   const binary = atob(
     input
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
       .padEnd(input.length + ((4 - (input.length % 4)) % 4), "="),
   );
 
@@ -191,7 +191,7 @@ describe("AzureOidc", () => {
       await crypto.subtle.verify(
         { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
         imported,
-        toArrayBuffer(base64UrlToBytes(parts[2]!)),
+        toArrayBuffer(base64UrlToBytes(parts[2])),
         toArrayBuffer(new TextEncoder().encode(`${parts[0]}.${parts[1]}`)),
       ),
     ).toBe(true);
@@ -299,8 +299,7 @@ describe("AzureOidc", () => {
     let calls = 0;
 
     const fetch: typeof globalThis.fetch = async (input) => {
-      const url =
-        input instanceof URL ? input.href : input instanceof Request ? input.url : input;
+      const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input;
 
       if (url.endsWith("/.well-known/openid-configuration")) {
         return new Response(

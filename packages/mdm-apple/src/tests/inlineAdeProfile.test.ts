@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 

@@ -29,7 +29,9 @@ export function EmailCodeField(props: {
         aria-invalid={props.invalid ? "true" : undefined}
         aria-describedby={props.describedBy}
         value={props.value}
-        onInput={(event) => props.onInput(event.currentTarget.value.replace(/\D/g, "").slice(0, 6))}
+        onInput={(event) =>
+          props.onInput(event.currentTarget.value.replaceAll(/\D/g, "").slice(0, 6))
+        }
         class="w-full rounded-lg border border-input bg-card px-3 py-2.5 text-center text-2xl tracking-[0.4em] text-foreground placeholder:tracking-[0.4em] placeholder:text-muted-foreground/60 outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
       />
     </div>

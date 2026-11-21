@@ -13,8 +13,8 @@ import {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-  type WebhookEndpointRow,
 } from "@mattrax/mdm-apple";
+import type { WebhookEndpointRow } from "@mattrax/mdm-apple";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 
 const authSecret = "webhook-test-secret";
@@ -255,7 +255,7 @@ describe("webhook delivery", () => {
     );
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    const [, request] = fetch.mock.calls[0]!;
+    const [, request] = fetch.mock.calls[0];
     const headers = new Headers(request?.headers);
     const timestamp = Number(headers.get(WEBHOOK_TIMESTAMP_HEADER));
     const header = headers.get(WEBHOOK_SIGNATURE_HEADER);
@@ -390,7 +390,7 @@ describe("webhook delivery", () => {
     const { db } = await setup({ eventFilters: ["device.enrolled"] });
     const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
 
-    const stored = endpoints(db)[0]!;
+    const stored = endpoints(db)[0];
 
     const testEndpoint = endpoint({
       secret: Schema.decodeUnknownSync(Schema.String)(stored.secret),

@@ -1,4 +1,4 @@
-import { PlistValue } from "@mattrax/plist";
+import type { PlistValue } from "@mattrax/plist";
 
 /**
  * Apple MDM enrollment profile builder.

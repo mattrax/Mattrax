@@ -6,9 +6,8 @@ import {
   describeScepCa,
   rotateScepCa,
   scepCaHealth,
-  type ScepCaDescription,
-  type ScepCaHealth,
 } from "@mattrax/scep";
+import type { ScepCaDescription, ScepCaHealth } from "@mattrax/scep";
 import { ScepRepositoryLive } from "@mattrax/mdm-apple";
 import type { EnterpriseDb } from "../schema.ts";
 

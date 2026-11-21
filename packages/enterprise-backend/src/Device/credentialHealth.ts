@@ -16,12 +16,13 @@ import type {
 } from "@mattrax/enterprise-domain";
 import { schema } from "../schema.ts";
 import type { EnterpriseDb } from "../schema.ts";
-import { loadScepCaState, type ScepCaState } from "../Scep/scepLifecycle.ts";
+import { loadScepCaState } from "../Scep/scepLifecycle.ts";
+import type { ScepCaState } from "../Scep/scepLifecycle.ts";
 
 // pkijs needs a WebCrypto engine before it can parse certificates. The APNs
 // helper does the same dance, but this module must stand alone (maintenance
 // imports it without the APNs service).
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -218,10 +219,10 @@ export const apnsCredentialHealth = async (input: {
       renewalUrl: APNS_RENEWAL_URL,
     };
 
-  let parsed: ReturnType<typeof parseApnsCertificate> | null = null;
+  let parsed: ReturnType<typeof parseApnsCertificate> | null;
 
   try {
-    parsed = parseApnsCertificate(input.certificatePem!);
+    parsed = parseApnsCertificate(input.certificatePem);
   } catch {
     parsed = null;
   }

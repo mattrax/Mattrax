@@ -6,6 +6,9 @@ export class MdmError extends Data.TaggedError("MdmError")<{ message: string; ca
 
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
 
+// Effect's tagged-error payload is deliberately empty; \`Record<string, never>\`
+// changes how it combines with sibling error unions.
+// oxlint-disable-next-line typescript/no-empty-object-type -- Effect tagged error with no payload.
 export class DeviceUnenrolled extends Data.TaggedError("DeviceUnenrolled")<{}> {}
 
 export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{

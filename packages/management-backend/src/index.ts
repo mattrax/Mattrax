@@ -1,4 +1,5 @@
-import { Schema, Context, Effect } from "effect";
+import type { Effect } from "effect";
+import { Schema, Context } from "effect";
 
 export class ManagementNotSupported extends Schema.TaggedError<ManagementNotSupported>()(
   "ManagementNotSupported",

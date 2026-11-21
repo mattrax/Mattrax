@@ -779,9 +779,9 @@ function CustomSection(props: {
         fileName: file.name,
         signed,
       });
-    } catch (cause) {
-      if (cause instanceof Error && /abort/i.test(cause.name)) return;
-      setError(errorMessage(raisedFailure(cause), "Could not read that file."));
+    } catch (error_) {
+      if (error_ instanceof Error && /abort/i.test(error_.name)) return;
+      setError(errorMessage(raisedFailure(error_), "Could not read that file."));
     }
   };
 
@@ -800,8 +800,8 @@ function CustomSection(props: {
         content: arrayBufferToBase64(new TextEncoder().encode(result.plist).buffer),
         signed: false,
       });
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "Could not remove the signature."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "Could not remove the signature."));
     } finally {
       setBusy(null);
     }

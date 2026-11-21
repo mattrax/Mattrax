@@ -241,9 +241,7 @@ export const UnlinkApplicationRequest = Schema.Struct({
 export const ApplicationStorefrontRefreshResult = Schema.Struct({
   ...ApplicationStorefrontListResponse.fields,
   /** Storefronts Apple could not be asked about; their rows were left untouched. */
-  errors: Schema.Array(
-    Schema.Struct({ region: Schema.String, message: Schema.String }),
-  ),
+  errors: Schema.Array(Schema.Struct({ region: Schema.String, message: Schema.String })),
   /** Present when auto-unlink removed assignments after the app went missing. */
   unlinked: Schema.optional(RemovedApplicationAssignments),
 });

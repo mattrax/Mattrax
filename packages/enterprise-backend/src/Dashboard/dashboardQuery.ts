@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
-import {
-  deriveDeviceHealth,
-  evaluateDeviceQuery,
-  type DashboardQueryRequest,
-  type DashboardQueryResponse,
-  type DashboardUserFilter,
-  type DeviceQuery,
+import { deriveDeviceHealth, evaluateDeviceQuery } from "@mattrax/enterprise-domain";
+import type {
+  DashboardQueryRequest,
+  DashboardQueryResponse,
+  DashboardUserFilter,
+  DeviceQuery,
 } from "@mattrax/enterprise-domain";
-import { schema as s, type EnterpriseDb } from "../schema.ts";
+import { schema as s } from "../schema.ts";
+import type { EnterpriseDb } from "../schema.ts";
 import { deviceBucket, softwareBucket, toBuckets } from "../Policy/dashboardQuery.ts";
 
 /**
@@ -135,10 +135,7 @@ export const loadDeviceSnapshots = (
     const [declarations, applications, awaiting] = yield* Effect.all(
       [
         queryEffect(
-          db
-            .select()
-            .from(s.deviceDeclaration)
-            .where(inArray(s.deviceDeclaration.deviceId, ids)),
+          db.select().from(s.deviceDeclaration).where(inArray(s.deviceDeclaration.deviceId, ids)),
         ),
         // Count-only device stats do not render rows, so the application
         // inventory scan is skipped unless the query actually references apps.
@@ -303,7 +300,11 @@ const projectDeviceDashboardQuery = (
  * Software widgets bucket the same rows by bundle id, so loading them once
  * avoids one whole-fleet inventory scan per widget.
  */
-const loadApplicationsByDevice = (db: EnterpriseDb, organizationId: string, deviceIds: ReadonlyArray<string>) =>
+const loadApplicationsByDevice = (
+  db: EnterpriseDb,
+  organizationId: string,
+  deviceIds: ReadonlyArray<string>,
+) =>
   Effect.gen(function* () {
     const byDevice = new Map<string, DeviceApplicationRow[]>();
 
@@ -597,4 +598,3 @@ export const runDashboardQueryBatch = (
 
     return { results };
   });
-

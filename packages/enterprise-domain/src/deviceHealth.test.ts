@@ -5,8 +5,8 @@ import {
   DEVICE_STALE_AFTER_DAYS,
   deriveDeviceHealth,
   isWindowsDevice,
-  type DeviceHealthInput,
 } from "./deviceHealth.ts";
+import type { DeviceHealthInput } from "./deviceHealth.ts";
 
 const now = new Date("2026-01-01T12:00:00Z");
 

@@ -82,7 +82,7 @@ describe("mergeAndroidPolicies", () => {
 
   it("does not mutate its inputs", () => {
     const first = { applications: [{ packageName: "a" }] };
-    const snapshot = Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(first)));
+    const snapshot = Schema.decodeUnknownSync(Schema.Json)(structuredClone(first));
     mergeAndroidPolicies([first, { applications: [{ packageName: "b" }] }]);
     expect(first).toEqual(snapshot);
   });

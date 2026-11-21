@@ -1,4 +1,5 @@
-import { appleOsFamily, compareOsVersion, type AppleOsFamily } from "@mattrax/dm-apple";
+import { appleOsFamily, compareOsVersion } from "@mattrax/dm-apple";
+import type { AppleOsFamily } from "@mattrax/dm-apple";
 
 /**
  * DDM status subscription planning.

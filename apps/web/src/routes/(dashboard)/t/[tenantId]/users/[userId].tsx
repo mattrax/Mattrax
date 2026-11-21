@@ -1,4 +1,5 @@
-import { useParams, type RoutePreloadFuncArgs } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show, createSignal } from "solid-js";
 import type { JSX } from "@solidjs/web";
@@ -22,12 +23,8 @@ import {
   UsersRound,
 } from "~/components/ui/icons";
 import { Card, CardContent } from "@mattrax/ui";
-import {
-  enterpriseQueries,
-  type UserDetail,
-  type UserPolicyAssignment,
-  type UserGroupRef,
-} from "~/lib/enterprise";
+import { enterpriseQueries } from "~/lib/enterprise";
+import type { UserDetail, UserPolicyAssignment, UserGroupRef } from "~/lib/enterprise";
 import { initials } from "~/lib/names";
 import { preloadPage } from "~/lib/page-data";
 import { useCan } from "~/lib/permissions";

@@ -2,7 +2,7 @@ import * as pkijs from "pkijs";
 import { Option, Schema } from "effect";
 import { pemDecode } from "@mattrax/crypto";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {

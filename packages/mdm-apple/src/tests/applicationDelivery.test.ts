@@ -8,7 +8,8 @@ import {
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
 } from "@mattrax/mdm-core";
-import { makeDb, tableName, type Store } from "./fake-db.js";
+import { makeDb, tableName } from "./fake-db.js";
+import type { Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -130,7 +131,7 @@ const manifestAssetUrl = (payload: Schema.Json): string => {
     }),
   )(payload);
 
-  return decoded.Manifest.items[0]!.assets[0]!.url;
+  return decoded.Manifest.items[0].assets[0].url;
 };
 
 const fetchAsset = (
@@ -160,7 +161,7 @@ describe("Apple policy application delivery", () => {
     expect(command).toBeTruthy();
     // SAFETY: the command was queued by this test with an object payload; the
     // assertions below check the exact keys that matter.
-    const payload = command!.payload as Record<string, Schema.Json>;
+    const payload = command.payload as Record<string, Schema.Json>;
     expect(payload).toMatchObject({
       InstallAsManaged: true,
       ManagementFlags: 1,
@@ -244,7 +245,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the catalogued command payload is a JSON object by construction;
     // manifestAssetUrl asserts the manifest shape it was queued with.
-    const url = manifestAssetUrl(command!.payload as Schema.Json);
+    const url = manifestAssetUrl(command.payload as Schema.Json);
     expect(url).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("app-1"))}`,
     );
@@ -316,7 +317,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the upload path queues this exact payload shape; the helper
     // decodes the manifest URL it contains.
-    const url = manifestAssetUrl(command!.payload as Schema.Json);
+    const url = manifestAssetUrl(command.payload as Schema.Json);
     expect(url).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-14"))}`,
     );
@@ -329,7 +330,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the upload path queues this exact payload shape; the helper
     // decodes the manifest URL it contains.
-    const newerUrl = manifestAssetUrl(newer!.payload as Schema.Json);
+    const newerUrl = manifestAssetUrl(newer.payload as Schema.Json);
     expect(newerUrl).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-15"))}`,
     );
@@ -423,7 +424,7 @@ describe("Apple policy application delivery", () => {
     const [command] = commands(db, "InstallApplication");
     expect(command).toBeTruthy();
     // SAFETY: the manifest path builds this exact payload shape.
-    expect((command!.payload as Record<string, Schema.Json>).ManifestURL).toBe(
+    expect((command.payload as Record<string, Schema.Json>).ManifestURL).toBe(
       "https://example.com/slack.plist",
     );
     expect(commands(db, "InstallEnterpriseApplication")).toHaveLength(0);

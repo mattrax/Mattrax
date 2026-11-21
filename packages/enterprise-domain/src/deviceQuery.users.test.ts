@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluateDeviceQuery, type DeviceQueryDevice } from "./deviceQuery.ts";
+import { evaluateDeviceQuery } from "./deviceQuery.ts";
+import type { DeviceQueryDevice } from "./deviceQuery.ts";
 
 const device = (users: DeviceQueryDevice["users"]): DeviceQueryDevice => ({
   name: "Mac",
@@ -96,9 +97,9 @@ describe("user conditions", () => {
       none: [{ field: "userEmail" as const, op: "contains" as const, value: "contractor" }],
     };
 
-    expect(
-      evaluateDeviceQuery(query, device([user({ email: "temp@contractor.test" })])),
-    ).toBe(false);
+    expect(evaluateDeviceQuery(query, device([user({ email: "temp@contractor.test" })]))).toBe(
+      false,
+    );
     expect(evaluateDeviceQuery(query, device([user({ email: "ada@acme.test" })]))).toBe(true);
     expect(evaluateDeviceQuery(query, device([]))).toBe(true);
   });

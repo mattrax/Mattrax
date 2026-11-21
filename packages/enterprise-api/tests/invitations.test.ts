@@ -623,7 +623,7 @@ describe("tenant invitations", () => {
 
     const spies = (["log", "warn", "error"] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
-        logged.push(args.map((arg) => String(arg)).join(" "));
+        logged.push(args.map(String).join(" "));
       }),
     );
 

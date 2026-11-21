@@ -29,14 +29,13 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { toast } from "~/components/toast";
-import {
-  enterprise,
-  enterpriseKeys,
-  type DeviceRow,
-  type DeviceSearchQuery,
-  type DynamicGroupKind,
-  type DynamicGroupRules,
-  type PolicyRow,
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type {
+  DeviceRow,
+  DeviceSearchQuery,
+  DynamicGroupKind,
+  DynamicGroupRules,
+  PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { createStaleWriteGuard } from "~/lib/stale-write";
@@ -551,8 +550,7 @@ export default function GroupDetailPage() {
     if (!edit()) return;
     const next = new Set(deviceIds());
 
-    for (const device of deviceRows())
-      if (!excludedDeviceIds().has(device.id)) next.add(device.id);
+    for (const device of deviceRows()) if (!excludedDeviceIds().has(device.id)) next.add(device.id);
     setDeviceIds(next);
   };
 
@@ -750,7 +748,7 @@ export default function GroupDetailPage() {
             </span>
             <Show when={row()!.kind === "dynamic" && row()!.lastEvaluatedAt}>
               <span class="text-[11px] text-muted-foreground">
-                Evaluated {formatDate(row()!.lastEvaluatedAt!)}
+                Evaluated {formatDate(row()!.lastEvaluatedAt)}
               </span>
             </Show>
           </div>
@@ -817,7 +815,6 @@ export default function GroupDetailPage() {
                         setDirectoryGroupId(
                           directoryGroupId() ?? (directory.data?.groups ?? [])[0]?.id ?? "",
                         );
-
                       } else if (value === "manual") {
                         setDirectoryGroupId(null);
                         resetDeviceSelection("manual");

@@ -1,5 +1,6 @@
 import { createEffect, createSignal } from "solid-js";
-import { errorTag, raisedFailure, type RaisedFailure } from "~/lib/errors";
+import { errorTag, raisedFailure } from "~/lib/errors";
+import type { RaisedFailure } from "~/lib/errors";
 
 /** Shown when a guarded mutation loses the optimistic-concurrency race. */
 export const STALE_WRITE_TITLE = "Someone else changed this; reloading the latest version";
@@ -18,7 +19,7 @@ export const isStaleWriteError = (error: RaisedFailure | undefined): boolean =>
 
 export type StaleWriteOptions = {
   /** Refetch or invalidate the record so the page holds the latest version. */
-  // oxlint-disable-next-line anti-slop/no-unknown-returns -- only completion matters; the refetch result is discarded.
+  // oxlint-disable-next-line quality/no-unknown-returns -- the reload result is discarded.
   readonly reload: () => void | Promise<unknown>;
   /**
    * Notification sink. Components pass the dashboard toast through
