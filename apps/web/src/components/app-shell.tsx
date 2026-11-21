@@ -541,7 +541,7 @@ function SidebarPanel(props: {
   onNavigate?: () => void;
 }) {
   return (
-    <div class="flex h-full min-h-0 flex-col bg-surface">
+    <div class="flex h-full min-h-0 flex-col bg-card">
       <div class="flex h-12 shrink-0 items-center px-4">
         <a
           href="/dashboard"
@@ -828,7 +828,7 @@ export function AppShell(props: {
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75">
+        <header class="sticky top-0 z-40 border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/80">
           <div class="flex h-12 items-center gap-2 px-3 sm:px-5">
             <Button
               variant="ghost"

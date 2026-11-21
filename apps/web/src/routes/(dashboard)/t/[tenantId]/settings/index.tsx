@@ -597,13 +597,9 @@ export default function GeneralSettingsPage() {
   });
 
   return (
-    <div class="grid gap-5 xl:grid-cols-2">
+    <div class="grid gap-5">
       {unsaved.prompt}
-      <QueryError
-        class="xl:col-span-2"
-        error={tenant.error}
-        onRetry={() => void tenant.refetch()}
-      />
+      <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
       <Panel
         title="Tenant profile"
@@ -767,7 +763,7 @@ export default function GeneralSettingsPage() {
         </form>
       </Panel>
 
-      <div class="flex min-w-0 flex-col gap-5">
+      <div class="grid min-w-0 gap-5 xl:grid-cols-2">
         <Panel
           title="Branding preview"
           description="How the public enrollment page looks with the values above."
@@ -845,7 +841,6 @@ export default function GeneralSettingsPage() {
       </div>
 
       <Panel
-        class="xl:col-span-2"
         title="Data and backups"
         description="Versioned JSON bundles for moving a tenant between deployments."
       >
@@ -1319,7 +1314,7 @@ export default function GeneralSettingsPage() {
 
       <Show when={canDelete()}>
         <Panel
-          class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
+          class="border-destructive/20 bg-destructive/[0.015]"
           header={
             <div class="flex items-center gap-2">
               <TriangleAlert class="size-4 text-destructive" />
@@ -1440,7 +1435,7 @@ export default function GeneralSettingsPage() {
  * control pinned to the right on desktop and stacked on narrow screens. */
 function FieldRow(props: { label: string; hint?: string; children: JSX.Element }) {
   return (
-    <label class="flex flex-col gap-2 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+    <label class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8 [&_input:not([type=checkbox]):not([type=color])]:h-9">
       <span class="min-w-0">
         <span class="block text-[13px] font-medium leading-snug text-foreground">
           {props.label}
@@ -1451,7 +1446,7 @@ function FieldRow(props: { label: string; hint?: string; children: JSX.Element }
           </span>
         </Show>
       </span>
-      <span class="w-full min-w-0 sm:w-[19rem] sm:shrink-0">{props.children}</span>
+      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
     </label>
   );
 }
