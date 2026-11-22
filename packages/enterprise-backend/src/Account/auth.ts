@@ -147,10 +147,12 @@ export const makeAuthLive = ({
       const db = yield* Db;
 
       /**
-       * Mirror passkey ownership onto `user.passkey_enabled` so session reads
-       * and account UI decide whether a usable sign-in method remains. The
-       * credential row is committed before this hook runs; a database trigger
-       * keeps the column correct even if this update fails.
+       * Mirror passkey ownership onto `account.passkey_enabled` so session
+       * reads and the account UI decide whether a usable sign-in method
+       * remains. Registration sets the flag when it inserts the first
+       * credential; this hook covers later credential changes and accepts
+       * that a failed update leaves the flag stale rather than losing the
+       * credential itself.
        */
       const syncPasskeyFactor = (subjectId: string) =>
         Effect.gen(function* () {
