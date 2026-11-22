@@ -3,7 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, lazy, Loading, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
@@ -24,7 +24,7 @@ import {
 } from "~/components/ui/dialog";
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import { RegionPicker } from "~/components/region-picker";
+import { flagOf, regionName } from "~/components/region-label";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -87,6 +87,46 @@ export const route = {
   },
 };
 
+/**
+ * The globe (d3-geo plus the world geometry) is only needed after the
+ * operator reaches the region field. Keep its chunk out of the settings entry
+ * and show a matching, interactive trigger until the chunk is warm.
+ */
+const LazyRegionPicker = lazy(() =>
+  import("~/components/region-picker").then((module) => ({ default: module.RegionPicker })),
+);
+
+function RegionPickerFallback(props: {
+  value: string;
+  disabled?: boolean;
+  onActivate?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={props.disabled}
+      onClick={() => props.onActivate?.()}
+      class="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2.5 text-left text-[13px] text-foreground outline-none transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <Show
+        when={props.value}
+        fallback={
+          <span class="min-w-0 flex-1 truncate text-muted-foreground">Use default (US)</span>
+        }
+      >
+        <span class="shrink-0 text-[15px] leading-none">{flagOf(props.value)}</span>
+        <span class="min-w-0 flex-1 truncate">{regionName(props.value)}</span>
+        <span class="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+          {props.value.toUpperCase()}
+        </span>
+      </Show>
+      <span class="ml-auto size-3.5 shrink-0 text-muted-foreground" aria-hidden="true">
+        ▾
+      </span>
+    </button>
+  );
+}
+
 export default function GeneralSettingsPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -131,6 +171,19 @@ export default function GeneralSettingsPage() {
   const [importError, setImportError] = createSignal<unknown>();
   const [importing, setImporting] = createSignal(false);
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
+  const [regionPickerReady, setRegionPickerReady] = createSignal(false);
+  const [regionPickerPending, setRegionPickerPending] = createSignal(false);
+
+  const activateRegionPicker = () => {
+    setRegionPickerPending(true);
+    setRegionPickerReady(true);
+  };
+
+  // Warm the picker chunk after the form has painted. The placeholder stays
+  // until the operator clicks, so focus is never moved by a background swap.
+  onSettled(() => {
+    void import("~/components/region-picker");
+  });
 
   let importFileInput: HTMLInputElement | undefined;
 
@@ -560,11 +613,33 @@ export default function GeneralSettingsPage() {
               label="App Store region"
               hint="Storefront used to resolve an App Store ID when a device does not report one. Defaults to the United States."
             >
-              <RegionPicker
-                value={appStoreRegion()}
-                disabled={!canWrite()}
-                onChange={setAppStoreRegion}
-              />
+              <Show
+                when={regionPickerReady()}
+                fallback={
+                  <RegionPickerFallback
+                    value={appStoreRegion()}
+                    disabled={!canWrite()}
+                    onActivate={activateRegionPicker}
+                  />
+                }
+              >
+                <Loading
+                  fallback={
+                    <RegionPickerFallback
+                      value={appStoreRegion()}
+                      disabled={!canWrite()}
+                      onActivate={activateRegionPicker}
+                    />
+                  }
+                >
+                  <LazyRegionPicker
+                    value={appStoreRegion()}
+                    disabled={!canWrite()}
+                    onChange={setAppStoreRegion}
+                    initialOpen={regionPickerPending()}
+                  />
+                </Loading>
+              </Show>
             </FieldRow>
             <FieldRow
               label="Unlink unavailable apps"
