@@ -1,16 +1,16 @@
 import { useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
-import { Match, Option, Schema } from "effect";
+import { Option, Schema } from "effect";
 import { BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
+import { SetupNotice } from "~/components/settings/setup-notice";
 import { toast } from "~/components/toast";
 import { IndeterminateBar, LoadingState } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
-import { CircleAlert, RotateCcw } from "~/components/ui/icons";
+import { ArrowUpRight, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { bulkFailureReason, bulkReport, runBulkBatches } from "~/lib/bulk-members";
 import type { BulkFailure } from "~/lib/bulk-members";
@@ -30,13 +30,6 @@ const SYNC_INTERVALS = [
 
 const selectClass =
   "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:text-[13px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[15rem]";
-
-const triggerLabel = (trigger: string | null | undefined) =>
-  Match.value(trigger).pipe(
-    Match.when("scheduled", () => "scheduled run"),
-    Match.when("manual", () => "manual run"),
-    Match.orElse(() => "run"),
-  );
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -407,54 +400,47 @@ export default function DirectorySyncPage() {
         >
           {(value) => (
             <>
-              <div class="flex flex-wrap items-center gap-2">
-                <Show
-                  when={value().configured}
-                  fallback={<Chip tone="warning">Setup required</Chip>}
-                >
-                  <Chip tone="success">Connected</Chip>
-                  <Chip tone="neutral">Sync {value().status}</Chip>
-                  <Chip tone={value().enabled ? "success" : "neutral"}>
-                    {value().enabled ? "Automatic" : "Manual only"}
-                  </Chip>
-                </Show>
-                <Show when={value().azureTenantId}>
-                  {(tenant) => (
-                    <span class="break-all font-mono text-[11px] text-muted-foreground">
-                      {tenant()}
-                    </span>
-                  )}
-                </Show>
-              </div>
-              <p class="mt-2 text-[11.5px] text-muted-foreground">
-                {value().configured
-                  ? "Microsoft Graph configured: directory sync can read users, groups and domains."
-                  : "Graph not configured: the deployment is missing a Microsoft Graph application, so directory sync is unavailable."}
-              </p>
-
-              <Show when={!value().configured}>
-                <div class="mt-4 flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-xs leading-relaxed text-warning-foreground">
-                  <CircleAlert class="mt-px size-3.5 shrink-0" />
-                  <span>
-                    Directory sync is not available on this deployment yet. Your Mattrax operator
-                    needs to connect a Microsoft Graph application with permission to read users,
-                    groups and domains. Everything below stays disabled until that is done.
+              <Show
+                when={value().configured}
+                fallback={
+                  <SetupNotice
+                    title="Connect Microsoft Graph"
+                    description="Directory sync needs a Microsoft Graph application with permission to read users, groups and domains. A Mattrax operator connects it for this deployment; the schedule and manual sync stay unavailable until then."
+                    action={
+                      <Show when={value().consentUrl}>
+                        {(url) => (
+                          <a
+                            class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                            href={url()}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Grant admin consent in Entra
+                          </a>
+                        )}
+                      </Show>
+                    }
+                  />
+                }
+              >
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                  <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
+                    <span class="size-1.5 rounded-full bg-success" />
+                    Connected
                   </span>
+                  <span class="text-muted-foreground">Sync {value().status}</span>
+                  <span class="text-muted-foreground">
+                    {value().enabled ? "Automatic" : "Manual only"}
+                  </span>
+                  <Show when={value().azureTenantId}>
+                    {(tenant) => (
+                      <span class="break-all font-mono text-[11px] text-muted-foreground">
+                        {tenant()}
+                      </span>
+                    )}
+                  </Show>
                 </div>
               </Show>
-              <Show when={value().consentUrl}>
-                {(url) => (
-                  <a
-                    class="mt-3 inline-flex text-[13px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
-                    href={url()}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Grant admin consent in Entra
-                  </a>
-                )}
-              </Show>
-
               <Show when={value().configured}>
                 <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
                   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
@@ -524,33 +510,46 @@ export default function DirectorySyncPage() {
                   </Show>
                 </div>
               </Show>
-              <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
-                <Show when={!value().lastSyncedAt}>
-                  <p>Never synced.</p>
-                </Show>
-                <Show when={value().lastSyncedAt}>
-                  {(at) => (
-                    <p>
-                      Last successful {triggerLabel(value().lastRunTrigger)} {formatDate(at())}
-                    </p>
-                  )}
-                </Show>
-                <Show when={value().lastAttemptedAt}>
-                  {(at) => (
-                    <p>
-                      Last attempted {triggerLabel(value().lastRunTrigger)} {formatDate(at())}
-                    </p>
-                  )}
-                </Show>
-                <Show when={counts()}>
-                  {(current) => (
-                    <p>
-                      Last run: {current().users ?? 0} users · {current().groups ?? 0} groups ·{" "}
-                      {current().domains ?? 0} domains
-                    </p>
-                  )}
-                </Show>
-              </div>
+              <Show
+                when={
+                  value().configured &&
+                  (value().lastSyncedAt || value().lastAttemptedAt || counts())
+                }
+              >
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                  <Show when={value().lastSyncedAt}>
+                    {(at) => (
+                      <span class="inline-flex items-center gap-1.5">
+                        <span class="size-1.5 rounded-full bg-success" />
+                        Last sync <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={!value().lastSyncedAt && value().lastAttemptedAt}>
+                    {(at) => (
+                      <span class="inline-flex items-center gap-1.5 text-warning-foreground">
+                        <span class="size-1.5 rounded-full bg-warning" />
+                        Last attempt <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={value().lastSyncedAt ? value().lastAttemptedAt : null}>
+                    {(at) => (
+                      <span>
+                        Attempted <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={counts()}>
+                    {(current) => (
+                      <span class="font-mono tabular-nums">
+                        {current().users ?? 0} users · {current().groups ?? 0} groups ·{" "}
+                        {current().domains ?? 0} domains
+                      </span>
+                    )}
+                  </Show>
+                </div>
+              </Show>
               <Show when={value().lastError}>
                 {(error) => (
                   <p class="mt-3 rounded-lg border border-destructive/25 bg-destructive/[0.07] p-3 text-xs leading-relaxed text-destructive">
@@ -581,83 +580,89 @@ export default function DirectorySyncPage() {
         >
           {(value) => (
             <>
-              <div class="flex flex-wrap items-center gap-2">
-                <Show
-                  when={value().configured}
-                  fallback={<Chip tone="warning">Setup required</Chip>}
-                >
-                  <Chip tone="success">Connected</Chip>
-                  <Chip tone="neutral">Sync {value().status}</Chip>
-                  <Chip tone={value().enabled ? "success" : "neutral"}>
-                    {value().enabled ? "Automatic" : "Manual only"}
-                  </Chip>
-                  <Show when={value().credentialsSource}>
-                    {(source) => (
-                      <Chip tone="neutral">
-                        {source() === "tenant" ? "Tenant credentials" : "Deployment credentials"}
-                      </Chip>
-                    )}
-                  </Show>
-                </Show>
-              </div>
-
-              <Show when={value().serviceAccountEmail}>
-                {(email) => (
-                  <p class="mt-2 break-all font-mono text-[11px] text-muted-foreground">
-                    {email()} → {value().adminEmail ?? "no admin"} ·{" "}
-                    {value().customer ?? "my_customer"}
-                  </p>
-                )}
-              </Show>
-
-              <p class="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
-                {value().configured
-                  ? "Google Workspace is configured: sync can read users, groups and memberships."
-                  : "Not configured: add a service-account key below, or ask the deployment operator to set the deployment-wide Google Workspace credentials."}
-              </p>
-
-              <details class="mt-3 rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
-                <summary class="cursor-pointer select-none font-medium text-foreground">
-                  What the Google setup needs
-                </summary>
-                <ol class="mt-2 list-decimal space-y-1 pl-4">
-                  <li>Create a Google Cloud service account and download a JSON key.</li>
-                  <li>Enable the Admin SDK API for that project.</li>
-                  <li>
-                    In Google Admin → Security → API controls → Domain-wide delegation, authorise
-                    the service account's client id for:
-                    <span class="mt-1 block break-all font-mono text-[10.5px]">
-                      https://www.googleapis.com/auth/admin.directory.user.readonly
-                      https://www.googleapis.com/auth/admin.directory.group.readonly
-                    </span>
-                  </li>
-                  <li>
-                    Enter a Workspace super-admin below. The service account impersonates that
-                    admin; the JSON key is encrypted at rest and never returned by the API.
-                  </li>
-                </ol>
-              </details>
-
               <Show
                 when={value().configured}
                 fallback={
-                  <div class="mt-5 flex flex-wrap items-center gap-2">
-                    <Show when={writable()}>
-                      <Button variant="outline" onClick={() => setGoogleFormOpen((open) => !open)}>
-                        {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
-                      </Button>
-                    </Show>
-                    <a
-                      class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
-                      href={value().adminDirectoryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open Google Admin
-                    </a>
-                  </div>
+                  <SetupNotice
+                    title="Connect Google Workspace"
+                    description="Add a service-account key for this tenant, or ask your deployment operator to set deployment-wide credentials. Sync stays unavailable until then."
+                    action={
+                      <>
+                        <Show when={writable()}>
+                          <Button
+                            variant="outline"
+                            onClick={() => setGoogleFormOpen((open) => !open)}
+                          >
+                            {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
+                          </Button>
+                        </Show>
+                        <Button
+                          as="a"
+                          href={value().adminDirectoryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          variant="ghost"
+                          size="sm"
+                          class="text-muted-foreground"
+                        >
+                          Google Admin
+                          <ArrowUpRight class="size-3.5" />
+                        </Button>
+                      </>
+                    }
+                  >
+                    <details class="rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                      <summary class="cursor-pointer select-none font-medium text-foreground">
+                        What the Google setup needs
+                      </summary>
+                      <ol class="mt-2 list-decimal space-y-1 pl-4">
+                        <li>Create a Google Cloud service account and download a JSON key.</li>
+                        <li>Enable the Admin SDK API for that project.</li>
+                        <li>
+                          In Google Admin → Security → API controls → Domain-wide delegation,
+                          authorise the service account's client id for:
+                          <span class="mt-1 block break-all font-mono text-[10.5px]">
+                            https://www.googleapis.com/auth/admin.directory.user.readonly
+                            https://www.googleapis.com/auth/admin.directory.group.readonly
+                          </span>
+                        </li>
+                        <li>
+                          Enter a Workspace super-admin below. The service account impersonates that
+                          admin; the JSON key is encrypted at rest and never returned by the API.
+                        </li>
+                      </ol>
+                    </details>
+                  </SetupNotice>
                 }
               >
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                  <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
+                    <span class="size-1.5 rounded-full bg-success" />
+                    Connected
+                  </span>
+                  <span class="text-muted-foreground">Sync {value().status}</span>
+                  <span class="text-muted-foreground">
+                    {value().enabled ? "Automatic" : "Manual only"}
+                  </span>
+                  <Show when={value().credentialsSource}>
+                    {(source) => (
+                      <span class="text-muted-foreground">
+                        {source() === "tenant" ? "Tenant credentials" : "Deployment credentials"}
+                      </span>
+                    )}
+                  </Show>
+                </div>
+
+                <Show when={value().serviceAccountEmail}>
+                  {(email) => (
+                    <p class="mt-2 break-all font-mono text-[11px] text-muted-foreground">
+                      {email()} → {value().adminEmail ?? "no admin"} ·{" "}
+                      {value().customer ?? "my_customer"}
+                    </p>
+                  )}
+                </Show>
+              </Show>
+              <Show when={value().configured}>
                 <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
                   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                     <label for="google-sync-interval" class="min-w-0">
@@ -709,14 +714,18 @@ export default function DirectorySyncPage() {
                         </Button>
                       </Show>
                     </Show>
-                    <a
-                      class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                    <Button
+                      as="a"
                       href={value().adminDirectoryUrl}
                       target="_blank"
                       rel="noreferrer"
+                      variant="ghost"
+                      size="sm"
+                      class="text-muted-foreground"
                     >
-                      Open Google Admin
-                    </a>
+                      Google Admin
+                      <ArrowUpRight class="size-3.5" />
+                    </Button>
                   </div>
 
                   <Show when={googleProgress()}>
@@ -746,6 +755,46 @@ export default function DirectorySyncPage() {
                   </Show>
                 </div>
               </Show>
+              <Show
+                when={
+                  value().configured &&
+                  (value().lastSyncedAt || value().lastAttemptedAt || googleCounts())
+                }
+              >
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                  <Show when={value().lastSyncedAt}>
+                    {(at) => (
+                      <span class="inline-flex items-center gap-1.5">
+                        <span class="size-1.5 rounded-full bg-success" />
+                        Last sync <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={!value().lastSyncedAt && value().lastAttemptedAt}>
+                    {(at) => (
+                      <span class="inline-flex items-center gap-1.5 text-warning-foreground">
+                        <span class="size-1.5 rounded-full bg-warning" />
+                        Last attempt <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={value().lastSyncedAt ? value().lastAttemptedAt : null}>
+                    {(at) => (
+                      <span>
+                        Attempted <span class="font-mono tabular-nums">{formatDate(at())}</span>
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={googleCounts()}>
+                    {(counts) => (
+                      <span class="font-mono tabular-nums">
+                        {counts().users} users · {counts().groups} groups
+                      </span>
+                    )}
+                  </Show>
+                </div>
+              </Show>
+
               <Show when={googleFormOpen() && writable()}>
                 <div class="mt-4 grid gap-3 rounded-lg border border-border bg-surface/40 p-3">
                   <p class="text-[11.5px] leading-relaxed text-muted-foreground">
@@ -813,34 +862,6 @@ export default function DirectorySyncPage() {
                   <ErrorText error={googleCredentials.error} />
                 </div>
               </Show>
-
-              <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
-                <Show
-                  when={!value().lastSyncedAt}
-                  fallback={
-                    <p>
-                      Last successful {triggerLabel(value().lastRunTrigger)}{" "}
-                      {formatDate(value().lastSyncedAt)}
-                    </p>
-                  }
-                >
-                  <p>Never synced.</p>
-                </Show>
-                <Show when={value().lastAttemptedAt}>
-                  {(at) => (
-                    <p>
-                      Last attempted {triggerLabel(value().lastRunTrigger)} {formatDate(at())}
-                    </p>
-                  )}
-                </Show>
-                <Show when={googleCounts()}>
-                  {(counts) => (
-                    <p>
-                      Last run: {counts().users} users · {counts().groups} groups
-                    </p>
-                  )}
-                </Show>
-              </div>
 
               <Show when={value().lastError}>
                 {(error) => (
@@ -1110,27 +1131,6 @@ export default function DirectorySyncPage() {
         }}
       />
     </div>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }
 

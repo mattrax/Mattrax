@@ -6,13 +6,13 @@ import { createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { LoadingState } from "~/components/ui";
+import { SetupNotice } from "~/components/settings/setup-notice";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
   Boxes,
-  CircleAlert,
   CheckCircle2,
   Download,
   MonitorSmartphone,
@@ -507,9 +507,12 @@ export default function ManagementSettingsPage() {
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Show when={apns.data}>
             {(data) => (
-              <Chip tone={data().configured ? "success" : "warning"}>
-                {data().configured ? "Configured" : "Not configured"}
-              </Chip>
+              <Show when={data().configured}>
+                <span class="inline-flex items-center gap-1.5 text-[12px] font-medium text-foreground">
+                  <span class="size-1.5 rounded-full bg-success" />
+                  Configured
+                </span>
+              </Show>
             )}
           </Show>
           <Show when={apns.data?.topic}>
@@ -545,15 +548,11 @@ export default function ManagementSettingsPage() {
             </Show>
           }
         >
-          <div class="mt-4 flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/[0.06] p-4 text-[13px]">
-            <CircleAlert class="mt-0.5 size-4 shrink-0 text-warning-foreground" />
-            <div>
-              <p class="font-medium text-foreground">APNs setup required</p>
-              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Without APNs, enrolled Apple devices only apply changes when they next poll.
-              </p>
-            </div>
-          </div>
+          <SetupNotice
+            class="mt-4"
+            title="APNs setup required"
+            description="Without APNs, enrolled Apple devices only apply changes when they next poll."
+          />
         </Show>
 
         <ol class="mt-5 grid gap-3 md:grid-cols-3">
