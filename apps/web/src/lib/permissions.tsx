@@ -184,6 +184,7 @@ export function tenantSectionPermission(section: string): Permission | undefined
     case "dashboards":
       return "dashboards.read";
     case "devices":
+    case "os-versions":
       return "devices.read";
     case "users":
       return "members.read";
@@ -238,6 +239,7 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "webhooks.read",
   "audit.read",
   "billing.read",
+  "devices.read",
 ];
 
 const SETTINGS_TABS = [
