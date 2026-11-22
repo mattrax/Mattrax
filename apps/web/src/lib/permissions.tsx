@@ -239,7 +239,6 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "webhooks.read",
   "audit.read",
   "billing.read",
-  "devices.read",
 ];
 
 const SETTINGS_TABS = [
