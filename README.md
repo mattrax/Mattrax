@@ -100,7 +100,6 @@ nothing else:
 ```bash
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
-export MATTRAX_VERSION=1.4.0
 
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d

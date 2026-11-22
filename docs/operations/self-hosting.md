@@ -21,14 +21,17 @@ Released images live in the GitHub Container Registry, and that is what
 `docker-compose.selfhost.yml` pulls:
 
 ```bash
-docker pull ghcr.io/mattrax/mattrax:1.4.0
+docker pull ghcr.io/mattrax/mattrax:latest
 ```
 
 - `ghcr.io/mattrax/mattrax:<version>` is an immutable release tag. Pin it on a
-  deployment that should not change until an operator upgrades it.
-- `ghcr.io/mattrax/mattrax:latest` follows the newest stable release.
-  Pre-release versions such as `1.4.0-rc.1` are published under their own tag
-  and never move `latest`.
+  deployment that should not change until an operator upgrades it. A published
+  version tag is never moved: re-running a release with different bytes fails
+  instead of replacing it.
+- `ghcr.io/mattrax/mattrax:latest` follows the newest stable release and only
+  moves forward, so re-cutting an older version never rolls it back. Pre-release
+  versions such as `1.4.0-rc.1` are published under their own tag and never move
+  `latest`.
 
 Pulling needs no registry credentials once the package is public. GHCR creates
 a package private by default, so an organisation owner flips its visibility once
@@ -45,7 +48,7 @@ version tags. Pull requests never run it. Every image carries a BuildKit
 provenance attestation and an SPDX SBOM:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/mattrax/mattrax:1.4.0
+docker buildx imagetools inspect ghcr.io/mattrax/mattrax:latest
 ```
 
 ### What the image contains
@@ -94,11 +97,15 @@ contain symbol names.
 ```bash
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
-export MATTRAX_VERSION=1.4.0
 
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
+
+This installs `latest`. Pin a specific release once you have chosen one (see
+[Version pinning and upgrades](#version-pinning-and-upgrades)); a network that
+cannot reach GHCR can build from source instead
+([Building from source](#building-from-source)).
 
 The first start applies the database migrations and creates the `mattrax-data`
 volume. Check it with `curl http://127.0.0.1:8080/api/ready` or
@@ -162,10 +169,12 @@ so the audit `ip` column stays null rather than recording a caller-chosen value.
 ## Version pinning and upgrades
 
 `MATTRAX_VERSION` selects the image tag and defaults to `latest`. Pinning a
-release makes a restart predictable:
+published release makes a restart predictable:
 
 ```bash
-export MATTRAX_VERSION=1.5.0
+# Substitute a published release tag (without the leading v), from the GitHub
+# releases page or the registry.
+export MATTRAX_VERSION=<version>
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
 ```
@@ -302,10 +311,13 @@ the licence status, Stripe Checkout, the customer portal and invoices from the
 cloud. Without a licence the rest of the product keeps running; the billing page
 reports that the deployment is unlicensed, and the APNs relay is disabled.
 
-A self-hosted install is not identified in product analytics: PostHog loads only
-when you configure `POSTHOG_KEY`, and the hosted services do not currently emit
-an analytics event for relayed pushes. See [Monitoring](/operations/monitoring)
-for the analytics and metrics that do exist.
+Your deployment's own product analytics is separate and opt-in: the
+dashboard and API send events only when you configure `POSTHOG_KEY`. The hosted
+relay also reports each relayed push to the Mattrax operator's PostHog project,
+identified only by a SHA-256 hash of the deployment licence id (no tenant data,
+push token, certificate or request body), so relay usage can be told apart.
+See [Monitoring](/operations/monitoring) for the analytics and metrics your
+deployment exposes.
 
 ## Operations
 
@@ -348,6 +360,7 @@ for the analytics and metrics that do exist.
   ARM hosts run the amd64 image under emulation.
 - Cloudflare-specific secrets (vendor APNs relay, managed Android Pub/Sub) still
   point at the hosted services if configured, and are otherwise disabled.
-- The hosted services do not emit a deployment-identity analytics event for the
-  APNs relay yet. There is no PostHog hook in `apps/services`, so cloud versus
-  self-hosted relay usage cannot be compared there without adding one.
+- The hosted APNs relay reports each push to the Mattrax operator's PostHog
+  project when that project is configured, with a hash of the deployment licence
+  id. It is not a per-deployment analytics feed, and it is not enabled by your
+  deployment's `POSTHOG_KEY`.

@@ -5,9 +5,10 @@
 #   ORIGIN=https://mdm.example.com AUTH_SECRET=$(openssl rand -base64 32) \
 #     docker compose -f docker-compose.selfhost.yml up -d
 #
-# Pulls the published image from GHCR by default. Pin a release with
-# MATTRAX_VERSION=1.4.0; the default, `latest`, follows the newest stable
-# release. To build from a checkout instead, add the build override:
+# Pulls the published image from GHCR by default. The default, `latest`,
+# follows the newest stable release; pin a published tag with
+# MATTRAX_VERSION=<version> to keep a deployment fixed. To build from a
+# checkout instead, add the build override:
 #
 #   docker compose -f docker-compose.selfhost.yml \
 #     -f docker-compose.selfhost.build.yml up -d --build

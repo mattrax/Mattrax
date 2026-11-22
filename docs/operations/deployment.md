@@ -149,11 +149,15 @@ The self-hosted image is released by `.github/workflows/release.yml`, separately
 from the Workers and the agent:
 
 - Pushing a `v<version>` tag builds `apps/docker/Dockerfile`, pushes a
-  commit-addressed staging tag, runs the documented compose stack against that
-  image and only then publishes `ghcr.io/mattrax/mattrax:<version>`, plus
-  `latest` for a stable version.
+  per-run staging tag, runs the documented compose stack against that exact
+  digest and only then publishes `ghcr.io/mattrax/mattrax:<version>`, plus
+  `latest` when the version is the newest stable release.
 - `workflow_dispatch` re-cuts an image from a branch by naming the version;
   `publish=false` builds and smoke-tests without creating release tags.
+- A version tag is immutable: publishing fails if the tag already points at a
+  different digest. `latest` only moves forward to the newest stable release, so
+  re-cutting an older version cannot roll it back. Publishing is serialised
+  across runs, so a tag and a dispatch cannot race.
 - Pre-release versions publish only their own tag, so `latest` never moves to an
   rc. Pull requests never publish.
 - Images are `linux/amd64` with BuildKit provenance and an SPDX SBOM;
