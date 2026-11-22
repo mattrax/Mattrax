@@ -52,6 +52,44 @@ test.describe("tenant settings", () => {
     expect(invalidRange.status()).toBe(400);
   });
 
+  test("shows tenant storage usage by category", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Storage Tenant");
+    const application = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/applications`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Storage app", platform: "apple", source: "upload" }),
+      },
+    );
+
+    await api(page, `/api/v1/tenants/${tenant.id}/applications/${application.id}/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        fileName: "Storage-app.pkg",
+        contentType: "application/octet-stream",
+        content: "A".repeat(8_192),
+      }),
+    });
+
+    const usage = await api<{
+      usedBytes: number;
+      objectCount: number;
+      categories: ReadonlyArray<{ id: string; bytes: number; objects: number }>;
+    }>(page, `/api/v1/tenants/${tenant.id}/storage`);
+
+    expect(usage.usedBytes).toBeGreaterThan(0);
+    expect(usage.objectCount).toBe(1);
+    expect(usage.categories.find((category) => category.id === "applications")).toMatchObject({
+      objects: 1,
+    });
+
+    await gotoHydrated(page, `/t/${tenant.id}/settings/storage`);
+    await expect(page.getByRole("heading", { name: "Storage", exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Storage-app.pkg")).toBeVisible();
+    await expect(page.getByText("Object storage", { exact: true })).toBeVisible();
+  });
+
   test("asks before discarding unsaved tenant profile edits", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Unsaved Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
@@ -139,6 +177,7 @@ test.describe("tenant settings", () => {
       ["Management", /Apple push notifications/],
       ["Delivery", /Recent failures/],
       ["Billing", /Billable devices|Plan/],
+      ["Storage", /Object storage/],
       ["General", /Tenant profile/],
     ] as const) {
       await tabs.getByRole("link", { name: tab }).click();

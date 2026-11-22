@@ -75,6 +75,7 @@ import { BillingInvoicesResponse } from "../Billing.js";
 import { BillingPortalRequest } from "../Billing.js";
 import { BillingPortalResponse } from "../Billing.js";
 import { BillingSummary } from "../Tenant.js";
+import { StorageUsageResponse } from "../storageUsage.js";
 import { BulkOperationResult } from "../Common.js";
 import { CreateApplicationRequest } from "../Application.js";
 import { CreateAutopilotProfileRequest } from "../Autopilot.js";
@@ -1854,6 +1855,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantIdParam,
       payload: DuplicateRequest,
       success: IdResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("storageUsage", "/v1/tenants/:tenantId/storage", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: StorageUsageResponse,
     }),
   )
   .add(

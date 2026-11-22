@@ -71,6 +71,7 @@ const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/settings/attributes.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/audit.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/billing.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/storage.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/delivery.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/enrollment.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/identity/directory.tsx",

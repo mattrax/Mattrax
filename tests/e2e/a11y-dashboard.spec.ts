@@ -150,6 +150,7 @@ test.describe("dashboard accessibility", () => {
       [`${base}/dashboards`, "dashboards"],
       [`${base}/settings`, "settings"],
       [`${base}/settings/audit`, "audit log"],
+      [`${base}/settings/storage`, "storage"],
     ] as const) {
       await gotoHydrated(page, path);
       await settle(page);

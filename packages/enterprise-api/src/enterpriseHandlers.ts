@@ -542,7 +542,7 @@ import {
   windowsMsiInstallPayload,
 } from "@mattrax/enterprise-backend";
 import { AndroidManagement } from "@mattrax/dm-android";
-import { buildTenantExport } from "@mattrax/enterprise-backend";
+import { buildTenantExport, collectTenantStorageUsage } from "@mattrax/enterprise-backend";
 import {
   buildTenantCutover,
   importTenantCutover,
@@ -24175,6 +24175,12 @@ export const createEnterpriseService = ({
 
         return yield* Effect.promise(() => resolveGroupScope(input, groupId));
       }),
+    storageUsage: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* Effect.promise(() => collectTenantStorageUsage(storage, ctx.organization.id));
+      }),
     billing: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -26187,6 +26193,11 @@ export const enterpriseHandlers = (
     .handle("duplicatePolicy", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.duplicatePolicy(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("storageUsage", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.storageUsage(request, params.tenantId),
       ),
     )
     .handle("billing", ({ request, params }) =>

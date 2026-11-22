@@ -169,6 +169,9 @@ export type {
   BackupRunInfo,
   BackupRestoreResponse,
   TenantBackupsResponse,
+  StorageCategory,
+  StorageObject,
+  StorageUsageResponse,
   CredentialInfo,
   CredentialLevel,
   DeviceActivityEntry,
@@ -438,6 +441,8 @@ export const enterpriseKeys = {
   vppAssets: (tenantId: RouteParam) => ["enterprise", "vpp-assets", keyTenant(tenantId)] as const,
   vppAssignments: (tenantId: RouteParam) =>
     ["enterprise", "vpp-assignments", keyTenant(tenantId)] as const,
+  storageUsage: (tenantId: RouteParam) =>
+    ["enterprise", "storage-usage", keyTenant(tenantId)] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", keyTenant(tenantId)] as const,
   billingInvoices: (tenantId: RouteParam) =>
     ["enterprise", "billing-invoices", keyTenant(tenantId)] as const,
@@ -2898,6 +2903,8 @@ export const enterprise = {
         },
       }),
     ),
+  storageUsage: (tenantId: RouteParam) =>
+    endpoint((api) => api.storageUsage({ params: { tenantId: required(tenantId, "tenantId") } })),
   billing: (tenantId: RouteParam) =>
     endpoint((api) => api.billing({ params: { tenantId: required(tenantId, "tenantId") } })),
   billingPortal: (tenantId: RouteParam, returnUrl: string) =>
@@ -3442,6 +3449,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.vppAssignments(tenantId),
       queryFn: () => enterprise.listVppAssignments(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  storageUsage: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.storageUsage(tenantId),
+      queryFn: () => enterprise.storageUsage(tenantId),
       enabled: Boolean(tenantId),
     }),
   billing: (tenantId: RouteParam) =>

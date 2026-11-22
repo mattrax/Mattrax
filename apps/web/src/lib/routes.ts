@@ -322,6 +322,7 @@ export const routes = {
           | "audit"
           | "os-updates"
           | "billing"
+          | "storage"
           | "legal",
       ) => (tab === "" ? `${base}/settings` : `${base}/settings/${tab}`),
       settingsAdministrators: () => `${base}/settings/administrators`,

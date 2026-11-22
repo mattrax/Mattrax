@@ -7,7 +7,7 @@ import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
-import { CircleAlert, CheckCircle2 } from "~/components/ui/icons";
+import { CircleAlert, CheckCircle2, HardDrive } from "~/components/ui/icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -375,6 +375,15 @@ export default function BillingSettingsPage() {
           <Show when={billing.data && !billing.data.limitsConfigured}>
             <p class="rounded-lg border border-border bg-surface p-3">{UNLIMITED_PLAN_NOTICE}</p>
           </Show>
+          <Button
+            as="a"
+            href={`/t/${params.tenantId}/settings/storage`}
+            variant="outline"
+            size="sm"
+          >
+            <HardDrive class="size-3.5" />
+            Review storage usage
+          </Button>
         </div>
       </Panel>
     </div>

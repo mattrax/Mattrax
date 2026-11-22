@@ -9,6 +9,7 @@ import {
   BookOpen,
   Boxes,
   Download,
+  HardDrive,
   KeyRound,
   LinkIcon,
   MonitorSmartphone,
@@ -47,6 +48,7 @@ const tabs: ReadonlyArray<{
   { id: "integrations", label: "Integrations", group: "Organisation", icon: LinkIcon },
   { id: "audit", label: "Audit log", group: "Organisation", icon: BookOpen },
   { id: "billing", label: "Billing", group: "Organisation", icon: Package },
+  { id: "storage", label: "Storage", group: "Organisation", icon: HardDrive },
   { id: "legal", label: "Legal", group: "Organisation", icon: ShieldCheck },
 ];
 
@@ -65,6 +67,10 @@ const sectionDescriptions = new Map([
   ["audit", "Every change made in this tenant, newest first."],
   ["os-updates", "Set minimum OS versions, enforcement and the window devices get to update."],
   ["billing", "Plan, usage and invoices for this tenant."],
+  [
+    "storage",
+    "See what this tenant stores in Mattrax, how it splits by category, and what is worth cleaning up.",
+  ],
   ["legal", "Open-source licences and the notices those projects require."],
 ]);
 

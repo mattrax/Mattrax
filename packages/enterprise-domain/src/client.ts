@@ -38,6 +38,8 @@ export * from "./dynamicGroups.ts";
 
 export * from "./deviceQuery.ts";
 
+export * from "./storageUsage.ts";
+
 export * from "./dashboard.ts";
 
 export * from "./onboarding.ts";

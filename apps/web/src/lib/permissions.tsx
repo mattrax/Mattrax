@@ -254,6 +254,7 @@ const SETTINGS_TABS = [
   "audit",
   "os-updates",
   "billing",
+  "storage",
 ] as const;
 
 const SECTIONS = [

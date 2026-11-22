@@ -733,6 +733,7 @@ export function AppShell(props: {
     ["integrations", "Integrations"],
     ["audit", "Audit log"],
     ["billing", "Billing"],
+    ["storage", "Storage"],
   ]);
 
   const pageLabel = createMemo(() => {

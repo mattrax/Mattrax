@@ -320,6 +320,7 @@ const EXPLICIT = {
   searchAuditLog: "audit.read",
   exportAuditLog: "audit.read",
   recordMcpActivity: "audit.read",
+  storageUsage: "tenant.read",
   billing: "billing.read",
   billingPortal: "billing.write",
   billingCheckout: "billing.write",
