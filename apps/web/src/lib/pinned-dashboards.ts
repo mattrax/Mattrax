@@ -84,6 +84,22 @@ export const pinnedDashboardsFor = (tenantId: string | undefined): ReadonlyArray
 export const isDashboardPinned = (tenantId: string | undefined, dashboardId: string): boolean =>
   pinnedDashboardsFor(tenantId).some((entry) => entry.dashboardId === dashboardId);
 
+/**
+ * Remove pins whose dashboard no longer appears in the tenant's list. Deferred
+ * so a page can call it from an effect without writing reactive state inside an
+ * owned scope.
+ */
+export function prunePinnedDashboards(tenantId: string, dashboardIds: ReadonlySet<string>): void {
+  queueMicrotask(() => {
+    const current = pinned();
+    const next = current.filter(
+      (entry) => entry.tenantId !== tenantId || dashboardIds.has(entry.dashboardId),
+    );
+
+    if (next.length !== current.length) publish(next);
+  });
+}
+
 /** Pin or unpin a dashboard; returns the state it was moved to. */
 export function togglePinnedDashboard(entry: PinnedDashboard): boolean {
   const current = pinned();

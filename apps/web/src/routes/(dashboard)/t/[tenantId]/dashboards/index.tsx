@@ -2,7 +2,7 @@ import { useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import {
   EmptyState,
   ErrorText,
@@ -26,6 +26,7 @@ import { queryClient as appQueryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { PinDashboardButton } from "~/components/pin-dashboard-button";
+import { prunePinnedDashboards } from "~/lib/pinned-dashboards";
 import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
@@ -46,6 +47,14 @@ export default function DashboardsPage() {
   const writable = () => can("dashboards.write");
   const dashboards = useQuery(() => enterpriseQueries.dashboards(params.tenantId));
   const tenantId = () => resolveTenantId(params.tenantId) ?? params.tenantId ?? "";
+
+  // A deleted dashboard must not leave a dead link in the rail.
+  createEffect(
+    () => dashboards.data?.dashboards,
+    (list) => {
+      if (list) prunePinnedDashboards(tenantId(), new Set(list.map((dashboard) => dashboard.id)));
+    },
+  );
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
