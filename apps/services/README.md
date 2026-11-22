@@ -66,5 +66,15 @@ Required environment:
 - `MATTRAX_PLAN_LIMITS` — the same plan catalogue the application enforces.
 - `APNS_RELAY_SECRET` — optional shared HMAC secret for trusted callers. Without
   it, the relay accepts a valid deployment licence key.
+- `POSTHOG_KEY` — optional PostHog project key. Unset disables analytics and the
+  relay never creates a client.
+- `POSTHOG_HOST`, `POSTHOG_ENVIRONMENT`, `MATTRAX_RELEASE` — optional PostHog
+  host, environment tag and release label for those events.
+
+With `POSTHOG_KEY` set, the relay captures one `apns_relay_push` event per
+push with `deployment_kind` (`licensed` or `shared-secret`), the outcome and a
+SHA-256 hash of the deployment licence id as both the distinct id and
+`deployment_id`. The raw licence id, push token, certificates, tenant data and
+request body are never sent.
 
 The public origin is `https://services.mattrax.app`.

@@ -78,6 +78,8 @@ export type AnalyticsConfig = {
   readonly key?: string;
   readonly host?: string;
   readonly environment?: string;
+  /** `$lib` label; defaults to the API Worker's value. */
+  readonly lib?: string;
   readonly release?: string;
   readonly deploymentId?: string | null;
   readonly requestId: string;
@@ -352,7 +354,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
 
   const baseProperties = (): AnalyticsBaseProperties => {
     const properties: AnalyticsBaseProperties = {
-      $lib: "mattrax-api",
+      $lib: config.lib ?? "mattrax-api",
       $current_url: path,
       request_id: config.requestId,
       method,

@@ -515,6 +515,7 @@ snapshots:
 			"dependencies": {
 				"@effect/sql-mysql2": "catalog:",
 				"@mattrax/apns": "workspace:*",
+				"@mattrax/cloud-services": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
 				"@mattrax/enterprise-billing": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
@@ -526,6 +527,7 @@ snapshots:
 				"drizzle-kit": "catalog:",
 				"tsx": "catalog:",
 				"typescript": "catalog:",
+				"vitest": "catalog:",
 			},
 		},
 

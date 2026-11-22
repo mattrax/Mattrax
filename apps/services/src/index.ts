@@ -20,6 +20,8 @@ import {
 } from "@mattrax/enterprise-billing";
 import { parsePlanLimits } from "@mattrax/enterprise-core";
 import { StripeService } from "@mattrax/effect-stripe";
+import { createRelayAnalytics } from "./analytics.ts";
+import type { RelayAnalyticsAuth } from "./analytics.ts";
 import { migrateDatabase } from "./migrate.ts";
 
 const port = Number(process.env.PORT ?? 8788);
@@ -32,6 +34,15 @@ const deviceMonthlyPriceId = process.env.STRIPE_DEVICE_MONTHLY_PRICE_ID?.trim();
 const licensePriceId = process.env.STRIPE_LICENSE_PRICE_ID?.trim();
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
 const planLimits = parsePlanLimits(process.env.MATTRAX_PLAN_LIMITS);
+
+// Opt-in deployment-identity analytics. Without POSTHOG_KEY every call is a
+// no-op; see ./analytics.ts for what is and is not sent.
+const relayAnalytics = createRelayAnalytics({
+  key: process.env.POSTHOG_KEY,
+  host: process.env.POSTHOG_HOST,
+  environment: process.env.POSTHOG_ENVIRONMENT,
+  release: process.env.MATTRAX_RELEASE,
+});
 
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
@@ -111,6 +122,9 @@ const apnsHandler = (request: HttpServerRequest.HttpServerRequest) =>
     if (body.length > 64 * 1024) return problem("Request body too large.", 413);
 
     let authorized = false;
+    // Only a licence-authenticated request has a deployment to identify; a
+    // shared-secret caller is the hosted Cloud relay.
+    let deployment: RelayAnalyticsAuth = { kind: "shared-secret" };
     const timestamp = request.headers["x-apns-timestamp"];
     const signature = request.headers["x-apns-signature"];
     const timestampValue = Array.isArray(timestamp) ? timestamp[0] : timestamp;
@@ -138,6 +152,8 @@ const apnsHandler = (request: HttpServerRequest.HttpServerRequest) =>
       const licenseId = yield* deploymentLicenseIdForKeyHash(db, sha256(token));
 
       if (!licenseId) return problem("Unauthorized.", 401);
+
+      deployment = { kind: "licensed", licenseId };
     }
 
     const input = Option.getOrUndefined(
@@ -158,11 +174,16 @@ const apnsHandler = (request: HttpServerRequest.HttpServerRequest) =>
       Effect.tryPromise(() => Effect.runPromise(apns.push(input))),
       {
         onFailure: (error) => {
+          relayAnalytics.push(deployment, "error");
           const message = error instanceof Error ? error.message : "APNs relay failed";
 
           return problem(message, /timed out/i.test(message) ? 504 : 502);
         },
-        onSuccess: () => HttpServerResponse.empty({ status: 204 }),
+        onSuccess: () => {
+          relayAnalytics.push(deployment, "ok");
+
+          return HttpServerResponse.empty({ status: 204 });
+        },
       },
     );
   });
