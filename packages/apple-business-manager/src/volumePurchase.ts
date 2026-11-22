@@ -1,11 +1,13 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect, Option, Predicate, Schema } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { parsePlist } from "@mattrax/plist";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
+import { VppError } from "./errors.js";
+import type { VppErrorKind } from "./errors.js";
 
 /**
  * Apple Volume Purchase Program (VPP / Apps and Books) integration.
@@ -20,23 +22,8 @@ import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
  * it does not claim the device installed the app until the device reports it.
  */
 
-export type VppErrorKind =
-  | "not_configured"
-  | "invalid_token"
-  | "expired"
-  | "unauthorized"
-  | "forbidden"
-  | "not_found"
-  | "conflict"
-  | "no_license"
-  | "invalid_response"
-  | "upstream";
-
-export class VppError extends Data.TaggedError("VppError")<{
-  message: string;
-  kind: VppErrorKind;
-  cause?: unknown;
-}> {}
+export { VppError };
+export type { VppErrorKind };
 
 const fail = (kind: VppErrorKind, message: string, cause?: unknown) =>
   new VppError({ kind, message, cause });

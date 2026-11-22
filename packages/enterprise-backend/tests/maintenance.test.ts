@@ -2,11 +2,12 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
+import { TestConsole } from "effect/testing";
 import { sweepWindowsStateCommands } from "@mattrax/mdm-apple";
 import { createApnsCsrDer, importApnsKeyJwk } from "@mattrax/apns";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
-import { runMaintenance } from "../src/Tenant/maintenance.ts";
+import { runMaintenance, VPP_CLIENT_LOAD_FAILED } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -1114,5 +1115,49 @@ describe("maintenance organisation event retention", () => {
 
     expect(result.purgedAuditEntries).toBe(2);
     expect(db.store.audit_log.map((row: { id: string }) => row.id)).toEqual(["fresh-mdm"]);
+  });
+});
+
+describe("maintenance Apps and Books client", () => {
+  it("logs and skips the sweep when the client chunk cannot be loaded", async () => {
+    // The Apps and Books client is imported lazily by the daily sweep. A
+    // rejected chunk must skip that step (and say so) instead of failing the
+    // rest of maintenance or surfacing as a defect.
+    vi.doMock("@mattrax/apple-business-manager", () => {
+      throw new Error("chunk load failed");
+    });
+
+    try {
+      const db = makeDb();
+
+      const outcome = await Effect.runPromise(
+        Effect.gen(function* () {
+          const result = yield* runMaintenance({
+            now,
+            auditRetentionDays: 0,
+            credentialAlerts: false,
+            vppSync: true,
+            authSecret: "maintenance-test-secret",
+          }).pipe(Effect.provideService(Db, db));
+
+          const logs = yield* TestConsole.logLines;
+          const errors = yield* TestConsole.errorLines;
+
+          return {
+            result,
+            lines: [...logs, ...errors].map((entry) =>
+              typeof entry === "string" ? entry : JSON.stringify(entry),
+            ),
+          };
+        }).pipe(Effect.provide(TestConsole.layer)),
+      );
+
+      // The sweep was skipped, the run still finished, and nothing died.
+      expect(outcome.result.vppSynced).toBe(0);
+      expect(outcome.result.vppFailed).toBe(0);
+      expect(outcome.lines.some((line) => line.includes(VPP_CLIENT_LOAD_FAILED))).toBe(true);
+    } finally {
+      vi.doUnmock("@mattrax/apple-business-manager");
+    }
   });
 });

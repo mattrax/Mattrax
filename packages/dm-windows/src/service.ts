@@ -82,8 +82,22 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
           module.makeWindowsMdmService(backend, config),
         ));
 
+      // A rejected chunk load is a typed error, so the routes answer with a
+      // SOAP fault instead of a defect.
       const delegate = <E>(run: (service: WindowsMdmServiceContract) => Effect.Effect<string, E>) =>
-        Effect.flatMap(Effect.promise(load), run);
+        Effect.flatMap(
+          Effect.tryPromise({
+            try: load,
+            catch: (cause) =>
+              new WindowsMdmError({
+                message:
+                  "The Windows MDM protocol handler could not be loaded. Retry the request; if it persists, contact support.",
+                cause,
+                code: "implementation_unavailable",
+              }),
+          }),
+          run,
+        );
 
       return WindowsMdmService.of({
         mdmOrigin,
@@ -91,7 +105,13 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
         policy: (xml, context) => delegate((service) => service.policy(xml, context)),
         enroll: (xml, context) => delegate((service) => service.enroll(xml, context)),
         management: (xml, context) => delegate((service) => service.management(xml, context)),
-        fault: (message, relatesTo) => delegate((service) => service.fault(message, relatesTo)),
+        // The contract declares `fault` infallible: when the implementation
+        // itself is unavailable, return an empty body and let the route's
+        // minimal fixed envelope stand in for it.
+        fault: (message, relatesTo) =>
+          delegate((service) => service.fault(message, relatesTo)).pipe(
+            Effect.catch(() => Effect.succeed("")),
+          ),
       });
     }),
   );

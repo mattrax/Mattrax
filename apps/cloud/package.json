@@ -14,6 +14,7 @@
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",
+    "perf:report": "MATTRAX_PERF_REPORT=1 vp build",
     "preview": "vp preview",
     "deploy": "cf deploy --prebuilt --force",
     "deploy:prod": "pnpm build && tsx ../../packages/config/scripts/bundle-budget.ts cloud && cf deploy --prebuilt --force",

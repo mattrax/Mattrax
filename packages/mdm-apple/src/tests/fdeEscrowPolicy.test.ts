@@ -29,15 +29,13 @@ const certificate = async (commonName: string) => {
 
 const fingerprint = async (pem: string) =>
   Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new Uint8Array(await certificateDer(pem))),
-    ),
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(certificateDer(pem)))),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 
 const escrowProfile = async (options: { certificatePem?: string } = {}) => {
   const certificatePayload = options.certificatePem
-    ? await certificatePemToBase64(options.certificatePem)
+    ? certificatePemToBase64(options.certificatePem)
     : "";
 
   const certificatePayloadXml = options.certificatePem
@@ -75,8 +73,8 @@ ${certificatePayloadXml}
 };
 
 /** Minimal PEM → base64 DER for embedding a test certificate in the plist. */
-const certificatePemToBase64 = async (pem: string) => {
-  const der = await certificateDer(pem);
+const certificatePemToBase64 = (pem: string) => {
+  const der = certificateDer(pem);
   let binary = "";
 
   for (const byte of der) binary += String.fromCharCode(byte);
@@ -162,7 +160,7 @@ describe("applyEscrowCertificate", () => {
 
     expect(certificatePayload?.uuid).toBe("33333333-3333-3333-3333-333333333333");
     expect(Array.from(certificatePayload!.certificateDer ?? [])).toEqual(
-      Array.from(await certificateDer(tenant)),
+      Array.from(certificateDer(tenant)),
     );
   });
 
