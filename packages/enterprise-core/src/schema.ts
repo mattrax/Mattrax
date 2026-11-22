@@ -419,7 +419,15 @@ const passkeyCredentialRow = (row: ManagedPasskeyCredentialRowInput) => {
   // SAFETY: the registration read selects every credential column, so the row
   // carries the fields below; the library types it as Partial because another
   // call site projects a subset of the columns.
-  return row as ManagedPasskeyCredentialRow;
+  const value = row as ManagedPasskeyCredentialRow;
+
+  // MySQL BIGINT values may arrive as strings through Hyperdrive. The passkey
+  // schemas type these as numbers, so normalise them at the mapping boundary.
+  return {
+    ...value,
+    algorithm: Number(value.algorithm),
+    counter: Number(value.counter),
+  };
 };
 
 /**
@@ -525,7 +533,10 @@ export const passkeyRegistrationMapping: any = {
   },
   clock: {
     encodeInstant: (millis: number) => millis,
-    decodeInstant: (value: number) => value,
+    // Hyperdrive/MySQL can return BIGINT as a string even when the column is
+    // configured as a number. Coerce here: the library compares this value with
+    // the numeric `issuedAtMillis`/`expiresAtMillis` using strict equality.
+    decodeInstant: Number,
     engineNowMillis: sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
     toMillis: (expression: SQL) => expression,
     fromMillis: (expression: SQL) => expression,
@@ -618,8 +629,11 @@ export const passkeyRegistrationMapping: any = {
   applicationSnapshot: "applicationSnapshot",
   registration: {
     schema: Registration,
+    // `name` is the WebAuthn username shown by password managers, so it must
+    // be the email. `displayName` is the human label. PasskeyLabel caps both at
+    // 128 characters; the account schema allows a 320-character address.
     describe: (value: typeof Registration.Type) => ({
-      name: value.name,
+      name: value.email.slice(0, 128),
       displayName: value.name,
     }),
     eligible: (value: typeof Registration.Type) =>

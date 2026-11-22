@@ -355,7 +355,12 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
   try {
     const { startAuthentication } = await import("@simplewebauthn/browser");
     response = await startAuthentication({
-      optionsJSON: started.options,
+      // A registration follow-up should not leave the person staring at a
+      // browser prompt for the server's full five-minute window.
+      optionsJSON: {
+        ...started.options,
+        timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
+      },
       useBrowserAutofill: false,
     });
   } catch {
@@ -379,6 +384,12 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
   return state;
 };
 
+/** WebAuthn needs a secure context and a browser that exposes the API. */
+const passkeyEnvironmentAvailable = () =>
+  typeof window !== "undefined" &&
+  window.isSecureContext &&
+  window.PublicKeyCredential !== undefined;
+
 /**
  * Human copy for the tagged auth failures that arrive without a message.
  *
@@ -393,7 +404,7 @@ const authFailureFallback = (tag: string | undefined, status: number) => {
     case "PasskeyProtocolRejected":
       return "That passkey couldn't be verified. If your password manager saved it, delete that entry and try again.";
     case "PasskeyUnavailable":
-      return "Passkeys aren't available right now. Try again in a moment.";
+      return "Mattrax couldn't complete the passkey step. Request a new code and try again. If it keeps happening, try a different browser or password manager.";
     case "PasskeyRejected":
       return "That passkey wasn't accepted. Try again.";
     case "PasskeyActionRequired":
@@ -426,8 +437,14 @@ const passkeyCreationFailure = (cause: unknown) => {
       return "Passkeys can't be created on this address. Open Mattrax on its normal address and try again.";
     case "NotSupportedError":
       return "This browser or password manager can't create passkeys. Try another browser, or use your device's own passkey prompt.";
+    case "AbortError":
+      return "The passkey prompt was cancelled. Try again and approve the prompt.";
+    case "ConstraintError":
+      return "That authenticator doesn't meet Mattrax's passkey requirements. Try another authenticator.";
+    case "UnknownError":
+      return "The authenticator could not create the passkey. Try another authenticator, or restart your browser.";
     default:
-      return "That passkey wasn't created. Try again.";
+      return "That passkey wasn't created. Check that your browser and password manager support passkeys, then try again.";
   }
 };
 
@@ -451,6 +468,11 @@ export const authClient = {
    */
   register: (payload: { name: string; email: string; grant?: string }) =>
     result(async () => {
+      if (!passkeyEnvironmentAvailable())
+        throw new Error(
+          "Passkeys need a secure browser with WebAuthn support. Open Mattrax over HTTPS in a current browser and try again.",
+        );
+
       const registration: RegistrationPayload = {
         name: payload.name,
         email: payload.email,
@@ -458,19 +480,35 @@ export const authClient = {
 
       if (payload.grant !== undefined) registration.grant = payload.grant;
 
-      const started = await request<{
+      let started: {
         flowId: string;
         expiresAtMillis: number;
         options: PublicKeyCredentialCreationOptionsJSON;
-      }>("/beginPasskeyRegistration", {
-        method: "POST",
-        body: authBody({
-          flowId: crypto.randomUUID(),
-          commandId: crypto.randomUUID(),
-          profileId: "default",
-          registration,
-        }),
-      });
+      };
+
+      try {
+        started = await request<{
+          flowId: string;
+          expiresAtMillis: number;
+          options: PublicKeyCredentialCreationOptionsJSON;
+        }>("/beginPasskeyRegistration", {
+          method: "POST",
+          body: authBody({
+            flowId: crypto.randomUUID(),
+            commandId: crypto.randomUUID(),
+            profileId: "default",
+            registration,
+          }),
+        });
+      } catch (error) {
+        if (error instanceof AuthRequestError && error._tag === "PasskeyUnavailable")
+          throw new Error(
+            "Mattrax couldn't start passkey setup. Request a new code and try again. If it keeps happening, try a different browser.",
+            { cause: error },
+          );
+
+        throw error;
+      }
 
       let response: unknown;
 
@@ -481,49 +519,44 @@ export const authClient = {
         throw new Error(passkeyCreationFailure(error), { cause: error });
       }
 
-      await request("/completePasskeyRegistration", {
-        method: "POST",
-        body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
-      });
+      try {
+        await request("/completePasskeyRegistration", {
+          method: "POST",
+          body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+        });
+      } catch (error) {
+        if (error instanceof AuthRequestError && error._tag === "PasskeyUnavailable")
+          throw new Error(
+            "Your authenticator created a passkey, but Mattrax couldn't save it. Try again. If it repeats, remove the Mattrax passkey from your password manager and use another browser.",
+            { cause: error },
+          );
+
+        throw error;
+      }
 
       capturePostHog("auth_registered", { method: "passkey" });
 
-      // Completing the registration normally establishes the session itself.
-      // Only sign in separately when it did not: the freshly created
-      // discoverable credential can still be rejected for a moment, and a
-      // redundant ceremony is the least reliable part of the flow.
+      // The registration ceremony does not issue a session, but an earlier
+      // step or a retried request may have already established one. Check
+      // first, then sign in once with the credential that was just created.
       const signedIn = await request("/me")
         .then(() => true)
         .catch(() => false);
 
       if (signedIn) return { signedIn: true };
 
-      // Some authenticators still need a moment before the newly created
-      // discoverable credential is offered for a separate sign-in, so retry a
-      // transient rejection. A permanent failure or a dismissed prompt must
-      // surface immediately.
-      for (let attempt = 0; attempt < 12; attempt++) {
-        try {
-          await passkeySignInFlow();
+      // One explicit sign-in with the credential that was just created. The
+      // registration ceremony does not issue a session, so a second prompt is
+      // expected; retrying a dismissed prompt only spams the person. The
+      // account and passkey exist either way, so callers send them to the
+      // sign-in page when this does not take.
+      try {
+        await passkeySignInFlow();
 
-          return { signedIn: true };
-        } catch {
-          // The registration sheet has just closed, so the follow-up prompt
-          // can be dismissed or find the credential before the browser is
-          // ready. The ceremony is idempotent; this loop is not user-driven.
-          await new Promise((resolve) => {
-            setTimeout(resolve, 500);
-          });
-        }
+        return { signedIn: true };
+      } catch {
+        return { signedIn: false };
       }
-
-      const signedInAfterRetries = await request("/me")
-        .then(() => true)
-        .catch(() => false);
-
-      // The account and passkey exist either way. Callers send the person to
-      // sign in explicitly instead of failing an account that was created.
-      return { signedIn: signedInAfterRetries };
     }),
   ssoSignIn: (token: string) =>
     result(async () => {
