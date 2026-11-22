@@ -9,6 +9,10 @@ import {
   resolveTenantBranding,
   selectInstaller,
   shouldApplyReportedName,
+  shouldPushDeviceName,
+  appleDeviceNameSettingsPayload,
+  appleDeviceNameFromSettingsPayload,
+  DEVICE_NAME_PUSH_RETRY_MS,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
@@ -2328,6 +2332,85 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       });
 
     /**
+     * Re-queue the supervised `Settings`/`DeviceName` command when the
+     * administrator opted into "apply name on each sync".
+     *
+     * Called from the command check-in so the new command can be delivered in
+     * the same response. The retry window in `shouldPushDeviceName` stops an
+     * OS that ignores the value from producing a command on every poll, and an
+     * active identical command is never duplicated or audited twice.
+     */
+    const queueDeviceNameUpdate = (
+      device: DeviceRow,
+      enrollmentMode: string | null,
+      at: Date,
+    ): Effect.Effect<void, never, Db> =>
+      Effect.gen(function* () {
+        if (
+          !shouldPushDeviceName({
+            proto: device.proto,
+            status: device.status,
+            enrollmentMode,
+            enabled: device.namePushEnabled,
+            name: device.name,
+            reportedName: device.physicalName,
+            appliedName: device.appliedName,
+            appliedAt: device.appliedNameAt,
+            now: at,
+          })
+        )
+          return;
+
+        const name = device.name.trim();
+        const payload = appleDeviceNameSettingsPayload(name);
+
+        // One attempt per retry window, whatever its outcome. A queued or
+        // in-flight duplicate would otherwise be re-inserted (and re-audited)
+        // on every poll, and a failure would hammer an OS that rejects the
+        // value.
+        const recent = yield* db
+          .select({ payload: s.deviceCommand.payload })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.requestType, "Settings"),
+              gte(
+                s.deviceCommand.updatedAt,
+                new Date(at.getTime() - DEVICE_NAME_PUSH_RETRY_MS),
+              ),
+            ),
+          );
+
+        if (recent.some((row) => appleDeviceNameFromSettingsPayload(row.payload) === name)) return;
+
+        yield* queueAppleCommand(device, "Settings", payload, at);
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId: device.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.deviceNamePushed,
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "apple",
+            metadata: {
+              platform: "apple",
+              deviceName: name,
+              trigger: "checkin",
+            },
+          },
+          auditOptions,
+        );
+      }).pipe(
+        // A failed name push must never fail the device's check-in. The next
+        // poll or the daily maintenance run retries it.
+        Effect.catch((error) =>
+          Effect.logWarning(`Failed to queue the device name for ${device.id}: ${String(error)}`),
+        ),
+      );
+
+    /**
      * Dynamic group membership must not make a device check-in fail. A group
      * that cannot be evaluated is retried on the next check-in and by daily
      * maintenance.
@@ -4047,6 +4130,36 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     auditOptions,
                   );
 
+                // A `Settings` command that changed the device name is the
+                // only reliable acknowledgement: record the applied value so
+                // the drift indicator can distinguish "never pushed" from
+                // "pushed and still different". The device's next inventory
+                // report updates `physicalName` independently.
+                if (command?.requestType === "Settings" && nextStatus === "succeeded") {
+                  const pushedName = appleDeviceNameFromSettingsPayload(command.payload);
+
+                  if (pushedName) {
+                    const appliedAt = now();
+
+                    yield* db
+                      .update(s.device)
+                      .set({ appliedName: pushedName, appliedNameAt: appliedAt })
+                      .where(eq(s.device.id, device.id));
+                    yield* db
+                      .update(s.deviceCommand)
+                      .set({
+                        resultDetail: `Device name set to "${pushedName}".`,
+                        updatedAt: appliedAt,
+                      })
+                      .where(
+                        and(
+                          eq(s.deviceCommand.id, command.id),
+                          eq(s.deviceCommand.deviceId, device.id),
+                        ),
+                      );
+                  }
+                }
+
                 // A user channel has its own inventory. Persist only the
                 // per-user state and never let it overwrite device inventory,
                 // status or setup state.
@@ -4471,6 +4584,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 declarationMode: s.deviceApple.declarationMode,
                 declarationModeReason: s.deviceApple.declarationModeReason,
                 awaitingConfiguration: s.deviceApple.awaitingConfiguration,
+                enrollmentMode: s.deviceApple.enrollmentMode,
               })
               .from(s.deviceApple)
               .where(eq(s.deviceApple.deviceId, device.id))
@@ -4623,6 +4737,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 Effect.logWarning(`Failed to deliver scripts to ${device.id}: ${String(error)}`),
               ),
             );
+
+            // "Apply name to device with each sync": the command check-in is
+            // the device's regular poll, so this is where the name is
+            // re-queued and delivered in the same response.
+            yield* queueDeviceNameUpdate(device, appleState?.enrollmentMode ?? null, at);
 
             const delivery = yield* deliverQueuedCommand(device, null, at);
 

@@ -285,6 +285,15 @@ delivery failures and invalid tokens.
 | `shutdown`                     | Yes              | —                                    |
 | `clear-passcode`               | Yes              | Needs an unlock token                |
 | `install-app`                  | Yes              | Manifest URL or iTunes Store id      |
+| `set-device-name`             | No               | `Settings`/`DeviceName`; supervised only |
+
+`set-device-name` queues Apple's `Settings` command with the documented
+`DeviceName` item and is available on supervised macOS, iOS, iPadOS and tvOS
+devices. Apple User Enrollment (BYOD) devices are excluded because they are not
+supervised. When "Apply name to device" is enabled, the check-in re-queues the
+same command while the reported name still differs, at most once a day. The last
+acknowledged value is stored in `appliedName`/`appliedNameAt`; see
+[Device names](../../manage/devices.md#device-names).
 
 ## Limitations
 

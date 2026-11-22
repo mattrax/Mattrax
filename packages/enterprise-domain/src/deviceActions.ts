@@ -30,6 +30,7 @@ export const DeviceActionName = Schema.Literals([
   "request-device-info",
   "relinquish-ownership",
   "schedule-os-update",
+  "set-device-name",
   "unenroll",
 ]);
 
@@ -86,6 +87,7 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "set-recovery-lock",
   "verify-recovery-lock",
   "schedule-os-update",
+  "set-device-name",
   "unenroll",
 ];
 
@@ -149,6 +151,9 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["verify-recovery-lock", "verify-recovery-lock"],
   ["schedule-os-update", "schedule-os-update"],
   ["os-update", "schedule-os-update"],
+  ["set-device-name", "set-device-name"],
+  ["device-name", "set-device-name"],
+  ["rename", "set-device-name"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -218,6 +223,11 @@ export type DeviceActionInput = {
   readonly managementMode?: string | null;
   /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
   readonly ownership?: string | null;
+  /**
+   * Apple enrollment mode. `user` is an Apple User Enrollment (BYOD), which
+   * cannot receive supervised-only `Settings` commands.
+   */
+  readonly enrollmentMode?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -301,6 +311,13 @@ export const deviceAvailableActions = (
       (action) =>
         action !== "schedule-os-update" || (input.proto === "apple" && isMacOsDevice(input)),
     )
+    // Apple's `Settings` command is supervised-only. A User Enrollment is a
+    // BYOD device we know is not supervised, so never advertise the rename.
+    .filter(
+      (action) =>
+        action !== "set-device-name" ||
+        (input.proto === "apple" && input.enrollmentMode !== "user"),
+    )
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
@@ -364,5 +381,64 @@ export const deviceActionUnavailableReason = (
   if (action === "schedule-os-update")
     return "OS update scheduling is only available for macOS devices.";
 
+  if (action === "set-device-name" && input.proto !== "apple")
+    return "Applying a name to the device is only available for Apple devices. Windows and Android name delivery is not implemented yet.";
+
+  if (action === "set-device-name" && input.enrollmentMode === "user")
+    return "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.";
+
   return `This device does not support the ${action} action.`;
+};
+
+/**
+ * Longest `DeviceName` Apple accepts in a `Settings` command.
+ *
+ * Apple documents 1-63 characters for the value; rejecting it here gives the
+ * administrator a useful error instead of a failed command on the device.
+ */
+export const APPLE_DEVICE_NAME_MAX_LENGTH = 63;
+
+/** Trim a name and reject the empty value Apple would refuse. */
+export const normalizeAppleDeviceName = (value: string | null | undefined): string | undefined => {
+  const name = value?.trim();
+
+  return name ? name : undefined;
+};
+
+/**
+ * Apple's `Settings` command that writes the device's own name.
+ *
+ * The item is the documented shape:
+ * `Settings: [{ Item: "DeviceName", DeviceName: "<name>" }]`. It is
+ * supervised-only on macOS, iOS, iPadOS and tvOS.
+ */
+export const appleDeviceNameSettingsPayload = (name: string) => ({
+  Settings: [{ Item: "DeviceName", DeviceName: name }],
+});
+
+/**
+ * Read the `DeviceName` out of a queued `Settings` payload. Used when a
+ * command result arrives so the applied name can be recorded without trusting
+ * the device's next (possibly stale) inventory report.
+ */
+export const appleDeviceNameFromSettingsPayload = (
+  payload: Schema.Json | null | undefined,
+): string | undefined => {
+  if (!Schema.is(Schema.JsonObject)(payload)) return undefined;
+
+  const settings = payload["Settings"];
+
+  if (!Array.isArray(settings)) return undefined;
+
+  for (const item of settings) {
+    if (!Schema.is(Schema.JsonObject)(item)) continue;
+
+    if (item["Item"] !== "DeviceName") continue;
+
+    const name = item["DeviceName"];
+
+    if (Schema.is(Schema.String)(name)) return normalizeAppleDeviceName(name);
+  }
+
+  return undefined;
 };

@@ -32,6 +32,7 @@ export const SYSTEM_AUDIT_ACTIONS = {
   deviceReturnToServiceCompleted: "device.return_to_service_completed",
   commandFailed: "device.command_failed",
   commandNotNow: "device.command_not_now",
+  deviceNamePushed: "device.name_pushed",
   declarationInvalid: "device.declaration_invalid",
   pushInvalidToken: "device.push_invalid_token",
   complianceChanged: "device.compliance_changed",

@@ -281,6 +281,35 @@ Precedence, highest first:
 A rename on the device therefore follows through to the dashboard, and an
 administrator's rename is never overwritten by the next check-in.
 
+### Applying the management name to the device
+
+The two names above are separate by design: renaming in Mattrax changes the
+management label, not the name the operating system presents in System Settings,
+AirDrop, the terminal hostname or a print queue. **Edit details → Apply name to
+device** closes that gap on supervised Apple devices.
+
+- The option defaults on for supervised Apple devices, so saving a new name also
+  queues Apple's `Settings` command with `DeviceName`.
+- While the option is on, the Apple check-in re-applies the management name when
+  the device still reports a different one. A push is attempted at most once a
+  day, whatever the previous outcome, so an OS that ignores the value does not
+  receive a command on every check-in.
+- `appliedName` and `appliedNameAt` record the last name the device
+  acknowledged, not the name that was merely queued.
+- When `physicalName` and `name` differ the device page shows a **Name drift**
+  chip and a one-click **Apply to device** action. The action pushes the current
+  management name without changing either name.
+- Turning the option off stops check-in re-applies. It never clears the last
+  applied name or renames the device back.
+- Apple User Enrollment (BYOD) devices are excluded: they are not supervised and
+  Apple rejects the `Settings` command.
+- Windows and Android name delivery are not implemented yet. The API rejects an
+  opt-in on those platforms instead of storing a flag that does nothing.
+
+Every rename and every queued push writes an audit event, and the queued
+`Settings` command appears in the device's command history with its result. A
+failed push is shown there like any other failed command.
+
 ### Inventory clocks
 
 `inventoryUpdatedAt` records the last hardware/OS report and `applicationsUpdatedAt` the

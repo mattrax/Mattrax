@@ -59,6 +59,87 @@ export const shouldApplyReportedName = (input: ReportedDeviceNameInput): boolean
   );
 };
 
+/**
+ * Whether the name Mattrax shows and the name the device reports have drifted
+ * apart. Both sides must be known: a device that has never reported a name has
+ * no evidence of drift, only missing data.
+ */
+export const deviceNameDrift = (input: {
+  readonly name?: string | null;
+  readonly reportedName?: string | null;
+}): boolean => {
+  const name = normalizeReportedName(input.name);
+  const reported = normalizeReportedName(input.reportedName);
+
+  return Boolean(name && reported && name !== reported);
+};
+
+/**
+ * How long a successful push suppresses another automatic retry.
+ *
+ * Apple acknowledges a `Settings` command even when the device ignores the
+ * value (an unsupervised device, or an OS that does not accept the item). This
+ * bounds the retry to once a day instead of queueing a command on every
+ * check-in, while still re-applying when a rename lands later.
+ */
+export const DEVICE_NAME_PUSH_RETRY_MS = 24 * 60 * 60 * 1000;
+
+export type DeviceNamePushInput = {
+  readonly proto?: string | null;
+  readonly status?: string | null;
+  /** Apple enrollment mode; `user` is a BYOD device and cannot be renamed. */
+  readonly enrollmentMode?: string | null;
+  /** Whether the administrator opted into re-applying the name on check-in. */
+  readonly enabled?: boolean | null;
+  /** Mattrax's management name, the value to push. */
+  readonly name?: string | null;
+  /** The name the device currently reports for itself. */
+  readonly reportedName?: string | null;
+  /** The last name the device acknowledged from a `Settings` command. */
+  readonly appliedName?: string | null;
+  readonly appliedAt?: Date | string | null;
+  readonly now?: Date;
+  readonly retryAfterMs?: number;
+};
+
+/**
+ * Whether an Apple check-in should queue another `Settings`/`DeviceName`
+ * command.
+ *
+ * This only decides "is there work to do", never "is the device supervised".
+ * Supervision is not reported by Apple, so the caller relies on the
+ * administrator's explicit opt-in and Apple's command result for feedback.
+ */
+export const shouldPushDeviceName = (input: DeviceNamePushInput): boolean => {
+  if (input.enabled !== true) return false;
+  if (input.proto !== "apple") return false;
+  if (input.status !== "enrolled") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const name = normalizeReportedName(input.name);
+
+  if (!name) return false;
+
+  // The device already calls itself what the administrator asked for.
+  if (normalizeReportedName(input.reportedName) === name) return false;
+
+  // The last push already carried this name. Give the device a day to report
+  // the new value before queueing the same command again.
+  if (normalizeReportedName(input.appliedName) === name && input.appliedAt) {
+    const appliedAt =
+      input.appliedAt instanceof Date ? input.appliedAt : new Date(input.appliedAt);
+    const now = input.now ?? new Date();
+
+    if (
+      Number.isFinite(appliedAt.getTime()) &&
+      now.getTime() - appliedAt.getTime() < (input.retryAfterMs ?? DEVICE_NAME_PUSH_RETRY_MS)
+    )
+      return false;
+  }
+
+  return true;
+};
+
 /** How long a per-platform application inventory stays fresh. */
 export const APPLICATION_INVENTORY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 

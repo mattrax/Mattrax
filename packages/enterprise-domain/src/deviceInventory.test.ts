@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   APPLICATION_INVENTORY_STALE_MS,
+  DEVICE_NAME_PUSH_RETRY_MS,
   applicationsInventoryStale,
+  deviceNameDrift,
   normalizeReportedName,
   shouldApplyReportedName,
+  shouldPushDeviceName,
   windowsActivationStatusFromLicenseStatus,
   windowsLicenseStatusValue,
 } from "./deviceInventory.ts";
@@ -59,6 +62,93 @@ describe("normalizeReportedName", () => {
     expect(normalizeReportedName("  Oscar's   MacBook  ")).toBe("Oscar's MacBook");
     expect(normalizeReportedName("   ")).toBeUndefined();
     expect(normalizeReportedName(null)).toBeUndefined();
+  });
+});
+
+describe("deviceNameDrift", () => {
+  it("reports drift only when both names are known and differ", () => {
+    expect(deviceNameDrift({ name: "Reception Mac", reportedName: "C02XK1AB" })).toBe(true);
+    expect(deviceNameDrift({ name: "Reception Mac", reportedName: "Reception Mac" })).toBe(false);
+    expect(deviceNameDrift({ name: "Reception Mac", reportedName: null })).toBe(false);
+    expect(deviceNameDrift({ name: "", reportedName: "C02XK1AB" })).toBe(false);
+  });
+
+  it("ignores surrounding and repeated whitespace", () => {
+    expect(deviceNameDrift({ name: "Reception  Mac", reportedName: " Reception Mac " })).toBe(
+      false,
+    );
+  });
+});
+
+describe("shouldPushDeviceName", () => {
+  const base = {
+    proto: "apple",
+    status: "enrolled",
+    enabled: true,
+    name: "Reception Mac",
+    reportedName: "C02XK1AB",
+  };
+
+  it("requires the administrator's opt-in", () => {
+    expect(shouldPushDeviceName({ ...base, enabled: null })).toBe(false);
+    expect(shouldPushDeviceName({ ...base, enabled: false })).toBe(false);
+  });
+
+  it("only runs for enrolled, non-BYOD Apple devices", () => {
+    expect(shouldPushDeviceName({ ...base, proto: "win" })).toBe(false);
+    expect(shouldPushDeviceName({ ...base, status: "enrolling" })).toBe(false);
+    expect(shouldPushDeviceName({ ...base, enrollmentMode: "user" })).toBe(false);
+    expect(shouldPushDeviceName({ ...base, enrollmentMode: "device" })).toBe(true);
+  });
+
+  it("does not push a name the device already reports", () => {
+    expect(shouldPushDeviceName({ ...base, reportedName: "Reception Mac" })).toBe(false);
+    expect(shouldPushDeviceName({ ...base, reportedName: " Reception   Mac " })).toBe(false);
+  });
+
+  it("pushes a new name immediately while the option is on", () => {
+    expect(
+      shouldPushDeviceName({
+        ...base,
+        reportedName: "C02XK1AB",
+        appliedName: "Old Name",
+        appliedAt: new Date("2026-11-23T00:00:00Z"),
+        now: new Date("2026-11-23T01:00:00Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("retries a successful push at most once a day", () => {
+    const appliedAt = new Date("2026-11-23T00:00:00Z");
+
+    expect(
+      shouldPushDeviceName({
+        ...base,
+        appliedName: "Reception Mac",
+        appliedAt,
+        now: new Date(appliedAt.getTime() + 60 * 60 * 1000),
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldPushDeviceName({
+        ...base,
+        appliedName: "Reception Mac",
+        appliedAt,
+        now: new Date(appliedAt.getTime() + DEVICE_NAME_PUSH_RETRY_MS),
+      }),
+    ).toBe(true);
+  });
+
+  it("treats an unparseable applied timestamp as due", () => {
+    expect(
+      shouldPushDeviceName({
+        ...base,
+        appliedName: "Reception Mac",
+        appliedAt: "not-a-date",
+        now: new Date("2026-11-23T01:00:00Z"),
+      }),
+    ).toBe(true);
   });
 });
 

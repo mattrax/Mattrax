@@ -4485,6 +4485,144 @@ describe("device command lifecycle", () => {
     ]);
   });
 
+  it("queues Apple's Settings/DeviceName command for set-device-name", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "  Reception Mac  ",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect("commandId" in result ? result.commandId : undefined).toBeDefined();
+
+    const [queued] = commands(db).filter((row: any) => row.requestType === "Settings");
+
+    expect(queued).toMatchObject({
+      status: "queued",
+      payload: { Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }] },
+    });
+    expect(queued.expiresAt).toBeInstanceOf(Date);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "set-device-name",
+        deviceName: "Reception Mac",
+      }),
+    });
+  });
+
+  it("rejects a missing or over-long device name", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-device-name",
+          deviceName: "   ",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-device-name",
+          deviceName: "x".repeat(64),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("does not offer set-device-name on Apple User Enrollment", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device_apple[0]!.enrollmentMode = "user";
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "Reception Mac",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("User Enrollment") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("persists the apply-name opt-in on rename and audits it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        name: "Reception Mac",
+        applyNameToDevice: true,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      name: "Reception Mac",
+      namePushEnabled: true,
+    });
+    expect(db.store.audit_log.at(-1)).toMatchObject({ action: "device.renamed" });
+  });
+
+  it("rejects the apply-name opt-in on platforms without name delivery", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "windows-1",
+      organizationId: tenant.id,
+      proto: "win",
+      status: "enrolled",
+      name: "DESKTOP-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "windows-1", {
+          name: "Reception PC",
+          applyNameToDevice: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
   it("queues a fresh command when the identical one already expired", async () => {
     const { db, service, headers } = await makeContext();
 
