@@ -7,9 +7,7 @@ import { createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
-  isLogoUrl,
   normalizeBrandColor,
-  resolveTenantBranding,
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest as TenantImportRequestSchema,
 } from "@mattrax/enterprise-domain/client";
@@ -37,7 +35,7 @@ import {
 } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
-import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
@@ -137,16 +135,6 @@ export default function GeneralSettingsPage() {
   let importFileInput: HTMLInputElement | undefined;
 
   const colorValue = () => normalizeBrandColor(brandColor() || "") ?? DEFAULT_BRAND_COLOR;
-
-  const preview = createMemo(() =>
-    resolveTenantBranding({
-      name: name() || "Tenant",
-      displayName: displayName() || null,
-      logo: logo() || null,
-      supportEmail: supportEmail() || null,
-      brandColor: brandColor() || null,
-    }),
-  );
 
   const del = useMutation(() => ({
     mutationFn: () => enterprise.deleteTenant(params.tenantId),
@@ -593,15 +581,19 @@ export default function GeneralSettingsPage() {
                 Unlink assignments when every storefront loses the app
               </label>
             </FieldRow>
-          </div>
-          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <Show when={tenant.data}>
-              {(data) => (
-                <span class="text-xs text-muted-foreground">
-                  Created {new Date(data().createdAt).toLocaleDateString()}
-                </span>
-              )}
-            </Show>
+            <ReadOnlyRow
+              label="Tenant ID"
+              hint="Stable identifier used by the API and device enrollment."
+            >
+              <span class="block break-all font-mono text-[12px] text-muted-foreground">
+                {tenant.data?.id ?? "…"}
+              </span>
+            </ReadOnlyRow>
+            <ReadOnlyRow label="Created" hint="When this tenant was provisioned.">
+              <span class="text-[13px] text-muted-foreground">
+                {tenant.data ? new Date(tenant.data.createdAt).toLocaleDateString() : "…"}
+              </span>
+            </ReadOnlyRow>
           </div>
           <Show when={!canWrite()}>
             <ReadOnlyNotice class="mt-3">
@@ -610,83 +602,6 @@ export default function GeneralSettingsPage() {
           </Show>
         </form>
       </Panel>
-
-      <div class="grid min-w-0 gap-5 xl:grid-cols-2">
-        <Panel
-          title="Branding preview"
-          description="How the public enrollment page looks with the values above."
-        >
-          <div class="overflow-hidden rounded-lg border border-border bg-surface">
-            <div class="h-1.5" style={{ "background-color": preview().brandColor }} />
-            <div class="space-y-4 p-4">
-              <div class="flex items-center gap-3">
-                <Show when={preview().logo && isLogoUrl(preview().logo!)}>
-                  <img
-                    src={preview().logo!}
-                    alt=""
-                    class="size-10 shrink-0 rounded-md bg-surface object-contain p-1"
-                  />
-                </Show>
-                <div class="min-w-0">
-                  <p class="truncate text-[13.5px] font-semibold text-foreground">
-                    Enroll in {preview().displayName}
-                  </p>
-                  <p class="text-xs text-muted-foreground">Device enrollment</p>
-                </div>
-              </div>
-              <div
-                class="rounded-lg px-3 py-2 text-center text-[13px] font-medium"
-                style={{
-                  "background-color": preview().brandColor,
-                  color: "var(--brand-foreground)",
-                }}
-              >
-                Continue
-              </div>
-              <p class="text-xs text-muted-foreground">
-                Need help? Contact{" "}
-                <a
-                  class="break-all font-medium text-foreground underline underline-offset-2"
-                  href={`mailto:${preview().supportEmail}`}
-                >
-                  {preview().supportEmail}
-                </a>
-              </p>
-            </div>
-          </div>
-          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-            This preview uses the values above before you save. Unset values fall back to the
-            Mattrax defaults.
-          </p>
-        </Panel>
-
-        <Panel title="Tenant details">
-          <div class="divide-y divide-border text-[13px]">
-            <DetailRow label="Tenant ID">
-              <span class="break-all font-mono text-xs text-muted-foreground">
-                {tenant.data?.id ?? ""}
-              </span>
-            </DetailRow>
-            <DetailRow label="Dashboard URL">
-              <span class="break-all font-mono text-xs text-muted-foreground">
-                /t/{tenant.data?.slug ?? ""}
-              </span>
-            </DetailRow>
-            <DetailRow label="Your role">
-              <span class="font-medium capitalize text-foreground">
-                {tenantRoleName(tenant.data) ?? "…"}
-              </span>
-            </DetailRow>
-            <DetailRow label="Devices">
-              <span class="text-right text-foreground">Managed from the Devices page</span>
-            </DetailRow>
-          </div>
-          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Tenant resources (devices, groups, policies, members) are isolated from every other
-            tenant.
-          </p>
-        </Panel>
-      </div>
 
       <Panel
         title="Data and backups"
@@ -1281,6 +1196,24 @@ export default function GeneralSettingsPage() {
 
 /** A form row in the OpenCode-console style: label and hint on the left, the
  * control pinned to the right on desktop and stacked on narrow screens. */
+function ReadOnlyRow(props: { label: string; hint?: string; children: JSX.Element }) {
+  return (
+    <div class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+      <span class="min-w-0">
+        <span class="block text-[13px] font-medium leading-snug text-foreground">
+          {props.label}
+        </span>
+        <Show when={props.hint}>
+          <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+            {props.hint}
+          </span>
+        </Show>
+      </span>
+      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
+    </div>
+  );
+}
+
 function FieldRow(props: { label: string; hint?: string; children: JSX.Element }) {
   return (
     <label class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8 [&_input:not([type=checkbox]):not([type=color])]:h-9">
@@ -1296,15 +1229,6 @@ function FieldRow(props: { label: string; hint?: string; children: JSX.Element }
       </span>
       <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
     </label>
-  );
-}
-
-function DetailRow(props: { label: string; children: JSX.Element }) {
-  return (
-    <div class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-      <span class="shrink-0 text-xs text-muted-foreground">{props.label}</span>
-      <span class="min-w-0 text-right">{props.children}</span>
-    </div>
   );
 }
 

@@ -315,7 +315,6 @@ test.describe("tenant settings", () => {
 
     await page.getByPlaceholder("#1c1917").fill("#2563eb");
     await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
-    await expect(page.getByText("Enroll in Acme Corp")).toBeVisible();
     await saveTenantSettings(page);
 
     const saved = await api<{
