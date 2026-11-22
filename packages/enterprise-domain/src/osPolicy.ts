@@ -321,7 +321,7 @@ const appleDdmCapability = (
   mechanism: "ddm-software-update",
   description: `Enforce delivers Apple's DDM software-update enforcement declaration with the minimum as TargetOSVersion and the deferral window as TargetLocalDateTime. ${label} ${minimum}+ applies it on the next declaration sync.`,
   limitation:
-    "Apple only installs a target version its servers still publish, and Mattrax has no iOS/iPadOS or macOS release feed to verify that, so a declaration can stay active without an update. Devices below the DDM minimum (iOS/iPadOS 17, macOS 14) or on legacy delivery need Apply update, which queues ScheduleOSUpdate; Apple has no absolute deadline in that command.",
+    "Apple only installs a target version its servers still publish, and Mattrax has no GDMF lookup for iOS/iPadOS to verify that (macOS has SOFA), so a declaration can stay active without an update. Devices below the DDM minimum (iOS/iPadOS 17, macOS 14) or on legacy delivery need Apply update, which queues ScheduleOSUpdate; Apple has no absolute deadline in that command and removes it in 27. User-enrolled (BYOD) devices have no command path at all.",
 });
 
 /**
@@ -390,24 +390,93 @@ export const appleSoftwareUpdateEnforcementSupported = (device: OsPolicyDeviceIn
   return comparison !== null && comparison >= 0;
 };
 
-/** The Apple update mechanism available for one device, or null when untracked. */
-export const appleOsUpdateMechanism = (input: {
-  readonly device: OsPolicyDeviceInput;
+/** The major component of a reported OS version, or null when unparseable. */
+const majorOsVersion = (value: string | null | undefined): number | null => {
+  const major = Number.parseInt((value ?? "").trim().split(".")[0] ?? "", 10);
+
+  return Number.isFinite(major) ? major : null;
+};
+
+/** The OS release that removed Apple's `ScheduleOSUpdate` command. */
+export const APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR = 27;
+
+export type AppleOsUpdateInput = OsPolicyDeviceInput & {
   /** `device_apple.declaration_mode`; legacy delivery cannot apply declarations. */
   readonly declarationMode?: "ddm" | "legacy" | null;
   /** `device_apple.enrollment_mode`; user enrolment is never supervised. */
+  readonly enrollmentMode?: "device" | "user" | null;
+};
+
+/**
+ * Whether Apple's `ScheduleOSUpdate` command is a legal fallback for this
+ * device. This is the same predicate the device-action picker advertises, so
+ * a fleet bulk action can never promise a path the API rejects.
+ */
+export const appleScheduleOsUpdateSupported = (input: AppleOsUpdateInput): boolean => {
+  if (input.proto !== "apple") return false;
+
+  // User enrolment is BYOD, never supervised, and Apple forbids the command.
+  if (input.enrollmentMode === "user") return false;
+
+  const major = majorOsVersion(input.osVersion);
+
+  // Apple removed the command in 27; the DDM declaration is the only path.
+  if (major !== null && major >= APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR) return false;
+
+  // macOS keeps the manual command even where DDM is available; the tenant
+  // has always had that one-off control and Apple ignores it under a DDM
+  // declaration, so it cannot fight the policy.
+  if (isMacOsDevice(input)) return true;
+
+  const edition = (input.osEdition ?? "").toLowerCase();
+  const model = (input.model ?? "").toLowerCase();
+
+  if (!/ios|ipados/.test(edition) && !/ipad|iphone|ipod/.test(model)) return false;
+
+  // iOS/iPadOS only fall back where DDM is known to be unavailable: below 17
+  // or a recorded legacy delivery mode. An unknown version is not proof.
+  if (input.declarationMode === "legacy") return true;
+
+  return major !== null && major < 17;
+};
+
+/**
+ * The Apple update mechanism a bulk Apply can actually use, or `null` when
+ * there is no safe action.
+ *
+ * DDM requires all of: an enforcing rule with a minimum (that is what compiles
+ * the declaration), an OS Apple supports, DDM delivery, and a supervised
+ * enrolment. Everything else may fall back to `ScheduleOSUpdate`, but only
+ * when the command predicate allows it; otherwise the fleet must not offer an
+ * Apply action at all.
+ */
+export const appleOsUpdateMechanism = (input: {
+  readonly device: AppleOsUpdateInput;
+  /** The persisted rule for the device's Apple family, if any. */
+  readonly rule?: OsPolicyRule | null;
+  readonly declarationMode?: "ddm" | "legacy" | null;
   readonly enrollmentMode?: "device" | "user" | null;
 }): "ddm-software-update" | "schedule-os-update" | null => {
   const platform = appleOsPolicyPlatform(input.device);
 
   if (!platform) return null;
 
-  if (input.enrollmentMode === "user" || input.declarationMode === "legacy")
-    return "schedule-os-update";
+  const ddmAvailable =
+    input.rule?.enforcement === "enforce" &&
+    effectiveOsMinimumVersion(input.rule) !== null &&
+    input.declarationMode !== "legacy" &&
+    input.enrollmentMode !== "user" &&
+    appleSoftwareUpdateEnforcementSupported(input.device);
 
-  return appleSoftwareUpdateEnforcementSupported(input.device)
-    ? "ddm-software-update"
-    : "schedule-os-update";
+  if (ddmAvailable) return "ddm-software-update";
+
+  return appleScheduleOsUpdateSupported({
+    ...input.device,
+    declarationMode: input.declarationMode ?? null,
+    enrollmentMode: input.enrollmentMode ?? null,
+  })
+    ? "schedule-os-update"
+    : null;
 };
 
 export type OsUpdateKnowledge = "known" | "unknown";
@@ -592,7 +661,20 @@ export const deriveOsCompliance = (
     installState === "installing";
 
   if (platform !== "macos") {
-    // iOS/iPadOS have no public release feed; DDM is the only update signal.
+    // No feed exists for Windows, Android or iOS/iPadOS. The minimum is the
+    // only fact we can check; a pending DDM update is only meaningful under a
+    // configured, non-off rule, so it cannot bypass the policy state.
+    if (!minimum)
+      return unknown({
+        reason: rule ? "policy_off" : "policy_not_configured",
+        platform,
+        currentVersion,
+        minimumVersion: null,
+        enforcement,
+        deferralEndsAt: deferralIso,
+      });
+
+    // DDM is the only update signal iOS/iPadOS have beyond the minimum.
     if (updatePending && (platform === "ios" || platform === "ipados"))
       return {
         status: "update-available",
@@ -607,18 +689,6 @@ export const deriveOsCompliance = (
         updateKnowledge: "known",
         deferralEndsAt: deferralIso,
       };
-
-    // No feed exists for Windows or Android. The minimum is the only fact we
-    // can check, so the result says exactly that.
-    if (!minimum)
-      return unknown({
-        reason: rule ? "policy_off" : "policy_not_configured",
-        platform,
-        currentVersion,
-        minimumVersion: null,
-        enforcement,
-        deferralEndsAt: deferralIso,
-      });
 
     return {
       status: "compliant",
@@ -635,7 +705,9 @@ export const deriveOsCompliance = (
     };
   }
 
-  if (updatePending)
+  // macOS pending state also only means something under a configured minimum;
+  // without one the SOFA feed remains the source of truth.
+  if (updatePending && minimum)
     return {
       status: "update-available",
       reason: "ddm_update_pending",

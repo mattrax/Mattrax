@@ -24,10 +24,10 @@ tvOS, watchOS and visionOS are **explicitly unsupported**. Apple's declarative
 software-update declaration exists for tvOS 18.4+ and visionOS 26+, but Mattrax
 has no update guidance or remediation path for those families and Apple does not
 support watchOS at all. Their devices are reported as `Not supported` on the
-device page, and the fleet page counts them separately rather than dropping
-them from the totals. They are never counted as compliant and never as a
-silent "unknown". A tenant that needs those families should keep them in
-another MDM.
+device page, excluded from compliance totals, and listed in their own
+unsupported count on the fleet page. They are never counted as compliant and
+never as a silent "unknown". A tenant that needs those families should keep
+them in another MDM.
 
 A device is only compared with the minimum for its own family. Changing a rule
 restarts its deferral window: `deferralDays` is measured from the time the rule
@@ -87,21 +87,22 @@ token so capable devices fetch it again.
 
 The fallback is explicit in the product:
 
-- `ScheduleOSUpdate` is only advertised on iOS/iPadOS below 17, on a device
-  whose recorded delivery mode is `legacy`, or above the OS version where Apple
-  removes the command (27). On macOS it remains available as the manual
-  override it has always been.
+- `ScheduleOSUpdate` is only advertised on iOS/iPadOS below 17 or on a device
+  whose recorded delivery mode is `legacy`. Apple removed the command in OS 27,
+  where the DDM declaration is the only path. On macOS it remains available as
+  the manual override it has always been, except on macOS 27.
 - User-enrolled (BYOD) Apple devices are never offered the fallback: Apple
-  requires supervision for both the command and the system-scoped declaration.
+  requires supervision for both the command and the declaration. They have no
+  command path at all.
 - A fallback command is audited with `mechanism: "schedule-os-update"` and the
   install action, so the audit trail distinguishes it from a DDM delivery.
 
 The UI repeats these limitations next to every rule. In particular:
 
 - Apple only installs a `TargetOSVersion` its servers still publish. Mattrax has
-  no GDMF lookup for iOS/iPadOS, so a declaration can stay active without an
-  update if Apple withdraws that exact version. Re-enter a current version when
-  the target changes.
+  no GDMF lookup for iOS/iPadOS (macOS has SOFA), so a declaration can stay
+  active without an update if Apple withdraws that exact version. Re-enter a
+  current version when the target changes.
 - Apple force-installs at `TargetLocalDateTime` interpreted in the device's local
   time. Mattrax sends the UTC wall clock because a tenant device time zone is
   not reported, so a device outside UTC may see the deadline shifted.
@@ -125,8 +126,10 @@ available/pending) can be selected and updated in bulk:
   delivery) receive `ScheduleOSUpdate` with `InstallASAP` as the explicit
   fallback; the confirmation warns that the device may restart.
 
-Every device call is a separate audited `device.action`, so a bulk apply leaves
-one trail per device.
+For DDM devices the declaration installs at `TargetLocalDateTime`; with no
+deferral window that is the time the rule was saved, so it behaves as an
+immediate install. Every device call is a separate audited `device.action`, so
+a bulk apply leaves one trail per device.
 
 The device page has a finer control for the command path: install immediately,
 install later with a deadline (converted to a bounded deferral count), or notify

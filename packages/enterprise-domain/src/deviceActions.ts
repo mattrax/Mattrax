@@ -1,6 +1,10 @@
 import { Schema } from "effect";
 import { isMacOsDevice } from "./deviceHealth.js";
 import { normalizeAppleDeviceName } from "./deviceInventory.js";
+import {
+  APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR,
+  appleScheduleOsUpdateSupported,
+} from "./osPolicy.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -228,11 +232,6 @@ export type DeviceActionInput = {
   readonly managementMode?: string | null;
   /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
   readonly ownership?: string | null;
-  /**
-   * Apple enrollment mode. `user` is an Apple User Enrollment (BYOD), which
-   * cannot receive supervised-only `Settings` commands.
-   */
-  readonly enrollmentMode?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -242,39 +241,6 @@ const majorOsVersion = (value: string | null | undefined): number | null => {
   const major = Number(match[1]);
 
   return Number.isFinite(major) ? major : null;
-};
-
-/**
- * Whether `ScheduleOSUpdate` is a valid fallback for this device.
- *
- * Apple supports the command on supervised iOS/iPadOS 9+ and macOS, but
- * deprecates it in 26 and removes it in 27, where the DDM enforcement
- * declaration is the only path. For iOS/iPadOS it is offered only when DDM
- * is known to be unavailable (below iOS/iPadOS 17 or legacy delivery); on
- * macOS it stays available as the explicit manual override because the
- * tenant has always had that control. User enrolment is never supervised.
- */
-const supportsScheduleOsUpdate = (input: DeviceActionInput): boolean => {
-  if (input.proto !== "apple") return false;
-
-  if (input.enrollmentMode === "user") return false;
-
-  const major = majorOsVersion(input.osVersion);
-
-  // Apple removed the command in 27.0; do not advertise a command the OS rejects.
-  if (major !== null && major >= 27) return false;
-
-  if (isMacOsDevice(input)) return true;
-
-  const edition = (input.osEdition ?? "").toLowerCase();
-  const model = (input.model ?? "").toLowerCase();
-
-  if (!/ios|ipados/.test(edition) && !/ipad|iphone|ipod/.test(model)) return false;
-
-  // A known DDM path already enforces the tenant rule without a command.
-  if (input.declarationMode !== "legacy" && (major === null || major >= 17)) return false;
-
-  return true;
 };
 
 /**
@@ -345,7 +311,7 @@ export const deviceAvailableActions = (
     .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
     // `ScheduleOSUpdate` is the explicit fallback where the DDM declaration
     // is unavailable; see `supportsScheduleOsUpdate`.
-    .filter((action) => action !== "schedule-os-update" || supportsScheduleOsUpdate(input))
+    .filter((action) => action !== "schedule-os-update" || appleScheduleOsUpdateSupported(input))
     // Apple's `Settings` command is supervised-only. A User Enrollment is a
     // BYOD device we know is not supervised, so never advertise the rename.
     .filter(
@@ -414,11 +380,16 @@ export const deviceActionUnavailableReason = (
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
 
   if (action === "schedule-os-update") {
+    const major = majorOsVersion(input.osVersion);
+
+    if (major !== null && major >= APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR)
+      return `Apple removed the ScheduleOSUpdate command in ${isMacOsDevice(input) ? "macOS" : "iOS/iPadOS"} ${APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR}. Use the DDM software-update enforcement declaration instead.`;
+
     if (input.enrollmentMode === "user")
       return "ScheduleOSUpdate requires supervision. A user-enrolled (BYOD) device cannot run it.";
 
     if (/ios|ipados/i.test(input.osEdition ?? ""))
-      return "iOS and iPadOS 17 or later receive the update policy through Apple's DDM declaration. ScheduleOSUpdate is only offered below 17, on legacy delivery, or on iOS 27 where Apple removes the command.";
+      return "iOS and iPadOS 17 or later use Apple's DDM declaration as the update path; ScheduleOSUpdate is only offered below 17 or on legacy delivery.";
 
     return "ScheduleOSUpdate is only available for supervised Apple devices.";
   }

@@ -263,6 +263,22 @@ describe("deviceAvailableActions", () => {
     ).toContain("schedule-os-update");
   });
 
+  it("explains the OS 27 command removal", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS", osVersion: "27.0" },
+        "schedule-os-update",
+      ),
+    ).toContain("removed the ScheduleOSUpdate command in iOS/iPadOS 27");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "27.0" },
+        "schedule-os-update",
+      ),
+    ).toContain("macOS 27");
+  });
+
   it("explains why ScheduleOSUpdate is not offered on a DDM phone", () => {
     expect(
       deviceActionUnavailableReason(

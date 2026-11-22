@@ -42,16 +42,17 @@ stored as a policy configuration. When the macOS, iOS or iPadOS rule is set to
   saved when there is no deferral).
 
 The declaration is only emitted for DDM devices on macOS 14+, iOS 17+ or
-iPadOS 17+; Apple documents the declaration as system-scoped and supervised
-only. User-enrolled devices, legacy-delivery devices and older releases are
-left on the explicit `ScheduleOSUpdate` fallback. A `warn` or `off` rule emits
+iPadOS 17+, and only for a supervised device enrolment (Shared iPad included)
+at system scope. A user-enrolled (BYOD) device cannot apply it and has no
+fallback command either. Devices with legacy delivery or older releases fall
+back to the explicit `ScheduleOSUpdate` command. A `warn` or `off` rule emits
 nothing. The configuration `ServerToken` is derived from the rule, its
 platform and its `updatedAt`, so an edit rotates the token and the device
 fetches the declaration again.
 
 Apple only installs a target version its servers still publish, and Mattrax
-does not query Apple GDMF for iOS/iPadOS, so an exact version that Apple has
-withdrawn leaves the declaration active without an update. `TargetLocalDateTime`
+has no GDMF lookup for iOS/iPadOS (macOS uses SOFA), so an exact version that
+Apple has withdrawn leaves the declaration active without an update. `TargetLocalDateTime`
 is sent as the UTC wall clock because the device time zone is not reported.
 These are documented gaps, not silently retargeted versions.
 

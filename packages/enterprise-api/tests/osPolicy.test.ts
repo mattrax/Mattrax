@@ -495,6 +495,93 @@ describe("OS fleet view", () => {
     });
   });
 
+  it("does not offer Apply when neither DDM nor the command is legal", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedDevice(db, tenant.id, {
+      id: "iphone-warn",
+      proto: "apple",
+      osEdition: "iOS",
+      osVersion: "18.1",
+      model: "iPhone15,2",
+      osUpdatePendingVersion: "18.3",
+    });
+    seedDevice(db, tenant.id, {
+      id: "ipad-norule",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "18.1",
+      model: "iPad14,1",
+      osUpdatePendingVersion: "18.3",
+    });
+
+    await runEffect(
+      service.patchTenantOsPolicy(request(headers), tenant.id, {
+        platforms: [{ platform: "ios", minimumVersion: "18.0", enforcement: "warn" }],
+      }),
+    );
+
+    const fleet = await runEffect(service.getOsFleet(request(headers), tenant.id));
+    const ios = fleet.platforms.find((entry: any) => entry.platform === "ios");
+    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+
+    // A warn-only 17+ phone has no command path, so it is listed without one.
+    expect(ios.behind).toHaveLength(1);
+    expect(ios.behind[0]).toMatchObject({ id: "iphone-warn", updateMechanism: null });
+
+    // No iPadOS rule means the pending update is policy state, not a behind row.
+    expect(ipados.behind).toHaveLength(0);
+    expect(ipados.counts).toMatchObject({ total: 1, unknown: 1 });
+  });
+
+  it("keeps a small Apple family visible behind a large sibling fleet", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    for (let index = 0; index < 101; index += 1)
+      seedDevice(db, tenant.id, {
+        id: `iphone-${index}`,
+        proto: "apple",
+        osEdition: "iOS",
+        osVersion: "17.6",
+        model: "iPhone15,2",
+      });
+
+    seedDevice(db, tenant.id, {
+      id: "the-ipad",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "16.7",
+      model: "iPad14,1",
+    });
+
+    await runEffect(
+      service.patchTenantOsPolicy(request(headers), tenant.id, {
+        platforms: [
+          { platform: "ios", minimumVersion: "18.0", enforcement: "enforce" },
+          { platform: "ipados", minimumVersion: "18.0", enforcement: "enforce" },
+        ],
+      }),
+    );
+
+    const fleet = await runEffect(service.getOsFleet(request(headers), tenant.id));
+    const ios = fleet.platforms.find((entry: any) => entry.platform === "ios");
+    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+
+    // The iPhone list is capped, but the iPad query is constrained to iPadOS so
+    // it cannot be starved by the shared apple transport limit.
+    expect(ios.behind).toHaveLength(100);
+    expect(ios.behindTruncated).toBe(true);
+    expect(ipados.behind.map((row: any) => row.id)).toEqual(["the-ipad"]);
+    expect(ipados.behindTruncated).toBe(false);
+  });
   it("requires read permission", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -513,6 +600,121 @@ describe("OS fleet view", () => {
   });
 });
 
+describe("OS update actions in device lists", () => {
+  it("exposes the same Apple fallback decision in list and search payloads", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedDevice(db, tenant.id, {
+      id: "ipad-ddm",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "18.1",
+      model: "iPad14,1",
+    });
+    seedDevice(db, tenant.id, {
+      id: "ipad-legacy",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "18.1",
+      model: "iPad14,1",
+    });
+
+    db.store.device_apple.push(
+      { deviceId: "ipad-ddm", declarationMode: "ddm", enrollmentMode: "device" },
+      { deviceId: "ipad-legacy", declarationMode: "legacy", enrollmentMode: "device" },
+    );
+
+    const list = await runEffect(service.listDevices(request(headers), tenant.id));
+    const search = await runEffect(service.searchDevices(request(headers), tenant.id, {}));
+
+    for (const rows of [list.rows, search.devices]) {
+      const byId = new Map(rows.map((row: any) => [row.id, row]));
+
+      expect(byId.get("ipad-ddm")!.actions).not.toContain("schedule-os-update");
+      expect(byId.get("ipad-legacy")!.actions).toContain("schedule-os-update");
+    }
+  });
+});
+
+describe("DDM bulk apply audit", () => {
+  it("records a validated DDM wake-up as an OS-update action", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seedDevice(db, tenant.id, {
+      id: "ipad-1",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "18.1",
+      model: "iPad14,1",
+    });
+    db.store.device_apple.push({
+      deviceId: "ipad-1",
+      declarationMode: "ddm",
+      enrollmentMode: "device",
+    });
+
+    await runEffect(
+      service.patchTenantOsPolicy(request(headers), tenant.id, {
+        platforms: [{ platform: "ipados", minimumVersion: "18.0", enforcement: "enforce" }],
+      }),
+    );
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "ipad-1", {
+        action: "sync",
+        osUpdateMechanism: "ddm-software-update",
+      }),
+    );
+
+    const audit = db.store.audit_log.findLast(
+      (row: any) => row.action === "device.action" && row.targetId === "ipad-1",
+    );
+
+    expect(audit.metadata).toMatchObject({ mechanism: "ddm-software-update" });
+
+    // A warn rule compiles no declaration, so the marker is rejected. A
+    // separate tenant avoids relying on the fake DB's upsert semantics.
+    const warned = await runEffect(
+      service.createTenant(request(headers), { name: "Warned", slug: "warned" }),
+    );
+
+    seedDevice(db, warned.id, {
+      id: "ipad-warn",
+      proto: "apple",
+      osEdition: "iPadOS",
+      osVersion: "18.1",
+      model: "iPad14,1",
+    });
+    db.store.device_apple.push({
+      deviceId: "ipad-warn",
+      declarationMode: "ddm",
+      enrollmentMode: "device",
+    });
+
+    await runEffect(
+      service.patchTenantOsPolicy(request(headers), warned.id, {
+        platforms: [{ platform: "ipados", minimumVersion: "18.0", enforcement: "warn" }],
+      }),
+    );
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), warned.id, "ipad-warn", {
+          action: "sync",
+          osUpdateMechanism: "ddm-software-update",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+});
 describe("ScheduleOSUpdate device action", () => {
   it("queues an Apple ScheduleOSUpdate payload with the requested install action", async () => {
     const { db, service, headers } = await makeContext();

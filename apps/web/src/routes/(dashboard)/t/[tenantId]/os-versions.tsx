@@ -148,9 +148,10 @@ export default function OsVersionsPage() {
    */
   const selectedMechanisms = () => {
     const rows = selectedRows();
-    const commands = rows.filter((row) => row.updateMechanism !== "ddm-software-update").length;
+    const declarations = rows.filter((row) => row.updateMechanism === "ddm-software-update").length;
+    const commands = rows.filter((row) => row.updateMechanism === "schedule-os-update").length;
 
-    return { total: rows.length, commands, declarations: rows.length - commands };
+    return { total: rows.length, commands, declarations };
   };
 
   const toggle = (id: string, checked: boolean) =>
@@ -176,10 +177,15 @@ export default function OsVersionsPage() {
       let failed = 0;
 
       for (const row of rows) {
+        if (row.updateMechanism === null) continue;
+
         try {
           if (row.updateMechanism === "ddm-software-update")
             // Wakes the device; it fetches the tenant declaration on check-in.
-            await enterprise.deviceAction(params.tenantId, row.id, { action: "sync" });
+            await enterprise.deviceAction(params.tenantId, row.id, {
+              action: "sync",
+              osUpdateMechanism: "ddm-software-update",
+            });
           else
             await enterprise.deviceAction(params.tenantId, row.id, {
               action: "schedule-os-update",
@@ -300,7 +306,13 @@ export default function OsVersionsPage() {
               {(platform) => {
                 const isApple = () => isApplePlatform(platform.platform);
 
-                const selectable = () => isApple() && canCommand() && platform.behind.length > 0;
+                // A behind device with no mechanism has no safe action (for
+                // example a warn-only iPhone 17+): show it, never offer a
+                // button the API would reject.
+                const actionable = () =>
+                  platform.behind.filter((row) => row.updateMechanism !== null);
+
+                const selectable = () => isApple() && canCommand() && actionable().length > 0;
 
                 return (
                   <Panel
@@ -403,7 +415,7 @@ export default function OsVersionsPage() {
                                   setSelected((current) => {
                                     const next = new Set(current);
 
-                                    for (const row of platform.behind) next.add(row.id);
+                                    for (const row of actionable()) next.add(row.id);
 
                                     return next;
                                   })
@@ -451,7 +463,7 @@ export default function OsVersionsPage() {
                                   {(row) => (
                                     <tr class="border-t border-border/70">
                                       <td class="px-2 py-1.5">
-                                        <Show when={selectable()}>
+                                        <Show when={selectable() && row.updateMechanism !== null}>
                                           <Checkbox
                                             checked={selected().has(row.id)}
                                             aria-label={`Select ${row.name}`}
@@ -565,7 +577,7 @@ export default function OsVersionsPage() {
                 const { declarations, commands } = selectedMechanisms();
                 const parts = [
                   declarations > 0
-                    ? `${declarations} ${declarations === 1 ? "device receives" : "devices receive"} Apple's DDM software-update enforcement declaration on its next check-in.`
+                    ? `${declarations} ${declarations === 1 ? "device receives" : "devices receive"} Apple's DDM software-update enforcement declaration on its next check-in and installs at the declaration deadline (immediately when no deferral window is set).`
                     : null,
                   commands > 0
                     ? `${commands} ${commands === 1 ? "device receives" : "devices receive"} Apple's ScheduleOSUpdate command with InstallASAP, which may restart the device.`

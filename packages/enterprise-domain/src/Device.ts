@@ -1099,6 +1099,13 @@ export const DeviceActionRequest = Schema.Struct({
   /** Apple's ProductKey from `AvailableOSUpdates`; omitted schedules all. */
   osUpdateProductKey: Schema.optional(Schema.String),
   /**
+   * Marks a `sync` as the OS-update bulk apply for a DDM-managed Apple
+   * device. The server validates that the tenant rule actually delivers the
+   * declaration, then records the mechanism in the audit trail so a bulk
+   * apply is distinguishable from a manual sync.
+   */
+  osUpdateMechanism: Schema.optional(Schema.Literals(["ddm-software-update"])),
+  /**
    * ISO-8601 deadline for `InstallLater`. Apple has no absolute deadline, so
    * the server converts this into a bounded `MaxUserDeferrals` count.
    */

@@ -277,6 +277,39 @@ describe("deriveOsCompliance", () => {
     expect(info).toMatchObject({ status: "update-available", reason: "ddm_update_pending" });
   });
 
+  it("does not let a pending DDM update bypass policy state", () => {
+    const device = {
+      ...iphone("18.0"),
+      osUpdatePendingVersion: "18.2",
+      osUpdateInstallState: "downloading",
+    };
+
+    expect(deriveOsCompliance(device, [], catalog, { now })).toMatchObject({
+      status: "unknown",
+      reason: "policy_not_configured",
+    });
+
+    expect(
+      deriveOsCompliance(
+        device,
+        [rule({ platform: "ios", minimumVersion: "18.0", enforcement: "off" })],
+        catalog,
+        { now },
+      ),
+    ).toMatchObject({ status: "unknown", reason: "policy_off" });
+
+    // A warning rule is still a configured policy, so the pending update is
+    // reported; it just does not change the device.
+    expect(
+      deriveOsCompliance(
+        device,
+        [rule({ platform: "ios", minimumVersion: "18.0", enforcement: "warn" })],
+        catalog,
+        { now },
+      ),
+    ).toMatchObject({ status: "update-available", reason: "ddm_update_pending" });
+  });
+
   it("marks tvOS, watchOS and visionOS explicitly unsupported", () => {
     for (const osEdition of ["tvOS", "watchOS", "visionOS"]) {
       const info = deriveOsCompliance(
@@ -499,15 +532,60 @@ describe("Apple DDM software-update enforcement", () => {
     );
   });
 
-  it("chooses the DDM declaration and names the fallback explicitly", () => {
-    expect(appleOsUpdateMechanism({ device: iphone("18.1") })).toBe("ddm-software-update");
-    expect(appleOsUpdateMechanism({ device: iphone("16.7") })).toBe("schedule-os-update");
-    expect(appleOsUpdateMechanism({ device: iphone("18.1"), declarationMode: "legacy" })).toBe(
+  it("chooses DDM only for an enforcing rule and names every fallback", () => {
+    const enforcing = rule({ platform: "ios", minimumVersion: "18.0", enforcement: "enforce" });
+    const warning = rule({ platform: "ios", minimumVersion: "18.0", enforcement: "warn" });
+    const macEnforcing = rule({
+      platform: "macos",
+      minimumVersion: "15.0",
+      enforcement: "enforce",
+    });
+
+    expect(appleOsUpdateMechanism({ device: iphone("18.1"), rule: enforcing })).toBe(
+      "ddm-software-update",
+    );
+    // No declaration is compiled for warn/off/absent rules, so a 17+ phone has
+    // no command path and must not be offered Apply.
+    expect(appleOsUpdateMechanism({ device: iphone("18.1"), rule: warning })).toBeNull();
+    expect(appleOsUpdateMechanism({ device: iphone("18.1") })).toBeNull();
+    // Below 17 the declaration does not exist; the command is the only path.
+    expect(appleOsUpdateMechanism({ device: iphone("16.7"), rule: enforcing })).toBe(
       "schedule-os-update",
     );
-    expect(appleOsUpdateMechanism({ device: iphone("18.1"), enrollmentMode: "user" })).toBe(
-      "schedule-os-update",
+    expect(
+      appleOsUpdateMechanism({
+        device: iphone("18.1"),
+        rule: enforcing,
+        declarationMode: "legacy",
+      }),
+    ).toBe("schedule-os-update");
+    // BYOD is unsupervised and has neither path.
+    expect(
+      appleOsUpdateMechanism({
+        device: iphone("18.1"),
+        rule: enforcing,
+        enrollmentMode: "user",
+      }),
+    ).toBeNull();
+    // macOS keeps the manual command under warn, but Apple removed it in 27.
+    expect(appleOsUpdateMechanism({ device: mac("15.1"), rule: macEnforcing })).toBe(
+      "ddm-software-update",
     );
+    expect(
+      appleOsUpdateMechanism({
+        device: mac("15.1"),
+        rule: rule({ platform: "macos", minimumVersion: "15.0", enforcement: "warn" }),
+      }),
+    ).toBe("schedule-os-update");
+    expect(appleOsUpdateMechanism({ device: mac("27.0"), rule: macEnforcing })).toBe(
+      "ddm-software-update",
+    );
+    expect(
+      appleOsUpdateMechanism({
+        device: mac("27.0"),
+        rule: rule({ platform: "macos", minimumVersion: "26.0", enforcement: "warn" }),
+      }),
+    ).toBeNull();
     expect(appleOsUpdateMechanism({ device: { proto: "win" } })).toBeNull();
   });
 });

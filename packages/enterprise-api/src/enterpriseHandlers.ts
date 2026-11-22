@@ -4097,7 +4097,6 @@ export const createEnterpriseService = ({
       ),
       managementMode: android?.managementMode ?? null,
       ownership: android?.ownership ?? null,
-      enrollmentMode: setup?.enrollmentMode ?? null,
     }),
   });
 
@@ -4221,7 +4220,8 @@ export const createEnterpriseService = ({
             setupReleasedAt: Date | null;
             returnToServiceRequestedAt: Date | null;
             returnToServiceCompletedAt: Date | null;
-            enrollmentMode: string | null;
+            declarationMode: "ddm" | "legacy" | null;
+            enrollmentMode: "device" | "user" | null;
           }
         >();
 
@@ -4233,6 +4233,7 @@ export const createEnterpriseService = ({
           setupReleasedAt: schema.deviceApple.setupReleasedAt,
           returnToServiceRequestedAt: schema.deviceApple.returnToServiceRequestedAt,
           returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
+          declarationMode: schema.deviceApple.declarationMode,
           enrollmentMode: schema.deviceApple.enrollmentMode,
         })
         .from(schema.deviceApple)
@@ -15972,6 +15973,7 @@ export const createEnterpriseService = ({
           osUpdateInstallAction?: AppleOsUpdateInstallAction;
           osUpdateProductKey?: string;
           osUpdateDeadline?: string;
+          osUpdateMechanism?: "ddm-software-update";
         } = payload ?? {};
 
         const action = body.action ?? "sync";
@@ -16043,6 +16045,33 @@ export const createEnterpriseService = ({
                 : "Unknown device action",
             }),
           );
+
+        // A bulk Apply on a DDM device is a wake-up, not a command. Validate
+        // that the tenant rule really delivers the declaration before the
+        // audit trail records it as an OS-update action.
+        if (body.osUpdateMechanism === "ddm-software-update") {
+          const platform = osPolicyPlatformForDevice(deviceActionInput);
+          const rules = yield* loadOsPolicyRules(ctx.organization.id);
+          const rule = platform
+            ? (rules.find((entry) => entry.platform === platform) ?? null)
+            : null;
+
+          if (
+            requestedAction !== "sync" ||
+            appleOsUpdateMechanism({
+              device: deviceActionInput,
+              rule,
+              declarationMode: apple?.declarationMode ?? null,
+              enrollmentMode: apple?.enrollmentMode ?? null,
+            }) !== "ddm-software-update"
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "This device does not receive the tenant DDM software-update declaration. Use ScheduleOSUpdate or fix the OS policy first.",
+              }),
+            );
+        }
 
         // Renaming is reversible and audited; it does not destroy data the way
         // a wipe or passcode reset does, so it follows inventory refreshes
@@ -16587,6 +16616,13 @@ export const createEnterpriseService = ({
           // without reading the command payload.
           ...(action === "set-device-name" && normalizeAppleDeviceName(body.deviceName)
             ? { deviceName: normalizeAppleDeviceName(body.deviceName) }
+            : {}),
+          ...(action === "sync" && body.osUpdateMechanism === "ddm-software-update"
+            ? {
+                // Bulk Apply on a DDM device is a wake-up that applies the
+                // declaration on check-in; record it as such.
+                mechanism: "ddm-software-update",
+              }
             : {}),
           ...(action === "schedule-os-update"
             ? {
@@ -17568,6 +17604,9 @@ export const createEnterpriseService = ({
                   proto: schema.device.proto,
                   osEdition: schema.device.osEdition,
                   osVersion: schema.device.osVersion,
+                  // The model resolves iPhone/iPadOS when the marketing name is
+                  // missing, so the bucket must carry it.
+                  model: schema.device.model,
                   // DDM reports a pending update separately from the installed
                   // version; grouping by it keeps the bucket status honest.
                   osUpdateInstallState: schema.device.osUpdateInstallState,
@@ -17580,6 +17619,7 @@ export const createEnterpriseService = ({
                   schema.device.proto,
                   schema.device.osEdition,
                   schema.device.osVersion,
+                  schema.device.model,
                   schema.device.osUpdateInstallState,
                   schema.device.osUpdatePendingVersion,
                 ),
@@ -17593,7 +17633,7 @@ export const createEnterpriseService = ({
             proto: bucket.proto,
             osEdition: bucket.osEdition,
             osVersion: bucket.osVersion,
-            model: null,
+            model: bucket.model,
             osUpdateInstallState: bucket.osUpdateInstallState,
             osUpdatePendingVersion: bucket.osUpdatePendingVersion,
           });
@@ -17605,7 +17645,7 @@ export const createEnterpriseService = ({
               proto: bucket.proto,
               osEdition: bucket.osEdition,
               osVersion: bucket.osVersion,
-              model: null,
+              model: bucket.model,
               osUpdateInstallState: bucket.osUpdateInstallState,
               osUpdatePendingVersion: bucket.osUpdatePendingVersion,
             },
@@ -17628,7 +17668,7 @@ export const createEnterpriseService = ({
               proto: bucket.proto,
               osEdition: bucket.osEdition,
               osVersion: bucket.osVersion,
-              model: null,
+              model: bucket.model,
             })
           )
             continue;
@@ -17800,6 +17840,38 @@ export const createEnterpriseService = ({
                 readonly lastSeenAt: Date;
               }> = [];
 
+              // Constrain the per-device query to the platform family in SQL.
+              // iOS, iPadOS and macOS share the apple transport, so a shared
+              // `proto = apple` limit lets a large iPhone fleet starve an iPad
+              // (or a Mac) out of its own behind list.
+              const familyCondition =
+                platform === "macos"
+                  ? or(
+                      like(schema.device.osEdition, "mac%"),
+                      and(
+                        isNull(schema.device.osEdition),
+                        or(like(schema.device.model, "%mac%"), isNull(schema.device.model)),
+                      ),
+                    )
+                  : platform === "ios"
+                    ? or(
+                        like(schema.device.osEdition, "ios%"),
+                        like(schema.device.osEdition, "iphone%"),
+                        and(
+                          isNull(schema.device.osEdition),
+                          or(
+                            like(schema.device.model, "iphone%"),
+                            like(schema.device.model, "ipod%"),
+                          ),
+                        ),
+                      )
+                    : platform === "ipados"
+                      ? or(
+                          like(schema.device.osEdition, "ipad%"),
+                          and(isNull(schema.device.osEdition), like(schema.device.model, "ipad%")),
+                        )
+                      : undefined;
+
               if (behindVersions.length > 0) {
                 const versionCondition = or(
                   ...behindVersions.map((version) =>
@@ -17828,6 +17900,7 @@ export const createEnterpriseService = ({
                         eq(schema.device.organizationId, ctx.organization.id),
                         eq(schema.device.proto, protoForPlatform[platform]),
                         versionCondition,
+                        familyCondition,
                       ),
                     )
                     .orderBy(asc(schema.device.name))
@@ -17892,6 +17965,7 @@ export const createEnterpriseService = ({
                       installState: row.osUpdateInstallState,
                       updateMechanism: appleOsUpdateMechanism({
                         device: row,
+                        rule,
                         declarationMode: apple?.declarationMode ?? null,
                         enrollmentMode: apple?.enrollmentMode ?? null,
                       }),
