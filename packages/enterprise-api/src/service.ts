@@ -6,7 +6,6 @@ import {
   EnterpriseService as EnterpriseServiceTag,
 } from "@mattrax/enterprise-domain";
 import { ApnsService } from "@mattrax/apns";
-import { StripeService } from "@mattrax/effect-stripe";
 import type { AppleProfileSigningConfig } from "@mattrax/dm-apple";
 import { createEnterpriseService } from "./enterpriseHandlers.js";
 import type { EnterpriseAnalytics } from "./enterpriseHandlers.js";
@@ -43,7 +42,6 @@ export type EnterpriseServiceOptions = {
    */
   readonly windowsFailureRetentionDays?: number;
   /** Stripe price for the per-device plan; enables Checkout and seat sync. */
-  readonly deviceMonthlyPriceId?: string;
   /**
    * Customer-facing billing implementation. Omit on hosted deployments to use
    * Stripe; a self-hosted deployment supplies the remote cloud service.
@@ -92,7 +90,6 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
       const db = yield* Db;
       const env = yield* Env;
       const auth = yield* EnterpriseAuth;
-      const stripeClient = yield* Effect.serviceOption(StripeService);
       const billing = Option.getOrUndefined(yield* Effect.serviceOption(BillingService));
       const r2 = yield* R2;
       const apns = yield* ApnsService;
@@ -119,8 +116,6 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           db,
           schema,
           origin: env.origin,
-          stripeClient: Option.getOrUndefined(stripeClient),
-          deviceMonthlyPriceId: options.deviceMonthlyPriceId,
           billing: billing ?? options.billing,
           storage,
           auth,

@@ -24,12 +24,21 @@ type Row = { [column: string]: RowValue };
 
 type Store = Record<string, Row[]>;
 
-const tableSymbol = (description: string) => (value: Row) =>
+type DrizzleTable = { readonly __table?: Row };
+
+const tableSymbol = (description: string) => (value: DrizzleTable) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
 
 const nameSymbol = tableSymbol("drizzle:Name");
 
-const tableName = (table: any): string => table?.[nameSymbol(table)];
+const tableName = (table: DrizzleTable): string => {
+  const key = nameSymbol(table);
+  const descriptor =
+    Object.getOwnPropertyDescriptor(table, key) ??
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(table), key);
+
+  return String(descriptor?.value);
+};
 
 const columnName = (column: any): string => column?.name;
 
@@ -307,7 +316,7 @@ const project = (fields: any, row: Row) => {
 
       // A whole table selected as a named field (`{ member: schema.member }`)
       // is projected as an unprefixed row so callers get a nested object.
-      const nested = tableName(field);
+      const nested = field?.table ? undefined : tableName(field);
 
       if (nested) {
         const prefix = `${nested}.`;
@@ -600,16 +609,19 @@ class DeleteBuilder {
   }
 }
 
-export const makeDb = (initial: Partial<Store> = {}) => {
+export const makeDb = (
+  initial: Partial<Store> = {},
+  tables: Record<string, DrizzleTable> = schema,
+) => {
   const store: Store = Object.fromEntries(
-    Object.values(schema).map((table) => [tableName(table), []]),
+    Object.values(tables).map((table) => [tableName(table), []]),
   );
 
   for (const [key, rows] of Object.entries(initial))
     store[key] = (rows ?? []).map((row) => ({ ...row }));
 
   const query = Object.fromEntries(
-    Object.entries(schema).map(([key, table]) => [
+    Object.entries(tables).map(([key, table]) => [
       key,
       {
         findFirst: ({ where }: { where?: any } = {}) =>
@@ -742,3 +754,8 @@ export const makeStripeClient = (overrides: StripeClientOverrides = {}): any => 
     subscriptions: { ...client.subscriptions, ...overrides.subscriptions },
   };
 };
+
+import { servicesSchema } from "@mattrax/enterprise-billing";
+
+/** A fake database whose tables are the isolated services billing schema. */
+export const makeServicesDb = (initial: Partial<Store> = {}) => makeDb(initial, servicesSchema);

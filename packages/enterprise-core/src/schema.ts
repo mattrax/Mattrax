@@ -60,7 +60,6 @@ export const account = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
-    stripeCustomerId: shortText("stripe_customer_id"),
     /**
      * Account-level landing tenant, independent of the browser's last-used
      * tenant. Only honoured while the account is a member; membership loss
@@ -655,7 +654,6 @@ export const passkeyRegistrationMapping: any = {
             ? sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.expiresAt} > current_timestamp(3))`
             : false,
           image: null,
-          stripeCustomerId: null,
           disabled: false,
           source: "manual",
           totpEnabled: false,
@@ -710,7 +708,13 @@ export const organization = mysqlTable(
     autoUnlinkUnavailableApplications: boolean("auto_unlink_unavailable_applications")
       .notNull()
       .default(false),
-    stripeCustomerId: shortText("stripe_customer_id"),
+    /**
+     * Cached billing entitlement pushed by the services deployment. The
+     * billing database is the authority; these columns exist only so device
+     * and tenant limits can be enforced without a network call per request.
+     */
+    billingPlan: shortText("billing_plan"),
+    billingStatus: varchar("billing_status", { length: 32 }),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
      * Claiming is a conditional update, so repeated sweeps are idempotent.
@@ -1067,87 +1071,6 @@ export const tenantOwnershipTransfer = mysqlTable(
     // index. The target is displayed, never filtered on.
     index("tenant_ownership_transfer_target_idx").on(table.targetAccountId, table.status),
   ],
-);
-
-export const subscription = mysqlTable(
-  "subscription",
-  {
-    id: id().primaryKey(),
-    plan: shortText("plan").notNull(),
-    referenceId: shortText("reference_id").notNull(),
-    stripeCustomerId: shortText("stripe_customer_id"),
-    stripeSubscriptionId: shortText("stripe_subscription_id"),
-    status: varchar("status", { length: 32 }).notNull(),
-    periodStart: timestamp("period_start"),
-    periodEnd: timestamp("period_end"),
-    cancelAtPeriodEnd: boolean("cancel_at_period_end"),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-  },
-  (table) => [index("subscription_reference_id_idx").on(table.referenceId)],
-);
-
-/**
- * A self-hosted deployment licensed to run Mattrax.
- *
- * Hosted tenants are billed through `subscription`; a self-hosted operator is
- * billed once for the whole deployment. The license key is stored hashed and
- * authenticates the deployment's calls to the cloud billing API. Usage is
- * reported by the deployment, and the Stripe subscription quantity is
- * reconciled against `deviceCount`.
- */
-export const deploymentLicense = mysqlTable(
-  "deployment_license",
-  {
-    id: id().primaryKey(),
-    name: shortText("name").notNull(),
-    licenseKeyHash: shortText("license_key_hash").notNull(),
-    licenseKeyPrefix: shortText("license_key_prefix").notNull(),
-    /** Public origin of the deployment, bound on first contact. */
-    origin: shortText("origin"),
-    contactEmail: varchar("contact_email", { length: 320 }),
-    stripeCustomerId: shortText("stripe_customer_id"),
-    stripeSubscriptionId: shortText("stripe_subscription_id"),
-    plan: shortText("plan").notNull().default("device"),
-    status: varchar("status", { length: 32 }),
-    deviceCount: int("device_count").notNull().default(0),
-    tenantCount: int("tenant_count").notNull().default(0),
-    periodEnd: timestamp("period_end"),
-    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
-    lastSeenAt: timestamp("last_seen_at"),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-  },
-  (table) => [
-    uniqueIndex("deployment_license_key_unique").on(table.licenseKeyHash),
-    uniqueIndex("deployment_license_customer_unique").on(table.stripeCustomerId),
-  ],
-);
-
-/**
- * Stripe event ids already applied. The primary key is the dedupe key, so the
- * insert of a duplicate delivery fails atomically in MySQL even when two
- * isolates process the same event concurrently.
- *
- * It is written and removed inside the same transaction as the subscription
- * writes: a failed apply rolls the marker back so Stripe's retry can succeed,
- * and a committed marker means the event was fully applied. There is
- * deliberately no foreign key to `organization` so the ledger survives a
- * tenant teardown; it contains no tenant data beyond the id.
- *
- * The ledger is only ever read by id (the dedupe probe). Daily maintenance
- * prunes it by `received_at`, so that column carries its own index.
- */
-export const stripeEvent = mysqlTable(
-  "stripe_event",
-  {
-    /** Stripe's `event.id` (`evt_…`). */
-    id: id().primaryKey(),
-    type: shortText("type").notNull(),
-    organizationId: id("organization_id"),
-    receivedAt: timestamp("received_at").notNull(),
-  },
-  (table) => [index("stripe_event_received_at_idx").on(table.receivedAt)],
 );
 
 export const accountApiToken = mysqlTable(
@@ -4273,8 +4196,6 @@ export const relations = defineRelations(
     registrationVerification,
     invitation,
     tenantOwnershipTransfer,
-    subscription,
-    stripeEvent,
     accountApiToken,
     mcpOAuthClient,
     mcpOAuthConnection,

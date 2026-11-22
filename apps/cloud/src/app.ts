@@ -59,7 +59,6 @@ import {
   DEFAULT_EMAIL_FROM,
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
-  billingWebhookRoutes,
   runMaintenance,
   runOnboardingEmails,
   runScheduledBackups,
@@ -78,11 +77,11 @@ import {
   makeSsoStrategy,
   makeEnterpriseAuthLive,
   sessionCookie,
-  deploymentUsage,
   BillingServiceLive,
+  billingEntitlementRoutes,
   drainEmailOutbox,
-  licenseBillingRoutes,
   makeRemoteBillingService,
+  makeServicesBillingService,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
@@ -95,11 +94,17 @@ import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-appl
 import { ScepService } from "@mattrax/scep";
 import { ManagementBackendEnterpriseLive, ScepRepositoryLive } from "@mattrax/mdm-apple";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
-import { Db, Env as CoreEnv, R2, parsePlanLimits, schema } from "@mattrax/enterprise-core";
+import {
+  Db,
+  Env as CoreEnv,
+  R2,
+  deploymentUsage,
+  parsePlanLimits,
+  schema,
+} from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
-import { StripeService } from "@mattrax/effect-stripe";
 import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
@@ -331,12 +336,8 @@ const applicationHandlers = Layer.mergeAll(
 const handlersLayer = Layer.mergeAll(
   applicationHandlers,
   authHttps.handlers(apiRoot),
-  // Raw Stripe webhook: unauthenticated but signature-verified. Mounted before
-  // the Effect HttpApi routes so it can read the raw request body.
-  billingWebhookRoutes({
-    webhookSecret: apiEnv.STRIPE_WEBHOOK_SECRET,
-    deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
-  }),
+  // The services deployment owns Stripe and pushes entitlements here.
+  billingEntitlementRoutes({ token: apiEnv.SERVICES_TOKEN }),
   HttpRouter.add("GET", "/api/health", HttpServerResponse.text("ok")),
   HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
   HttpRouter.add(
@@ -358,7 +359,6 @@ const apiLayer = Layer.mergeAll(
   appleMdmRoutes,
   scepRoutes,
   scimRoutes,
-  licenseBillingRoutes({ priceId: apiEnv.STRIPE_LICENSE_PRICE_ID }),
 );
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
@@ -940,13 +940,23 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
         })
       : Layer.empty;
 
-  const stripeLayer = env.STRIPE_SECRET_KEY
-    ? StripeService.layer(env.STRIPE_SECRET_KEY)
-    : Layer.empty;
-
-  // A hosted deployment bills through its own Stripe account; remote billing is
-  // the self-hosted path and must not shadow a configured Stripe deployment.
-  const remoteBilling = env.STRIPE_SECRET_KEY ? undefined : remoteBillingConfig();
+  // Hosted Cloud forwards tenant billing to the services deployment. A
+  // self-hosted deployment uses the licence API on the same service; neither
+  // path needs a Stripe secret in the application.
+  const servicesBilling =
+    env.SERVICES_URL && env.SERVICES_TOKEN
+      ? makeServicesBillingService({
+          url: env.SERVICES_URL,
+          token: env.SERVICES_TOKEN,
+          origin: env.ORIGIN,
+        })
+      : undefined;
+  const remoteBilling = servicesBilling ? undefined : remoteBillingConfig();
+  const billing =
+    servicesBilling ??
+    (remoteBilling
+      ? makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN })
+      : undefined);
 
   const servicesLayer = Layer.mergeAll(
     EnterpriseService({
@@ -976,20 +986,12 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       planLimits,
       // Match the delivery panel's "in N days" window to what maintenance keeps.
       windowsFailureRetentionDays,
-      // Checkout and seat reconciliation need the per-device price; both
-      // report a configuration error when it is absent.
-      deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
     }).pipe(
-      Layer.provide(
-        remoteBilling
-          ? BillingServiceLive(makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN }))
-          : Layer.empty,
-      ),
+      Layer.provide(billing ? BillingServiceLive(billing) : Layer.empty),
       // Merge auth into the service layer's output so raw routes (the SSE
       // stream) can resolve it from the request context too.
       Layer.provideMerge(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
-      Layer.provide(stripeLayer),
       Layer.provide(R2.layer(storageBucket)),
       Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
@@ -1719,6 +1721,16 @@ export const createApiRuntime = (
 
       const daily = Effect.gen(function* () {
         const db = yield* Db;
+        const cronBilling =
+          apiEnv.SERVICES_URL && apiEnv.SERVICES_TOKEN
+            ? makeServicesBillingService({
+                url: apiEnv.SERVICES_URL,
+                token: apiEnv.SERVICES_TOKEN,
+                origin: env.ORIGIN,
+              })
+            : remoteBillingConfig()
+              ? makeRemoteBillingService({ ...remoteBillingConfig()!, origin: env.ORIGIN })
+              : undefined;
 
         yield* reportLicenseUsage(db, env).pipe(
           Effect.catch((error) =>
@@ -1749,15 +1761,9 @@ export const createApiRuntime = (
             email: mailer.transport,
             emailOutboxConcurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
             emailOutboxMaxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
-            // Nightly seat reconciliation and customer-name repair. The plan
-            // catalogue is passed so the paid quantity can be capped by the plan.
-            billing: env.STRIPE_SECRET_KEY
-              ? {
-                  stripe: StripeService.make(env.STRIPE_SECRET_KEY),
-                  deviceMonthlyPriceId: apiEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID,
-                  planLimits,
-                }
-              : undefined,
+            // Nightly usage report. The services deployment reconciles paid
+            // seats and retries a lost report in its own sweep.
+            billing: cronBilling ? { reportUsage: cronBilling.reportUsage } : undefined,
           }),
         );
 

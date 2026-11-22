@@ -523,6 +523,7 @@ snapshots:
 			},
 			"devDependencies": {
 				"@types/node": "catalog:",
+				"drizzle-kit": "catalog:",
 				"tsx": "catalog:",
 				"typescript": "catalog:",
 			},

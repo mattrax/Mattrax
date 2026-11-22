@@ -2,13 +2,16 @@
   "name": "@mattrax/services",
   "version": "0.0.0",
   "private": true,
-  "description": "Hosted Mattrax services: APNs relay and Stripe billing for Cloud and self-hosted deployments.",
+  "description": "Hosted Mattrax services: APNs relay, deployment licences and hosted tenant billing.",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/migrate-cli.ts",
+    "typecheck": "tsc --noEmit",
+    "db:import-legacy": "tsx scripts/import-legacy.ts"
   },
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",
@@ -21,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "drizzle-kit": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:"
   },

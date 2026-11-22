@@ -407,15 +407,8 @@ export const teardownTenant = (
       ),
     );
 
-    yield* db
-      .delete(schema.subscription)
-      .where(eq(schema.subscription.referenceId, organizationId));
-
-    if (organization.stripeCustomerId)
-      yield* db
-        .update(schema.organization)
-        .set({ stripeCustomerId: null, updatedAt: now() })
-        .where(eq(schema.organization.id, organizationId));
+    // Billing owns the customer and subscription rows; cancelling through the
+    // billing service is the only cleanup this deployment can perform.
 
     yield* record(
       "subscription",

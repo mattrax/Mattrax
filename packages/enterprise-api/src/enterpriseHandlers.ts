@@ -24,6 +24,7 @@ import {
   EnterpriseDbError,
   EnterpriseForbidden,
   EnterpriseInternal,
+  EnterpriseStripeError,
   EnterprisePermissionDenied,
   BUILT_IN_ROLE_PERMISSIONS,
   BUILT_IN_ROLE_LABELS,
@@ -151,16 +152,15 @@ import type {
   AdminAccountInfo,
   AdminAccountMembership,
 } from "@mattrax/enterprise-domain";
-import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { lookupAppStoreApplication } from "./appStore.js";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
 import { resolvePolicyDeployment } from "./policyDeployment.js";
-import type { StripeClientLike } from "@mattrax/effect-stripe";
 import {
   authCredentials,
   authIdentifiers,
   authPending,
   authSessions,
+  billingUsageForOrganization,
   countWindowsFailures,
   deviceLimitForOrganization,
   hasMfaFactor,
@@ -429,10 +429,6 @@ import {
   installerSkipReason,
   selectInstaller,
 } from "@mattrax/enterprise-domain";
-import { reconcileSubscriptionQuantity } from "@mattrax/enterprise-billing";
-// The composition fallback for a deployment with a Stripe client but no remote
-// billing layer.
-import { makeStripeBillingService } from "@mattrax/enterprise-billing";
 import type { BillingOperations } from "@mattrax/enterprise-billing";
 import {
   listWebhookDeliveries as listStoredWebhookDeliveries,
@@ -628,22 +624,11 @@ export class EnterpriseAnalyticsService extends Context.Service<
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
   /**
-   * Stripe client used for billing. Deployments without Stripe credentials leave
-   * this unset; billing handlers then return `EnterpriseStripeError` instead of
-   * failing at boot.
-   */
-  readonly stripeClient?: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
-  /**
-   * Customer-facing billing implementation. Hosted deployments omit it and get
-   * the Stripe service; a self-hosted deployment supplies the remote service.
+   * Customer-facing billing implementation. Hosted Cloud and self-hosted
+   * deployments both forward to the services deployment; a deployment with no
+   * billing configured gets a handler that fails loudly instead of at boot.
    */
   readonly billing?: BillingOperations;
-  /**
-   * Stripe price for the per-device monthly plan. Checkout and seat
-   * reconciliation need it alongside `stripeClient`; both request a
-   * configuration error when it is absent.
-   */
-  readonly deviceMonthlyPriceId?: string;
   readonly storage: R2Bucket;
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
@@ -948,21 +933,12 @@ type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
   readonly auth?: EnterpriseAuth["Service"];
 };
 
-type RawStripeClientLike = StripeClientLike;
-
 type Dynamic = ReturnType<typeof JSON.parse>;
 
-const StripeEffectProperty = Schema.Struct({ effect: Schema.optional(Schema.Json) });
-
-const isEffectStripeClient = (
-  client: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>,
-): client is ReturnType<typeof makeEffectStripeClient> => {
-  const effect = Option.getOrUndefined(
-    Schema.decodeUnknownOption(StripeEffectProperty)(client),
-  )?.effect;
-
-  return effect instanceof Function;
-};
+const notConfiguredBilling = () =>
+  new EnterpriseStripeError({
+    message: "Billing is not configured for this deployment.",
+  });
 
 const now = () => new Date();
 
@@ -1576,8 +1552,6 @@ export const createEnterpriseService = ({
   db,
   schema,
   origin,
-  stripeClient,
-  deviceMonthlyPriceId,
   billing: providedBilling,
   storage,
   auth: authService,
@@ -1720,21 +1694,52 @@ export const createEnterpriseService = ({
     timeoutMs: webhookTimeoutMs !== undefined ? webhookTimeoutMs : undefined,
   };
 
-  const stripe = stripeClient
-    ? isEffectStripeClient(stripeClient)
-      ? stripeClient
-      : makeEffectStripeClient(stripeClient)
-    : undefined;
+  /**
+   * Read-only summary for deployments without a billing service. It uses the
+   * cached entitlement and local usage, so plan limits stay visible even when
+   * Stripe is not configured; customer operations still fail explicitly.
+   */
+  const localBilling = (): BillingOperations => ({
+    summary: ({ organizationId, accountId }) =>
+      Effect.gen(function* () {
+        const usage = yield* billingUsageForOrganization(db, organizationId, accountId);
+        const devices = yield* deviceLimitForOrganization({
+          db,
+          organizationId,
+          config: planLimits,
+        });
+        const tenants = yield* tenantLimitForAccount({ db, accountId, config: planLimits });
 
-  const billing =
-    providedBilling ??
-    makeStripeBillingService({
-      db,
-      origin,
-      stripe,
-      deviceMonthlyPriceId,
-      planLimits,
-    });
+        return {
+          plan: devices.plan,
+          billableDevices: usage.deviceCount,
+          deviceLimit: devices.limit,
+          tenantLimit: tenants.limit,
+          devicesUsed: usage.devicesUsed,
+          tenantsUsed: tenants.used,
+          overDeviceLimit: devices.overLimit,
+          overTenantLimit: tenants.overLimit,
+          limitsConfigured: Boolean(planLimits?.configured),
+          subscriptionId: null,
+          periodEnd: null,
+          cancelAtPeriodEnd: false,
+          configured: false,
+        };
+      }).pipe(
+        Effect.mapError(
+          () => new EnterpriseStripeError({ message: "Could not load billing details." }),
+        ),
+      ),
+    portal: () => Effect.fail(notConfiguredBilling()),
+    checkout: () => Effect.fail(notConfiguredBilling()),
+    invoices: () => Effect.fail(notConfiguredBilling()),
+    reportUsage: () => Effect.void,
+    renameTenant: () => Effect.void,
+    preflightTenantDeletion: () => Effect.void,
+    cancelTenant: () => Effect.succeed("none" as const),
+  });
+
+  const billing: BillingOperations = providedBilling ?? localBilling();
 
   /**
    * Translate an Android delivery failure into the API's stable error tags.
@@ -3108,27 +3113,24 @@ export const createEnterpriseService = ({
     });
 
   /**
-   * Best-effort seat reconciliation for a device lifecycle change.
-   *
-   * The nightly sweep is the backstop, so a Stripe outage is logged rather
-   * than failing the device operation that triggered it.
+   * Best-effort usage report for a device lifecycle change. Billing lives in
+   * the services deployment, so a network failure is logged rather than
+   * failing the device operation that triggered it; the nightly report retries.
    */
-  const reconcileSeats = (organizationId: string) =>
-    stripe && deviceMonthlyPriceId
-      ? reconcileSubscriptionQuantity({
-          db,
-          stripe,
+  const reportSeats = (organizationId: string, accountId: string) =>
+    billingUsageForOrganization(db, organizationId, accountId).pipe(
+      Effect.flatMap((usage) =>
+        billing.reportUsage({
           organizationId,
-          deviceMonthlyPriceId,
-          planLimits,
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(
-              `Billing seat reconciliation failed for ${organizationId}: ${String(cause)}`,
-            ),
-          ),
-        )
-      : Effect.void;
+          deviceCount: usage.deviceCount,
+          devicesUsed: usage.devicesUsed,
+          tenantCount: usage.tenantCount,
+        }),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logWarning(`Billing usage report failed for ${organizationId}: ${String(cause)}`),
+      ),
+    );
 
   const listTenantInfo = (userId: string) =>
     Effect.gen(function* () {
@@ -6288,58 +6290,19 @@ export const createEnterpriseService = ({
     });
 
   /**
-   * Cancel the tenant's Stripe subscription before the row disappears. A
-   * deployment without Stripe credentials cannot cancel a subscription that
-   * exists, so the teardown fails instead of silently billing a deleted tenant.
+   * Cancel the tenant's subscription before the row disappears. Billing owns
+   * the subscription; a deployment that cannot reach it fails closed rather
+   * than silently billing a deleted tenant.
    */
   const teardownSubscription = (organization: EnterpriseOrganization) =>
-    Effect.gen(function* () {
-      const [row] = yield* db
-        .select()
-        .from(schema.subscription)
-        .where(eq(schema.subscription.referenceId, organization.id))
-        .limit(1);
-
-      if (!row?.stripeSubscriptionId) return "none" as const;
-
-      if (!stripe)
-        return yield* Effect.fail(
-          new Error(
-            "This tenant has a Stripe subscription but billing is not configured on this deployment.",
-          ),
-        );
-
-      const cancelled = yield* stripe.subscriptions.cancel(row.stripeSubscriptionId).pipe(
-        // Stripe keeps cancelled subscriptions readable; a missing one means a
-        // previous attempt already removed it.
-        Effect.catchIf(
-          (cause) => cause.statusCode === 404 || cause.code === "resource_missing",
-          () => Effect.succeed(null),
-        ),
-      );
-
-      return cancelled?.cancel_at_period_end ? ("at_period_end" as const) : ("cancelled" as const);
-    });
+    billing.cancelTenant({ tenantId: organization.id });
 
   /**
    * The same check as `teardownSubscription` without cancelling anything, so a
    * deployment that cannot settle billing fails before devices are contacted.
    */
   const preflightTeardown = (organization: EnterpriseOrganization) =>
-    Effect.gen(function* () {
-      const [row] = yield* db
-        .select({ stripeSubscriptionId: schema.subscription.stripeSubscriptionId })
-        .from(schema.subscription)
-        .where(eq(schema.subscription.referenceId, organization.id))
-        .limit(1);
-
-      if (row?.stripeSubscriptionId && !stripe)
-        return yield* Effect.fail(
-          new Error(
-            "This tenant has a Stripe subscription but billing is not configured on this deployment.",
-          ),
-        );
-    });
+    billing.preflightTenantDeletion({ tenantId: organization.id });
 
   /** The condition fields the entity tables can filter on. */
   type EntityListField = {
@@ -9165,16 +9128,15 @@ export const createEnterpriseService = ({
           })
           .where(eq(schema.organization.id, tenantId));
 
-        // Keep the Stripe customer label in step with the tenant. Billing is
-        // never allowed to fail a rename: the nightly sweep compares names and
-        // retries an update that Stripe rejected.
-        if (name && stripe && ctx.organization.stripeCustomerId)
-          yield* stripe.customers
-            .update(ctx.organization.stripeCustomerId, { name })
+        // Keep the billing customer label in step with the tenant. Billing is
+        // never allowed to fail a rename; the nightly sweep retries.
+        if (name)
+          yield* billing
+            .renameTenant({ tenantId, name })
             .pipe(
               Effect.catchCause((cause) =>
                 Effect.logWarning(
-                  `Stripe customer rename failed for ${tenantId}: ${String(cause)}`,
+                  `Billing customer rename failed for ${tenantId}: ${String(cause)}`,
                 ),
               ),
             );
@@ -14965,7 +14927,7 @@ export const createEnterpriseService = ({
           revokedCertificates: revoked,
         });
         // Deleting devices frees seats on the per-device plan.
-        yield* reconcileSeats(ctx.organization.id);
+        yield* reportSeats(ctx.organization.id, ctx.account.id);
 
         return ok;
       }),
@@ -16787,7 +16749,7 @@ export const createEnterpriseService = ({
               revokedCertificates: revoked,
               platform: "android",
             });
-            yield* reconcileSeats(ctx.organization.id);
+            yield* reportSeats(ctx.organization.id, ctx.account.id);
 
             return ok;
           });
@@ -16865,7 +16827,7 @@ export const createEnterpriseService = ({
         });
         // A device on its way out no longer costs a seat; the nightly sweep
         // catches devices that stop reporting without an explicit unenrol.
-        yield* reconcileSeats(ctx.organization.id);
+        yield* reportSeats(ctx.organization.id, ctx.account.id);
 
         return ok;
       }),
@@ -24185,9 +24147,13 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
 
+        const usage = yield* billingUsageForOrganization(db, ctx.organization.id, ctx.account.id);
+
         return yield* billing.summary({
           organizationId: ctx.organization.id,
           accountId: ctx.account.id,
+          organization: ctx.organization,
+          usage,
         });
       }),
     billingPortal: (request, tenantId, payload) =>
@@ -24214,10 +24180,13 @@ export const createEnterpriseService = ({
         // the portal.
         yield* requireStepUp(auth, request, "billing-portal");
 
+        const usage = yield* billingUsageForOrganization(db, ctx.organization.id, ctx.account.id);
+
         const result = yield* billing.checkout({
           tenantId,
           organization: ctx.organization,
           request: payload,
+          usage,
         });
 
         yield* audit(ctx, "billing.checkout_started", "organization", ctx.organization.id, {

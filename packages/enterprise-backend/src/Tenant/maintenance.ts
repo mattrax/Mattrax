@@ -1,6 +1,11 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
-import { Db, pruneWindowsFailures, schema as s } from "@mattrax/enterprise-core";
+import { and, count, eq, gte, inArray, lt } from "drizzle-orm";
+import {
+  Db,
+  billableDeviceCount,
+  pruneWindowsFailures,
+  schema as s,
+} from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
@@ -21,10 +26,7 @@ import type { DomainCertificateRequester } from "../Device/credentialIssuance.ts
 import { purgeExpiredScepCaTrust, rotateDueScepCas } from "../Scep/scepLifecycle.ts";
 import { runServerCertificateCheck } from "../Scep/serverCertificate.ts";
 import type { ServerCertificateProbe } from "../Scep/serverCertificate.ts";
-import { reconcileSubscriptionSweep } from "@mattrax/enterprise-billing";
-import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
-import type { EffectStripeClient } from "@mattrax/effect-stripe";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
 import { syncScheduledVppAssets } from "@mattrax/apple-business-manager";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
@@ -222,19 +224,16 @@ export type MaintenanceOptions = {
    */
   readonly tenantDeletionLogRetentionDays?: number;
   /**
-   * Stripe webhook-event ledger rows older than this many days are deleted.
-   * Defaults to 90 so a late or replayed event is still deduped, while the
-   * ledger does not grow forever. Set to `0` to keep it indefinitely.
-   */
-  readonly stripeEventRetentionDays?: number;
-  /**
-   * Stripe client used to reconcile subscription seats and customer names.
-   * Omit it on deployments without billing, or to skip the billing sweep.
+   * Billing client used to report per-tenant usage. The services deployment
+   * reconciles Stripe seats from these snapshots; omit it to skip the sweep.
    */
   readonly billing?: {
-    readonly stripe: EffectStripeClient;
-    readonly deviceMonthlyPriceId?: string;
-    readonly planLimits?: PlanLimitsConfig;
+    readonly reportUsage: (input: {
+      readonly organizationId: string;
+      readonly deviceCount: number;
+      readonly devicesUsed: number;
+      readonly tenantCount: number;
+    }) => Effect.Effect<void, unknown>;
   };
 };
 
@@ -310,18 +309,10 @@ export type MaintenanceResult = {
   readonly migrationDevicesStuck: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
-  /** Stripe webhook-event ledger rows deleted by retention. */
-  readonly purgedStripeEvents: number;
-  /** Tenants whose Stripe seat quantity was brought in line this run. */
-  readonly billingSeatsUpdated: number;
-  /** Tenants checked against Stripe where the quantity already matched. */
-  readonly billingSeatsUnchanged: number;
-  /** Tenants skipped (no subscription, another price, ended subscription). */
-  readonly billingSeatsSkipped: number;
-  /** Tenants whose Stripe reconciliation failed; retried next run. */
-  readonly billingSeatsFailed: number;
-  /** Stripe customer names updated to match a renamed tenant. */
-  readonly billingCustomerNamesUpdated: number;
+  /** Tenant usage snapshots accepted by the billing service. */
+  readonly billingUsageReported: number;
+  /** Tenant usage snapshots the billing service rejected; retried next run. */
+  readonly billingUsageFailed: number;
   /** Transactional emails delivered by the outbox drain this run. */
   readonly emailOutboxSent: number;
   /** Rows rescheduled after a provider failure. */
@@ -513,8 +504,6 @@ export const runMaintenance = (
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
 
-    const stripeEventRetentionDays = options.stripeEventRetentionDays ?? 90;
-
     /** Latest origin observation, reused by the missing-certificate sweep. */
     let serverCertificateState: ServerCertificateInfo | null = null;
 
@@ -556,12 +545,8 @@ export const runMaintenance = (
       migrationDevicesEnrolled: 0,
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
-      purgedStripeEvents: 0,
-      billingSeatsUpdated: 0,
-      billingSeatsUnchanged: 0,
-      billingSeatsSkipped: 0,
-      billingSeatsFailed: 0,
-      billingCustomerNamesUpdated: 0,
+      billingUsageReported: 0,
+      billingUsageFailed: 0,
       emailOutboxSent: 0,
       emailOutboxRetried: 0,
       emailOutboxFailed: 0,
@@ -1150,47 +1135,37 @@ export const runMaintenance = (
       result.purgedTenantDeletionLogs = staleJournals.length;
     }
 
-    // 11b. Stripe webhook-event ledger retention. The ledger only dedupes
-    //      retries, so it needs to outlive Stripe's retry window, not forever.
-    //      Bounded per run; the next daily pass continues from the same cutoff.
-    if (stripeEventRetentionDays > 0) {
-      const cutoff = new Date(now.getTime() - stripeEventRetentionDays * day);
-
-      const staleEvents = yield* db
-        .select({ id: s.stripeEvent.id })
-        .from(s.stripeEvent)
-        .where(lt(s.stripeEvent.receivedAt, cutoff))
-        .limit(5_000);
-
-      if (staleEvents.length > 0)
-        yield* db.delete(s.stripeEvent).where(
-          inArray(
-            s.stripeEvent.id,
-            staleEvents.map((row) => row.id),
-          ),
-        );
-
-      result.purgedStripeEvents = staleEvents.length;
-    }
-
-    // 12. Billing seats. Devices enrol through the protocol layer, which has
-    //     no Stripe client, so this sweep is what keeps the paid quantity equal
-    //     to the fleet a tenant actually has. It also retries a customer rename
-    //     whose inline Stripe update failed. Runs after the stale-device sweep
-    //     above so retired devices are already out of the count.
+    // 12. Billing usage. Devices live in this database but billing lives in
+    //     the services deployment, so report a snapshot per tenant. The
+    //     services deployment reconciles paid seats from it and retries a lost
+    //     report in its own nightly sweep.
     if (options.billing) {
-      const billing = yield* reconcileSubscriptionSweep({
-        db,
-        stripe: options.billing.stripe,
-        deviceMonthlyPriceId: options.billing.deviceMonthlyPriceId,
-        planLimits: options.billing.planLimits,
-      });
+      const organizations = yield* db
+        .select({ id: s.organization.id })
+        .from(s.organization)
+        .orderBy(s.organization.createdAt)
+        .limit(1_000);
 
-      result.billingSeatsUpdated = billing.updated;
-      result.billingSeatsUnchanged = billing.unchanged;
-      result.billingSeatsSkipped = billing.skipped;
-      result.billingSeatsFailed = billing.failed;
-      result.billingCustomerNamesUpdated = billing.customerNamesUpdated;
+      for (const organization of organizations) {
+        const [devices] = yield* db
+          .select({ value: count() })
+          .from(s.device)
+          .where(eq(s.device.organizationId, organization.id));
+
+        const billable = yield* billableDeviceCount(db, organization.id);
+
+        const reported = yield* options.billing
+          .reportUsage({
+            organizationId: organization.id,
+            deviceCount: billable,
+            devicesUsed: devices?.value ?? 0,
+            tenantCount: 0,
+          })
+          .pipe(Effect.exit);
+
+        if (Exit.isSuccess(reported)) result.billingUsageReported += 1;
+        else result.billingUsageFailed += 1;
+      }
     }
 
     return result;

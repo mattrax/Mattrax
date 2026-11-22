@@ -9,44 +9,35 @@ export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/e
 export {
   BillingService,
   BillingServiceLive,
+  makeEntitlementSync,
+  makeServicesBillingService,
   makeStripeBillingService,
+  pruneStripeEvents,
+  reconcileSubscriptionSweep,
 } from "@mattrax/enterprise-billing";
 
-export { licenseBillingRoutes } from "@mattrax/enterprise-billing";
+export { hostedBillingRoutes, licenseBillingRoutes } from "@mattrax/enterprise-billing";
 
-export type { LicenseBillingConfig } from "@mattrax/enterprise-billing";
+export type { HostedBillingConfig, LicenseBillingConfig } from "@mattrax/enterprise-billing";
 
 export { makeRemoteBillingService } from "@mattrax/enterprise-billing";
 
-export type { RemoteBillingOptions } from "@mattrax/enterprise-billing";
+export type { RemoteBillingOptions, ServicesBillingOptions } from "@mattrax/enterprise-billing";
 
 export type {
   BillingCheckoutInput,
   BillingError,
   BillingInvoicesInput,
-  BillingPortalInput,
   BillingOperations,
+  BillingPortalInput,
   BillingSummaryInput,
-  BillingUsageInput,
+  BillingTenant,
+  BillingUsage,
   StripeBillingOptions,
 } from "@mattrax/enterprise-billing";
 
-export {
-  billableDeviceCount,
-  deploymentUsage,
-  reconcileSubscriptionQuantity,
-  reconcileSubscriptionSweep,
-  syncStripeCustomerName,
-} from "@mattrax/enterprise-billing";
-
-export type {
-  ReconcileSeatsInput,
-  SeatReconcileResult,
-  SeatReconcileSkipReason,
-  SubscriptionSweepInput,
-  SubscriptionSweepResult,
-  SyncCustomerNameInput,
-} from "@mattrax/enterprise-billing";
+export { billingEntitlementRoutes } from "./billingEntitlement.ts";
+export type { BillingEntitlementConfig } from "./billingEntitlement.ts";
 
 export {
   WEBHOOK_DELIVERY_PAGE_DEFAULT,

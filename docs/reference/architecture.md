@@ -129,7 +129,7 @@ The container uses the same application code with Node entry points instead of W
 | `AUTH_SECRET`                             | Sessions, sealed APNs/SCEP/device secrets, webhook secrets, WSTEP tokens |
 | `CLOUD_APPLE_VENDOR_*`                    | APNs CSR signing                                                         |
 | `APNS_RELAY_SECRET`                       | HMAC to the push relay                                                   |
-| `STRIPE_*`                                | Billing                                                                  |
+| `SERVICES_URL` / `SERVICES_TOKEN`         | Hosted billing and APNs services                                         |
 | `AZURE_CLIENT_SECRET`                     | Entra OIDC/Graph                                                         |
 | `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` | AMAPI                                                                    |
 
