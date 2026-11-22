@@ -23,7 +23,7 @@ for (const theme of ["light", "dark"] as const) {
     expect(early.theme).toBe(theme);
     expect(early.dark).toBe(theme === "dark");
     expect(early.colorScheme).toBe(theme);
-    expect(early.meta).toBe(theme === "dark" ? "#10100f" : "#f6f6f3");
+    expect(early.meta).toBe(theme === "dark" ? "#10100f" : "#e9e9e6");
 
     await page.waitForTimeout(600);
 
