@@ -5732,10 +5732,12 @@ export {
 
 export {
   syncDynamicGroup,
+  syncDynamicGroupDependents,
   syncDynamicGroupsForDevice,
   syncDynamicGroupsForTenant,
   previewDynamicGroup,
   type DynamicGroupPreview,
+  type DynamicGroupPreviewReference,
   type DynamicGroupSyncOptions,
   type DynamicGroupSyncResult,
 } from "@mattrax/mdm-core";

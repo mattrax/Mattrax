@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { syncDynamicGroupDependents } from "./dynamicGroups.ts";
 import { syncGroupInheritance } from "./groupInheritance.ts";
 
 export type DirectoryGroupSyncOptions = {
@@ -98,6 +99,10 @@ const syncDirectoryGroupLocked = (
 
       // Unlinking can drop members that enclosing groups were inheriting.
       yield* syncGroupInheritance(db, organizationId, groupId);
+
+      // A dynamic group can use this group as a criterion, so a membership
+      // change here must reach its referencing rules immediately.
+      yield* syncDynamicGroupDependents(db, organizationId, groupId, { now });
 
       return emptyResult(
         groupId,
@@ -240,6 +245,10 @@ const syncDirectoryGroupLocked = (
 
     // Enclosing groups include this group's membership.
     yield* syncGroupInheritance(db, organizationId, groupId);
+
+    // Reference the evaluator rather than duplicating rule logic: a dynamic
+    // group that names this one must see the new membership now.
+    yield* syncDynamicGroupDependents(db, organizationId, groupId, { now });
 
     return {
       groupId,

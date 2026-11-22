@@ -76,6 +76,19 @@ export type DevicePreRegistrationImportResponse = typeof DevicePreRegistrationIm
 export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
 
 /**
+ * A group named by another group's rules, with the membership the preview
+ * resolved. `problem` explains a circular, missing or skipped reference.
+ */
+export const GroupPreviewReference = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  count: Schema.Number,
+  problem: Schema.optional(NullableString),
+});
+
+export type GroupPreviewReference = typeof GroupPreviewReference.Type;
+
+/**
  * Live membership preview. Dynamic groups evaluate their rules without
  * materialising anything, so the dashboard can show a count while the rule
  * builder is being edited.
@@ -86,6 +99,9 @@ export const GroupPreviewResponse = Schema.Struct({
   count: Schema.Number,
   devices: Schema.Array(GroupRelation),
   evaluatedAt: Schema.String,
+  /** Why the group was skipped, for example a circular group reference. */
+  problem: Schema.optional(NullableString),
+  references: Schema.optional(Schema.Array(GroupPreviewReference)),
 });
 
 export type GroupPreviewResponse = typeof GroupPreviewResponse.Type;

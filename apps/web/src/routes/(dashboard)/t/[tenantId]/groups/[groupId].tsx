@@ -875,7 +875,13 @@ export default function GroupDetailPage() {
                       : ""
                   }`}
                 >
-                  <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
+                  <GroupRuleBuilder
+                    rules={rules()}
+                    onChange={setRules}
+                    disabled={!edit()}
+                    groups={allGroups.data?.rows ?? []}
+                    groupId={params.groupId}
+                  />
                 </div>
               </Show>
               <ErrorText error={save.error || dup.error || del.error} />
@@ -925,7 +931,48 @@ export default function GroupDetailPage() {
                 <p class="text-[26px] font-semibold leading-none tracking-[-0.03em] text-foreground">
                   {preview.data?.count ?? "…"}
                 </p>
-                <Show when={preview.data && preview.data.count === 0}>
+                <Show when={preview.data?.problem}>
+                  {(problem) => (
+                    <div class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                      <p class="font-medium text-foreground">This group is not being evaluated</p>
+                      <p class="mt-0.5">{problem()}</p>
+                      <p class="mt-1">
+                        Existing members are kept unchanged. Break the reference loop, or remove the
+                        missing group, then save.
+                      </p>
+                    </div>
+                  )}
+                </Show>
+                <Show when={(preview.data?.references?.length ?? 0) > 0}>
+                  <div class="space-y-1">
+                    <p class="text-[11px] font-medium text-muted-foreground">Referenced groups</p>
+                    <For each={preview.data?.references ?? []}>
+                      {(reference) => (
+                        <div class="flex items-start justify-between gap-3 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                          <div class="min-w-0">
+                            <a
+                              class="block truncate text-[12px] text-foreground hover:underline"
+                              href={`/t/${params.tenantId}/groups/${reference.id}`}
+                            >
+                              {reference.name}
+                            </a>
+                            <Show when={reference.problem}>
+                              {(problem) => (
+                                <p class="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">
+                                  {problem()}
+                                </p>
+                              )}
+                            </Show>
+                          </div>
+                          <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                            {reference.count} {reference.count === 1 ? "device" : "devices"}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={preview.data && preview.data.count === 0 && !preview.data.problem}>
                   <p class="text-[12px] text-muted-foreground">No devices match these rules yet.</p>
                 </Show>
                 <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
