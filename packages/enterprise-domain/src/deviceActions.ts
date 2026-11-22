@@ -511,6 +511,14 @@ export const APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH = 500;
 /** Policy configuration kind holding a group's default lock screen message. */
 export const APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND = "mttx.apple.lockScreenMessage";
 
+/**
+ * Apple policy kinds delivered as DDM declarations (or their legacy profile
+ * equivalent). A kind outside this list, such as the lock screen default, is
+ * an imperative command and never has a declaration report.
+ */
+export const isDeclarableAppleConfigurationKind = (kind: string): boolean =>
+  kind === "mttx.apple.device" || /^mttx\.apple\.(custom|certificate|declaration)\..+/.test(kind);
+
 /** Normalise line endings, trim the message and reject an empty value. */
 export const normalizeAppleLockScreenMessage = (
   value: string | null | undefined,

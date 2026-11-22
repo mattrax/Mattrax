@@ -200,6 +200,25 @@ export const DeviceManagementApp = Schema.Struct({
 
 export type DeviceManagementApp = typeof DeviceManagementApp.Type;
 
+/**
+ * The most recent `InstallProfile`/`RemoveProfile` command for a device's
+ * lock screen profile. The command history is keyed by profile identifier in
+ * its payload, so the detail endpoint resolves the matching row for the UI.
+ */
+export const DeviceLockScreenDelivery = Schema.Struct({
+  id: Schema.String,
+  requestType: Schema.String,
+  status: Schema.String,
+  statusLabel: Schema.String,
+  resultStatus: Schema.optional(NullableString),
+  resultDetail: Schema.optional(NullableString),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  expiresAt: Schema.optional(NullableString),
+});
+
+export type DeviceLockScreenDelivery = typeof DeviceLockScreenDelivery.Type;
+
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
   proto: DeviceProtocol,
@@ -251,6 +270,8 @@ export const DeviceRow = Schema.Struct({
   /** The management name when the message was last acknowledged. */
   appliedLockScreenName: Schema.optional(NullableString),
   appliedLockScreenAt: Schema.optional(NullableString),
+  /** Delivery state of the most recent lock screen profile command. */
+  lockScreenDelivery: Schema.optional(Schema.NullOr(DeviceLockScreenDelivery)),
   vendor: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   osVersion: Schema.optional(NullableString),

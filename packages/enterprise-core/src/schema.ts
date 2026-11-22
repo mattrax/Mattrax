@@ -2082,6 +2082,10 @@ export const device = mysqlTable(
     appliedLockScreenName: shortText("applied_lock_screen_name"),
     /** The management name at the last queue, used to de-duplicate a rename. */
     queuedLockScreenName: shortText("queued_lock_screen_name"),
+    /** Digest of the last queued lock screen profile, for retry throttling. */
+    queuedLockScreenDigest: shortText("queued_lock_screen_digest"),
+    /** When the lock screen profile was last queued. */
+    queuedLockScreenAt: timestamp("queued_lock_screen_at"),
     /** When the lock screen message acknowledgement arrived. */
     appliedLockScreenAt: timestamp("applied_lock_screen_at"),
     vendor: shortText("vendor"),

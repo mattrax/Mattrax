@@ -391,28 +391,32 @@ failed push is shown there like any other failed command.
 A shared iPad or loaner iPhone can show a return message and its asset tag on the
 lock screen, so the person holding it knows who to call and which asset to quote.
 The **Lock screen message** card on the device page previews the message and
-queues Apple's `LockScreenMessage` command.
+installs Apple's `com.apple.shareddeviceconfiguration` profile.
 
 - The action is available only on supervised iPhone and iPadOS devices. macOS,
   tvOS, visionOS, Windows, Android and Apple User Enrollment (BYOD) devices are
   refused with an explanation.
-- `Message` is required (up to 500 characters). **Include asset tag** adds the
-  device's asset tag as `AssetTagInfo`; a device without an asset tag cannot
-  include one, and the API refuses the request instead of sending an empty value.
+- `LockScreenFootnote` is required (up to 500 characters). **Include asset tag**
+  adds the device's asset tag as `AssetTagInformation`; a device without an
+  asset tag cannot include one, and the API refuses the request instead of
+  sending an empty value.
 - Applying a message stores it as the device's override. The card shows what was
-  last acknowledged (`appliedLockScreenMessage`, the applied asset tag and the
-  time) and the latest command's delivery state from Command history.
-- While a message is configured, the Apple check-in re-applies it when the
-  message, the asset tag or the management name differs from the last
-  acknowledgement. An unchanged message is retried at most once a day, so an OS
-  that ignores the command is not hammered on every check-in.
+  last installed (`appliedLockScreenMessage`, the applied asset tag and the
+  time) and the latest `InstallProfile`/`RemoveProfile` delivery state.
+- While a message is configured, the Apple check-in re-installs the profile when
+  the message, the asset tag or the management name changes. An unchanged,
+  failed install is retried at most once a day, so an OS that rejects the
+  profile is not hammered on every check-in.
 - A policy can provide a group default with the
   `mttx.apple.lockScreenMessage` configuration
   (`{ "message": "…", "includeAssetTag": true }`). The device card shows which
-  policy supplied the default; **Use policy default** clears the override.
-- Every push and every applied override is audited, and the command appears in
-  the device's command history with its result. A failed push is shown there
-  like any other failed command.
+  policy supplied the default; **Use policy default** clears the override, and the
+  check-in removes the profile when no message remains.
+- Every install/removal and every applied override is audited, and the profile
+  command appears in the device's command history with its result. A failed
+  install is shown there like any other failed command.
+- Apple has no dedicated "clear lock screen message" command. Mattrax removes
+  the profile instead, which clears the message on the next check-in.
 
 ### Inventory clocks
 
@@ -539,7 +543,6 @@ Commands are recorded with a lifecycle and a delivery deadline:
 | ADE setup commands                | 24 hours          |
 | App install                       | 24 hours          |
 | Installed-application inventory   | 7 days            |
-| Lock screen message               | 7 days            |
 | Erase                             | 7 days            |
 
 An expired command is never delivered and never retried, so a lock queued three weeks ago

@@ -1128,6 +1128,91 @@ const stableUuid = async (value: string): Promise<string> => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 
+/** Reverse-DNS prefix of the per-device lock screen profile. */
+export const APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX = "app.mattrax.lockscreen.";
+
+/** Stable profile identifier for one device's lock screen message. */
+export const appleLockScreenProfileIdentifier = (deviceId: string) =>
+  `${APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX}${deviceId}`;
+
+/**
+ * Build the supervised iOS/iPadOS lock screen profile.
+ *
+ * Apple publishes the feature as the `com.apple.shareddeviceconfiguration`
+ * profile payload, not as an MDM command. `LockScreenFootnote` is the current
+ * message key (`IfLostReturnToMessage` is deprecated) and
+ * `AssetTagInformation` is the asset tag.
+ */
+export const buildAppleLockScreenProfile = async (input: {
+  readonly deviceId: string;
+  readonly message: string;
+  readonly assetTagInfo?: string | null;
+}): Promise<{
+  readonly identifier: string;
+  readonly policyId: string;
+  readonly kind: string;
+  readonly content: Uint8Array;
+}> => {
+  const identifier = appleLockScreenProfileIdentifier(input.deviceId);
+  const assetTagInfo = input.assetTagInfo?.trim();
+  const payload = {
+    ...(assetTagInfo ? { AssetTagInformation: assetTagInfo } : {}),
+    LockScreenFootnote: input.message,
+    PayloadDisplayName: "Lock screen message",
+    PayloadIdentifier: `${identifier}.payload`,
+    PayloadType: "com.apple.shareddeviceconfiguration",
+    PayloadUUID: await stableUuid(`mattrax:${identifier}:payload`),
+    PayloadVersion: 1,
+  };
+  const plist = await Effect.runPromise(
+    serializePlist({
+      PayloadContent: [payload],
+      PayloadDisplayName: "Mattrax lock screen message",
+      PayloadIdentifier: identifier,
+      PayloadOrganization: "Mattrax",
+      PayloadType: "Configuration",
+      PayloadUUID: await stableUuid(`mattrax:${identifier}`),
+      PayloadVersion: 1,
+    }),
+  );
+
+  return {
+    identifier,
+    policyId: "lock-screen",
+    kind: APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+    content: encoder.encode(plist),
+  };
+};
+
+/** The values a built lock screen profile carries, read back for acknowledgement. */
+export type AppleLockScreenProfileContent = {
+  readonly identifier: string;
+  readonly message: string;
+  readonly assetTagInfo: string | null;
+};
+
+/** Decode a lock screen profile and return the message it sends. */
+export const readAppleLockScreenProfile = async (
+  content: Uint8Array,
+): Promise<AppleLockScreenProfileContent | undefined> => {
+  const inspection = await inspectMobileconfig(content);
+
+  if (!inspection?.identifier) return undefined;
+  const payload = payloadsFromMobileconfig(inspection.plist).find(
+    (candidate) => plistText(candidate.PayloadType) === "com.apple.shareddeviceconfiguration",
+  );
+
+  if (!payload) return undefined;
+  const message = plistText(payload.LockScreenFootnote);
+
+  if (!message) return undefined;
+
+  return {
+    identifier: inspection.identifier,
+    message,
+    assetTagInfo: plistText(payload.AssetTagInformation) ?? null,
+  };
+};
 const legacyDeviceProfile = async (row: PolicyConfigurationRow) => {
   const data = asRecord(row.data);
   const allowCamera = data?.camera !== false;

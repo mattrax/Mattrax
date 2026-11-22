@@ -568,7 +568,9 @@ export default function PolicyDetailPage() {
 
   const lockScreenDirty = () => {
     const configuration = lockScreenConfiguration();
-    const storedMessage = isString(configuration?.message) ? String(configuration.message) : "";
+    const storedMessage = isString(configuration?.message)
+      ? String(configuration.message).trim()
+      : "";
 
     return (
       lockScreenMessage().trim() !== storedMessage ||
@@ -609,7 +611,12 @@ export default function PolicyDetailPage() {
         expectedUpdatedAt: row()?.updatedAt,
       }),
     onSuccess: () => {
-      toast.success("Lock screen default removed");
+      toast.success("Lock screen default removed", {
+        description:
+          "Devices without a per-device override remove the lock screen profile on their next check-in.",
+      });
+      setLockScreenMessage("");
+      setLockScreenIncludeAssetTag(false);
       void invalidate();
     },
     onError: (error) => {
@@ -798,9 +805,9 @@ export default function PolicyDetailPage() {
         >
           <div class="space-y-3">
             <p class="text-[12px] leading-relaxed text-muted-foreground">
-              Mattrax queues Apple's LockScreenMessage command on the device's next check-in.
-              Devices without an asset tag cannot include one, and unenrolled or BYOD devices do not
-              accept the command.
+              Mattrax installs Apple's shared-device lock screen profile on the device's next
+              check-in and removes it when no message remains. Devices without an asset tag cannot
+              include one, and unenrolled or BYOD devices do not accept the profile.
             </p>
             <Field label="Message">
               <textarea

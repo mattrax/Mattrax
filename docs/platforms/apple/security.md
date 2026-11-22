@@ -299,15 +299,19 @@ skipped over-long automatic push is recorded as `device.name_push_skipped`. The
 last acknowledged value is stored in `appliedName`/`appliedNameAt`; see
 [Device names](../../manage/devices.md#device-names).
 
-`set-lock-screen-message` queues Apple's `LockScreenMessage` command with `Message`
-and, when enabled, the device's asset tag as `AssetTagInfo`. Apple defines the command
-only for supervised iPhone and iPadOS; macOS, tvOS and visionOS do not accept it, and
-Apple User Enrollment (BYOD) devices are refused because they are not supervised. The
-action is refused when `includeAssetTag` is on and the device has no asset tag. While a
-message is configured the check-in re-applies it when the message, asset tag or
-management name changes, at most once a day for an unchanged value. The last
-acknowledged message is stored in `appliedLockScreenMessage` and
-`appliedLockScreenAssetTag`; see [Lock screen message](../../manage/devices.md#lock-screen-message).
+`set-lock-screen-message` installs Apple's `com.apple.shareddeviceconfiguration`
+profile. There is no `LockScreenMessage` MDM command: the current keys are
+`LockScreenFootnote` for the message and `AssetTagInformation` for the asset tag
+(`IfLostReturnToMessage` is deprecated). Apple defines the payload for supervised
+iPhone and iPadOS; macOS, tvOS and visionOS do not accept it, and Apple User Enrollment
+(BYOD) devices are refused because they are not supervised. The action is refused when
+`includeAssetTag` is on and the device has no asset tag. Delivery uses the ordinary
+`InstallProfile` command; removing the profile clears the message because Apple has no
+dedicated clear command. While a message is configured the check-in re-installs it when
+the message, asset tag or management name changes, at most once a day after a failed
+install for an unchanged value. The last installed message is stored in
+`appliedLockScreenMessage` and `appliedLockScreenAssetTag`; see
+[Lock screen message](../../manage/devices.md#lock-screen-message).
 
 ## Limitations
 

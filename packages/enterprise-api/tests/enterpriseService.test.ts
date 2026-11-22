@@ -4827,7 +4827,7 @@ describe("device command lifecycle", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
-  it("queues Apple's LockScreenMessage with the message and asset tag", async () => {
+  it("queues Apple's shared-device lock screen profile with the message and asset tag", async () => {
     const { db, service, headers } = await makeContext();
 
     const tenant = await runEffect(
@@ -4850,13 +4850,19 @@ describe("device command lifecycle", () => {
     expect(result).toMatchObject({ status: "ok" });
     expect("commandId" in result ? result.commandId : undefined).toBeDefined();
 
-    const [queued] = commands(db).filter((row: any) => row.requestType === "LockScreenMessage");
+    const [queued] = commands(db).filter((row: any) => row.requestType === "InstallProfile");
 
-    expect(queued).toMatchObject({
-      status: "queued",
-      payload: { Message: "If found, return to the IT desk", AssetTagInfo: "AST-1042" },
-    });
+    expect(queued).toMatchObject({ status: "queued" });
     expect(queued.expiresAt).toBeInstanceOf(Date);
+
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(queued!.payload.Payload), (character) => character.charCodeAt(0)),
+    );
+
+    expect(profile).toContain("com.apple.shareddeviceconfiguration");
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).toContain("AssetTagInformation");
+    expect(profile).toContain("AST-1042");
     expect(db.store.device[0]).toMatchObject({
       lockScreenMessage: "If found, return to the IT desk",
       lockScreenIncludeAssetTag: true,
@@ -4946,7 +4952,14 @@ describe("device command lifecycle", () => {
       }),
     );
 
-    expect(commands(db)[0]!.payload).toEqual({ Message: "If found, return to the IT desk" });
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(commands(db)[0]!.payload.Payload), (character) =>
+        character.charCodeAt(0),
+      ),
+    );
+
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).not.toContain("AssetTagInformation");
   });
 
   it("refuses Include asset tag when the device has no asset tag", async () => {
@@ -5094,6 +5107,44 @@ describe("device command lifecycle", () => {
     );
 
     expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: null,
+      lockScreenIncludeAssetTag: null,
+    });
+  });
+
+  it("requires devices.command to set but not clear a lock screen override", async () => {
+    const base = await makeContext();
+
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(base.db, tenant.id);
+    base.db.store.device[0]!.assetTag = "AST-1042";
+    base.db.store.device[0]!.osEdition = "iPadOS";
+
+    const writer = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.write"] },
+    });
+
+    await expect(
+      runEffect(
+        writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+          lockScreenMessage: "Return to the IT desk",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    // Clearing the override does not queue work, so devices.write is enough.
+    await runEffect(
+      writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    );
+
+    expect(base.db.store.device[0]).toMatchObject({
       lockScreenMessage: null,
       lockScreenIncludeAssetTag: null,
     });

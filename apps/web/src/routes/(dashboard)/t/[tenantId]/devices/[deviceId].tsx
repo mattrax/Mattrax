@@ -6,6 +6,7 @@ import {
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
   DeviceRow,
   EffectivePolicyResponse,
+  normalizeDeviceCommandStatus,
 } from "@mattrax/enterprise-domain/client";
 import type {
   AttributeDefinitionRow,
@@ -757,11 +758,10 @@ export default function DeviceDetailPage() {
     return null;
   };
 
-  const latestLockScreenCommand = () =>
-    commandRows().find((entry) => entry.requestType === "LockScreenMessage");
+  const latestLockScreenCommand = () => row()?.lockScreenDelivery ?? undefined;
 
   /**
-   * Persist the per-device override and queue Apple's LockScreenMessage. The
+   * Persist the per-device override and install Apple's shared-device lock screen profile. The
    * API stores the same values, so the check-in re-applies them even if this
    * request's command expires.
    */
@@ -795,7 +795,8 @@ export default function DeviceDetailPage() {
       }),
     onSuccess: async () => {
       toast.success("Using the policy default", {
-        description: "The device will fall back to its policy's lock screen message.",
+        description:
+          "If this policy has a default it applies; otherwise the lock screen profile is removed on the next check-in.",
       });
       await invalidate();
 
@@ -2885,7 +2886,7 @@ export default function DeviceDetailPage() {
                   <Show when={row()!.proto === "apple"}>
                     <DetailCard
                       title="Lock screen message"
-                      description="A return message and the asset tag, shown on the lock screen of supervised iPhone and iPad devices."
+                      description="A return message and asset tag, delivered as Apple's shared-device lock screen profile to supervised iPhone and iPad devices."
                       action={
                         <Show when={row()!.lockScreenMessageSource}>
                           {(source) => (
@@ -2900,9 +2901,9 @@ export default function DeviceDetailPage() {
                         when={canSetLockScreen()}
                         fallback={
                           <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-                            Apple's LockScreenMessage command is only available on supervised iPhone
-                            and iPad devices. It is not available on macOS, tvOS, Android, Windows
-                            or Apple User Enrollment (BYOD) devices.
+                            Apple's shared-device lock screen profile is only available on
+                            supervised iPhone and iPad devices. It is not available on macOS, tvOS,
+                            Android, Windows or Apple User Enrollment (BYOD) devices.
                           </p>
                         }
                       >
@@ -2956,12 +2957,17 @@ export default function DeviceDetailPage() {
                           <CheckboxField
                             checked={lockScreenIncludeAssetTag()}
                             onCheckedChange={setLockScreenIncludeAssetTag}
-                            disabled={!writable() || !row()!.assetTag?.trim()}
+                            disabled={
+                              !writable() ||
+                              (!lockScreenIncludeAssetTag() && !row()!.assetTag?.trim())
+                            }
                             label="Include asset tag"
                             description={
                               row()!.assetTag?.trim()
-                                ? "Apple's AssetTagInfo adds this device's asset tag under the message."
-                                : "This device has no asset tag yet. Add one in Edit details to include it."
+                                ? "Adds this device's asset tag as AssetTagInformation under the message."
+                                : lockScreenIncludeAssetTag()
+                                  ? "This device has no asset tag. Turn this off to send the message without one."
+                                  : "This device has no asset tag yet. Add one in Edit details to include it."
                             }
                           />
 
@@ -2981,7 +2987,7 @@ export default function DeviceDetailPage() {
                                   })
                                 }
                               >
-                                {applyLockScreenMessage.isPending ? "Queueing…" : "Apply to device"}
+                                {applyLockScreenMessage.isPending ? "Applying…" : "Apply to device"}
                               </Button>
                               <Show
                                 when={
@@ -3005,7 +3011,11 @@ export default function DeviceDetailPage() {
                               {(entry) => (
                                 <span class="ml-auto flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                                   <span>Delivery</span>
-                                  <Chip tone={commandStatusTone(entry().status)}>
+                                  <Chip
+                                    tone={commandStatusTone(
+                                      normalizeDeviceCommandStatus(entry().status),
+                                    )}
+                                  >
                                     {entry().statusLabel}
                                   </Chip>
                                   <span title={formatDate(entry().updatedAt)}>
@@ -3020,7 +3030,7 @@ export default function DeviceDetailPage() {
                             {(applied) => (
                               <div class="space-y-1 border-t border-border pt-3 text-[11.5px] text-muted-foreground">
                                 <p>
-                                  Applied <span class="text-foreground">{applied()}</span>
+                                  Last installed <span class="text-foreground">{applied()}</span>
                                   <Show when={row()!.appliedLockScreenAssetTag}>
                                     {" "}
                                     with asset tag{" "}

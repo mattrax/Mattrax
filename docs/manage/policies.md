@@ -132,12 +132,13 @@ iPad devices:
 ```
 
 Unlike the other Apple kinds it is not a declaration. Mattrax resolves the winning config
-for each device on check-in and queues Apple's `LockScreenMessage` command with the
-message, plus the device's asset tag as `AssetTagInfo` when `includeAssetTag` is on.
-Devices without an asset tag skip the push and the device page explains why. A
-per-device override on the device page wins over this default. Policy delivery state
-only tracks declarative kinds, so follow the command itself under the device's Command
-history.
+for each device on check-in and installs the `com.apple.shareddeviceconfiguration`
+profile with `LockScreenFootnote` and, when `includeAssetTag` is on, the device's
+asset tag as `AssetTagInformation`. Devices without an asset tag skip delivery and the
+device page explains why. A per-device override on the device page wins over this
+default; removing the default removes the profile when no override remains. Policy
+delivery state only tracks declarative kinds, so follow the `InstallProfile` command
+under the device's Command history.
 
 ## The designer
 

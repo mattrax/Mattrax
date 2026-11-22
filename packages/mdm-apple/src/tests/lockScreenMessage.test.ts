@@ -4,6 +4,7 @@ import { schema } from "@mattrax/enterprise-core";
 import { AppleDeviceEvent, MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -75,8 +76,23 @@ const deviceRow = (db: ReturnType<typeof setup>["db"]) => dbRows(db, tableName(s
 const commands = (db: ReturnType<typeof setup>["db"]) =>
   dbRows(db, tableName(schema.deviceCommand));
 
-const lockScreenCommands = (db: ReturnType<typeof setup>["db"]) =>
-  commands(db).filter((row) => row.requestType === "LockScreenMessage");
+const profileCommands = (db: ReturnType<typeof setup>["db"]) =>
+  commands(db).filter(
+    (row) => row.requestType === "InstallProfile" || row.requestType === "RemoveProfile",
+  );
+
+const installedProfiles = (db: ReturnType<typeof setup>["db"]) =>
+  profileCommands(db).filter((row) => row.requestType === "InstallProfile");
+
+/** Decode an InstallProfile payload enough to read the profile XML. */
+const profileText = (command: Row): string => {
+  const payload = command.payload as { Payload?: string };
+  const encoded = payload.Payload ?? "";
+
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)),
+  );
+};
 
 const enroll = async (backend: ReturnType<typeof setup>["backend"]) => {
   await run(backend.appleDeviceEvent(scope, authenticate()));
@@ -106,8 +122,20 @@ const configure = (db: ReturnType<typeof setup>["db"], values: DeviceOverrides =
 const checkin = (backend: ReturnType<typeof setup>["backend"]) =>
   run(backend.appleManagementCheckin(scope));
 
-describe("Apple lock screen message check-in", () => {
-  it("queues LockScreenMessage with the asset tag and audits the push", async () => {
+const acknowledge = async (backend: ReturnType<typeof setup>["backend"], command: Row) => {
+  await run(
+    backend.appleDeviceEvent(
+      scope,
+      CommandResultEvent.make({
+        commandUUID: String(command.id),
+        status: "Acknowledged",
+      }),
+    ),
+  );
+};
+
+describe("Apple lock screen profile check-in", () => {
+  it("installs the shared-device profile with the message and asset tag", async () => {
     const { db, backend } = setup();
 
     await enroll(backend);
@@ -118,12 +146,16 @@ describe("Apple lock screen message check-in", () => {
 
     await checkin(backend);
 
-    expect(lockScreenCommands(db)).toHaveLength(1);
-    expect(lockScreenCommands(db)[0]!.payload).toEqual({
-      Message: "If found, return to the IT desk",
-      AssetTagInfo: "AST-1042",
-    });
-    expect(lockScreenCommands(db)[0]!.status).toBe("queued");
+    expect(installedProfiles(db)).toHaveLength(1);
+    expect(installedProfiles(db)[0]!.status).toBe("queued");
+
+    const text = profileText(installedProfiles(db)[0]!);
+
+    expect(text).toContain("com.apple.shareddeviceconfiguration");
+    expect(text).toContain("LockScreenFootnote");
+    expect(text).toContain("If found, return to the IT desk");
+    expect(text).toContain("AssetTagInformation");
+    expect(text).toContain("AST-1042");
     expect(
       dbRows(db, tableName(schema.auditLog)).some(
         (row) => row.action === "device.lock_screen_message_pushed",
@@ -131,7 +163,7 @@ describe("Apple lock screen message check-in", () => {
     ).toBe(true);
   });
 
-  it("does not queue a duplicate while the applied state is unchanged", async () => {
+  it("does not queue another profile while the installed profile is unchanged", async () => {
     const { db, backend } = setup();
 
     await enroll(backend);
@@ -141,23 +173,16 @@ describe("Apple lock screen message check-in", () => {
     });
 
     await checkin(backend);
-    expect(lockScreenCommands(db)).toHaveLength(1);
+    const command = installedProfiles(db)[0]!;
+
+    await acknowledge(backend, command);
+    expect(installedProfiles(db)).toHaveLength(1);
 
     await checkin(backend);
-    expect(lockScreenCommands(db)).toHaveLength(1);
-
-    Object.assign(storedDevice(db), {
-      appliedLockScreenMessage: "If found, return to the IT desk",
-      appliedLockScreenAssetTag: "AST-1042",
-      appliedLockScreenName: storedDevice(db).name,
-      appliedLockScreenAt: new Date(),
-    });
-
-    await checkin(backend);
-    expect(lockScreenCommands(db)).toHaveLength(1);
+    expect(installedProfiles(db)).toHaveLength(1);
   });
 
-  it("re-applies when the asset tag or device name changes", async () => {
+  it("re-installs when the asset tag or device name changes", async () => {
     const { db, backend } = setup();
 
     await enroll(backend);
@@ -165,31 +190,45 @@ describe("Apple lock screen message check-in", () => {
       lockScreenMessage: "If found, return to the IT desk",
       lockScreenIncludeAssetTag: true,
     });
-    Object.assign(storedDevice(db), {
-      appliedLockScreenMessage: "If found, return to the IT desk",
-      appliedLockScreenAssetTag: "AST-1042",
-      appliedLockScreenName: storedDevice(db).name,
-      appliedLockScreenAt: new Date(),
-    });
+
+    await checkin(backend);
+    await acknowledge(backend, installedProfiles(db)[0]!);
 
     Object.assign(storedDevice(db), { assetTag: "AST-9999" });
     await checkin(backend);
 
-    expect(lockScreenCommands(db)).toHaveLength(1);
-    expect(lockScreenCommands(db)[0]!.payload).toMatchObject({ AssetTagInfo: "AST-9999" });
+    expect(installedProfiles(db)).toHaveLength(2);
+    expect(profileText(installedProfiles(db)[1]!)).toContain("AST-9999");
 
-    // A new command is blocked only while an identical one is recent; a
-    // rename is a different desired state, so it queues another.
-    Object.assign(storedDevice(db), {
-      name: "Cart iPad renamed",
-      appliedLockScreenName: "Cart iPad",
-    });
+    await acknowledge(backend, installedProfiles(db)[1]!);
+    Object.assign(storedDevice(db), { name: "Cart iPad renamed" });
     await checkin(backend);
 
-    expect(lockScreenCommands(db)).toHaveLength(2);
+    expect(installedProfiles(db)).toHaveLength(3);
   });
 
-  it("records the applied message when the device acknowledges the command", async () => {
+  it("removes the profile when no message remains", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+    configure(db, {
+      lockScreenMessage: "If found, return to the IT desk",
+      lockScreenIncludeAssetTag: true,
+    });
+
+    await checkin(backend);
+    await acknowledge(backend, installedProfiles(db)[0]!);
+
+    configure(db, { lockScreenMessage: null, lockScreenIncludeAssetTag: null });
+    await checkin(backend);
+
+    const removals = profileCommands(db).filter((row) => row.requestType === "RemoveProfile");
+
+    expect(removals).toHaveLength(1);
+    expect(removals[0]!.payload).toMatchObject({ Identifier: expect.any(String) });
+  });
+
+  it("records the applied message when the device acknowledges the profile", async () => {
     const { db, backend } = setup();
 
     await enroll(backend);
@@ -200,25 +239,16 @@ describe("Apple lock screen message check-in", () => {
 
     await checkin(backend);
 
-    const command = lockScreenCommands(db)[0]!;
+    const command = installedProfiles(db)[0]!;
 
-    await run(
-      backend.appleDeviceEvent(
-        scope,
-        CommandResultEvent.make({
-          commandUUID: String(command.id),
-          status: "Acknowledged",
-        }),
-      ),
-    );
+    await acknowledge(backend, command);
 
     expect(deviceRow(db)).toMatchObject({
       appliedLockScreenMessage: "If found, return to the IT desk",
       appliedLockScreenAssetTag: "AST-1042",
-      appliedLockScreenName: storedDevice(db).name,
     });
     expect(deviceRow(db).appliedLockScreenAt).toBeInstanceOf(Date);
-    expect(lockScreenCommands(db)[0]!.resultDetail).toContain("AST-1042");
+    expect(installedProfiles(db)[0]!.resultDetail).toContain("AST-1042");
   });
 
   it("uses the policy default when the device has no override", async () => {
@@ -286,9 +316,7 @@ describe("Apple lock screen message check-in", () => {
 
     await checkin(backend);
 
-    expect(lockScreenCommands(db)).toHaveLength(1);
-    expect(lockScreenCommands(db)[0]!.payload).toEqual({
-      Message: "Please return to the IT desk",
-    });
+    expect(installedProfiles(db)).toHaveLength(1);
+    expect(profileText(installedProfiles(db)[0]!)).toContain("Please return to the IT desk");
   });
 });

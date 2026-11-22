@@ -95,11 +95,14 @@ import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core
 import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
 import type { SkippedConfiguration } from "@mattrax/mdm-core";
 import {
+  appleLockScreenProfileIdentifier,
+  buildAppleLockScreenProfile,
   buildLegacyProfiles,
   installProfilePayload,
   installedProfiles,
   planLegacyProfileChanges,
   profileDigest,
+  readAppleLockScreenProfile,
 } from "@mattrax/mdm-core";
 import { isScriptProfileIdentifier, planScriptProfileChanges } from "@mattrax/mdm-core";
 import type { DesiredScriptProfile } from "@mattrax/mdm-core";
@@ -402,28 +405,26 @@ const scopedConfigurations = (
         })()
       : undefined;
 
-    const rows: Array<ScopedConfiguration> = effective.configurations
-      .filter(
-        (configuration) => configuration.kind !== APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
-      )
-      .map((configuration) => ({
-        policyId: configuration.policyId,
-        kind: configuration.kind,
-        data: configuration.data,
-        hash: configuration.hash ?? "",
-        organizationId: device.organizationId,
-        groupId:
-          configuration.scope === "group"
-            ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
-            : `direct:${configuration.policyId}`,
-      }));
+    const rows: Array<ScopedConfiguration> = effective.configurations.map((configuration) => ({
+      policyId: configuration.policyId,
+      kind: configuration.kind,
+      data: configuration.data,
+      hash: configuration.hash ?? "",
+      organizationId: device.organizationId,
+      groupId:
+        configuration.scope === "group"
+          ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
+          : `direct:${configuration.policyId}`,
+    }));
 
     const scoped = yield* Effect.promise(() =>
       scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode),
     );
 
     return {
-      configurations: scoped.delivered,
+      configurations: scoped.delivered.filter(
+        (configuration) => configuration.kind !== APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+      ),
       skipped: scoped.skipped,
       lockScreenMessage,
     };
@@ -1619,6 +1620,23 @@ const base64DecodeBytes = (value: string): Uint8Array => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
+/** Read a lock screen profile out of an `InstallProfile` command payload. */
+const lockScreenProfileFromInstallPayload = async (
+  payload: Schema.Json | null | undefined,
+): Promise<Awaited<ReturnType<typeof readAppleLockScreenProfile>>> => {
+  if (!Schema.is(Schema.JsonObject)(payload)) return undefined;
+
+  const encoded = payload["Payload"];
+
+  if (!Schema.is(Schema.String)(encoded)) return undefined;
+
+  try {
+    return await readAppleLockScreenProfile(base64DecodeBytes(encoded));
+  } catch {
+    return undefined;
+  }
+};
+
 /** Apple only has a local account during macOS Setup Assistant. */
 const appleDeviceIsMac = (device: Pick<DeviceRow, "osEdition" | "model">) =>
   /mac/i.test(`${device.osEdition ?? ""} ${device.model ?? ""}`);
@@ -2668,21 +2686,57 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       );
 
     /**
-     * Re-queue the supervised LockScreenMessage command when the device's
-     * desired message, asset tag or name differs from what it acknowledged.
+     * Install, update or remove the supervised iOS/iPadOS lock screen profile.
      *
-     * The desired state comes from the per-device override or, when absent,
-     * the winning policy default. The retry window stops an OS that ignores
-     * the command from producing one on every poll, and a recent identical
-     * command is never duplicated or audited twice.
+     * Apple publishes the feature as the `com.apple.shareddeviceconfiguration`
+     * profile payload, delivered through `InstallProfile` / `RemoveProfile`.
+     * The desired message comes from the per-device override or, when absent,
+     * the winning policy default.
+     *
+     * The diff uses the device's own successful profile history, so an
+     * unchanged profile queues nothing. A failed install is retried at most
+     * once a day for the same message/asset-tag/name, while a genuine change
+     * is applied on the next check-in.
      */
-    const queueLockScreenMessageUpdate = (
+    const syncLockScreenProfile = (
       device: DeviceRow,
       enrollmentMode: string | null,
       policy: ScopedConfigurations["lockScreenMessage"],
       at: Date,
     ): Effect.Effect<void, never, Db> =>
       Effect.gen(function* () {
+        if (
+          !isAppleLockScreenMessageDevice({
+            proto: device.proto,
+            enrollmentMode,
+            osEdition: device.osEdition,
+            model: device.model,
+          })
+        )
+          return;
+
+        if (device.status !== "enrolled") return;
+
+        const identifier = appleLockScreenProfileIdentifier(device.id);
+        const installed = yield* installedLegacyProfiles(device.id);
+        const installedDigest = installed.get(identifier);
+
+        // Serialise profile commands: an in-flight install/remove may be about
+        // this profile, and computing the diff again would duplicate work.
+        const [active] = yield* db
+          .select({ id: s.deviceCommand.id })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, ["InstallProfile", "RemoveProfile"]),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .limit(1);
+
+        if (active) return;
+
         const resolved = resolveAppleLockScreenMessage({
           deviceMessage: device.lockScreenMessage,
           deviceIncludeAssetTag: device.lockScreenIncludeAssetTag,
@@ -2690,69 +2744,81 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           assetTag: device.assetTag,
         });
 
-        if (!resolved.message) return;
+        if (!resolved.message) {
+          if (!installedDigest) return;
 
-        if (
-          !shouldPushLockScreenMessage({
-            proto: device.proto,
-            status: device.status,
-            enrollmentMode,
-            osEdition: device.osEdition,
-            model: device.model,
-            message: resolved.message,
-            includeAssetTag: resolved.includeAssetTag,
-            assetTag: device.assetTag,
-            deviceName: device.name,
-            appliedMessage: device.appliedLockScreenMessage,
-            appliedAssetTag: device.appliedLockScreenAssetTag,
-            appliedName: device.appliedLockScreenName,
-            appliedAt: device.appliedLockScreenAt,
-            now: at,
-          })
-        )
-          return;
-
-        const assetTagInfo = resolved.includeAssetTag ? device.assetTag?.trim() || null : null;
-        const payload = appleLockScreenMessagePayload({
-          message: resolved.message,
-          assetTag: assetTagInfo,
-        });
-
-        // One attempt per retry window, whatever its outcome. A queued or
-        // in-flight duplicate would otherwise be re-inserted (and re-audited)
-        // on every poll.
-        const recent = yield* db
-          .select({ payload: s.deviceCommand.payload })
-          .from(s.deviceCommand)
-          .where(
-            and(
-              eq(s.deviceCommand.deviceId, device.id),
-              eq(s.deviceCommand.requestType, "LockScreenMessage"),
-              gte(
-                s.deviceCommand.updatedAt,
-                new Date(at.getTime() - LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS),
-              ),
-            ),
+          yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+          yield* db
+            .update(s.device)
+            .set({
+              queuedLockScreenName: device.name,
+              queuedLockScreenDigest: null,
+              queuedLockScreenAt: at,
+            })
+            .where(eq(s.device.id, device.id));
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId: device.organizationId,
+              action: SYSTEM_AUDIT_ACTIONS.deviceLockScreenMessagePushed,
+              targetType: "device",
+              targetId: device.id,
+              deviceId: device.id,
+              protocol: "apple",
+              metadata: {
+                platform: "apple",
+                operation: "remove",
+                trigger: "checkin",
+              },
+            },
+            auditOptions,
           );
 
-        if (
-          device.queuedLockScreenName === device.name &&
-          recent.some((row) => {
-            const previous = appleLockScreenMessageFromPayload(row.payload);
+          return;
+        }
 
-            return (
-              previous?.message === resolved.message && previous?.assetTagInfo === assetTagInfo
-            );
-          })
+        // A resolved default that cannot be delivered (for example Include
+        // asset tag on a device with no asset tag) leaves the last profile in
+        // place rather than clearing a working message.
+        if (resolved.problem) {
+          yield* Effect.logWarning(
+            `Lock screen message not delivered to ${device.id}: ${resolved.problem}`,
+          );
+
+          return;
+        }
+
+        const assetTagInfo = resolved.includeAssetTag ? device.assetTag?.trim() || null : null;
+        const profile = yield* Effect.promise(() =>
+          buildAppleLockScreenProfile({
+            deviceId: device.id,
+            message: resolved.message!,
+            assetTagInfo,
+          }),
+        );
+        const digest = yield* Effect.promise(() => profileDigest(profile.content));
+
+        // Already installed and the name has not changed: nothing to send.
+        if (installedDigest === digest && device.queuedLockScreenName === device.name) return;
+
+        // One attempt per retry window for an unchanged desired state, so an OS
+        // that ignores or fails the profile is not asked on every check-in.
+        if (
+          device.queuedLockScreenDigest === digest &&
+          device.queuedLockScreenName === device.name &&
+          device.queuedLockScreenAt &&
+          at.getTime() - device.queuedLockScreenAt.getTime() < LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS
         )
           return;
 
-        yield* queueAppleCommand(device, "LockScreenMessage", payload, at);
-        // Record the name the command was queued under so a rename queues one
-        // new command while an unchanged name never re-queues the same payload.
+        yield* queueAppleCommand(device, "InstallProfile", installProfilePayload(profile), at);
         yield* db
           .update(s.device)
-          .set({ queuedLockScreenName: device.name })
+          .set({
+            queuedLockScreenName: device.name,
+            queuedLockScreenDigest: digest,
+            queuedLockScreenAt: at,
+          })
           .where(eq(s.device.id, device.id));
         yield* writeSystemAudit(
           db,
@@ -2765,6 +2831,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             protocol: "apple",
             metadata: {
               platform: "apple",
+              operation: "install",
               lockScreenMessage: resolved.message,
               includeAssetTag: resolved.includeAssetTag,
               source: resolved.source,
@@ -2775,11 +2842,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           auditOptions,
         );
       }).pipe(
-        // A failed push must never fail the device's check-in. The next poll or
-        // the daily maintenance run retries it.
+        // A failed profile push must never fail the device's check-in. The next
+        // poll or the daily maintenance run retries it.
         Effect.catch((error) =>
           Effect.logWarning(
-            `Failed to queue the lock screen message for ${device.id}: ${String(error)}`,
+            `Failed to sync the lock screen profile for ${device.id}: ${String(error)}`,
           ),
         ),
       );
@@ -4505,14 +4572,26 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     auditOptions,
                   );
 
-                // A LockScreenMessage acknowledgement is the only reliable
-                // evidence that the message is on the device. Record exactly
-                // what was sent so a later message, asset-tag or name change
-                // re-applies it without guessing.
-                if (command?.requestType === "LockScreenMessage" && nextStatus === "succeeded") {
-                  const applied = appleLockScreenMessageFromPayload(command.payload);
+                // An InstallProfile acknowledgment is the only reliable
+                // evidence that the lock screen profile is on the device.
+                // Record the values carried by that profile, once, and never
+                // let an older acknowledgement overwrite a newer applied state.
+                if (
+                  command &&
+                  command.status !== "succeeded" &&
+                  nextStatus === "succeeded" &&
+                  command.requestType === "InstallProfile"
+                ) {
+                  const applied = yield* Effect.promise(() =>
+                    lockScreenProfileFromInstallPayload(command.payload),
+                  );
 
-                  if (applied) {
+                  if (
+                    applied &&
+                    applied.identifier === appleLockScreenProfileIdentifier(device.id) &&
+                    (!device.appliedLockScreenAt ||
+                      command.updatedAt.getTime() >= device.appliedLockScreenAt.getTime())
+                  ) {
                     const appliedAt = now();
 
                     yield* db
@@ -4520,7 +4599,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .set({
                         appliedLockScreenMessage: applied.message,
                         appliedLockScreenAssetTag: applied.assetTagInfo,
-                        appliedLockScreenName: device.name,
+                        appliedLockScreenName: device.queuedLockScreenName ?? device.name,
                         appliedLockScreenAt: appliedAt,
                       })
                       .where(eq(s.device.id, device.id));
@@ -4528,8 +4607,51 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .update(s.deviceCommand)
                       .set({
                         resultDetail: applied.assetTagInfo
-                          ? `Lock screen message applied with asset tag "${applied.assetTagInfo}".`
-                          : "Lock screen message applied.",
+                          ? `Lock screen profile installed with asset tag "${applied.assetTagInfo}".`
+                          : "Lock screen profile installed.",
+                        updatedAt: appliedAt,
+                      })
+                      .where(
+                        and(
+                          eq(s.deviceCommand.id, command.id),
+                          eq(s.deviceCommand.deviceId, device.id),
+                        ),
+                      );
+                  }
+                }
+
+                if (
+                  command &&
+                  command.status !== "succeeded" &&
+                  nextStatus === "succeeded" &&
+                  command.requestType === "RemoveProfile"
+                ) {
+                  const identifier =
+                    Schema.is(Schema.JsonObject)(command.payload) &&
+                    Schema.is(Schema.String)(command.payload["Identifier"])
+                      ? command.payload["Identifier"]
+                      : undefined;
+
+                  if (
+                    identifier === appleLockScreenProfileIdentifier(device.id) &&
+                    (!device.appliedLockScreenAt ||
+                      command.updatedAt.getTime() >= device.appliedLockScreenAt.getTime())
+                  ) {
+                    const appliedAt = now();
+
+                    yield* db
+                      .update(s.device)
+                      .set({
+                        appliedLockScreenMessage: null,
+                        appliedLockScreenAssetTag: null,
+                        appliedLockScreenName: null,
+                        appliedLockScreenAt: appliedAt,
+                      })
+                      .where(eq(s.device.id, device.id));
+                    yield* db
+                      .update(s.deviceCommand)
+                      .set({
+                        resultDetail: "Lock screen profile removed.",
                         updatedAt: appliedAt,
                       })
                       .where(
@@ -5169,9 +5291,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             yield* queueDeviceNameUpdate(device, appleState?.enrollmentMode ?? null, at);
 
             // The lock screen default is resolved alongside the effective
-            // policy above, so the message is re-applied from the same state
-            // the policy page shows.
-            yield* queueLockScreenMessageUpdate(
+            // policy above, so the profile is synced from the same state the
+            // policy page shows.
+            yield* syncLockScreenProfile(
               device,
               appleState?.enrollmentMode ?? null,
               scoped.lockScreenMessage,
@@ -6184,6 +6306,14 @@ export {
   type LegacyProfile,
   type LegacyProfileBuild,
   type LegacyProfileChanges,
+} from "@mattrax/mdm-core";
+
+export {
+  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
+  appleLockScreenProfileIdentifier,
+  buildAppleLockScreenProfile,
+  readAppleLockScreenProfile,
+  type AppleLockScreenProfileContent,
 } from "@mattrax/mdm-core";
 
 export {
