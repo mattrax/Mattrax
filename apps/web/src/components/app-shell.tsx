@@ -69,7 +69,7 @@ import { BrandLogo } from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
 import { IndeterminateBar, Skeleton } from "@mattrax/ui";
 
-type NavGroup = "workspace" | "pinned" | "manage";
+type NavGroup = "workspace" | "pinned";
 
 type NavItem = {
   id: string;
@@ -87,7 +87,6 @@ type NavItem = {
 const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
   { id: "workspace", label: "Workspace" },
   { id: "pinned", label: "Pinned" },
-  { id: "manage", label: "Manage" },
 ];
 
 const LAST_TENANT_KEY = "mattrax:last-tenant";
@@ -412,20 +411,20 @@ function navFor(tenantId: string | undefined): NavItem[] {
     item("groups", "Groups", tenant.groups(), UsersRound, "workspace", {
       permission: "groups.read",
     }),
-    item("policies", "Policies", tenant.policies(), ShieldCheck, "manage", {
+    item("policies", "Policies", tenant.policies(), ShieldCheck, "workspace", {
       permission: "policies.read",
     }),
-    item("applications", "Applications", tenant.applications(), Package, "manage", {
+    item("applications", "Applications", tenant.applications(), Package, "workspace", {
       permission: "applications.read",
     }),
-    item("scripts", "Scripts", tenant.scripts(), CommandIcon, "manage", {
+    item("scripts", "Scripts", tenant.scripts(), CommandIcon, "workspace", {
       permission: "scripts.read",
     }),
     {
       id: "settings",
       label: "Settings",
       href: tenant.settings(),
-      group: "manage",
+      group: "workspace",
       icon: Settings,
       settingsGate: true,
       match: (value) => value === tenant.settings() || value.startsWith(`${tenant.settings()}/`),
