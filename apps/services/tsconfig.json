@@ -1,0 +1,18 @@
+{
+  "extends": "../../packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "references": [
+    { "path": "../../packages/apns" },
+    { "path": "../../packages/effect-stripe" },
+    { "path": "../../packages/enterprise-billing" },
+    { "path": "../../packages/enterprise-core" },
+    { "path": "../../packages/enterprise-domain" }
+  ],
+  "include": ["src"]
+}

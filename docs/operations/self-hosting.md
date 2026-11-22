@@ -148,8 +148,8 @@ verified sender and the server details:
 | `MAIL_SMTP_USER`      | Username for AUTH PLAIN/LOGIN, when the server requires it.                 |
 | `MAIL_SMTP_PASSWORD`  | Password for the same account.                                              |
 | `MAIL_SMTP_HELO`      | EHLO name; defaults to the runtime hostname.                                |
-| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://e.mattrax.app`.                  |
-| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator.                      |
+| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://services.mattrax.app`.                  |
+| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator; also authenticates APNs relay requests. |
 
 ```bash
 MAIL_TRANSPORT=smtp
@@ -172,7 +172,7 @@ operator for the whole deployment, based on enrolled devices. The install does
 not need its own Stripe account:
 
 ```bash
-MATTRAX_BILLING_URL=https://e.mattrax.app
+MATTRAX_BILLING_URL=https://services.mattrax.app
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 

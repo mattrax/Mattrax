@@ -43,6 +43,7 @@
     { "path": "./apps/cloud/tsconfig.tooling.json" },
     { "path": "./apps/cli" },
     { "path": "./apps/docker" },
+    { "path": "./apps/services" },
     { "path": "./apps/mdm-compliance" },
     { "path": "./apps/web" }
   ]

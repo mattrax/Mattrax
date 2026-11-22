@@ -31,6 +31,7 @@ appledm:
           - packages/scep/**
           - packages/plist/**
           - apps/apns-relay/**
+          - apps/services/**
           - packages/management-backend-enterprise/src/index.ts
           - packages/management-backend-enterprise/src/inventory.ts
           - packages/management-backend-enterprise/src/securityInfo.ts

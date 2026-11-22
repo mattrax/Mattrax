@@ -646,6 +646,26 @@ const dashboardReportsJob = (env: Env) =>
     });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
+const DEFAULT_APNS_RELAY_URL = "https://services.mattrax.app/v1/apns/push";
+
+const makeHostedApns = (env: Env) => {
+  const url = env.APNS_RELAY_URL ?? DEFAULT_APNS_RELAY_URL;
+  // A self-hosted deployment already holds a licence key; reusing it for the
+  // relay keeps push working without a second shared secret.
+  const licenseKey =
+    typeof process === "undefined" ? undefined : process.env.MATTRAX_LICENSE_KEY?.trim();
+
+  return makeApnsService(
+    env.APNS_RELAY_SECRET
+      ? RelayPushTransport({ url, secret: env.APNS_RELAY_SECRET })
+      : licenseKey
+        ? RelayPushTransport({ url, token: licenseKey })
+        : NoopPushTransport(
+            "APNs push relay is not configured; devices will poll for changes instead",
+          ),
+  );
+};
+
 /**
  * Wake the devices affected by a directory membership change.
  *
@@ -655,13 +675,7 @@ const dashboardReportsJob = (env: Env) =>
  * changed users to report).
  */
 const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
-  const apns = makeApnsService(
-    env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
-      ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
-      : NoopPushTransport(
-          "APNs push relay is not configured; devices will poll for changes instead",
-        ),
-  );
+  const apns = makeHostedApns(env);
 
   const androidConfig = androidDeliveryConfig(apiEnv);
 
@@ -778,13 +792,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
   // pushes go through the HMAC-signed relay. Without a relay the service is a
   // no-op: devices still poll for DDM changes, so policy still converges.
-  const apns = makeApnsService(
-    env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
-      ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
-      : NoopPushTransport(
-          "APNs push relay is not configured; devices will poll for changes instead",
-        ),
-  );
+  const apns = makeHostedApns(env);
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 

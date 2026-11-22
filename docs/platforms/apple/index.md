@@ -304,7 +304,7 @@ Push transports:
 | ---------------------------- | ----------------------------------------- |
 | Single-tenant Node / gateway | Direct HTTP/2 with the tenant certificate |
 | Single-tenant Worker         | Workers mTLS binding                      |
-| Hosted multi-tenant Cloud    | HMAC-signed requests to `apps/apns-relay` |
+| Hosted multi-tenant Cloud    | HMAC-signed requests to `apps/services` |
 
 Without a push transport, devices still converge by polling at their normal check-in
 interval. Delivery outcomes are recorded per device and exposed through
