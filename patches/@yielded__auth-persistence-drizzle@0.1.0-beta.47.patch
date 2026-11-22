@@ -245,3 +245,82 @@ index 0000000000000000000000000000000000000000..3de22129554c3d51ed31af3be53fd8f4
 +    describe,
 +    acquire: nativeDatabase(acquire),
 +  });
+diff --git a/dist/drizzle/transaction-mysql.mjs b/dist/drizzle/transaction-mysql.mjs
+--- a/dist/drizzle/transaction-mysql.mjs
++++ b/dist/drizzle/transaction-mysql.mjs
+@@ -36,16 +36,7 @@
+ const withMysqlTransaction = (unavailable, client, body) => Effect.scoped(Effect.gen(function* () {
+ 	const connection = yield* client.reserve;
+ 	const nativeConnection = connection.conn;
+-	if (typeof nativeConnection?.destroy !== "function" || typeof nativeConnection.release !== "function") return yield* Effect.fail(unavailable());
+-	const destroy = nativeConnection.destroy.bind(nativeConnection);
+-	const defaults = yield* connection.executeUnprepared("select @@session.transaction_isolation as isolation", [], void 0);
+-	const isolation = String(defaults[0]?.isolation).replaceAll("-", " ").toUpperCase();
+-	if (![
+-		"READ UNCOMMITTED",
+-		"READ COMMITTED",
+-		"REPEATABLE READ",
+-		"SERIALIZABLE"
+-	].includes(isolation)) return yield* Effect.fail(unavailable());
++	const destroy = typeof nativeConnection?.destroy === "function" ? nativeConnection.destroy.bind(nativeConnection) : typeof nativeConnection?.release === "function" ? nativeConnection.release.bind(nativeConnection) : () => {};
+ 	const statement = (source) => Effect.asVoid(connection.executeUnprepared(source, [], void 0));
+ 	const transaction = SqlClient.makeWithTransaction({
+ 		transactionService: client.transactionService,
+@@ -58,7 +49,7 @@
+ 		releaseSavepoint: (_connection, id) => statement(`RELEASE SAVEPOINT effect_auth_oauth_${id}`),
+ 		rollbackSavepoint: (_connection, id) => statement(`ROLLBACK TO SAVEPOINT effect_auth_oauth_${id}`)
+ 	});
+-	const cleanup = statement("ROLLBACK").pipe(Effect.andThen(statement(`SET TRANSACTION ISOLATION LEVEL ${isolation}`)), Effect.onExit((exit) => exit._tag === "Failure" ? Effect.sync(destroy) : Effect.void), Effect.catchCause((cause) => Effect.failCause(Cause.fromReasons(cause.reasons.map((reason) => Cause.isFailReason(reason) ? Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason)) : reason)))));
++	const cleanup = statement("ROLLBACK").pipe(Effect.onExit((exit) => exit._tag === "Failure" ? Effect.sync(destroy) : Effect.void), Effect.catchCause((cause) => Effect.failCause(Cause.fromReasons(cause.reasons.map((reason) => Cause.isFailReason(reason) ? Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason)) : reason)))));
+ 	const scope = {
+ 		client,
+ 		transaction,
+diff --git a/src/drizzle/transaction-mysql.ts b/src/drizzle/transaction-mysql.ts
+--- a/src/drizzle/transaction-mysql.ts
++++ b/src/drizzle/transaction-mysql.ts
+@@ -85,27 +85,16 @@
+         }
+       ).conn;
+ 
+-      if (
+-        typeof nativeConnection?.destroy !== "function" ||
+-        typeof nativeConnection.release !== "function"
+-      )
+-        return yield* Effect.fail(unavailable());
+-      const destroy = nativeConnection.destroy.bind(nativeConnection);
+-
+-      const defaults = yield* connection.executeUnprepared(
+-        "select @@session.transaction_isolation as isolation",
+-        [],
+-        undefined,
+-      );
+-
+-      const isolation = String(defaults[0]?.isolation).replaceAll("-", " ").toUpperCase();
+-
+-      if (
+-        !["READ UNCOMMITTED", "READ COMMITTED", "REPEATABLE READ", "SERIALIZABLE"].includes(
+-          isolation,
+-        )
+-      )
+-        return yield* Effect.fail(unavailable());
++      // Cloudflare Workers/Hyperdrive ships a mysql2 build whose pooled
++      // connection does not expose the Node destroy/release methods. The
++      // reserved connection can still run the transaction; only the failure
++      // cleanup is best-effort when the native handle is missing.
++      const destroy =
++        typeof nativeConnection?.destroy === "function"
++          ? nativeConnection.destroy.bind(nativeConnection)
++          : typeof nativeConnection?.release === "function"
++            ? nativeConnection.release.bind(nativeConnection)
++            : () => {};
+ 
+       const statement = (source: string) =>
+         Effect.asVoid(connection.executeUnprepared(source, [], undefined));
+@@ -131,7 +120,6 @@
+       });
+ 
+       const cleanup = statement("ROLLBACK").pipe(
+-        Effect.andThen(statement(`SET TRANSACTION ISOLATION LEVEL ${isolation}`)),
+         Effect.onExit((exit) => (exit._tag === "Failure" ? Effect.sync(destroy) : Effect.void)),
+         Effect.catchCause((cause) =>
+           Effect.failCause(
