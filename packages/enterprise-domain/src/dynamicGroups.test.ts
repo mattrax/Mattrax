@@ -8,6 +8,7 @@ import {
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
   planDynamicGroupDependencies,
+  remapDynamicGroupRuleGroups,
 } from "./dynamicGroups.ts";
 import type { DynamicGroupReferenceNode } from "./dynamicGroups.ts";
 import type { DeviceQueryDevice } from "./deviceQuery.ts";
@@ -68,6 +69,35 @@ describe("dynamic group rule versioning", () => {
     expect(
       dynamicGroupRulesProblem({ version: 1, all: [{ field: "group", value: ["group-1"] }] }),
     ).toBeNull();
+    expect(
+      dynamicGroupRulesProblem({ version: 1, all: [{ field: "group", value: ["group-1", ""] }] }),
+    ).toMatch(/empty group id/i);
+  });
+
+  it("remaps group references when ids are regenerated", () => {
+    const rules: DynamicGroupRules = {
+      version: 1,
+      all: [
+        { field: "group", op: "in", value: ["old-a", "old-b"] },
+        { field: "platform", op: "eq", value: "apple" },
+      ],
+      none: [{ field: "group", op: "notIn", value: ["old-a"] }],
+    };
+
+    const ids = new Map([
+      ["old-a", "new-a"],
+      ["old-b", "new-b"],
+    ]);
+
+    const remapped = remapDynamicGroupRuleGroups(rules, (id) => ids.get(id));
+
+    expect(remapped.missing).toEqual([]);
+    expect(remapped.rules?.all?.[0]).toMatchObject({ value: ["new-a", "new-b"] });
+    expect(remapped.rules?.none?.[0]).toMatchObject({ value: ["new-a"] });
+    expect(remapped.rules?.all?.[1]).toMatchObject({ field: "platform", value: "apple" });
+
+    const unresolved = remapDynamicGroupRuleGroups(rules, () => undefined);
+    expect(unresolved.missing).toEqual(["old-a", "old-b"]);
   });
 });
 
@@ -230,5 +260,55 @@ describe("dynamic group dependency plan", () => {
         groups,
       ),
     ).toMatch(/same tenant/i);
+  });
+
+  it("treats nesting as a dependency", () => {
+    const plan = planDynamicGroupDependencies(
+      [{ id: "parent", rules: null }, node("child"), node("watcher", ["parent"])],
+      [{ parentId: "parent", childId: "child" }],
+    );
+
+    expect(plan.problems.size).toBe(0);
+    // The child has to be materialised before its parent, so a watcher of the
+    // parent is ordered after the child too.
+    expect(plan.order).toEqual(["child", "watcher"]);
+  });
+
+  it("detects a rule that names an ancestor as a cycle", () => {
+    const plan = planDynamicGroupDependencies(
+      [{ id: "parent", rules: null }, node("child", ["parent"])],
+      [{ parentId: "parent", childId: "child" }],
+    );
+
+    expect(plan.order).toEqual([]);
+    expect(plan.problems.get("child")).toMatchObject({ reason: "cycle" });
+    expect(plan.problems.get("child")?.path).toEqual(["parent", "child", "parent"]);
+  });
+
+  it("rejects an ancestor reference on the write path", () => {
+    const groups: ReadonlyArray<DynamicGroupReferenceNode> = [
+      { id: "parent", rules: null },
+      node("child"),
+    ];
+    const edges = [{ parentId: "parent", childId: "child" }];
+
+    expect(
+      dynamicGroupReferenceProblem(
+        "child",
+        { version: 1, all: [{ field: "group", op: "in", value: ["parent"] }] },
+        groups,
+        edges,
+      ),
+    ).toMatch(/contains it/i);
+
+    // Referencing a descendant is not a loop: the parent already includes it.
+    expect(
+      dynamicGroupReferenceProblem(
+        "parent",
+        { version: 1, all: [{ field: "group", op: "in", value: ["child"] }] },
+        groups,
+        edges,
+      ),
+    ).toBeNull();
   });
 });

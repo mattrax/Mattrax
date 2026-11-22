@@ -225,6 +225,83 @@ describe("in-place tenant restore", () => {
     ]);
   });
 
+  it("remaps group references in dynamic rules to the restored ids", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    const linked = {
+      ...bundle,
+      groups: [
+        { key: "group-pilot", name: "Pilot", policyKeys: [], devices: [] },
+        {
+          key: "group-ring",
+          name: "Ring",
+          kind: "dynamic",
+          rules: {
+            version: 1,
+            all: [{ field: "group", op: "in", value: ["group-pilot"] }],
+          },
+          policyKeys: [],
+          devices: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(linked));
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    const pilot = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Pilot",
+    );
+    const ring = db.store.enterprise_group.find((group: { name: string }) => group.name === "Ring");
+
+    expect(ring.rules).toEqual({
+      version: 1,
+      all: [{ field: "group", op: "in", value: [pilot.id] }],
+    });
+    // The old exported key must not survive as a dangling criterion.
+    expect(JSON.stringify(ring.rules)).not.toContain("group-pilot");
+  });
+
+  it("rejects a restored dynamic rule that names a group outside the backup", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    const dangling = {
+      ...bundle,
+      groups: [
+        {
+          key: "group-ring",
+          name: "Ring",
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: ["gone"] }] },
+          policyKeys: [],
+          devices: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(dangling));
+
+    const failure = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }).pipe(Effect.flip),
+    );
+
+    expect(failure).toMatchObject({ reason: "invalid_bundle" });
+    expect(failure.message).toMatch(/not in this backup/i);
+  });
+
   it("replaces configuration, keeps devices, and takes a pinned pre-restore snapshot", async () => {
     const { db, storage, objects, organization } = makeContext();
 

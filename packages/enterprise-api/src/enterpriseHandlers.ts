@@ -3652,6 +3652,8 @@ export const createEnterpriseService = ({
           }),
         );
 
+      const edges = yield* loadGroupHierarchyEdges(db, tenantId);
+
       const problem = dynamicGroupReferenceProblem(
         groupId,
         rules,
@@ -3659,6 +3661,7 @@ export const createEnterpriseService = ({
           id: group.id,
           rules: group.kind === "dynamic" ? group.rules : null,
         })),
+        edges,
       );
 
       if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
@@ -17876,10 +17879,14 @@ export const createEnterpriseService = ({
               for (const ancestorId of affectedIds.filter((id) => id !== groupId))
                 yield* syncGroupInheritance(db, ctx.organization.id, ancestorId);
 
-              // A dynamic rule that named this group can no longer resolve it.
-              // Its recompute skips (leaving membership intact) and reports the
-              // missing reference instead of silently matching nothing.
-              yield* syncDynamicGroupDependents(db, ctx.organization.id, groupId, { now: now() });
+              // Groups that referenced this group, or one of its former
+              // ancestors, must follow. The parent ids were captured before the
+              // edge deletion, because afterwards the nesting graph no longer
+              // relates them to the deleted group.
+              for (const changedId of affectedIds)
+                yield* syncDynamicGroupDependents(db, ctx.organization.id, changedId, {
+                  now: now(),
+                });
 
               return { id: groupId, deleted: true as const, devices };
             }),
@@ -18077,9 +18084,10 @@ export const createEnterpriseService = ({
         // changed, and that is what its parents read.
         yield* syncGroupInheritance(db, ctx.organization.id, groupId);
 
-        // A mode or rule change can move this group's membership without any
-        // device check-in. Groups whose rules name it must follow immediately.
-        yield* syncDynamicGroupDependents(db, ctx.organization.id, groupId, { now: now() });
+        // A manual mode change moves membership without a rule recompute, so
+        // repeat the propagation the dynamic/directory branches already did.
+        if (kind !== "dynamic" && !nextDirectoryGroupId)
+          yield* syncDynamicGroupDependents(db, ctx.organization.id, groupId, { now: now() });
 
         yield* audit(ctx, "group.updated", "group", groupId, {
           fields: Object.keys(body).filter((field) => field !== "expectedUpdatedAt"),
@@ -18323,19 +18331,20 @@ export const createEnterpriseService = ({
             );
 
         // A dynamic/directory group must re-derive after an exclusion change:
-        // removing an exclusion can bring a matching device back. The syncs
-        // refresh nested membership as well; a plain manual group only needs
-        // the inheritance refresh.
+        // removing an exclusion can bring a matching device back. Both syncs
+        // refresh nested membership and their own dependents internally.
         if (group.kind === "dynamic")
           yield* syncDynamicGroup(db, ctx.organization.id, groupId, { now: now() });
         else if (group.directoryGroupId)
           yield* syncDirectoryGroup(db, ctx.organization.id, groupId, { now: now() });
-        else
-          // A manual add/remove (or an exclusion change) is a membership change
-          // that a referencing group's rules can see.
-          yield* syncDynamicGroupDependents(db, ctx.organization.id, groupId, { now: now() });
 
         yield* syncGroupInheritance(db, ctx.organization.id, groupId);
+
+        // A manual add/remove (or an exclusion change) only moves the ancestors'
+        // unions during the refresh above, so dependents are recomputed after
+        // it — otherwise they would read the parent's old membership.
+        if (group.kind !== "dynamic" && !group.directoryGroupId)
+          yield* syncDynamicGroupDependents(db, ctx.organization.id, groupId, { now: now() });
 
         // Device membership changes affect those devices; policy membership
         // changes affect every device in the group (and its enclosing groups).

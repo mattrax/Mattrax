@@ -227,4 +227,17 @@ describe("device query", () => {
       value: ["pilot"],
     });
   });
+
+  it('does not read a text value that starts with "in" as a group clause', () => {
+    expect(parseDeviceQueryText("name is in stock")?.all?.[0]).toEqual({
+      field: "name",
+      op: "eq",
+      value: "in stock",
+    });
+    expect(parseDeviceQueryText("model is in drawer")?.all?.[0]).toEqual({
+      field: "model",
+      op: "eq",
+      value: "in drawer",
+    });
+  });
 });
