@@ -1475,6 +1475,190 @@ describe("enterprise service group flow", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
+
+  it("accepts group references and rejects cycles and cross-tenant ids", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const pilot = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Pilot", kind: "manual" }),
+    );
+
+    const ring = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Ring",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [pilot.id] }] },
+      }),
+    );
+
+    // A direct self-reference is rejected before it is stored.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // Making the pilot group reference the ring would close a loop.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, pilot.id, {
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // An id outside the tenant (here: nonexistent) is not accepted.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: ["other-tenant"] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("rejects a rule that references a group containing it", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, child.id, {
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("recomputes a parent watcher after a nested child membership change", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+
+    const watcher = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Watcher",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+      }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, child.id, {
+        assign: { devices: ["device-1"] },
+      }),
+    );
+
+    // The child row reaches the parent through inheritance first, then the
+    // watcher is recomputed against the parent's new membership.
+    expect(db.store.group_device).toEqual(
+      expect.arrayContaining([
+        { groupId: parent.id, deviceId: "device-1", source: "nested" },
+        { groupId: watcher.id, deviceId: "device-1", source: "dynamic" },
+      ]),
+    );
+  });
+
+  it("recomputes a former parent's watcher when a nested group is deleted", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+    const watcher = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Watcher",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+      }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, child.id, {
+        assign: { devices: ["device-1"] },
+      }),
+    );
+
+    await runEffect(service.deleteGroups(request(headers), tenant.id, [child.id]));
+
+    // The parent loses the inherited device and the watcher follows in the
+    // same request, even though the nesting edge is already gone.
+    expect(
+      db.store.group_device.filter((row: { groupId: string }) => row.groupId === watcher.id),
+    ).toEqual([]);
+  });
 });
 
 describe("enterprise service policy flow", () => {

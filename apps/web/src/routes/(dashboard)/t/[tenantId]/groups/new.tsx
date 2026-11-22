@@ -22,6 +22,7 @@ export const route = {
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "device")),
       () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "policy")),
+      () => queryClient.ensureQueryData(enterpriseQueries.list(params.tenantId, "group")),
       () => queryClient.ensureQueryData(enterpriseQueries.directory(params.tenantId)),
     ]);
   },
@@ -43,6 +44,10 @@ export default function NewGroupPage() {
   const deviceList = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
   const policyList = useQuery(() => enterpriseQueries.list(params.tenantId, "policy"));
+
+  // Offered by the group criterion picker. A new group has no id yet, so there
+  // is nothing to exclude from the list.
+  const groupList = useQuery(() => enterpriseQueries.list(params.tenantId, "group"));
 
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 
@@ -179,7 +184,11 @@ export default function NewGroupPage() {
               </Show>
               <Show when={kind() === "dynamic"}>
                 <div class="animate-in rounded-lg border border-border bg-surface p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
-                  <GroupRuleBuilder rules={rules()} onChange={setRules} />
+                  <GroupRuleBuilder
+                    rules={rules()}
+                    onChange={setRules}
+                    groups={groupList.data?.rows ?? []}
+                  />
                 </div>
               </Show>
               <ErrorText error={create.error} />
