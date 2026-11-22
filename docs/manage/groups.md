@@ -76,13 +76,58 @@ no `none` condition may match. An empty rule set matches nothing.
 | `assetTag`                 | `prefix`, `eq`                                                           |
 | `staleDays`                | `eq`, `lt`, `lte`, `gt`, `gte` (default `gte`)                           |
 | `health`                   | `eq` (`healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`) |
-| `userEmail`                | `contains`, `eq`, `ne`, `prefix`                                        |
+| `userEmail`                | `contains`, `eq`, `ne`, `prefix`                                         |
 | `userDomain`               | `contains`, `eq`, `ne`, `prefix` (the part after `@`)                    |
-| `userName`                 | `contains`, `eq`, `ne`, `prefix`                                        |
-| `userExternalId`           | `contains`, `eq`, `ne`, `prefix`                                        |
-| `userSource`               | `eq`, `ne` (`entra`, `scim`, `manual`)                                  |
+| `userName`                 | `contains`, `eq`, `ne`, `prefix`                                         |
+| `userExternalId`           | `contains`, `eq`, `ne`, `prefix`                                         |
+| `userSource`               | `eq`, `ne` (`entra`, `scim`, `manual`)                                   |
+| `group`                    | `in`, `notIn` (one or more tenant group ids)                             |
 
 Missing device values never match.
+
+`group` was added additively to `version: 1`. A saved rule that does not use it
+decodes exactly as before, so there is no migration and no re-interpretation of
+existing rules.
+
+### Referencing other groups
+
+`group` matches another group's **materialised membership**: manual, dynamic,
+directory-derived and nested rows all count. It accepts one group id or a list.
+
+- `in` matches when the device is a member of **any** listed group.
+- `notIn` matches when it is a member of **none** of them.
+
+```json
+{
+  "version": 1,
+  "all": [
+    { "field": "group", "op": "in", "value": ["pilot_group_id"] },
+    { "field": "group", "op": "notIn", "value": ["exceptions_group_id"] }
+  ]
+}
+```
+
+This expresses ring-based rollout ("devices in the pilot group"), delegated
+sub-scopes and "everyone except the exception group" without duplicating the
+other group's rule, which would drift.
+
+Rules are evaluated in dependency order: a referenced group is materialised
+before the group that names it. A dynamic recompute refreshes every group that
+references the changed group, transitively, so membership changes do not wait
+for the daily pass.
+
+A group cannot reference itself, directly or through a longer chain. The write
+path rejects a cycle, and a group whose stored rules do contain one (for example
+after a manual database edit) is **skipped**: its current members are left
+unchanged and the preview explains the circular path. The same applies when a
+referenced group was deleted; a skipped group is never silently treated as
+matching nothing.
+
+Exclusions keep their existing precedence. A device excluded from the
+referencing group never matches, even when it is a member of the referenced
+group. A device excluded from the referenced group is not in its materialised
+membership, so it does not match `in` either. Group references are
+tenant-scoped; cross-tenant ids are rejected.
 
 ### Conditions on linked people
 
@@ -108,7 +153,10 @@ Dynamic membership is recomputed:
 
 - When a group is created or updated.
 - When a device is created, updated or reports inventory.
-- During daily maintenance (full tenant pass).
+- When a group whose membership it uses as a `group` criterion changes, directly
+  or transitively. This includes manual adds/removes, exclusions, directory
+  syncs, nested-edge changes and another dynamic recompute.
+- During daily maintenance (full tenant pass, dependency order).
 - On demand with `POST /groups/sync`.
 
 Only `source = 'dynamic'` rows are replaced. Manual rows survive as explicit exceptions.
@@ -122,7 +170,9 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/$GROUP_ID/preview" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
-Preview uses the saved rules. Save first, then preview.
+Preview uses the saved rules. Save first, then preview. It lists every
+referenced group with its current member count, and explains a skipped or
+circular reference instead of showing a misleading zero.
 
 ## Nested groups
 
@@ -215,7 +265,10 @@ Bulk delete returns `{ deleted, failed }`.
 
 - Dynamic evaluation is application-side, not indexed. Cost is proportional to the number
   of dynamic groups and devices.
-- The dashboard rule editor only edits `all` conditions. Use the API for `any`/`none`.
+- The dashboard rule editor edits `all` conditions and offers `any`/`none` only
+  through the API.
+- Boolean criteria cannot be nested (an `any` inside an `all`). Combine `group`
+  criteria with the top-level lists instead.
 - Tenant export/import does not carry dynamic rules; an imported dynamic group becomes
   manual.
 - Group names are not unique. Prefer ids in automation.

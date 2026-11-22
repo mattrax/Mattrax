@@ -65,14 +65,15 @@ them with static values or a DDM declaration.
 
 Jamf smart groups map to dynamic groups:
 
-| Jamf criterion           | Mattrax rule              |
-| ------------------------ | ------------------------- |
-| Model contains `MacBook` | `model contains MacBook`  |
-| OS version ≥ 14          | `osVersion gte 14.0`      |
-| Serial prefix `FIN`      | `serial prefix FIN`       |
-| Asset tag prefix         | `assetTag prefix`         |
-| Last inventory > 30 days | `staleDays gt 30`         |
-| Smart group membership   | Not supported; use a rule |
+| Jamf criterion           | Mattrax rule                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| Model contains `MacBook` | `model contains MacBook`                                                                        |
+| OS version ≥ 14          | `osVersion gte 14.0`                                                                            |
+| Serial prefix `FIN`      | `serial prefix FIN`                                                                             |
+| Asset tag prefix         | `assetTag prefix`                                                                               |
+| Last inventory > 30 days | `staleDays gt 30`                                                                               |
+| Smart group membership   | `group in <group_id>` (see [Referencing other groups](/manage/groups#referencing-other-groups)) |
+| Excluding a smart group  | `group notIn <group_id>`                                                                        |
 
 The dashboard editor only edits `all` conditions. Use the API for `any`/`none`.
 

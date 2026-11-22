@@ -1475,6 +1475,54 @@ describe("enterprise service group flow", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
+
+  it("accepts group references and rejects cycles and cross-tenant ids", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const pilot = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Pilot", kind: "manual" }),
+    );
+
+    const ring = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Ring",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [pilot.id] }] },
+      }),
+    );
+
+    // A direct self-reference is rejected before it is stored.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // Making the pilot group reference the ring would close a loop.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, pilot.id, {
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // An id outside the tenant (here: nonexistent) is not accepted.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: ["other-tenant"] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
 });
 
 describe("enterprise service policy flow", () => {
