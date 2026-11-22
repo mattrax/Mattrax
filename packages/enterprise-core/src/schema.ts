@@ -13,7 +13,7 @@ import {
   TOTP_POLICY,
   authenticationRequirement,
 } from "@mattrax/enterprise-domain";
-import type { DynamicGroupRules } from "@mattrax/enterprise-domain";
+import type { DeviceViewQuery, DynamicGroupRules } from "@mattrax/enterprise-domain";
 import { defineRelations, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -3247,6 +3247,79 @@ export const dashboardReportRun = mysqlTable(
   ],
 );
 
+/**
+ * A named, reusable device-list view: the query a device table URL carries,
+ * plus the visible columns and page size.
+ *
+ * Views never drive group membership. `private` rows are visible only to
+ * their creator; `tenant` rows are readable by every member and writable by
+ * roles that hold `devices.write`. The query is deliberately stored as JSON
+ * rather than expanded into columns so new device filters do not require a
+ * migration; the API validates it on write.
+ */
+export const deviceView = mysqlTable(
+  "device_view",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+    visibility: varchar("visibility", { length: 16, enum: ["private", "tenant"] })
+      .notNull()
+      .default("private"),
+    /** The exact device-search query, including columns and page size. */
+    query: json("query").$type<DeviceViewQuery>().notNull(),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("device_view_organization_visibility_idx").on(table.organizationId, table.visibility),
+    // The foreign key needs its own leading index; the unique name index below
+    // starts with the organisation, so InnoDB cannot reuse it.
+    index("device_view_creator_idx").on(table.createdByAccountId),
+    // A member cannot create two views with the same name; tenant views by
+    // different authors may share a name.
+    uniqueIndex("device_view_owner_name_unique").on(
+      table.organizationId,
+      table.createdByAccountId,
+      table.name,
+    ),
+  ],
+);
+
+/**
+ * One device-list view each member opens when the device page has no explicit
+ * search params. Kept separate from `device_view` so a view is never mutated
+ * by another member choosing it as their default.
+ */
+export const deviceViewDefault = mysqlTable(
+  "device_view_default",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountId: id("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "cascade" }),
+    viewId: id("view_id")
+      .notNull()
+      .references(() => deviceView.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_view_default_member_unique").on(table.organizationId, table.accountId),
+    index("device_view_default_view_idx").on(table.viewId),
+    index("device_view_default_account_idx").on(table.accountId),
+  ],
+);
+
 export const policy = mysqlTable(
   "policy",
   {
@@ -4271,6 +4344,8 @@ export const relations = defineRelations(
     enterpriseGroup,
     dashboard,
     dashboardWidget,
+    deviceView,
+    deviceViewDefault,
     policy,
     policyDeployment,
     configuration,
@@ -4388,6 +4463,21 @@ export const relations = defineRelations(
     member: {
       organization: r.one.organization({ from: r.member.organizationId, to: r.organization.id }),
       account: r.one.account({ from: r.member.accountId, to: r.account.id }),
+    },
+    deviceView: {
+      organization: r.one.organization({
+        from: r.deviceView.organizationId,
+        to: r.organization.id,
+      }),
+      creator: r.one.account({ from: r.deviceView.createdByAccountId, to: r.account.id }),
+    },
+    deviceViewDefault: {
+      organization: r.one.organization({
+        from: r.deviceViewDefault.organizationId,
+        to: r.organization.id,
+      }),
+      account: r.one.account({ from: r.deviceViewDefault.accountId, to: r.account.id }),
+      view: r.one.deviceView({ from: r.deviceViewDefault.viewId, to: r.deviceView.id }),
     },
     invitation: {
       organization: r.one.organization({

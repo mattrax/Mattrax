@@ -24,6 +24,7 @@ const DEVICE_READ = new Set([
   "listDeviceApplications",
   "listDeviceCommands",
   "listDeviceDeclarations",
+  "listDeviceViews",
   "getDeviceHealth",
   "getDeviceActivity",
   "getDeviceHealthSummary",
@@ -326,6 +327,13 @@ const EXPLICIT = {
   billingCheckout: "billing.write",
   billingInvoices: "billing.read",
   deviceAction: "devices.command",
+  // Members without manage-devices rights still curate their own private
+  // views. The handler enforces the extra `devices.write` gate when a view is
+  // published to the tenant or a tenant view is edited.
+  createDeviceView: "devices.read",
+  patchDeviceView: "devices.read",
+  deleteDeviceView: "devices.read",
+  setDefaultDeviceView: "devices.read",
   getDeviceRecoveryKey: "devices.recovery_key",
   // Managed-admin passwords and Activation Lock bypass codes are device
   // secrets: reading them is as sensitive as the recovery key.
