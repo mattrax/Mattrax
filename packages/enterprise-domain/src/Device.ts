@@ -230,6 +230,27 @@ export const DeviceRow = Schema.Struct({
   appliedNameAt: Schema.optional(NullableString),
   /** True when the device-reported name differs from the management name. */
   nameDrift: Schema.optional(Schema.Boolean),
+  /**
+   * Per-device lock screen message override. Absent or null means the device
+   * uses its policy's default, when one is assigned.
+   */
+  lockScreenMessage: Schema.optional(NullableString),
+  /** Per-device choice to append the asset tag to the message. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** The effective message and where it came from, resolved for the detail page. */
+  effectiveLockScreenMessage: Schema.optional(NullableString),
+  effectiveLockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  lockScreenMessageSource: Schema.optional(Schema.NullOr(Schema.Literals(["device", "policy"]))),
+  /** The policy supplying the effective default, when the source is policy. */
+  lockScreenPolicyName: Schema.optional(NullableString),
+  /** Why the resolved message cannot be pushed (missing asset tag, ...). */
+  lockScreenMessageProblem: Schema.optional(NullableString),
+  /** The last message and asset tag the device acknowledged. */
+  appliedLockScreenMessage: Schema.optional(NullableString),
+  appliedLockScreenAssetTag: Schema.optional(NullableString),
+  /** The management name when the message was last acknowledged. */
+  appliedLockScreenName: Schema.optional(NullableString),
+  appliedLockScreenAt: Schema.optional(NullableString),
   vendor: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   osVersion: Schema.optional(NullableString),
@@ -1072,6 +1093,7 @@ export const DeviceActionRequest = Schema.Struct({
       "relinquish-ownership",
       "schedule-os-update",
       "set-device-name",
+      "set-lock-screen-message",
     ]),
   ),
   /**
@@ -1079,6 +1101,13 @@ export const DeviceActionRequest = Schema.Struct({
    * `set-device-name`; it does not change the management name.
    */
   deviceName: Schema.optional(Schema.String),
+  /**
+   * The message to show on the lock screen. Required by
+   * `set-lock-screen-message`; it is also stored as the device's override.
+   */
+  lockScreenMessage: Schema.optional(Schema.String),
+  /** Append the device's asset tag to the message as `AssetTagInfo`. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.Boolean),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */
@@ -1122,6 +1151,14 @@ export const PatchDeviceRequest = Schema.Struct({
    * `set-device-name` command. Turning it off stops check-in re-applies.
    */
   applyNameToDevice: Schema.optional(Schema.Boolean),
+  /**
+   * Clear the per-device lock screen override so the policy default applies
+   * again. Setting a message here does not queue a command; use the
+   * `set-lock-screen-message` action for that.
+   */
+  lockScreenMessage: Schema.optional(NullableString),
+  /** Clear or set the per-device asset-tag choice independently of the message. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 
 /** One Apple per-user channel action. */

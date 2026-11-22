@@ -386,6 +386,34 @@ Every rename and every queued push writes an audit event, and the queued
 `Settings` command appears in the device's command history with its result. A
 failed push is shown there like any other failed command.
 
+### Lock screen message
+
+A shared iPad or loaner iPhone can show a return message and its asset tag on the
+lock screen, so the person holding it knows who to call and which asset to quote.
+The **Lock screen message** card on the device page previews the message and
+queues Apple's `LockScreenMessage` command.
+
+- The action is available only on supervised iPhone and iPadOS devices. macOS,
+  tvOS, visionOS, Windows, Android and Apple User Enrollment (BYOD) devices are
+  refused with an explanation.
+- `Message` is required (up to 500 characters). **Include asset tag** adds the
+  device's asset tag as `AssetTagInfo`; a device without an asset tag cannot
+  include one, and the API refuses the request instead of sending an empty value.
+- Applying a message stores it as the device's override. The card shows what was
+  last acknowledged (`appliedLockScreenMessage`, the applied asset tag and the
+  time) and the latest command's delivery state from Command history.
+- While a message is configured, the Apple check-in re-applies it when the
+  message, the asset tag or the management name differs from the last
+  acknowledgement. An unchanged message is retried at most once a day, so an OS
+  that ignores the command is not hammered on every check-in.
+- A policy can provide a group default with the
+  `mttx.apple.lockScreenMessage` configuration
+  (`{ "message": "…", "includeAssetTag": true }`). The device card shows which
+  policy supplied the default; **Use policy default** clears the override.
+- Every push and every applied override is audited, and the command appears in
+  the device's command history with its result. A failed push is shown there
+  like any other failed command.
+
 ### Inventory clocks
 
 `inventoryUpdatedAt` records the last hardware/OS report and `applicationsUpdatedAt` the
@@ -474,6 +502,7 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `collect-activation-lock-code` | Yes (supervised)              | No            | No          | Yes          |
 | `rotate-filevault-key`         | Yes                           | No            | No          | Yes          |
 | `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes          |
+| `set-lock-screen-message`      | Yes (supervised iPhone/iPad)  | No            | No          | No           |
 | `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes          |
 | `start-lost-mode`              | No                            | No            | Yes         | Yes          |
 | `stop-lost-mode`               | No                            | No            | Yes         | Yes          |
@@ -510,6 +539,7 @@ Commands are recorded with a lifecycle and a delivery deadline:
 | ADE setup commands                | 24 hours          |
 | App install                       | 24 hours          |
 | Installed-application inventory   | 7 days            |
+| Lock screen message               | 7 days            |
 | Erase                             | 7 days            |
 
 An expired command is never delivered and never retried, so a lock queued three weeks ago

@@ -182,6 +182,7 @@ const AUDIT_TITLES = {
   "device.renamed": "Device renamed",
   "device.name_push_queued": "Device name push queued",
   "device.name_push_skipped": "Device name push skipped",
+  "device.lock_screen_message_pushed": "Lock screen message queued",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",
@@ -242,6 +243,12 @@ const auditDetail = (row: AuditRow) => {
   const deviceName = trimmed(metadata.deviceName, 80);
 
   if (deviceName) parts.push(`Name: ${deviceName}`);
+
+  const lockScreenMessage = trimmed(metadata.lockScreenMessage, 120);
+
+  if (lockScreenMessage) parts.push(`Message: ${lockScreenMessage}`);
+
+  if (metadata.includeAssetTag === true) parts.push("Asset tag included");
 
   const rawFields = metadata.fields;
 

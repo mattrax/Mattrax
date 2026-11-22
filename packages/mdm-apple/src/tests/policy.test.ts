@@ -293,6 +293,28 @@ describe("policy configuration validation", () => {
     );
   });
 
+  it("accepts and validates a lock screen message default", async () => {
+    await expect(
+      validateConfiguration("mttx.apple.lockScreenMessage", {
+        message: "If found, return to the IT desk",
+        includeAssetTag: true,
+      }).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+
+    await expect(validate("mttx.apple.lockScreenMessage", { message: "   " })).resolves.toContain(
+      "non-empty",
+    );
+    await expect(
+      validate("mttx.apple.lockScreenMessage", { message: "x".repeat(501) }),
+    ).resolves.toContain("at most 500");
+    await expect(
+      validate("mttx.apple.lockScreenMessage", {
+        message: "If found, return to the IT desk",
+        includeAssetTag: "yes",
+      }),
+    ).resolves.toContain("includeAssetTag");
+  });
+
   it("rejects an application kind that cannot be installed", async () => {
     await expect(
       validate("mttx.apple.application.office", { fileName: "Office.pkg" }),

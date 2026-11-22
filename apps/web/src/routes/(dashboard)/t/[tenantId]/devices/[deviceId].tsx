@@ -2,7 +2,11 @@ import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { InfiniteData } from "@tanstack/solid-query";
-import { DeviceRow, EffectivePolicyResponse } from "@mattrax/enterprise-domain/client";
+import {
+  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  DeviceRow,
+  EffectivePolicyResponse,
+} from "@mattrax/enterprise-domain/client";
 import type {
   AttributeDefinitionRow,
   DeviceActivityResponse,
@@ -618,6 +622,8 @@ export default function DeviceDetailPage() {
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
   const [applyName, setApplyName] = createSignal(false);
+  const [lockScreenMessage, setLockScreenMessage] = createSignal("");
+  const [lockScreenIncludeAssetTag, setLockScreenIncludeAssetTag] = createSignal(false);
   const [editOpen, setEditOpen] = createSignal(false);
   const [tab, setTab] = createSignal<"overview" | "scope">("overview");
   const [selectedGroupId, setSelectedGroupId] = createSignal("");
@@ -656,6 +662,8 @@ export default function DeviceDetailPage() {
         setAssetTag(device.assetTag ?? "");
         setNotes(device.notes ?? "");
         setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
+        setLockScreenMessage(device.effectiveLockScreenMessage ?? "");
+        setLockScreenIncludeAssetTag(device.effectiveLockScreenIncludeAssetTag ?? false);
       }
     },
   );
@@ -715,6 +723,89 @@ export default function DeviceDetailPage() {
     },
     onError: (error) => {
       toast.error("Could not apply the device name", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
+
+  /**
+   * A lock screen message is a device command, so the panel needs the command
+   * permission and an Apple device that advertises the action.
+   */
+  const canSetLockScreen = () => supports("set-lock-screen-message") && canCommand();
+
+  /** The message the device is currently configured to show. */
+  const lockScreenDesiredMessage = () => row()?.effectiveLockScreenMessage ?? "";
+
+  const lockScreenDesiredInclude = () => row()?.effectiveLockScreenIncludeAssetTag ?? false;
+
+  const lockScreenDirty = () =>
+    Boolean(row()) &&
+    (lockScreenMessage().trim() !== lockScreenDesiredMessage() ||
+      lockScreenIncludeAssetTag() !== lockScreenDesiredInclude());
+
+  const lockScreenProblem = () => {
+    const device = row();
+
+    if (!device) return null;
+    if (!lockScreenMessage().trim()) return "Enter a lock screen message.";
+    if (lockScreenMessage().trim().length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH)
+      return `The lock screen message must be at most ${APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH} characters.`;
+    if (lockScreenIncludeAssetTag() && !device.assetTag?.trim())
+      return "This device has no asset tag. Add one in Edit details, or turn off Include asset tag.";
+
+    return null;
+  };
+
+  const latestLockScreenCommand = () =>
+    commandRows().find((entry) => entry.requestType === "LockScreenMessage");
+
+  /**
+   * Persist the per-device override and queue Apple's LockScreenMessage. The
+   * API stores the same values, so the check-in re-applies them even if this
+   * request's command expires.
+   */
+  const applyLockScreenMessage = useMutation(() => ({
+    mutationFn: (input: { message: string; includeAssetTag: boolean }) =>
+      enterprise.deviceAction(params.tenantId, params.deviceId, {
+        action: "set-lock-screen-message",
+        lockScreenMessage: input.message,
+        lockScreenIncludeAssetTag: input.includeAssetTag,
+      }),
+    onSuccess: async () => {
+      toast.success("Lock screen message queued", {
+        description:
+          "The message will be applied the next time the device checks in. Follow the command under Command history.",
+      });
+      await invalidate();
+    },
+    onError: (error) => {
+      toast.error("Could not apply the lock screen message", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
+
+  /** Drop the per-device override so the policy default (if any) applies again. */
+  const clearLockScreenOverride = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchDevice(params.tenantId, params.deviceId, {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    onSuccess: async () => {
+      toast.success("Using the policy default", {
+        description: "The device will fall back to its policy's lock screen message.",
+      });
+      await invalidate();
+
+      // The editor is seeded from the effective message, so reseed it from the
+      // refreshed row instead of leaving the cleared override on screen.
+      setLockScreenMessage(row()?.effectiveLockScreenMessage ?? "");
+      setLockScreenIncludeAssetTag(row()?.effectiveLockScreenIncludeAssetTag ?? false);
+    },
+    onError: (error) => {
+      toast.error("Could not clear the lock screen message", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
     },
@@ -2790,6 +2881,170 @@ export default function DeviceDetailPage() {
                       </div>
                     </Show>
                   </DetailCard>
+
+                  <Show when={row()!.proto === "apple"}>
+                    <DetailCard
+                      title="Lock screen message"
+                      description="A return message and the asset tag, shown on the lock screen of supervised iPhone and iPad devices."
+                      action={
+                        <Show when={row()!.lockScreenMessageSource}>
+                          {(source) => (
+                            <Chip tone={source() === "policy" ? "brand" : "muted"}>
+                              {source() === "policy" ? "Policy default" : "Device override"}
+                            </Chip>
+                          )}
+                        </Show>
+                      }
+                    >
+                      <Show
+                        when={canSetLockScreen()}
+                        fallback={
+                          <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                            Apple's LockScreenMessage command is only available on supervised iPhone
+                            and iPad devices. It is not available on macOS, tvOS, Android, Windows
+                            or Apple User Enrollment (BYOD) devices.
+                          </p>
+                        }
+                      >
+                        <div class="space-y-4">
+                          <div class="rounded-xl border border-border bg-surface/70 p-4 text-center">
+                            <p class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                              {row()!.name}
+                            </p>
+                            <p class="mt-3 min-h-10 whitespace-pre-line text-[13px] leading-relaxed text-foreground">
+                              {lockScreenMessage().trim() || "No lock screen message"}
+                            </p>
+                            <Show when={lockScreenIncludeAssetTag() && row()!.assetTag?.trim()}>
+                              <p class="mt-3 font-mono text-[11px] text-muted-foreground">
+                                Asset tag {row()!.assetTag}
+                              </p>
+                            </Show>
+                          </div>
+
+                          <Show when={row()!.lockScreenMessageSource === "policy"}>
+                            <p class="text-[11.5px] text-muted-foreground">
+                              Using the default from{" "}
+                              <span class="font-medium text-foreground">
+                                {row()!.lockScreenPolicyName ?? "an assigned policy"}
+                              </span>
+                              . Applying an edit stores a per-device override.
+                            </p>
+                          </Show>
+
+                          <Show when={lockScreenProblem()}>
+                            {(problem) => (
+                              <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-2.5 text-[11.5px] leading-relaxed text-warning-foreground">
+                                <CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                                <span>{problem()}</span>
+                              </p>
+                            )}
+                          </Show>
+
+                          <Field label="Message">
+                            <Textarea
+                              value={lockScreenMessage()}
+                              disabled={!writable()}
+                              rows={3}
+                              maxlength={APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH}
+                              placeholder={
+                                "If found, return to the IT desk\nAsk for the asset tag below."
+                              }
+                              onInput={(event) => setLockScreenMessage(event.currentTarget.value)}
+                            />
+                          </Field>
+
+                          <CheckboxField
+                            checked={lockScreenIncludeAssetTag()}
+                            onCheckedChange={setLockScreenIncludeAssetTag}
+                            disabled={!writable() || !row()!.assetTag?.trim()}
+                            label="Include asset tag"
+                            description={
+                              row()!.assetTag?.trim()
+                                ? "Apple's AssetTagInfo adds this device's asset tag under the message."
+                                : "This device has no asset tag yet. Add one in Edit details to include it."
+                            }
+                          />
+
+                          <div class="flex flex-wrap items-center gap-2">
+                            <Show when={writable()}>
+                              <Button
+                                size="sm"
+                                disabled={
+                                  !lockScreenDirty() ||
+                                  Boolean(lockScreenProblem()) ||
+                                  applyLockScreenMessage.isPending
+                                }
+                                onClick={() =>
+                                  applyLockScreenMessage.mutate({
+                                    message: lockScreenMessage().trim(),
+                                    includeAssetTag: lockScreenIncludeAssetTag(),
+                                  })
+                                }
+                              >
+                                {applyLockScreenMessage.isPending ? "Queueing…" : "Apply to device"}
+                              </Button>
+                              <Show
+                                when={
+                                  row()!.lockScreenMessage !== null ||
+                                  row()!.lockScreenIncludeAssetTag !== null
+                                }
+                              >
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={clearLockScreenOverride.isPending}
+                                  onClick={() => clearLockScreenOverride.mutate()}
+                                >
+                                  {clearLockScreenOverride.isPending
+                                    ? "Clearing…"
+                                    : "Use policy default"}
+                                </Button>
+                              </Show>
+                            </Show>
+                            <Show when={latestLockScreenCommand()}>
+                              {(entry) => (
+                                <span class="ml-auto flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                                  <span>Delivery</span>
+                                  <Chip tone={commandStatusTone(entry().status)}>
+                                    {entry().statusLabel}
+                                  </Chip>
+                                  <span title={formatDate(entry().updatedAt)}>
+                                    {relativeTime(entry().updatedAt)}
+                                  </span>
+                                </span>
+                              )}
+                            </Show>
+                          </div>
+
+                          <Show when={row()!.appliedLockScreenMessage}>
+                            {(applied) => (
+                              <div class="space-y-1 border-t border-border pt-3 text-[11.5px] text-muted-foreground">
+                                <p>
+                                  Applied <span class="text-foreground">{applied()}</span>
+                                  <Show when={row()!.appliedLockScreenAssetTag}>
+                                    {" "}
+                                    with asset tag{" "}
+                                    <span class="font-mono text-foreground">
+                                      {row()!.appliedLockScreenAssetTag}
+                                    </span>
+                                  </Show>
+                                </p>
+                                <p>
+                                  {row()!.appliedLockScreenAt
+                                    ? formatDate(row()!.appliedLockScreenAt)
+                                    : "Acknowledgement time not recorded"}
+                                  <Show when={row()!.appliedLockScreenName}>
+                                    {" "}
+                                    · device name {row()!.appliedLockScreenName}
+                                  </Show>
+                                </p>
+                              </div>
+                            )}
+                          </Show>
+                        </div>
+                      </Show>
+                    </DetailCard>
+                  </Show>
                   <DetailCard
                     title="Notes"
                     description="Read-only Markdown notes saved with this device."

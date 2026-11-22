@@ -748,6 +748,14 @@ export const importTenantCutover = (
                   namePushEnabled: device.namePushEnabled ?? null,
                   appliedName: device.appliedName ?? null,
                   appliedNameAt: device.appliedNameAt ? new Date(device.appliedNameAt) : null,
+                  lockScreenMessage: device.lockScreenMessage ?? null,
+                  lockScreenIncludeAssetTag: device.lockScreenIncludeAssetTag ?? null,
+                  appliedLockScreenMessage: device.appliedLockScreenMessage ?? null,
+                  appliedLockScreenAssetTag: device.appliedLockScreenAssetTag ?? null,
+                  appliedLockScreenName: device.appliedLockScreenName ?? null,
+                  appliedLockScreenAt: device.appliedLockScreenAt
+                    ? new Date(device.appliedLockScreenAt)
+                    : null,
                   assetTag: device.assetTag ?? null,
                   notes: device.notes ?? null,
                   enrolledAt: new Date(device.enrolledAt),
@@ -775,6 +783,14 @@ export const importTenantCutover = (
                 namePushEnabled: device.namePushEnabled ?? null,
                 appliedName: device.appliedName ?? null,
                 appliedNameAt: device.appliedNameAt ? new Date(device.appliedNameAt) : null,
+                lockScreenMessage: device.lockScreenMessage ?? null,
+                lockScreenIncludeAssetTag: device.lockScreenIncludeAssetTag ?? null,
+                appliedLockScreenMessage: device.appliedLockScreenMessage ?? null,
+                appliedLockScreenAssetTag: device.appliedLockScreenAssetTag ?? null,
+                appliedLockScreenName: device.appliedLockScreenName ?? null,
+                appliedLockScreenAt: device.appliedLockScreenAt
+                  ? new Date(device.appliedLockScreenAt)
+                  : null,
                 assetTag: device.assetTag ?? null,
                 notes: device.notes ?? null,
                 enrolledAt: new Date(device.enrolledAt),

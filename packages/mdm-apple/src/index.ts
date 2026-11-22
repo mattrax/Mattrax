@@ -19,6 +19,11 @@ import {
   DEVICE_NAME_PUSH_RETRY_MS,
   APPLE_DEVICE_NAME_MAX_LENGTH,
   latestKnownDeviceName,
+  APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
+  isAppleLockScreenMessageDevice,
+  parseAppleLockScreenMessageConfiguration,
+  resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
@@ -351,6 +356,16 @@ type ScopedConfigurations = {
   readonly configurations: ReadonlyArray<ScopedConfiguration>;
   /** Configurations filtered out because the device's OS cannot apply them. */
   readonly skipped: ReadonlyArray<SkippedConfiguration>;
+  /**
+   * The winning lock screen message default for this device, if a policy
+   * provides one. It is resolved here because this is already the one place a
+   * check-in resolves the device's effective policy.
+   */
+  readonly lockScreenMessage:
+    | (NonNullable<ReturnType<typeof parseAppleLockScreenMessageConfiguration>> & {
+        readonly policyName?: string;
+      })
+    | undefined;
 };
 
 /**
@@ -372,23 +387,46 @@ const scopedConfigurations = (
     // and the effective-policy API all agree.
     const effective = yield* resolveEffectivePolicyForDevice(db, device);
 
-    const rows: Array<ScopedConfiguration> = effective.configurations.map((configuration) => ({
-      policyId: configuration.policyId,
-      kind: configuration.kind,
-      data: configuration.data,
-      hash: configuration.hash ?? "",
-      organizationId: device.organizationId,
-      groupId:
-        configuration.scope === "group"
-          ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
-          : `direct:${configuration.policyId}`,
-    }));
+    // The lock screen default is an imperative command, not a declaration.
+    // Keep the winning configuration out of the declaration pipeline and hand
+    // it to the check-in's re-apply logic instead.
+    const lockScreenConfiguration = effective.configurations.find(
+      (configuration) => configuration.kind === APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+    );
+
+    const lockScreenMessage = lockScreenConfiguration
+      ? (() => {
+          const parsed = parseAppleLockScreenMessageConfiguration(lockScreenConfiguration.data);
+
+          return parsed ? { ...parsed, policyName: lockScreenConfiguration.policyName } : undefined;
+        })()
+      : undefined;
+
+    const rows: Array<ScopedConfiguration> = effective.configurations
+      .filter(
+        (configuration) => configuration.kind !== APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+      )
+      .map((configuration) => ({
+        policyId: configuration.policyId,
+        kind: configuration.kind,
+        data: configuration.data,
+        hash: configuration.hash ?? "",
+        organizationId: device.organizationId,
+        groupId:
+          configuration.scope === "group"
+            ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
+            : `direct:${configuration.policyId}`,
+      }));
 
     const scoped = yield* Effect.promise(() =>
       scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode),
     );
 
-    return { configurations: scoped.delivered, skipped: scoped.skipped };
+    return {
+      configurations: scoped.delivered,
+      skipped: scoped.skipped,
+      lockScreenMessage,
+    };
   });
 
 /** The delivery mode last recorded for a device. */
@@ -2545,6 +2583,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             and(
               eq(s.deviceCommand.deviceId, device.id),
               eq(s.deviceCommand.requestType, "Settings"),
+
             ),
           );
 
@@ -2625,6 +2664,123 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         // poll or the daily maintenance run retries it.
         Effect.catch((error) =>
           Effect.logWarning(`Failed to queue the device name for ${device.id}: ${String(error)}`),
+        ),
+      );
+
+    /**
+     * Re-queue the supervised LockScreenMessage command when the device's
+     * desired message, asset tag or name differs from what it acknowledged.
+     *
+     * The desired state comes from the per-device override or, when absent,
+     * the winning policy default. The retry window stops an OS that ignores
+     * the command from producing one on every poll, and a recent identical
+     * command is never duplicated or audited twice.
+     */
+    const queueLockScreenMessageUpdate = (
+      device: DeviceRow,
+      enrollmentMode: string | null,
+      policy: ScopedConfigurations["lockScreenMessage"],
+      at: Date,
+    ): Effect.Effect<void, never, Db> =>
+      Effect.gen(function* () {
+        const resolved = resolveAppleLockScreenMessage({
+          deviceMessage: device.lockScreenMessage,
+          deviceIncludeAssetTag: device.lockScreenIncludeAssetTag,
+          policy: policy ?? null,
+          assetTag: device.assetTag,
+        });
+
+        if (!resolved.message) return;
+
+        if (
+          !shouldPushLockScreenMessage({
+            proto: device.proto,
+            status: device.status,
+            enrollmentMode,
+            osEdition: device.osEdition,
+            model: device.model,
+            message: resolved.message,
+            includeAssetTag: resolved.includeAssetTag,
+            assetTag: device.assetTag,
+            deviceName: device.name,
+            appliedMessage: device.appliedLockScreenMessage,
+            appliedAssetTag: device.appliedLockScreenAssetTag,
+            appliedName: device.appliedLockScreenName,
+            appliedAt: device.appliedLockScreenAt,
+            now: at,
+          })
+        )
+          return;
+
+        const assetTagInfo = resolved.includeAssetTag ? device.assetTag?.trim() || null : null;
+        const payload = appleLockScreenMessagePayload({
+          message: resolved.message,
+          assetTag: assetTagInfo,
+        });
+
+        // One attempt per retry window, whatever its outcome. A queued or
+        // in-flight duplicate would otherwise be re-inserted (and re-audited)
+        // on every poll.
+        const recent = yield* db
+          .select({ payload: s.deviceCommand.payload })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.requestType, "LockScreenMessage"),
+              gte(
+                s.deviceCommand.updatedAt,
+                new Date(at.getTime() - LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS),
+              ),
+            ),
+          );
+
+        if (
+          device.queuedLockScreenName === device.name &&
+          recent.some((row) => {
+            const previous = appleLockScreenMessageFromPayload(row.payload);
+
+            return (
+              previous?.message === resolved.message && previous?.assetTagInfo === assetTagInfo
+            );
+          })
+        )
+          return;
+
+        yield* queueAppleCommand(device, "LockScreenMessage", payload, at);
+        // Record the name the command was queued under so a rename queues one
+        // new command while an unchanged name never re-queues the same payload.
+        yield* db
+          .update(s.device)
+          .set({ queuedLockScreenName: device.name })
+          .where(eq(s.device.id, device.id));
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId: device.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.deviceLockScreenMessagePushed,
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "apple",
+            metadata: {
+              platform: "apple",
+              lockScreenMessage: resolved.message,
+              includeAssetTag: resolved.includeAssetTag,
+              source: resolved.source,
+              ...(resolved.policyName ? { policyName: resolved.policyName } : {}),
+              trigger: "checkin",
+            },
+          },
+          auditOptions,
+        );
+      }).pipe(
+        // A failed push must never fail the device's check-in. The next poll or
+        // the daily maintenance run retries it.
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Failed to queue the lock screen message for ${device.id}: ${String(error)}`,
+          ),
         ),
       );
 
@@ -4349,6 +4505,42 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     auditOptions,
                   );
 
+                // A LockScreenMessage acknowledgement is the only reliable
+                // evidence that the message is on the device. Record exactly
+                // what was sent so a later message, asset-tag or name change
+                // re-applies it without guessing.
+                if (command?.requestType === "LockScreenMessage" && nextStatus === "succeeded") {
+                  const applied = appleLockScreenMessageFromPayload(command.payload);
+
+                  if (applied) {
+                    const appliedAt = now();
+
+                    yield* db
+                      .update(s.device)
+                      .set({
+                        appliedLockScreenMessage: applied.message,
+                        appliedLockScreenAssetTag: applied.assetTagInfo,
+                        appliedLockScreenName: device.name,
+                        appliedLockScreenAt: appliedAt,
+                      })
+                      .where(eq(s.device.id, device.id));
+                    yield* db
+                      .update(s.deviceCommand)
+                      .set({
+                        resultDetail: applied.assetTagInfo
+                          ? `Lock screen message applied with asset tag "${applied.assetTagInfo}".`
+                          : "Lock screen message applied.",
+                        updatedAt: appliedAt,
+                      })
+                      .where(
+                        and(
+                          eq(s.deviceCommand.id, command.id),
+                          eq(s.deviceCommand.deviceId, device.id),
+                        ),
+                      );
+                  }
+                }
+
                 // A `Settings` command that changed the device name is the
                 // only reliable acknowledgement: record the applied value so
                 // the drift indicator can distinguish "never pushed" from
@@ -4975,6 +5167,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             // the device's regular poll, so this is where the name is
             // re-queued and delivered in the same response.
             yield* queueDeviceNameUpdate(device, appleState?.enrollmentMode ?? null, at);
+
+            // The lock screen default is resolved alongside the effective
+            // policy above, so the message is re-applied from the same state
+            // the policy page shows.
+            yield* queueLockScreenMessageUpdate(
+              device,
+              appleState?.enrollmentMode ?? null,
+              scoped.lockScreenMessage,
+              at,
+            );
 
             const delivery = yield* deliverQueuedCommand(device, null, at);
 

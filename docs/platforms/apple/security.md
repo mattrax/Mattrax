@@ -270,22 +270,23 @@ delivery failures and invalid tokens.
 
 ## Command matrix
 
-| Action                         | Requires step-up | Notes                                    |
-| ------------------------------ | ---------------- | ---------------------------------------- |
-| `sync`                         | No               | APNs wake-up                             |
-| `collect-security-info`        | No               | FileVault/bootstrap key and AL state     |
-| `refresh-applications`         | No               | Installed app inventory                  |
-| `collect-activation-lock-code` | Yes              | Device bypass code                       |
-| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key       |
-| `set-recovery-lock`            | Yes              | Apple silicon only                       |
-| `verify-recovery-lock`         | Yes              | Checks the stored password               |
-| `lock`                         | Yes              | Returns a PIN                            |
-| `wipe`                         | Yes              | Erase with explicit flags                |
-| `restart`                      | Yes              | —                                        |
-| `shutdown`                     | Yes              | —                                        |
-| `clear-passcode`               | Yes              | Needs an unlock token                    |
-| `install-app`                  | Yes              | Manifest URL or iTunes Store id          |
-| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only |
+| Action                         | Requires step-up | Notes                                            |
+| ------------------------------ | ---------------- | ------------------------------------------------ |
+| `sync`                         | No               | APNs wake-up                                     |
+| `collect-security-info`        | No               | FileVault/bootstrap key and AL state             |
+| `refresh-applications`         | No               | Installed app inventory                          |
+| `collect-activation-lock-code` | Yes              | Device bypass code                               |
+| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key               |
+| `set-recovery-lock`            | Yes              | Apple silicon only                               |
+| `verify-recovery-lock`         | Yes              | Checks the stored password                       |
+| `lock`                         | Yes              | Returns a PIN                                    |
+| `wipe`                         | Yes              | Erase with explicit flags                        |
+| `restart`                      | Yes              | —                                                |
+| `shutdown`                     | Yes              | —                                                |
+| `clear-passcode`               | Yes              | Needs an unlock token                            |
+| `install-app`                  | Yes              | Manifest URL or iTunes Store id                  |
+| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only         |
+| `set-lock-screen-message`      | No               | shared-device profile; supervised iPhone/iPad only |
 
 `set-device-name` queues Apple's `Settings` command with the documented
 `DeviceName` item and works on supervised macOS, iOS, iPadOS and tvOS devices.
@@ -297,6 +298,16 @@ same command while the newest known name still differs, at most once a day. A
 skipped over-long automatic push is recorded as `device.name_push_skipped`. The
 last acknowledged value is stored in `appliedName`/`appliedNameAt`; see
 [Device names](../../manage/devices.md#device-names).
+
+`set-lock-screen-message` queues Apple's `LockScreenMessage` command with `Message`
+and, when enabled, the device's asset tag as `AssetTagInfo`. Apple defines the command
+only for supervised iPhone and iPadOS; macOS, tvOS and visionOS do not accept it, and
+Apple User Enrollment (BYOD) devices are refused because they are not supervised. The
+action is refused when `includeAssetTag` is on and the device has no asset tag. While a
+message is configured the check-in re-applies it when the message, asset tag or
+management name changes, at most once a day for an unchanged value. The last
+acknowledged message is stored in `appliedLockScreenMessage` and
+`appliedLockScreenAssetTag`; see [Lock screen message](../../manage/devices.md#lock-screen-message).
 
 ## Limitations
 

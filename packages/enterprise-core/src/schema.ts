@@ -2067,6 +2067,23 @@ export const device = mysqlTable(
     appliedName: shortText("applied_name"),
     /** When that acknowledgement arrived. */
     appliedNameAt: timestamp("applied_name_at"),
+    /**
+     * Per-device lock screen message override. Null means the device uses its
+     * policy's lock-screen default, when one is assigned.
+     */
+    lockScreenMessage: text("lock_screen_message"),
+    /** Append the asset tag to the message; null inherits the policy default. */
+    lockScreenIncludeAssetTag: boolean("lock_screen_include_asset_tag"),
+    /** The last lock screen message the device acknowledged. */
+    appliedLockScreenMessage: text("applied_lock_screen_message"),
+    /** The asset tag included with that message, or null when none was sent. */
+    appliedLockScreenAssetTag: shortText("applied_lock_screen_asset_tag"),
+    /** The management name when that message was acknowledged. */
+    appliedLockScreenName: shortText("applied_lock_screen_name"),
+    /** The management name at the last queue, used to de-duplicate a rename. */
+    queuedLockScreenName: shortText("queued_lock_screen_name"),
+    /** When the lock screen message acknowledgement arrived. */
+    appliedLockScreenAt: timestamp("applied_lock_screen_at"),
     vendor: shortText("vendor"),
     osEdition: shortText("os_edition"),
     osVersion: shortText("os_version"),

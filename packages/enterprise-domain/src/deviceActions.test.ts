@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   appleDeviceNameFromSettingsPayload,
   appleDeviceNameSettingsPayload,
+  appleLockScreenMessageFromPayload,
+  appleLockScreenMessagePayload,
   appleUserAvailableActions,
   appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
+  isAppleLockScreenMessageDevice,
+  lockScreenMessageProblem,
+  normalizeAppleLockScreenMessage,
+  parseAppleLockScreenMessageConfiguration,
+  resolveAppleLockScreenMessage,
+  shouldPushLockScreenMessage,
 } from "./deviceActions.ts";
 import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
@@ -324,5 +334,262 @@ describe("appleUserAvailableActions", () => {
     expect(appleUserAvailableActions({ configured: true })).toEqual(["sync", "refresh-profiles"]);
     expect(appleUserSupportsAction({ configured: true }, "sync")).toBe(true);
     expect(appleUserSupportsAction({ configured: false }, "sync")).toBe(false);
+  });
+});
+
+describe("set-lock-screen-message", () => {
+  it("is offered on iPhone and iPad, including before the OS is known", () => {
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iPadOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(deviceAvailableActions({ proto: "apple", status: "enrolled" })).toContain(
+      "set-lock-screen-message",
+    );
+  });
+
+  it("is not offered on macOS, tvOS, visionOS, Android, Windows or BYOD devices", () => {
+    const unavailable = [
+      { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
+      { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
+      { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },
+      { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+      { proto: "android", status: "enrolled" },
+      { proto: "win", status: "enrolled" },
+      { proto: "apple", status: "unenrolled", osEdition: "iOS" },
+    ];
+
+    for (const input of unavailable)
+      expect(deviceAvailableActions(input)).not.toContain("set-lock-screen-message");
+  });
+
+  it("explains why the command is unavailable", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on macOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "tvOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on tvOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("User Enrollment");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "android", status: "enrolled" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("only available on supervised iPhone and iPad");
+  });
+
+  it("recognises supported Apple families", () => {
+    expect(isAppleLockScreenMessageDevice({ proto: "apple" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "iOS" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "iPhone16,1" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "macOS" })).toBe(false);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "Apple TV 4K" })).toBe(false);
+  });
+});
+
+describe("Apple lock screen message payload", () => {
+  it("trims the message and omits AssetTagInfo when not requested", () => {
+    expect(
+      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: null }),
+    ).toEqual({ Message: "If found, return to IT" });
+    expect(
+      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: "   " }),
+    ).toEqual({ Message: "If found, return to IT" });
+  });
+
+  it("includes the trimmed asset tag when requested", () => {
+    expect(
+      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: " AST-1042 " }),
+    ).toEqual({ Message: "If found, return to IT", AssetTagInfo: "AST-1042" });
+  });
+
+  it("round-trips a queued command", () => {
+    const payload = appleLockScreenMessagePayload({
+      message: "If found, return to IT",
+      assetTag: "AST-1042",
+    });
+
+    expect(appleLockScreenMessageFromPayload(payload)).toEqual({
+      message: "If found, return to IT",
+      assetTagInfo: "AST-1042",
+    });
+    expect(appleLockScreenMessageFromPayload({ Message: "" })).toBeUndefined();
+    expect(appleLockScreenMessageFromPayload(null)).toBeUndefined();
+  });
+
+  it("normalises and bounds the message", () => {
+    expect(normalizeAppleLockScreenMessage("  Line one\r\nLine two  ")).toBe("Line one\nLine two");
+    expect(normalizeAppleLockScreenMessage("   ")).toBeUndefined();
+    expect(APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH).toBe(500);
+    expect(
+      lockScreenMessageProblem({
+        message: "x".repeat(APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH + 1),
+        includeAssetTag: false,
+      }),
+    ).toContain("at most 500");
+  });
+
+  it("refuses Include asset tag without an asset tag", () => {
+    expect(
+      lockScreenMessageProblem({
+        message: "If found, return to IT",
+        includeAssetTag: true,
+        assetTag: null,
+      }),
+    ).toContain("no asset tag");
+    expect(
+      lockScreenMessageProblem({
+        message: "If found, return to IT",
+        includeAssetTag: true,
+        assetTag: "AST-1042",
+      }),
+    ).toBeUndefined();
+  });
+});
+
+describe("resolveAppleLockScreenMessage", () => {
+  const policy = {
+    message: "Return to the IT desk",
+    includeAssetTag: true,
+    policyName: "Shared iPads",
+  };
+
+  it("prefers a per-device message and can override the asset-tag choice", () => {
+    expect(
+      resolveAppleLockScreenMessage({
+        deviceMessage: "Call Oscar",
+        deviceIncludeAssetTag: false,
+        policy,
+        assetTag: "AST-1042",
+      }),
+    ).toEqual({ message: "Call Oscar", includeAssetTag: false, source: "device" });
+
+    expect(
+      resolveAppleLockScreenMessage({ deviceIncludeAssetTag: true, policy, assetTag: "AST-1042" }),
+    ).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      policyName: "Shared iPads",
+    });
+  });
+
+  it("reports why a resolved default cannot be delivered", () => {
+    expect(resolveAppleLockScreenMessage({ policy, assetTag: null })).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      problem: expect.stringContaining("no asset tag"),
+    });
+  });
+
+  it("decodes a stored policy configuration", () => {
+    expect(
+      parseAppleLockScreenMessageConfiguration({
+        message: " Return to IT ",
+        includeAssetTag: true,
+      }),
+    ).toEqual({ message: "Return to IT", includeAssetTag: true });
+    expect(parseAppleLockScreenMessageConfiguration({ message: "" })).toBeUndefined();
+    expect(parseAppleLockScreenMessageConfiguration(null)).toBeUndefined();
+  });
+});
+
+describe("shouldPushLockScreenMessage", () => {
+  const base = {
+    proto: "apple",
+    status: "enrolled",
+    osEdition: "iPadOS",
+    message: "Return to the IT desk",
+    includeAssetTag: true,
+    assetTag: "AST-1042",
+    deviceName: "Cart iPad 3",
+  };
+
+  it("only runs on enrolled, supervised mobile Apple devices", () => {
+    expect(shouldPushLockScreenMessage(base)).toBe(true);
+    expect(shouldPushLockScreenMessage({ ...base, proto: "win" })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, status: "unenrolling" })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, enrollmentMode: "user" })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, osEdition: "macOS" })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, osEdition: "tvOS" })).toBe(false);
+  });
+
+  it("does not push when Include asset tag has no asset tag", () => {
+    expect(shouldPushLockScreenMessage({ ...base, assetTag: null })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, includeAssetTag: false, assetTag: null })).toBe(
+      true,
+    );
+  });
+
+  it("pushes when the message, asset tag or device name changes", () => {
+    const applied = {
+      appliedMessage: base.message,
+      appliedAssetTag: base.assetTag,
+      appliedName: base.deviceName,
+      appliedAt: new Date("2026-11-23T00:00:00Z"),
+      now: new Date("2026-11-23T01:00:00Z"),
+    };
+
+    expect(shouldPushLockScreenMessage({ ...base, ...applied })).toBe(false);
+    expect(shouldPushLockScreenMessage({ ...base, ...applied, message: "New message" })).toBe(true);
+    expect(shouldPushLockScreenMessage({ ...base, ...applied, assetTag: "AST-9999" })).toBe(true);
+    expect(shouldPushLockScreenMessage({ ...base, ...applied, deviceName: "Renamed iPad" })).toBe(
+      true,
+    );
+    expect(shouldPushLockScreenMessage({ ...base, ...applied, includeAssetTag: false })).toBe(true);
+  });
+
+  it("retries an unchanged message at most once a day", () => {
+    const appliedAt = new Date("2026-11-23T00:00:00Z");
+    const applied = {
+      appliedMessage: base.message,
+      appliedAssetTag: base.assetTag,
+      appliedName: base.deviceName,
+      appliedAt,
+    };
+
+    expect(
+      shouldPushLockScreenMessage({
+        ...base,
+        ...applied,
+        now: new Date(appliedAt.getTime() + 60 * 60 * 1000),
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldPushLockScreenMessage({
+        ...base,
+        ...applied,
+        now: new Date(appliedAt.getTime() + LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS),
+      }),
+    ).toBe(true);
   });
 });

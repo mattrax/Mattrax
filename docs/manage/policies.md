@@ -99,21 +99,45 @@ touches the current tenant.
 
 ## Configuration kinds
 
-| Kind                          | Platform | Payload                                              |
-| ----------------------------- | -------- | ---------------------------------------------------- |
-| `mttx.apple.device`           | Apple    | Built-in settings; currently `{ "camera": boolean }` |
-| `mttx.apple.custom.<id>`      | Apple    | Base64 `.mobileconfig`                               |
-| `mttx.apple.certificate.<id>` | Apple    | PEM certificate for DDM                              |
-| `mttx.apple.declaration.<id>` | Apple    | Raw DDM declaration                                  |
-| `mttx.apple.application.<id>` | Apple    | App install: catalogue reference or inline app       |
-| `mttx.windows.custom.<id>`    | Windows  | OMA-URI node or `{ nodes: [...] }`                   |
-| `mttx.android.policy.<id>`    | Android  | AMAPI policy fragment                                |
+| Kind                           | Platform | Payload                                              |
+| ------------------------------ | -------- | ---------------------------------------------------- |
+| `mttx.apple.device`            | Apple    | Built-in settings; currently `{ "camera": boolean }` |
+| `mttx.apple.custom.<id>`       | Apple    | Base64 `.mobileconfig`                               |
+| `mttx.apple.certificate.<id>`  | Apple    | PEM certificate for DDM                              |
+| `mttx.apple.declaration.<id>`  | Apple    | Raw DDM declaration                                  |
+| `mttx.apple.application.<id>`  | Apple    | App install: catalogue reference or inline app       |
+| `mttx.apple.lockScreenMessage` | Apple    | Lock screen default: message and include-asset-tag   |
+| `mttx.windows.custom.<id>`     | Windows  | OMA-URI node or `{ nodes: [...] }`                   |
+| `mttx.android.policy.<id>`     | Android  | AMAPI policy fragment                                |
 
 An Apple application configuration installs on every device in the policy's scope. It
 references a catalogue row (`{ "applicationId": "…" }`) or carries its own manifest, store
 id or uploaded `.pkg` metadata. See [Applications](/manage/applications#applications-in-a-policy),
 [Apple DDM](/platforms/apple/ddm), [Windows policies](/platforms/windows/policies) and
 [Android policies](/platforms/android/policies).
+
+### Lock screen message default
+
+`mttx.apple.lockScreenMessage` is a group-level default for the
+[lock screen message](/manage/devices#lock-screen-message) shown on supervised iPhone and
+iPad devices:
+
+```json
+{
+  "mttx.apple.lockScreenMessage": {
+    "message": "If found, return to the IT desk",
+    "includeAssetTag": true
+  }
+}
+```
+
+Unlike the other Apple kinds it is not a declaration. Mattrax resolves the winning config
+for each device on check-in and queues Apple's `LockScreenMessage` command with the
+message, plus the device's asset tag as `AssetTagInfo` when `includeAssetTag` is on.
+Devices without an asset tag skip the push and the device page explains why. A
+per-device override on the device page wins over this default. Policy delivery state
+only tracks declarative kinds, so follow the command itself under the device's Command
+history.
 
 ## The designer
 

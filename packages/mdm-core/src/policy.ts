@@ -10,6 +10,12 @@ import {
   verifyAppleAssetToken,
 } from "@mattrax/dm-apple";
 import type { VerifiedAppleAssetToken } from "@mattrax/dm-apple";
+import {
+  APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  normalizeAppleLockScreenMessage,
+  parseAppleLockScreenMessageConfiguration,
+} from "@mattrax/enterprise-domain";
 import { isPlistObject, plistText } from "./internal/plistValue.js";
 import type { PlistObject } from "./internal/plistValue.js";
 
@@ -60,6 +66,8 @@ export type ConfigurationKind =
   | { readonly type: "application"; readonly id: string }
   | { readonly type: "windows"; readonly id: string }
   | { readonly type: "android"; readonly id: string }
+  /** An imperative lock screen default, not a declaration. */
+  | { readonly type: "lockScreenMessage" }
   | { readonly type: "unknown" };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9]{1,20}$/;
@@ -110,6 +118,10 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 export const parseConfigurationKind = (kind: string): ConfigurationKind => {
   if (kind === "mttx.apple.device") return { type: "device" };
+
+  // This kind carries an imperative command default. It is resolved per device
+  // and delivered as a LockScreenMessage command, never as a declaration.
+  if (kind === APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND) return { type: "lockScreenMessage" };
   const android = /^mttx\.android\.policy\.(.+)$/.exec(kind);
 
   if (android?.[1] && IDENTIFIER_PATTERN.test(android[1]))
@@ -672,6 +684,37 @@ export const validateConfiguration = (
 
         if (record.camera !== undefined && !Schema.is(Schema.Boolean)(record.camera))
           return yield* Effect.fail(`"${kind}.camera" must be a boolean`);
+
+        return;
+      }
+
+      case "lockScreenMessage": {
+        if (scope === "user")
+          return yield* Effect.fail(
+            `"${kind}" is delivered to the device and cannot be user-scoped.`,
+          );
+        const record = asRecord(data);
+
+        if (
+          record?.includeAssetTag !== undefined &&
+          !Schema.is(Schema.Boolean)(record.includeAssetTag)
+        )
+          return yield* Effect.fail(`"${kind}.includeAssetTag" must be a boolean.`);
+
+        const parsed = parseAppleLockScreenMessageConfiguration(data);
+
+        if (!parsed)
+          return yield* Effect.fail(
+            `"${kind}" requires a non-empty "message". Optionally set "includeAssetTag" to a boolean.`,
+          );
+
+        if (parsed.message.length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH)
+          return yield* Effect.fail(
+            `"${kind}.message" must be at most ${APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH} characters.`,
+          );
+
+        if (!normalizeAppleLockScreenMessage(parsed.message))
+          return yield* Effect.fail(`"${kind}.message" cannot be empty.`);
 
         return;
       }

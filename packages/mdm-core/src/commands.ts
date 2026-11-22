@@ -33,6 +33,9 @@ const BUDGETS = new Map<string, number>([
   ["SetRecoveryLock", 30 * MINUTE],
   ["Settings", 30 * MINUTE],
   ["VerifyRecoveryLock", HOUR],
+  // A lock screen message stays useful while a loaner or shared device is out
+  // with someone; a week covers an offline cart without becoming stale advice.
+  ["LockScreenMessage", 7 * DAY],
   // ADE setup: the device is sitting in Setup Assistant, so these are bounded
   // to one setup window rather than a fleet-policy budget.
   ["AccountConfiguration", 24 * HOUR],
