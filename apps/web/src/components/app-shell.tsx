@@ -31,6 +31,9 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "@mattrax/ui";
 import {
   Activity,
@@ -48,6 +51,7 @@ import {
   PanelLeftOpen,
   PanelRight,
   Plus,
+  RefreshCw,
   Search as SearchIcon,
   Settings,
   ShieldCheck,
@@ -64,6 +68,7 @@ import { announce, announcementText, Toaster } from "~/components/toast";
 import { SETTINGS_READ_PERMISSIONS, tenantRoleName, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
+import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
 import { isServer } from "@solidjs/web";
 import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
@@ -538,6 +543,50 @@ function NavGroups(props: {
   );
 }
 
+function SidebarUpdate(props: { collapsed?: boolean }) {
+  return (
+    <Show when={pendingDeployment()}>
+      <Tooltip>
+        <TooltipTrigger as="span" class={props.collapsed ? "block" : "block w-full"}>
+          <button
+            type="button"
+            onClick={reloadForDeployment}
+            aria-label="A new version is available. Reload to update."
+            class={cn(
+              "group mb-1 flex items-center rounded-lg text-left outline-none transition-[background-color,color] duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/30",
+              props.collapsed ? "mx-auto size-9 justify-center" : "h-10 w-full gap-2.5 px-1.5",
+            )}
+          >
+            <span class="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground">
+              <RefreshCw class="size-3.5" aria-hidden="true" />
+              <span
+                aria-hidden="true"
+                class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-brand ring-2 ring-shell"
+              />
+            </span>
+            <Show when={!props.collapsed}>
+              <span class="min-w-0 flex-1" aria-hidden="true">
+                <span class="block truncate text-[12px] font-[500] leading-4 text-foreground">
+                  Update available
+                </span>
+                <span class="block truncate text-[11px] text-muted-foreground">
+                  Reload to apply
+                </span>
+              </span>
+            </Show>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side={props.collapsed ? "right" : "top"}>
+          <p class="text-[11px] font-medium">A new version is available</p>
+          <p class="mt-0.5 text-[11px]">
+            Reload to get the latest changes. This page keeps working until you do.
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </Show>
+  );
+}
+
 function SidebarPanel(props: {
   user: ShellUser | undefined;
   onSignOut: () => void | Promise<void>;
@@ -584,6 +633,7 @@ function SidebarPanel(props: {
 
       <Separator />
       <div class="shrink-0 p-2">
+        <SidebarUpdate collapsed={props.collapsed} />
         <UserMenu
           user={props.user}
           onSignOut={props.onSignOut}
