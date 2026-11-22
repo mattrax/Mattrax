@@ -103,7 +103,8 @@ export const SORT_DIRECTIONS = ["asc", "desc"] as const;
 export const DeviceSearchParams = Schema.Struct({
   status: Schema.optional(Schema.Literals(DEVICE_STATUSES)),
   proto: Schema.optional(Schema.Literals(DEVICE_PROTOCOLS)),
-  staleDays: Schema.optional(Schema.Literals(DEVICE_STALE_DAYS)),
+  /** Positive day count; the picker shows 7/30/90 but a view may store any. */
+  staleDays: Schema.optional(Schema.String),
   health: Schema.optional(Schema.Literals(DEVICE_HEALTH_FILTERS)),
   push: Schema.optional(Schema.Literals(DEVICE_PUSH_FILTERS)),
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
@@ -185,7 +186,14 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   const params: MutableDeviceSearchParams = {};
   const status = literalValue(DEVICE_STATUSES, values.status);
   const proto = literalValue(DEVICE_PROTOCOLS, values.proto);
-  const staleDays = literalValue(DEVICE_STALE_DAYS, values.staleDays);
+  const staleDaysValue = values.staleDays === undefined ? undefined : Number(values.staleDays);
+  const staleDays =
+    staleDaysValue !== undefined &&
+    Number.isInteger(staleDaysValue) &&
+    staleDaysValue >= 1 &&
+    staleDaysValue <= 3650
+      ? String(staleDaysValue)
+      : undefined;
   const health = literalValue(DEVICE_HEALTH_FILTERS, values.health);
   const push = literalValue(DEVICE_PUSH_FILTERS, values.push);
   const setup = literalValue(["awaiting", "complete"], values.setup);

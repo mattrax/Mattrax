@@ -70,7 +70,14 @@ import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
-import { announce } from "~/components/toast";
+import { toast } from "~/components/toast";
+import {
+  deviceFilterConditions,
+  hasExplicitDeviceSearch,
+  mergeActiveViewQuery,
+  resolveDeviceDefaultView,
+  staleDaysValue,
+} from "~/lib/device-view-query";
 import { resolveTenantId } from "~/lib/tenant";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -359,7 +366,7 @@ export default function DevicesPage() {
 
   const initialProto = (): DeviceRow["proto"] | "" => search().proto ?? "";
 
-  const initialStale = (): "" | "7" | "30" | "90" => search().staleDays ?? "";
+  const initialStale = (): string => search().staleDays ?? "";
 
   const initialHealth = (): DeviceHealthFilter | "" => search().health ?? "";
 
@@ -381,7 +388,7 @@ export default function DevicesPage() {
   const [status, setStatus] = createSignal<DeviceRow["status"] | "">(initialStatus());
   const [proto, setProto] = createSignal<DeviceRow["proto"] | "">(initialProto());
   const [groupId, setGroupId] = createSignal(search().groupId ?? "");
-  const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
+  const [staleDays, setStaleDays] = createSignal(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
   const [setup, setSetup] = createSignal<"" | "awaiting" | "complete">(initialSetup());
@@ -842,11 +849,13 @@ export default function DevicesPage() {
    * stays applicable instead of opening an empty or failing table.
    */
   const applyView = (view: DeviceView) => {
-    const knownGroups = groups.data
-      ? new Set((groups.data.rows ?? []).map((group) => group.id))
+    // Placeholder rows are not evidence that a group or attribute was
+    // deleted. Only a successful read can authoritatively prune references.
+    const knownGroups = groups.isSuccess
+      ? new Set((groups.data?.rows ?? []).map((group) => group.id))
       : undefined;
-    const knownAttributes = attributeDefinitions.data
-      ? new Set((attributeDefinitions.data.rows ?? []).map((definition) => definition.key))
+    const knownAttributes = attributeDefinitions.isSuccess
+      ? new Set((attributeDefinitions.data?.rows ?? []).map((definition) => definition.key))
       : undefined;
     const reconciled = reconcileDeviceViewQuery(view.query, {
       groupIds: knownGroups,
@@ -854,17 +863,16 @@ export default function DevicesPage() {
     });
     const query = reconciled.query;
     const attribute = viewAttribute(query);
-    const staleDays =
-      query.staleDays === 7 || query.staleDays === 30 || query.staleDays === 90
-        ? String(query.staleDays)
-        : "";
+    const staleDays = staleDaysValue(
+      query.staleDays === undefined ? undefined : String(query.staleDays),
+    );
 
     setQ(query.q ?? "");
     setDebouncedQ(query.q ?? "");
     setStatus(query.status ?? "");
     setProto(query.proto ?? "");
     setGroupId(query.groupId ?? "");
-    setStaleDays(staleDays as "" | "7" | "30" | "90");
+    setStaleDays(staleDays ?? "");
     setHealth(query.health ?? "");
     setPush(query.push ?? "");
     setSetup(query.setup ?? "");
@@ -884,58 +892,37 @@ export default function DevicesPage() {
     setPage(0);
 
     if (reconciled.droppedGroup)
-      announce("The group this view filtered on was deleted, so the filter was removed.");
+      toast.warning("View references a deleted group", {
+        description: "The group filter was removed; the rest of the view still applies.",
+      });
 
     if (reconciled.droppedAttributes.length > 0 || reconciled.droppedColumns.length > 0)
-      announce(
-        "Some attributes this view used were deleted, so those filters and columns were removed.",
-      );
+      toast.warning("View references deleted attributes", {
+        description: "Those attribute filters and columns were removed.",
+        details: [...reconciled.droppedAttributes, ...reconciled.droppedColumns],
+      });
   };
 
-  const hasExplicitSearchParams = () =>
-    (
-      [
-        "q",
-        "status",
-        "proto",
-        "staleDays",
-        "health",
-        "push",
-        "setup",
-        "notSeenSince",
-        "activation",
-        "groupId",
-        "attributeKey",
-        "attributeValue",
-        "query",
-        "sort",
-        "direction",
-        "page",
-        "columns",
-        "pageSize",
-        "view",
-      ] as const
-    ).some((key) => {
-      const value = searchParams[key];
-
-      return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
-    });
-
   // Restore the member's default view once, and only on a bare /devices visit.
-  // A shared link with explicit filters always wins over the default.
-  let defaultViewApplied = false;
+  // The URL at mount is latched: clearing a shared link later must not apply
+  // the default behind the operator's back. Group/attribute reads are not
+  // required — a role may hold devices.read without groups.read.
+  const explicitSearchAtMount = hasExplicitDeviceSearch(searchParams);
+  const defaultViewState = { resolved: false };
   createEffect(
     () => ({
       views: deviceViews.data?.views,
-      ready: deviceViews.isSuccess && groups.isSuccess && attributeDefinitions.isSuccess,
-      explicit: hasExplicitSearchParams(),
+      ready: deviceViews.isSuccess,
     }),
     (state) => {
-      if (defaultViewApplied || !state.views || !state.ready || state.explicit) return;
-      defaultViewApplied = true;
-      const view = state.views.find((item) => item.isDefault);
+      const view = state.views?.find((item) => item.isDefault);
+      const action = resolveDeviceDefaultView(defaultViewState, {
+        explicitAtMount: explicitSearchAtMount,
+        ready: state.ready,
+        hasDefault: Boolean(view),
+      });
 
-      if (view) applyView(view);
+      if (action === "apply" && view) applyView(view);
     },
   );
 
@@ -943,6 +930,17 @@ export default function DevicesPage() {
     const attributes = (attributeDefinitions.data?.rows ?? []).filter(
       (definition) => definition.visibility === "visible",
     );
+    const staleOptions = [
+      { value: "7", label: "Not in 7 days" },
+      { value: "30", label: "Not in 30 days" },
+      { value: "90", label: "Not in 90 days" },
+    ];
+
+    if (staleDays() && !staleOptions.some((option) => option.value === staleDays()))
+      staleOptions.unshift({
+        value: staleDays(),
+        label: `Not in ${staleDays()} days`,
+      });
 
     return [
       {
@@ -1005,6 +1003,25 @@ export default function DevicesPage() {
         ],
       },
       {
+        id: "setup",
+        label: "ADE setup",
+        icon: Laptop,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "awaiting", label: "Awaiting Setup Assistant" },
+          { value: "complete", label: "Released" },
+        ],
+      },
+      {
+        id: "notSeenSince",
+        label: "Last seen before",
+        icon: RefreshCw,
+        kind: "text",
+        operators: [{ value: "is", label: "before" }],
+        placeholder: "2026-01-01T00:00:00.000Z",
+      },
+      {
         id: "activation",
         label: "Windows activation",
         icon: ShieldCheck,
@@ -1053,42 +1070,26 @@ export default function DevicesPage() {
         icon: RefreshCw,
         kind: "select",
         operators: [{ value: "is", label: "is" }],
-        options: [
-          { value: "7", label: "Not in 7 days" },
-          { value: "30", label: "Not in 30 days" },
-          { value: "90", label: "Not in 90 days" },
-        ],
+        options: staleOptions,
       },
     ];
   });
 
-  const filterConditions = createMemo<FilterCondition[]>(() => {
-    const conditions: FilterCondition[] = [];
-
-    if (status()) conditions.push({ field: "status", operator: "is", values: [status()] });
-
-    if (proto()) conditions.push({ field: "proto", operator: "is", values: [proto()] });
-
-    if (groupId()) conditions.push({ field: "groupId", operator: "is", values: [groupId()] });
-
-    if (health()) conditions.push({ field: "health", operator: "is", values: [health()] });
-
-    if (push()) conditions.push({ field: "push", operator: "is", values: [push()] });
-
-    if (activation())
-      conditions.push({ field: "activation", operator: "is", values: [activation()] });
-
-    if (staleDays()) conditions.push({ field: "staleDays", operator: "is", values: [staleDays()] });
-
-    if (attributeKey())
-      conditions.push({
-        field: `attr:${attributeKey()}`,
-        operator: "is",
-        values: attributeValue() ? [attributeValue()] : [],
-      });
-
-    return conditions;
-  });
+  const filterConditions = createMemo<FilterCondition[]>(() =>
+    deviceFilterConditions({
+      status: status(),
+      proto: proto(),
+      groupId: groupId(),
+      health: health(),
+      push: push(),
+      setup: setup(),
+      notSeenSince: notSeenSince(),
+      activation: activation(),
+      staleDays: staleDays(),
+      attributeKey: attributeKey(),
+      attributeValue: attributeValue(),
+    }),
+  );
 
   const applyFilters = (next: ReadonlyArray<FilterCondition>) => {
     setStatus("");
@@ -1143,14 +1144,16 @@ export default function DevicesPage() {
             Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
           ) ?? "",
         );
-      else if (condition.field === "activation")
-        setActivation(isActivationStatus(value) ? value : "");
-      else if (condition.field === "staleDays")
-        setStaleDays(
+      else if (condition.field === "setup")
+        setSetup(
           Option.getOrUndefined(
-            Schema.decodeUnknownOption(Schema.Literals(["7", "30", "90"]))(value),
+            Schema.decodeUnknownOption(Schema.Literals(["awaiting", "complete"]))(value),
           ) ?? "",
         );
+      else if (condition.field === "notSeenSince") setNotSeenSince(value);
+      else if (condition.field === "activation")
+        setActivation(isActivationStatus(value) ? value : "");
+      else if (condition.field === "staleDays") setStaleDays(staleDaysValue(value) ?? "");
     }
 
     setPage(0);
@@ -1328,27 +1331,29 @@ export default function DevicesPage() {
       .map((column) => column.id);
   };
 
-  const currentViewQuery = (): DeviceViewQuery => {
-    const active = filters();
-
-    return {
-      q: active.q,
-      status: active.status,
-      proto: active.proto,
-      groupId: active.groupId,
-      staleDays: active.staleDays,
-      health: active.health,
-      push: active.push,
-      setup: active.setup,
-      notSeenSince: active.notSeenSince,
-      activation: active.activation,
-      attributes: active.attributes,
-      query: active.query,
-      sort: active.sort,
-      direction: active.direction,
+  const currentViewQuery = (activeView?: DeviceView): DeviceViewQuery => {
+    const state = filters();
+    const current: DeviceViewQuery = {
+      q: state.q,
+      status: state.status,
+      proto: state.proto,
+      groupId: state.groupId,
+      staleDays: state.staleDays,
+      health: state.health,
+      push: state.push,
+      setup: state.setup,
+      notSeenSince: state.notSeenSince,
+      activation: state.activation,
+      attributes: state.attributes,
+      query: state.query,
+      sort: state.sort,
+      direction: state.direction,
       columns: currentVisibleColumns(),
       pageSize: pageSize(),
     };
+
+    // Update merges the stored view so fields the table cannot edit survive.
+    return activeView ? mergeActiveViewQuery(activeView.query, current) : current;
   };
 
   const total = () => devices.data?.total ?? 0;
@@ -1541,6 +1546,7 @@ export default function DevicesPage() {
       <FleetSummary items={fleet()} />
 
       <QueryError error={groups.error} onRetry={() => void groups.refetch()} />
+      <QueryError error={deviceViews.error} onRetry={() => void deviceViews.refetch()} />
 
       <Show when={exportError()}>
         <ErrorText error={exportError()} />

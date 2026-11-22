@@ -28,7 +28,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { announce } from "~/components/toast";
+import { toast } from "~/components/toast";
+import { errorMessage, raisedFailure } from "~/lib/errors";
 import { ErrorText } from "./common";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
@@ -47,8 +48,8 @@ export function DeviceViewsMenu(props: {
   canSave: boolean;
   /** `devices.write`: publish to the tenant and edit tenant views. */
   canPublish: boolean;
-  /** The query the current table state would save. */
-  currentQuery: () => DeviceViewQuery;
+  /** The query the current table state would save; active view merges extras. */
+  currentQuery: (activeView?: DeviceView) => DeviceViewQuery;
   onApply: (view: DeviceView) => void;
   /** Drop the active-view marker after deleting the selected view. */
   onCurrentViewDeleted: () => void;
@@ -61,6 +62,9 @@ export function DeviceViewsMenu(props: {
   const [visibility, setVisibility] = createSignal<DeviceViewVisibility>("private");
   const [errored, setErrored] = createSignal<unknown>();
   const [busy, setBusy] = createSignal(false);
+  const [pendingAction, setPendingAction] = createSignal<"update" | "duplicate" | "default" | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = createSignal<DeviceView>();
   const [deleteBusy, setDeleteBusy] = createSignal(false);
   const [deleteError, setDeleteError] = createSignal<unknown>();
@@ -108,7 +112,7 @@ export function DeviceViewsMenu(props: {
           description: description().trim() || null,
           visibility: visibility(),
         });
-        announce("View renamed.");
+        toast.success("View renamed");
       } else {
         await enterprise.createDeviceView(props.tenantId, {
           name: name().trim(),
@@ -116,7 +120,7 @@ export function DeviceViewsMenu(props: {
           visibility: visibility(),
           query: props.currentQuery(),
         });
-        announce("View saved.");
+        toast.success("View saved");
       }
 
       await invalidate();
@@ -129,18 +133,26 @@ export function DeviceViewsMenu(props: {
   };
 
   const updateQuery = async (view: DeviceView) => {
+    setPendingAction("update");
+
     try {
       await enterprise.patchDeviceView(props.tenantId, view.id, {
-        query: props.currentQuery(),
+        query: props.currentQuery(view),
       });
       await invalidate();
-      announce("View updated to the current filters.");
+      toast.success("View updated to the current filters");
     } catch (error) {
-      failure(error);
+      toast.error("Could not update the view", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const duplicate = async (view: DeviceView) => {
+    setPendingAction("duplicate");
+
     try {
       await enterprise.createDeviceView(props.tenantId, {
         name: `${view.name} copy`.slice(0, 120),
@@ -150,19 +162,29 @@ export function DeviceViewsMenu(props: {
         query: view.query,
       });
       await invalidate();
-      announce("View duplicated.");
+      toast.success("View duplicated");
     } catch (error) {
-      failure(error);
+      toast.error("Could not duplicate the view", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    } finally {
+      setPendingAction(null);
     }
   };
 
   const toggleDefault = async (view: DeviceView) => {
+    setPendingAction("default");
+
     try {
       await enterprise.setDefaultDeviceView(props.tenantId, view.isDefault ? null : view.id);
       await invalidate();
-      announce(view.isDefault ? "Default view cleared." : "Default view set.");
+      toast.success(view.isDefault ? "Default view cleared" : "Default view set");
     } catch (error) {
-      failure(error);
+      toast.error("Could not change your default view", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -177,7 +199,7 @@ export function DeviceViewsMenu(props: {
     try {
       await enterprise.deleteDeviceView(props.tenantId, view.id);
       await invalidate();
-      announce("View deleted.");
+      toast.success("View deleted");
       setDeleteTarget(undefined);
 
       if (props.currentViewId === view.id) props.onCurrentViewDeleted();
@@ -245,19 +267,29 @@ export function DeviceViewsMenu(props: {
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  disabled={!canEdit(view())}
+                  disabled={!canEdit(view()) || pendingAction() !== null}
                   onSelect={() => void updateQuery(view())}
                 >
-                  Update “{view().name}”
+                  {pendingAction() === "update" ? "Updating…" : `Update “${view().name}”`}
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={!canEdit(view())} onSelect={() => openRename(view())}>
                   Rename…
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void duplicate(view())}>
-                  Duplicate
+                <DropdownMenuItem
+                  disabled={pendingAction() !== null}
+                  onSelect={() => void duplicate(view())}
+                >
+                  {pendingAction() === "duplicate" ? "Duplicating…" : "Duplicate"}
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void toggleDefault(view())}>
-                  {view().isDefault ? "Clear my default" : "Set as my default"}
+                <DropdownMenuItem
+                  disabled={pendingAction() !== null}
+                  onSelect={() => void toggleDefault(view())}
+                >
+                  {pendingAction() === "default"
+                    ? "Saving…"
+                    : view().isDefault
+                      ? "Clear my default"
+                      : "Set as my default"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

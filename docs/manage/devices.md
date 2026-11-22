@@ -110,15 +110,16 @@ holds the visible table columns; a view also records the page size.
 
 Visibility and permissions:
 
-| Visibility | Who can open it       | Who can edit or delete it               |
-| ---------- | --------------------- | --------------------------------------- |
-| Private    | Its owner             | Its owner                               |
-| Tenant     | Every tenant member   | Roles with **Manage devices**           |
+| Visibility | Who can open it     | Who can edit or delete it     |
+| ---------- | ------------------- | ----------------------------- |
+| Private    | Its owner           | Its owner                     |
+| Tenant     | Every tenant member | Roles with **Manage devices** |
 
 A member with **View devices** can create and manage private views. Publishing a
 tenant view (and editing or deleting one) requires **Manage devices**
 (`devices.write`). Creating, updating, deleting and choosing a default are written
-to the audit log.
+to the audit log. When a member leaves the tenant, their private views and their
+default are removed; published tenant views stay with the tenant.
 
 References age gracefully: if a saved view filtered on a group or attribute that was
 later deleted, opening it drops that reference, tells you, and keeps the rest of the
@@ -127,13 +128,13 @@ device list.
 
 API:
 
-| Method   | Path                                                | Purpose                          |
-| -------- | --------------------------------------------------- | -------------------------------- |
-| `GET`    | `/api/v1/tenants/:tenantId/device-views`             | List private and tenant views    |
-| `POST`   | `/api/v1/tenants/:tenantId/device-views`             | Create a view                    |
-| `PATCH`  | `/api/v1/tenants/:tenantId/device-views/:viewId`     | Update name, visibility or query |
-| `DELETE` | `/api/v1/tenants/:tenantId/device-views/:viewId`     | Delete a view                    |
-| `PUT`    | `/api/v1/tenants/:tenantId/device-views/default`     | Set or clear your default view   |
+| Method   | Path                                             | Purpose                          |
+| -------- | ------------------------------------------------ | -------------------------------- |
+| `GET`    | `/api/v1/tenants/:tenantId/device-views`         | List private and tenant views    |
+| `POST`   | `/api/v1/tenants/:tenantId/device-views`         | Create a view                    |
+| `PATCH`  | `/api/v1/tenants/:tenantId/device-views/:viewId` | Update name, visibility or query |
+| `DELETE` | `/api/v1/tenants/:tenantId/device-views/:viewId` | Delete a view                    |
+| `PUT`    | `/api/v1/tenants/:tenantId/device-views/default` | Set or clear your default view   |
 
 A view query is the same shape as the device search filters plus `columns` and
 `pageSize`, for example:

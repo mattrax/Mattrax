@@ -24,6 +24,7 @@ import { chord, sequence, useCommands } from "~/lib/commands";
 import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selection";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
+import { toggleVisibleColumnIds } from "./table-columns";
 
 export type MdmColumn<T> = {
   id: string;
@@ -665,18 +666,33 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     rangeGesture = false;
   };
 
+  /** Commit an externally owned column set and drop an ordering it hides. */
+  const commitVisibleColumns = (ids: ReadonlyArray<string>) => {
+    props.onVisibleColumnsChange?.([...ids]);
+
+    const current = sort();
+
+    if (!current) return;
+    const column = props.columns.find((item) => sortColumnId(item) === current.id);
+
+    // An ordering whose column is hidden has no visible cause, so clear it.
+    if (!column || !ids.includes(column.id)) setSort(null);
+  };
+
   /** Persist a visibility map and drop any sort whose column just disappeared. */
   const applyVisibility = (next: Record<string, boolean>) => {
     if (props.visibleColumnIds?.() !== undefined) {
-      props.onVisibleColumnsChange?.(
+      commitVisibleColumns(
         props.columns.filter((column) => visibleIn(next, column)).map((column) => column.id),
       );
-    } else {
-      setHidden(next);
 
-      if (props.storageKey && typeof localStorage !== "undefined")
-        localStorage.setItem(`mattrax:table:${props.storageKey}:columns`, JSON.stringify(next));
+      return;
     }
+
+    setHidden(next);
+
+    if (props.storageKey && typeof localStorage !== "undefined")
+      localStorage.setItem(`mattrax:table:${props.storageKey}:columns`, JSON.stringify(next));
 
     const current = sort();
 
@@ -698,6 +714,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     // activation and a stale picker after another tab changed the storage.
     if (!visible && visibleColumns().length === 1 && isColumnVisible(column)) {
       announce("Keep at least one column visible.");
+
+      return;
+    }
+
+    const external = props.visibleColumnIds?.();
+
+    if (external !== undefined) {
+      commitVisibleColumns(toggleVisibleColumnIds(props.columns, external, column.id, visible));
 
       return;
     }

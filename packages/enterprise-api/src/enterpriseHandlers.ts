@@ -7765,6 +7765,19 @@ export const createEnterpriseService = ({
           .where(eq(schema.accountApiToken.accountId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
         yield* db.delete(schema.member).where(eq(schema.member.accountId, user.id));
+        // Private views and defaults belong to the account; tenant views are
+        // the tenant's and survive with their owner reference set null.
+        yield* db
+          .delete(schema.deviceViewDefault)
+          .where(eq(schema.deviceViewDefault.accountId, user.id));
+        yield* db
+          .delete(schema.deviceView)
+          .where(
+            and(
+              eq(schema.deviceView.createdByAccountId, user.id),
+              eq(schema.deviceView.visibility, "private"),
+            ),
+          );
 
         // Yielded Auth owns these tables; remove the subject's auth state.
         // In-flight passkey ceremonies carry no subject column and expire on
@@ -12775,6 +12788,25 @@ export const createEnterpriseService = ({
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
             yield* tx.delete(schema.member).where(eq(schema.member.id, member.id));
+            // A removed member cannot reach their private views any more; a
+            // tenant view stays for the team to manage.
+            yield* tx
+              .delete(schema.deviceViewDefault)
+              .where(
+                and(
+                  eq(schema.deviceViewDefault.organizationId, tenantId),
+                  eq(schema.deviceViewDefault.accountId, member.accountId),
+                ),
+              );
+            yield* tx
+              .delete(schema.deviceView)
+              .where(
+                and(
+                  eq(schema.deviceView.organizationId, tenantId),
+                  eq(schema.deviceView.createdByAccountId, member.accountId),
+                  eq(schema.deviceView.visibility, "private"),
+                ),
+              );
             yield* clearTenantAccountDirectoryState(tx, tenantId, member.accountId);
           }),
         );

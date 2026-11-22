@@ -129,6 +129,7 @@ describe("device search codecs", () => {
         view: "view-1",
         setup: "awaiting",
         notSeenSince: "2026-01-01T00:00:00.000Z",
+        staleDays: "13",
       }),
     ).toEqual({
       columns: "name,health,attribute:cost_centre",
@@ -136,10 +137,13 @@ describe("device search codecs", () => {
       view: "view-1",
       setup: "awaiting",
       notSeenSince: "2026-01-01T00:00:00.000Z",
+      staleDays: "13",
     });
     expect(decodeDeviceSearchParams({ pageSize: "500" })).toEqual({});
     expect(decodeDeviceSearchParams({ pageSize: "0" })).toEqual({});
     expect(decodeDeviceSearchParams({ setup: "bogus" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "2.5" })).toEqual({});
   });
 
   it("serialises the page alongside the filters", () => {
