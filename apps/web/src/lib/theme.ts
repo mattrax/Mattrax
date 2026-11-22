@@ -22,7 +22,7 @@ export const THEME_STORAGE_KEY = "mattrax:theme";
 
 /** `theme-color` per resolved theme. Keep in sync with `apps/web/src/Document.tsx`. */
 export const THEME_COLOURS = {
-  light: "#f6f6f3",
+  light: "#e9e9e6",
   dark: "#10100f",
 } as const;
 

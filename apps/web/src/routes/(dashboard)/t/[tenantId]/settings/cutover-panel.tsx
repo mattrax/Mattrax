@@ -273,7 +273,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
 
   return (
     <Panel
-      class="xl:col-span-2"
+      class="min-w-0"
       title="Export / move deployment"
       description="Move this tenant to another Mattrax deployment without re-enrolling its devices."
     >

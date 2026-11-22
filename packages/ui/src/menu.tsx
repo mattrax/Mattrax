@@ -220,16 +220,39 @@ function DropdownMenuRadioGroup(props: DropdownMenuRadioGroupProps) {
 }
 
 function DropdownMenuRadioItem(
-  props: Omit<ComponentProps<"div">, "style"> & { value: string; children?: JSX.Element },
+  props: Omit<ComponentProps<"div">, "style"> & {
+    value: string;
+    children?: JSX.Element;
+    /** The selected marker: a leading dot (default), a trailing check, or none. */
+    indicator?: "dot" | "check" | "none";
+  },
 ) {
-  const [local, others] = splitProps(props, ["class", "value", "children"]);
+  const [local, others] = splitProps(props, ["class", "value", "children", "indicator"]);
+  const indicator = () => local.indicator ?? "dot";
 
   return (
-    <MenuRadioItem value={local.value} class={cn(itemBase, "pl-7", local.class)} {...others}>
-      <span class="absolute left-2 flex size-3.5 items-center justify-center">
-        <span class="size-1.5 rounded-full bg-current" />
-      </span>
+    <MenuRadioItem
+      value={local.value}
+      class={cn(
+        itemBase,
+        indicator() === "dot" && "pl-7",
+        indicator() === "check" && "pr-7",
+        indicator() === "none" && "pl-2",
+        local.class,
+      )}
+      {...others}
+    >
+      <Show when={indicator() === "dot"}>
+        <span class="absolute left-2 flex size-3.5 items-center justify-center">
+          <span class="size-1.5 rounded-full bg-current" />
+        </span>
+      </Show>
       {local.children}
+      <Show when={indicator() === "check"}>
+        <span class="absolute right-2 flex size-3.5 items-center justify-center">
+          <Check class="size-3.5" />
+        </span>
+      </Show>
     </MenuRadioItem>
   );
 }

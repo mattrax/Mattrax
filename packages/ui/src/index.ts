@@ -126,6 +126,26 @@ export {
 export { Spinner } from "./spinner";
 
 export {
+  DotMatrix,
+  type DotMatrixPattern,
+  type DotMatrixProps,
+  type DotMatrixState,
+} from "./dot-matrix";
+
+export { LoadingState, type LoadingStateProps } from "./loading-state";
+
+export {
+  IndeterminateBar,
+  Progress,
+  SegmentedProgress,
+  type IndeterminateBarProps,
+  type ProgressProps,
+  type ProgressSegment,
+  type ProgressTone,
+  type SegmentedProgressProps,
+} from "./progress";
+
+export {
   Table,
   TableBody,
   TableCaption,

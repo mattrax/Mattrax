@@ -17,6 +17,7 @@ import {
   formatDate,
   relativeTime,
 } from "~/components/mdm/common";
+import { Progress } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -88,7 +89,7 @@ const statusLabel = (status: string) => {
   }
 };
 
-export default function MigrationDetailPage() {
+export default function MigrationDetailPage(props: { embedded?: boolean } = {}) {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -157,7 +158,11 @@ export default function MigrationDetailPage() {
     onSuccess: () => {
       setConfirmDelete(false);
       void qc.invalidateQueries({ queryKey: enterpriseKeys.fleetMigrations(params.tenantId) });
-      navigate(routes.tenant(params.tenantId).migrations());
+      navigate(
+        props.embedded
+          ? routes.tenant(params.tenantId).settingsMigration()
+          : routes.tenant(params.tenantId).migrations(),
+      );
     },
     onError: (error) => toast.error("Could not delete the cohort", { description: String(error) }),
   }));
@@ -292,8 +297,15 @@ export default function MigrationDetailPage() {
 
   return (
     <Show when={can("devices.read")} fallback={<AccessDenied />}>
-      <Page>
-        <PageBreadcrumbs title="Migration" />
+      <Page class={props.embedded ? "max-w-none p-0" : undefined}>
+        <Show when={props.embedded} fallback={<PageBreadcrumbs title="Migration" />}>
+          <a
+            href={routes.tenant(params.tenantId).settingsMigration()}
+            class="text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+          >
+            ← Migration cohorts
+          </a>
+        </Show>
         <PageHeader
           eyebrow="Migration"
           title={detail.data?.migration.name ?? "Migration cohort"}
@@ -330,6 +342,14 @@ export default function MigrationDetailPage() {
         <Show when={counts()}>
           {(value) => (
             <div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+              <Progress
+                class="sm:col-span-3 xl:col-span-6"
+                value={value().confirmed}
+                max={value().total}
+                label="Migration progress"
+                valueLabel={`${value().confirmed} of ${value().total} confirmed`}
+                showValue
+              />
               <StatCard label="Total" value={value().total} />
               <StatCard label="Pending" value={value().pending} />
               <StatCard label="Unenrol issued" value={value().unenrolIssued} tone="warning" />

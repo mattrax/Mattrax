@@ -14,6 +14,7 @@ import {
   PageTitle,
 } from "@mattrax/ui";
 import { ErrorText, QueryError } from "~/components/mdm/common";
+import { MigrationBanner } from "~/components/migration-banner";
 import { MissingDevicesBanner } from "~/components/missing-devices-banner";
 import { OnboardingChecklist } from "~/components/onboarding-checklist";
 import { SoftwareUpdatesBanner } from "~/components/software-updates-banner";
@@ -248,6 +249,7 @@ function LoadedOverview(props: {
         creating={props.creating}
         error={props.error}
       />
+      <MigrationBanner tenantId={props.tenantId} />
       <MissingDevicesBanner tenantId={props.tenantId} />
       <SoftwareUpdatesBanner tenantId={props.tenantId} />
       <OnboardingChecklist tenantId={props.tenantId} />
@@ -299,6 +301,7 @@ function PreviewOverview(props: {
         creating={props.creating}
         error={props.error}
       />
+      <MigrationBanner tenantId={props.tenantId} />
       <MissingDevicesBanner tenantId={props.tenantId} />
       <SoftwareUpdatesBanner tenantId={props.tenantId} />
       <OnboardingChecklist tenantId={props.tenantId} />

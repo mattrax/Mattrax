@@ -33,6 +33,9 @@ test.describe("RBAC UI gating", () => {
     await expect(page.getByRole("link", { name: "Create policy", exact: true })).toBeVisible();
 
     await gotoHydrated(page, `${base}/settings`);
+    // The save control lives in the shared floating bar, which appears once the
+    // profile differs from what the server last returned.
+    await page.getByLabel(/^Name/).fill("RBAC Owner Renamed");
     await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Import tenant", exact: true })).toBeVisible();

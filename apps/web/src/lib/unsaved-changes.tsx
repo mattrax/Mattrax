@@ -35,7 +35,12 @@ export type UnsavedChangesGuard = {
  */
 export function useUnsavedChanges(
   dirty: () => boolean,
-  options: { title?: string; description?: string } = {},
+  options: {
+    title?: string;
+    description?: string;
+    /** Navigation targets that may proceed without a prompt, e.g. sibling settings tabs. */
+    allowNavigation?: (to: string) => boolean;
+  } = {},
 ): UnsavedChangesGuard {
   const [pending, setPending] = createSignal<PendingChange | null>(null);
 
@@ -51,6 +56,7 @@ export function useUnsavedChanges(
 
   useBeforeLeave((event) => {
     if (!dirty()) return;
+    if (typeof event.to === "string" && options.allowNavigation?.(event.to)) return;
     event.preventDefault();
     setPending({ run: () => event.retry(true) });
   });

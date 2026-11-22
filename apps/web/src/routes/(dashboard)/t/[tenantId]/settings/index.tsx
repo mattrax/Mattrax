@@ -3,15 +3,12 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
-  isLogoUrl,
   normalizeBrandColor,
-  resolveTenantBranding,
   TENANT_IMPORT_MAX_BYTES,
-  validateTenantBranding,
   TenantImportRequest as TenantImportRequestSchema,
 } from "@mattrax/enterprise-domain/client";
 import type { TenantImportRequest, TenantImportResponse } from "@mattrax/enterprise-domain/client";
@@ -27,23 +24,21 @@ import {
 } from "~/components/ui/dialog";
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { RegionPicker } from "~/components/region-picker";
+import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import type { BackupRunInfo, MeResponse, TenantDetail } from "~/lib/enterprise";
+import type { BackupRunInfo } from "~/lib/enterprise";
 import {
-  combineRestores,
   optimisticallyRemoveCollectionItems,
   optimisticallyUpdateCollection,
-  optimisticUpdate,
 } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
-import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
-import { rememberTenantAlias } from "~/lib/tenant";
-import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
 import { CutoverPanel } from "./cutover-panel";
@@ -97,23 +92,34 @@ export default function GeneralSettingsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { can } = useCan();
-  const canWrite = () => can("tenant.write");
+  const draft = useTenantProfileDraft();
+  const {
+    name,
+    setName,
+    slug,
+    setSlug,
+    displayName,
+    setDisplayName,
+    logo,
+    setLogo,
+    supportEmail,
+    setSupportEmail,
+    brandColor,
+    setBrandColor,
+    appStoreRegion,
+    setAppStoreRegion,
+    autoUnlink,
+    setAutoUnlink,
+    brandingErrors,
+    tenant,
+  } = draft;
+  const canWrite = draft.canWrite;
   const canExport = () => can("tenant.export");
   const canImport = () => can("tenant.import");
   const canBackups = () => can("backups.read");
   const canRunBackup = () => can("backups.write");
   const canDelete = () => can("tenant.delete");
 
-  const tenant = useQuery(() => enterpriseQueries.tenant(params.tenantId));
-
-  const [name, setName] = createSignal("");
-  const [slug, setSlug] = createSignal("");
-  const [displayName, setDisplayName] = createSignal("");
-  const [logo, setLogo] = createSignal("");
-  const [supportEmail, setSupportEmail] = createSignal("");
-  const [brandColor, setBrandColor] = createSignal("");
-  const [appStoreRegion, setAppStoreRegion] = createSignal("");
-  const [autoUnlink, setAutoUnlink] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [includeAudit, setIncludeAudit] = createSignal(false);
@@ -125,159 +131,10 @@ export default function GeneralSettingsPage() {
   const [importError, setImportError] = createSignal<unknown>();
   const [importing, setImporting] = createSignal(false);
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
-  const [saved, setSaved] = createSignal(false);
-  const [seeded, setSeeded] = createSignal(false);
-
-  const [baseline, setBaseline] = createSignal<{
-    name: string;
-    slug: string;
-    displayName: string;
-    logo: string;
-    supportEmail: string;
-    brandColor: string;
-    appStoreRegion: string;
-    autoUnlinkUnavailableApplications: boolean;
-  } | null>(null);
 
   let importFileInput: HTMLInputElement | undefined;
 
-  createEffect(
-    () => tenant.data?.id,
-    () => {
-      const data = tenant.data;
-
-      if (data) {
-        setName(data.name);
-        setSlug(data.slug);
-        setDisplayName(data.displayName ?? "");
-        setLogo(data.logo ?? "");
-        setSupportEmail(data.supportEmail ?? "");
-        setBrandColor(data.brandColor ?? "");
-        setAppStoreRegion(data.appStoreRegion ?? "");
-        setAutoUnlink(data.autoUnlinkUnavailableApplications ?? false);
-        setSeeded(true);
-      }
-    },
-  );
-
-  const brandingErrors = createMemo(() =>
-    validateTenantBranding({
-      displayName: displayName() || null,
-      logo: logo() || null,
-      supportEmail: supportEmail() || null,
-      brandColor: brandColor() || null,
-    }),
-  );
-
-  const hasBrandingErrors = () => Object.keys(brandingErrors()).length > 0;
   const colorValue = () => normalizeBrandColor(brandColor() || "") ?? DEFAULT_BRAND_COLOR;
-
-  const preview = createMemo(() =>
-    resolveTenantBranding({
-      name: name() || "Tenant",
-      displayName: displayName() || null,
-      logo: logo() || null,
-      supportEmail: supportEmail() || null,
-      brandColor: brandColor() || null,
-    }),
-  );
-
-  const profile = () => ({
-    name: name(),
-    slug: slug(),
-    displayName: displayName(),
-    logo: logo(),
-    supportEmail: supportEmail(),
-    brandColor: brandColor(),
-    appStoreRegion: appStoreRegion().trim().toUpperCase(),
-    autoUnlinkUnavailableApplications: autoUnlink(),
-  });
-
-  const dirty = () => {
-    const current = baseline() ?? tenant.data;
-
-    if (!current || !seeded()) return false;
-
-    return (
-      name() !== current.name ||
-      slug() !== current.slug ||
-      displayName() !== (current.displayName ?? "") ||
-      logo() !== (current.logo ?? "") ||
-      supportEmail() !== (current.supportEmail ?? "") ||
-      brandColor() !== (current.brandColor ?? "") ||
-      appStoreRegion().trim().toUpperCase() !== (current.appStoreRegion ?? "") ||
-      autoUnlink() !== (current.autoUnlinkUnavailableApplications ?? false)
-    );
-  };
-
-  const unsaved = useUnsavedChanges(dirty, {
-    title: "Discard tenant changes?",
-    description: "The tenant profile or branding has edits that have not been saved.",
-  });
-
-  const save = useMutation(() => ({
-    mutationFn: () =>
-      enterprise.patchTenant(params.tenantId, {
-        name: name(),
-        slug: slug(),
-        displayName: displayName() || null,
-        logo: logo() || null,
-        supportEmail: supportEmail() || null,
-        brandColor: brandColor() || null,
-        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
-        autoUnlinkUnavailableApplications: autoUnlink(),
-      }),
-    onMutate: async () => {
-      const patch = {
-        name: name(),
-        slug: slug(),
-        displayName: displayName() || null,
-        logo: logo() || null,
-        supportEmail: supportEmail() || null,
-        brandColor: brandColor() || null,
-        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
-        autoUnlinkUnavailableApplications: autoUnlink(),
-      };
-
-      const tenantId = tenant.data?.id;
-
-      const restores = await Promise.all([
-        optimisticUpdate<TenantDetail>(qc, enterpriseKeys.tenant(params.tenantId), (current) => ({
-          ...current,
-          ...patch,
-        })),
-        // The shell and tenant switcher read branding from the membership list.
-        optimisticUpdate<MeResponse>(qc, enterpriseKeys.me(), (current) => ({
-          ...current,
-          tenants: current.tenants.map((membership) =>
-            membership.id === tenantId ? { ...membership, ...patch } : membership,
-          ),
-        })),
-      ]);
-
-      return combineRestores(restores);
-    },
-    onSuccess: () => {
-      setBaseline(profile());
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-
-      // A slug change changes the canonical address of every tenant page. A
-      // document load avoids racing the membership shell (which still has the
-      // old slug for a moment) and lands on server-resolved data.
-      if (slug() && slug() !== params.tenantId) {
-        if (tenant.data?.id) rememberTenantAlias(slug(), tenant.data.id);
-        window.location.replace(`/t/${encodeURIComponent(slug())}/settings`);
-
-        return;
-      }
-    },
-    onError: (_error, _variables, restore) => restore?.(),
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
-      void qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
-    },
-  }));
 
   const del = useMutation(() => ({
     mutationFn: () => enterprise.deleteTenant(params.tenantId),
@@ -597,13 +454,8 @@ export default function GeneralSettingsPage() {
   });
 
   return (
-    <div class="grid gap-5 xl:grid-cols-2">
-      {unsaved.prompt}
-      <QueryError
-        class="xl:col-span-2"
-        error={tenant.error}
-        onRetry={() => void tenant.refetch()}
-      />
+    <div class="grid gap-5">
+      <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
       <Panel
         title="Tenant profile"
@@ -612,7 +464,7 @@ export default function GeneralSettingsPage() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            save.mutate();
+            draft.requestSave();
           }}
         >
           <div class="divide-y divide-border">
@@ -706,19 +558,12 @@ export default function GeneralSettingsPage() {
             </FieldRow>
             <FieldRow
               label="App Store region"
-              hint="Two-letter storefront used to resolve an App Store ID when a device does not report one. Leave empty for US."
+              hint="Storefront used to resolve an App Store ID when a device does not report one. Defaults to the United States."
             >
-              <Input
-                disabled={!canWrite()}
+              <RegionPicker
                 value={appStoreRegion()}
-                maxlength={2}
-                placeholder="US"
-                pattern="[A-Za-z]{2}"
-                onInput={(e) => {
-                  setAppStoreRegion(
-                    e.currentTarget.value.replaceAll(/[^a-zA-Z]/g, "").toUpperCase(),
-                  );
-                }}
+                disabled={!canWrite()}
+                onChange={setAppStoreRegion}
               />
             </FieldRow>
             <FieldRow
@@ -736,116 +581,29 @@ export default function GeneralSettingsPage() {
                 Unlink assignments when every storefront loses the app
               </label>
             </FieldRow>
-          </div>
-          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-            <Show when={tenant.data}>
-              <span class="text-xs text-muted-foreground">
-                Created {new Date(tenant.data.createdAt).toLocaleDateString()}
+            <ReadOnlyRow
+              label="Tenant ID"
+              hint="Stable identifier used by the API and device enrollment."
+            >
+              <span class="block break-all font-mono text-[12px] text-muted-foreground">
+                {tenant.data?.id ?? "…"}
               </span>
-            </Show>
-            <Show when={canWrite()}>
-              <Button
-                type="submit"
-                class="ml-auto"
-                disabled={save.isPending || hasBrandingErrors() || !dirty()}
-              >
-                {save.isPending ? "Saving…" : "Save changes"}
-              </Button>
-              <Show when={saved()}>
-                <span role="status" class="text-xs text-success-foreground">
-                  Saved.
-                </span>
-              </Show>
-            </Show>
+            </ReadOnlyRow>
+            <ReadOnlyRow label="Created" hint="When this tenant was provisioned.">
+              <span class="text-[13px] text-muted-foreground">
+                {tenant.data ? new Date(tenant.data.createdAt).toLocaleDateString() : "…"}
+              </span>
+            </ReadOnlyRow>
           </div>
           <Show when={!canWrite()}>
             <ReadOnlyNotice class="mt-3">
               Your role can view these settings but not change them.
             </ReadOnlyNotice>
           </Show>
-          <ErrorText error={save.error} />
         </form>
       </Panel>
 
-      <div class="flex min-w-0 flex-col gap-5">
-        <Panel
-          title="Branding preview"
-          description="How the public enrollment page looks with the values above."
-        >
-          <div class="overflow-hidden rounded-lg border border-border bg-surface">
-            <div class="h-1.5" style={{ "background-color": preview().brandColor }} />
-            <div class="space-y-4 p-4">
-              <div class="flex items-center gap-3">
-                <Show when={preview().logo && isLogoUrl(preview().logo!)}>
-                  <img
-                    src={preview().logo!}
-                    alt=""
-                    class="size-10 shrink-0 rounded-md bg-surface object-contain p-1"
-                  />
-                </Show>
-                <div class="min-w-0">
-                  <p class="truncate text-[13.5px] font-semibold text-foreground">
-                    Enroll in {preview().displayName}
-                  </p>
-                  <p class="text-xs text-muted-foreground">Device enrollment</p>
-                </div>
-              </div>
-              <div
-                class="rounded-lg px-3 py-2 text-center text-[13px] font-medium"
-                style={{
-                  "background-color": preview().brandColor,
-                  color: "var(--brand-foreground)",
-                }}
-              >
-                Continue
-              </div>
-              <p class="text-xs text-muted-foreground">
-                Need help? Contact{" "}
-                <a
-                  class="break-all font-medium text-foreground underline underline-offset-2"
-                  href={`mailto:${preview().supportEmail}`}
-                >
-                  {preview().supportEmail}
-                </a>
-              </p>
-            </div>
-          </div>
-          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-            This preview uses the values above before you save. Unset values fall back to the
-            Mattrax defaults.
-          </p>
-        </Panel>
-
-        <Panel title="Tenant details">
-          <div class="divide-y divide-border text-[13px]">
-            <DetailRow label="Tenant ID">
-              <span class="break-all font-mono text-xs text-muted-foreground">
-                {tenant.data?.id ?? ""}
-              </span>
-            </DetailRow>
-            <DetailRow label="Dashboard URL">
-              <span class="break-all font-mono text-xs text-muted-foreground">
-                /t/{tenant.data?.slug ?? ""}
-              </span>
-            </DetailRow>
-            <DetailRow label="Your role">
-              <span class="font-medium capitalize text-foreground">
-                {tenantRoleName(tenant.data) ?? "…"}
-              </span>
-            </DetailRow>
-            <DetailRow label="Devices">
-              <span class="text-right text-foreground">Managed from the Devices page</span>
-            </DetailRow>
-          </div>
-          <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Tenant resources (devices, groups, policies, members) are isolated from every other
-            tenant.
-          </p>
-        </Panel>
-      </div>
-
       <Panel
-        class="xl:col-span-2"
         title="Data and backups"
         description="Versioned JSON bundles for moving a tenant between deployments."
       >
@@ -1319,7 +1077,7 @@ export default function GeneralSettingsPage() {
 
       <Show when={canDelete()}>
         <Panel
-          class="border-destructive/20 bg-destructive/[0.015] xl:col-span-2"
+          class="border-destructive/20 bg-destructive/[0.015]"
           header={
             <div class="flex items-center gap-2">
               <TriangleAlert class="size-4 text-destructive" />
@@ -1438,9 +1196,9 @@ export default function GeneralSettingsPage() {
 
 /** A form row in the OpenCode-console style: label and hint on the left, the
  * control pinned to the right on desktop and stacked on narrow screens. */
-function FieldRow(props: { label: string; hint?: string; children: JSX.Element }) {
+function ReadOnlyRow(props: { label: string; hint?: string; children: JSX.Element }) {
   return (
-    <label class="flex flex-col gap-2 py-3.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+    <div class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
       <span class="min-w-0">
         <span class="block text-[13px] font-medium leading-snug text-foreground">
           {props.label}
@@ -1451,17 +1209,26 @@ function FieldRow(props: { label: string; hint?: string; children: JSX.Element }
           </span>
         </Show>
       </span>
-      <span class="w-full min-w-0 sm:w-[19rem] sm:shrink-0">{props.children}</span>
-    </label>
+      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
+    </div>
   );
 }
 
-function DetailRow(props: { label: string; children: JSX.Element }) {
+function FieldRow(props: { label: string; hint?: string; children: JSX.Element }) {
   return (
-    <div class="flex items-start justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-      <span class="shrink-0 text-xs text-muted-foreground">{props.label}</span>
-      <span class="min-w-0 text-right">{props.children}</span>
-    </div>
+    <label class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8 [&_input:not([type=checkbox]):not([type=color])]:h-9">
+      <span class="min-w-0">
+        <span class="block text-[13px] font-medium leading-snug text-foreground">
+          {props.label}
+        </span>
+        <Show when={props.hint}>
+          <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+            {props.hint}
+          </span>
+        </Show>
+      </span>
+      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
+    </label>
   );
 }
 

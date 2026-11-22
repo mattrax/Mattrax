@@ -408,6 +408,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
           keywords: ["plan", "invoice", "stripe", "usage"],
           path: "billing",
         },
+        {
+          key: "storage",
+          title: "Storage",
+          keywords: ["r2", "bucket", "files", "usage", "space", "cleanup"],
+          path: "storage",
+        },
       ] satisfies ReadonlyArray<{
         key: string;
         title: string;

@@ -27,11 +27,7 @@ import {
 } from "~/components/ui/dialog";
 import { GripVertical, Plus, Star, X } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-} from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DashboardWidget, DashboardWidgetType } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { optimisticUpdate } from "~/lib/optimistic";
@@ -39,6 +35,8 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient as appQueryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 import { useCan } from "~/lib/permissions";
+import { PinDashboardButton } from "~/components/pin-dashboard-button";
+import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -420,9 +418,7 @@ export default function DashboardPage() {
         enterpriseKeys.dashboards(params.tenantId),
         (current) => ({
           ...current,
-          dashboards: current.dashboards.filter(
-            (dashboard) => dashboard.id !== params.dashboardId,
-          ),
+          dashboards: current.dashboards.filter((dashboard) => dashboard.id !== params.dashboardId),
         }),
       );
 
@@ -737,6 +733,16 @@ export default function DashboardPage() {
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <Show when={dashboard.data}>
+            {(current) => (
+              <PinDashboardButton
+                tenantId={resolveTenantId(params.tenantId) ?? params.tenantId ?? ""}
+                dashboardId={current().id}
+                name={current().name}
+                size="sm"
+              />
+            )}
+          </Show>
           <Show when={writable() && !dashboard.data?.isDefault}>
             <Button
               size="sm"
@@ -867,80 +873,80 @@ export default function DashboardPage() {
                 const position = () => currentLayout(widget);
                 const batchFor = useDashboardWidgetBatch();
 
-              return (
-                <article
-                  class={cn(
-                    "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)] transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift",
-                    `dashboard-widget-${widget.type}`,
-                    editing() && "hover:border-border-strong",
-                  )}
-                  style={{
-                    "grid-column": `${position().x + 1} / span ${position().w}`,
-                    "grid-row": `${position().y + 1} / span ${position().h}`,
-                  }}
-                >
-                  <header class="flex min-w-0 items-start gap-1.5 px-0.5 pb-2">
+                return (
+                  <article
+                    class={cn(
+                      "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)] transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift",
+                      `dashboard-widget-${widget.type}`,
+                      editing() && "hover:border-border-strong",
+                    )}
+                    style={{
+                      "grid-column": `${position().x + 1} / span ${position().w}`,
+                      "grid-row": `${position().y + 1} / span ${position().h}`,
+                    }}
+                  >
+                    <header class="flex min-w-0 items-start gap-1.5 px-0.5 pb-2">
+                      <Show when={editing()}>
+                        <button
+                          type="button"
+                          aria-label={`Move ${widget.title}`}
+                          class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:cursor-grabbing active:bg-hover"
+                          onPointerDown={(event) => startDrag(event, widget, "move")}
+                        >
+                          <GripVertical class="size-3.5" />
+                        </button>
+                      </Show>
+                      <div class="min-w-0 flex-1">
+                        <h2 class="truncate text-[12.5px] font-medium text-foreground">
+                          {widget.title}
+                        </h2>
+                        <p class="truncate text-[10px] capitalize text-muted-foreground">
+                          {widget.type === "markdown"
+                            ? "Markdown"
+                            : `${widget.type} · ${String(widgetConfig(widget).dataset ?? "devices")}`}
+                        </p>
+                      </div>
+                      <Show when={editing()}>
+                        <div class="flex shrink-0 items-center gap-1">
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            class="min-h-9 sm:min-h-0"
+                            onClick={() => openEdit(widget)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            aria-label={`Remove ${widget.title}`}
+                            class="min-h-9 min-w-9 text-muted-foreground hover:text-destructive sm:min-h-0 sm:min-w-0"
+                            disabled={removeWidget.isPending}
+                            onClick={() => setRemoveWidgetTarget(widget)}
+                          >
+                            <X class="size-3" />
+                          </Button>
+                        </div>
+                      </Show>
+                    </header>
+                    <div class="min-h-0 flex-1 overflow-hidden">
+                      <DashboardWidgetView
+                        widget={widget}
+                        tenantId={params.tenantId!}
+                        batch={batchFor?.(widget)}
+                      />
+                    </div>
                     <Show when={editing()}>
                       <button
                         type="button"
-                        aria-label={`Move ${widget.title}`}
-                        class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:cursor-grabbing active:bg-hover"
-                        onPointerDown={(event) => startDrag(event, widget, "move")}
-                      >
-                        <GripVertical class="size-3.5" />
-                      </button>
+                        aria-label={`Resize ${widget.title}`}
+                        class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                        onPointerDown={(event) => startDrag(event, widget, "resize")}
+                      />
                     </Show>
-                    <div class="min-w-0 flex-1">
-                      <h2 class="truncate text-[12.5px] font-medium text-foreground">
-                        {widget.title}
-                      </h2>
-                      <p class="truncate text-[10px] capitalize text-muted-foreground">
-                        {widget.type === "markdown"
-                          ? "Markdown"
-                          : `${widget.type} · ${String(widgetConfig(widget).dataset ?? "devices")}`}
-                      </p>
-                    </div>
-                    <Show when={editing()}>
-                      <div class="flex shrink-0 items-center gap-1">
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          class="min-h-9 sm:min-h-0"
-                          onClick={() => openEdit(widget)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          aria-label={`Remove ${widget.title}`}
-                          class="min-h-9 min-w-9 text-muted-foreground hover:text-destructive sm:min-h-0 sm:min-w-0"
-                          disabled={removeWidget.isPending}
-                          onClick={() => setRemoveWidgetTarget(widget)}
-                        >
-                          <X class="size-3" />
-                        </Button>
-                      </div>
-                    </Show>
-                  </header>
-                  <div class="min-h-0 flex-1 overflow-hidden">
-                    <DashboardWidgetView
-                      widget={widget}
-                      tenantId={params.tenantId!}
-                      batch={batchFor?.(widget)}
-                    />
-                  </div>
-                  <Show when={editing()}>
-                    <button
-                      type="button"
-                      aria-label={`Resize ${widget.title}`}
-                      class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                      onPointerDown={(event) => startDrag(event, widget, "resize")}
-                    />
-                  </Show>
-                </article>
-              );
-            }}
+                  </article>
+                );
+              }}
             </For>
           </div>
         </DashboardWidgetBatchProvider>
@@ -1108,8 +1114,7 @@ export default function DashboardPage() {
                         onChange={(event) => {
                           const status = event.currentTarget.value;
 
-                          const userFilter: MutableJsonObject =
-                            status === "all" ? {} : { status };
+                          const userFilter: MutableJsonObject = status === "all" ? {} : { status };
 
                           setDraft((value) => ({
                             ...value,

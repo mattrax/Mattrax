@@ -70,5 +70,5 @@ console.log(`Deployment licence created.
   key:     ${licenseKey}
 
 Set on the self-hosted deployment:
-  MATTRAX_BILLING_URL=${process.env.MATTRAX_BILLING_URL ?? "https://e.mattrax.app"}
+  MATTRAX_BILLING_URL=${process.env.MATTRAX_BILLING_URL ?? "https://services.mattrax.app"}
   MATTRAX_LICENSE_KEY=${licenseKey}`);

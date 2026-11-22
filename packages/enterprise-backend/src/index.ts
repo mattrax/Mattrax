@@ -844,6 +844,8 @@ export { cookieValue } from "./Account/ssrToken.ts";
 
 export { restoreTenantFromBackup, TenantRestoreError } from "./Tenant/tenantRestore.ts";
 
+export { collectTenantStorageUsage, STORAGE_SCAN_MAX_OBJECTS } from "./Tenant/storageUsage.ts";
+
 export {
   teardownTenant,
   TenantTeardownStepFailed,

@@ -48,6 +48,28 @@ test.describe("top navigation", () => {
     await expect(page.locator("header")).toHaveCount(1);
   });
 
+  test("collapses the sidebar to icons and remembers the choice", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Collapsed Nav Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+
+    const aside = page.locator("aside");
+    await expect(aside).toHaveCSS("width", "244px");
+
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "64px");
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(
+      primaryNav(page).getByRole("link", { name: "Devices", exact: true }),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(aside).toHaveCSS("width", "64px");
+
+    await page.getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "244px");
+  });
+
   test("sends an unknown tenant back to the dashboard", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Unknown Tenant");
     await gotoHydrated(page, "/t/not-a-tenant/devices");

@@ -58,7 +58,7 @@ describe("theme preference", () => {
   });
 
   test("theme colours match the documented paper colours", () => {
-    expect(THEME_COLOURS.light).toBe("#f6f6f3");
+    expect(THEME_COLOURS.light).toBe("#e9e9e6");
     expect(THEME_COLOURS.dark).toBe("#10100f");
   });
 });

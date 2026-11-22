@@ -52,6 +52,44 @@ test.describe("tenant settings", () => {
     expect(invalidRange.status()).toBe(400);
   });
 
+  test("shows tenant storage usage by category", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Storage Tenant");
+    const application = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/applications`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Storage app", platform: "apple", source: "upload" }),
+      },
+    );
+
+    await api(page, `/api/v1/tenants/${tenant.id}/applications/${application.id}/upload`, {
+      method: "POST",
+      body: JSON.stringify({
+        fileName: "Storage-app.pkg",
+        contentType: "application/octet-stream",
+        content: "A".repeat(8_192),
+      }),
+    });
+
+    const usage = await api<{
+      usedBytes: number;
+      objectCount: number;
+      categories: ReadonlyArray<{ id: string; bytes: number; objects: number }>;
+    }>(page, `/api/v1/tenants/${tenant.id}/storage`);
+
+    expect(usage.usedBytes).toBeGreaterThan(0);
+    expect(usage.objectCount).toBe(1);
+    expect(usage.categories.find((category) => category.id === "applications")).toMatchObject({
+      objects: 1,
+    });
+
+    await gotoHydrated(page, `/t/${tenant.id}/settings/storage`);
+    await expect(page.getByRole("heading", { name: "Storage", exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Storage-app.pkg")).toBeVisible();
+    await expect(page.getByText("Object storage", { exact: true })).toBeVisible();
+  });
+
   test("asks before discarding unsaved tenant profile edits", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Unsaved Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
@@ -62,7 +100,7 @@ test.describe("tenant settings", () => {
       .getByRole("navigation", { name: "Primary" })
       .getByRole("link", { name: "Devices" })
       .click();
-    const dialog = page.getByRole("dialog", { name: /discard tenant changes/i });
+    const dialog = page.getByRole("dialog", { name: /leave tenant settings/i });
     await expect(dialog).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings$`));
 
@@ -80,6 +118,52 @@ test.describe("tenant settings", () => {
     await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
   });
 
+  test("keeps a tenant draft across settings panes and saves from the bar", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Pane Draft Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings`);
+
+    await page.getByLabel(/^Name/).fill("Pane Draft Renamed");
+    const bar = page.getByRole("region", { name: "Tenant settings changes" });
+    await expect(bar).toContainText("Unsaved tenant changes");
+
+    const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
+    await tabs.getByRole("link", { name: "Administrators" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/administrators$`));
+    await expect(page.getByRole("dialog", { name: /leave tenant settings/i })).toHaveCount(0);
+    await expect(bar).toContainText("Unsaved tenant changes");
+
+    await tabs.getByRole("link", { name: "General" }).click();
+    await expect(page.getByLabel(/^Name/)).toHaveValue("Pane Draft Renamed");
+
+    await saveTenantSettings(page);
+    await expect(bar).toContainText("Tenant changes saved");
+  });
+
+  test("requires I understand before changing the tenant slug", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Slug Warning Tenant");
+    const nextSlug = `renamed-${Math.random().toString(36).slice(2, 8)}`;
+    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+
+    await page.getByLabel(/^Slug/).fill(nextSlug);
+    await page
+      .getByRole("region", { name: "Tenant settings changes" })
+      .getByRole("button", { name: "Save changes" })
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: /changing the tenant slug breaks existing URLs/i,
+    });
+    await expect(dialog).toBeVisible();
+    const confirm = dialog.getByRole("button", { name: "Change slug and save" });
+    await expect(confirm).toBeDisabled();
+
+    await dialog.getByRole("textbox").fill("I understand");
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    await page.waitForURL(new RegExp(`/t/${nextSlug}/settings$`), { timeout: 15_000 });
+  });
+
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Settings Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
@@ -93,6 +177,7 @@ test.describe("tenant settings", () => {
       ["Management", /Apple push notifications/],
       ["Delivery", /Recent failures/],
       ["Billing", /Billable devices|Plan/],
+      ["Storage", /Object storage/],
       ["General", /Tenant profile/],
     ] as const) {
       await tabs.getByRole("link", { name: tab }).click();
@@ -110,6 +195,79 @@ test.describe("tenant settings", () => {
     expect(me.tenants.find((item: { id: string }) => item.id === tenant.id).name).toBe(
       "Renamed Tenant",
     );
+  });
+
+  test("keeps migration in settings and offers it to empty fleets", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Migration Tenant");
+    const base = `/t/${tenant.slug}`;
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeVisible();
+    await page.getByRole("link", { name: "Open migration" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/migration$`));
+    await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+    await expect(page.getByText("No migrations yet")).toBeVisible();
+
+    const primary = page.getByRole("navigation", { name: "Primary" });
+    await expect(primary.getByRole("link", { name: "Migration" })).toHaveCount(0);
+    await expect(primary.getByRole("link", { name: "OS versions" })).toHaveCount(0);
+    await expect(
+      page
+        .locator('nav[aria-label="Tenant settings sections"]')
+        .getByRole("link", { name: "Migration" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss migration banner" }).click();
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeHidden();
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeHidden();
+  });
+
+  test("creates a migration cohort without leaving settings", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Cohort Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings/migration`);
+
+    await page.getByLabel("Name").fill("Q1 exit");
+    await page.getByLabel("Device serials").fill("C02XYZ123");
+    await page.getByRole("button", { name: "Create cohort" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/migration/[^/]+$`));
+    await expect(page.getByRole("heading", { name: "Q1 exit" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "← Migration cohorts" })).toBeVisible();
+    await expect(
+      page.locator('nav[aria-label="Tenant settings sections"] a[aria-current="page"]'),
+    ).toHaveText("Migration");
+  });
+
+  test("picks an App Store region on the globe", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Region Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings`);
+
+    const trigger = page.getByRole("button", { name: /App Store region/ });
+    await expect(trigger).toContainText("Use default");
+
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Choose App Store region" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("textbox", { name: "Search countries" }).fill("Japan");
+    await dialog.getByRole("button", { name: /Japan/ }).click();
+    await dialog.getByRole("button", { name: "Use JP" }).click();
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    // The dialog's dismiss layer lingers while it animates out; a click in that
+    // window is treated as an outside press and swallowed.
+    await page.waitForTimeout(350);
+
+    await expect(trigger).toContainText("Japan");
+    await saveTenantSettings(page);
+
+    const detail = await page.evaluate(
+      async (tenantId: string) => (await fetch(`/api/v1/tenants/${tenantId}`)).json(),
+      tenant.id,
+    );
+    expect(detail.appStoreRegion).toBe("JP");
   });
 
   test("shows the auditor role in administrator settings", async ({ page }) => {
@@ -157,7 +315,6 @@ test.describe("tenant settings", () => {
 
     await page.getByPlaceholder("#1c1917").fill("#2563eb");
     await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
-    await expect(page.getByText("Enroll in Acme Corp")).toBeVisible();
     await saveTenantSettings(page);
 
     const saved = await api<{

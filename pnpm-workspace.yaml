@@ -25,6 +25,8 @@ catalog:
   "@solidjs/web": 2.0.0
   "@tailwindcss/vite": ^4.3.5
   "@tanstack/solid-query": 6.0.0-rc.5
+  "@types/d3-geo": ^3.1.1
+  "@types/geojson": ^7946.0.16
   "@types/node": ^26.6.6
   "@ui-sdk/core": 0.1.0-beta.6
   "@ui-sdk/solid": 0.1.0-beta.6
@@ -38,6 +40,7 @@ catalog:
   cf: 1.0.0-rc.1
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
+  d3-geo: ^3.1.2
   drizzle-kit: 1.0.0-rc.5
   drizzle-orm: 1.0.0-rc.5
   effect: ^4.1.4

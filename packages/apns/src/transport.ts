@@ -255,7 +255,10 @@ export async function relaySignature(
 
 export type RelayPushTransportOptions = {
   readonly url: string;
-  readonly secret: string;
+  /** Shared HMAC secret. Use \`token\` for a per-deployment licence instead. */
+  readonly secret?: string;
+  /** Bearer token (a deployment licence key) for relays that validate it. */
+  readonly token?: string;
   /** Override for tests or alternative runtimes. */
   readonly fetch?: typeof globalThis.fetch;
   /** Override for deterministic signatures in tests. */
@@ -275,7 +278,7 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
 
   return {
     name: "relay",
-    available: true,
+    available: Boolean(options.secret || options.token),
     push: (input) =>
       Effect.tryPromise({
         try: async () => {
@@ -287,22 +290,24 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
             privateKeyPem: input.privateKeyPem,
           });
 
-          const timestamp = String(now());
-          const signature = await relaySignature(options.secret, timestamp, body);
+          const headers = new Headers({ "content-type": "application/json" });
+
+          if (options.secret) {
+            const timestamp = String(now());
+            headers.set("x-apns-timestamp", timestamp);
+            headers.set(
+              "x-apns-signature",
+              await relaySignature(options.secret, timestamp, body),
+            );
+          }
+
+          if (options.token) headers.set("authorization", `Bearer ${options.token}`);
 
           // The relay talks to APNs on our behalf; a hung relay must not hold
           // the Worker's request open.
           const response = await fetchWithTimeout(
             options.url,
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-apns-timestamp": timestamp,
-                "x-apns-signature": signature,
-              },
-              body,
-            },
+            { method: "POST", headers, body },
             { timeoutMs, fetch: doFetch },
           );
 

@@ -3,6 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { CheckCircle2, CircleAlert, MonitorSmartphone } from "~/components/ui/icons";
@@ -218,9 +219,18 @@ export default function DeliverySettingsPage() {
         <Show
           when={(windowsFailures.data?.failures.length ?? 0) > 0}
           fallback={
-            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
-              {windowsFailures.isPending ? "Loading…" : "No failures recorded."}
-            </p>
+            <Show
+              when={windowsFailures.isPending}
+              fallback={
+                <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
+                  No failures recorded.
+                </p>
+              }
+            >
+              <div class="flex justify-center rounded-lg border border-dashed border-border bg-surface px-4 py-5">
+                <LoadingState label="Loading delivery failures…" size={16} />
+              </div>
+            </Show>
           }
         >
           <ul class="divide-y divide-border overflow-hidden rounded-lg border border-border">

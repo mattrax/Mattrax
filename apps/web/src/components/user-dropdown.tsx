@@ -9,6 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@mattrax/ui";
 import { LogOut } from "~/components/ui/icons";
 
@@ -41,11 +42,7 @@ export function UserDropdown(props: UserDropdownProps) {
   return (
     <Show
       when={!props.pending}
-      fallback={
-        <div
-          class={props.placeholderClass ?? "size-7 animate-pulse rounded-full bg-hover opacity-50"}
-        />
-      }
+      fallback={<Skeleton class={props.placeholderClass ?? "size-7 rounded-full opacity-50"} />}
     >
       <Show
         when={props.user}

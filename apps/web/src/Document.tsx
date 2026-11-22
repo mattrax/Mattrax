@@ -128,7 +128,7 @@ export default function Document(props: { children?: JSX.Element }) {
               "justify-content": "center",
               overflow: "auto",
               padding: "2rem 1.5rem",
-              "background-color": "light-dark(#f6f6f3,#10100f)",
+              "background-color": "light-dark(#e9e9e6,#10100f)",
               color: "light-dark(#202020,#fafafa)",
               "color-scheme": "light dark",
               "font-family":

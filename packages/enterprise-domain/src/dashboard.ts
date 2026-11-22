@@ -43,6 +43,11 @@ export const DashboardSummary = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   isDefault: Schema.Boolean,
   widgetCount: Schema.Number,
+  /**
+   * The first few widgets in layout order, used to draw a live gallery preview.
+   * The detail endpoint keeps the full list in `widgets`.
+   */
+  previewWidgets: Schema.optional(Schema.Array(DashboardWidget)),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });

@@ -175,19 +175,19 @@ export function Panel(props: {
       class={cn("relative overflow-hidden", props.class)}
     >
       <Show when={props.header ?? props.title}>
-        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3.5">
           <Show
             when={props.header}
             fallback={
               <div class="min-w-0 flex-1 basis-0">
                 <h2
                   id={titleId()}
-                  class="text-[13px] font-[560] leading-5 tracking-[-0.012em] text-foreground"
+                  class="text-[14px] font-[560] leading-5 tracking-[-0.012em] text-foreground"
                 >
                   {props.title}
                 </h2>
                 <Show when={props.description}>
-                  <p class="mt-0.5 text-[12px] leading-5 text-muted-foreground">
+                  <p class="mt-1 text-[12.5px] leading-5 text-muted-foreground">
                     {props.description}
                   </p>
                 </Show>

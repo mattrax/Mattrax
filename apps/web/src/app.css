@@ -37,6 +37,53 @@ body {
   min-height: 100svh;
 }
 
+/* ---------------------------------------------------------------------------
+ * Settings sections
+ *
+ * Settings panes read as a stack of flat sections rather than a grid of cards.
+ * Every section loses its card chrome; cards nested inside a section (roles,
+ * rows, previews) keep theirs. The rail already draws the outer frame, so a
+ * second border around every section is noise.
+ * ------------------------------------------------------------------------- */
+
+.settings-sections > div.grid,
+.settings-sections > div.space-y-5,
+.settings-sections > div > div.grid,
+.settings-sections > div > div.space-y-5 {
+  row-gap: 0;
+}
+
+.settings-sections > div.space-y-5 > * + *,
+.settings-sections > div > div.space-y-5 > * + * {
+  margin-top: 0;
+}
+
+.settings-sections [data-slot="card"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* A card inside a section is a real surface again: role rows, previews and
+   other grouped content keep their own frame. */
+.settings-sections [data-slot="card"] [data-slot="card"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Sections are separated by a rule; the first one already sits under the
+   masthead's border. */
+.settings-sections [data-slot="card"]:not([data-slot="card"] [data-slot="card"]):not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+
+.settings-sections [data-slot="card"]:not([data-slot="card"] [data-slot="card"]) > div:first-child {
+  border-bottom: 0;
+}
+
 /* Dense setting rows go two-column only when the editor itself is wide
    enough, not when the whole viewport happens to be. */
 .designer-fields {
@@ -77,11 +124,6 @@ body {
   animation: mattax-page-in 200ms var(--ease-swift) backwards;
 }
 
-/* Indeterminate segment while the router resolves the next page. */
-.route-progress {
-  animation: mattax-route-progress 1.1s linear infinite;
-}
-
 @keyframes mattax-page-in {
   from {
     opacity: 0;
@@ -90,28 +132,6 @@ body {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-@keyframes mattax-route-progress {
-  0% {
-    transform: translateX(-110%) scaleX(0.55);
-  }
-  55% {
-    transform: translateX(70%) scaleX(1);
-  }
-  100% {
-    transform: translateX(310%) scaleX(0.6);
-  }
-}
-
-@keyframes mattax-pulse-soft {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
   }
 }
 
@@ -325,10 +345,6 @@ body {
   .animate-ping,
   .animate-pulse {
     animation: none;
-  }
-
-  .route-progress {
-    animation: mattax-pulse-soft 1.4s ease-in-out infinite;
   }
 }
 

@@ -129,8 +129,8 @@ All are optional. Without them billing reports `configured: false`.
 | `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
 | `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
 | `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
-| `APNS_RELAY_URL`                         | Multi-tenant APNs relay base URL                                                                |
-| `APNS_RELAY_SECRET`                      | Relay HMAC secret (at least 32 characters)                                                      |
+| `APNS_RELAY_URL`                         | APNs relay URL; defaults to `https://services.mattrax.app/v1/apns/push`                          |
+| `APNS_RELAY_SECRET`                      | Optional relay HMAC secret; self-hosted installs use `MATTRAX_LICENSE_KEY` instead                |
 | `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
 Without the vendor key, tenants upload a manually signed APNs certificate. Without the

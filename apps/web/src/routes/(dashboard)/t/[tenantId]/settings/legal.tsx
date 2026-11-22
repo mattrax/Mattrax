@@ -4,6 +4,7 @@ import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
 import { ErrorText, Field, PageHeader, Panel } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { preloadPage } from "~/lib/page-data";
@@ -124,11 +125,7 @@ export default function LegalSettingsPage() {
       >
         <Show
           when={licences.data}
-          fallback={
-            <p class="text-[12px] text-muted-foreground" role="status">
-              Loading licence inventory…
-            </p>
-          }
+          fallback={<LoadingState label="Loading licence inventory…" size={16} />}
         >
           {(bundle) => (
             <div class="space-y-4">

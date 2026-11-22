@@ -5,9 +5,10 @@ import { useInfiniteQuery } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Badge, FilterBar } from "@mattrax/ui";
+import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
+import { Search } from "~/components/ui/icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { AuditLogEntry, AuditSearchQuery } from "~/lib/enterprise";
 import {
@@ -83,6 +84,25 @@ const KNOWN_ACTIONS = [
   "scim.token_created",
   "scim.token_revoked",
 ];
+
+const auditFieldClass =
+  "h-8 rounded-lg border border-input bg-surface px-2.5 text-[12.5px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
+const auditSelectClass = `${auditFieldClass} pr-7`;
+
+const isoDay = (date: Date) => {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+
+const daysAgo = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+
+  return isoDay(date);
+};
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -231,6 +251,39 @@ export default function AuditSettingsPage() {
       settleTimer = setTimeout(() => setDebounced(next), 250);
     },
   );
+
+  const period = createMemo(() => {
+    const from = fromDate();
+    const to = toDate();
+
+    if (!from && !to) return "";
+    if (to) return "custom";
+    if (from === isoDay(new Date())) return "today";
+    if (from === daysAgo(6)) return "7d";
+    if (from === daysAgo(29)) return "30d";
+
+    return "custom";
+  });
+
+  const applyPeriod = (value: string) => {
+    if (!value) {
+      setFromDate("");
+      setToDate("");
+    } else if (value === "today") {
+      setFromDate(isoDay(new Date()));
+      setToDate("");
+    } else if (value === "7d") {
+      setFromDate(daysAgo(6));
+      setToDate("");
+    } else if (value === "30d") {
+      setFromDate(daysAgo(29));
+      setToDate("");
+    } else if (value === "custom") {
+      // Seed a visible range so the From/To fields are immediately editable.
+      if (!fromDate()) setFromDate(daysAgo(29));
+      if (!toDate()) setToDate(isoDay(new Date()));
+    }
+  };
 
   const rangeError = createMemo(() => {
     if (!fromDate() || !toDate()) return undefined;
@@ -498,51 +551,101 @@ export default function AuditSettingsPage() {
         title="Audit log"
         description="Account changes and device (MDM) activity in one append-only log. Repeated device check-ins fold into a short window; enrollment, policy delivery, command results and failures are always recorded separately."
       >
-        <div class="space-y-3">
-          <FilterBar
-            fields={filterFields}
-            conditions={filterConditions()}
-            onChange={applyFilters}
-            label="Filter"
-          />
-        </div>
+        <div class="space-y-2.5">
+          <div class="flex flex-col gap-2 xl:flex-row xl:items-center">
+            <label class="relative min-w-[18rem] flex-1">
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                aria-label="Search audit events"
+                placeholder="Search actor, action, target or IP…"
+                value={query()}
+                onInput={(event) => setQuery(event.currentTarget.value)}
+                class={`${auditFieldClass} w-full pl-8`}
+              />
+            </label>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <input
+                type="search"
+                aria-label="Filter by actor"
+                placeholder="Actor email or id"
+                value={actor()}
+                onInput={(event) => setActor(event.currentTarget.value)}
+                class={`${auditFieldClass} w-[12.5rem]`}
+              />
+              <select
+                aria-label="Filter by action"
+                value={action()}
+                onChange={(event) => setAction(event.currentTarget.value)}
+                class={auditSelectClass}
+              >
+                <option value="">Any action</option>
+                {KNOWN_ACTIONS.map((value) => (
+                  <option value={value}>{value}</option>
+                ))}
+              </select>
+              <select
+                aria-label="Filter by time period"
+                value={period()}
+                onChange={(event) => applyPeriod(event.currentTarget.value)}
+                class={auditSelectClass}
+              >
+                <option value="">Any time</option>
+                <option value="today">Today</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="custom">Custom range</option>
+              </select>
+            </div>
+          </div>
 
-        <Show when={rangeError()}>{(error) => <ErrorText error={error()} />}</Show>
-
-        <div class="mt-4 flex flex-wrap items-center gap-2">
-          <p id="audit-export-hint" class="sr-only">
-            Exports the audit events that match the active filters, newest first.
-          </p>
-          <Button
-            variant="outline"
-            aria-describedby="audit-export-hint"
-            onClick={() => void exportAudit("csv")}
-            disabled={exporting() !== null || Boolean(rangeError())}
-          >
-            {exporting() === "csv" ? "Exporting…" : "Export CSV"}
-          </Button>
-          <Button
-            variant="outline"
-            aria-describedby="audit-export-hint"
-            onClick={() => void exportAudit("json")}
-            disabled={exporting() !== null || Boolean(rangeError())}
-          >
-            {exporting() === "json" ? "Exporting…" : "Export JSON"}
-          </Button>
-          <span role="status" aria-live="polite" class="text-xs text-muted-foreground">
-            <Show
-              when={entries().length > 0}
-              fallback={
-                rangeError()
-                  ? "Fix the date range to see events"
-                  : log.isPending
-                    ? "Loading audit events…"
-                    : "No matching events"
-              }
+          <div class="flex flex-wrap items-center gap-2">
+            <FilterBar
+              fields={filterFields}
+              conditions={filterConditions()}
+              onChange={applyFilters}
+              label="More filters"
+            />
+            <span
+              role="status"
+              aria-live="polite"
+              class="mr-auto text-[11px] text-muted-foreground"
             >
-              {entries().length} event{entries().length === 1 ? "" : "s"} loaded · newest first
-            </Show>
-          </span>
+              <Show
+                when={entries().length > 0}
+                fallback={
+                  rangeError()
+                    ? "Fix the date range to see events"
+                    : log.isPending
+                      ? "Loading audit events…"
+                      : "No matching events"
+                }
+              >
+                {entries().length} event{entries().length === 1 ? "" : "s"} loaded · newest first
+              </Show>
+            </span>
+            <p id="audit-export-hint" class="sr-only">
+              Exports the audit events that match the active filters, newest first.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-describedby="audit-export-hint"
+              onClick={() => void exportAudit("csv")}
+              disabled={exporting() !== null || Boolean(rangeError())}
+            >
+              {exporting() === "csv" ? "Exporting…" : "Export CSV"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              aria-describedby="audit-export-hint"
+              onClick={() => void exportAudit("json")}
+              disabled={exporting() !== null || Boolean(rangeError())}
+            >
+              {exporting() === "json" ? "Exporting…" : "Export JSON"}
+            </Button>
+          </div>
         </div>
 
         <Show when={exportError()}>
@@ -566,9 +669,16 @@ export default function AuditSettingsPage() {
         <Show
           when={entries().length > 0}
           fallback={
-            <p class="mt-4 text-[13px] text-muted-foreground">
-              {log.isPending ? "Loading audit events…" : "No audit events match these filters."}
-            </p>
+            <Show
+              when={log.isPending}
+              fallback={
+                <p class="mt-4 text-[13px] text-muted-foreground">
+                  No audit events match these filters.
+                </p>
+              }
+            >
+              <LoadingState class="mt-4" label="Loading audit events…" size={16} />
+            </Show>
           }
         >
           <p class="mt-3 text-[11px] text-muted-foreground sm:hidden">
@@ -578,31 +688,31 @@ export default function AuditSettingsPage() {
             class="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-border"
             aria-busy={log.isFetching ? "true" : undefined}
           >
-            <table class="w-full min-w-[720px] text-left text-[13px]">
+            <table class="w-full min-w-[760px] text-left text-[12px]">
               <caption class="sr-only">Audit events, newest first</caption>
-              <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <thead class="border-b border-border bg-surface text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
                 <tr>
-                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-2.5 py-1.5 font-medium">
                     When
                   </th>
-                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-2.5 py-1.5 font-medium">
                     Actor
                   </th>
-                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-2.5 py-1.5 font-medium">
                     Action
                   </th>
-                  <th scope="col" class="sticky top-0 z-10 bg-popover px-3 py-2.5 font-medium">
+                  <th scope="col" class="sticky top-0 z-10 bg-popover px-2.5 py-1.5 font-medium">
                     Device / target
                   </th>
                   <th
                     scope="col"
-                    class="sticky top-0 z-10 hidden bg-popover px-3 py-2.5 font-medium md:table-cell"
+                    class="sticky top-0 z-10 hidden bg-popover px-2.5 py-1.5 font-medium md:table-cell"
                   >
                     IP
                   </th>
                   <th
                     scope="col"
-                    class="sticky top-0 z-10 hidden bg-popover px-3 py-2.5 font-medium lg:table-cell"
+                    class="sticky top-0 z-10 hidden bg-popover px-2.5 py-1.5 font-medium lg:table-cell"
                   >
                     Details
                   </th>
@@ -617,96 +727,90 @@ export default function AuditSettingsPage() {
                     return (
                       <>
                         <tr class="transition-colors hover:bg-hover">
-                          <td class="whitespace-nowrap px-3 py-3 align-top text-xs text-muted-foreground">
+                          <td class="whitespace-nowrap px-2.5 py-1.5 align-middle font-mono text-[10.5px] tabular-nums text-muted-foreground">
                             {formatDate(entry.createdAt)}
                           </td>
-                          <td
-                            class="max-w-[14rem] truncate px-3 py-3 align-top text-muted-foreground"
-                            title={auditActorLabel(entry)}
-                          >
-                            <span class="flex items-center gap-1.5">
+                          <td class="max-w-[15rem] px-2.5 py-1.5 align-middle">
+                            <div class="flex min-w-0 items-center gap-1.5">
                               <Show when={entry.actorType === "system"}>
                                 <Badge variant="secondary">system</Badge>
                               </Show>
-                              <span class="truncate">{auditActorLabel(entry)}</span>
-                            </span>
-                            <span class="mt-0.5 block truncate text-[10.5px] text-muted-foreground">
+                              <span
+                                class="truncate text-[12px] font-[500] text-foreground"
+                                title={auditActorLabel(entry)}
+                              >
+                                {auditActorLabel(entry)}
+                              </span>
+                            </div>
+                            <div class="truncate text-[10px] leading-4 text-muted-foreground">
                               {auditActorKind(entry)}
                               <Show when={entry.category}>
                                 {" · "}
                                 {entry.category}
                               </Show>
+                              <Show when={credentialOf(entry)}>
+                                {(credential) => (
+                                  <>
+                                    {" · via "}
+                                    {credential().type === "oauth" ? "MCP" : "API token"}
+                                    {credential().name ? ` · ${credential().name}` : ""}
+                                  </>
+                                )}
+                              </Show>
+                              <Show when={rbacOf(entry)}>
+                                {(rbac) => (
+                                  <>
+                                    {" · "}
+                                    {rbac().roleKind === "custom" ? "Custom role" : "Built-in role"}
+                                    {rbac().roleName ? ` · ${rbac().roleName}` : ""}
+                                  </>
+                                )}
+                              </Show>
+                            </div>
+                          </td>
+                          <td class="whitespace-nowrap px-2.5 py-1.5 align-middle">
+                            <span title={entry.action}>
+                              <Badge variant="secondary">{formatAuditAction(entry.action)}</Badge>
                             </span>
-                            <Show when={credentialOf(entry)}>
-                              {(credential) => (
-                                <span class="mt-1 block truncate text-[10.5px] text-muted-foreground">
-                                  via {credential().type === "oauth" ? "MCP" : "API token"}
-                                  {credential().name ? ` · ${credential().name}` : ""}
-                                </span>
-                              )}
-                            </Show>
-                            <Show when={rbacOf(entry)}>
-                              {(rbac) => (
-                                <span class="mt-1 block truncate text-[10.5px] text-muted-foreground">
-                                  {rbac().roleKind === "custom" ? "Custom role" : "Built-in role"}
-                                  {rbac().roleName ? ` · ${rbac().roleName}` : ""}
-                                  {rbac().permission ? ` · ${rbac().permission}` : ""}
-                                </span>
-                              )}
-                            </Show>
                           </td>
-                          <td class="px-3 py-3 align-top">
-                            <Badge variant="secondary">{formatAuditAction(entry.action)}</Badge>
-                            <code class="mt-1 block break-all text-[11px] text-muted-foreground">
-                              {entry.action}
-                            </code>
+                          <td class="max-w-[20rem] px-2.5 py-1.5 align-middle text-[11.5px] text-muted-foreground">
+                            <div class="flex min-w-0 items-center gap-1.5">
+                              <span class="shrink-0">{entry.targetType}</span>
+                              <Show when={entry.targetId}>
+                                <code class="truncate text-[11px]">{entry.targetId}</code>
+                              </Show>
+                              <Show when={auditProtocolLabel(entry.protocol)}>
+                                {(label) => (
+                                  <span class="shrink-0 rounded border border-border px-1 py-px text-[9.5px] tracking-wide uppercase">
+                                    {label()}
+                                  </span>
+                                )}
+                              </Show>
+                              <button
+                                type="button"
+                                class="ml-auto shrink-0 rounded text-[10.5px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                                aria-expanded={expandedEntry() === entry.id ? "true" : "false"}
+                                aria-controls={`audit-metadata-${entry.id}`}
+                                onClick={() =>
+                                  setExpandedEntry((current) =>
+                                    current === entry.id ? null : entry.id,
+                                  )
+                                }
+                              >
+                                {expandedEntry() === entry.id ? "Hide" : "Details"}
+                              </button>
+                            </div>
                           </td>
-                          <td class="px-3 py-3 align-top text-xs text-muted-foreground">
-                            <span class="block">{entry.targetType}</span>
-                            <Show when={entry.targetId}>
-                              <code class="break-all text-xs">{entry.targetId}</code>
-                            </Show>
-                            <Show when={entry.deviceId && entry.deviceId !== entry.targetId}>
-                              <span class="mt-1 block break-all text-[11px]">
-                                device {entry.deviceId}
-                              </span>
-                            </Show>
-                            <Show when={auditProtocolLabel(entry.protocol)}>
-                              {(label) => (
-                                <span class="mt-1 block text-[10.5px]">{label()} MDM</span>
-                              )}
-                            </Show>
-                            {/* Details column is hidden on small screens; keep a
-                              compact metadata line visible here instead. */}
-                            <Show when={summary()}>
-                              <span class="mt-1 block break-words text-xs lg:hidden">
-                                {summary()}
-                              </span>
-                            </Show>
-                            <button
-                              type="button"
-                              class="mt-1.5 block w-fit rounded text-[11px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                              aria-expanded={expandedEntry() === entry.id ? "true" : "false"}
-                              aria-controls={`audit-metadata-${entry.id}`}
-                              onClick={() =>
-                                setExpandedEntry((current) =>
-                                  current === entry.id ? null : entry.id,
-                                )
-                              }
-                            >
-                              {expandedEntry() === entry.id ? "Hide details" : "Details"}
-                            </button>
-                          </td>
-                          <td class="hidden px-3 py-3 align-top font-mono text-[11px] text-muted-foreground md:table-cell">
+                          <td class="hidden px-2.5 py-1.5 align-middle font-mono text-[10.5px] text-muted-foreground md:table-cell">
                             {entry.ip ?? "—"}
                           </td>
-                          <td class="hidden max-w-[22rem] px-3 py-3 align-top lg:table-cell">
+                          <td class="hidden max-w-[22rem] px-2.5 py-1.5 align-middle lg:table-cell">
                             <Show
                               when={summary()}
-                              fallback={<span class="text-xs text-muted-foreground">—</span>}
+                              fallback={<span class="text-[11px] text-muted-foreground">—</span>}
                             >
                               <span
-                                class="block truncate text-xs text-muted-foreground"
+                                class="block truncate text-[11px] text-muted-foreground"
                                 title={summary()}
                               >
                                 {summary()}
@@ -718,6 +822,10 @@ export default function AuditSettingsPage() {
                           <tr id={`audit-metadata-${entry.id}`}>
                             <td colspan="6" class="bg-surface px-3 py-3">
                               <dl class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-[11px] sm:grid-cols-2">
+                                <div class="flex gap-2">
+                                  <dt class="text-muted-foreground">Action</dt>
+                                  <dd class="break-all font-mono">{entry.action}</dd>
+                                </div>
                                 <div class="flex gap-2">
                                   <dt class="text-muted-foreground">IP</dt>
                                   <dd class="font-mono">{entry.ip ?? "not recorded"}</dd>

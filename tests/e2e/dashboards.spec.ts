@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("dashboards", () => {
   test("builds a shared dashboard and uses it for Overview", async ({ page }) => {
@@ -35,6 +35,48 @@ test.describe("dashboards", () => {
     await gotoHydrated(page, base);
     await expect(page.getByText("Team runbook")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Runbook", exact: true })).toBeVisible();
+  });
+
+  test("pins a dashboard to the sidebar and keeps it there", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Pinned Tenant");
+    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Fleet ops" }),
+    });
+
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
+    await expect(page.getByRole("heading", { name: "Fleet ops", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Actions for Fleet ops" }).click();
+    await page.getByRole("menuitem", { name: "Pin to sidebar" }).click();
+
+    const primary = page.getByRole("navigation", { name: "Primary" });
+    await expect(primary.getByText("Pinned", { exact: true })).toBeVisible();
+    await expect(primary.getByRole("link", { name: "Fleet ops", exact: true })).toBeVisible();
+
+    // A full navigation proves the pin comes from browser storage, not the
+    // mounted page state.
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+    const pinnedLink = primary.getByRole("link", { name: "Fleet ops", exact: true });
+    await expect(pinnedLink).toBeVisible();
+    await pinnedLink.click();
+    await expect(page).toHaveURL(new RegExp(`/dashboards/${dashboard.id}$`));
+
+    await page.getByRole("button", { name: "Unpin from sidebar: Fleet ops" }).click();
+    await expect(primary.getByRole("link", { name: "Fleet ops", exact: true })).toHaveCount(0);
+  });
+
+  test("creates a dashboard from the gallery dialog", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Gallery Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
+
+    await page.getByRole("button", { name: "New dashboard" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name").fill("Quarterly review");
+    await dialog.getByRole("button", { name: "Create dashboard" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/[^/?]+\\?edit=1`));
+    await expect(page.getByRole("heading", { name: "Quarterly review" })).toBeVisible();
   });
 
   test("filters the device table with a shareable query", async ({ page }) => {

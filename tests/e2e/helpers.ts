@@ -310,7 +310,7 @@ export async function api<T = unknown>(page: Page, path: string, init?: ApiReque
  * button and the compact "Add filter" button.
  */
 export async function addFilter(page: Page, field: string, value: string) {
-  const empty = page.getByRole("button", { name: "Filter", exact: true });
+  const empty = page.getByRole("button", { name: /^(Filter|More filters)$/ });
 
   if ((await empty.count()) > 0) await empty.click();
   else await page.getByRole("button", { name: "Add filter", exact: true }).click();
@@ -327,7 +327,7 @@ export async function addFilter(page: Page, field: string, value: string) {
 
 /** Add a text-value filter: pick the field, type the value, apply. */
 export async function addTextFilter(page: Page, field: string, value: string) {
-  const empty = page.getByRole("button", { name: "Filter", exact: true });
+  const empty = page.getByRole("button", { name: /^(Filter|More filters)$/ });
 
   if ((await empty.count()) > 0) await empty.click();
   else await page.getByRole("button", { name: "Add filter", exact: true }).click();
