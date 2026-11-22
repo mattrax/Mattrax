@@ -5938,12 +5938,17 @@ export const createEnterpriseService = ({
     updatedAt: iso(row.updatedAt),
   });
 
-  const dashboardSummaryRow = (row: typeof schema.dashboard.$inferSelect, widgetCount: number) => ({
+  const dashboardSummaryRow = (
+    row: typeof schema.dashboard.$inferSelect,
+    widgetCount: number,
+    previewWidgets: ReadonlyArray<ReturnType<typeof dashboardWidgetRow>> = [],
+  ) => ({
     id: row.id,
     name: row.name,
     description: row.description,
     isDefault: row.isDefault,
     widgetCount,
+    previewWidgets,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -22353,21 +22358,38 @@ export const createEnterpriseService = ({
           .orderBy(asc(schema.dashboard.name));
 
         const widgets = yield* db
-          .select({ dashboardId: schema.dashboardWidget.dashboardId })
+          .select()
           .from(schema.dashboardWidget)
-          .where(eq(schema.dashboardWidget.organizationId, ctx.organization.id));
+          .where(eq(schema.dashboardWidget.organizationId, ctx.organization.id))
+          .orderBy(
+            asc(schema.dashboardWidget.dashboardId),
+            asc(schema.dashboardWidget.y),
+            asc(schema.dashboardWidget.x),
+          );
 
         const countByDashboard = new Map<string, number>();
+        const previewsByDashboard = new Map<string, Array<ReturnType<typeof dashboardWidgetRow>>>();
 
-        for (const widget of widgets)
+        for (const widget of widgets) {
           countByDashboard.set(
             widget.dashboardId,
             (countByDashboard.get(widget.dashboardId) ?? 0) + 1,
           );
+          const previews = previewsByDashboard.get(widget.dashboardId) ?? [];
+
+          // Three widgets are enough for the gallery composition; the fourth
+          // would be too small to read at card scale.
+          if (previews.length < 3) previews.push(dashboardWidgetRow(widget));
+          previewsByDashboard.set(widget.dashboardId, previews);
+        }
 
         return {
           dashboards: rows.map((row) =>
-            dashboardSummaryRow(row, countByDashboard.get(row.id) ?? 0),
+            dashboardSummaryRow(
+              row,
+              countByDashboard.get(row.id) ?? 0,
+              previewsByDashboard.get(row.id) ?? [],
+            ),
           ),
         };
       }),

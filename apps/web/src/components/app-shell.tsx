@@ -819,6 +819,10 @@ export function AppShell(props: {
 
       if (typeof document === "undefined") return;
 
+      // The shell scrolls inside `main`, not the document, so the router's
+      // pathname change has to reset that scrollport explicitly.
+      document.getElementById("main")?.scrollTo({ top: 0 });
+
       // A dialog owns focus while it is open; moving focus into the inert
       // background would strand it.
       if (document.querySelector('[data-slot="dialog-content"], [data-slot="command-palette"]'))

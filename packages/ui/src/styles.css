@@ -121,6 +121,14 @@
   --brand-foreground: #ffffff;
   --brand-muted: #efecfb;
 
+  /* Default chart ramp for custom dashboards; the overview declares its own
+     monochrome ramp inline. */
+  --chart-1: var(--brand-solid);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: var(--info);
+  --chart-5: var(--destructive);
+
   --shadow-card-value: 0 1px 2px rgb(24 24 22 / 0.04), 0 0 0 1px rgb(24 24 22 / 0.02);
   --shadow-popover-value:
     0 12px 32px -12px rgb(24 24 22 / 0.22), 0 2px 6px -2px rgb(24 24 22 / 0.08);

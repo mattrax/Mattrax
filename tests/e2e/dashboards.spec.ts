@@ -46,7 +46,8 @@ test.describe("dashboards", () => {
 
     await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
     await expect(page.getByRole("heading", { name: "Fleet ops", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Pin to sidebar: Fleet ops" }).click();
+    await page.getByRole("button", { name: "Actions for Fleet ops" }).click();
+    await page.getByRole("menuitem", { name: "Pin to sidebar" }).click();
 
     const primary = page.getByRole("navigation", { name: "Primary" });
     await expect(primary.getByText("Pinned", { exact: true })).toBeVisible();
@@ -62,6 +63,20 @@ test.describe("dashboards", () => {
 
     await page.getByRole("button", { name: "Unpin from sidebar: Fleet ops" }).click();
     await expect(primary.getByRole("link", { name: "Fleet ops", exact: true })).toHaveCount(0);
+  });
+
+  test("creates a dashboard from the gallery dialog", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Gallery Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
+
+    await page.getByRole("button", { name: "New dashboard" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name").fill("Quarterly review");
+    await dialog.getByRole("button", { name: "Create dashboard" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/[^/?]+\\?edit=1`));
+    await expect(page.getByRole("heading", { name: "Quarterly review" })).toBeVisible();
   });
 
   test("filters the device table with a shareable query", async ({ page }) => {
