@@ -143,6 +143,31 @@ after re-pointing `stable.json` at the older manifest (or restoring the previous
 release asset). Keep the per-release `mattraxd-manifest.json`: it records the
 exact artifact URLs and checksums that shipped.
 
+## Container image releases
+
+The self-hosted image is released by `.github/workflows/release.yml`, separately
+from the Workers and the agent:
+
+- Pushing a `v<version>` tag builds `apps/docker/Dockerfile`, pushes a
+  commit-addressed staging tag, runs the documented compose stack against that
+  image and only then publishes `ghcr.io/mattrax/mattrax:<version>`, plus
+  `latest` for a stable version.
+- `workflow_dispatch` re-cuts an image from a branch by naming the version;
+  `publish=false` builds and smoke-tests without creating release tags.
+- Pre-release versions publish only their own tag, so `latest` never moves to an
+  rc. Pull requests never publish.
+- Images are `linux/amd64` with BuildKit provenance and an SPDX SBOM;
+  `docker buildx imagetools inspect ghcr.io/mattrax/mattrax:<version>` shows
+  both.
+
+GHCR creates the package private. After the first release an organisation owner
+must set the `mattrax` package's visibility to public, or self-hosters cannot
+pull it anonymously.
+
+The image is released with the GitHub release for the tag: the workflow creates
+one (with the image digest) when the tag has no release yet, and leaves an
+existing release's notes untouched.
+
 ## Rolling back production
 
 `cf` deploys immutable Worker versions. If a production deploy is bad:

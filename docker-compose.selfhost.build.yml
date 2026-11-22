@@ -1,0 +1,17 @@
+# Source build for docker-compose.selfhost.yml.
+#
+# The base file pulls the published image. Layer this override to build the same
+# Dockerfile from the checkout instead, which is what contributors and air-gapped
+# installs need:
+#
+#   docker compose -f docker-compose.selfhost.yml \
+#     -f docker-compose.selfhost.build.yml up -d --build
+#
+# The local tag is fixed so an accidental source build cannot overwrite a
+# published version tag in the local image store. MATTRAX_VERSION is unused here.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: apps/docker/Dockerfile
+    image: mattrax-selfhost:local

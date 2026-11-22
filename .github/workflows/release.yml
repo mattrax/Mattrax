@@ -1,0 +1,369 @@
+name: Release image
+
+# Publishes the self-hosted container image that docker-compose.selfhost.yml and
+# docs/operations/self-hosting.md point at:
+#
+#   ghcr.io/mattrax/mattrax:<version>   immutable release tag
+#   ghcr.io/mattrax/mattrax:latest      newest stable release
+#
+# - Pushing a "v*" tag (v1.4.0) builds apps/docker/Dockerfile, runs the compose
+#   smoke test against the built image, then publishes the version tag and, for
+#   a stable version, moves "latest".
+# - workflow_dispatch re-cuts a release from a branch. It takes the version
+#   explicitly because a branch ref carries none; publish=false builds and
+#   smoke-tests without tagging a release.
+# - Pull requests never trigger this workflow, so nothing is published from a
+#   PR and untrusted code never receives a package-write token.
+#
+# The version tag is created only after the same digest passed the smoke test:
+# "build" pushes a commit-addressed staging tag, "smoke" runs the documented
+# compose stack against it, and "publish" promotes that digest. A failed smoke
+# test therefore leaves no release tag behind and never moves "latest".
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. v1.4.0 or 1.4.0"
+        required: true
+        type: string
+      publish:
+        description: "Create the version tags from the smoke-tested image (off: build and smoke only)"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # One place that decides the version and tags, so the build, smoke test and
+  # publisher cannot disagree. Fork tags would push to a package namespace that
+  # the compose smoke test cannot pull from, so the pipeline is canonical-repo
+  # only; everything else is a no-op instead of a red run.
+  prepare:
+    name: Version
+    if: github.repository == 'mattrax/Mattrax'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.version.outputs.image }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      staging: ${{ steps.version.outputs.staging }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PUBLISH: ${{ github.event.inputs.publish }}
+        run: |
+          set -eu
+
+          version=""
+          publish=false
+
+          case "$EVENT_NAME" in
+            push)
+              # refs/tags/v1.4.0 -> 1.4.0. A tag is the only way to publish a
+              # release, matching the agent release workflow.
+              version="${REF_NAME#v}"
+              publish=true
+              ;;
+            workflow_dispatch)
+              version="${INPUT_VERSION#v}"
+              publish="${INPUT_PUBLISH:-true}"
+              ;;
+            *)
+              echo "::error::Unsupported event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' is not a release version such as 1.4.0 or 1.4.0-rc.1"
+            exit 1
+          fi
+
+          case "$publish" in
+            true|false) ;;
+            *)
+              echo "::error::publish must be true or false (got '$publish')"
+              exit 1
+              ;;
+          esac
+
+          # A pre-release (1.4.0-rc.1) publishes its own tag but must never move
+          # "latest", or every self-hoster tracking latest would jump to an rc.
+          prerelease=false
+          case "${version%%+*}" in
+            *-*) prerelease=true ;;
+          esac
+
+          # GHCR repository names are lowercase; github.repository is not.
+          image="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          staging="sha-$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+
+          {
+            echo "image=$image"
+            echo "version=$version"
+            echo "tag=$REF_NAME"
+            echo "staging=$staging"
+            echo "prerelease=$prerelease"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "image=$image:$staging (version: $version, prerelease: $prerelease, publish: $publish)"
+
+  build:
+    name: Build and push staging
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The Dockerfile builds the docs, and Rspress lastUpdated reads
+          # per-file Git history. Blob-less history is all it needs.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      # The docker driver cannot export provenance or an SBOM attestation; the
+      # container driver can. This is the only extra builder setup needed on a
+      # hosted runner (buildx is preinstalled).
+      - name: Create a BuildKit builder
+        run: |
+          docker buildx create --name mattrax --driver docker-container --use
+          docker buildx inspect --bootstrap
+
+      - name: Build and push the staging image
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          STAGING: ${{ needs.prepare.outputs.staging }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -eu
+          docker buildx build \
+            --file apps/docker/Dockerfile \
+            --platform linux/amd64 \
+            --provenance=mode=max \
+            --sbom=true \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --tag "$IMAGE:$STAGING" \
+            --push \
+            .
+
+      - name: Record the staging digest
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          STAGING: ${{ needs.prepare.outputs.staging }}
+        run: |
+          set -eu
+          digest="$(docker buildx imagetools inspect "$IMAGE:$STAGING" | awk '$1 == "Digest:" { print $2; exit }')"
+          if [ -z "$digest" ]; then
+            echo "::error::Could not read the staging digest"
+            exit 1
+          fi
+          echo "staging digest: $IMAGE:$STAGING@$digest"
+
+  # The guarantee that the published image is self-hostable: run the documented
+  # compose stack (app + MySQL) from the pushed image and probe the same
+  # liveness/readiness endpoints a reverse proxy would. A version tag is only
+  # created after this job passes.
+  smoke:
+    name: Compose smoke test
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
+    env:
+      # Compose interpolates these for every subcommand, pull included.
+      ORIGIN: https://mdm.ci.invalid
+      AUTH_SECRET: ci-smoke-auth-secret-0123456789abcdef
+      MYSQL_PASSWORD: ci-smoke-mysql
+      MATTRAX_VERSION: ${{ needs.prepare.outputs.staging }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      - name: Start the documented stack from the staging image
+        run: |
+          set -euo pipefail
+          docker pull "ghcr.io/mattrax/mattrax:$MATTRAX_VERSION"
+          docker compose -f docker-compose.selfhost.yml up -d --wait --wait-timeout 300
+          docker compose -f docker-compose.selfhost.yml ps
+
+      - name: Probe health, readiness and the dashboard
+        run: |
+          set -euo pipefail
+          app="$(docker compose -f docker-compose.selfhost.yml ps -q app)"
+
+          # The pull-based stack must be serving the image that was tested, not a
+          # stale local tag, and must still run as the unprivileged user.
+          test "$(docker inspect --format '{{.Config.Image}}' "$app")" = "ghcr.io/mattrax/mattrax:$MATTRAX_VERSION"
+          test "$(docker inspect --format '{{.Config.User}}' "$app")" = "node"
+
+          health="$(curl -fsS http://127.0.0.1:8080/api/health)"
+          ready="$(curl -fsS http://127.0.0.1:8080/api/ready)"
+
+          # Liveness is unconditional (the route answers the literal "ok");
+          # readiness must reach MySQL and write to the /data volume. No SMTP is
+          # configured in CI, so the mailer is reported as skipped and the
+          # overall status as degraded by design.
+          test "$health" = "ok"
+          jq -e '.checks.database == "ok"' <<<"$ready" > /dev/null
+          jq -e '.checks.storage == "ok"' <<<"$ready" > /dev/null
+          jq -e '.checks.mailer == "skipped"' <<<"$ready" > /dev/null
+          jq -e '.status == "ok" or .status == "degraded"' <<<"$ready" > /dev/null
+
+          # The dashboard, its built docs and the SSR login route are part of the
+          # self-hosted contract.
+          curl -fsS -o /dev/null -w 'docs: %{http_code}\n' http://127.0.0.1:8080/docs/
+          curl -fsS -o /dev/null -w 'login: %{http_code}\n' http://127.0.0.1:8080/login
+
+          echo "$ready"
+
+      - name: Container logs
+        if: failure()
+        run: docker compose -f docker-compose.selfhost.yml logs --no-color --tail 200 app
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.selfhost.yml down -v --remove-orphans
+
+  publish:
+    name: Publish
+    needs: [prepare, build, smoke]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.promote.outputs.digest }}
+    steps:
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+
+      # Registry-to-registry: the version tag is the digest the smoke job just
+      # pulled, not a rebuild. Provenance and SBOM attestations travel with it.
+      - name: Promote the tested digest
+        id: promote
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          STAGING: ${{ needs.prepare.outputs.staging }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          tags=(--tag "$IMAGE:$VERSION")
+
+          if [ "$PRERELEASE" != "true" ]; then
+            tags+=(--tag "$IMAGE:latest")
+          fi
+
+          docker buildx imagetools create "${tags[@]}" "$IMAGE:$STAGING"
+
+          digest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" | awk '$1 == "Digest:" { print $2; exit }')"
+          if [ -z "$digest" ]; then
+            echo "::error::Publish succeeded but the digest could not be read"
+            exit 1
+          fi
+
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "published $IMAGE:$VERSION ($IMAGE@$digest)"
+
+      - name: Summarise the release
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          DIGEST: ${{ steps.promote.outputs.digest }}
+        run: |
+          {
+            echo "### Container image"
+            echo
+            echo "- \`$IMAGE:$VERSION\`"
+            if [ "$PRERELEASE" != "true" ]; then echo "- \`$IMAGE:latest\`"; fi
+            echo "- Digest: \`$DIGEST\`"
+            echo
+            echo "Provenance and SBOM attestations:"
+            echo
+            echo "~~~"
+            echo "docker buildx imagetools inspect $IMAGE:$VERSION"
+            echo "~~~"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The image is released with the GitHub release for the tag. A human-authored
+  # release is never rewritten: when one already exists its notes stay as-is,
+  # because this job has no way to merge text safely.
+  release:
+    name: GitHub release
+    needs: [prepare, publish]
+    if: github.event_name == 'push' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      IMAGE: ${{ needs.prepare.outputs.image }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      DIGEST: ${{ needs.publish.outputs.digest }}
+    steps:
+      - name: Create the release if absent
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Release $TAG already exists; leaving its notes untouched. Published $IMAGE:$VERSION ($DIGEST)."
+            exit 0
+          fi
+
+          notes="Self-hosted container image: $IMAGE:$VERSION
+          Digest: $DIGEST
+          Platform: linux/amd64
+
+          docker pull $IMAGE:$VERSION
+
+          Upgrade instructions, configuration and the source-build alternative are
+          in docs/operations/self-hosting.md."
+
+          args=(--title "$TAG" --notes "$notes" --verify-tag)
+
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${args[@]}"

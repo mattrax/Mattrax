@@ -93,17 +93,23 @@ through the web Worker's service binding.
 
 ### Self-hosting
 
-The same dashboard and API run as one Node container. It needs MySQL and an HTTPS
-reverse proxy, and nothing else:
+The same dashboard and API run as one Node container, published as
+`ghcr.io/mattrax/mattrax`. It needs MySQL and an HTTPS reverse proxy, and
+nothing else:
 
 ```bash
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
-docker compose -f docker-compose.selfhost.yml up -d --build
+export MATTRAX_VERSION=1.4.0
+
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-See [docs/operations/self-hosting.md](docs/operations/self-hosting.md) for configuration,
-TLS, storage, backups and upgrade notes.
+Build from a checkout instead with
+`docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+See [docs/operations/self-hosting.md](docs/operations/self-hosting.md) for version
+pinning, TLS, storage, backups and upgrade notes.
 
 Configuration lives in each app's `cloudflare.config.ts` and deployments use the
 [`cf` CLI](https://github.com/cloudflare/cf). Authenticate once with:

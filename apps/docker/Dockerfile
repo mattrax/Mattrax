@@ -75,6 +75,17 @@ RUN mkdir -p /out/etc /out/data /out/home/node \
 # compromised. Node comes from the build stage so it can be stripped.
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
+# Static OCI metadata so `docker inspect` and registry UIs describe the image
+# without relying on the build command. The release workflow adds the version,
+# revision and creation time; a local source build has only these.
+LABEL org.opencontainers.image.title="Mattrax" \
+      org.opencontainers.image.description="Self-hosted Mattrax MDM: the dashboard, API and MDM runtime in one Node container." \
+      org.opencontainers.image.source="https://github.com/mattrax/Mattrax" \
+      org.opencontainers.image.url="https://mattrax.app" \
+      org.opencontainers.image.documentation="https://github.com/mattrax/Mattrax/blob/main/docs/operations/self-hosting.md" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.base.name="gcr.io/distroless/cc-debian12:nonroot"
+
 ENV NODE_ENV=production \
     PORT=8080 \
     HOST=0.0.0.0 \

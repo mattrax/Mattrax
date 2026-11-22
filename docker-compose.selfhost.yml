@@ -1,16 +1,22 @@
 # Self-hosted Mattrax.
 #
 #   ORIGIN=https://mdm.example.com AUTH_SECRET=$(openssl rand -base64 32) \
-#     docker compose -f docker-compose.selfhost.yml up -d --build
+#     docker compose -f docker-compose.selfhost.yml pull
+#   ORIGIN=https://mdm.example.com AUTH_SECRET=$(openssl rand -base64 32) \
+#     docker compose -f docker-compose.selfhost.yml up -d
+#
+# Pulls the published image from GHCR by default. Pin a release with
+# MATTRAX_VERSION=1.4.0; the default, `latest`, follows the newest stable
+# release. To build from a checkout instead, add the build override:
+#
+#   docker compose -f docker-compose.selfhost.yml \
+#     -f docker-compose.selfhost.build.yml up -d --build
 #
 # ORIGIN must be the public HTTPS URL devices and browsers use. TLS is
 # terminated by a reverse proxy in front of this container.
 services:
   app:
-    build:
-      context: .
-      dockerfile: apps/docker/Dockerfile
-    image: mattrax-selfhost:local
+    image: ghcr.io/mattrax/mattrax:${MATTRAX_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       mysql:
