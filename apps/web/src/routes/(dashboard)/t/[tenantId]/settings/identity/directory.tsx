@@ -455,88 +455,75 @@ export default function DirectorySyncPage() {
                 )}
               </Show>
 
-              <div class="mt-5 space-y-4">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-                  <label for="entra-sync-interval" class="min-w-0">
-                    <span class="block text-[13px] font-medium text-foreground">
-                      Automatic sync
-                    </span>
-                    <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                      {automaticSyncHint(value())}
-                    </span>
-                  </label>
-                  <select
-                    id="entra-sync-interval"
-                    class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
-                    disabled={!writable() || !value().configured || interval.isPending}
-                    value={String(value().syncIntervalMinutes)}
-                    onChange={(event) => interval.mutate(Number(event.currentTarget.value))}
-                  >
-                    {intervalOptions().map((option) => (
-                      <option value={String(option.minutes)}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
+              <Show when={value().configured}>
+                <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+                    <label for="entra-sync-interval" class="min-w-0">
+                      <span class="block text-[13px] font-medium text-foreground">
+                        Automatic sync
+                      </span>
+                      <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                        {automaticSyncHint(value())}
+                      </span>
+                    </label>
+                    <select
+                      id="entra-sync-interval"
+                      class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
+                      disabled={!writable() || interval.isPending}
+                      value={String(value().syncIntervalMinutes)}
+                      onChange={(event) => interval.mutate(Number(event.currentTarget.value))}
+                    >
+                      {intervalOptions().map((option) => (
+                        <option value={String(option.minutes)}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div class="flex flex-wrap items-center gap-2">
                   <Show when={writable()}>
-                    <Button
-                      variant="outline"
-                      disabled={!value().configured || toggle.isPending}
-                      title={
-                        value().configured
-                          ? undefined
-                          : "Directory sync is not available on this deployment yet"
-                      }
-                      onClick={() => toggle.mutate(!value().enabled)}
-                    >
-                      {value().enabled ? "Disable sync" : "Enable sync"}
-                    </Button>
-                    <Button
-                      pending={sync.isPending}
-                      disabled={!value().configured}
-                      title={
-                        value().configured
-                          ? undefined
-                          : "Directory sync is not available on this deployment yet"
-                      }
-                      onClick={() => sync.mutate()}
-                    >
-                      <Show when={!sync.isPending}>
-                        <RotateCcw class="size-4" />
-                      </Show>
-                      Sync now
-                    </Button>
+                    <div class="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                      <Button
+                        variant="outline"
+                        disabled={toggle.isPending}
+                        onClick={() => toggle.mutate(!value().enabled)}
+                      >
+                        {value().enabled ? "Disable sync" : "Enable sync"}
+                      </Button>
+                      <Button pending={sync.isPending} onClick={() => sync.mutate()}>
+                        <Show when={!sync.isPending}>
+                          <RotateCcw class="size-4" />
+                        </Show>
+                        Sync now
+                      </Button>
+                    </div>
+                  </Show>
+
+                  <Show when={progress()}>
+                    {(current) => (
+                      <div
+                        class="space-y-1.5 border-t border-border pt-3.5"
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                      >
+                        <Show when={current().state === "running"}>
+                          <IndeterminateBar />
+                        </Show>
+                        <p
+                          class={cn(
+                            "text-[11.5px] leading-relaxed",
+                            current().state === "running" && "text-muted-foreground",
+                            current().state === "stale" && "text-warning-foreground",
+                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "failed" && "text-destructive",
+                          )}
+                        >
+                          {current().message}
+                        </p>
+                      </div>
+                    )}
                   </Show>
                 </div>
-
-                <Show when={progress()}>
-                  {(current) => (
-                    <div
-                      class="space-y-1.5 border-t border-border pt-3.5"
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                    >
-                      <Show when={current().state === "running"}>
-                        <IndeterminateBar />
-                      </Show>
-                      <p
-                        class={cn(
-                          "text-[11.5px] leading-relaxed",
-                          current().state === "running" && "text-muted-foreground",
-                          current().state === "stale" && "text-warning-foreground",
-                          current().state === "succeeded" && "text-success-foreground",
-                          current().state === "failed" && "text-destructive",
-                        )}
-                      >
-                        {current().message}
-                      </p>
-                    </div>
-                  )}
-                </Show>
-              </div>
-
+              </Show>
               <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
                 <Show when={!value().lastSyncedAt}>
                   <p>Never synced.</p>
@@ -651,98 +638,114 @@ export default function DirectorySyncPage() {
                 </ol>
               </details>
 
-              <div class="mt-5 space-y-4">
-                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-                  <label for="google-sync-interval" class="min-w-0">
-                    <span class="block text-[13px] font-medium text-foreground">
-                      Automatic sync
-                    </span>
-                    <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
-                      {automaticSyncHint(value())}
-                    </span>
-                  </label>
-                  <select
-                    id="google-sync-interval"
-                    class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
-                    disabled={!writable() || !value().configured || googleInterval.isPending}
-                    value={String(value().syncIntervalMinutes)}
-                    onChange={(event) => googleInterval.mutate(Number(event.currentTarget.value))}
-                  >
-                    {googleIntervalOptions().map((option) => (
-                      <option value={String(option.minutes)}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-2">
-                  <Show when={writable()}>
-                    <Button
-                      variant="outline"
-                      disabled={!value().configured || googleToggle.isPending}
-                      onClick={() => googleToggle.mutate(!value().enabled)}
-                    >
-                      {value().enabled ? "Disable sync" : "Enable sync"}
-                    </Button>
-                    <Button
-                      pending={googleSync.isPending}
-                      disabled={!value().configured}
-                      onClick={() => googleSync.mutate()}
-                    >
-                      <Show when={!googleSync.isPending}>
-                        <RotateCcw class="size-4" />
-                      </Show>
-                      Sync now
-                    </Button>
-                    <Button variant="outline" onClick={() => setGoogleFormOpen((open) => !open)}>
-                      {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
-                    </Button>
-                    <Show when={value().credentialsSource === "tenant"}>
-                      <Button
-                        variant="ghost"
-                        disabled={googleRemove.isPending}
-                        onClick={() => setGoogleRemoveOpen(true)}
-                      >
-                        Remove tenant key
+              <Show
+                when={value().configured}
+                fallback={
+                  <div class="mt-5 flex flex-wrap items-center gap-2">
+                    <Show when={writable()}>
+                      <Button variant="outline" onClick={() => setGoogleFormOpen((open) => !open)}>
+                        {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
                       </Button>
                     </Show>
-                  </Show>
-                  <a
-                    class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
-                    href={value().adminDirectoryUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open Google Admin
-                  </a>
-                </div>
-
-                <Show when={googleProgress()}>
-                  {(current) => (
-                    <div
-                      class="space-y-1.5 border-t border-border pt-3.5"
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
+                    <a
+                      class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                      href={value().adminDirectoryUrl}
+                      target="_blank"
+                      rel="noreferrer"
                     >
-                      <Show when={current().state === "running"}>
-                        <IndeterminateBar />
-                      </Show>
-                      <p
-                        class={cn(
-                          "text-[11.5px] leading-relaxed",
-                          current().state === "running" && "text-muted-foreground",
-                          current().state === "stale" && "text-warning-foreground",
-                          current().state === "succeeded" && "text-success-foreground",
-                          current().state === "failed" && "text-destructive",
-                        )}
-                      >
-                        {current().message}
-                      </p>
-                    </div>
-                  )}
-                </Show>
-              </div>
+                      Open Google Admin
+                    </a>
+                  </div>
+                }
+              >
+                <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+                    <label for="google-sync-interval" class="min-w-0">
+                      <span class="block text-[13px] font-medium text-foreground">
+                        Automatic sync
+                      </span>
+                      <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                        {automaticSyncHint(value())}
+                      </span>
+                    </label>
+                    <select
+                      id="google-sync-interval"
+                      class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
+                      disabled={!writable() || googleInterval.isPending}
+                      value={String(value().syncIntervalMinutes)}
+                      onChange={(event) => googleInterval.mutate(Number(event.currentTarget.value))}
+                    >
+                      {googleIntervalOptions().map((option) => (
+                        <option value={String(option.minutes)}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
 
+                  <div class="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                    <Show when={writable()}>
+                      <Button
+                        variant="outline"
+                        disabled={googleToggle.isPending}
+                        onClick={() => googleToggle.mutate(!value().enabled)}
+                      >
+                        {value().enabled ? "Disable sync" : "Enable sync"}
+                      </Button>
+                      <Button pending={googleSync.isPending} onClick={() => googleSync.mutate()}>
+                        <Show when={!googleSync.isPending}>
+                          <RotateCcw class="size-4" />
+                        </Show>
+                        Sync now
+                      </Button>
+                      <Button variant="outline" onClick={() => setGoogleFormOpen((open) => !open)}>
+                        {googleFormOpen() ? "Close credentials form" : "Configure credentials"}
+                      </Button>
+                      <Show when={value().credentialsSource === "tenant"}>
+                        <Button
+                          variant="ghost"
+                          disabled={googleRemove.isPending}
+                          onClick={() => setGoogleRemoveOpen(true)}
+                        >
+                          Remove tenant key
+                        </Button>
+                      </Show>
+                    </Show>
+                    <a
+                      class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                      href={value().adminDirectoryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open Google Admin
+                    </a>
+                  </div>
+
+                  <Show when={googleProgress()}>
+                    {(current) => (
+                      <div
+                        class="space-y-1.5 border-t border-border pt-3.5"
+                        role="status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                      >
+                        <Show when={current().state === "running"}>
+                          <IndeterminateBar />
+                        </Show>
+                        <p
+                          class={cn(
+                            "text-[11.5px] leading-relaxed",
+                            current().state === "running" && "text-muted-foreground",
+                            current().state === "stale" && "text-warning-foreground",
+                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "failed" && "text-destructive",
+                          )}
+                        >
+                          {current().message}
+                        </p>
+                      </div>
+                    )}
+                  </Show>
+                </div>
+              </Show>
               <Show when={googleFormOpen() && writable()}>
                 <div class="mt-4 grid gap-3 rounded-lg border border-border bg-surface/40 p-3">
                   <p class="text-[11.5px] leading-relaxed text-muted-foreground">
@@ -1137,10 +1140,10 @@ const automaticSyncHint = (status: {
   syncIntervalMinutes: number;
   nextSyncAt?: string | null;
 }) => {
-  if (!status.enabled) return "Enable sync to run automatically on this schedule.";
+  if (!status.enabled) return "Sync is paused. The schedule applies once it is enabled.";
 
   if (status.syncIntervalMinutes <= 0)
-    return 'Automatic directory sync is off. Use "Sync now" to run it manually.';
+    return 'Manual only. Use "Sync now" when you need a fresh import.';
 
   return status.nextSyncAt
     ? `Next automatic run ${formatDate(status.nextSyncAt)}.`
