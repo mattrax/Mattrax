@@ -145,9 +145,7 @@ jobs:
           cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
-          STRIPE_SECRET_KEY=sk_test_ci
           STRIPE_WEBHOOK_SECRET=whsec_ci
-          STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
           cp apps/cloud/.dev.vars apps/web/.dev.vars
@@ -238,9 +236,7 @@ jobs:
           cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
-          STRIPE_SECRET_KEY=sk_test_ci
           STRIPE_WEBHOOK_SECRET=whsec_ci
-          STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
           cp apps/cloud/.dev.vars apps/web/.dev.vars
