@@ -74,6 +74,10 @@ import {
   deviceActionUnavailableReason,
   deviceAvailableActions,
   appleUserAvailableActions,
+  appleDeviceNameSettingsPayload,
+  normalizeAppleDeviceName,
+  APPLE_DEVICE_NAME_MAX_LENGTH,
+  deviceNameDrift,
   diagnoseError,
   errorDiagnostic,
   evaluateDeviceQuery,
@@ -3990,6 +3994,8 @@ export const createEnterpriseService = ({
       readonly setupReleasedAt?: Date | null;
       readonly returnToServiceRequestedAt?: Date | null;
       readonly returnToServiceCompletedAt?: Date | null;
+      /** Apple User Enrollment (`user`) is BYOD and cannot be renamed. */
+      readonly enrollmentMode?: string | null;
     },
     android?: {
       readonly managementMode?: string | null;
@@ -4020,6 +4026,18 @@ export const createEnterpriseService = ({
     assetTag: row.assetTag,
     notes: row.notes,
     physicalName: row.physicalName,
+    namePushEnabled: row.namePushEnabled,
+    appliedName: row.appliedName,
+    appliedNameAt: row.appliedNameAt ? iso(row.appliedNameAt) : null,
+    // Drift is derived from the two names the row already has, so a rename
+    // that never reached the device stays visible without another query.
+    nameDrift: deviceNameDrift({
+      name: row.name,
+      reportedName: row.physicalName,
+      reportedNameAt: row.physicalNameAt,
+      appliedName: row.appliedName,
+      appliedNameAt: row.appliedNameAt,
+    }),
     vendor: row.vendor,
     osEdition: row.osEdition,
     osVersion: row.osVersion,
@@ -4068,6 +4086,7 @@ export const createEnterpriseService = ({
       ),
       managementMode: android?.managementMode ?? null,
       ownership: android?.ownership ?? null,
+      enrollmentMode: setup?.enrollmentMode ?? null,
     }),
   });
 
@@ -4187,6 +4206,7 @@ export const createEnterpriseService = ({
             setupReleasedAt: Date | null;
             returnToServiceRequestedAt: Date | null;
             returnToServiceCompletedAt: Date | null;
+            enrollmentMode: string | null;
           }
         >();
 
@@ -4198,6 +4218,7 @@ export const createEnterpriseService = ({
           setupReleasedAt: schema.deviceApple.setupReleasedAt,
           returnToServiceRequestedAt: schema.deviceApple.returnToServiceRequestedAt,
           returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
+          enrollmentMode: schema.deviceApple.enrollmentMode,
         })
         .from(schema.deviceApple)
         .where(inArray(schema.deviceApple.deviceId, [...deviceIds]));
@@ -15382,7 +15403,12 @@ export const createEnterpriseService = ({
     patchDevice: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        const body: { name?: string; notes?: string | null; assetTag?: string | null } = payload;
+        const body: {
+          name?: string;
+          notes?: string | null;
+          assetTag?: string | null;
+          applyNameToDevice?: boolean;
+        } = payload;
 
         const existing = yield* db.query.device.findFirst({
           where: { id: deviceId, organizationId: ctx.organization.id },
@@ -15396,12 +15422,66 @@ export const createEnterpriseService = ({
             new EnterpriseBadRequest({ message: "Device name cannot be empty" }),
           );
 
+        // Opting into device-name delivery is a real promise, so reject it on
+        // platforms (and enrollment modes) where the command cannot be sent
+        // rather than storing a flag that never does anything.
+        if (body.applyNameToDevice === true) {
+          // The opt-in causes system-initiated pushes on every check-in, so it
+          // must require the same permission as an explicit command.
+          if (!hasPermission(ctx.permissions, "devices.command"))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message: "Applying the name to the device requires the devices.command permission.",
+              }),
+            );
+
+          if (existing.proto !== "apple")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "Applying the name to the device is only implemented for Apple devices. Windows and Android name delivery is not available yet.",
+              }),
+            );
+
+          const [apple] = yield* db
+            .select({ enrollmentMode: schema.deviceApple.enrollmentMode })
+            .from(schema.deviceApple)
+            .where(eq(schema.deviceApple.deviceId, deviceId))
+            .limit(1);
+
+          if (apple?.enrollmentMode === "user")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.",
+              }),
+            );
+
+          const targetName = body.name === undefined ? existing.name : body.name.trim();
+
+          if (targetName.length > APPLE_DEVICE_NAME_MAX_LENGTH)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Apple device names must be 1-${APPLE_DEVICE_NAME_MAX_LENGTH} characters.`,
+              }),
+            );
+        }
+
+        // A rename or asset-tag edit can change dynamic-group membership, and
+        // therefore the device's policies. Commit the name first so the audit
+        // row and the group evaluation see the same value.
+        const name = body.name === undefined ? existing.name : body.name.trim();
+        const renamed = name !== existing.name;
+
         yield* db
           .update(schema.device)
           .set({
-            name: body.name === undefined ? existing.name : body.name.trim(),
+            name,
             notes: body.notes === undefined ? existing.notes : body.notes,
             assetTag: body.assetTag === undefined ? existing.assetTag : body.assetTag,
+            ...(body.applyNameToDevice === undefined
+              ? {}
+              : { namePushEnabled: body.applyNameToDevice }),
           })
           .where(
             and(
@@ -15420,7 +15500,14 @@ export const createEnterpriseService = ({
         if (groupChanges.some((group) => group.added > 0 || group.removed > 0))
           yield* refreshDevicePolicies(ctx.organization.id, [deviceId]);
 
-        yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
+        yield* audit(ctx, renamed ? "device.renamed" : "device.updated", "device", deviceId, {
+          fields: Object.keys(body),
+          platform: existing.proto,
+          ...(renamed ? { from: existing.name, to: name, deviceName: name } : {}),
+          ...(body.applyNameToDevice === undefined
+            ? {}
+            : { applyNameToDevice: body.applyNameToDevice }),
+        });
 
         return ok;
       }),
@@ -15863,6 +15950,7 @@ export const createEnterpriseService = ({
 
         const body: {
           action?: string;
+          deviceName?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
           recoveryLockPassword?: string;
@@ -15892,6 +15980,17 @@ export const createEnterpriseService = ({
                 .limit(1)
             : [];
 
+        // Apple User Enrollment is a BYOD device and cannot receive the
+        // supervised-only `Settings` command that renames it.
+        const [apple] =
+          device.proto === "apple"
+            ? yield* db
+                .select({ enrollmentMode: schema.deviceApple.enrollmentMode })
+                .from(schema.deviceApple)
+                .where(eq(schema.deviceApple.deviceId, device.id))
+                .limit(1)
+            : [];
+
         // Capability gating: the platform, enrollment state and the device's
         // own reported capabilities decide which actions are legal. RBAC is
         // still enforced by `requireTenant` above.
@@ -15903,6 +16002,7 @@ export const createEnterpriseService = ({
           model: device.model,
           managementMode: android?.managementMode ?? null,
           ownership: android?.ownership ?? null,
+          enrollmentMode: apple?.enrollmentMode ?? null,
           capabilities: Option.getOrUndefined(
             Schema.decodeUnknownOption(Schema.Json)(device.capabilities),
           ),
@@ -15924,7 +16024,14 @@ export const createEnterpriseService = ({
             }),
           );
 
-        if (!["sync", "collect-security-info", "refresh-applications"].includes(action))
+        // Renaming is reversible and audited; it does not destroy data the way
+        // a wipe or passcode reset does, so it follows inventory refreshes
+        // rather than requiring a fresh step-up.
+        if (
+          !["sync", "collect-security-info", "refresh-applications", "set-device-name"].includes(
+            action,
+          )
+        )
           yield* requireStepUp(auth, request, "device-command");
 
         let lockPin: string | undefined;
@@ -16208,6 +16315,17 @@ export const createEnterpriseService = ({
                   // The payload is completed below once the escrowed key and
                   // tenant escrow certificate have been read.
                   return { requestType: "RotateFileVaultKey", payload: {} };
+                case "set-device-name": {
+                  const name = normalizeAppleDeviceName(body.deviceName);
+
+                  if (!name || name.length > APPLE_DEVICE_NAME_MAX_LENGTH) return null;
+
+                  return {
+                    requestType: "Settings",
+                    payload: appleDeviceNameSettingsPayload(name),
+                  };
+                }
+
                 case "set-recovery-lock":
                   return {
                     requestType: "SetRecoveryLock",
@@ -16289,7 +16407,9 @@ export const createEnterpriseService = ({
                   message:
                     action === "install-app"
                       ? "Provide a manifest URL or iTunes Store ID to install an app"
-                      : "Unknown device action",
+                      : action === "set-device-name"
+                        ? `Provide a device name of 1-${APPLE_DEVICE_NAME_MAX_LENGTH} characters.`
+                        : "Unknown device action",
                 }),
               );
 
@@ -16440,7 +16560,15 @@ export const createEnterpriseService = ({
           yield* applePush.pushAppleDevice(device.id);
         }
 
-        const auditMetadata = { action, deduplicated: command?.deduplicated ?? false };
+        const auditMetadata = {
+          action,
+          deduplicated: command?.deduplicated ?? false,
+          // The name is not a secret; recording it makes a rename auditable
+          // without reading the command payload.
+          ...(action === "set-device-name" && normalizeAppleDeviceName(body.deviceName)
+            ? { deviceName: normalizeAppleDeviceName(body.deviceName) }
+            : {}),
+        };
 
         yield* audit(ctx, "device.action", "device", deviceId, auditMetadata);
 

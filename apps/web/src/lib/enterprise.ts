@@ -1387,7 +1387,10 @@ export const enterprise = {
   patchDevice: (
     tenantId: RouteParam,
     id: RouteParam,
-    payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">>,
+    payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">> & {
+      /** Opt into "Apply name to device with each sync". */
+      applyNameToDevice?: boolean;
+    },
   ) =>
     endpoint((api) =>
       api.patchDevice({
@@ -1531,7 +1534,9 @@ export const enterprise = {
         | "clear-app-data"
         | "request-device-info"
         | "relinquish-ownership"
-        | "schedule-os-update";
+        | "schedule-os-update"
+        | "set-device-name";
+      deviceName?: string;
       manifestUrl?: string;
       iTunesStoreId?: number;
       osUpdateInstallAction?:

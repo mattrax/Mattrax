@@ -179,6 +179,9 @@ export type DeviceActivityInputs = {
 
 const AUDIT_TITLES = {
   "device.updated": "Device details updated",
+  "device.renamed": "Device renamed",
+  "device.name_push_queued": "Device name push queued",
+  "device.name_push_skipped": "Device name push skipped",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",
@@ -235,6 +238,10 @@ const auditDetail = (row: AuditRow) => {
   const action = trimmed(metadata.action, 40);
 
   if (action) parts.push(`Action: ${action}`);
+
+  const deviceName = trimmed(metadata.deviceName, 80);
+
+  if (deviceName) parts.push(`Name: ${deviceName}`);
 
   const rawFields = metadata.fields;
 

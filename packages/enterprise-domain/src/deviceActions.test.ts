@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  appleDeviceNameFromSettingsPayload,
+  appleDeviceNameSettingsPayload,
   appleUserAvailableActions,
   appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
 } from "./deviceActions.ts";
+import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
 describe("deviceAvailableActions", () => {
   it("offers Windows actions without a sync action", () => {
@@ -188,6 +191,74 @@ describe("deviceAvailableActions", () => {
         "return-to-service",
       ),
     ).toContain("not support it on macOS");
+  });
+
+  it("offers set-device-name on enrolled Apple devices", () => {
+    const actions = deviceAvailableActions({ proto: "apple", status: "enrolled" });
+
+    expect(actions).toContain("set-device-name");
+    expect(deviceSupportsAction({ proto: "apple", status: "enrolled" }, "set-device-name")).toBe(
+      true,
+    );
+  });
+
+  it("does not offer set-device-name on Apple User Enrollment or other platforms", () => {
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        enrollmentMode: "user",
+      }),
+    ).not.toContain("set-device-name");
+
+    expect(deviceAvailableActions({ proto: "win", status: "enrolled" })).not.toContain(
+      "set-device-name",
+    );
+    expect(deviceAvailableActions({ proto: "android", status: "enrolled" })).not.toContain(
+      "set-device-name",
+    );
+    expect(deviceAvailableActions({ proto: "apple", status: "unenrolled" })).not.toContain(
+      "set-device-name",
+    );
+  });
+
+  it("explains why set-device-name is unavailable", () => {
+    expect(
+      deviceActionUnavailableReason({ proto: "win", status: "enrolled" }, "set-device-name"),
+    ).toContain("only available for Apple devices");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "set-device-name",
+      ),
+    ).toContain("User Enrollment");
+  });
+});
+
+describe("Apple device name payload", () => {
+  it("builds the documented Settings/DeviceName item", () => {
+    expect(appleDeviceNameSettingsPayload("Reception Mac")).toEqual({
+      Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }],
+    });
+  });
+
+  it("reads the name back from a queued payload", () => {
+    expect(
+      appleDeviceNameFromSettingsPayload(appleDeviceNameSettingsPayload("Reception Mac")),
+    ).toBe("Reception Mac");
+    expect(
+      appleDeviceNameFromSettingsPayload({
+        Settings: [{ Item: "MDMOptions", MDMOptions: {} }],
+      }),
+    ).toBeUndefined();
+    expect(appleDeviceNameFromSettingsPayload(null)).toBeUndefined();
+  });
+
+  it("trims names and documents Apple's 63-character limit", () => {
+    expect(normalizeAppleDeviceName("  Reception Mac  ")).toBe("Reception Mac");
+    expect(normalizeAppleDeviceName("   ")).toBeUndefined();
+    expect(APPLE_DEVICE_NAME_MAX_LENGTH).toBe(63);
   });
 });
 

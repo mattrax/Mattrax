@@ -2056,6 +2056,17 @@ export const device = mysqlTable(
     notes: text("notes"),
     assetTag: shortText("asset_tag"),
     physicalName: shortText("physical_name"),
+    /** When `physicalName` was last written from a device report. */
+    physicalNameAt: timestamp("physical_name_at"),
+    /**
+     * "Apply name to device with each sync". Null means the administrator has
+     * never chosen; the dashboard defaults it on for supervised Apple devices.
+     */
+    namePushEnabled: boolean("name_push_enabled"),
+    /** The last name an Apple `Settings`/`DeviceName` command acknowledged. */
+    appliedName: shortText("applied_name"),
+    /** When that acknowledgement arrived. */
+    appliedNameAt: timestamp("applied_name_at"),
     vendor: shortText("vendor"),
     osEdition: shortText("os_edition"),
     osVersion: shortText("os_version"),

@@ -59,6 +59,156 @@ export const shouldApplyReportedName = (input: ReportedDeviceNameInput): boolean
   );
 };
 
+/**
+ * Longest `DeviceName` Apple accepts in a `Settings` command.
+ *
+ * Apple documents 1-63 characters for the value; enforcing it in the action
+ * and the automatic check-in path gives the administrator a useful error
+ * instead of a command the device will reject.
+ */
+export const APPLE_DEVICE_NAME_MAX_LENGTH = 63;
+
+/** Trim a name and reject the empty value Apple would refuse. */
+export const normalizeAppleDeviceName = (value: string | null | undefined): string | undefined => {
+  const name = value?.trim();
+
+  return name ? name : undefined;
+};
+
+const validTime = (value: Date | string | null | undefined): number | undefined => {
+  if (!value) return undefined;
+
+  const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+
+  return Number.isFinite(time) ? time : undefined;
+};
+
+/**
+ * The most recent name Mattrax knows the device carries.
+ *
+ * `physicalName` is what the device reported, and `appliedName` is what it
+ * acknowledged from a `Settings` command. Either can be newer: a stale
+ * inventory report can arrive after a successful push, or a user can rename
+ * the device after one. Each column records when it was written, so the newer
+ * evidence wins instead of always trusting the report.
+ */
+export const latestKnownDeviceName = (input: {
+  readonly reportedName?: string | null;
+  readonly reportedNameAt?: Date | string | null;
+  readonly appliedName?: string | null;
+  readonly appliedNameAt?: Date | string | null;
+}): string | undefined => {
+  const reported = normalizeReportedName(input.reportedName);
+  const applied = normalizeReportedName(input.appliedName);
+  const reportedAt = validTime(input.reportedNameAt);
+  const appliedAt = validTime(input.appliedNameAt);
+
+  if (applied && appliedAt !== undefined && (reportedAt === undefined || appliedAt > reportedAt))
+    return applied;
+
+  return reported ?? applied;
+};
+
+/**
+ * Whether the name Mattrax shows and the name the device currently carries
+ * have drifted apart. Uses {@link latestKnownDeviceName}, so a stale
+ * `physicalName` cannot hide a rename that was acknowledged but never
+ * reported. Both sides must be known: a device with no name evidence has no
+ * drift, only missing data.
+ */
+export const deviceNameDrift = (input: {
+  readonly name?: string | null;
+  readonly reportedName?: string | null;
+  readonly reportedNameAt?: Date | string | null;
+  readonly appliedName?: string | null;
+  readonly appliedNameAt?: Date | string | null;
+}): boolean => {
+  const name = normalizeReportedName(input.name);
+  const known = latestKnownDeviceName(input);
+
+  return Boolean(name && known && name !== known);
+};
+
+/**
+ * How long a successful push suppresses another automatic retry.
+ *
+ * Apple acknowledges a `Settings` command even when the device ignores the
+ * value (an unsupervised device, or an OS that does not accept the item). This
+ * bounds the retry to once a day instead of queueing a command on every
+ * check-in, while still re-applying when a rename lands later.
+ */
+export const DEVICE_NAME_PUSH_RETRY_MS = 24 * 60 * 60 * 1000;
+
+export type DeviceNamePushInput = {
+  readonly proto?: string | null;
+  readonly status?: string | null;
+  /** Apple enrollment mode; `user` is a BYOD device and cannot be renamed. */
+  readonly enrollmentMode?: string | null;
+  /** Whether the administrator opted into re-applying the name on check-in. */
+  readonly enabled?: boolean | null;
+  /** Mattrax's management name, the value to push. */
+  readonly name?: string | null;
+  /** The name the device currently reports for itself. */
+  readonly reportedName?: string | null;
+  /** When that report was written. */
+  readonly reportedNameAt?: Date | string | null;
+  /** The last name the device acknowledged from a `Settings` command. */
+  readonly appliedName?: string | null;
+  readonly appliedAt?: Date | string | null;
+  readonly now?: Date;
+  readonly retryAfterMs?: number;
+};
+
+/**
+ * Whether an Apple check-in should queue another `Settings`/`DeviceName`
+ * command.
+ *
+ * This only decides "is there work to do", never "is the device supervised".
+ * Supervision is not reported by Apple, so the caller relies on the
+ * administrator's explicit opt-in and Apple's command result for feedback.
+ */
+export const shouldPushDeviceName = (input: DeviceNamePushInput): boolean => {
+  if (input.enabled !== true) return false;
+  if (input.proto !== "apple") return false;
+  if (input.status !== "enrolled") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const name = normalizeReportedName(input.name);
+
+  if (!name) return false;
+
+  // Apple rejects an over-long value; the manual action reports that to the
+  // administrator, while the automatic path skips and audits instead.
+  if (name.length > APPLE_DEVICE_NAME_MAX_LENGTH) return false;
+
+  // The device already carries what the administrator asked for. Use the
+  // newest evidence, so a stale report cannot hide an acknowledged rename.
+  if (
+    latestKnownDeviceName({
+      reportedName: input.reportedName,
+      reportedNameAt: input.reportedNameAt,
+      appliedName: input.appliedName,
+      appliedNameAt: input.appliedAt,
+    }) === name
+  )
+    return false;
+
+  // The last push already carried this name. Give the device a day to report
+  // the new value before queueing the same command again.
+  if (normalizeReportedName(input.appliedName) === name && input.appliedAt) {
+    const appliedAt = input.appliedAt instanceof Date ? input.appliedAt : new Date(input.appliedAt);
+    const now = input.now ?? new Date();
+
+    if (
+      Number.isFinite(appliedAt.getTime()) &&
+      now.getTime() - appliedAt.getTime() < (input.retryAfterMs ?? DEVICE_NAME_PUSH_RETRY_MS)
+    )
+      return false;
+  }
+
+  return true;
+};
+
 /** How long a per-platform application inventory stays fresh. */
 export const APPLICATION_INVENTORY_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 

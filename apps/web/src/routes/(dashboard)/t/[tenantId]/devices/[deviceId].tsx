@@ -37,6 +37,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CheckboxField,
   NativeSelect,
   Tabs,
   TabsList,
@@ -94,6 +95,7 @@ import {
   DEVICE_ARTWORK_WIDTH,
 } from "~/lib/device-artwork";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { defaultApplyNameToDevice, shouldQueueDeviceNamePush } from "~/lib/device-name";
 import {
   optimisticallyPatchItem,
   optimisticallyRemoveDevices,
@@ -615,6 +617,7 @@ export default function DeviceDetailPage() {
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [applyName, setApplyName] = createSignal(false);
   const [editOpen, setEditOpen] = createSignal(false);
   const [tab, setTab] = createSignal<"overview" | "scope">("overview");
   const [selectedGroupId, setSelectedGroupId] = createSignal("");
@@ -630,6 +633,19 @@ export default function DeviceDetailPage() {
     setConfirmAction(null);
   };
 
+  /**
+   * Pushing a name is a device command, so the option needs both the command
+   * permission and an Apple device that advertises the action.
+   */
+  const canApplyName = () =>
+    row()?.proto === "apple" && supports("set-device-name") && canCommand();
+
+  /**
+   * Supervision is not reported by Apple, so the option starts off and only a
+   * stored `true` turns it on. User Enrollment is excluded by the action.
+   */
+  const currentApplyName = () => defaultApplyNameToDevice(row()?.namePushEnabled);
+
   createEffect(
     () => row()?.id,
     () => {
@@ -639,6 +655,7 @@ export default function DeviceDetailPage() {
         setName(device.name);
         setAssetTag(device.assetTag ?? "");
         setNotes(device.notes ?? "");
+        setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
       }
     },
   );
@@ -679,14 +696,45 @@ export default function DeviceDetailPage() {
     ]);
   };
 
+  /**
+   * Queue Apple's `Settings`/`DeviceName` command. Kept separate from the
+   * rename so a failed push is reported on its own and never rolls back the
+   * management name the administrator just saved.
+   */
+  const applyNameToDevice = useMutation(() => ({
+    mutationFn: (deviceName: string) =>
+      enterprise.deviceAction(params.tenantId, params.deviceId, {
+        action: "set-device-name",
+        deviceName,
+      }),
+    onSuccess: async (_result, deviceName) => {
+      toast.success("Device name queued", {
+        description: `"${deviceName}" will be applied the next time the device checks in. Follow it under Command history.`,
+      });
+      await invalidate();
+    },
+    onError: (error) => {
+      toast.error("Could not apply the device name", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
+
   const save = useMutation(() => ({
     mutationFn: () =>
       enterprise.patchDevice(params.tenantId, params.deviceId, {
         name: name(),
         assetTag: assetTag() || null,
         notes: notes() || null,
+        ...(canApplyName() ? { applyNameToDevice: applyName() } : {}),
       }),
     onMutate: async () => {
+      // Capture the pre-save values before the optimistic write. Reading the
+      // row in onSuccess compares against the optimistic name and loses the
+      // fact that the operator renamed the device.
+      const previousName = row()?.name ?? null;
+      const previousApplyName = currentApplyName();
+
       const restore = await optimisticallyPatchItem(
         queryClient,
         params.tenantId!,
@@ -698,10 +746,26 @@ export default function DeviceDetailPage() {
       // The dialog closes on submit; the header already shows the new values.
       setEditOpen(false);
 
-      return { restore };
+      return { restore, previousName, previousApplyName };
     },
-    onSuccess: () => {
+    onSuccess: (_result, _payload, context) => {
       toast.success("Device details saved");
+
+      // The rename is already committed. Push it separately so a command
+      // failure cannot undo or hide the saved name; the check-in opt-in is
+      // the durable retry path. Saving an unrelated field must not queue a
+      // command unless the name changed or the option was just turned on.
+      if (
+        shouldQueueDeviceNamePush({
+          supported: canApplyName(),
+          applyName: applyName(),
+          submittedName: name(),
+          previousName: context?.previousName,
+          previousApplyName: context?.previousApplyName,
+        })
+      )
+        applyNameToDevice.mutate(name().trim());
+
       void invalidate();
     },
     onError: (error, _payload, context) => {
@@ -718,7 +782,8 @@ export default function DeviceDetailPage() {
     Boolean(row()) &&
     (name() !== row()!.name ||
       assetTag() !== (row()!.assetTag ?? "") ||
-      notes() !== (row()!.notes ?? ""));
+      notes() !== (row()!.notes ?? "") ||
+      (canApplyName() && applyName() !== currentApplyName()));
 
   const unsaved = useUnsavedChanges(() => detailsDirty() || usersDirty(), {
     title: "Discard device changes?",
@@ -1000,7 +1065,9 @@ export default function DeviceDetailPage() {
         | "clear-app-data"
         | "request-device-info"
         | "relinquish-ownership"
-        | "schedule-os-update";
+        | "schedule-os-update"
+        | "set-device-name";
+      deviceName?: string;
       manifestUrl?: string;
       osUpdateInstallAction?:
         | "Default"
@@ -1133,7 +1200,33 @@ export default function DeviceDetailPage() {
 
     return [
       { label: "Management name", value: device.name },
-      { label: "Device name", value: device.physicalName },
+      {
+        label: "Device name",
+        value: device.physicalName ? (
+          <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{device.physicalName}</span>
+            <Show when={device.nameDrift}>
+              <Chip tone="warning">Name drift</Chip>
+              <Show when={canCommand() && supports("set-device-name")}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={applyNameToDevice.isPending}
+                  onClick={() => applyNameToDevice.mutate(device.name)}
+                >
+                  {applyNameToDevice.isPending ? "Queueing…" : "Apply to device"}
+                </Button>
+              </Show>
+            </Show>
+          </span>
+        ) : undefined,
+      },
+      {
+        label: "Name applied",
+        value: device.appliedName
+          ? `${device.appliedName} · ${formatDate(device.appliedNameAt)}`
+          : undefined,
+      },
       { label: "Device vendor", value: device.vendor },
       { label: "Model name", value: device.model },
       { label: "Asset tag", value: device.assetTag },
@@ -3706,7 +3799,8 @@ export default function DeviceDetailPage() {
           <SheetHeader>
             <SheetTitle>Edit device details</SheetTitle>
             <SheetDescription>
-              The management name, asset tag and Markdown notes are saved with this device.
+              The management name, asset tag and Markdown notes are saved with this device. On
+              supported Apple devices the name can also be pushed to the device itself.
             </SheetDescription>
           </SheetHeader>
           <form
@@ -3724,6 +3818,15 @@ export default function DeviceDetailPage() {
                   onInput={(event) => setName(event.currentTarget.value)}
                 />
               </Field>
+              <Show when={canApplyName()}>
+                <CheckboxField
+                  checked={applyName()}
+                  onCheckedChange={setApplyName}
+                  disabled={!writable()}
+                  label="Apply name to device"
+                  description="Rename the device itself and re-apply it on check-in while the reported name differs. Only supervised Apple devices accept this command, and Mattrax cannot detect supervision, so this stays off until you enable it."
+                />
+              </Show>
               <Field label="Asset tag">
                 <Input
                   disabled={!writable()}

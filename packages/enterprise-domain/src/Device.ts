@@ -218,6 +218,18 @@ export const DeviceRow = Schema.Struct({
   assetTag: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   physicalName: Schema.optional(NullableString),
+  /**
+   * Whether "Apply name to device" is enabled. True makes the Apple check-in
+   * re-queue a `Settings`/`DeviceName` command while the reported name still
+   * differs. `null` means the administrator never chose; the dashboard
+   * defaults it on for supervised Apple devices.
+   */
+  namePushEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** The last name the device acknowledged from a `Settings` command. */
+  appliedName: Schema.optional(NullableString),
+  appliedNameAt: Schema.optional(NullableString),
+  /** True when the device-reported name differs from the management name. */
+  nameDrift: Schema.optional(Schema.Boolean),
   vendor: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   osVersion: Schema.optional(NullableString),
@@ -1059,8 +1071,14 @@ export const DeviceActionRequest = Schema.Struct({
       "request-device-info",
       "relinquish-ownership",
       "schedule-os-update",
+      "set-device-name",
     ]),
   ),
+  /**
+   * The name to write to an Apple device's own `DeviceName`. Required by
+   * `set-device-name`; it does not change the management name.
+   */
+  deviceName: Schema.optional(Schema.String),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */
@@ -1091,6 +1109,12 @@ export const PatchDeviceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   assetTag: Schema.optional(NullableString),
+  /**
+   * Opt into "Apply name to device with each sync". Turning it on does not
+   * queue anything by itself; the dashboard follows the save with a
+   * `set-device-name` command. Turning it off stops check-in re-applies.
+   */
+  applyNameToDevice: Schema.optional(Schema.Boolean),
 });
 
 /** One Apple per-user channel action. */
