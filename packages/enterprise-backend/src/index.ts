@@ -159,30 +159,10 @@ export { makeApplePush } from "./Device/push.ts";
 
 export type { ApplePush, ApplePushOptions } from "./Device/push.ts";
 
-export {
-  ABM_BUSINESS_BASE_URL,
-  ABM_DEFAULT_ASSERTION_AUDIENCE,
-  ABM_DEFAULT_TOKEN_URL,
-  ABM_SCHOOL_BASE_URL,
-  ADE_PROFILE_PURPOSE,
-  AppleBusinessManagerError,
-  appleBusinessManagerInfo,
-  assignAppleBusinessManagerDevice,
-  buildClientAssertion,
-  clearAppleBusinessManagerToken,
-  createAdeProfileToken,
-  describeAppleError,
-  loadAppleBusinessManager,
-  makeAbmClient,
-  openAbmCredential,
-  parseAbmTokenUpload,
-  parseAppleDate,
-  readAdeProfileToken,
-  saveAppleBusinessManagerToken,
-  sealAbmCredential,
-  syncAppleBusinessManagerDevices,
-  validateAbmPrivateKey,
-} from "@mattrax/apple-business-manager";
+// Apple Business Manager and the volume-purchase client are admin/cron-only
+// paths. Their runtime exports are not re-exported here: every consumer imports
+// them directly (and lazily where that matters), so the barrel does not drag
+// them into the startup closure. Types are still re-exported.
 
 export type {
   AbmAccessToken,
@@ -200,25 +180,6 @@ export type {
   AppleBusinessManagerInfo,
   AppleBusinessManagerRow,
   LegacyDepCredential,
-} from "@mattrax/apple-business-manager";
-
-export {
-  VPP_BASE_URL,
-  VppError,
-  assignVppLicence,
-  clearVppToken,
-  findVppAsset,
-  findVppAssetByStoreId,
-  loadVppToken,
-  makeVppClient,
-  openVppToken,
-  parseVppTokenUpload,
-  releaseVppLicence,
-  saveVppToken,
-  sealVppToken,
-  syncScheduledVppAssets,
-  syncVppAssets,
-  vppInfo,
 } from "@mattrax/apple-business-manager";
 
 export type {

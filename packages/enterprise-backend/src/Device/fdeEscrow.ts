@@ -51,7 +51,7 @@ export const escrowCertificateFingerprint = (
           await crypto.subtle.digest(
             "SHA-256",
             // SAFETY: WebCrypto accepts a Uint8Array view as a BufferSource.
-            certificateDer(certificatePem) as BufferSource,
+            (await certificateDer(certificatePem)) as BufferSource,
           ),
         ),
       ),
@@ -62,8 +62,8 @@ const describeCertificate = (certificatePem: string) =>
   Effect.gen(function* () {
     return {
       certificateFingerprintSha256: yield* escrowCertificateFingerprint(certificatePem),
-      subject: certificateCommonName(certificatePem),
-      certificateNotAfter: certificateNotAfter(certificatePem),
+      subject: yield* Effect.promise(() => certificateCommonName(certificatePem)),
+      certificateNotAfter: yield* Effect.promise(() => certificateNotAfter(certificatePem)),
     };
   });
 
@@ -200,9 +200,9 @@ export const uploadTenantEscrowKey = (input: {
   authSecret: string;
 }): Effect.Effect<EscrowKeyRow, EscrowKeyError | unknown> =>
   Effect.gen(function* () {
-    yield* Effect.try({
-      try: () => {
-        const certificate = pemToCert(input.certificatePem.trim());
+    yield* Effect.tryPromise({
+      try: async () => {
+        const certificate = await pemToCert(input.certificatePem.trim());
 
         // Apple wraps the key with CMS RSA key transport, so a non-RSA
         // certificate can never be used for escrow.

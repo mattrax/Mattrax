@@ -1,5 +1,3 @@
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
 import { Effect } from "effect";
 import { serializePlist } from "@mattrax/plist";
 import {
@@ -11,18 +9,12 @@ import {
   pemEncode,
   uint8ArrayToBase64,
 } from "@mattrax/crypto";
+import { loadPkijs } from "./pkijs.js";
+import type { Asn1jsModule, PkijsModule } from "./pkijs.js";
 import {
   APPLE_ROOT_CA,
   APPLE_WORLDWIDE_DEVELOPER_RELATIONS_CERTIFICATION_AUTHORITY,
 } from "./appleCerts.js";
-
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
 
 const RSA_ALGORITHM = {
   name: "RSASSA-PKCS1-v1_5",
@@ -59,7 +51,7 @@ export const apnsKeyToPkcs8Pem = async (jwk: JsonWebKey): Promise<string> => {
   return pemEncode("PRIVATE KEY", der);
 };
 
-const rdn = (type: string, value: string) =>
+const rdn = (pkijs: PkijsModule, asn1js: Asn1jsModule, type: string, value: string) =>
   new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
 
 /** Build a DER encoded PKCS#10 certification request for an Apple MDM push cert. */
@@ -67,12 +59,14 @@ export async function createApnsCsrDer(
   keyPair: CryptoKeyPair,
   subject: ApnsCsrSubject,
 ): Promise<ArrayBuffer> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
   csr.subject = new pkijs.RelativeDistinguishedNames({
     typesAndValues: [
-      rdn(ORGANIZATION_OID, subject.organization),
-      rdn(ORGANIZATIONAL_UNIT_OID, subject.organizationalUnit),
+      rdn(pkijs, asn1js, ORGANIZATION_OID, subject.organization),
+      rdn(pkijs, asn1js, ORGANIZATIONAL_UNIT_OID, subject.organizationalUnit),
     ],
   });
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);

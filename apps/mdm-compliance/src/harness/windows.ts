@@ -16,15 +16,13 @@ import type {
   WindowsManagementResponse,
   WindowsManagementScope,
 } from "@mattrax/management-backend";
+import { WindowsMdmService, WindowsMdmServiceLive, windowsMdmRoutes } from "@mattrax/dm-windows";
 import {
   DiscoverResponse,
   GetPoliciesResponse,
   RequestSecurityTokenResponseCollection,
-  WindowsMdmService,
-  WindowsMdmServiceLive,
-  windowsMdmRoutes,
-  parseSyncML,
-} from "@mattrax/dm-windows";
+} from "@mattrax/dm-windows/messages";
+import { parseSyncML } from "@mattrax/dm-windows/syncml";
 import { deserializeSoapElement, extractSoapBody } from "@mattrax/soap";
 
 export type WindowsHarnessState = {

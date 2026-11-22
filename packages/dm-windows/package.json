@@ -5,6 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./messages": "./src/messages.ts",
+    "./syncml": "./src/syncml.ts",
+    "./wstep": "./src/wstep.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {

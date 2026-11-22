@@ -1,5 +1,4 @@
 import { Auth, Hooks, Passkey, Sessions, Totp } from "@yielded/auth";
-import * as PasskeyServer from "@yielded/auth-simplewebauthn/Server";
 import type { makeAppAuth } from "@mattrax/enterprise-domain";
 import {
   appSessionConfiguration,
@@ -296,7 +295,41 @@ export const makeAuthLive = ({
    */
   const PasskeyConfigLive = Passkey.PasskeyConfig.layer(passkeyProfile(origin, trustedOrigins));
 
-  const PasskeyProtocolLive = PasskeyServer.layer.pipe(Layer.provide(PasskeyConfigLive));
+  /**
+   * The WebAuthn verifier is the single largest dependency in the auth graph and
+   * it is only exercised by a passkey ceremony, so it is imported on first use
+   * rather than at module evaluation. Every method delegates to the same
+   * lazily-built verifier, which keeps the layer's other behaviour (one verifier
+   * per layer, configuration errors surfacing on first ceremony) unchanged.
+   */
+  const PasskeyProtocolLive = Layer.effect(
+    Passkey.PasskeyProtocol,
+    Effect.gen(function* () {
+      const config = yield* Passkey.PasskeyConfig;
+
+      // `Effect.cached` memoises the verifier for this layer, so a request that
+      // performs several ceremonies builds it once, as before. A relying-party
+      // profile the verifier refuses is reported as "unavailable": the ceremony
+      // fails closed instead of taking the whole API down with it.
+      const verifier = yield* Effect.cached(
+        Effect.flatMap(
+          Effect.promise(() => import("@yielded/auth-simplewebauthn/Server")),
+          (module) => module.make(config),
+        ).pipe(Effect.mapError(() => Passkey.PasskeyUnavailable.make({}))),
+      );
+
+      return Passkey.PasskeyProtocol.of({
+        prepareAuthentication: (input) =>
+          Effect.flatMap(verifier, (service) => service.prepareAuthentication(input)),
+        prepareRegistration: (input) =>
+          Effect.flatMap(verifier, (service) => service.prepareRegistration(input)),
+        verifyAuthentication: (input) =>
+          Effect.flatMap(verifier, (service) => service.verifyAuthentication(input)),
+        verifyRegistration: (input) =>
+          Effect.flatMap(verifier, (service) => service.verifyRegistration(input)),
+      });
+    }),
+  ).pipe(Layer.provide(PasskeyConfigLive));
 
   const PasskeyClaimsLive = Layer.effect(
     appAuth.strategies.passkey.SessionClaims,

@@ -1,14 +1,7 @@
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { Option, Schema } from "effect";
 import { pemDecode } from "@mattrax/crypto";
-
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+import { loadPkijs } from "./pkijs.js";
 
 const UID_OID = "0.9.2342.19200300.100.1.1";
 
@@ -60,10 +53,15 @@ const findAttribute = (certificate: pkijs.Certificate, oid: string): string | nu
 export const isApnsMdmTopic = (topic: string | null | undefined): topic is string =>
   typeof topic === "string" && MDM_TOPIC_PATTERN.test(topic);
 
-/** Parse a PEM certificate without validating its lifetime or contents. */
-export function parseApnsCertificate(pem: string): ParsedApnsCertificate {
+/**
+ * Parse a PEM certificate without validating its lifetime or contents.
+ *
+ * Async because pkijs is loaded on first use, not at module evaluation.
+ */
+export async function parseApnsCertificate(pem: string): Promise<ParsedApnsCertificate> {
   const der = pemDecode("CERTIFICATE", pem);
-  const certificate = pkijs.Certificate.fromBER(der);
+  const { Certificate } = await loadPkijs();
+  const certificate = Certificate.fromBER(der);
   const topic = findAttribute(certificate, UID_OID);
 
   if (!topic) throw new Error("APNs certificate is missing the UID (topic) subject attribute");
@@ -111,7 +109,7 @@ export async function validateApnsCertificate(
   pem: string,
   options: ValidateApnsCertificateOptions = {},
 ): Promise<ParsedApnsCertificate> {
-  const parsed = parseApnsCertificate(pem);
+  const parsed = await parseApnsCertificate(pem);
 
   if (!isApnsMdmTopic(parsed.topic)) throw new Error(`Invalid APNs topic: ${parsed.topic}`);
 

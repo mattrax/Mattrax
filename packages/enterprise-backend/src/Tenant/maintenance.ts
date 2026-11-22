@@ -28,7 +28,6 @@ import { runServerCertificateCheck } from "../Scep/serverCertificate.ts";
 import type { ServerCertificateProbe } from "../Scep/serverCertificate.ts";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
-import { syncScheduledVppAssets } from "@mattrax/apple-business-manager";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
@@ -1051,6 +1050,12 @@ export const runMaintenance = (
     //     is easy to forget. Tenants are refreshed at most once a day; a failed
     //     sync is recorded on the token row and retried by the next run.
     if (options.vppSync !== false && options.authSecret) {
+      // Apps and Books sync is a daily cron path; the VPP client is imported
+      // here so it stays out of the API Worker's startup closure.
+      const { syncScheduledVppAssets } = yield* Effect.promise(
+        () => import("@mattrax/apple-business-manager"),
+      );
+
       const vpp = yield* syncScheduledVppAssets({
         db,
         authSecret: options.authSecret,

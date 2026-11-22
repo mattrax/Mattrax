@@ -29,13 +29,15 @@ const certificate = async (commonName: string) => {
 
 const fingerprint = async (pem: string) =>
   Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(certificateDer(pem)))),
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new Uint8Array(await certificateDer(pem))),
+    ),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 
-const escrowProfile = (options: { certificatePem?: string } = {}) => {
+const escrowProfile = async (options: { certificatePem?: string } = {}) => {
   const certificatePayload = options.certificatePem
-    ? certificatePemToBase64(options.certificatePem)
+    ? await certificatePemToBase64(options.certificatePem)
     : "";
 
   const certificatePayloadXml = options.certificatePem
@@ -73,8 +75,8 @@ ${certificatePayloadXml}
 };
 
 /** Minimal PEM → base64 DER for embedding a test certificate in the plist. */
-const certificatePemToBase64 = (pem: string) => {
-  const der = certificateDer(pem);
+const certificatePemToBase64 = async (pem: string) => {
+  const der = await certificateDer(pem);
   let binary = "";
 
   for (const byte of der) binary += String.fromCharCode(byte);
@@ -88,7 +90,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile() },
+          { content: await escrowProfile() },
           { escrowCertificateFingerprintSha256: null },
         ),
       ),
@@ -99,7 +101,7 @@ describe("FileVault escrow profile validation", () => {
     const tenant = await certificate("Tenant escrow");
     const foreign = await certificate("Foreign escrow");
 
-    const bytes = Uint8Array.from(atob(escrowProfile({ certificatePem: foreign })), (char) =>
+    const bytes = Uint8Array.from(atob(await escrowProfile({ certificatePem: foreign })), (char) =>
       char.charCodeAt(0),
     );
 
@@ -119,7 +121,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile({ certificatePem: tenant }) },
+          { content: await escrowProfile({ certificatePem: tenant }) },
           { escrowCertificateFingerprintSha256: await fingerprint(tenant) },
         ),
       ),
@@ -133,7 +135,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile() },
+          { content: await escrowProfile() },
           { escrowCertificateFingerprintSha256: await fingerprint(tenant) },
         ),
       ),
@@ -144,7 +146,7 @@ describe("FileVault escrow profile validation", () => {
 describe("applyEscrowCertificate", () => {
   it("injects the tenant certificate under the referenced payload UUID", async () => {
     const tenant = await certificate("Tenant escrow");
-    const bytes = Uint8Array.from(atob(escrowProfile()), (char) => char.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(await escrowProfile()), (char) => char.charCodeAt(0));
 
     const rewritten = await applyEscrowCertificate(bytes, tenant);
     expect("content" in rewritten).toBe(true);
@@ -160,7 +162,7 @@ describe("applyEscrowCertificate", () => {
 
     expect(certificatePayload?.uuid).toBe("33333333-3333-3333-3333-333333333333");
     expect(Array.from(certificatePayload!.certificateDer ?? [])).toEqual(
-      Array.from(certificateDer(tenant)),
+      Array.from(await certificateDer(tenant)),
     );
   });
 
