@@ -2601,7 +2601,6 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             and(
               eq(s.deviceCommand.deviceId, device.id),
               eq(s.deviceCommand.requestType, "Settings"),
-
             ),
           );
 

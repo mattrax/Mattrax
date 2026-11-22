@@ -270,8 +270,12 @@ export const DeviceRow = Schema.Struct({
   /** The management name when the message was last acknowledged. */
   appliedLockScreenName: Schema.optional(NullableString),
   appliedLockScreenAt: Schema.optional(NullableString),
-  /** Delivery state of the most recent lock screen profile command. */
-  lockScreenDelivery: Schema.optional(Schema.NullOr(DeviceLockScreenDelivery)),
+  /**
+   * Delivery state of the most recent lock screen profile command. Exposed as
+   * unknown to keep the device response schema small; clients decode it with
+   * `DeviceLockScreenDelivery`.
+   */
+  lockScreenDelivery: Schema.optional(Schema.Unknown),
   vendor: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   osVersion: Schema.optional(NullableString),

@@ -4,6 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { InfiniteData } from "@tanstack/solid-query";
 import {
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  DeviceLockScreenDelivery,
   DeviceRow,
   EffectivePolicyResponse,
   normalizeDeviceCommandStatus,
@@ -758,7 +759,10 @@ export default function DeviceDetailPage() {
     return null;
   };
 
-  const latestLockScreenCommand = () => row()?.lockScreenDelivery ?? undefined;
+  const decodeLockScreenDelivery = Schema.decodeUnknownOption(DeviceLockScreenDelivery);
+
+  const latestLockScreenCommand = () =>
+    Option.getOrUndefined(decodeLockScreenDelivery(row()?.lockScreenDelivery));
 
   /**
    * Persist the per-device override and install Apple's shared-device lock screen profile. The
