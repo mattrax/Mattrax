@@ -101,7 +101,11 @@ export default function MigrationPage(props: { embedded?: boolean } = {}) {
       setName("");
       setSerials("");
       void qc.invalidateQueries({ queryKey: enterpriseKeys.fleetMigrations(params.tenantId) });
-      navigate(`/t/${params.tenantId}/migration/${result.id}`);
+      navigate(
+        props.embedded
+          ? `/t/${params.tenantId}/settings/migration/${result.id}`
+          : `/t/${params.tenantId}/migration/${result.id}`,
+      );
       toast.success(`Cohort created with ${result.added} device${result.added === 1 ? "" : "s"}`, {
         description:
           result.skipped.length > 0
@@ -118,7 +122,11 @@ export default function MigrationPage(props: { embedded?: boolean } = {}) {
       header: "Cohort",
       cell: (row: FleetMigrationSummary) => (
         <a
-          href={`/t/${params.tenantId}/migration/${row.id}`}
+          href={
+            props.embedded
+              ? `/t/${params.tenantId}/settings/migration/${row.id}`
+              : `/t/${params.tenantId}/migration/${row.id}`
+          }
           class="font-medium text-foreground hover:underline"
         >
           {row.name}

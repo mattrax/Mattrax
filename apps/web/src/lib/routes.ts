@@ -306,6 +306,8 @@ export const routes = {
       enrollment: () => `${base}/enrollment`,
       settings: () => `${base}/settings`,
       settingsMigration: () => `${base}/settings/migration`,
+      settingsMigrationDetail: (migrationId: string) =>
+        `${base}/settings/migration/${segment(migrationId)}`,
       settingsTab: (
         tab:
           | ""

@@ -1,4 +1,4 @@
-import MigrationPage, { route } from "../migration/index";
+import MigrationPage, { route } from "../../migration/index";
 
 export { route };
 

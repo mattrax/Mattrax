@@ -88,7 +88,7 @@ const statusLabel = (status: string) => {
   }
 };
 
-export default function MigrationDetailPage() {
+export default function MigrationDetailPage(props: { embedded?: boolean } = {}) {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -157,7 +157,11 @@ export default function MigrationDetailPage() {
     onSuccess: () => {
       setConfirmDelete(false);
       void qc.invalidateQueries({ queryKey: enterpriseKeys.fleetMigrations(params.tenantId) });
-      navigate(routes.tenant(params.tenantId).migrations());
+      navigate(
+        props.embedded
+          ? routes.tenant(params.tenantId).settingsMigration()
+          : routes.tenant(params.tenantId).migrations(),
+      );
     },
     onError: (error) => toast.error("Could not delete the cohort", { description: String(error) }),
   }));
@@ -292,8 +296,15 @@ export default function MigrationDetailPage() {
 
   return (
     <Show when={can("devices.read")} fallback={<AccessDenied />}>
-      <Page>
-        <PageBreadcrumbs title="Migration" />
+      <Page class={props.embedded ? "max-w-none p-0" : undefined}>
+        <Show when={props.embedded} fallback={<PageBreadcrumbs title="Migration" />}>
+          <a
+            href={routes.tenant(params.tenantId).settingsMigration()}
+            class="text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+          >
+            ← Migration cohorts
+          </a>
+        </Show>
         <PageHeader
           eyebrow="Migration"
           title={detail.data?.migration.name ?? "Migration cohort"}

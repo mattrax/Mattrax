@@ -141,6 +141,22 @@ test.describe("tenant settings", () => {
     await expect(page.getByText("Bring a fleet over from another MDM")).toBeHidden();
   });
 
+  test("creates a migration cohort without leaving settings", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Cohort Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings/migration`);
+
+    await page.getByLabel("Name").fill("Q1 exit");
+    await page.getByLabel("Device serials").fill("C02XYZ123");
+    await page.getByRole("button", { name: "Create cohort" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/migration/[^/]+$`));
+    await expect(page.getByRole("heading", { name: "Q1 exit" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "← Migration cohorts" })).toBeVisible();
+    await expect(
+      page.locator('nav[aria-label="Tenant settings sections"] a[aria-current="page"]'),
+    ).toHaveText("Migration");
+  });
+
   test("shows the auditor role in administrator settings", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);

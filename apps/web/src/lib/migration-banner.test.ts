@@ -4,8 +4,8 @@ import {
   readMigrationBannerDismissed,
   shouldShowMigrationBanner,
   writeMigrationBannerDismissed,
-  type MigrationBannerStorage,
 } from "./migration-banner";
+import type { MigrationBannerStorage } from "./migration-banner";
 
 const memoryStorage = (initial: Record<string, string> = {}) => {
   const values = new Map(Object.entries(initial));
