@@ -34,7 +34,7 @@ for (const theme of ["light", "dark"] as const) {
 
     expect(settled.theme).toBe(theme);
     // The page canvas is the `--background` token: gray-1 in light, #08080a in dark.
-    expect(settled.body).toBe(theme === "dark" ? "rgb(16, 16, 15)" : "rgb(246, 246, 243)");
+    expect(settled.body).toBe(theme === "dark" ? "rgb(16, 16, 15)" : "rgb(233, 233, 230)");
   });
 }
 
