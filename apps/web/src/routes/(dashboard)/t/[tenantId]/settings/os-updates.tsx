@@ -39,6 +39,10 @@ const platformLabel = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
       return "macOS";
+    case "ios":
+      return "iOS";
+    case "ipados":
+      return "iPadOS";
     case "windows":
       return "Windows";
     case "android":
@@ -52,6 +56,9 @@ const versionExample = (platform: OsPolicyPlatform) => {
       return "10.0.22631";
     case "android":
       return "14";
+    case "ios":
+    case "ipados":
+      return "18.1";
     default:
       return "14.6";
   }
@@ -83,8 +90,10 @@ const enforcementLabel = (value: Draft["enforcement"]) => {
  * Tenant-wide OS policy.
  *
  * The page is deliberately explicit about what `enforce` does on each
- * platform: only macOS has a minimum-version command, and Windows/Android only
- * have update rings. Claiming otherwise would be a lie the fleet view repeats.
+ * platform: Apple platforms deliver the DDM software-update enforcement
+ * declaration (with an explicit ScheduleOSUpdate fallback), while
+ * Windows/Android only have update rings. Claiming otherwise would be a lie
+ * the fleet view repeats.
  */
 export default function OsUpdateSettingsPage() {
   const params = useParams();

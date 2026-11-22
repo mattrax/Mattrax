@@ -112,6 +112,7 @@ import {
   softwareUpdateRank,
   OS_POLICY_PLATFORMS,
   OS_POLICY_CAPABILITIES,
+  appleOsUpdateMechanism,
   appleScheduleOsUpdatePayload,
   completeOsPolicy,
   deriveOsCompliance,
@@ -121,6 +122,7 @@ import {
   osPolicyDeferralEndsAt,
   osPolicyPlatformForDevice,
   osPolicyRuleFromRow,
+  unsupportedAppleOsPolicyFamily,
   isEnvManagedSuperadmin,
   isSuperadmin,
   normalizeAdminAccountsQuery,
@@ -4041,8 +4043,12 @@ export const createEnterpriseService = ({
       readonly setupReleasedAt?: Date | null;
       readonly returnToServiceRequestedAt?: Date | null;
       readonly returnToServiceCompletedAt?: Date | null;
-      /** Apple User Enrollment (`user`) is BYOD and cannot be renamed. */
-      readonly enrollmentMode?: string | null;
+      readonly declarationMode?: "ddm" | "legacy" | null;
+      /**
+       * Apple User Enrollment (`user`) is BYOD: it cannot be renamed and
+       * cannot apply a supervised system-scoped declaration.
+       */
+      readonly enrollmentMode?: "device" | "user" | null;
     },
     android?: {
       readonly managementMode?: string | null;
@@ -4128,12 +4134,16 @@ export const createEnterpriseService = ({
     actions: deviceAvailableActions({
       proto: row.proto,
       status: row.status,
+      osEdition: row.osEdition,
+      osVersion: row.osVersion,
+      model: row.model,
+      declarationMode: setup?.declarationMode ?? null,
+      enrollmentMode: setup?.enrollmentMode ?? null,
       capabilities: Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
       ),
       managementMode: android?.managementMode ?? null,
       ownership: android?.ownership ?? null,
-      enrollmentMode: setup?.enrollmentMode ?? null,
     }),
   });
 
@@ -4207,6 +4217,8 @@ export const createEnterpriseService = ({
       readonly osVersion?: string | null;
       readonly osEdition?: string | null;
       readonly model?: string | null;
+      readonly osUpdateInstallState?: string | null;
+      readonly osUpdatePendingVersion?: string | null;
     },
     rules: ReadonlyArray<OsPolicyRule>,
     catalog: Parameters<typeof deriveOsCompliance>[2],
@@ -4218,6 +4230,8 @@ export const createEnterpriseService = ({
         osVersion: row.osVersion,
         osEdition: row.osEdition,
         model: row.model,
+        osUpdateInstallState: row.osUpdateInstallState,
+        osUpdatePendingVersion: row.osUpdatePendingVersion,
       },
       rules,
       catalog,
@@ -4253,7 +4267,8 @@ export const createEnterpriseService = ({
             setupReleasedAt: Date | null;
             returnToServiceRequestedAt: Date | null;
             returnToServiceCompletedAt: Date | null;
-            enrollmentMode: string | null;
+            declarationMode: "ddm" | "legacy" | null;
+            enrollmentMode: "device" | "user" | null;
           }
         >();
 
@@ -4265,6 +4280,7 @@ export const createEnterpriseService = ({
           setupReleasedAt: schema.deviceApple.setupReleasedAt,
           returnToServiceRequestedAt: schema.deviceApple.returnToServiceRequestedAt,
           returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
+          declarationMode: schema.deviceApple.declarationMode,
           enrollmentMode: schema.deviceApple.enrollmentMode,
         })
         .from(schema.deviceApple)
@@ -16007,6 +16023,7 @@ export const createEnterpriseService = ({
           osUpdateInstallAction?: AppleOsUpdateInstallAction;
           osUpdateProductKey?: string;
           osUpdateDeadline?: string;
+          osUpdateMechanism?: "ddm-software-update";
         } = payload ?? {};
 
         const action = body.action ?? "sync";
@@ -16030,12 +16047,16 @@ export const createEnterpriseService = ({
                 .limit(1)
             : [];
 
-        // Apple User Enrollment is a BYOD device and cannot receive the
-        // supervised-only `Settings` command that renames it.
+        // Apple User Enrollment is BYOD: it cannot receive the supervised-only
+        // `Settings` rename command, and DDM availability and supervision also
+        // decide whether ScheduleOSUpdate is the right Apple update path.
         const [apple] =
           device.proto === "apple"
             ? yield* db
-                .select({ enrollmentMode: schema.deviceApple.enrollmentMode })
+                .select({
+                  enrollmentMode: schema.deviceApple.enrollmentMode,
+                  declarationMode: schema.deviceApple.declarationMode,
+                })
                 .from(schema.deviceApple)
                 .where(eq(schema.deviceApple.deviceId, device.id))
                 .limit(1)
@@ -16050,9 +16071,10 @@ export const createEnterpriseService = ({
           osEdition: device.osEdition,
           osVersion: device.osVersion,
           model: device.model,
+          declarationMode: apple?.declarationMode ?? null,
+          enrollmentMode: apple?.enrollmentMode ?? null,
           managementMode: android?.managementMode ?? null,
           ownership: android?.ownership ?? null,
-          enrollmentMode: apple?.enrollmentMode ?? null,
           capabilities: Option.getOrUndefined(
             Schema.decodeUnknownOption(Schema.Json)(device.capabilities),
           ),
@@ -16073,6 +16095,33 @@ export const createEnterpriseService = ({
                 : "Unknown device action",
             }),
           );
+
+        // A bulk Apply on a DDM device is a wake-up, not a command. Validate
+        // that the tenant rule really delivers the declaration before the
+        // audit trail records it as an OS-update action.
+        if (body.osUpdateMechanism === "ddm-software-update") {
+          const platform = osPolicyPlatformForDevice(deviceActionInput);
+          const rules = yield* loadOsPolicyRules(ctx.organization.id);
+          const rule = platform
+            ? (rules.find((entry) => entry.platform === platform) ?? null)
+            : null;
+
+          if (
+            requestedAction !== "sync" ||
+            appleOsUpdateMechanism({
+              device: deviceActionInput,
+              rule,
+              declarationMode: apple?.declarationMode ?? null,
+              enrollmentMode: apple?.enrollmentMode ?? null,
+            }) !== "ddm-software-update"
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "This device does not receive the tenant DDM software-update declaration. Use ScheduleOSUpdate or fix the OS policy first.",
+              }),
+            );
+        }
 
         // Renaming is reversible and audited; it does not destroy data the way
         // a wipe or passcode reset does, so it follows inventory refreshes
@@ -16617,6 +16666,21 @@ export const createEnterpriseService = ({
           // without reading the command payload.
           ...(action === "set-device-name" && normalizeAppleDeviceName(body.deviceName)
             ? { deviceName: normalizeAppleDeviceName(body.deviceName) }
+            : {}),
+          ...(action === "sync" && body.osUpdateMechanism === "ddm-software-update"
+            ? {
+                // Bulk Apply on a DDM device is a wake-up that applies the
+                // declaration on check-in; record it as such.
+                mechanism: "ddm-software-update",
+              }
+            : {}),
+          ...(action === "schedule-os-update"
+            ? {
+                // The fallback is explicit in the audit trail: the DDM
+                // declaration, where available, is delivered without a command.
+                mechanism: "schedule-os-update",
+                installAction: body.osUpdateInstallAction ?? "InstallASAP",
+              }
             : {}),
         };
 
@@ -17590,11 +17654,25 @@ export const createEnterpriseService = ({
                   proto: schema.device.proto,
                   osEdition: schema.device.osEdition,
                   osVersion: schema.device.osVersion,
+                  // The model resolves iPhone/iPadOS when the marketing name is
+                  // missing, so the bucket must carry it.
+                  model: schema.device.model,
+                  // DDM reports a pending update separately from the installed
+                  // version; grouping by it keeps the bucket status honest.
+                  osUpdateInstallState: schema.device.osUpdateInstallState,
+                  osUpdatePendingVersion: schema.device.osUpdatePendingVersion,
                   value: count(),
                 })
                 .from(schema.device)
                 .where(eq(schema.device.organizationId, ctx.organization.id))
-                .groupBy(schema.device.proto, schema.device.osEdition, schema.device.osVersion),
+                .groupBy(
+                  schema.device.proto,
+                  schema.device.osEdition,
+                  schema.device.osVersion,
+                  schema.device.model,
+                  schema.device.osUpdateInstallState,
+                  schema.device.osUpdatePendingVersion,
+                ),
             ),
           ],
           { concurrency: "unbounded" },
@@ -17605,7 +17683,9 @@ export const createEnterpriseService = ({
             proto: bucket.proto,
             osEdition: bucket.osEdition,
             osVersion: bucket.osVersion,
-            model: null,
+            model: bucket.model,
+            osUpdateInstallState: bucket.osUpdateInstallState,
+            osUpdatePendingVersion: bucket.osUpdatePendingVersion,
           });
 
           if (!platform) return [];
@@ -17615,7 +17695,9 @@ export const createEnterpriseService = ({
               proto: bucket.proto,
               osEdition: bucket.osEdition,
               osVersion: bucket.osVersion,
-              model: null,
+              model: bucket.model,
+              osUpdateInstallState: bucket.osUpdateInstallState,
+              osUpdatePendingVersion: bucket.osUpdatePendingVersion,
             },
             rules,
             softwareUpdates.catalog,
@@ -17624,6 +17706,44 @@ export const createEnterpriseService = ({
 
           return [{ bucket, platform, info, count: Number(bucket.value) || 0 }];
         });
+
+        // Families Apple supports but Mattrax deliberately does not manage
+        // are excluded from compliance counts, never hidden. The fleet page
+        // says how many devices are outside the policy.
+        const unsupportedByFamily = new Map<string, number>();
+
+        for (const bucket of buckets) {
+          if (
+            osPolicyPlatformForDevice({
+              proto: bucket.proto,
+              osEdition: bucket.osEdition,
+              osVersion: bucket.osVersion,
+              model: bucket.model,
+            })
+          )
+            continue;
+
+          const family = unsupportedAppleOsPolicyFamily({
+            proto: bucket.proto,
+            osEdition: bucket.osEdition,
+            osVersion: bucket.osVersion,
+          });
+
+          if (!family) continue;
+
+          unsupportedByFamily.set(
+            family,
+            (unsupportedByFamily.get(family) ?? 0) + (Number(bucket.value) || 0),
+          );
+        }
+
+        const unsupported = {
+          total: [...unsupportedByFamily.values()].reduce((total, count) => total + count, 0),
+          byFamily: [...unsupportedByFamily.entries()].map(([family, count]) => ({
+            family,
+            count,
+          })),
+        };
 
         type FleetComplianceCounts = {
           total: number;
@@ -17680,6 +17800,8 @@ export const createEnterpriseService = ({
 
         const protoForPlatform: Record<OsPolicyPlatform, "apple" | "win" | "android"> = {
           macos: "apple",
+          ios: "apple",
+          ipados: "apple",
           windows: "win",
           android: "android",
         };
@@ -17763,8 +17885,42 @@ export const createEnterpriseService = ({
                 readonly osVersion: string | null;
                 readonly osEdition: string | null;
                 readonly model: string | null;
+                readonly osUpdateInstallState: string | null;
+                readonly osUpdatePendingVersion: string | null;
                 readonly lastSeenAt: Date;
               }> = [];
+
+              // Constrain the per-device query to the platform family in SQL.
+              // iOS, iPadOS and macOS share the apple transport, so a shared
+              // `proto = apple` limit lets a large iPhone fleet starve an iPad
+              // (or a Mac) out of its own behind list.
+              const familyCondition =
+                platform === "macos"
+                  ? or(
+                      like(schema.device.osEdition, "mac%"),
+                      and(
+                        isNull(schema.device.osEdition),
+                        or(like(schema.device.model, "%mac%"), isNull(schema.device.model)),
+                      ),
+                    )
+                  : platform === "ios"
+                    ? or(
+                        like(schema.device.osEdition, "ios%"),
+                        like(schema.device.osEdition, "iphone%"),
+                        and(
+                          isNull(schema.device.osEdition),
+                          or(
+                            like(schema.device.model, "iphone%"),
+                            like(schema.device.model, "ipod%"),
+                          ),
+                        ),
+                      )
+                    : platform === "ipados"
+                      ? or(
+                          like(schema.device.osEdition, "ipad%"),
+                          and(isNull(schema.device.osEdition), like(schema.device.model, "ipad%")),
+                        )
+                      : undefined;
 
               if (behindVersions.length > 0) {
                 const versionCondition = or(
@@ -17784,6 +17940,8 @@ export const createEnterpriseService = ({
                       osVersion: schema.device.osVersion,
                       osEdition: schema.device.osEdition,
                       model: schema.device.model,
+                      osUpdateInstallState: schema.device.osUpdateInstallState,
+                      osUpdatePendingVersion: schema.device.osUpdatePendingVersion,
                       lastSeenAt: schema.device.lastSeenAt,
                     })
                     .from(schema.device)
@@ -17792,6 +17950,7 @@ export const createEnterpriseService = ({
                         eq(schema.device.organizationId, ctx.organization.id),
                         eq(schema.device.proto, protoForPlatform[platform]),
                         versionCondition,
+                        familyCondition,
                       ),
                     )
                     .orderBy(asc(schema.device.name))
@@ -17799,14 +17958,48 @@ export const createEnterpriseService = ({
                 );
               }
 
+              // The fallback mechanism depends on the device delivery mode,
+              // which is not on the device projection above. Behind lists are
+              // bounded, so one small lookup is cheaper than a join.
+              const behindApple: ReadonlyArray<{
+                readonly deviceId: string;
+                readonly declarationMode: "ddm" | "legacy" | null;
+                readonly enrollmentMode: "device" | "user" | null;
+              }> =
+                behindRows.length > 0
+                  ? yield* queryEffect(
+                      db
+                        .select({
+                          deviceId: schema.deviceApple.deviceId,
+                          declarationMode: schema.deviceApple.declarationMode,
+                          enrollmentMode: schema.deviceApple.enrollmentMode,
+                        })
+                        .from(schema.deviceApple)
+                        .where(
+                          inArray(
+                            schema.deviceApple.deviceId,
+                            behindRows.map((row) => row.id),
+                          ),
+                        ),
+                    )
+                  : [];
+
+              const appleByDeviceId = new Map(
+                behindApple.map((row) => [row.deviceId, row] as const),
+              );
+
               const behind = behindRows
                 .flatMap((row) => {
-                  if (platform === "macos" && !isMacOsDevice(row)) return [];
+                  // iOS and iPadOS share the apple proto, so the edition must
+                  // match the platform bucket rather than the transport.
+                  if (osPolicyPlatformForDevice(row) !== platform) return [];
 
                   const info = osComplianceFor(row, rules, softwareUpdates.catalog, at);
 
                   if (info.status !== "below-minimum" && info.status !== "update-available")
                     return [];
+
+                  const apple = appleByDeviceId.get(row.id);
 
                   return [
                     {
@@ -17818,6 +18011,14 @@ export const createEnterpriseService = ({
                       targetVersion: info.targetVersion,
                       deferralEndsAt: info.deferralEndsAt,
                       lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
+                      pendingVersion: row.osUpdatePendingVersion,
+                      installState: row.osUpdateInstallState,
+                      updateMechanism: appleOsUpdateMechanism({
+                        device: row,
+                        rule,
+                        declarationMode: apple?.declarationMode ?? null,
+                        enrollmentMode: apple?.enrollmentMode ?? null,
+                      }),
                     },
                   ];
                 })
@@ -17860,6 +18061,7 @@ export const createEnterpriseService = ({
             minimumSupportedVersion: baseline.minimumSupportedVersion,
           },
           totals,
+          unsupported,
           platforms,
         };
       }),

@@ -1,6 +1,10 @@
 import { Schema } from "effect";
 import { isMacOsDevice } from "./deviceHealth.js";
 import { normalizeAppleDeviceName } from "./deviceInventory.js";
+import {
+  APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR,
+  appleScheduleOsUpdateSupported,
+} from "./osPolicy.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -216,6 +220,10 @@ export type DeviceActionInput = {
   readonly osEdition?: string | null;
   readonly osVersion?: string | null;
   readonly model?: string | null;
+  /** Apple delivery path recorded on `device_apple`; legacy cannot use DDM. */
+  readonly declarationMode?: "ddm" | "legacy" | null;
+  /** Apple enrolment mode. User enrolment is BYOD and never supervised. */
+  readonly enrollmentMode?: "device" | "user" | null;
   /**
    * Android Management API management mode (`DEVICE_OWNER`, `PROFILE_OWNER`).
    * Unknown or omitted values leave the action available so a stale report
@@ -224,11 +232,6 @@ export type DeviceActionInput = {
   readonly managementMode?: string | null;
   /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
   readonly ownership?: string | null;
-  /**
-   * Apple enrollment mode. `user` is an Apple User Enrollment (BYOD), which
-   * cannot receive supervised-only `Settings` commands.
-   */
-  readonly enrollmentMode?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -306,12 +309,9 @@ export const deviceAvailableActions = (
 
   const base = platformActions(input.proto)
     .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
-    // `ScheduleOSUpdate` is a macOS command. Advertising it on iOS or tvOS
-    // would queue a command Apple rejects.
-    .filter(
-      (action) =>
-        action !== "schedule-os-update" || (input.proto === "apple" && isMacOsDevice(input)),
-    )
+    // `ScheduleOSUpdate` is the explicit fallback where the DDM declaration
+    // is unavailable; see `supportsScheduleOsUpdate`.
+    .filter((action) => action !== "schedule-os-update" || appleScheduleOsUpdateSupported(input))
     // Apple's `Settings` command is supervised-only. A User Enrollment is a
     // BYOD device we know is not supervised, so never advertise the rename.
     .filter(
@@ -379,8 +379,20 @@ export const deviceActionUnavailableReason = (
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
 
-  if (action === "schedule-os-update")
-    return "OS update scheduling is only available for macOS devices.";
+  if (action === "schedule-os-update") {
+    const major = majorOsVersion(input.osVersion);
+
+    if (major !== null && major >= APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR)
+      return `Apple removed the ScheduleOSUpdate command in ${isMacOsDevice(input) ? "macOS" : "iOS/iPadOS"} ${APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR}. Use the DDM software-update enforcement declaration instead.`;
+
+    if (input.enrollmentMode === "user")
+      return "ScheduleOSUpdate requires supervision. A user-enrolled (BYOD) device cannot run it.";
+
+    if (/ios|ipados/i.test(input.osEdition ?? ""))
+      return "iOS and iPadOS 17 or later use Apple's DDM declaration as the update path; ScheduleOSUpdate is only offered below 17 or on legacy delivery.";
+
+    return "ScheduleOSUpdate is only available for supervised Apple devices.";
+  }
 
   if (action === "set-device-name" && input.proto !== "apple")
     return "Applying a name to the device is only available for Apple devices. Windows and Android name delivery is not implemented yet.";

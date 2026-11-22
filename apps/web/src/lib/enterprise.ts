@@ -1547,6 +1547,7 @@ export const enterprise = {
         | "InstallForceRestart";
       osUpdateProductKey?: string;
       osUpdateDeadline?: string;
+      osUpdateMechanism?: "ddm-software-update";
     } = { action: "sync" },
   ) =>
     endpoint((api) =>

@@ -4,8 +4,12 @@ import { Db, deviceLimitForOrganization, schema as s } from "@mattrax/enterprise
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   DeviceHealthManagementApp,
+  appleSoftwareUpdateEnforcementDeclaration,
+  appleSoftwareUpdateEnforcementSupported,
   deriveDeviceHealth,
   installerSkipReason,
+  osPolicyPlatformForDevice,
+  osPolicyRuleFromRow,
   resolveTenantBranding,
   selectInstaller,
   shouldApplyReportedName,
@@ -149,6 +153,19 @@ const DEVICE_INFORMATION_CONFIGURATION_ID = "13DE3EE0-D5A8-46E9-B967-27E56A4D918
 const MANAGEMENT_DECLARATION_ID = "F8C4C3A1-2B6E-4D7F-A9E5-3C8B7D9E2F4A";
 
 const MANAGEMENT_DECLARATION_SERVER_TOKEN = "CFC79DC6-B2A3-434D-8F2A-E03E11197A67";
+
+/**
+ * Built-in DDM software-update enforcement declaration.
+ *
+ * The declaration is generated from the tenant OS policy rather than stored
+ * as a policy configuration, so an enforcing rule reaches every supervised
+ * Apple device without the operator assigning a policy to a group.
+ */
+export const OS_UPDATE_ENFORCEMENT_ACTIVATION_ID = "2E0D4D7C-6F16-4A8C-9D28-2B7C3A1F5E90";
+
+export const OS_UPDATE_ENFORCEMENT_ACTIVATION_SERVER_TOKEN = "B0F7C8A4-7D3E-42B1-8A5C-6C1E9D2F4A73";
+
+export const OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID = "C6A1E9D4-3B72-4F58-8E0A-7D5B2C4F1A96";
 
 /**
  * Base DDM status subscription. Devices also subscribe the platform-specific
@@ -391,6 +408,83 @@ const deviceTokenFor = (deviceId: string) =>
     return apple?.deviceToken ?? deviceId;
   }).pipe(Effect.mapError(internal));
 
+type OsUpdateEnforcement = {
+  readonly serverToken: string;
+  readonly declaration: NonNullable<ReturnType<typeof appleSoftwareUpdateEnforcementDeclaration>>;
+};
+
+/**
+ * The tenant OS policy compiled to a DDM declaration for one device.
+ *
+ * Delivery conditions are deliberately conservative: only DDM devices whose
+ * OS Apple supports, whose enrolment is supervised, and whose platform rule is
+ * `enforce` get the declaration. Everything else is left to the explicit
+ * `ScheduleOSUpdate` fallback. A `warn` rule changes no device, so it emits
+ * nothing. The server token is derived from the rule and its timestamp, so a
+ * rule edit (including a deferral restart) makes the device fetch it again.
+ */
+const osUpdateEnforcementForDevice = (
+  device: DeviceRow,
+  mode: "ddm" | "legacy",
+): Effect.Effect<OsUpdateEnforcement | null, ReturnType<typeof internal>, Db> =>
+  Effect.gen(function* () {
+    if (mode !== "ddm") return null;
+
+    const platform = osPolicyPlatformForDevice(device);
+
+    if (!platform || platform === "windows" || platform === "android") return null;
+
+    if (!appleSoftwareUpdateEnforcementSupported(device)) return null;
+
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ enrollmentMode: s.deviceApple.enrollmentMode })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    // A user-enrolled device is BYOD and cannot apply a system-scoped,
+    // supervised declaration. Apple only allows supervised enrolment.
+    if (apple?.enrollmentMode === "user") return null;
+
+    const [row] = yield* db
+      .select({
+        platform: s.tenantOsPolicy.platform,
+        minimumVersion: s.tenantOsPolicy.minimumVersion,
+        enforcement: s.tenantOsPolicy.enforcement,
+        deferralDays: s.tenantOsPolicy.deferralDays,
+        updatedAt: s.tenantOsPolicy.updatedAt,
+      })
+      .from(s.tenantOsPolicy)
+      .where(
+        and(
+          eq(s.tenantOsPolicy.organizationId, device.organizationId),
+          eq(s.tenantOsPolicy.platform, platform),
+        ),
+      )
+      .limit(1);
+
+    if (!row) return null;
+
+    const declaration = appleSoftwareUpdateEnforcementDeclaration(osPolicyRuleFromRow(row));
+
+    if (!declaration) return null;
+
+    const serverToken = (yield* Effect.promise(() =>
+      hashToken(
+        JSON.stringify({
+          identifier: OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID,
+          platform,
+          updatedAt: row.updatedAt.toISOString(),
+          declaration,
+        }),
+      ),
+    )).toUpperCase();
+
+    return { declaration, serverToken };
+  }).pipe(Effect.mapError(internal));
+
 const declarationItemsForDevice = (
   device: DeviceRow,
   deviceToken: string,
@@ -455,6 +549,23 @@ const declarationItemsForDevice = (
         ),
       )),
     ];
+
+    // The tenant OS policy is a system declaration, not a policy
+    // configuration: every supervised DDM device gets the same enforcement
+    // target without an assignment. Its activation is separate from the
+    // device-information activation so the two tokens change independently.
+    const osUpdateEnforcement = yield* osUpdateEnforcementForDevice(device, mode);
+
+    if (osUpdateEnforcement) {
+      activations.push({
+        identifier: OS_UPDATE_ENFORCEMENT_ACTIVATION_ID,
+        serverToken: OS_UPDATE_ENFORCEMENT_ACTIVATION_SERVER_TOKEN,
+      });
+      configurations.push({
+        identifier: OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID,
+        serverToken: osUpdateEnforcement.serverToken,
+      });
+    }
 
     const assets = yield* Effect.promise(() =>
       Promise.all(
@@ -5159,11 +5270,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             const deviceToken = yield* deviceTokenFor(device.id);
 
+            const mode = yield* deliveryModeForDevice(device.id).pipe(Effect.mapError(internal));
+
             const items = yield* declarationItemsForDevice(
               device,
               deviceToken,
               { origin, authSecret: authSecret ?? "" },
-              "ddm",
+              mode,
             ).pipe(Effect.mapError(internal));
 
             const token = yield* Effect.tryPromise({
@@ -5324,6 +5437,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               };
             }
 
+            if (type === "activation" && identifier === OS_UPDATE_ENFORCEMENT_ACTIVATION_ID) {
+              const enforcement = yield* osUpdateEnforcementForDevice(device, mode);
+
+              if (!enforcement) return null;
+
+              return {
+                Type: "com.apple.activation.simple",
+                Identifier: OS_UPDATE_ENFORCEMENT_ACTIVATION_ID,
+                ServerToken: OS_UPDATE_ENFORCEMENT_ACTIVATION_SERVER_TOKEN,
+                Payload: { StandardConfigurations: [OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID] },
+              };
+            }
+
             if (type === "activation") {
               const { configurations: rows } = yield* scopedConfigurations(device, mode).pipe(
                 Effect.mapError(internal),
@@ -5357,6 +5483,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   deviceInformationConfigurationToken(statusItems),
                 ),
                 Payload: { StatusItems: statusItems.map((Name) => ({ Name })) },
+              };
+            }
+
+            if (type === "configuration" && identifier === OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID) {
+              const enforcement = yield* osUpdateEnforcementForDevice(device, mode);
+
+              if (!enforcement) return null;
+
+              return {
+                Type: enforcement.declaration.Type,
+                Identifier: OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID,
+                ServerToken: enforcement.serverToken,
+                Payload: enforcement.declaration.Payload,
               };
             }
 
