@@ -13,6 +13,7 @@ import {
   QueryError,
   formatDate,
 } from "~/components/mdm/common";
+import { Progress } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -158,11 +159,20 @@ export default function MigrationPage(props: { embedded?: boolean } = {}) {
     {
       header: "Progress",
       cell: (row: FleetMigrationSummary) => (
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-muted-foreground">{progress(row)}</span>
-          <Show when={row.counts.stuck > 0}>
-            <Badge variant="destructive">{row.counts.stuck} stuck</Badge>
-          </Show>
+        <div class="min-w-40 space-y-1.5">
+          <div class="flex flex-wrap items-center justify-between gap-1.5">
+            <span class="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {progress(row)}
+            </span>
+            <Show when={row.counts.stuck > 0}>
+              <Badge variant="destructive">{row.counts.stuck} stuck</Badge>
+            </Show>
+          </div>
+          <Progress
+            value={row.counts.confirmed}
+            max={row.counts.total}
+            label="Migration progress"
+          />
         </div>
       ),
     },

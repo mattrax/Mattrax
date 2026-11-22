@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
@@ -686,7 +687,7 @@ export default function ManagementSettingsPage() {
               when={android.data}
               fallback={
                 <Show when={!android.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Android Enterprise…" size={16} />
                 </Show>
               }
             >
@@ -862,7 +863,7 @@ export default function ManagementSettingsPage() {
               when={abm.data}
               fallback={
                 <Show when={!abm.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Apple Business Manager…" size={16} />
                 </Show>
               }
             >
@@ -1023,7 +1024,7 @@ export default function ManagementSettingsPage() {
               when={vpp.data}
               fallback={
                 <Show when={!vpp.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Apps and Books…" size={16} />
                 </Show>
               }
             >
@@ -1147,7 +1148,7 @@ export default function ManagementSettingsPage() {
           when={autopilot.data}
           fallback={
             <Show when={!autopilot.error}>
-              <p class="mt-3 text-[13px] text-muted-foreground">Loading…</p>
+              <LoadingState class="mt-3" label="Loading Windows Autopilot…" size={16} />
             </Show>
           }
         >

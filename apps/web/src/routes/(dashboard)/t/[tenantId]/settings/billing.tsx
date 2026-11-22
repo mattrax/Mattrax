@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, CheckCircle2 } from "~/components/ui/icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
@@ -270,11 +271,18 @@ export default function BillingSettingsPage() {
           <Show
             when={(invoices.data?.invoices.length ?? 0) > 0}
             fallback={
-              <p class="rounded-lg border border-dashed border-input bg-surface px-6 py-8 text-center text-xs text-muted-foreground">
-                {invoices.isLoading
-                  ? "Loading invoices…"
-                  : "No invoices yet. The first invoice is issued when a subscription starts."}
-              </p>
+              <Show
+                when={invoices.isLoading}
+                fallback={
+                  <p class="rounded-lg border border-dashed border-input bg-surface px-6 py-8 text-center text-xs text-muted-foreground">
+                    No invoices yet. The first invoice is issued when a subscription starts.
+                  </p>
+                }
+              >
+                <div class="flex justify-center rounded-lg border border-dashed border-input bg-surface px-6 py-8">
+                  <LoadingState label="Loading invoices…" size={16} />
+                </div>
+              </Show>
             }
           >
             <div class="overflow-x-auto">

@@ -26,10 +26,7 @@ function Skeleton(props: Omit<ComponentProps<"div">, "style">) {
     <div
       data-slot="skeleton"
       aria-hidden="true"
-      class={cn(
-        "animate-pulse rounded-md bg-[linear-gradient(90deg,var(--muted),var(--hover),var(--muted))] bg-[length:200%_100%] [animation:mt-shimmer_1.6s_linear_infinite]",
-        local.class,
-      )}
+      class={cn("mt-skeleton rounded-md", local.class)}
       {...others}
     />
   );

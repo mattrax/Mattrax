@@ -7,6 +7,7 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
+import { IndeterminateBar, LoadingState } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { CircleAlert, RotateCcw } from "~/components/ui/icons";
@@ -398,9 +399,7 @@ export default function DirectorySyncPage() {
           fallback={
             <Show
               when={status.isError}
-              fallback={
-                <p class="text-[13px] text-muted-foreground">Loading directory sync status…</p>
-              }
+              fallback={<LoadingState label="Loading directory sync status…" size={16} />}
             >
               <ErrorText error={status.error} />
             </Show>
@@ -456,8 +455,8 @@ export default function DirectorySyncPage() {
                 )}
               </Show>
 
-              <div class="mt-5 divide-y divide-border">
-                <div class="flex flex-col gap-2 pb-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+              <div class="mt-5 space-y-4">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                   <label for="entra-sync-interval" class="min-w-0">
                     <span class="block text-[13px] font-medium text-foreground">
                       Automatic sync
@@ -479,7 +478,7 @@ export default function DirectorySyncPage() {
                   </select>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2 pt-3.5">
+                <div class="flex flex-wrap items-center gap-2">
                   <Show when={writable()}>
                     <Button
                       variant="outline"
@@ -511,38 +510,31 @@ export default function DirectorySyncPage() {
                   </Show>
                 </div>
 
-                <div
-                  class={cn("space-y-1.5", progress() && "mt-3")}
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  <Show when={progress()}>
-                    {(current) => (
-                      <>
-                        <Show when={current().state === "running"}>
-                          <div
-                            class="h-0.5 overflow-hidden rounded-full bg-border"
-                            aria-hidden="true"
-                          >
-                            <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
-                          </div>
-                        </Show>
-                        <p
-                          class={cn(
-                            "text-[11.5px] leading-relaxed",
-                            current().state === "running" && "text-muted-foreground",
-                            current().state === "stale" && "text-warning-foreground",
-                            current().state === "succeeded" && "text-success-foreground",
-                            current().state === "failed" && "text-destructive",
-                          )}
-                        >
-                          {current().message}
-                        </p>
-                      </>
-                    )}
-                  </Show>
-                </div>
+                <Show when={progress()}>
+                  {(current) => (
+                    <div
+                      class="space-y-1.5 border-t border-border pt-3.5"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <Show when={current().state === "running"}>
+                        <IndeterminateBar />
+                      </Show>
+                      <p
+                        class={cn(
+                          "text-[11.5px] leading-relaxed",
+                          current().state === "running" && "text-muted-foreground",
+                          current().state === "stale" && "text-warning-foreground",
+                          current().state === "succeeded" && "text-success-foreground",
+                          current().state === "failed" && "text-destructive",
+                        )}
+                      >
+                        {current().message}
+                      </p>
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <div class="mt-4 space-y-1 border-t border-border pt-3.5 text-xs text-muted-foreground">
@@ -594,9 +586,7 @@ export default function DirectorySyncPage() {
           fallback={
             <Show
               when={google.isError}
-              fallback={
-                <p class="text-[13px] text-muted-foreground">Loading Google Workspace status…</p>
-              }
+              fallback={<LoadingState label="Loading Google Workspace status…" size={16} />}
             >
               <ErrorText error={google.error} />
             </Show>
@@ -661,8 +651,8 @@ export default function DirectorySyncPage() {
                 </ol>
               </details>
 
-              <div class="mt-5 divide-y divide-border">
-                <div class="flex flex-col gap-2 pb-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+              <div class="mt-5 space-y-4">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                   <label for="google-sync-interval" class="min-w-0">
                     <span class="block text-[13px] font-medium text-foreground">
                       Automatic sync
@@ -684,7 +674,7 @@ export default function DirectorySyncPage() {
                   </select>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2 pt-3.5">
+                <div class="flex flex-wrap items-center gap-2">
                   <Show when={writable()}>
                     <Button
                       variant="outline"
@@ -726,14 +716,17 @@ export default function DirectorySyncPage() {
                   </a>
                 </div>
 
-                <div
-                  class={cn("space-y-1.5", googleProgress() && "mt-3")}
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                >
-                  <Show when={googleProgress()}>
-                    {(current) => (
+                <Show when={googleProgress()}>
+                  {(current) => (
+                    <div
+                      class="space-y-1.5 border-t border-border pt-3.5"
+                      role="status"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      <Show when={current().state === "running"}>
+                        <IndeterminateBar />
+                      </Show>
                       <p
                         class={cn(
                           "text-[11.5px] leading-relaxed",
@@ -745,9 +738,9 @@ export default function DirectorySyncPage() {
                       >
                         {current().message}
                       </p>
-                    )}
-                  </Show>
-                </div>
+                    </div>
+                  )}
+                </Show>
               </div>
 
               <Show when={googleFormOpen() && writable()}>

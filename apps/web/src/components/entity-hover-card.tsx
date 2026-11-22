@@ -1,6 +1,12 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, createUniqueId, Show } from "solid-js";
-import { Badge, HoverCard, HoverCardContent, HoverCardTrigger } from "@mattrax/ui";
+import {
+  Badge,
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+  SegmentedProgress,
+} from "@mattrax/ui";
 import type { BadgeProps } from "@mattrax/ui";
 import { formatDate, formatDeviceDate, relativeTime } from "~/components/mdm/common";
 import {
@@ -247,22 +253,23 @@ function DeliveryBar(props: { delivery: NonNullable<PolicyRow["delivery"]> | und
     const pending = Math.max(0, 100 - done - failed);
 
     return [
-      { width: done, class: "bg-success" },
-      { width: pending, class: "bg-warning/30" },
-      { width: failed, class: "bg-destructive" },
+      { label: "Delivered", width: done, class: "bg-success" },
+      { label: "Pending", width: pending, class: "bg-warning/30" },
+      { label: "Failed", width: failed, class: "bg-destructive" },
     ].filter((segment) => segment.width > 0);
   };
 
   return (
     <Show when={segments().length > 0}>
-      <div class="flex h-1.5 w-full gap-px overflow-hidden rounded-full bg-hover">
-        {segments().map((segment) => (
-          <span
-            class={cn("h-full first:rounded-l-full last:rounded-r-full", segment.class)}
-            style={{ width: `${segment.width}%` }}
-          />
-        ))}
-      </div>
+      <SegmentedProgress
+        label="Policy delivery"
+        class="h-1.5"
+        segments={segments().map((segment) => ({
+          label: segment.label,
+          value: segment.width,
+          class: segment.class,
+        }))}
+      />
     </Show>
   );
 }

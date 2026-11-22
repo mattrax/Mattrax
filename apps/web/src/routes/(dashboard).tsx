@@ -4,6 +4,7 @@ import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-q
 import { isServer } from "@solidjs/web";
 import { createEffect, createSignal, Errored, lazy, onSettled, Show } from "solid-js";
 import type { ParentProps } from "solid-js";
+import { LoadingState } from "@mattrax/ui";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
@@ -21,12 +22,7 @@ import { clearSessionPresence, readSessionPresence } from "~/lib/session-presenc
 function DashboardBootScreen() {
   return (
     <div class="flex min-h-svh items-center justify-center bg-background text-foreground">
-      <div class="flex flex-col items-center gap-3">
-        <span class="flex size-9 animate-pulse items-center justify-center rounded-xl bg-primary text-[14px] font-bold text-primary-foreground">
-          M
-        </span>
-        <p class="text-[12px] text-muted-foreground">Loading your tenant…</p>
-      </div>
+      <LoadingState label="Loading your tenant…" size={34} pattern="wave" />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Skeleton } from "~/components/ui/skeleton";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import type { McpConnectionInfo } from "~/lib/enterprise";
@@ -646,9 +647,7 @@ export default function AccountPage() {
       >
         <Show
           when={!(me.isPending && me.data === undefined)}
-          fallback={
-            <div class="h-8 w-full max-w-sm animate-pulse rounded-lg bg-hover" aria-hidden="true" />
-          }
+          fallback={<Skeleton class="h-8 w-full max-w-sm rounded-lg" />}
         >
           <Show
             when={tenants().length > 0}

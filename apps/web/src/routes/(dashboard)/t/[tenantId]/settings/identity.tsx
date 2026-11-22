@@ -24,9 +24,11 @@ export default function IdentitySettingsLayout(props: ParentProps) {
   };
 
   return (
-    <div class="flex flex-col gap-5">
+    <div class="flex flex-col">
+      {/* The tab band cancels the pane gutter so it reads as part of the body
+          above the sections, then re-adds the same gutter to align its labels. */}
       <nav
-        class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-border sm:bg-surface sm:p-1"
+        class="no-scrollbar -mx-4 -mt-5 flex gap-5 overflow-x-auto border-b border-border px-4 sm:-mx-6 sm:-mt-6 sm:px-6 xl:-mx-8 xl:-mt-7 xl:px-8"
         aria-label="Identity sections"
       >
         <For each={visibleTabs()}>
@@ -38,10 +40,10 @@ export default function IdentitySettingsLayout(props: ParentProps) {
               <a
                 href={href}
                 class={cn(
-                  "relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
+                  "-mb-px inline-flex h-10 shrink-0 items-center rounded-sm border-b-2 px-0.5 text-[12.5px] font-[500] whitespace-nowrap outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
                   isActive()
-                    ? "bg-hover text-foreground shadow-[var(--card-highlight)]"
-                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border-strong hover:text-foreground",
                 )}
                 aria-current={isActive() ? "page" : undefined}
               >
@@ -51,7 +53,7 @@ export default function IdentitySettingsLayout(props: ParentProps) {
           }}
         </For>
       </nav>
-      <div class="flex min-w-0 flex-col">{props.children}</div>
+      <div class="flex min-w-0 flex-col pt-5">{props.children}</div>
     </div>
   );
 }

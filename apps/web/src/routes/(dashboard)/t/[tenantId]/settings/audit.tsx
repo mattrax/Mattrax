@@ -5,7 +5,7 @@ import { useInfiniteQuery } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Badge, FilterBar } from "@mattrax/ui";
+import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import { enterpriseQueries } from "~/lib/enterprise";
@@ -566,9 +566,16 @@ export default function AuditSettingsPage() {
         <Show
           when={entries().length > 0}
           fallback={
-            <p class="mt-4 text-[13px] text-muted-foreground">
-              {log.isPending ? "Loading audit events…" : "No audit events match these filters."}
-            </p>
+            <Show
+              when={log.isPending}
+              fallback={
+                <p class="mt-4 text-[13px] text-muted-foreground">
+                  No audit events match these filters.
+                </p>
+              }
+            >
+              <LoadingState class="mt-4" label="Loading audit events…" size={16} />
+            </Show>
           }
         >
           <p class="mt-3 text-[11px] text-muted-foreground sm:hidden">

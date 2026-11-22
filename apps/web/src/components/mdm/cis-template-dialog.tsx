@@ -11,6 +11,7 @@ import {
 } from "~/components/ui/dialog";
 import { Check, Info, ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { Progress } from "@mattrax/ui";
 import { loadCollection } from "~/lib/policy-designer/catalog";
 import type { Collection, PlatformId } from "~/lib/policy-designer/catalog";
 import {
@@ -293,12 +294,12 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                         <span>{controlsLabel(current().stats)}</span>
                         <span class="tabular-nums">{coverage()}%</span>
                       </div>
-                      <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                          class="h-full rounded-full bg-brand-solid"
-                          style={{ width: `${coverage()}%` }}
-                        />
-                      </div>
+                      <Progress
+                        class="mt-1"
+                        value={coverage()}
+                        label="Control coverage"
+                        valueLabel={`${coverage()}%`}
+                      />
                       <p class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
                         {current().stats.settings} settings across {current().stats.mapped} mapped
                         controls.

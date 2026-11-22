@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Search as SearchIcon,
 } from "~/components/ui/icons";
-import { EmptyState, Kbd } from "@mattrax/ui";
+import { EmptyState, Kbd, LoadingState, Skeleton } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { announce } from "~/components/toast";
 import { chord, sequence, useCommands } from "~/lib/commands";
@@ -778,13 +778,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
         <div class="ml-auto flex items-center gap-1.5">
           <Show when={props.isFetching && !props.loading}>
-            <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-              <RefreshCw
-                class="size-3 animate-spin motion-reduce:animate-none"
-                aria-hidden="true"
-              />
-              Refreshing…
-            </span>
+            <LoadingState label="Refreshing…" size={12} />
           </Show>
           <span class="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
             {props.total !== undefined
@@ -891,9 +885,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       <Show when={!props.error && props.loading}>
         <div class="overflow-hidden rounded-xl border border-border bg-card">
           <div class="space-y-px p-0">
-            <For each={[0, 1, 2, 3, 4, 5]}>
-              {() => <div class="h-9 animate-pulse bg-surface/60" />}
-            </For>
+            <For each={[0, 1, 2, 3, 4, 5]}>{() => <Skeleton class="h-9 rounded-none" />}</For>
           </div>
         </div>
       </Show>

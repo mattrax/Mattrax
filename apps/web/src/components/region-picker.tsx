@@ -3,6 +3,7 @@ import type { Feature, Geometry } from "geojson";
 import { Schema } from "effect";
 import { Portal } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -413,7 +414,10 @@ export function RegionPicker(props: {
               when={mapState() === "ready" && world()}
               fallback={
                 <div class="flex h-[360px] flex-col items-center justify-center gap-2 text-[12px] text-muted-foreground">
-                  <Show when={mapState() === "error"} fallback={<>Loading globe…</>}>
+                  <Show
+                    when={mapState() === "error"}
+                    fallback={<LoadingState label="Loading globe…" size={18} pattern="spiral" />}
+                  >
                     <span>Couldn't load the globe.</span>
                     <Button size="xs" variant="outline" onClick={() => void loadMap()}>
                       Try again

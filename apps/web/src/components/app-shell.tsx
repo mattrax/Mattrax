@@ -67,8 +67,9 @@ import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
+import { IndeterminateBar, Skeleton } from "@mattrax/ui";
 
-type NavGroup = "workspace" | "pinned" | "manage" | "settings";
+type NavGroup = "workspace" | "pinned" | "manage";
 
 type NavItem = {
   id: string;
@@ -87,7 +88,6 @@ const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
   { id: "workspace", label: "Workspace" },
   { id: "pinned", label: "Pinned" },
   { id: "manage", label: "Manage" },
-  { id: "settings", label: "Settings" },
 ];
 
 const LAST_TENANT_KEY = "mattrax:last-tenant";
@@ -157,10 +157,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
           </Show>
         </span>
         <span class="min-w-0 flex-1">
-          <Show
-            when={!loading()}
-            fallback={<span class="block h-2.5 w-24 animate-pulse rounded-full bg-hover" />}
-          >
+          <Show when={!loading()} fallback={<Skeleton class="my-0.5 h-2.5 w-24 rounded-full" />}>
             <span class="block truncate text-[12.5px] font-[500] leading-4 text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
               <Show when={active()} fallback="Select tenant">
                 {(tenant) => tenant().name}
@@ -428,22 +425,11 @@ function navFor(tenantId: string | undefined): NavItem[] {
       id: "settings",
       label: "Settings",
       href: tenant.settings(),
-      group: "settings",
+      group: "manage",
       icon: Settings,
       settingsGate: true,
       match: (value) => value === tenant.settings() || value.startsWith(`${tenant.settings()}/`),
     },
-    item(
-      "administrators",
-      "Administrators",
-      tenant.settingsAdministrators(),
-      UsersRound,
-      "settings",
-      { permission: "members.read" },
-    ),
-    item("audit", "Audit log", `${tenant.settings()}/audit`, Activity, "settings", {
-      permission: "audit.read",
-    }),
   ];
 }
 
@@ -455,8 +441,8 @@ function NavGroups(props: {
 }) {
   const grouped = (group: NavGroup) => props.items.filter((item) => item.group === group);
 
-  // A section link is a prefix match, so `/settings/administrators` matches
-  // both Settings and Administrators. The most specific href owns the highlight.
+  // Settings owns its whole subtree, so every settings pane highlights the one
+  // Settings entry; other entries use their own prefix.
   const activeId = createMemo(
     () =>
       props.items
@@ -915,11 +901,8 @@ export function AppShell(props: {
               edge. It disappears the moment the router settles, so it never
               competes with the page's own entrance. */}
             <Show when={isRouting()}>
-              <div
-                class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
-                aria-hidden="true"
-              >
-                <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+              <div class="pointer-events-none absolute inset-x-0 bottom-0">
+                <IndeterminateBar class="h-0.5 rounded-none bg-transparent" />
               </div>
             </Show>
           </header>

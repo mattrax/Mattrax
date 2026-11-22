@@ -1,5 +1,5 @@
 import { Portal } from "@solidjs/web";
-import { Spinner } from "@mattrax/ui";
+import { DotMatrix } from "@mattrax/ui";
 import { createSignal, Show } from "solid-js";
 import { ErrorText } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
@@ -39,7 +39,7 @@ export function SettingsSaveBar(props: { draft: TenantProfileDraft }) {
                 </Show>
               }
             >
-              <Spinner class="size-3.5 shrink-0 text-muted-foreground" />
+              <DotMatrix size={16} decorative class="shrink-0" />
             </Show>
             <div class="min-w-0">
               <p class="text-[12px] font-[550] leading-4 text-foreground" aria-live="polite">

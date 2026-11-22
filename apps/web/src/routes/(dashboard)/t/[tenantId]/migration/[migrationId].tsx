@@ -17,6 +17,7 @@ import {
   formatDate,
   relativeTime,
 } from "~/components/mdm/common";
+import { Progress } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -341,6 +342,14 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
         <Show when={counts()}>
           {(value) => (
             <div class="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+              <Progress
+                class="sm:col-span-3 xl:col-span-6"
+                value={value().confirmed}
+                max={value().total}
+                label="Migration progress"
+                valueLabel={`${value().confirmed} of ${value().total} confirmed`}
+                showValue
+              />
               <StatCard label="Total" value={value().total} />
               <StatCard label="Pending" value={value().pending} />
               <StatCard label="Unenrol issued" value={value().unenrolIssued} tone="warning" />

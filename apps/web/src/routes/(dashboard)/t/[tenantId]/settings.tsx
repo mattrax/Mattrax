@@ -181,7 +181,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
 
             <div
               class={cn(
-                "min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7",
+                "settings-sections min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7",
                 (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
               )}
             >
