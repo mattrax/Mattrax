@@ -3,7 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
-import { createMemo, createSignal, lazy, Loading, onCleanup, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, lazy, Loading, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
@@ -174,12 +174,15 @@ export default function GeneralSettingsPage() {
   const [regionPickerReady, setRegionPickerReady] = createSignal(false);
   const [regionPickerPending, setRegionPickerPending] = createSignal(false);
 
-  // Warm the picker after the form has painted; clicking the placeholder
-  // loads it immediately and opens the globe on arrival.
-  onSettled(() => {
-    const timer = window.setTimeout(() => setRegionPickerReady(true), 1200);
+  const activateRegionPicker = () => {
+    setRegionPickerPending(true);
+    setRegionPickerReady(true);
+  };
 
-    onCleanup(() => window.clearTimeout(timer));
+  // Warm the picker chunk after the form has painted. The placeholder stays
+  // until the operator clicks, so focus is never moved by a background swap.
+  onSettled(() => {
+    void import("~/components/region-picker");
   });
 
   let importFileInput: HTMLInputElement | undefined;
@@ -616,16 +619,17 @@ export default function GeneralSettingsPage() {
                   <RegionPickerFallback
                     value={appStoreRegion()}
                     disabled={!canWrite()}
-                    onActivate={() => {
-                      setRegionPickerPending(true);
-                      setRegionPickerReady(true);
-                    }}
+                    onActivate={activateRegionPicker}
                   />
                 }
               >
                 <Loading
                   fallback={
-                    <RegionPickerFallback value={appStoreRegion()} disabled={!canWrite()} />
+                    <RegionPickerFallback
+                      value={appStoreRegion()}
+                      disabled={!canWrite()}
+                      onActivate={activateRegionPicker}
+                    />
                   }
                 >
                   <LazyRegionPicker

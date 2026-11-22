@@ -120,24 +120,30 @@ export const parsePolicyImportText = (
     if (trimmed.length > POLICY_IMPORT_MAX_CHARS)
       return yield* Effect.fail("The policy document is too large to import.");
 
-    const decoded = yield* Effect.tryPromise({
-      try: async () => {
-        let value: unknown;
+    let value: unknown;
+    let json = true;
 
-        // Most imports are JSON. Parsing that first keeps the YAML parser out
-        // of the page and downloads it only when a file really is YAML.
-        try {
-          value = JSON.parse(trimmed);
-        } catch {
-          const { parse } = await import("yaml");
+    // Most imports are JSON. Parsing that first keeps the YAML parser out of
+    // the page and downloads it only when the input is not JSON.
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      json = false;
+    }
 
-          value = parse(trimmed);
-        }
+    if (!json) {
+      const yaml = yield* Effect.tryPromise({
+        try: () => import("yaml"),
+        catch: () => "Could not load the YAML parser. Reload and try again.",
+      });
 
-        return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(value));
-      },
-      catch: () => `${source} is not valid JSON or YAML.`,
-    });
+      value = yield* Effect.try({
+        try: () => yaml.parse(trimmed),
+        catch: () => `${source} is not valid JSON or YAML.`,
+      });
+    }
+
+    const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(value));
 
     if (decoded === undefined) return yield* Effect.fail(`${source} is not valid JSON or YAML.`);
 

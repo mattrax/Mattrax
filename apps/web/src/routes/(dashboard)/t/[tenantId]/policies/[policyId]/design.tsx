@@ -30,7 +30,8 @@ import { enterpriseQueries } from "~/lib/enterprise";
 /**
  * The designer carries the policy schema, ADMX import and preview engine. It
  * is the only thing this route needs that is heavier than its shell, so load
- * it beside the route instead of blocking the policy header and toolbar.
+ * it beside the route; the permission notices render immediately and the
+ * designer itself gets a loading state.
  */
 const LazyPolicyDesigner = lazy(() =>
   import("~/components/mdm/policy-designer").then((module) => ({

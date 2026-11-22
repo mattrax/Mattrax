@@ -2,7 +2,7 @@ import { geoCentroid, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import type { Feature, Geometry } from "geojson";
 import { Schema } from "effect";
 import { Portal } from "@solidjs/web";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import {
@@ -111,6 +111,12 @@ export function RegionPicker(props: {
 }) {
   const [open, setOpen] = createSignal(props.initialOpen ?? false);
   const [world, setWorld] = createSignal<World>();
+
+  // A click on the preload placeholder mounts this component with the dialog
+  // already open; run the normal open path so the map starts fetching.
+  onSettled(() => {
+    if (props.initialOpen) openPicker();
+  });
   const [mapState, setMapState] = createSignal<"idle" | "loading" | "ready" | "error">("idle");
   const [selected, setSelected] = createSignal((props.value || "US").toUpperCase());
   const [query, setQuery] = createSignal("");

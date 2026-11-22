@@ -44,7 +44,7 @@ behind the interaction that does, and keep the same trigger visible so the page
 does not jump:
 
 - a policy designer gets a loading state beside its toolbar;
-- a YAML parser is imported after a file is chosen (JSON stays on `JSON.parse`);
+- a YAML parser is imported only when the input is not JSON;
 - a map dialog keeps its trigger button and warms after paint;
 - a menu or drawer is mounted on first open.
 
@@ -54,12 +54,17 @@ The client build is dominated by the Solid runtime, the UI primitives and the
 Effect/enterprise API client; these are present on every route. Route-level
 deferrals are worthwhile but do not change total output:
 
-| Surface             |    Before |     After |
-| ------------------- | --------: | --------: |
-| Policy import route | 2012.8 KB | 1844.2 KB |
-| Policy design route | 2135.8 KB | 1901.7 KB |
-| Public designer     | 1896.9 KB |  757.6 KB |
-| Dashboard shell     | 1883.6 KB | 1871.9 KB |
+| Surface             | Before (KiB) | After (KiB) |
+| ------------------- | -----------: | ----------: |
+| Policy import route |       2013.0 |      1844.2 |
+| Policy design route |       2136.4 |      1901.7 |
+| Public designer     |       1897.3 |       757.6 |
+| Settings general    |       2001.8 |      1925.1 |
+
+These are module-graph static closures in KiB, not total chunk output. The
+deferrals move 178.1 KiB (YAML), 180.4 KiB (designer) and 77.3 KiB (globe) out
+of the first load; the bytes are still downloaded on interaction, so total
+output is unchanged.
 
 For the API Worker, use the same graph commands against
 `mattrax-api/bundle`. Its startup closure is dominated by `effect`,
