@@ -365,7 +365,7 @@ The command prints the only copy of the key and stores a SHA-256 hash in
 `deployment_license`. Give the operator:
 
 ```bash
-MATTRAX_BILLING_URL=https://e.mattrax.app
+MATTRAX_BILLING_URL=https://services.mattrax.app
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
