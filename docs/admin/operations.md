@@ -14,11 +14,11 @@ once and never changed.
 
 `actorType` says what produced the event:
 
-| Actor type | Meaning                                                                          |
-| ---------- | -------------------------------------------------------------------------------- |
-| `account`  | A signed-in administrator. `actorAccountId`/`actorEmail` identify them.          |
-| `api-token`| An API token or MCP connection, resolved to its owning account.                  |
-| `system`   | The deployment acting on a device or in the background. `actorAccountId` is null.|
+| Actor type  | Meaning                                                                           |
+| ----------- | --------------------------------------------------------------------------------- |
+| `account`   | A signed-in administrator. `actorAccountId`/`actorEmail` identify them.           |
+| `api-token` | An API token or MCP connection, resolved to its owning account.                   |
+| `system`    | The deployment acting on a device or in the background. `actorAccountId` is null. |
 
 `category` splits the stream: `account` (someone changed something), `mdm` (device
 protocol traffic and enrollment answers) and `system` (Android tenant connection events,
@@ -28,13 +28,13 @@ rule is shared by new writes and the migration backfill (`defaultAuditCategory`)
 
 ### What MDM records
 
-| Action                  | When it is written                                                                 |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `mdm.checkin`           | A device checked in (Apple device or user channel, Windows discovery/management, Android notification). Repeated check-ins fold into one row per device, fixed time bucket, user principal and presenting identity; `metadata.checkIns` and `metadata.firstSeenAt` describe the fold. |
-| `mdm.policy_delivered`  | Declarations, legacy profiles, Windows policy changes or an Android policy actually reached the device. |
-| `mdm.status_report`     | A status/inventory report changed at least one stored value or the health level. Timestamps (`lastSeenAt`, `inventoryUpdatedAt`) are excluded from the diff, so identical Apple/Windows reports stay invisible. Android notifications fold per bucket and mean “a report arrived” (there is no payload diff to compare). |
-| `mdm.command_result`    | A command reached a successful terminal state. Failures keep `device.command_failed`, deferrals `device.command_not_now`. |
-| `mdm.failure`           | A check-in failed: an unparseable payload, an invalid identity, a SOAP/SyncML fault, a rejected policy or a failed Android policy sync. `metadata.code` is stable; `metadata.reason` is bounded and redacted; `metadata.attribution` says whether the device was resolved from a bound certificate (`bound`) or from an asserted UDID/DeviceID (`asserted`). |
+| Action                 | When it is written                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `mdm.checkin`          | A device checked in (Apple device or user channel, Windows discovery/management, Android notification). Repeated check-ins fold into one row per device, fixed time bucket, user principal and presenting identity; `metadata.checkIns` and `metadata.firstSeenAt` describe the fold.                                                                        |
+| `mdm.policy_delivered` | Declarations, legacy profiles, Windows policy changes or an Android policy actually reached the device.                                                                                                                                                                                                                                                      |
+| `mdm.status_report`    | A status/inventory report changed at least one stored value or the health level. Timestamps (`lastSeenAt`, `inventoryUpdatedAt`) are excluded from the diff, so identical Apple/Windows reports stay invisible. Android notifications fold per bucket and mean “a report arrived” (there is no payload diff to compare).                                     |
+| `mdm.command_result`   | A command reached a successful terminal state. Failures keep `device.command_failed`, deferrals `device.command_not_now`.                                                                                                                                                                                                                                    |
+| `mdm.failure`          | A check-in failed: an unparseable payload, an invalid identity, a SOAP/SyncML fault, a rejected policy or a failed Android policy sync. `metadata.code` is stable; `metadata.reason` is bounded and redacted; `metadata.attribution` says whether the device was resolved from a bound certificate (`bound`) or from an asserted UDID/DeviceID (`asserted`). |
 
 Enrollment, checkout, unenrollment, compliance and declaration failures keep their
 `device.*` actions. Each state change is appended once per occurrence and is never folded
@@ -331,20 +331,25 @@ permissions in the built-in roles.
 
 ## Billing
 
-Billing is optional. Without Stripe secrets the API reports `configured: false` instead of
-failing.
+Billing is optional. Without Stripe secrets the services deployment reports `configured:
+false` instead of failing.
 
 ### Configure Stripe
 
-Set on the API Worker:
+Billing lives in the hosted services deployment (`services.mattrax.app`), in its own
+`services_` schema. Set these on that deployment, not on the application Worker:
 
 ```bash
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_DEVICE_MONTHLY_PRICE_ID=price_...
+STRIPE_LICENSE_PRICE_ID=price_...
+SERVICES_TOKEN=...          # shared with the application Worker
+MATTRAX_CLOUD_URL=https://mattrax.app
 ```
 
-Point Stripe at `POST /api/v1/billing/webhook`. Mattrax handles subscription created,
+Point Stripe at `https://services.mattrax.app/api/v1/billing/webhook`. The service
+handles subscription created,
 updated and deleted, invoice paid/succeeded/failed and
 `checkout.session.completed` (which links the customer and records the plan; the
 subscription event then fills in the period). Tenants are resolved by
@@ -354,18 +359,19 @@ event is skipped by the transactional event-id ledger.
 ### Deployment licences
 
 A self-hosted operator pays for the whole deployment rather than each tenant.
-Set `STRIPE_LICENSE_PRICE_ID` on the cloud API Worker (a per-device recurring
-price), then issue a licence:
+Set `STRIPE_LICENSE_PRICE_ID` on the services deployment (a per-device recurring
+price), then issue a licence against the services database:
 
 ```bash
 DATABASE_URL=mysql://... pnpm license:issue --name "Acme" --email ops@acme.test
 ```
 
 The command prints the only copy of the key and stores a SHA-256 hash in
-`deployment_license`. Give the operator:
+`services_deployment_license`. Give the operator:
 
 ```bash
 MATTRAX_BILLING_URL=https://services.mattrax.app
+APNS_RELAY_URL=https://services.mattrax.app/v1/apns/push
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
@@ -419,10 +425,13 @@ that count (never above the plan's device limit when `MATTRAX_PLAN_LIMITS` caps
 it) with `proration_behavior: none`, so month-to-month churn settles on the next
 renewal instead of emitting credit notes.
 
-- Unenrolling or deleting devices reconciles immediately.
+- Unenrolling or deleting devices reports fresh usage immediately; the services
+  deployment performs the Stripe quantity update.
 - A device enrols through the protocol layer, which has no Stripe client, so the
-  nightly maintenance sweep brings the quantity in line within 24 hours.
-- The same sweep retries a Stripe customer rename that failed inline when a
+  nightly maintenance sweep reports fresh usage and the services deployment
+  brings the quantity in line within 24 hours.
+- The services deployment's own sweep retries a Stripe customer rename that
+  failed inline when a
   tenant was renamed, and repairs any drift introduced in the Stripe dashboard.
 
 ### Invoices
@@ -574,8 +583,8 @@ one row. In order:
    removed receives the protocol's unenroll response), Windows devices get a queued
    `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll` command, and Android devices are
    deprovisioned through the Android Management API.
-2. Cancels the Stripe subscription immediately and clears `organization.stripe_customer_id`
-   together with the local `subscription` row.
+2. Cancels the subscription through the services deployment, which owns the Stripe
+   customer and subscription rows.
 3. Deletes every object under `p/<tenant>/`, `a/<tenant>/` and `backups/<tenant>/`.
 4. Deletes the organization row (and everything that cascades from it).
 
@@ -638,11 +647,11 @@ chosen recipients.
 
 ### Schedules
 
-| Setting    | Meaning                                                                |
-| ---------- | ---------------------------------------------------------------------- |
-| `daily`    | Every day at the chosen UTC hour.                                       |
-| `weekly`   | Every Monday at the chosen UTC hour.                                    |
-| `monthly`  | The 1st of each month at the chosen UTC hour.                           |
+| Setting   | Meaning                                       |
+| --------- | --------------------------------------------- |
+| `daily`   | Every day at the chosen UTC hour.             |
+| `weekly`  | Every Monday at the chosen UTC hour.          |
+| `monthly` | The 1st of each month at the chosen UTC hour. |
 
 The schedule is evaluated in UTC. The hourly cron generates any report whose latest slot
 has not been queued, so changing the hour takes effect on the next tick rather than the
@@ -672,13 +681,13 @@ time: report mail carries tenant data and must not land in an unverified mailbox
 
 ### What a dashboard can show
 
-| Data from the report brief                  | Where it comes from                                |
-| ------------------------------------------- | -------------------------------------------------- |
-| Active devices                              | Devices dataset (status, health, check-in age)     |
-| OS versions                                 | Devices dataset (group by OS version)              |
-| Installed/outdated software                 | Software dataset (managed/update state, versions)  |
-| Device inventory                            | Devices dataset (table with model, serial, dates)  |
-| User inventory and active/inactive users    | Users dataset (name, email, status, source)        |
+| Data from the report brief               | Where it comes from                               |
+| ---------------------------------------- | ------------------------------------------------- |
+| Active devices                           | Devices dataset (status, health, check-in age)    |
+| OS versions                              | Devices dataset (group by OS version)             |
+| Installed/outdated software              | Software dataset (managed/update state, versions) |
+| Device inventory                         | Devices dataset (table with model, serial, dates) |
+| User inventory and active/inactive users | Users dataset (name, email, status, source)       |
 
 Two gaps are deliberate rather than accidental:
 

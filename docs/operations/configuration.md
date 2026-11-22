@@ -41,9 +41,9 @@ edge, so the web Worker never holds `AUTH_SECRET`; this is not implemented yet.
 
 ### Support and calendar link
 
-| Variable      | Default                                                            | Purpose                                      |
-| ------------- | ------------------------------------------------------------------ | -------------------------------------------- |
-| `SUPPORT_URL` | `mailto:hello@mattrax.app?subject=Mattrax%20support`                | Support form or calendar booking URL         |
+| Variable      | Default                                              | Purpose                              |
+| ------------- | ---------------------------------------------------- | ------------------------------------ |
+| `SUPPORT_URL` | `mailto:hello@mattrax.app?subject=Mattrax%20support` | Support form or calendar booking URL |
 
 Set `SUPPORT_URL` on the dashboard Worker (`mattrax`) or in the self-hosted
 container's environment. It is used by the account menu and the overview's "Get
@@ -100,13 +100,12 @@ stream with the actor, target and before/after state.
 
 ## Billing
 
-| Variable                         | Purpose                                              |
-| -------------------------------- | ---------------------------------------------------- |
-| `STRIPE_SECRET_KEY`              | Stripe API key                                       |
-| `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature                             |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan                    |
-| `STRIPE_LICENSE_PRICE_ID`        | Per-device price for self-hosted deployment licences |
-| `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue                             |
+| Variable              | Purpose                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `SERVICES_URL`        | Hosted services origin; defaults to `https://services.mattrax.app` |
+| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer token                              |
+| `STRIPE_*`            | Configured on the services deployment, not the application         |
+| `MATTRAX_PLAN_LIMITS` | JSON plan/seat catalogue                                           |
 
 All are optional. Without them billing reports `configured: false`.
 
@@ -129,8 +128,8 @@ All are optional. Without them billing reports `configured: false`.
 | `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
 | `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
 | `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
-| `APNS_RELAY_URL`                         | APNs relay URL; defaults to `https://services.mattrax.app/v1/apns/push`                          |
-| `APNS_RELAY_SECRET`                      | Optional relay HMAC secret; self-hosted installs use `MATTRAX_LICENSE_KEY` instead                |
+| `APNS_RELAY_URL`                         | APNs relay URL; defaults to `https://services.mattrax.app/v1/apns/push`                         |
+| `APNS_RELAY_SECRET`                      | Optional relay HMAC secret; self-hosted installs use `MATTRAX_LICENSE_KEY` instead              |
 | `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
 Without the vendor key, tenants upload a manually signed APNs certificate. Without the
@@ -151,12 +150,12 @@ identity that cannot be loaded fails the download rather than serving an unsigne
 
 ## Google Workspace directory sync
 
-| Variable                                  | Purpose                                                        |
-| ----------------------------------------- | -------------------------------------------------------------- |
-| `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON`  | Optional deployment-wide service-account JSON key               |
-| `GOOGLE_WORKSPACE_ADMIN_EMAIL`           | Workspace super-admin to impersonate (deployment mode)          |
-| `GOOGLE_WORKSPACE_CUSTOMER`              | `my_customer` or a primary domain; defaults to `my_customer`    |
-| `MAINTENANCE_GOOGLE_SYNC_CONCURRENCY`    | Parallel tenants in the scheduled sweep; defaults to 2          |
+| Variable                                | Purpose                                                      |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON` | Optional deployment-wide service-account JSON key            |
+| `GOOGLE_WORKSPACE_ADMIN_EMAIL`          | Workspace super-admin to impersonate (deployment mode)       |
+| `GOOGLE_WORKSPACE_CUSTOMER`             | `my_customer` or a primary domain; defaults to `my_customer` |
+| `MAINTENANCE_GOOGLE_SYNC_CONCURRENCY`   | Parallel tenants in the scheduled sweep; defaults to 2       |
 
 Tenants can instead save their own key under **Settings → Identity → Directory sync**;
 it is sealed with `AUTH_SECRET` and takes precedence over the deployment values. See

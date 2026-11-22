@@ -79,3 +79,9 @@ export {
   type PlanResolutionInput,
   type TenantLimitStatus,
 } from "./planLimits.ts";
+
+export {
+  billableDeviceCount,
+  billingUsageForOrganization,
+  deploymentUsage,
+} from "./billingUsage.ts";

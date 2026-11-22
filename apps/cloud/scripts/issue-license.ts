@@ -4,13 +4,13 @@ import mysql from "mysql2/promise";
 /**
  * Issue a deployment licence for a self-hosted Mattrax install.
  *
- * Run against the cloud billing database:
+ * Run against the services database (the `services_` schema):
  *
  *   DATABASE_URL=mysql://… pnpm license:issue --name "Acme" --email ops@acme.test
  *
  * The printed key is the only copy: the database stores a SHA-256 hash. Give it
- * to the operator as `MATTRAX_LICENSE_KEY`, together with this cloud origin as
- * `MATTRAX_BILLING_URL`.
+ * to the operator as `MATTRAX_LICENSE_KEY`, together with the services origin
+ * as `MATTRAX_BILLING_URL`.
  */
 
 const argument = (name: string): string | undefined => {
@@ -45,7 +45,7 @@ const connection = await mysql.createConnection({ uri: databaseUrl, timezone: "Z
 
 try {
   await connection.query(
-    `INSERT INTO deployment_license
+    `INSERT INTO services_deployment_license
       (id, name, license_key_hash, license_key_prefix, origin, contact_email, plan,
        device_count, tenant_count, cancel_at_period_end, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'device', 0, 0, false, ?, ?)`,
@@ -71,4 +71,5 @@ console.log(`Deployment licence created.
 
 Set on the self-hosted deployment:
   MATTRAX_BILLING_URL=${process.env.MATTRAX_BILLING_URL ?? "https://services.mattrax.app"}
+  APNS_RELAY_URL=https://services.mattrax.app/v1/apns/push
   MATTRAX_LICENSE_KEY=${licenseKey}`);

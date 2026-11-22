@@ -125,19 +125,6 @@ const makeDeps = (
 
 const seed = (db: ReturnType<typeof makeDb>) => {
   db.store.organization.push({ ...organization });
-  db.store.subscription.push({
-    id: "sub-row-1",
-    plan: "device",
-    referenceId: "org-1",
-    stripeCustomerId: "cus_1",
-    stripeSubscriptionId: "sub_1",
-    status: "active",
-    periodStart: null,
-    periodEnd: null,
-    cancelAtPeriodEnd: false,
-    createdAt: organization.createdAt,
-    updatedAt: organization.updatedAt,
-  });
 };
 
 describe("tenant teardown", () => {
@@ -185,7 +172,6 @@ describe("tenant teardown", () => {
     });
 
     expect(db.store.organization).toHaveLength(0);
-    expect(db.store.subscription).toHaveLength(0);
     expect([...storage.objects.keys()]).toEqual(["p/org-2/policy-1/file"]);
 
     const journal = db.store.tenant_deletion.at(0)!;
@@ -298,7 +284,6 @@ describe("tenant teardown", () => {
 
     expect(failureStep(failure)).toBe("subscription");
     expect(db.store.organization).toHaveLength(1);
-    expect(db.store.subscription).toHaveLength(1);
     expect(db.store.tenant_deletion.at(0)).toMatchObject({ status: "failed" });
   });
 

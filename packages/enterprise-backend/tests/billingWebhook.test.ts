@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { Schema } from "effect";
 import { Layer } from "effect";
 import { HttpRouter } from "effect/http";
-import { Db } from "@mattrax/enterprise-core";
+import { ServicesDbService, servicesSchema } from "@mattrax/enterprise-billing";
 import {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
 } from "@mattrax/enterprise-billing";
-import { makeDb, runEffect, schema } from "./helpers.js";
+import { makeServicesDb as makeDb, runEffect } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
 
@@ -26,11 +26,11 @@ const seedOrganization = (
   id: string,
   stripeCustomerId: string | null = null,
 ) => {
-  db.store.organization.push({
+  db.store.services_tenant.push({
     id,
     name: id,
-    slug: id,
     stripeCustomerId,
+    entitlementSyncedAt: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -90,14 +90,14 @@ const makeLedgerDb = () => {
   db.insert = (table: any) => {
     const builder = insert(table);
 
-    if (table !== schema.stripeEvent) return builder;
+    if (table !== servicesSchema.stripeEvent) return builder;
 
     const values = builder.values.bind(builder);
 
     builder.values = (rows: any) => {
       const row = Array.isArray(rows) ? rows[0] : rows;
 
-      if (db.store.stripe_event.some((existing: any) => existing.id === row.id))
+      if (db.store.services_stripe_event.some((existing: any) => existing.id === row.id))
         throw Object.assign(
           new Error(`Duplicate entry '${row.id}' for key 'stripe_event.PRIMARY'`),
           { code: "ER_DUP_ENTRY", errno: 1062 },
@@ -157,13 +157,13 @@ describe("Stripe webhook signature verification", () => {
 
     await expect(
       deliverEvent(db, "customer.subscription.created", subscription()),
-    ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
-    expect(db.store.subscription).toHaveLength(1);
+    ).resolves.toMatchObject({ tenantId: "org-1" });
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("links a deployment licence subscription without touching a tenant", async () => {
     const db = makeDb({
-      deployment_license: [
+      services_deployment_license: [
         {
           id: "lic-1",
           name: "Acme self-hosted",
@@ -192,14 +192,14 @@ describe("Stripe webhook signature verification", () => {
         "customer.subscription.created",
         subscription({ metadata: { deploymentLicenseId: "lic-1" } }),
       ),
-    ).resolves.toMatchObject({ organizationId: null });
+    ).resolves.toMatchObject({ licenseId: "lic-1" });
 
-    expect(db.store.deployment_license[0]).toMatchObject({
+    expect(db.store.services_deployment_license[0]).toMatchObject({
       stripeSubscriptionId: "sub_1",
       stripeCustomerId: "cus_1",
       status: "active",
     });
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a missing signature", async () => {
@@ -220,7 +220,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects an invalid signature", async () => {
@@ -241,7 +241,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a payload that changed after signing", async () => {
@@ -264,7 +264,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("reports unconfigured billing instead of crashing", async () => {
@@ -295,10 +295,10 @@ describe("Stripe subscription lifecycle", () => {
 
     await deliverEvent(db, "customer.subscription.created", subscription());
 
-    expect(db.store.subscription).toMatchObject([
+    expect(db.store.services_subscription).toMatchObject([
       {
         plan: "device",
-        referenceId: "org-1",
+        tenantId: "org-1",
         stripeCustomerId: "cus_1",
         stripeSubscriptionId: "sub_1",
         status: "active",
@@ -316,7 +316,7 @@ describe("Stripe subscription lifecycle", () => {
     seedOrganization(db, "org-1", "cus_1");
 
     await deliverEvent(db, "customer.subscription.created", subscription());
-    const createdAt = db.store.subscription[0]!.createdAt;
+    const createdAt = db.store.services_subscription[0]!.createdAt;
 
     const updated = subscription({
       status: "past_due",
@@ -338,8 +338,8 @@ describe("Stripe subscription lifecycle", () => {
     // for row identity and deterministic fields.
     await deliverEvent(db, "customer.subscription.updated", updated);
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       status: "past_due",
       cancelAtPeriodEnd: true,
       periodEnd: new Date((periodEnd + 86_400) * 1000),
@@ -354,8 +354,8 @@ describe("Stripe subscription lifecycle", () => {
     await deliverEvent(db, "customer.subscription.created", subscription());
     await deliverEvent(db, "customer.subscription.deleted", subscription({ status: "canceled" }));
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       stripeSubscriptionId: "sub_1",
       status: "canceled",
     });
@@ -364,10 +364,10 @@ describe("Stripe subscription lifecycle", () => {
   it("maps invoices paid and failed onto the existing subscription", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-sub",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "past_due",
@@ -385,20 +385,20 @@ describe("Stripe subscription lifecycle", () => {
     };
 
     await deliverEvent(db, "invoice.paid", invoice);
-    expect(db.store.subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "active" });
 
     await deliverEvent(db, "invoice.payment_failed", { ...invoice, status: "open" });
-    expect(db.store.subscription[0]).toMatchObject({ status: "past_due" });
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "past_due" });
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("does not resurrect a canceled subscription from a late paid invoice", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-sub",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "canceled",
@@ -415,7 +415,7 @@ describe("Stripe subscription lifecycle", () => {
       status: "paid",
     });
 
-    expect(db.store.subscription[0]).toMatchObject({ status: "canceled" });
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "canceled" });
   });
 
   it("ignores unrelated event types", async () => {
@@ -448,19 +448,19 @@ describe("Stripe Checkout completion", () => {
 
     await expect(
       deliverEvent(db, "checkout.session.completed", checkoutSession()),
-    ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
+    ).resolves.toMatchObject({ tenantId: "org-1" });
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
     });
     // The completed session links the customer so later invoice events (which
     // may only carry a customer id) resolve without metadata.
-    expect(db.store.organization[0]).toMatchObject({ stripeCustomerId: "cus_1" });
+    expect(db.store.services_tenant[0]).toMatchObject({ stripeCustomerId: "cus_1" });
   });
 
   it("keeps a trial active until the subscription event refines it", async () => {
@@ -473,7 +473,7 @@ describe("Stripe Checkout completion", () => {
       checkoutSession({ payment_status: "no_payment_required" }),
     );
 
-    expect(db.store.subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "active" });
   });
 
   it("ignores a payment-mode session", async () => {
@@ -487,7 +487,7 @@ describe("Stripe Checkout completion", () => {
         checkoutSession({ mode: "payment", subscription: null }),
       ),
     ).resolves.toEqual({ ignored: true });
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("refuses a session whose metadata and customer disagree", async () => {
@@ -502,7 +502,7 @@ describe("Stripe Checkout completion", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("dedupes a redelivered completion through the event ledger", async () => {
@@ -512,28 +512,27 @@ describe("Stripe Checkout completion", () => {
     const payload = JSON.stringify(event("checkout.session.completed", checkoutSession()));
 
     await expect(deliver(db, payload)).resolves.toMatchObject({
-      organizationId: "org-1",
-      stripeSubscriptionId: "sub_1",
+      tenantId: "org-1",
     });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
-    expect(db.store.stripe_event).toHaveLength(1);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 });
 
 describe("Stripe webhook tenant resolution", () => {
-  it("rejects an unknown organization metadata id", async () => {
+  it("creates a local tenant projection for metadata the service has not seen", async () => {
     const db = makeDb();
 
-    await expectWebhookFailure(
+    await expect(
       deliverEvent(
         db,
         "customer.subscription.created",
         subscription({ metadata: { organizationId: "missing-org" } }),
       ),
-      400,
-    );
-    expect(db.store.subscription).toHaveLength(0);
+    ).resolves.toMatchObject({ tenantId: "missing-org" });
+
+    expect(db.store.services_tenant).toHaveLength(1);
   });
 
   it("rejects an unknown Stripe customer", async () => {
@@ -547,7 +546,7 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects metadata and customer that map to different organizations", async () => {
@@ -563,17 +562,17 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a subscription id that already belongs to another tenant", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-2",
       plan: "device",
-      referenceId: "org-2",
+      tenantId: "org-2",
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
@@ -594,9 +593,9 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
-      referenceId: "org-2",
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
+      tenantId: "org-2",
       status: "active",
     });
   });
@@ -605,10 +604,10 @@ describe("Stripe webhook tenant resolution", () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-2",
       plan: "device",
-      referenceId: "org-2",
+      tenantId: "org-2",
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
@@ -628,9 +627,9 @@ describe("Stripe webhook tenant resolution", () => {
       400,
     );
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
-      referenceId: "org-2",
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
+      tenantId: "org-2",
       stripeSubscriptionId: "sub_2",
       status: "active",
     });
@@ -640,10 +639,10 @@ describe("Stripe webhook tenant resolution", () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-1",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
@@ -662,12 +661,16 @@ describe("Stripe webhook tenant resolution", () => {
       }),
     );
 
-    expect(db.store.subscription).toHaveLength(2);
-    expect(db.store.subscription.find((row: any) => row.referenceId === "org-1")).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(2);
+    expect(
+      db.store.services_subscription.find((row: any) => row.tenantId === "org-1"),
+    ).toMatchObject({
       stripeSubscriptionId: "sub_1",
       status: "active",
     });
-    expect(db.store.subscription.find((row: any) => row.referenceId === "org-2")).toMatchObject({
+    expect(
+      db.store.services_subscription.find((row: any) => row.tenantId === "org-2"),
+    ).toMatchObject({
       stripeSubscriptionId: "sub_2",
       status: "active",
     });
@@ -682,20 +685,19 @@ describe("Stripe event ledger", () => {
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
 
     await expect(deliver(db, payload)).resolves.toMatchObject({
-      organizationId: "org-1",
-      stripeSubscriptionId: "sub_1",
+      tenantId: "org-1",
     });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
 
-    expect(db.store.stripe_event).toMatchObject([
+    expect(db.store.services_stripe_event).toMatchObject([
       {
         id: "evt_customer_subscription_created",
         type: "customer.subscription.created",
-        organizationId: "org-1",
+        tenantId: "org-1",
         receivedAt: now,
       },
     ]);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("rejects a concurrent duplicate delivery atomically", async () => {
@@ -715,8 +717,8 @@ describe("Stripe event ledger", () => {
     );
 
     expect(duplicates).toHaveLength(1);
-    expect(db.store.stripe_event).toHaveLength(1);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("records ignored event types so their redelivery is also deduped", async () => {
@@ -725,7 +727,7 @@ describe("Stripe event ledger", () => {
 
     await expect(deliver(db, payload)).resolves.toEqual({ ignored: true });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
-    expect(db.store.stripe_event).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
   });
 
   it("keeps different event ids independent", async () => {
@@ -735,12 +737,12 @@ describe("Stripe event ledger", () => {
     await deliverEvent(db, "customer.subscription.created", subscription());
     await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
 
-    expect(db.store.stripe_event.map((row: any) => row.id).sort()).toEqual([
+    expect(db.store.services_stripe_event.map((row: any) => row.id).sort()).toEqual([
       "evt_customer_subscription_created",
       "evt_customer_subscription_updated",
     ]);
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({ status: "past_due" });
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "past_due" });
   });
 });
 
@@ -753,7 +755,7 @@ describe("POST /api/v1/billing/webhook", () => {
     },
   ) =>
     HttpRouter.toWebHandler(
-      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(Db, db))),
+      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(ServicesDbService, db))),
     ).handler;
 
   it("accepts a signed event and returns 200", async () => {
@@ -774,7 +776,7 @@ describe("POST /api/v1/billing/webhook", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("returns 400 for a missing signature", async () => {
@@ -791,7 +793,7 @@ describe("POST /api/v1/billing/webhook", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("returns 503 when the webhook secret is not configured", async () => {

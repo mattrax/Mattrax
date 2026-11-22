@@ -1,9 +1,19 @@
-export * from "./billing.js";
+export * from "./billingService.ts";
 
-export * from "./billingService.js";
+export * from "./billingWebhook.ts";
 
-export * from "./billingWebhook.js";
+export * from "./entitlementSync.ts";
 
-export * from "./licenseBilling.js";
+export * from "./hostedBillingRoutes.ts";
 
-export * from "./remoteBillingService.js";
+export * from "./licenseBilling.ts";
+
+export * from "./remoteBillingService.ts";
+
+export * from "./servicesBillingService.ts";
+
+export { servicesSchema } from "./schema.ts";
+
+export { Db as ServicesDbService } from "./db.ts";
+
+export type { ServicesDb } from "./db.ts";

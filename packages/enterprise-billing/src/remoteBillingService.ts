@@ -137,6 +137,12 @@ export const makeRemoteBillingService = ({
 
     reportUsage: ({ deviceCount, tenantCount }) =>
       post("/api/platform/billing/usage", { deviceCount, tenantCount }).pipe(Effect.asVoid),
+
+    renameTenant: () => Effect.void,
+
+    preflightTenantDeletion: () => Effect.void,
+
+    cancelTenant: () => Effect.succeed("none"),
   };
 };
 

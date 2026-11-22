@@ -11,8 +11,7 @@
     { "path": "../../packages/apns" },
     { "path": "../../packages/effect-stripe" },
     { "path": "../../packages/enterprise-billing" },
-    { "path": "../../packages/enterprise-core" },
-    { "path": "../../packages/enterprise-domain" }
+    { "path": "../../packages/enterprise-core" }
   ],
   "include": ["src"]
 }

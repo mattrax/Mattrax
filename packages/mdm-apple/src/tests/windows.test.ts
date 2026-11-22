@@ -86,7 +86,8 @@ const organizationRow = (id: string, createdAt: Date) => ({
   slug: id,
   logo: null,
   metadata: null,
-  stripeCustomerId: null,
+  billingPlan: "free",
+  billingStatus: "active",
   createdAt,
   updatedAt: createdAt,
 });
@@ -110,7 +111,6 @@ const setup = async (
     requireDeviceIdentity?: boolean;
     tenantTokenTtlSeconds?: number;
     planLimits?: ReturnType<typeof parsePlanLimits>;
-    subscription?: Row;
     devices?: Array<Row>;
     ssoConfig?: Array<Row>;
     federated?: Parameters<typeof createWindowsBackend>[0]["federated"];
@@ -139,8 +139,6 @@ const setup = async (
       enrollmentRow("org-early"),
     ],
   };
-
-  if (overrides.subscription) initial[tableName(schema.subscription)] = [overrides.subscription];
 
   if (overrides.devices) initial[tableName(schema.device)] = overrides.devices;
 
@@ -405,14 +403,6 @@ describe("Windows enterprise backend", () => {
 
     const { backend, db } = await setup({
       planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
-      subscription: {
-        id: "sub-1",
-        plan: "free",
-        referenceId: "org-early",
-        status: "active",
-        createdAt: now,
-        updatedAt: now,
-      },
       devices: [
         {
           id: "existing",
@@ -440,14 +430,6 @@ describe("Windows enterprise backend", () => {
 
     const { backend, db } = await setup({
       planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
-      subscription: {
-        id: "sub-1",
-        plan: "free",
-        referenceId: "org-early",
-        status: "active",
-        createdAt: now,
-        updatedAt: now,
-      },
       devices: [
         {
           id: "existing",

@@ -7,23 +7,36 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { MysqlClient } from "@effect/sql-mysql2";
-import mysql from "mysql2/promise";
 import { NodePushTransport } from "@mattrax/apns";
-import { billingWebhookRoutes, licenseBillingRoutes } from "@mattrax/enterprise-billing";
-import { Db, schema } from "@mattrax/enterprise-core";
+import {
+  billingWebhookRoutes,
+  deploymentLicenseIdForKeyHash,
+  hostedBillingRoutes,
+  licenseBillingRoutes,
+  makeEntitlementSync,
+  ServicesDbService,
+  servicesSchema,
+  tenantEntitlement,
+} from "@mattrax/enterprise-billing";
+import { parsePlanLimits } from "@mattrax/enterprise-core";
 import { StripeService } from "@mattrax/effect-stripe";
+import { migrateDatabase } from "./migrate.ts";
 
 const port = Number(process.env.PORT ?? 8788);
+const databaseUrl = process.env.DATABASE_URL?.trim();
 const stripeKey = process.env.STRIPE_SECRET_KEY?.trim();
 const relaySecret = process.env.APNS_RELAY_SECRET?.trim();
+const servicesToken = process.env.SERVICES_TOKEN?.trim();
+const cloudUrl = process.env.MATTRAX_CLOUD_URL?.trim();
 const deviceMonthlyPriceId = process.env.STRIPE_DEVICE_MONTHLY_PRICE_ID?.trim();
 const licensePriceId = process.env.STRIPE_LICENSE_PRICE_ID?.trim();
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+const planLimits = parsePlanLimits(process.env.MATTRAX_PLAN_LIMITS);
 
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const database = (() => {
-  const url = new URL(process.env.DATABASE_URL!);
+  const url = new URL(databaseUrl);
   const databaseName = url.pathname.replace(/^\//, "");
 
   if (!url.hostname || !databaseName)
@@ -55,24 +68,15 @@ const database = (() => {
   });
 })();
 
-const licensePool = mysql.createPool({
-  uri: process.env.DATABASE_URL,
-  connectionLimit: 4,
-  timezone: "Z",
-});
-
-const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
-
-const bearerToken = (request: HttpServerRequest.HttpServerRequest) => {
-  const value = request.headers.authorization;
-  const header = Array.isArray(value) ? value[0] : value;
-
-  return header?.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : undefined;
-};
-
+const servicesDb = ServicesDbService.layer.pipe(Layer.provide(database));
 const stripe = stripeKey ? StripeService.make(stripeKey) : undefined;
 const stripeLayer = stripe ? Layer.succeed(StripeService, stripe) : Layer.empty;
 const apns = NodePushTransport();
+
+const entitlementSync =
+  cloudUrl && servicesToken
+    ? makeEntitlementSync({ url: cloudUrl, token: servicesToken })
+    : undefined;
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -122,17 +126,18 @@ const apnsHandler = (request: HttpServerRequest.HttpServerRequest) =>
     }
 
     if (!authorized) {
-      const token = bearerToken(request);
+      const value = request.headers.authorization;
+      const header = Array.isArray(value) ? value[0] : value;
+      const token = header?.startsWith("Bearer ")
+        ? header.slice("Bearer ".length).trim()
+        : undefined;
 
       if (!token) return problem("Unauthorized.", 401);
 
-      const [rows] = yield* Effect.promise(() =>
-        licensePool.query("SELECT id FROM deployment_license WHERE license_key_hash = ? LIMIT 1", [
-          sha256(token),
-        ]),
-      );
+      const db = yield* ServicesDbService;
+      const licenseId = yield* deploymentLicenseIdForKeyHash(db, sha256(token));
 
-      if ((rows as ReadonlyArray<unknown>).length === 0) return problem("Unauthorized.", 401);
+      if (!licenseId) return problem("Unauthorized.", 401);
     }
 
     const input = Option.getOrUndefined(
@@ -172,30 +177,57 @@ const health = Effect.succeed(
 );
 
 const dbHealth = Effect.gen(function* () {
-  const db = yield* Db;
+  const db = yield* ServicesDbService;
   const rows = yield* db
-    .select({ id: schema.deploymentLicense.id })
-    .from(schema.deploymentLicense)
+    .select({ id: servicesSchema.deploymentLicense.id })
+    .from(servicesSchema.deploymentLicense)
     .limit(1);
 
   return json({ status: "ok", licenses: rows.length });
 });
 
+/**
+ * After a webhook commits, push the tenant's entitlement to the application
+ * deployment. The application caches the plan on its organisation row so limit
+ * checks stay local. A failure is returned to Stripe so the event is retried.
+ */
+const onApplied = (
+  result: { readonly tenantId?: string; readonly licenseId?: string },
+  db: import("@mattrax/enterprise-billing").ServicesDb,
+) =>
+  Effect.gen(function* () {
+    if (!result.tenantId || !entitlementSync) return;
+
+    const subscription = yield* tenantEntitlement(db, result.tenantId);
+
+    yield* entitlementSync({
+      organizationId: result.tenantId,
+      plan: subscription?.plan ?? "free",
+      status: subscription?.status ?? null,
+    });
+  });
+
 const routes = Layer.mergeAll(
+  // The service origin is machine-facing; people who land here go to the app.
+  HttpRouter.add("GET", "/", HttpServerResponse.redirect("https://mattrax.app", { status: 302 })),
   HttpRouter.add("GET", "/health", () => health),
   HttpRouter.add("GET", "/health/db", () => dbHealth),
   HttpRouter.add("POST", "/v1/apns/push", apnsHandler),
   HttpRouter.add("POST", "/apns", apnsHandler),
   licenseBillingRoutes({ priceId: licensePriceId }),
+  hostedBillingRoutes({
+    token: servicesToken,
+    priceId: deviceMonthlyPriceId,
+    planLimits,
+  }),
   billingWebhookRoutes({
     webhookSecret,
     deviceMonthlyPriceId,
+    onApplied,
   }),
 );
 
-const databaseAndDb = Db.layer.pipe(Layer.provide(database));
-
-const appLayer = routes.pipe(Layer.provideMerge(databaseAndDb), Layer.provideMerge(stripeLayer));
+const appLayer = routes.pipe(Layer.provideMerge(servicesDb), Layer.provideMerge(stripeLayer));
 
 const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
 
@@ -247,6 +279,11 @@ const writeResponse = async (response: Response, target: ServerResponse) => {
   await pipeline(Readable.fromWeb(response.body as never), target);
 };
 
+await migrateDatabase({
+  databaseUrl,
+  migrationsDirectory: new URL("../migrations", import.meta.url).pathname,
+});
+
 const server = createServer((request, response) => {
   void (async () => {
     try {
@@ -269,3 +306,7 @@ server.listen(port, "0.0.0.0", () => {
 const shutdown = () => server.close(() => process.exit(0));
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
+
+function sha256(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}

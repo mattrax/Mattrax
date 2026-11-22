@@ -21,13 +21,13 @@ required statuses.
 
 Repository secrets (Settings → Secrets and variables → Actions → Secrets):
 
-| Secret                                                                                                                          | Purpose                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`                                                                                                          | Token with Workers Scripts:Edit, Workers R2 Storage:Edit, Workers Routes:Edit and Account Settings:Read on the account. |
-| `CLOUDFLARE_ACCOUNT_ID`                                                                                                         | Account that owns both Workers.                                                                                         |
-| `DATABASE_URL`                                                                                                                                   | Production MySQL connection string used by `pnpm cloud db:migrate`.                                                       |
-| `AUTH_SECRET`                                                                                                                                    | Optional copy of the dashboard's SSR signing secret. The Worker's existing secret is used when this is absent.            |
-| `PREVIEW_DATABASE_URL`                                                                                                                           | Optional. Shared preview MySQL connection string. When absent (together with the preview Hyperdrive/bucket), PR Preview deployments are skipped. |
+| Secret                  | Purpose                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CLOUDFLARE_API_TOKEN`  | Token with Workers Scripts:Edit, Workers R2 Storage:Edit, Workers Routes:Edit and Account Settings:Read on the account.                          |
+| `CLOUDFLARE_ACCOUNT_ID` | Account that owns both Workers.                                                                                                                  |
+| `DATABASE_URL`          | Production MySQL connection string used by `pnpm cloud db:migrate`.                                                                              |
+| `AUTH_SECRET`           | Optional copy of the dashboard's SSR signing secret. The Worker's existing secret is used when this is absent.                                   |
+| `PREVIEW_DATABASE_URL`  | Optional. Shared preview MySQL connection string. When absent (together with the preview Hyperdrive/bucket), PR Preview deployments are skipped. |
 
 Repository variables (Settings → Secrets and variables → Actions → Variables):
 
@@ -36,7 +36,7 @@ Repository variables (Settings → Secrets and variables → Actions → Variabl
 | `PREVIEW_HYPERDRIVE_ID`  | Hyperdrive config for the preview database.                                            |
 | `PREVIEW_STORAGE_BUCKET` | R2 bucket for preview uploads and backups. Must exist before the first preview deploy. |
 | `PRODUCTION_ORIGIN`      | Optional. Defaults to `https://e.mattrax.app`.                                         |
-| `STRIPE_LICENSE_PRICE_ID` | Optional. Per-device price for self-hosted deployment licences.                        |
+| `SERVICES_TOKEN`         | Shared token for the hosted services deployment (billing and entitlements).            |
 
 The Workers' own secrets are shared by production and every Preview of that
 Worker, so they only need to be set once (for example with `cf secrets put`):

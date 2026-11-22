@@ -540,7 +540,6 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           email,
           emailVerified: true,
           image: null,
-          stripeCustomerId: null,
           disabled: false,
           authRevision: id(),
           createdAt: timestamp,

@@ -130,11 +130,9 @@ export const apiWorker = {
     ),
     TRUSTED_ORIGINS: bindings.secret(),
     AUTH_SECRET: bindings.secret(),
-    STRIPE_SECRET_KEY: bindings.secret(),
-    STRIPE_WEBHOOK_SECRET: bindings.secret(),
-    STRIPE_DEVICE_MONTHLY_PRICE_ID: bindings.secret(),
-    /** Optional: enables self-hosted deployment licences on this deployment. */
-    STRIPE_LICENSE_PRICE_ID: bindings.text(process.env.STRIPE_LICENSE_PRICE_ID ?? ""),
+    /** Hosted services deployment for APNs billing and entitlements. */
+    SERVICES_URL: bindings.text(process.env.SERVICES_URL ?? "https://services.mattrax.app"),
+    SERVICES_TOKEN: bindings.secret(),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
     /**

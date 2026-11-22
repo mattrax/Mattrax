@@ -32,11 +32,9 @@ const ApiEnvSchema = Schema.Struct({
   // Signs sessions, SSR tokens, step-up grants, SSO assertions and email
   // tokens; a short operator-chosen value makes every artifact forgeable.
   AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
-  STRIPE_SECRET_KEY: Schema.optional(nonEmptyString),
-  STRIPE_WEBHOOK_SECRET: Schema.optional(nonEmptyString),
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: Schema.optional(nonEmptyString),
-  /** Per-device price for a self-hosted deployment's platform licence. */
-  STRIPE_LICENSE_PRICE_ID: Schema.optional(nonEmptyString),
+  /** Hosted services deployment; a token enables hosted billing through it. */
+  SERVICES_URL: Schema.optional(urlString),
+  SERVICES_TOKEN: Schema.optional(nonEmptyString),
   /**
    * Optional JSON plan catalogue mapping plan names to device/tenant limits.
    * Missing or `null` limits are unlimited. Parsed defensively at startup.
@@ -246,10 +244,8 @@ const optionalString = Schema.optional(Schema.String);
 const RawApiEnvSchema = Schema.Struct({
   ORIGIN: optionalString,
   AUTH_SECRET: optionalString,
-  STRIPE_SECRET_KEY: optionalString,
-  STRIPE_WEBHOOK_SECRET: optionalString,
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: optionalString,
-  STRIPE_LICENSE_PRICE_ID: optionalString,
+  SERVICES_URL: optionalString,
+  SERVICES_TOKEN: optionalString,
   MATTRAX_PLAN_LIMITS: optionalString,
   MATTRAX_SUPERADMINS: optionalString,
   CLOUD_APPLE_VENDOR_CERT: optionalString,
@@ -332,10 +328,8 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   // `.dev.vars`; whitelabel deployments set their own origin.
   ORIGIN: emptyStringAsUndefined(rawEnv.ORIGIN) ?? "https://e.mattrax.app",
   AUTH_SECRET: emptyStringAsUndefined(rawEnv.AUTH_SECRET),
-  STRIPE_SECRET_KEY: emptyStringAsUndefined(rawEnv.STRIPE_SECRET_KEY),
-  STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined(rawEnv.STRIPE_WEBHOOK_SECRET),
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_DEVICE_MONTHLY_PRICE_ID),
-  STRIPE_LICENSE_PRICE_ID: emptyStringAsUndefined(rawEnv.STRIPE_LICENSE_PRICE_ID),
+  SERVICES_URL: emptyStringAsUndefined(rawEnv.SERVICES_URL) ?? "https://services.mattrax.app",
+  SERVICES_TOKEN: emptyStringAsUndefined(rawEnv.SERVICES_TOKEN),
   MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
   MATTRAX_SUPERADMINS: emptyStringAsUndefined(rawEnv.MATTRAX_SUPERADMINS),
   CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),

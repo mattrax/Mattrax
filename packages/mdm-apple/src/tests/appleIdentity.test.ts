@@ -22,7 +22,8 @@ const organization = (id: string, slug: string) => ({
   slug,
   logo: null,
   metadata: null,
-  stripeCustomerId: null,
+  billingPlan: "free",
+  billingStatus: "active",
   createdAt: now,
   updatedAt: now,
 });
@@ -42,7 +43,6 @@ const setup = (
   certificates: Array<ReturnType<typeof issuedCertificate>> = [],
   options: {
     planLimits?: ReturnType<typeof parsePlanLimits>;
-    subscription?: Row;
     devices?: Array<Row>;
   } = {},
 ) => {
@@ -53,8 +53,6 @@ const setup = (
     ],
     [tableName(schema.scepIssuedCertificate)]: certificates,
   };
-
-  if (options.subscription) initial[tableName(schema.subscription)] = [options.subscription];
 
   if (options.devices) initial[tableName(schema.device)] = options.devices;
 
@@ -73,15 +71,6 @@ const setup = (
 
 const planLimits = (devices: number | null) =>
   parsePlanLimits(JSON.stringify({ free: { devices } }));
-
-const subscription = {
-  id: "sub-1",
-  plan: "free",
-  referenceId: "org-1",
-  status: "active",
-  createdAt: now,
-  updatedAt: now,
-};
 
 const deviceRow = (id: string, udid: string) => ({
   id,
@@ -202,7 +191,6 @@ describe("Apple per-device SCEP identity binding", () => {
   it("rejects a new device when the plan device limit is reached", async () => {
     const { db, backend } = setup([issuedCertificate()], {
       planLimits: planLimits(1),
-      subscription,
       devices: [deviceRow("existing", "udid-existing")],
     });
 
@@ -215,7 +203,6 @@ describe("Apple per-device SCEP identity binding", () => {
   it("allows re-authentication of an existing device above the plan limit", async () => {
     const { db, backend } = setup([issuedCertificate()], {
       planLimits: planLimits(1),
-      subscription,
       devices: [deviceRow("existing", "udid-1")],
     });
 

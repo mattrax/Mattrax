@@ -3,10 +3,11 @@ import { eq } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { Layer } from "effect";
-import { Db } from "@mattrax/enterprise-core";
+import { Db } from "./db.ts";
+import type { ServicesDb } from "./db.ts";
 import { StripeService } from "@mattrax/effect-stripe";
 import type { StripeClientLike, StripeCustomer } from "@mattrax/effect-stripe";
-import { schema } from "@mattrax/enterprise-core";
+import { servicesSchema as schema } from "./schema.ts";
 
 /**
  * Cloud billing for self-hosted deployments.
@@ -101,6 +102,18 @@ const bodyOf = <A>(
     Effect.map((body) => Option.getOrUndefined(Schema.decodeUnknownOption(codec)(body))),
     Effect.catch(() => Effect.succeed(undefined)),
   );
+
+/** Resolve a deployment licence by the SHA-256 hash of its key. */
+export const deploymentLicenseIdForKeyHash = (db: ServicesDb, hash: string) =>
+  Effect.gen(function* () {
+    const [license] = yield* db
+      .select({ id: schema.deploymentLicense.id })
+      .from(schema.deploymentLicense)
+      .where(eq(schema.deploymentLicense.licenseKeyHash, hash))
+      .limit(1);
+
+    return license?.id;
+  });
 
 const authenticate = (request: HttpServerRequest.HttpServerRequest) =>
   Effect.gen(function* () {
