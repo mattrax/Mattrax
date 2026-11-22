@@ -3,6 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createSignal } from "solid-js";
 import type {
+  OsBehindDevice,
   OsFleetPlatform,
   OsPolicyPlatform,
   TenantOsPolicyPlatform,
@@ -42,6 +43,10 @@ const platformLabel = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
       return "macOS";
+    case "ios":
+      return "iOS";
+    case "ipados":
+      return "iPadOS";
     case "windows":
       return "Windows";
     case "android":
@@ -52,6 +57,8 @@ const platformLabel = (platform: OsPolicyPlatform) => {
 const platformProto = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
+    case "ios":
+    case "ipados":
       return "apple" as const;
     case "windows":
       return "win" as const;
@@ -59,6 +66,9 @@ const platformProto = (platform: OsPolicyPlatform) => {
       return "android" as const;
   }
 };
+
+const isApplePlatform = (platform: OsPolicyPlatform) =>
+  platform === "macos" || platform === "ios" || platform === "ipados";
 
 const Stat = (props: { label: string; value: number; tone?: string }) => (
   <div class="rounded-lg border border-border bg-card px-3 py-2.5">
@@ -115,11 +125,32 @@ export default function OsVersionsPage() {
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [applyError, setApplyError] = createSignal<unknown>();
 
-  const selectedRows = () => {
+  type SelectedRow = OsBehindDevice & { platform: OsPolicyPlatform };
+
+  const selectedRows = (): SelectedRow[] => {
     const ids = selected();
-    const rows = fleet.data?.platforms.flatMap((platform) => platform.behind) ?? [];
+    const rows =
+      fleet.data?.platforms.flatMap((platform) =>
+        platform.behind.map((row) => ({ ...row, platform: platform.platform })),
+      ) ?? [];
 
     return rows.filter((row) => ids.has(row.id));
+  };
+
+  /**
+   * Which delivery path Apply update uses for the current selection.
+   *
+   * A device with the DDM declaration receives an APNs wake-up and applies
+   * the tenant rule on check-in. Devices without DDM (below the declaration
+   * minimum or on legacy delivery) fall back to the explicit ScheduleOSUpdate
+   * command. Apple ignores that command while a DDM declaration manages the
+   * update, so the declaration wins whenever it is available.
+   */
+  const selectedMechanisms = () => {
+    const rows = selectedRows();
+    const commands = rows.filter((row) => row.updateMechanism !== "ddm-software-update").length;
+
+    return { total: rows.length, commands, declarations: rows.length - commands };
   };
 
   const toggle = (id: string, checked: boolean) =>
@@ -133,11 +164,11 @@ export default function OsVersionsPage() {
     });
 
   /**
-   * Apply updates to the selected Macs.
+   * Apply the OS update policy to the selected Apple devices.
    *
-   * Every row is one `ScheduleOSUpdate` command. Apple's command installs the
-   * latest available update, so no ProductKey is sent; the operator can pick a
-   * specific update from the device page when they know it.
+   * The DDM declaration installs the tenant minimum, so a capable device only
+   * needs an APNs wake-up to sync it. A device without DDM gets the explicit
+   * ScheduleOSUpdate command fallback. Every call is one audited device action.
    */
   const apply = useMutation(() => ({
     mutationFn: async () => {
@@ -146,16 +177,22 @@ export default function OsVersionsPage() {
 
       for (const row of rows) {
         try {
-          await enterprise.deviceAction(params.tenantId, row.id, {
-            action: "schedule-os-update",
-            osUpdateInstallAction: "InstallASAP",
-          });
+          if (row.updateMechanism === "ddm-software-update")
+            // Wakes the device; it fetches the tenant declaration on check-in.
+            await enterprise.deviceAction(params.tenantId, row.id, { action: "sync" });
+          else
+            await enterprise.deviceAction(params.tenantId, row.id, {
+              action: "schedule-os-update",
+              osUpdateInstallAction: "InstallASAP",
+            });
         } catch {
           failed += 1;
         }
       }
 
-      return { total: rows.length, failed };
+      const { commands, declarations } = selectedMechanisms();
+
+      return { total: rows.length, failed, commands, declarations };
     },
     onSuccess: async (result) => {
       setConfirmOpen(false);
@@ -247,11 +284,23 @@ export default function OsVersionsPage() {
               </div>
             </Show>
 
+            <Show when={data().unsupported.total > 0}>
+              <div class="rounded-lg border border-border bg-surface-muted/40 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                {data().unsupported.total}{" "}
+                {data().unsupported.total === 1 ? "Apple device runs" : "Apple devices run"}{" "}
+                {data()
+                  .unsupported.byFamily.map((entry) => entry.family)
+                  .join(", ")}
+                . Mattrax does not manage OS update policy for tvOS, watchOS or visionOS, so these
+                devices are excluded from compliance counts rather than reported as unknown.
+              </div>
+            </Show>
+
             <For each={data().platforms}>
               {(platform) => {
-                const isMac = () => platform.platform === "macos";
+                const isApple = () => isApplePlatform(platform.platform);
 
-                const selectable = () => isMac() && canCommand() && platform.behind.length > 0;
+                const selectable = () => isApple() && canCommand() && platform.behind.length > 0;
 
                 return (
                   <Panel
@@ -392,6 +441,7 @@ export default function OsVersionsPage() {
                                   </th>
                                   <th class="px-2 py-1.5 font-medium">Device</th>
                                   <th class="px-2 py-1.5 font-medium">Version</th>
+                                  <th class="px-2 py-1.5 font-medium">Update</th>
                                   <th class="px-2 py-1.5 font-medium">Why</th>
                                   <th class="px-2 py-1.5 font-medium">Status</th>
                                 </tr>
@@ -421,6 +471,29 @@ export default function OsVersionsPage() {
                                       </td>
                                       <td class="px-2 py-1.5 font-mono text-[11.5px]">
                                         {row.currentVersion ?? "—"}
+                                      </td>
+                                      <td class="px-2 py-1.5 text-[11px] text-muted-foreground">
+                                        <Show when={row.pendingVersion || row.installState}>
+                                          <span class="flex flex-col">
+                                            <Show when={row.pendingVersion}>
+                                              {(version) => (
+                                                <span class="font-mono text-[11px] text-foreground">
+                                                  {version()} pending
+                                                </span>
+                                              )}
+                                            </Show>
+                                            <Show when={row.installState}>
+                                              {(state) => <span>{state()}</span>}
+                                            </Show>
+                                          </span>
+                                        </Show>
+                                        <Show when={!row.pendingVersion && !row.installState}>
+                                          {row.updateMechanism === "ddm-software-update"
+                                            ? "DDM on check-in"
+                                            : row.updateMechanism === "schedule-os-update"
+                                              ? "Command fallback"
+                                              : "—"}
+                                        </Show>
                                       </td>
                                       <td class="px-2 py-1.5 text-muted-foreground">
                                         {row.reason === "deferral_active" && row.deferralEndsAt
@@ -472,8 +545,8 @@ export default function OsVersionsPage() {
 
                         <Show when={!selectable() && platform.behind.length > 0}>
                           <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                            {isMac()
-                              ? "You need the device-command permission to apply macOS updates."
+                            {isApple()
+                              ? "You need the device-command permission to apply Apple updates."
                               : "This platform has no per-device update command. Enforcement is applied through its update policy on the next check-in."}
                           </p>
                         </Show>
@@ -487,8 +560,20 @@ export default function OsVersionsPage() {
             <ConfirmDialog
               open={confirmOpen()}
               onOpenChange={setConfirmOpen}
-              title={`Apply macOS updates to ${selectedRows().length} ${selectedRows().length === 1 ? "device" : "devices"}?`}
-              description="Each Mac receives Apple's ScheduleOSUpdate command with InstallASAP. Apple installs the latest available update; the command runs on the device's next check-in and may restart it."
+              title={`Apply the OS update policy to ${selectedRows().length} ${selectedRows().length === 1 ? "device" : "devices"}?`}
+              description={(() => {
+                const { declarations, commands } = selectedMechanisms();
+                const parts = [
+                  declarations > 0
+                    ? `${declarations} ${declarations === 1 ? "device receives" : "devices receive"} Apple's DDM software-update enforcement declaration on its next check-in.`
+                    : null,
+                  commands > 0
+                    ? `${commands} ${commands === 1 ? "device receives" : "devices receive"} Apple's ScheduleOSUpdate command with InstallASAP, which may restart the device.`
+                    : null,
+                ].filter((part): part is string => part !== null);
+
+                return parts.join(" ");
+              })()}
               confirmLabel="Apply updates"
               pending={apply.isPending}
               error={applyError()}

@@ -216,6 +216,10 @@ export type DeviceActionInput = {
   readonly osEdition?: string | null;
   readonly osVersion?: string | null;
   readonly model?: string | null;
+  /** Apple delivery path recorded on `device_apple`; legacy cannot use DDM. */
+  readonly declarationMode?: "ddm" | "legacy" | null;
+  /** Apple enrolment mode. User enrolment is BYOD and never supervised. */
+  readonly enrollmentMode?: "device" | "user" | null;
   /**
    * Android Management API management mode (`DEVICE_OWNER`, `PROFILE_OWNER`).
    * Unknown or omitted values leave the action available so a stale report
@@ -238,6 +242,39 @@ const majorOsVersion = (value: string | null | undefined): number | null => {
   const major = Number(match[1]);
 
   return Number.isFinite(major) ? major : null;
+};
+
+/**
+ * Whether `ScheduleOSUpdate` is a valid fallback for this device.
+ *
+ * Apple supports the command on supervised iOS/iPadOS 9+ and macOS, but
+ * deprecates it in 26 and removes it in 27, where the DDM enforcement
+ * declaration is the only path. For iOS/iPadOS it is offered only when DDM
+ * is known to be unavailable (below iOS/iPadOS 17 or legacy delivery); on
+ * macOS it stays available as the explicit manual override because the
+ * tenant has always had that control. User enrolment is never supervised.
+ */
+const supportsScheduleOsUpdate = (input: DeviceActionInput): boolean => {
+  if (input.proto !== "apple") return false;
+
+  if (input.enrollmentMode === "user") return false;
+
+  const major = majorOsVersion(input.osVersion);
+
+  // Apple removed the command in 27.0; do not advertise a command the OS rejects.
+  if (major !== null && major >= 27) return false;
+
+  if (isMacOsDevice(input)) return true;
+
+  const edition = (input.osEdition ?? "").toLowerCase();
+  const model = (input.model ?? "").toLowerCase();
+
+  if (!/ios|ipados/.test(edition) && !/ipad|iphone|ipod/.test(model)) return false;
+
+  // A known DDM path already enforces the tenant rule without a command.
+  if (input.declarationMode !== "legacy" && (major === null || major >= 17)) return false;
+
+  return true;
 };
 
 /**
@@ -306,12 +343,9 @@ export const deviceAvailableActions = (
 
   const base = platformActions(input.proto)
     .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
-    // `ScheduleOSUpdate` is a macOS command. Advertising it on iOS or tvOS
-    // would queue a command Apple rejects.
-    .filter(
-      (action) =>
-        action !== "schedule-os-update" || (input.proto === "apple" && isMacOsDevice(input)),
-    )
+    // `ScheduleOSUpdate` is the explicit fallback where the DDM declaration
+    // is unavailable; see `supportsScheduleOsUpdate`.
+    .filter((action) => action !== "schedule-os-update" || supportsScheduleOsUpdate(input))
     // Apple's `Settings` command is supervised-only. A User Enrollment is a
     // BYOD device we know is not supervised, so never advertise the rename.
     .filter(
@@ -379,8 +413,15 @@ export const deviceActionUnavailableReason = (
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
 
-  if (action === "schedule-os-update")
-    return "OS update scheduling is only available for macOS devices.";
+  if (action === "schedule-os-update") {
+    if (input.enrollmentMode === "user")
+      return "ScheduleOSUpdate requires supervision. A user-enrolled (BYOD) device cannot run it.";
+
+    if (/ios|ipados/i.test(input.osEdition ?? ""))
+      return "iOS and iPadOS 17 or later receive the update policy through Apple's DDM declaration. ScheduleOSUpdate is only offered below 17, on legacy delivery, or on iOS 27 where Apple removes the command.";
+
+    return "ScheduleOSUpdate is only available for supervised Apple devices.";
+  }
 
   if (action === "set-device-name" && input.proto !== "apple")
     return "Applying a name to the device is only available for Apple devices. Windows and Android name delivery is not implemented yet.";

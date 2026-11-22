@@ -2018,7 +2018,7 @@ export const tenantOsPolicy = mysqlTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     platform: varchar("platform", {
       length: 16,
-      enum: ["macos", "windows", "android"],
+      enum: ["macos", "ios", "ipados", "windows", "android"],
     }).notNull(),
     minimumVersion: varchar("minimum_version", { length: 64 }),
     enforcement: varchar("enforcement", {

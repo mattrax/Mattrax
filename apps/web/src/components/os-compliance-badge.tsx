@@ -82,6 +82,10 @@ const platformLabel = (platform: OsComplianceInfo["platform"]) => {
   switch (platform) {
     case "macos":
       return "macOS";
+    case "ios":
+      return "iOS";
+    case "ipados":
+      return "iPadOS";
     case "windows":
       return "Windows";
     case "android":

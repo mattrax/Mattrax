@@ -234,6 +234,43 @@ describe("deviceAvailableActions", () => {
       ),
     ).toContain("User Enrollment");
   });
+
+  it("offers ScheduleOSUpdate only where the DDM declaration is unavailable", () => {
+    const fallback = { proto: "apple" as const, status: "enrolled", osEdition: "iOS" };
+
+    expect(deviceAvailableActions({ ...fallback, osVersion: "16.7" })).toContain(
+      "schedule-os-update",
+    );
+    expect(deviceAvailableActions({ ...fallback, osVersion: "18.1" })).not.toContain(
+      "schedule-os-update",
+    );
+    expect(
+      deviceAvailableActions({ ...fallback, osVersion: "18.1", declarationMode: "legacy" }),
+    ).toContain("schedule-os-update");
+    expect(
+      deviceAvailableActions({
+        ...fallback,
+        osVersion: "18.1",
+        declarationMode: "legacy",
+        enrollmentMode: "user",
+      }),
+    ).not.toContain("schedule-os-update");
+    expect(deviceAvailableActions({ ...fallback, osVersion: "27.0" })).not.toContain(
+      "schedule-os-update",
+    );
+    expect(
+      deviceAvailableActions({ proto: "apple", status: "enrolled", osEdition: "macOS 15.1" }),
+    ).toContain("schedule-os-update");
+  });
+
+  it("explains why ScheduleOSUpdate is not offered on a DDM phone", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS", osVersion: "18.1" },
+        "schedule-os-update",
+      ),
+    ).toContain("DDM declaration");
+  });
 });
 
 describe("Apple device name payload", () => {

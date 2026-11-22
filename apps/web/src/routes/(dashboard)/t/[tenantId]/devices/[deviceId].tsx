@@ -1170,6 +1170,30 @@ export default function DeviceDetailPage() {
 
   const osCompliance = () => decodeOsCompliance(row()?.osCompliance);
 
+  /**
+   * DDM software-update state for iOS/iPadOS.
+   *
+   * Apple reports `softwareupdate.install-state` and the pending version, not
+   * a release feed. macOS keeps the richer SOFA status above, so this only
+   * covers the phone/tablet families.
+   */
+  const ddmUpdate = () => {
+    const device = row();
+
+    if (!device || device.proto !== "apple") return undefined;
+
+    if (!/ios|ipados/i.test(device.osEdition ?? "")) return undefined;
+
+    const pending = device.osUpdatePendingVersion?.trim() || null;
+    const installState = device.osUpdateInstallState?.trim() || null;
+    const failureCount = device.osUpdateFailureCount ?? 0;
+    const failed = installState === "failed" || failureCount > 0;
+
+    if (!pending && !installState && !failed) return undefined;
+
+    return { pending, installState, failureCount, failed };
+  };
+
   const [osUpdateAction, setOsUpdateAction] = createSignal<
     "InstallASAP" | "InstallLater" | "NotifyOnly"
   >("InstallASAP");
@@ -1263,12 +1287,38 @@ export default function DeviceDetailPage() {
         value: (() => {
           const info = decodeSoftwareUpdate(device.osUpdate);
 
-          return isMacOsUpdateTracked(info) ? (
+          if (isMacOsUpdateTracked(info))
+            return (
+              <span class="flex flex-col items-start gap-1">
+                <SoftwareUpdateTag info={info} />
+                <span class="text-[11px] text-muted-foreground">{softwareUpdateReason(info!)}</span>
+              </span>
+            );
+
+          const ddm = ddmUpdate();
+
+          if (!ddm) return undefined;
+
+          return (
             <span class="flex flex-col items-start gap-1">
-              <SoftwareUpdateTag info={info} />
-              <span class="text-[11px] text-muted-foreground">{softwareUpdateReason(info!)}</span>
+              <Badge variant={ddm.failed ? "warning" : "info"}>
+                {ddm.failed
+                  ? "Update failed"
+                  : ddm.pending
+                    ? `${ddm.pending} pending`
+                    : "Update pending"}
+              </Badge>
+              <span class="text-[11px] text-muted-foreground">
+                {ddm.failed
+                  ? ddm.failureCount > 1
+                    ? `Apple reports the last update failed ${ddm.failureCount} times.`
+                    : "Apple reports the last update failed."
+                  : ddm.installState
+                    ? `State: ${ddm.installState}.`
+                    : "Apple reports this update as pending install."}
+              </span>
             </span>
-          ) : undefined;
+          );
         })(),
       },
       { label: "Disk size", value: device.diskTotal },
@@ -1791,6 +1841,17 @@ export default function DeviceDetailPage() {
                     </Show>
                     <Show when={osCompliance()}>
                       {(compliance) => <OsComplianceTag info={compliance()} />}
+                    </Show>
+                    <Show when={ddmUpdate()}>
+                      {(ddm) => (
+                        <Badge variant={ddm().failed ? "warning" : "info"}>
+                          {ddm().failed
+                            ? "Update failed"
+                            : ddm().pending
+                              ? `${ddm().pending} pending`
+                              : "Update pending"}
+                        </Badge>
+                      )}
                     </Show>
                   </div>
                 </div>
@@ -3226,11 +3287,16 @@ export default function DeviceDetailPage() {
                         </Show>
                         <Show when={supports("schedule-os-update")}>
                           <div class="rounded-lg border border-border p-3">
-                            <p class="text-[12.5px] font-medium text-foreground">macOS update</p>
+                            <p class="text-[12.5px] font-medium text-foreground">
+                              OS update command
+                            </p>
                             <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
-                              Sends Apple's <code class="font-mono">ScheduleOSUpdate</code> command.
-                              It runs on the next check-in and may restart the Mac. Apple has no
-                              absolute deadline; <em>Install later</em> lets the user postpone it.
+                              Sends Apple's <code class="font-mono">ScheduleOSUpdate</code>
+                              command. It runs on the next check-in and may restart the device.
+                              Apple has no absolute deadline; <em>Install later</em> lets the user
+                              postpone it. iOS/iPadOS 17+ normally receive the tenant policy through
+                              Apple's DDM declaration instead, so this command is only advertised
+                              when DDM is unavailable (below 17 or legacy delivery).
                             </p>
                             <div class="mt-2 grid gap-2 sm:grid-cols-2">
                               <Field label="Install action">
@@ -3279,7 +3345,7 @@ export default function DeviceDetailPage() {
 
                                 if (
                                   window.confirm(
-                                    "Request the latest macOS update on this device? The command is delivered on its next check-in and may restart it.",
+                                    "Request the latest OS update on this device? The command is delivered on its next check-in and may restart it.",
                                   )
                                 )
                                   command.mutate({
@@ -3295,7 +3361,7 @@ export default function DeviceDetailPage() {
                                   });
                               }}
                             >
-                              Request macOS update
+                              Request OS update
                             </Button>
                           </div>
                         </Show>

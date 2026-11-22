@@ -6,18 +6,19 @@ legacy `.mobileconfig` profiles where DDM does not cover the setting.
 
 ## What is supported
 
-| Area       | Support                                                                                |
-| ---------- | -------------------------------------------------------------------------------------- |
-| Enrollment | Profile link, optional password, QR code, device cap, asset tag                        |
-| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation                            |
-| Push       | Tenant APNs certificate; direct, mTLS or relay transport                               |
-| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`                |
-| Zero-touch | ABM/ADE assignment, automatic enrollment endpoint, setup gating and Return to Service  |
-| Apps       | VPP/Apps & Books device licences; manifest, store and uploaded `.pkg` install commands |
-| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`                         |
-| Users      | macOS/Shared iPad user channel, per-user push and profiles, BYOD profile               |
-| Inventory  | DDM status items and `InstalledApplicationList`                                        |
-| Health     | Derived enrollment/declaration/disk/FileVault/battery health                           |
+| Area       | Support                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| Enrollment | Profile link, optional password, QR code, device cap, asset tag                              |
+| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation                                  |
+| Push       | Tenant APNs certificate; direct, mTLS or relay transport                                     |
+| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`                      |
+| Zero-touch | ABM/ADE assignment, automatic enrollment endpoint, setup gating and Return to Service        |
+| Apps       | VPP/Apps & Books device licences; manifest, store and uploaded `.pkg` install commands       |
+| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`                               |
+| Users      | macOS/Shared iPad user channel, per-user push and profiles, BYOD profile                     |
+| Inventory  | DDM status items and `InstalledApplicationList`                                              |
+| OS updates | DDM software-update enforcement on macOS 14+/iOS 17+/iPadOS 17+; `ScheduleOSUpdate` fallback |
+| Health     | Derived enrollment/declaration/disk/FileVault/battery health                                 |
 
 ## Prerequisites
 
@@ -304,7 +305,7 @@ Push transports:
 | ---------------------------- | ----------------------------------------- |
 | Single-tenant Node / gateway | Direct HTTP/2 with the tenant certificate |
 | Single-tenant Worker         | Workers mTLS binding                      |
-| Hosted multi-tenant Cloud    | HMAC-signed requests to `apps/services` |
+| Hosted multi-tenant Cloud    | HMAC-signed requests to `apps/services`   |
 
 Without a push transport, devices still converge by polling at their normal check-in
 interval. Delivery outcomes are recorded per device and exposed through
@@ -343,6 +344,7 @@ whose key does not match cannot sign a push even if its expiry date is fine.
 | `install-app`           | Requires `manifestUrl` or `iTunesStoreId`                                                                                  |
 | `collect-security-info` | Requests FileVault/bootstrap-token state                                                                                   |
 | `refresh-applications`  | Replaces installed-application inventory                                                                                   |
+| `schedule-os-update`    | `ScheduleOSUpdate` on macOS; iOS/iPadOS only where the DDM declaration is unavailable (below 17 or legacy delivery)        |
 
 Every action except `sync`, `collect-security-info` and `refresh-applications` requires a
 step-up confirmation in the browser. See [Security](/manage/security).
@@ -380,7 +382,12 @@ pending actions, and a reported inventory reconciles installs that already lande
   [User-scoped policies](/reference/user-scoped-policies/).
 - FileVault and installed-app inventory are fixture-tested but not yet validated on real
   supervised hardware. CMS-wrapped personal recovery keys need an operator decryption step.
-- There is no automatic APNs renewal, CRL/OCSP endpoint or compliance engine.
+- There is no automatic APNs renewal, CRL/OCSP endpoint or general declarative compliance
+  engine. OS update compliance comes from the tenant OS policy and DDM status items; see
+  [OS version management](/manage/os-versions).
+- The DDM software-update declaration targets the exact minimum version. Mattrax has no
+  GDMF lookup for iOS/iPadOS, so a withdrawn target can leave the declaration active
+  without an update.
 
 ## API endpoints
 
