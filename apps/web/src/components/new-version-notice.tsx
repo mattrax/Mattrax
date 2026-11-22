@@ -1,6 +1,7 @@
+import { useLocation } from "@solidjs/router";
 import { createEffect, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
-import { RefreshCw, X } from "~/components/ui/icons";
+import { RefreshCw } from "~/components/ui/icons";
 import {
   dismissDeploymentNotice,
   markDeploymentNoticeShown,
@@ -9,11 +10,35 @@ import {
 } from "~/lib/skew-protection";
 
 /**
+ * Routes that render the dashboard shell. The shell carries its own compact
+ * update affordance above the account menu, so a second floating notice would
+ * duplicate it.
+ */
+const APP_SHELL_PREFIXES = [
+  "/dashboard",
+  "/account",
+  "/t/",
+  "/tenants",
+  "/settings",
+  "/admin",
+] as const;
+
+const matchesPrefix = (pathname: string, prefix: string) =>
+  pathname === prefix || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
+
+export const usesAppShell = (pathname: string): boolean =>
+  APP_SHELL_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix));
+
+/**
  * A new deployment is serving this origin while the tab still runs the old
  * bundle. The notice is deliberate rather than automatic: reloading can discard
  * an in-progress form, and a tab that keeps working does not need interrupting.
+ *
+ * Outside the dashboard this is a bottom-right toast. Inside the dashboard the
+ * sidebar shows the update above the account menu instead.
  */
 export function NewVersionNotice() {
+  const location = useLocation();
   let announced: string | null = null;
 
   // Persist only after the notice has rendered. Polling dedupes while it is
@@ -28,13 +53,15 @@ export function NewVersionNotice() {
     },
   );
 
+  const showToast = () => pendingDeployment() !== null && !usesAppShell(location.pathname);
+
   return (
-    <div class="pointer-events-none fixed inset-x-0 top-24 z-[65] flex flex-col items-center gap-2 px-4">
+    <div class="pointer-events-none fixed inset-x-0 bottom-0 z-[65] flex justify-end p-4 sm:p-6">
       {/* Keep the live region permanently mounted and empty until there is an
           update; inserting the region and its text together is unreliable in
           several screen readers. */}
-      <div role="status" aria-live="polite" class="pointer-events-none w-full max-w-md">
-        <Show when={pendingDeployment()}>
+      <div role="status" aria-live="polite" class="pointer-events-none w-full max-w-sm">
+        <Show when={showToast()}>
           <div class="pointer-events-auto flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-[var(--shadow-popover)]">
             <span
               aria-hidden="true"
@@ -47,23 +74,15 @@ export function NewVersionNotice() {
               <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
                 Reload to get the latest changes. This page keeps working until you do.
               </p>
-              <div class="mt-2.5 flex items-center gap-2">
+              <div class="mt-2.5 flex items-center gap-1.5">
                 <Button size="sm" onClick={reloadForDeployment}>
                   Reload
                 </Button>
                 <Button size="sm" variant="ghost" onClick={dismissDeploymentNotice}>
-                  Not now
+                  Later
                 </Button>
               </div>
             </div>
-            <button
-              type="button"
-              aria-label="Dismiss update notice"
-              class="rounded p-1 text-muted-foreground hover:bg-hover hover:text-foreground"
-              onClick={dismissDeploymentNotice}
-            >
-              <X class="size-3.5" />
-            </button>
           </div>
         </Show>
       </div>
