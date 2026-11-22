@@ -58,7 +58,7 @@ describe("SCEP CA lifetime", () => {
     expect(description.notBefore.toISOString()).toBe(now.toISOString());
     expect(description.notAfter.getTime()).toBe(now.getTime() + SCEP_CA_LIFETIME_DAYS * DAY);
     // The certificate is self-describing: the tenant id is in the OU.
-    const certificate = pemToCert(stored.certPem);
+    const certificate = await pemToCert(stored.certPem);
 
     const ou = certificate.subject.typesAndValues.find(
       (attribute) => attribute.type === "2.5.4.11",

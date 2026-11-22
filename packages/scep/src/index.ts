@@ -10,6 +10,8 @@ export * from "./crypto.js";
 
 export * from "./pkcs7.js";
 
+export { loadPkijs } from "./pkijs.js";
+
 export * from "./repository.js";
 
 export * from "./service.js";

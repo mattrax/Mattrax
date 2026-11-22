@@ -19,7 +19,7 @@ describe("APNs certificate parsing", () => {
       notAfter: expires,
     });
 
-    const parsed = parseApnsCertificate(pem);
+    const parsed = await parseApnsCertificate(pem);
     expect(parsed.topic).toBe("com.apple.mgmt.External.abc123");
     expect(parsed.commonName).toBe("Acme MDM");
     expect(Math.floor(parsed.notAfter.getTime() / 1000)).toBe(Math.floor(expires.getTime() / 1000));

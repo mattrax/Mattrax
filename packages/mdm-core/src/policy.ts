@@ -1149,7 +1149,7 @@ export const buildLegacyProfile = async (
     let der: Uint8Array;
 
     try {
-      der = certificateDer(pem);
+      der = await certificateDer(pem);
     } catch {
       return null;
     }
@@ -1211,7 +1211,7 @@ export const applyEscrowCertificate = async (
     };
 
   const payloads = payloadsFromMobileconfig(inspection.plist).map((payload) => ({ ...payload }));
-  const der = certificateDer(certificatePem);
+  const der = await certificateDer(certificatePem);
 
   const escrowPayload = payloads.find(
     (payload) => plistText(payload.PayloadType) === ESCROW_PAYLOAD_TYPE,

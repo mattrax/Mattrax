@@ -136,7 +136,7 @@ export const ScepService = Layer.effect(
           const valid = yield* Effect.tryPromise({
             try: async () => {
               for (const anchorPem of anchorPems) {
-                const anchor = pemToCert(anchorPem);
+                const anchor = await pemToCert(anchorPem);
 
                 if (await signer.verify(anchor)) return true;
               }

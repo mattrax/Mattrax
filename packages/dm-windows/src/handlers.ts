@@ -36,17 +36,19 @@ const escapeXml = (value: string) =>
 const fallbackFaultEnvelope = (message: string) =>
   `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Body><s:Fault><s:Code><s:Value>s:Receiver</s:Value></s:Code><s:Reason><s:Text xml:lang="en-us">${escapeXml(message)}</s:Text></s:Reason></s:Fault></s:Body></s:Envelope>`;
 
-/** The fault encoder can itself fail (for example on a serialization defect). */
-function encodeFault(service: WindowsMdmService.Service, message: string) {
-  try {
-    const encoded = Effect.runSync(service.fault(message));
-
-    if (encoded.trim()) return encoded;
-  } catch {
-    // Fall through to a minimal, fixed envelope.
-  }
-
-  return fallbackFaultEnvelope(message);
+/**
+ * The fault encoder can itself fail (for example on a serialization defect).
+ * `fault` is async because the protocol implementation is imported on first
+ * use, so this must be composed with `yield*` rather than run synchronously.
+ */
+function encodeFault(
+  service: WindowsMdmService.Service,
+  message: string,
+): Effect.Effect<string, never> {
+  return service.fault(message).pipe(
+    Effect.catchCause(() => Effect.succeed(fallbackFaultEnvelope(message))),
+    Effect.map((encoded) => (encoded.trim() ? encoded : fallbackFaultEnvelope(message))),
+  );
 }
 
 /**
@@ -92,11 +94,9 @@ function soapHandler(
       const body = yield* textRequest(request);
 
       const response = yield* handle(service, body, requestContext(request)).pipe(
-        Effect.matchCause({
-          onSuccess: (value) => value,
-          onFailure: (cause) =>
-            encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
-        }),
+        Effect.catchCause((cause) =>
+          encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
+        ),
       );
 
       return HttpServerResponse.text(response, {
@@ -110,13 +110,13 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
     const service = yield* WindowsMdmService;
     const body = yield* textRequest(request);
 
-    const response = yield* service.management(body, requestContext(request)).pipe(
-      Effect.matchCause({
-        onSuccess: (value) => value,
-        onFailure: (cause) =>
+    const response = yield* service
+      .management(body, requestContext(request))
+      .pipe(
+        Effect.catchCause((cause) =>
           encodeFault(service, describeFailure(cause, "Invalid SyncML request")),
-      }),
-    );
+        ),
+      );
 
     return HttpServerResponse.text(response, { contentType: "application/vnd.syncml.dm+xml" });
   });

@@ -85,16 +85,18 @@ describe("credentialLevel", () => {
 describe("parseCertificateNotAfter", () => {
   it("reads notAfter from a PEM certificate", async () => {
     const notAfter = new Date("2027-04-01T00:00:00.000Z");
-    const parsed = parseCertificateNotAfter(await makeCertificate(notAfter));
+    const parsed = await parseCertificateNotAfter(await makeCertificate(notAfter));
     expect(parsed?.toISOString()).toBe(notAfter.toISOString());
   });
 
-  it("returns null instead of throwing for unparseable input", () => {
-    expect(parseCertificateNotAfter(undefined)).toBeNull();
-    expect(parseCertificateNotAfter("")).toBeNull();
-    expect(parseCertificateNotAfter("not a pem")).toBeNull();
+  it("returns null instead of throwing for unparseable input", async () => {
+    expect(await parseCertificateNotAfter(undefined)).toBeNull();
+    expect(await parseCertificateNotAfter("")).toBeNull();
+    expect(await parseCertificateNotAfter("not a pem")).toBeNull();
     expect(
-      parseCertificateNotAfter("-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----"),
+      await parseCertificateNotAfter(
+        "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----",
+      ),
     ).toBeNull();
   });
 });

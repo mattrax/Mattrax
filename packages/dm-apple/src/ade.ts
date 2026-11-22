@@ -14,17 +14,14 @@
  * issue device identities, so chain validity windows are deliberately not
  * enforced for that anchor.
  */
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { Effect, Schema } from "effect";
 import { parsePlist, PlistValue } from "@mattrax/plist";
+import { loadPkijs } from "./pkijs.js";
+import type { PkijsModule } from "./pkijs.js";
 
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+// pkijs is loaded on first use (see `loadPkijs`) so an enrollment request that
+// is not CMS signed never pays for it, and it stays out of the startup closure.
 
 /** Bound the CMS body before ASN.1 parsing. */
 export const MAX_ADE_MACHINE_INFO_BYTES = 64 * 1024;
@@ -111,10 +108,10 @@ const decodePem = (pem: string): Uint8Array => {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 };
 
-const parseCertificate = (pem: string): pkijs.Certificate =>
+const parseCertificate = (pkijs: PkijsModule, pem: string): pkijs.Certificate =>
   pkijs.Certificate.fromBER(toArrayBuffer(decodePem(pem)));
 
-const isCertificateAuthority = (certificate: pkijs.Certificate): boolean => {
+const isCertificateAuthority = (pkijs: PkijsModule, certificate: pkijs.Certificate): boolean => {
   const extension = certificate.extensions?.find((item) => item.extnID === BASIC_CONSTRAINTS_OID);
 
   return extension?.parsedValue instanceof pkijs.BasicConstraints
@@ -122,7 +119,7 @@ const isCertificateAuthority = (certificate: pkijs.Certificate): boolean => {
     : false;
 };
 
-const parseSignedData = (bytes: Uint8Array) => {
+const parseSignedData = (pkijs: PkijsModule, bytes: Uint8Array) => {
   if (bytes.byteLength === 0)
     throw new AppleAdeEnrollmentError("invalid_request", "The enrollment request is empty");
 
@@ -156,11 +153,12 @@ const parseSignedData = (bytes: Uint8Array) => {
 };
 
 const verifyWithAnchors = async (
+  pkijs: PkijsModule,
   signer: pkijs.Certificate,
   anchors: ReadonlyArray<pkijs.Certificate>,
 ): Promise<boolean> => {
   for (const anchor of anchors) {
-    if (!isCertificateAuthority(anchor)) continue;
+    if (!isCertificateAuthority(pkijs, anchor)) continue;
 
     if (!signer.issuer.isEqual(anchor.subject)) continue;
 
@@ -185,7 +183,9 @@ export async function parseAppleAdeMachineInfo(
   input: Uint8Array,
   options: { readonly anchors?: ReadonlyArray<string> } = {},
 ): Promise<AppleAdeMachineInfo> {
-  const { signedData, certificates } = parseSignedData(input);
+  const pkijs = await loadPkijs();
+
+  const { signedData, certificates } = parseSignedData(pkijs, input);
 
   if (signedData.signerInfos.length !== 1 || certificates.length === 0)
     throw new AppleAdeEnrollmentError(
@@ -224,9 +224,11 @@ export async function parseAppleAdeMachineInfo(
       "The enrollment request signature is invalid",
     );
 
-  const anchors = (options.anchors ?? [APPLE_DEVICE_CA_PEM, APPLE_ROOT_PEM]).map(parseCertificate);
+  const anchors = (options.anchors ?? [APPLE_DEVICE_CA_PEM, APPLE_ROOT_PEM]).map((pem) =>
+    parseCertificate(pkijs, pem),
+  );
 
-  if (!(await verifyWithAnchors(result.signerCertificate, anchors)))
+  if (!(await verifyWithAnchors(pkijs, result.signerCertificate, anchors)))
     throw new AppleAdeEnrollmentError(
       "untrusted_signer",
       "The enrollment request was not signed by an Apple device identity",

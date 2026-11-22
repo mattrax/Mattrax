@@ -489,30 +489,9 @@ import type {
   EnrollmentAttemptPlatform,
 } from "@mattrax/enterprise-backend";
 import type { AppleBusinessManagerError } from "@mattrax/apple-business-manager";
-import {
-  appleBusinessManagerInfo,
-  assignAppleBusinessManagerDevice,
-  clearAppleBusinessManagerToken,
-  createAdeProfileToken,
-  loadAppleBusinessManager,
-  createAbmClient,
-  openAbmCredential,
-  readAdeProfileToken,
-  saveAppleBusinessManagerToken,
-  syncAppleBusinessManagerDevices,
-} from "@mattrax/apple-business-manager";
+import type * as AppleBusinessManager from "@mattrax/apple-business-manager";
 import type { AppleApiConfig } from "@mattrax/apple-business-manager";
 import type { VppError } from "@mattrax/apple-business-manager";
-import {
-  assignVppLicence,
-  clearVppToken,
-  findVppAsset,
-  findVppAssetByStoreId,
-  releaseVppLicence,
-  saveVppToken,
-  syncVppAssets,
-  vppInfo,
-} from "@mattrax/apple-business-manager";
 import {
   countDeviceHealth,
   groupDeviceHealthReasons,
@@ -600,6 +579,76 @@ import type {
   EnterpriseSchema,
 } from "@mattrax/enterprise-backend";
 import type { EmailTransport } from "@mattrax/email";
+
+/**
+ * Apple Business Manager and the volume-purchase client are deployment
+ * administration paths, not part of a normal request. The module is imported on
+ * first use so its evaluation stays off the request path; these wrappers keep
+ * the call sites identical to a static import.
+ */
+type AppleBusinessManagerModule = typeof AppleBusinessManager;
+
+const loadAppleBusinessManagerModule = () => import("@mattrax/apple-business-manager");
+
+const withAppleBusinessManager = <A, E>(
+  run: (module: AppleBusinessManagerModule) => Effect.Effect<A, E>,
+): Effect.Effect<A, E> => Effect.flatMap(Effect.promise(loadAppleBusinessManagerModule), run);
+
+const loadAppleBusinessManager: AppleBusinessManagerModule["loadAppleBusinessManager"] = (
+  ...args
+) => withAppleBusinessManager((module) => module.loadAppleBusinessManager(...args));
+
+const appleBusinessManagerInfo: AppleBusinessManagerModule["appleBusinessManagerInfo"] = (
+  ...args
+) => withAppleBusinessManager((module) => module.appleBusinessManagerInfo(...args));
+
+const saveAppleBusinessManagerToken: AppleBusinessManagerModule["saveAppleBusinessManagerToken"] = (
+  ...args
+) => withAppleBusinessManager((module) => module.saveAppleBusinessManagerToken(...args));
+
+const clearAppleBusinessManagerToken: AppleBusinessManagerModule["clearAppleBusinessManagerToken"] =
+  (...args) => withAppleBusinessManager((module) => module.clearAppleBusinessManagerToken(...args));
+
+const syncAppleBusinessManagerDevices: AppleBusinessManagerModule["syncAppleBusinessManagerDevices"] =
+  (...args) =>
+    withAppleBusinessManager((module) => module.syncAppleBusinessManagerDevices(...args));
+
+const assignAppleBusinessManagerDevice: AppleBusinessManagerModule["assignAppleBusinessManagerDevice"] =
+  (...args) =>
+    withAppleBusinessManager((module) => module.assignAppleBusinessManagerDevice(...args));
+
+const createAdeProfileToken: AppleBusinessManagerModule["createAdeProfileToken"] = (...args) =>
+  withAppleBusinessManager((module) => module.createAdeProfileToken(...args));
+
+const readAdeProfileToken: AppleBusinessManagerModule["readAdeProfileToken"] = (...args) =>
+  withAppleBusinessManager((module) => module.readAdeProfileToken(...args));
+
+const openAbmCredential: AppleBusinessManagerModule["openAbmCredential"] = async (...args) =>
+  (await loadAppleBusinessManagerModule()).openAbmCredential(...args);
+
+const vppInfo: AppleBusinessManagerModule["vppInfo"] = (...args) =>
+  withAppleBusinessManager((module) => module.vppInfo(...args));
+
+const saveVppToken: AppleBusinessManagerModule["saveVppToken"] = (...args) =>
+  withAppleBusinessManager((module) => module.saveVppToken(...args));
+
+const clearVppToken: AppleBusinessManagerModule["clearVppToken"] = (...args) =>
+  withAppleBusinessManager((module) => module.clearVppToken(...args));
+
+const syncVppAssets: AppleBusinessManagerModule["syncVppAssets"] = (...args) =>
+  withAppleBusinessManager((module) => module.syncVppAssets(...args));
+
+const findVppAsset: AppleBusinessManagerModule["findVppAsset"] = (...args) =>
+  withAppleBusinessManager((module) => module.findVppAsset(...args));
+
+const findVppAssetByStoreId: AppleBusinessManagerModule["findVppAssetByStoreId"] = (...args) =>
+  withAppleBusinessManager((module) => module.findVppAssetByStoreId(...args));
+
+const assignVppLicence: AppleBusinessManagerModule["assignVppLicence"] = (...args) =>
+  withAppleBusinessManager((module) => module.assignVppLicence(...args));
+
+const releaseVppLicence: AppleBusinessManagerModule["releaseVppLicence"] = (...args) =>
+  withAppleBusinessManager((module) => module.releaseVppLicence(...args));
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -3953,21 +4002,19 @@ export const createEnterpriseService = ({
         ),
       );
 
-      let certificate: string;
-
-      try {
-        const der = certificateDer(escrowKey.certificatePem);
-        let binary = "";
-
-        for (const byte of der) binary += String.fromCharCode(byte);
-        certificate = btoa(binary);
-      } catch {
-        return yield* Effect.fail(
+      const escrowCertificateDer = yield* Effect.tryPromise({
+        try: () => certificateDer(escrowKey.certificatePem),
+        catch: () =>
           new EnterpriseInternal({
             message: "The stored FileVault escrow certificate could not be encoded",
           }),
-        );
-      }
+      });
+
+      let binary = "";
+
+      for (const byte of escrowCertificateDer) binary += String.fromCharCode(byte);
+
+      const certificate = btoa(binary);
 
       return {
         KeyType: "personal",
@@ -14517,7 +14564,10 @@ export const createEnterpriseService = ({
           });
 
           if (credential.kind !== "abm_api") return undefined;
-          const client = createAbmClient(appleApi, credential.scope);
+
+          const client = yield* withAppleBusinessManager((module) =>
+            Effect.sync(() => module.createAbmClient(appleApi, credential.scope)),
+          );
           const token = yield* Effect.tryPromise(() => client.exchangeAccessToken(credential));
           const apps = yield* Effect.tryPromise(() => client.listApps(token.accessToken));
 
