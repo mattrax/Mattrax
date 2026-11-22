@@ -3,11 +3,11 @@ import { useNavigate } from "~/lib/navigation";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, Errored, onSettled, Show } from "solid-js";
+import { createSignal, Errored, lazy, Loading, onSettled, Show } from "solid-js";
 import { ErrorPanel } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
-import { PolicyDesigner } from "~/components/mdm/policy-designer";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
+import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
@@ -26,6 +26,17 @@ import type { PolicyDraft } from "~/lib/policy-designer/build";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";
+
+/**
+ * The designer carries the policy schema, ADMX import and preview engine. It
+ * is the only thing this route needs that is heavier than its shell, so load
+ * it beside the route instead of blocking the policy header and toolbar.
+ */
+const LazyPolicyDesigner = lazy(() =>
+  import("~/components/mdm/policy-designer").then((module) => ({
+    default: module.PolicyDesigner,
+  })),
+);
 
 const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
@@ -349,33 +360,41 @@ export default function PolicyDesignerPage() {
               selections when both policies are already cached. */}
           <Show keyed when={`${params.policyId}:${draftEpoch()}`}>
             {(_identity) => (
-              <PolicyDesigner
-                mode="dashboard"
-                pageActions={pageActions()}
-                initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
-                persistedDraft={
-                  configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+              <Loading
+                fallback={
+                  <div class="flex h-full items-center justify-center">
+                    <LoadingState label="Loading policy designer…" size={20} />
+                  </div>
                 }
-                storageKey={storageKey()}
-                saving={save.isPending}
-                saveDisabled={!writable() || !enabled()}
-                disabledHint={
-                  !enabled()
-                    ? "Enable the policy to save designer changes."
-                    : !writable()
-                      ? "Your role cannot save policies."
+              >
+                <LazyPolicyDesigner
+                  mode="dashboard"
+                  pageActions={pageActions()}
+                  initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
+                  persistedDraft={
+                    configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+                  }
+                  storageKey={storageKey()}
+                  saving={save.isPending}
+                  saveDisabled={!writable() || !enabled()}
+                  disabledHint={
+                    !enabled()
+                      ? "Enable the policy to save designer changes."
+                      : !writable()
+                        ? "Your role cannot save policies."
+                        : undefined
+                  }
+                  canDeploy={writable() && enabled()}
+                  error={save.error}
+                  onSave={
+                    writable() && enabled()
+                      ? (draft) => {
+                          void save.mutate(draft);
+                        }
                       : undefined
-                }
-                canDeploy={writable() && enabled()}
-                error={save.error}
-                onSave={
-                  writable() && enabled()
-                    ? (draft) => {
-                        void save.mutate(draft);
-                      }
-                    : undefined
-                }
-              />
+                  }
+                />
+              </Loading>
             )}
           </Show>
         </Show>

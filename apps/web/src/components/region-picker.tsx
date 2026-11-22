@@ -15,6 +15,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
+import { flagOf, regionName } from "~/components/region-label";
 
 const GLOBE_SIZE = 480;
 const GLOBE_CENTER = GLOBE_SIZE / 2;
@@ -63,32 +64,6 @@ const fetchWorld = (): Promise<World> => {
   return worldPromise;
 };
 
-let regionNames: Intl.DisplayNames | undefined;
-
-try {
-  regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-} catch {
-  regionNames = undefined;
-}
-
-const regionName = (code: string): string => {
-  const normalized = code.trim().toUpperCase();
-
-  if (normalized.length !== 2) return normalized;
-
-  try {
-    return regionNames?.of(normalized) ?? normalized;
-  } catch {
-    return normalized;
-  }
-};
-
-const flagOf = (code: string): string =>
-  code
-    .trim()
-    .toUpperCase()
-    .replaceAll(/[A-Z]/g, (character) => String.fromCodePoint(127397 + character.charCodeAt(0)));
-
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(maximum, Math.max(minimum, value));
 
@@ -131,8 +106,10 @@ export function RegionPicker(props: {
   value: string;
   disabled?: boolean;
   onChange: (code: string) => void;
+  /** Open the globe on mount; used when a placeholder click wakes the picker. */
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(props.initialOpen ?? false);
   const [world, setWorld] = createSignal<World>();
   const [mapState, setMapState] = createSignal<"idle" | "loading" | "ready" | "error">("idle");
   const [selected, setSelected] = createSignal((props.value || "US").toUpperCase());

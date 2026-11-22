@@ -1,5 +1,4 @@
 import { Effect, Option, Schema } from "effect";
-import { parse as parseYaml } from "yaml";
 import { PortablePolicy, PortablePolicyDocument } from "@mattrax/enterprise-domain/client";
 import type { PolicyRow } from "@mattrax/enterprise-domain/client";
 
@@ -121,8 +120,22 @@ export const parsePolicyImportText = (
     if (trimmed.length > POLICY_IMPORT_MAX_CHARS)
       return yield* Effect.fail("The policy document is too large to import.");
 
-    const decoded = yield* Effect.try({
-      try: () => Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parseYaml(trimmed))),
+    const decoded = yield* Effect.tryPromise({
+      try: async () => {
+        let value: unknown;
+
+        // Most imports are JSON. Parsing that first keeps the YAML parser out
+        // of the page and downloads it only when a file really is YAML.
+        try {
+          value = JSON.parse(trimmed);
+        } catch {
+          const { parse } = await import("yaml");
+
+          value = parse(trimmed);
+        }
+
+        return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(value));
+      },
       catch: () => `${source} is not valid JSON or YAML.`,
     });
 
