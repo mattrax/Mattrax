@@ -111,7 +111,7 @@ export const makeServicesBillingService = ({
     name: organization.name,
   });
 
-  const usageBody = (usage: BillingUsage): Record<string, Schema.Json> => ({
+  const usageBody = (usage: BillingUsage) => ({
     organizationId: usage.organizationId ?? null,
     deviceCount: usage.deviceCount,
     devicesUsed: usage.devicesUsed ?? usage.deviceCount,
