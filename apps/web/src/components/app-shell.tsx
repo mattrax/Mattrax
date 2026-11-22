@@ -142,7 +142,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-10 w-full min-w-0 items-center gap-2.5 rounded-lg border border-border bg-card px-2 text-left shadow-[0_1px_2px_rgb(24_24_22/0.04)] outline-none transition-[border-color,background-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 data-expanded:border-border-strong"
+        class="group flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover"
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         {/* The name is composed from the visible content so assistive tech and
@@ -150,7 +150,7 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
         <span class="sr-only">Switch tenant: </span>
         <span
           aria-hidden="true"
-          class="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface text-[9.5px] font-[600] leading-none text-foreground/80 ring-1 ring-inset ring-border"
+          class="flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-card text-[8.5px] font-[600] leading-none text-foreground/70 ring-1 ring-inset ring-border transition-colors group-hover:text-foreground"
         >
           <Show when={active()} fallback={<Building2 class="size-3.5" />}>
             {(tenant) => tenantInitials(tenant().name)}
@@ -161,28 +161,18 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             when={!loading()}
             fallback={<span class="block h-2.5 w-24 animate-pulse rounded-full bg-hover" />}
           >
-            <span class="block truncate text-[12.5px] font-[520] leading-4 text-foreground">
+            <span class="block truncate text-[12.5px] font-[500] leading-4 text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
               <Show when={active()} fallback="Select tenant">
                 {(tenant) => tenant().name}
               </Show>
             </span>
-            <Show when={active()}>
-              {(tenant) => (
-                <span class="mt-0.5 block truncate text-[10.5px] leading-3.5 text-muted-foreground">
-                  <span class="capitalize">{tenantRoleName(tenant()) ?? tenant().role}</span>
-                  <span class="px-1 text-subtle-foreground/50">·</span>
-                  <span class="normal-case">{tenant().slug}</span>
-                </span>
-              )}
-            </Show>
           </Show>
         </span>
-        <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+        <ChevronsUpDown class="size-3.5 shrink-0 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="w-[288px]">
+      <DropdownMenuContent class="w-[272px]">
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Tenants</DropdownMenuLabel>
           <Show
             when={tenants().length > 0}
             fallback={
@@ -203,10 +193,11 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
                 {(tenant) => (
                   <DropdownMenuRadioItem
                     value={tenant.id}
+                    indicator="check"
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
-                    class="h-10 cursor-pointer"
+                    class="h-10 cursor-pointer gap-2.5 pl-2 pr-8"
                   >
-                    <span class="flex size-5 shrink-0 items-center justify-center rounded-[4px] bg-hover text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
+                    <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
                       {tenantInitials(tenant.name)}
                     </span>
                     <span class="min-w-0 flex-1 leading-none">
@@ -226,8 +217,8 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
           </Show>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate("/tenants/new")} class="gap-2.5">
-          <span class="flex size-5 items-center justify-center text-muted-foreground">
+        <DropdownMenuItem onSelect={() => navigate("/tenants/new")} class="h-9 gap-2.5">
+          <span class="flex size-6 items-center justify-center rounded-[5px] border border-dashed border-border text-muted-foreground">
             <Plus class="size-3.5" />
           </span>
           Create tenant
@@ -880,7 +871,7 @@ export function AppShell(props: {
                 <BrandLogo class="h-3" />
               </a>
               <span class="mx-1 hidden h-3.5 w-px bg-border lg:block" aria-hidden="true" />
-              <div class="min-w-0 flex-1">
+              <div class="hidden min-w-0 flex-1 sm:block">
                 <ShellBreadcrumb
                   tenantName={tenantName()}
                   tenantHref={
@@ -889,7 +880,7 @@ export function AppShell(props: {
                   label={pageLabel()}
                 />
               </div>
-              <div class="flex shrink-0 items-center gap-1">
+              <div class="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
                 <SearchButton compact />
                 <Button
                   as="a"
