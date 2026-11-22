@@ -3,7 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import {
   DEFAULT_BRAND_COLOR,
@@ -11,7 +11,6 @@ import {
   normalizeBrandColor,
   resolveTenantBranding,
   TENANT_IMPORT_MAX_BYTES,
-  validateTenantBranding,
   TenantImportRequest as TenantImportRequestSchema,
 } from "@mattrax/enterprise-domain/client";
 import type { TenantImportRequest, TenantImportResponse } from "@mattrax/enterprise-domain/client";
@@ -28,14 +27,13 @@ import {
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { RegionPicker } from "~/components/region-picker";
+import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import type { BackupRunInfo, MeResponse, TenantDetail } from "~/lib/enterprise";
+import type { BackupRunInfo } from "~/lib/enterprise";
 import {
-  combineRestores,
   optimisticallyRemoveCollectionItems,
   optimisticallyUpdateCollection,
-  optimisticUpdate,
 } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -43,8 +41,6 @@ import { tenantRoleName, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { withStepUp } from "~/lib/step-up";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
-import { rememberTenantAlias } from "~/lib/tenant";
-import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { downloadBlob } from "~/lib/download";
 import { resolveTenantId } from "~/lib/tenant";
 import { CutoverPanel } from "./cutover-panel";
@@ -98,23 +94,34 @@ export default function GeneralSettingsPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { can } = useCan();
-  const canWrite = () => can("tenant.write");
+  const draft = useTenantProfileDraft();
+  const {
+    name,
+    setName,
+    slug,
+    setSlug,
+    displayName,
+    setDisplayName,
+    logo,
+    setLogo,
+    supportEmail,
+    setSupportEmail,
+    brandColor,
+    setBrandColor,
+    appStoreRegion,
+    setAppStoreRegion,
+    autoUnlink,
+    setAutoUnlink,
+    brandingErrors,
+    tenant,
+  } = draft;
+  const canWrite = draft.canWrite;
   const canExport = () => can("tenant.export");
   const canImport = () => can("tenant.import");
   const canBackups = () => can("backups.read");
   const canRunBackup = () => can("backups.write");
   const canDelete = () => can("tenant.delete");
 
-  const tenant = useQuery(() => enterpriseQueries.tenant(params.tenantId));
-
-  const [name, setName] = createSignal("");
-  const [slug, setSlug] = createSignal("");
-  const [displayName, setDisplayName] = createSignal("");
-  const [logo, setLogo] = createSignal("");
-  const [supportEmail, setSupportEmail] = createSignal("");
-  const [brandColor, setBrandColor] = createSignal("");
-  const [appStoreRegion, setAppStoreRegion] = createSignal("");
-  const [autoUnlink, setAutoUnlink] = createSignal(false);
   const [confirm, setConfirm] = createSignal("");
   const [deleteOpen, setDeleteOpen] = createSignal(false);
   const [includeAudit, setIncludeAudit] = createSignal(false);
@@ -126,51 +133,9 @@ export default function GeneralSettingsPage() {
   const [importError, setImportError] = createSignal<unknown>();
   const [importing, setImporting] = createSignal(false);
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
-  const [saved, setSaved] = createSignal(false);
-  const [seeded, setSeeded] = createSignal(false);
-
-  const [baseline, setBaseline] = createSignal<{
-    name: string;
-    slug: string;
-    displayName: string;
-    logo: string;
-    supportEmail: string;
-    brandColor: string;
-    appStoreRegion: string;
-    autoUnlinkUnavailableApplications: boolean;
-  } | null>(null);
 
   let importFileInput: HTMLInputElement | undefined;
 
-  createEffect(
-    () => tenant.data?.id,
-    () => {
-      const data = tenant.data;
-
-      if (data) {
-        setName(data.name);
-        setSlug(data.slug);
-        setDisplayName(data.displayName ?? "");
-        setLogo(data.logo ?? "");
-        setSupportEmail(data.supportEmail ?? "");
-        setBrandColor(data.brandColor ?? "");
-        setAppStoreRegion(data.appStoreRegion ?? "");
-        setAutoUnlink(data.autoUnlinkUnavailableApplications ?? false);
-        setSeeded(true);
-      }
-    },
-  );
-
-  const brandingErrors = createMemo(() =>
-    validateTenantBranding({
-      displayName: displayName() || null,
-      logo: logo() || null,
-      supportEmail: supportEmail() || null,
-      brandColor: brandColor() || null,
-    }),
-  );
-
-  const hasBrandingErrors = () => Object.keys(brandingErrors()).length > 0;
   const colorValue = () => normalizeBrandColor(brandColor() || "") ?? DEFAULT_BRAND_COLOR;
 
   const preview = createMemo(() =>
@@ -182,103 +147,6 @@ export default function GeneralSettingsPage() {
       brandColor: brandColor() || null,
     }),
   );
-
-  const profile = () => ({
-    name: name(),
-    slug: slug(),
-    displayName: displayName(),
-    logo: logo(),
-    supportEmail: supportEmail(),
-    brandColor: brandColor(),
-    appStoreRegion: appStoreRegion().trim().toUpperCase(),
-    autoUnlinkUnavailableApplications: autoUnlink(),
-  });
-
-  const dirty = () => {
-    const current = baseline() ?? tenant.data;
-
-    if (!current || !seeded()) return false;
-
-    return (
-      name() !== current.name ||
-      slug() !== current.slug ||
-      displayName() !== (current.displayName ?? "") ||
-      logo() !== (current.logo ?? "") ||
-      supportEmail() !== (current.supportEmail ?? "") ||
-      brandColor() !== (current.brandColor ?? "") ||
-      appStoreRegion().trim().toUpperCase() !== (current.appStoreRegion ?? "") ||
-      autoUnlink() !== (current.autoUnlinkUnavailableApplications ?? false)
-    );
-  };
-
-  const unsaved = useUnsavedChanges(dirty, {
-    title: "Discard tenant changes?",
-    description: "The tenant profile or branding has edits that have not been saved.",
-  });
-
-  const save = useMutation(() => ({
-    mutationFn: () =>
-      enterprise.patchTenant(params.tenantId, {
-        name: name(),
-        slug: slug(),
-        displayName: displayName() || null,
-        logo: logo() || null,
-        supportEmail: supportEmail() || null,
-        brandColor: brandColor() || null,
-        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
-        autoUnlinkUnavailableApplications: autoUnlink(),
-      }),
-    onMutate: async () => {
-      const patch = {
-        name: name(),
-        slug: slug(),
-        displayName: displayName() || null,
-        logo: logo() || null,
-        supportEmail: supportEmail() || null,
-        brandColor: brandColor() || null,
-        appStoreRegion: appStoreRegion().trim().toUpperCase() || null,
-        autoUnlinkUnavailableApplications: autoUnlink(),
-      };
-
-      const tenantId = tenant.data?.id;
-
-      const restores = await Promise.all([
-        optimisticUpdate<TenantDetail>(qc, enterpriseKeys.tenant(params.tenantId), (current) => ({
-          ...current,
-          ...patch,
-        })),
-        // The shell and tenant switcher read branding from the membership list.
-        optimisticUpdate<MeResponse>(qc, enterpriseKeys.me(), (current) => ({
-          ...current,
-          tenants: current.tenants.map((membership) =>
-            membership.id === tenantId ? { ...membership, ...patch } : membership,
-          ),
-        })),
-      ]);
-
-      return combineRestores(restores);
-    },
-    onSuccess: () => {
-      setBaseline(profile());
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-
-      // A slug change changes the canonical address of every tenant page. A
-      // document load avoids racing the membership shell (which still has the
-      // old slug for a moment) and lands on server-resolved data.
-      if (slug() && slug() !== params.tenantId) {
-        if (tenant.data?.id) rememberTenantAlias(slug(), tenant.data.id);
-        window.location.replace(`/t/${encodeURIComponent(slug())}/settings`);
-
-        return;
-      }
-    },
-    onError: (_error, _variables, restore) => restore?.(),
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: enterpriseKeys.tenant(params.tenantId) });
-      void qc.invalidateQueries({ queryKey: enterpriseKeys.me() });
-    },
-  }));
 
   const del = useMutation(() => ({
     mutationFn: () => enterprise.deleteTenant(params.tenantId),
@@ -599,7 +467,6 @@ export default function GeneralSettingsPage() {
 
   return (
     <div class="grid gap-5">
-      {unsaved.prompt}
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
       <Panel
@@ -609,7 +476,7 @@ export default function GeneralSettingsPage() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            save.mutate();
+            draft.requestSave();
           }}
         >
           <div class="divide-y divide-border">
@@ -729,23 +596,11 @@ export default function GeneralSettingsPage() {
           </div>
           <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <Show when={tenant.data}>
-              <span class="text-xs text-muted-foreground">
-                Created {new Date(tenant.data.createdAt).toLocaleDateString()}
-              </span>
-            </Show>
-            <Show when={canWrite()}>
-              <Button
-                type="submit"
-                class="ml-auto"
-                disabled={save.isPending || hasBrandingErrors() || !dirty()}
-              >
-                {save.isPending ? "Saving…" : "Save changes"}
-              </Button>
-              <Show when={saved()}>
-                <span role="status" class="text-xs text-success-foreground">
-                  Saved.
+              {(data) => (
+                <span class="text-xs text-muted-foreground">
+                  Created {new Date(data().createdAt).toLocaleDateString()}
                 </span>
-              </Show>
+              )}
             </Show>
           </div>
           <Show when={!canWrite()}>
@@ -753,7 +608,6 @@ export default function GeneralSettingsPage() {
               Your role can view these settings but not change them.
             </ReadOnlyNotice>
           </Show>
-          <ErrorText error={save.error} />
         </form>
       </Panel>
 

@@ -62,7 +62,7 @@ test.describe("tenant settings", () => {
       .getByRole("navigation", { name: "Primary" })
       .getByRole("link", { name: "Devices" })
       .click();
-    const dialog = page.getByRole("dialog", { name: /discard tenant changes/i });
+    const dialog = page.getByRole("dialog", { name: /leave tenant settings/i });
     await expect(dialog).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings$`));
 
@@ -78,6 +78,52 @@ test.describe("tenant settings", () => {
     await dialog.getByRole("button", { name: "Discard" }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/devices$`));
     await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+  });
+
+  test("keeps a tenant draft across settings panes and saves from the bar", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Pane Draft Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings`);
+
+    await page.getByLabel(/^Name/).fill("Pane Draft Renamed");
+    const bar = page.getByRole("region", { name: "Tenant settings changes" });
+    await expect(bar).toContainText("Unsaved tenant changes");
+
+    const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
+    await tabs.getByRole("link", { name: "Administrators" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/administrators$`));
+    await expect(page.getByRole("dialog", { name: /leave tenant settings/i })).toHaveCount(0);
+    await expect(bar).toContainText("Unsaved tenant changes");
+
+    await tabs.getByRole("link", { name: "General" }).click();
+    await expect(page.getByLabel(/^Name/)).toHaveValue("Pane Draft Renamed");
+
+    await saveTenantSettings(page);
+    await expect(bar).toContainText("Tenant changes saved");
+  });
+
+  test("requires I understand before changing the tenant slug", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Slug Warning Tenant");
+    const nextSlug = `renamed-${Math.random().toString(36).slice(2, 8)}`;
+    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+
+    await page.getByLabel(/^Slug/).fill(nextSlug);
+    await page
+      .getByRole("region", { name: "Tenant settings changes" })
+      .getByRole("button", { name: "Save changes" })
+      .click();
+
+    const dialog = page.getByRole("dialog", {
+      name: /changing the tenant slug breaks existing URLs/i,
+    });
+    await expect(dialog).toBeVisible();
+    const confirm = dialog.getByRole("button", { name: "Change slug and save" });
+    await expect(confirm).toBeDisabled();
+
+    await dialog.getByRole("textbox").fill("I understand");
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    await page.waitForURL(new RegExp(`/t/${nextSlug}/settings$`), { timeout: 15_000 });
   });
 
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
