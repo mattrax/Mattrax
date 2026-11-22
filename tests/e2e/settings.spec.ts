@@ -157,6 +157,34 @@ test.describe("tenant settings", () => {
     ).toHaveText("Migration");
   });
 
+  test("picks an App Store region on the globe", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Region Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings`);
+
+    const trigger = page.getByRole("button", { name: /App Store region/ });
+    await expect(trigger).toContainText("Use default");
+
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Choose App Store region" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("textbox", { name: "Search countries" }).fill("Japan");
+    await dialog.getByRole("button", { name: /Japan/ }).click();
+    await dialog.getByRole("button", { name: "Use JP" }).click();
+    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    // The dialog's dismiss layer lingers while it animates out; a click in that
+    // window is treated as an outside press and swallowed.
+    await page.waitForTimeout(350);
+
+    await expect(trigger).toContainText("Japan");
+    await saveTenantSettings(page);
+
+    const detail = await page.evaluate(
+      async (tenantId: string) => (await fetch(`/api/v1/tenants/${tenantId}`)).json(),
+      tenant.id,
+    );
+    expect(detail.appStoreRegion).toBe("JP");
+  });
+
   test("shows the auditor role in administrator settings", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);

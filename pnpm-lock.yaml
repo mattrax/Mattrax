@@ -231,6 +231,14 @@ snapshots:
 					"version": "4.3.5",
 				},
 				"@tanstack/solid-query": "6.0.0-rc.5",
+				"@types/d3-geo": {
+					"specifier": "^3.1.1",
+					"version": "3.1.1",
+				},
+				"@types/geojson": {
+					"specifier": "^7946.0.16",
+					"version": "7946.0.16",
+				},
 				"@types/node": {
 					"specifier": "^26.6.6",
 					"version": "26.6.6",
@@ -261,6 +269,10 @@ snapshots:
 				"clsx": {
 					"specifier": "^2.1.1",
 					"version": "2.1.1",
+				},
+				"d3-geo": {
+					"specifier": "^3.1.2",
+					"version": "3.1.2",
 				},
 				"drizzle-kit": "1.0.0-rc.5",
 				"drizzle-orm": "1.0.0-rc.5",
@@ -515,6 +527,7 @@ snapshots:
 				"@yielded/auth": "catalog:",
 				"class-variance-authority": "catalog:",
 				"clsx": "catalog:",
+				"d3-geo": "catalog:",
 				"effect": "catalog:",
 				"posthog-js": "catalog:",
 				"solid-js": "catalog:",
@@ -528,6 +541,8 @@ snapshots:
 				"@cloudflare/vite-plugin": "catalog:",
 				"@rolldown/perf-kit": "catalog:",
 				"@solidjs/vite-plugin": "catalog:",
+				"@types/d3-geo": "catalog:",
+				"@types/geojson": "catalog:",
 				"@types/node": "catalog:",
 				"cf": "catalog:",
 				"filesystem-routing": "catalog:",
@@ -5377,6 +5392,13 @@ snapshots:
 			},
 		},
 
+		"@types/d3-geo@3.1.1": {
+			"integrity": "sha512-65Emv9fQiQQqphLlRkuQ5ypPsOmWPhtBGCMv61JDPEPMvsx+gzhGf74yw1a78xFKPj6zw4AgQICJoQv0vK9M2w==",
+			"dependencies": {
+				"@types/geojson": "7946.0.16",
+			},
+		},
+
 		"@types/debug@4.1.13": {
 			"integrity": "sha512-KSVgmQmzMwPlmtljOomayoR89W4FynCAi3E8PPs7vmDVPe84hT+vGPKkJfThkmXs0x0jAaa9U8uW8bbfyS2fWw==",
 			"dependencies": {
@@ -5401,6 +5423,10 @@ snapshots:
 
 		"@types/estree@1.0.10": {
 			"integrity": "sha512-lTyOMnOcmRBzdCv6/4zUZCrEhV0xrqQiUZBZtVcbmLHBXKLnN8q89v/wKRF/Q0HbwVsqbIG3o5HDoFl9sduM+g==",
+		},
+
+		"@types/geojson@7946.0.16": {
+			"integrity": "sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg==",
 		},
 
 		"@types/hast@3.0.5": {
@@ -7048,6 +7074,22 @@ snapshots:
 			"integrity": "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==",
 		},
 
+		"d3-array@3.2.5": {
+			"integrity": "sha512-Th8qGXoBalmWsstpkuhmBuTsBQIFqYOJtjlBvNVvBfJ8E3uYusBUwUR8HU20U0qKKQkgCvKyR1YjiozWadk5QA==",
+			"engines": {"node": ">=12"},
+			"dependencies": {
+				"internmap": "2.0.3",
+			},
+		},
+
+		"d3-geo@3.1.2": {
+			"integrity": "sha512-5R8ZgDQorIxmauv7R6gpE/ndz+Z0qAZssigq0aXFdvPHdY41RqtW02jrRUQAL724NdPABYXo1+gQEGBBr7uKNg==",
+			"engines": {"node": ">=12"},
+			"dependencies": {
+				"d3-array": "3.2.5",
+			},
+		},
+
 		"data-uri-to-buffer@8.0.0": {
 			"integrity": "sha512-6UHfyCux51b8PTGDgveqtz1tvphBku5DrMKKJbFAZAJOI2zsjDpDoYE1+QGj7FOMS4BdTFNJsJiR3zEB0xH0yQ==",
 			"engines": {"node": ">= 20"},
@@ -8635,6 +8677,11 @@ snapshots:
 				"through": "2.3.8",
 				"wrap-ansi": "6.2.0",
 			},
+		},
+
+		"internmap@2.0.3": {
+			"integrity": "sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==",
+			"engines": {"node": ">=12"},
 		},
 
 		"intl-messageformat@10.7.18": {

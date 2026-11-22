@@ -118,6 +118,8 @@
   --shell: #f7f7f4;
   /** The content canvas inside the frame, one tone for every dashboard page. */
   --page: #fbfbf9;
+  /** The ocean behind the region globe; land uses the card tone. */
+  --globe-ocean: #eaf0f5;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
@@ -176,6 +178,7 @@
   --surface-raised: #242421;
   --shell: #151514;
   --page: #131312;
+  --globe-ocean: #121a22;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;

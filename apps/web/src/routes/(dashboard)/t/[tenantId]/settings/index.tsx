@@ -27,6 +27,7 @@ import {
 } from "~/components/ui/dialog";
 import { TriangleAlert } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { RegionPicker } from "~/components/region-picker";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { BackupRunInfo, MeResponse, TenantDetail } from "~/lib/enterprise";
@@ -702,19 +703,12 @@ export default function GeneralSettingsPage() {
             </FieldRow>
             <FieldRow
               label="App Store region"
-              hint="Two-letter storefront used to resolve an App Store ID when a device does not report one. Leave empty for US."
+              hint="Storefront used to resolve an App Store ID when a device does not report one. Defaults to the United States."
             >
-              <Input
-                disabled={!canWrite()}
+              <RegionPicker
                 value={appStoreRegion()}
-                maxlength={2}
-                placeholder="US"
-                pattern="[A-Za-z]{2}"
-                onInput={(e) => {
-                  setAppStoreRegion(
-                    e.currentTarget.value.replaceAll(/[^a-zA-Z]/g, "").toUpperCase(),
-                  );
-                }}
+                disabled={!canWrite()}
+                onChange={setAppStoreRegion}
               />
             </FieldRow>
             <FieldRow
