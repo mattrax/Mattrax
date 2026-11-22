@@ -1,6 +1,6 @@
 import { useIsRouting, useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import {
   createEffect,
   createMemo,
@@ -34,7 +34,6 @@ import {
 } from "@mattrax/ui";
 import {
   Activity,
-  ArrowRightLeft,
   BookOpen,
   Building2,
   ChevronsUpDown,
@@ -53,7 +52,8 @@ import {
   User,
   UsersRound,
 } from "~/components/ui/icons";
-import { meQueryOptions } from "~/lib/enterprise";
+import { enterpriseKeys, meQueryOptions } from "~/lib/enterprise";
+import { installPinnedDashboards, pinnedDashboardsFor } from "~/lib/pinned-dashboards";
 import type { Permission } from "@mattrax/enterprise-domain/client";
 import { routes } from "~/lib/routes";
 import { supportUrl } from "~/lib/support-config-store";
@@ -68,7 +68,7 @@ import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
 
-type NavGroup = "workspace" | "manage" | "settings";
+type NavGroup = "workspace" | "pinned" | "manage" | "settings";
 
 type NavItem = {
   id: string;
@@ -85,6 +85,7 @@ type NavItem = {
 
 const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
   { id: "workspace", label: "Workspace" },
+  { id: "pinned", label: "Pinned" },
   { id: "manage", label: "Manage" },
   { id: "settings", label: "Settings" },
 ];
@@ -417,12 +418,6 @@ function navFor(tenantId: string | undefined): NavItem[] {
     item("devices", "Devices", tenant.devices(), MonitorSmartphone, "workspace", {
       permission: "devices.read",
     }),
-    item("os-versions", "OS versions", tenant.osVersions(), MonitorSmartphone, "workspace", {
-      permission: "devices.read",
-    }),
-    item("migration", "Migration", tenant.migrations(), ArrowRightLeft, "workspace", {
-      permission: "devices.read",
-    }),
     item("users", "Users", tenant.users(), User, "workspace", {
       permission: "members.read",
     }),
@@ -541,8 +536,8 @@ function SidebarPanel(props: {
   onNavigate?: () => void;
 }) {
   return (
-    <div class="flex h-full min-h-0 flex-col bg-card">
-      <div class="flex h-12 shrink-0 items-center px-4">
+    <div class="flex h-full min-h-0 flex-col bg-shell">
+      <div class="flex h-14 shrink-0 items-center justify-center px-4">
         <a
           href="/dashboard"
           class="flex items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -707,13 +702,49 @@ export function AppShell(props: {
     (tenantId) => setCrossTabTenant(tenantId),
   );
 
-  const navItems = createMemo(() =>
-    navFor(navTenant()).filter((item) => {
+  onSettled(installPinnedDashboards);
+
+  const pinned = createMemo(() => pinnedDashboardsFor(activeId()));
+  const queryClient = useQueryClient();
+
+  const pinnedItems = createMemo<NavItem[]>(() => {
+    const tenant = navTenant();
+
+    if (!tenant || !can("dashboards.read")) return [];
+    // Names come from whatever the Dashboards page has already cached; the pin
+    // itself stores a fallback so the rail renders before that page is visited.
+    const known = queryClient.getQueryData<{
+      dashboards: ReadonlyArray<{ id: string; name: string }>;
+    }>(enterpriseKeys.dashboards(activeId()))?.dashboards;
+
+    return pinned().flatMap((pin) => {
+      const current = known?.find((dashboard) => dashboard.id === pin.dashboardId);
+
+      // Drop a pin once the server confirms the dashboard no longer exists.
+      if (known && !current) return [];
+      const href = routes.tenant(tenant).dashboard(pin.dashboardId);
+
+      return [
+        {
+          id: `pinned:${pin.dashboardId}`,
+          label: current?.name ?? pin.name,
+          href,
+          group: "pinned" as const,
+          icon: PanelRight,
+          match: (value: string) => value === href,
+        },
+      ];
+    });
+  });
+
+  const navItems = createMemo(() => [
+    ...navFor(navTenant()).filter((item) => {
       if (item.settingsGate) return canAny(SETTINGS_READ_PERMISSIONS);
 
       return !item.permission || can(item.permission);
     }),
-  );
+    ...pinnedItems(),
+  ]);
 
   const settingsLabels = new Map([
     ["", "General"],
@@ -721,6 +752,7 @@ export function AppShell(props: {
     ["identity", "Identity"],
     ["enrollment", "Enrollment"],
     ["management", "Management"],
+    ["migration", "Migration"],
     ["delivery", "Delivery"],
     ["integrations", "Integrations"],
     ["audit", "Audit log"],
@@ -807,7 +839,7 @@ export function AppShell(props: {
   );
 
   return (
-    <div class="flex min-h-svh bg-background text-foreground selection:bg-brand/30 selection:text-foreground">
+    <div class="flex h-dvh overflow-hidden bg-background p-3 text-foreground selection:bg-brand/30 selection:text-foreground sm:p-4 lg:p-6 xl:p-8">
       <a
         href="#main"
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -815,112 +847,116 @@ export function AppShell(props: {
         Skip to content
       </a>
 
-      <aside class="sticky top-0 hidden h-svh w-[244px] shrink-0 border-r border-border lg:block">
-        <SidebarPanel
-          user={props.user}
-          onSignOut={props.onSignOut}
-          superadmin={superadmin()}
-          activeId={activeId()}
-          items={navItems()}
-          path={location.pathname}
-          label="Primary"
-        />
-      </aside>
+      <div class="mx-auto flex h-full min-h-0 w-full max-w-[1800px] overflow-hidden rounded-[20px] border border-border bg-shell shadow-[0_1px_2px_rgb(24_24_22/0.04),0_20px_55px_-28px_rgb(24_24_22/0.22)]">
+        <aside class="hidden h-full w-[244px] shrink-0 border-r border-border lg:block">
+          <SidebarPanel
+            user={props.user}
+            onSignOut={props.onSignOut}
+            superadmin={superadmin()}
+            activeId={activeId()}
+            items={navItems()}
+            path={location.pathname}
+            label="Primary"
+          />
+        </aside>
 
-      <div class="flex min-w-0 flex-1 flex-col">
-        <header class="sticky top-0 z-40 border-b border-border bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-          <div class="flex h-12 items-center gap-2 px-3 sm:px-5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="lg:hidden"
-              aria-label="Open navigation"
-              onClick={() => setMobileNavOpen(true)}
-            >
-              <Menu class="size-4" />
-            </Button>
-            <a
-              href="/dashboard"
-              class="flex shrink-0 items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
-              aria-label="Mattrax home"
-            >
-              <BrandLogo class="h-3" />
-            </a>
-            <span class="mx-1 hidden h-3.5 w-px bg-border lg:block" aria-hidden="true" />
-            <div class="min-w-0 flex-1">
-              <ShellBreadcrumb
-                tenantName={tenantName()}
-                tenantHref={tenantSegment() ? routes.tenant(tenantSegment()).overview() : undefined}
-                label={pageLabel()}
-              />
-            </div>
-            <div class="flex shrink-0 items-center gap-1">
-              <SearchButton compact />
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <header class="relative z-40 shrink-0 border-b border-border bg-shell/95 backdrop-blur supports-[backdrop-filter]:bg-shell/85">
+            <div class="flex h-12 items-center gap-2 px-3 sm:px-5">
               <Button
-                as="a"
-                href="/docs/"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Documentation"
-                title="Documentation"
+                class="lg:hidden"
+                aria-label="Open navigation"
+                onClick={() => setMobileNavOpen(true)}
               >
-                <HelpCircle class="size-4" />
+                <Menu class="size-4" />
               </Button>
-              <span
-                class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden"
-                aria-hidden="true"
-              />
-              <span class="lg:hidden">
-                <UserMenu
-                  user={props.user}
-                  onSignOut={props.onSignOut}
-                  superadmin={superadmin()}
-                  variant="bar"
+              <a
+                href="/dashboard"
+                class="flex shrink-0 items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
+                aria-label="Mattrax home"
+              >
+                <BrandLogo class="h-3" />
+              </a>
+              <span class="mx-1 hidden h-3.5 w-px bg-border lg:block" aria-hidden="true" />
+              <div class="min-w-0 flex-1">
+                <ShellBreadcrumb
+                  tenantName={tenantName()}
+                  tenantHref={
+                    tenantSegment() ? routes.tenant(tenantSegment()).overview() : undefined
+                  }
+                  label={pageLabel()}
                 />
-              </span>
+              </div>
+              <div class="flex shrink-0 items-center gap-1">
+                <SearchButton compact />
+                <Button
+                  as="a"
+                  href="/docs/"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Documentation"
+                  title="Documentation"
+                >
+                  <HelpCircle class="size-4" />
+                </Button>
+                <span
+                  class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden"
+                  aria-hidden="true"
+                />
+                <span class="lg:hidden">
+                  <UserMenu
+                    user={props.user}
+                    onSignOut={props.onSignOut}
+                    superadmin={superadmin()}
+                    variant="bar"
+                  />
+                </span>
+              </div>
             </div>
-          </div>
 
-          {/* Route progress: a slim indeterminate segment pinned to the header
+            {/* Route progress: a slim indeterminate segment pinned to the header
               edge. It disappears the moment the router settles, so it never
               competes with the page's own entrance. */}
-          <Show when={isRouting()}>
-            <div
-              class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
-              aria-hidden="true"
-            >
-              <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
-            </div>
-          </Show>
-        </header>
+            <Show when={isRouting()}>
+              <div
+                class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden"
+                aria-hidden="true"
+              >
+                <div class="route-progress h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+              </div>
+            </Show>
+          </header>
 
-        <main
-          id="main"
-          tabindex="-1"
-          class={cn(
-            "relative z-10 flex w-full flex-1 flex-col transition-opacity duration-[140ms] ease-swift focus:outline-none",
-            isRouting() && "opacity-70",
-          )}
-        >
-          <Errored
-            fallback={(error, reset) => (
-              <ErrorPanel boundary="dashboard" error={error()} reset={reset} label="Dashboard" />
+          <main
+            id="main"
+            tabindex="-1"
+            class={cn(
+              "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto transition-opacity duration-[140ms] ease-swift focus:outline-none",
+              isRouting() && "opacity-70",
             )}
           >
-            {/* Page content mounts after the shell is hydrated. Server-rendered
+            <Errored
+              fallback={(error, reset) => (
+                <ErrorPanel boundary="dashboard" error={error()} reset={reset} label="Dashboard" />
+              )}
+            >
+              {/* Page content mounts after the shell is hydrated. Server-rendered
                 page markup is data-independent, but the client resolves queries
                 before claiming it, so hydration would silently detach controls
                 (column pickers, filters, sort buttons). Rendering the page once
                 hydration finishes keeps every control live on cold loads. */}
-            <Show when={!isServer && isHydrated()}>{props.children}</Show>
-          </Errored>
-        </main>
+              <Show when={!isServer && isHydrated()}>{props.children}</Show>
+            </Errored>
+          </main>
+        </div>
       </div>
 
       <Sheet open={mobileNavOpen()} onOpenChange={setMobileNavOpen}>
         <SheetContent
           side="left"
-          class="left-0 right-auto w-[264px] max-w-[264px] border-l-0 border-r border-border bg-surface p-0 data-[starting-style]:-translate-x-full data-[ending-style]:-translate-x-full"
+          class="left-0 right-auto w-[264px] max-w-[264px] border-l-0 border-r border-border bg-shell p-0 data-[starting-style]:-translate-x-full data-[ending-style]:-translate-x-full"
         >
           <SheetHeader class="sr-only">
             <SheetTitle>Navigation</SheetTitle>

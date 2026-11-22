@@ -25,6 +25,8 @@ import { useCan } from "~/lib/permissions";
 import { queryClient as appQueryClient } from "~/lib/query-client";
 import { routes } from "~/lib/routes";
 import { optimisticUpdate } from "~/lib/optimistic";
+import { PinDashboardButton } from "~/components/pin-dashboard-button";
+import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -43,6 +45,7 @@ export default function DashboardsPage() {
   const { can } = useCan();
   const writable = () => can("dashboards.write");
   const dashboards = useQuery(() => enterpriseQueries.dashboards(params.tenantId));
+  const tenantId = () => resolveTenantId(params.tenantId) ?? params.tenantId ?? "";
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [makeDefaultError, setMakeDefaultError] = createSignal<unknown>(null);
@@ -218,12 +221,20 @@ export default function DashboardsPage() {
                       {dashboard.description?.trim() || "No description"}
                     </p>
                   </a>
-                  <Show when={dashboard.isDefault}>
-                    <Badge variant="secondary" class="shrink-0 gap-1">
-                      <Star class="size-3" />
-                      Overview
-                    </Badge>
-                  </Show>
+                  <div class="flex shrink-0 items-center gap-1.5">
+                    <Show when={dashboard.isDefault}>
+                      <Badge variant="secondary" class="gap-1">
+                        <Star class="size-3" />
+                        Overview
+                      </Badge>
+                    </Show>
+                    <PinDashboardButton
+                      tenantId={tenantId()}
+                      dashboardId={dashboard.id}
+                      name={dashboard.name}
+                      compact
+                    />
+                  </div>
                 </div>
                 <div class="mt-4 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span class="tabular-nums">

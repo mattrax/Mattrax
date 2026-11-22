@@ -112,6 +112,35 @@ test.describe("tenant settings", () => {
     );
   });
 
+  test("keeps migration in settings and offers it to empty fleets", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Migration Tenant");
+    const base = `/t/${tenant.slug}`;
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeVisible();
+    await page.getByRole("link", { name: "Open migration" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/migration$`));
+    await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+    await expect(page.getByText("No migrations yet")).toBeVisible();
+
+    const primary = page.getByRole("navigation", { name: "Primary" });
+    await expect(primary.getByRole("link", { name: "Migration" })).toHaveCount(0);
+    await expect(primary.getByRole("link", { name: "OS versions" })).toHaveCount(0);
+    await expect(
+      page
+        .locator('nav[aria-label="Tenant settings sections"]')
+        .getByRole("link", { name: "Migration" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeVisible();
+    await page.getByRole("button", { name: "Dismiss migration banner" }).click();
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeHidden();
+
+    await gotoHydrated(page, base);
+    await expect(page.getByText("Bring a fleet over from another MDM")).toBeHidden();
+  });
+
   test("shows the auditor role in administrator settings", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);

@@ -63,7 +63,7 @@ const progress = (migration: FleetMigrationSummary) => {
   return `${done}/${counts.total} confirmed`;
 };
 
-export default function MigrationPage() {
+export default function MigrationPage(props: { embedded?: boolean } = {}) {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -166,119 +166,126 @@ export default function MigrationPage() {
     },
   ];
 
+  const content = (
+    <>
+      <QueryError error={migrations.error} onRetry={() => void migrations.refetch()} />
+
+      <Panel
+        title="Cohorts"
+        description="A cohort is a list of serials with a status each. It never moves a device by itself."
+      >
+        <DataTable
+          rows={migrations.data ? [...migrations.data.migrations] : undefined}
+          columns={columns}
+          empty={
+            <EmptyState
+              title="No migrations yet"
+              description="Create a cohort from the serials your incumbent MDM lists, or seed one from a group."
+            />
+          }
+        />
+      </Panel>
+
+      <Show when={writable()}>
+        <Panel
+          title="New cohort"
+          description="Serials come from the incumbent MDM's device list. Devices Mattrax already manages are skipped: they are not migrating."
+        >
+          <form
+            class="grid gap-4 sm:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create.mutate();
+            }}
+          >
+            <Field label="Name">
+              <Input
+                value={name()}
+                placeholder="Q1 Jamf exit"
+                onInput={(event) => setName(event.currentTarget.value)}
+              />
+            </Field>
+            <Field label="Leaving">
+              <select
+                class={selectClass}
+                value={source()}
+                onChange={(event) => {
+                  // SAFETY: the select only renders the source options above.
+                  setSource(event.currentTarget.value as Source);
+                }}
+              >
+                <For each={sources}>
+                  {(entry) => <option value={entry.value}>{entry.label}</option>}
+                </For>
+              </select>
+            </Field>
+            <Field label="Target platforms">
+              <div class="flex flex-wrap gap-3 pt-1.5">
+                <For each={platforms}>
+                  {(entry) => (
+                    <label class="flex items-center gap-1.5 text-[12.5px]">
+                      <input
+                        type="checkbox"
+                        checked={selected().includes(entry.value)}
+                        onChange={() => togglePlatform(entry.value)}
+                      />
+                      {entry.label}
+                    </label>
+                  )}
+                </For>
+              </div>
+            </Field>
+            <Field
+              label="Stuck after (days)"
+              hint="A device that has not returned inside this window becomes stuck."
+            >
+              <Input
+                type="number"
+                min={1}
+                max={90}
+                value={stuckAfterDays()}
+                onInput={(event) => setStuckAfterDays(Number(event.currentTarget.value) || 7)}
+              />
+            </Field>
+            <div class="sm:col-span-2">
+              <Field
+                label="Device serials"
+                hint="One per line or comma separated. A serial with no device in Mattrax is recorded against the first target platform."
+              >
+                <textarea
+                  class={textareaClass}
+                  value={serials()}
+                  placeholder={"C02XYZ123\nC02ABC456"}
+                  onInput={(event) => setSerials(event.currentTarget.value)}
+                />
+              </Field>
+            </div>
+            <div class="sm:col-span-2">
+              <Button
+                type="submit"
+                disabled={create.isPending || !name().trim() || selected().length === 0}
+              >
+                {create.isPending ? "Creating…" : "Create cohort"}
+              </Button>
+            </div>
+          </form>
+        </Panel>
+      </Show>
+    </>
+  );
+
   return (
     <Show when={can("devices.read")} fallback={<AccessDenied />}>
-      <Page>
-        <PageHeader
-          eyebrow="Devices"
-          title="Migration"
-          description="Track a fleet leaving Jamf, Intune or Kandji: issue the unenrol handoff, watch for the device to re-enrol, and confirm the profile was accepted."
-        />
-
-        <QueryError error={migrations.error} onRetry={() => void migrations.refetch()} />
-
-        <Panel
-          title="Cohorts"
-          description="A cohort is a list of serials with a status each. It never moves a device by itself."
-        >
-          <DataTable
-            rows={migrations.data ? [...migrations.data.migrations] : undefined}
-            columns={columns}
-            empty={
-              <EmptyState
-                title="No migrations yet"
-                description="Create a cohort from the serials your incumbent MDM lists, or seed one from a group."
-              />
-            }
+      <Show when={!props.embedded} fallback={content}>
+        <Page>
+          <PageHeader
+            eyebrow="Devices"
+            title="Migration"
+            description="Track a fleet leaving Jamf, Intune or Kandji: issue the unenrol handoff, watch for the device to re-enrol, and confirm the profile was accepted."
           />
-        </Panel>
-
-        <Show when={writable()}>
-          <Panel
-            title="New cohort"
-            description="Serials come from the incumbent MDM's device list. Devices Mattrax already manages are skipped: they are not migrating."
-          >
-            <form
-              class="grid gap-4 sm:grid-cols-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                create.mutate();
-              }}
-            >
-              <Field label="Name">
-                <Input
-                  value={name()}
-                  placeholder="Q1 Jamf exit"
-                  onInput={(event) => setName(event.currentTarget.value)}
-                />
-              </Field>
-              <Field label="Leaving">
-                <select
-                  class={selectClass}
-                  value={source()}
-                  onChange={(event) => {
-                    // SAFETY: the select only renders the source options above.
-                    setSource(event.currentTarget.value as Source);
-                  }}
-                >
-                  <For each={sources}>
-                    {(entry) => <option value={entry.value}>{entry.label}</option>}
-                  </For>
-                </select>
-              </Field>
-              <Field label="Target platforms">
-                <div class="flex flex-wrap gap-3 pt-1.5">
-                  <For each={platforms}>
-                    {(entry) => (
-                      <label class="flex items-center gap-1.5 text-[12.5px]">
-                        <input
-                          type="checkbox"
-                          checked={selected().includes(entry.value)}
-                          onChange={() => togglePlatform(entry.value)}
-                        />
-                        {entry.label}
-                      </label>
-                    )}
-                  </For>
-                </div>
-              </Field>
-              <Field
-                label="Stuck after (days)"
-                hint="A device that has not returned inside this window becomes stuck."
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={90}
-                  value={stuckAfterDays()}
-                  onInput={(event) => setStuckAfterDays(Number(event.currentTarget.value) || 7)}
-                />
-              </Field>
-              <div class="sm:col-span-2">
-                <Field
-                  label="Device serials"
-                  hint="One per line or comma separated. A serial with no device in Mattrax is recorded against the first target platform."
-                >
-                  <textarea
-                    class={textareaClass}
-                    value={serials()}
-                    placeholder={"C02XYZ123\nC02ABC456"}
-                    onInput={(event) => setSerials(event.currentTarget.value)}
-                  />
-                </Field>
-              </div>
-              <div class="sm:col-span-2">
-                <Button
-                  type="submit"
-                  disabled={create.isPending || !name().trim() || selected().length === 0}
-                >
-                  {create.isPending ? "Creating…" : "Create cohort"}
-                </Button>
-              </div>
-            </form>
-          </Panel>
-        </Show>
-      </Page>
+          {content}
+        </Page>
+      </Show>
     </Show>
   );
 }

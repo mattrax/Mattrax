@@ -46,6 +46,7 @@
   --color-active: var(--active);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-shell: var(--shell);
   --color-scrim: var(--scrim);
 
   --color-brand: var(--brand);
@@ -81,7 +82,7 @@
 .theme-light {
   color-scheme: light;
 
-  --background: #f6f6f3;
+  --background: #e9e9e6;
   --foreground: #1a1a18;
   --card: #ffffff;
   --card-foreground: #1a1a18;
@@ -112,6 +113,7 @@
   --active: #e8e8e2;
   --surface: #f1f1ed;
   --surface-raised: #ffffff;
+  --shell: #f7f7f4;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
@@ -160,6 +162,7 @@
   --active: #2c2c29;
   --surface: #1b1b19;
   --surface-raised: #242421;
+  --shell: #151514;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;

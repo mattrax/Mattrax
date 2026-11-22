@@ -5,6 +5,7 @@ import { Dynamic } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import {
   Activity,
+  ArrowRightLeft,
   BookOpen,
   Boxes,
   Download,
@@ -34,6 +35,7 @@ const tabs: ReadonlyArray<{
   { id: "enrollment", label: "Enrollment", group: "Access", icon: MonitorSmartphone },
   { id: "attributes", label: "Attributes", group: "Access", icon: SlidersHorizontal },
   { id: "management", label: "Management", group: "Fleet", icon: Boxes },
+  { id: "migration", label: "Migration", group: "Fleet", icon: ArrowRightLeft },
   { id: "delivery", label: "Delivery", group: "Fleet", icon: Activity },
   { id: "os-updates", label: "OS updates", group: "Fleet", icon: Download },
   { id: "integrations", label: "Integrations", group: "Organisation", icon: LinkIcon },
@@ -51,6 +53,7 @@ const sectionDescriptions = new Map([
   ["enrollment", "Choose which platforms can enroll, and control the enrollment link."],
   ["attributes", "Define the custom fields your organisation tracks on every device."],
   ["management", "Fleet integrations: Apple push, ABM, Apps and Books, Android and Windows."],
+  ["migration", "Track a fleet leaving Jamf, Intune or Kandji and confirm each device lands."],
   ["delivery", "Check that notification delivery to devices is healthy."],
   ["integrations", "Send tenant events to webhooks you control."],
   ["audit", "Every change made in this tenant, newest first."],
@@ -99,8 +102,8 @@ export default function TenantSettingsLayout(props: ParentProps) {
   );
 
   return (
-    <div class="mx-auto w-full max-w-[1360px] flex-1 px-4 pb-10 pt-5 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
-      <section class="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+    <div class="flex min-h-full w-full flex-1 flex-col bg-card">
+      <section class="flex min-h-full flex-1 flex-col bg-card">
         <header class="flex flex-col gap-3 border-b border-border px-5 pb-5 pt-6 sm:px-7 sm:pb-6 sm:pt-7 lg:px-8">
           <div class="label-caps">Settings</div>
           <div class="flex flex-col gap-1.5">
@@ -113,19 +116,19 @@ export default function TenantSettingsLayout(props: ParentProps) {
           </div>
         </header>
 
-        <div class="grid lg:grid-cols-[248px_minmax(0,1fr)]">
+        <div class="grid flex-1 xl:grid-cols-[248px_minmax(0,1fr)]">
           <nav
             ref={(element) => {
               tabNav = element;
             }}
-            class="no-scrollbar flex gap-1 overflow-x-auto border-b border-border px-3 py-2.5 lg:block lg:overflow-visible lg:border-b-0 lg:border-r lg:px-3 lg:py-5"
+            class="no-scrollbar flex gap-1 overflow-x-auto border-b border-border px-3 py-2.5 xl:block xl:overflow-visible xl:border-b-0 xl:border-r xl:px-3 xl:py-5"
             aria-label="Tenant settings sections"
           >
             <For each={groups()}>
               {(entry) => (
-                <div class="contents lg:mb-5 lg:block lg:last:mb-0">
-                  <div class="label-caps hidden px-2.5 pb-2 lg:block">{entry.group}</div>
-                  <ul class="contents lg:block lg:space-y-[2px]">
+                <div class="contents xl:mb-5 xl:block xl:last:mb-0">
+                  <div class="label-caps hidden px-2.5 pb-2 xl:block">{entry.group}</div>
+                  <ul class="contents xl:block xl:space-y-[2px]">
                     <For each={entry.items}>
                       {(tab) => {
                         const href = tab.id ? `${base()}/${tab.id}` : base();
@@ -136,7 +139,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                             <a
                               href={href}
                               class={cn(
-                                "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[12px] font-[500] transition-colors duration-[var(--duration-hover)] ease-swift lg:h-9 lg:w-full lg:gap-2.5 lg:rounded-lg lg:px-2.5 lg:text-[13px]",
+                                "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[12px] font-[500] transition-colors duration-[var(--duration-hover)] ease-swift xl:h-9 xl:w-full xl:gap-2.5 xl:rounded-lg xl:px-2.5 xl:text-[13px]",
                                 isActive()
                                   ? "bg-active text-foreground"
                                   : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -146,7 +149,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                               <Dynamic
                                 component={tab.icon}
                                 class={cn(
-                                  "size-3.5 shrink-0 transition-opacity lg:size-4",
+                                  "size-3.5 shrink-0 transition-opacity xl:size-4",
                                   isActive() ? "opacity-90" : "opacity-55",
                                 )}
                               />
@@ -162,7 +165,9 @@ export default function TenantSettingsLayout(props: ParentProps) {
             </For>
           </nav>
 
-          <div class="min-w-0 px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7">{props.children}</div>
+          <div class="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
+            {props.children}
+          </div>
         </div>
       </section>
     </div>

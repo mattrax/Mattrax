@@ -14,7 +14,7 @@ const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
  * It is intentionally quieter than the macOS update banner: compliance covers
  * three platform families, and a device that meets the configured minimum is
  * not necessarily on the newest release (Windows and Android have no feed). The
- * OS versions page carries the explanation.
+ * OS updates settings carry the explanation and the minimum-version controls.
  */
 export function OsComplianceSummary(props: { tenantId: string }) {
   const { can } = useCan();
@@ -50,11 +50,11 @@ export function OsComplianceSummary(props: { tenantId: string }) {
           </div>
           <Button
             as="a"
-            href={routes.tenant(props.tenantId).osVersions()}
+            href={routes.tenant(props.tenantId).settingsTab("os-updates")}
             size="xs"
             variant="outline"
           >
-            OS versions
+            OS updates
           </Button>
         </div>
 

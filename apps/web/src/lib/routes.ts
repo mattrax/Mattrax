@@ -305,6 +305,7 @@ export const routes = {
       software: () => `${base}/software`,
       enrollment: () => `${base}/enrollment`,
       settings: () => `${base}/settings`,
+      settingsMigration: () => `${base}/settings/migration`,
       settingsTab: (
         tab:
           | ""
@@ -313,6 +314,7 @@ export const routes = {
           | "attributes"
           | "enrollment"
           | "management"
+          | "migration"
           | "delivery"
           | "integrations"
           | "audit"
