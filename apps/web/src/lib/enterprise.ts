@@ -62,6 +62,7 @@ import type {
   DevicePreRegistrationImportRequest,
   DeviceRow,
   DeviceSearchQuery,
+  DeviceViewQuery,
   DashboardQueryRequest,
   DashboardReportFormat,
   CreateDashboardReportRequest,
@@ -207,6 +208,8 @@ export type {
   DeviceRow,
   DeviceSearchQuery,
   DeviceSearchRow,
+  DeviceView,
+  DeviceViewQuery,
   McpConnectionInfo,
   McpConnectionsResponse,
   DynamicGroupCondition,
@@ -307,6 +310,7 @@ type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
@@ -404,6 +408,8 @@ export const enterpriseKeys = {
     ["enterprise", "device-search", keyTenant(tenantId)] as const,
   deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     ["enterprise", "device-search", keyTenant(tenantId), query] as const,
+  deviceViews: (tenantId: RouteParam) =>
+    ["enterprise", "device-views", keyTenant(tenantId)] as const,
   deviceHealth: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "device-health", keyTenant(tenantId), id ?? ""] as const,
   deviceHealthSummary: (tenantId: RouteParam) =>
@@ -689,6 +695,7 @@ function endpoint<A, E>(
       Effect.map(clientEffect(headers), (client) => ({
         ...client.EnterpriseApi,
         ...client.EnterpriseGroup,
+        ...client.EnterpriseDeviceView,
         ...client.EnterpriseOnboarding,
       })),
     call,
@@ -1064,6 +1071,58 @@ export const enterprise = {
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Named device-list views visible to the caller, including their default. */
+  listDeviceViews: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceViews({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createDeviceView: (
+    tenantId: RouteParam,
+    payload: {
+      name: string;
+      description?: string | null;
+      visibility?: "private" | "tenant";
+      query: DeviceViewQuery;
+    },
+  ) =>
+    endpoint((api) =>
+      api.createDeviceView({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  patchDeviceView: (
+    tenantId: RouteParam,
+    viewId: RouteParam,
+    payload: {
+      name?: string;
+      description?: string | null;
+      visibility?: "private" | "tenant";
+      query?: DeviceViewQuery;
+    },
+  ) =>
+    endpoint((api) =>
+      api.patchDeviceView({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          viewId: required(viewId, "viewId"),
+        },
+        payload,
+      }),
+    ),
+  deleteDeviceView: (tenantId: RouteParam, viewId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteDeviceView({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          viewId: required(viewId, "viewId"),
+        },
+      }),
+    ),
+  setDefaultDeviceView: (tenantId: RouteParam, viewId: string | null) =>
+    endpoint((api) =>
+      api.setDefaultDeviceView({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { viewId },
+      }),
     ),
   /** Server-paginated group list for the groups table. */
   searchGroups: (tenantId: RouteParam, query: GroupSearchQuery = {}) =>

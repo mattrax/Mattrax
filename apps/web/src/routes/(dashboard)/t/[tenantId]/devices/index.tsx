@@ -17,8 +17,9 @@ import {
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
-import { MdmTable } from "~/components/mdm/table";
-import type { MdmSortState } from "~/components/mdm/table";
+import { MdmTable, readTableColumnVisibility } from "~/components/mdm/table";
+import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
+import { DeviceViewsMenu } from "~/components/mdm/device-views";
 import { Button } from "~/components/ui/button";
 import { Badge, EmptyState, FilterBar, NativeSelect } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
@@ -47,7 +48,14 @@ import {
   formatDeviceQueryText,
   parseDeviceQueryText,
 } from "~/lib/enterprise";
-import type { DeviceHealthFilter, DeviceQuery, DeviceRow } from "~/lib/enterprise";
+import type {
+  DeviceHealthFilter,
+  DeviceQuery,
+  DeviceRow,
+  DeviceView,
+  DeviceViewQuery,
+} from "~/lib/enterprise";
+import { reconcileDeviceViewQuery } from "@mattrax/enterprise-domain/client";
 import {
   DEVICE_IMPORT_MAX_ROWS,
   parseDeviceImportCsv,
@@ -62,15 +70,18 @@ import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
+import { announce } from "~/components/toast";
 import { resolveTenantId } from "~/lib/tenant";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
+
+const MAX_PAGE_SIZE = 200;
 
 /** The unfiltered first page, matching the page's default key exactly. */
 const defaultDeviceSearch = {
-  limit: PAGE_SIZE,
+  limit: DEFAULT_PAGE_SIZE,
   offset: 0,
   sort: "name" as const,
   direction: "asc" as const,
@@ -84,6 +95,8 @@ const deviceListOverrides = [
   "staleDays",
   "health",
   "push",
+  "setup",
+  "notSeenSince",
   "activation",
   "groupId",
   "attributeKey",
@@ -93,6 +106,9 @@ const deviceListOverrides = [
   "sort",
   "direction",
   "page",
+  "columns",
+  "pageSize",
+  "view",
 ] as const;
 
 export const route = {
@@ -168,6 +184,8 @@ const FILTER_PARAM_KEYS = [
   "staleDays",
   "health",
   "push",
+  "setup",
+  "notSeenSince",
   "activation",
   "attributeKey",
   "attributeValue",
@@ -175,6 +193,9 @@ const FILTER_PARAM_KEYS = [
   "direction",
   "query",
   "page",
+  "columns",
+  "pageSize",
+  "view",
 ] as const;
 
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
@@ -344,6 +365,10 @@ export default function DevicesPage() {
 
   const initialPush = (): "failing" | "invalid" | "" => search().push ?? "";
 
+  const initialSetup = (): "" | "awaiting" | "complete" => search().setup ?? "";
+
+  const initialNotSeenSince = () => search().notSeenSince ?? "";
+
   const initialActivation = (): DeviceActivationFilter => search().activation ?? "";
 
   const initialSort = (): MdmSortState => ({
@@ -359,6 +384,8 @@ export default function DevicesPage() {
   const [staleDays, setStaleDays] = createSignal<"" | "7" | "30" | "90">(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
+  const [setup, setSetup] = createSignal<"" | "awaiting" | "complete">(initialSetup());
+  const [notSeenSince, setNotSeenSince] = createSignal(initialNotSeenSince());
   const [activation, setActivation] = createSignal<DeviceActivationFilter>(initialActivation());
   const [attributeKey, setAttributeKey] = createSignal(search().attributeKey ?? "");
   const [attributeValue, setAttributeValue] = createSignal(search().attributeValue ?? "");
@@ -369,6 +396,27 @@ export default function DevicesPage() {
   );
 
   const [queryOpen, setQueryOpen] = createSignal(false);
+
+  const initialPageSize = () => {
+    const value = Number(search().pageSize ?? DEFAULT_PAGE_SIZE);
+
+    return Number.isInteger(value) && value >= 1 && value <= MAX_PAGE_SIZE
+      ? value
+      : DEFAULT_PAGE_SIZE;
+  };
+
+  const initialVisibleColumns = () => {
+    const columns = search().columns?.split(",").filter(Boolean);
+
+    return columns && columns.length ? columns : undefined;
+  };
+
+  const [pageSize, setPageSize] = createSignal(initialPageSize());
+  // Undefined means the table's own persisted/default selection.
+  const [viewColumns, setViewColumns] = createSignal<ReadonlyArray<string> | undefined>(
+    initialVisibleColumns(),
+  );
+  const [currentViewId, setCurrentViewId] = createSignal(search().view);
 
   // 1-based in the URL so a paged view is shareable; 0-based in state.
   const initialPage = () => {
@@ -515,6 +563,8 @@ export default function DevicesPage() {
       staleDays: staleDays(),
       health: health(),
       push: push(),
+      setup: setup(),
+      notSeenSince: notSeenSince(),
       activation: activation(),
       attributeKey: attributeKey(),
       attributeValue: attributeValue(),
@@ -522,6 +572,9 @@ export default function DevicesPage() {
       direction: sort()?.dir ?? "asc",
       query: formatDeviceQueryText(deviceQuery()),
       page: page(),
+      columns: viewColumns()?.join(",") ?? "",
+      pageSize: pageSize(),
+      view: currentViewId() ?? "",
     }),
     (state) => {
       if (!urlInitialised) {
@@ -546,6 +599,10 @@ export default function DevicesPage() {
 
       if (state.push) next.push = state.push;
 
+      if (state.setup) next.setup = state.setup;
+
+      if (state.notSeenSince) next.notSeenSince = state.notSeenSince;
+
       if (state.activation) next.activation = state.activation;
 
       if (state.attributeKey) next.attributeKey = state.attributeKey;
@@ -559,6 +616,12 @@ export default function DevicesPage() {
       if (state.query) next.query = state.query;
 
       if (state.page > 0) next.page = String(state.page + 1);
+
+      if (state.columns) next.columns = state.columns;
+
+      if (state.pageSize !== DEFAULT_PAGE_SIZE) next.pageSize = String(state.pageSize);
+
+      if (state.view) next.view = state.view;
 
       // Coalesce rapid control changes into one router write. Every
       // `setSearchParams` is a navigation, and a burst of them trips the
@@ -580,12 +643,17 @@ export default function DevicesPage() {
     staleDays: initialStale(),
     health: initialHealth(),
     push: initialPush(),
+    setup: initialSetup(),
+    notSeenSince: initialNotSeenSince(),
     activation: initialActivation(),
     attributeKey: search().attributeKey ?? "",
     attributeValue: search().attributeValue ?? "",
     sort: initialSort(),
     query: search().query ?? "",
     page: initialPage(),
+    columns: search().columns ?? "",
+    pageSize: search().pageSize ?? "",
+    view: search().view ?? "",
   }));
 
   createEffect(
@@ -602,12 +670,17 @@ export default function DevicesPage() {
         staleDays: staleDays(),
         health: health(),
         push: push(),
+        setup: setup(),
+        notSeenSince: notSeenSince(),
         activation: activation(),
         attributeKey: attributeKey(),
         attributeValue: attributeValue(),
         sort: sort(),
         deviceQuery: deviceQuery(),
         page: page(),
+        columns: viewColumns()?.join(",") ?? "",
+        pageSize: pageSize() === DEFAULT_PAGE_SIZE ? "" : String(pageSize()),
+        view: currentViewId() ?? "",
       }));
 
       if (filters.q !== local.q) {
@@ -627,6 +700,13 @@ export default function DevicesPage() {
       if (filters.health !== local.health) setHealth(filters.health);
 
       if (filters.push !== local.push) setPush(filters.push);
+
+      if (filters.setup !== local.setup) setSetup(filters.setup);
+
+      if (filters.notSeenSince !== local.notSeenSince) {
+        setNotSeenSince(filters.notSeenSince);
+        setPage(0);
+      }
 
       if (filters.activation !== local.activation) {
         setActivation(filters.activation);
@@ -657,6 +737,14 @@ export default function DevicesPage() {
 
       // A shared `?page=3` link (or back/forward) restores the page index.
       if (filters.page !== local.page) setPage(filters.page);
+
+      if (filters.columns !== local.columns)
+        setViewColumns(filters.columns ? filters.columns.split(",").filter(Boolean) : undefined);
+
+      if (filters.pageSize !== local.pageSize)
+        setPageSize(filters.pageSize ? Number(filters.pageSize) : DEFAULT_PAGE_SIZE);
+
+      if (filters.view !== local.view) setCurrentViewId(filters.view || undefined);
     },
     { defer: true },
   );
@@ -687,6 +775,8 @@ export default function DevicesPage() {
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
     push: push() || undefined,
+    setup: setup() || undefined,
+    notSeenSince: notSeenSince() || undefined,
     activation: activation() || undefined,
     attributes:
       attributeKey() && attributeValue()
@@ -700,14 +790,14 @@ export default function DevicesPage() {
   const devices = useQuery(() => ({
     queryKey: enterpriseKeys.deviceSearch(params.tenantId, {
       ...filters(),
-      limit: PAGE_SIZE,
-      offset: page() * PAGE_SIZE,
+      limit: pageSize(),
+      offset: page() * pageSize(),
     }),
     queryFn: () =>
       enterprise.searchDevices(params.tenantId, {
         ...filters(),
-        limit: PAGE_SIZE,
-        offset: page() * PAGE_SIZE,
+        limit: pageSize(),
+        offset: page() * pageSize(),
       }),
     placeholderData: keepPreviousData,
   }));
@@ -723,6 +813,131 @@ export default function DevicesPage() {
     queryFn: () => enterprise.listAttributes(params.tenantId),
     placeholderData: { rows: [] },
   }));
+
+  const deviceViews = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceViews(params.tenantId),
+    queryFn: () => enterprise.listDeviceViews(params.tenantId),
+    placeholderData: { views: [] },
+    enabled: can("devices.read"),
+  }));
+
+  /** Attribute filters the URL can represent (one key/value pair). */
+  const viewAttribute = (query: DeviceViewQuery) => {
+    if (!query.attributes) return { key: "", value: "" };
+
+    try {
+      const [entry] = Object.entries(JSON.parse(query.attributes) as Record<string, string>);
+
+      return entry ? { key: entry[0], value: entry[1] } : { key: "", value: "" };
+    } catch {
+      return { key: "", value: "" };
+    }
+  };
+
+  /**
+   * Apply a saved view by writing its query into the table's controls. The URL
+   * mirror then makes the URL canonical, so a copied link reproduces the view.
+   *
+   * References to deleted groups and attributes are dropped first; the view
+   * stays applicable instead of opening an empty or failing table.
+   */
+  const applyView = (view: DeviceView) => {
+    const knownGroups = groups.data
+      ? new Set((groups.data.rows ?? []).map((group) => group.id))
+      : undefined;
+    const knownAttributes = attributeDefinitions.data
+      ? new Set((attributeDefinitions.data.rows ?? []).map((definition) => definition.key))
+      : undefined;
+    const reconciled = reconcileDeviceViewQuery(view.query, {
+      groupIds: knownGroups,
+      attributeKeys: knownAttributes,
+    });
+    const query = reconciled.query;
+    const attribute = viewAttribute(query);
+    const staleDays =
+      query.staleDays === 7 || query.staleDays === 30 || query.staleDays === 90
+        ? String(query.staleDays)
+        : "";
+
+    setQ(query.q ?? "");
+    setDebouncedQ(query.q ?? "");
+    setStatus(query.status ?? "");
+    setProto(query.proto ?? "");
+    setGroupId(query.groupId ?? "");
+    setStaleDays(staleDays as "" | "7" | "30" | "90");
+    setHealth(query.health ?? "");
+    setPush(query.push ?? "");
+    setSetup(query.setup ?? "");
+    setNotSeenSince(query.notSeenSince ?? "");
+    setActivation(query.activation ?? "");
+    setAttributeKey(attribute.key);
+    setAttributeValue(attribute.value);
+    setDeviceQuery(parseDeviceQueryText(query.query));
+    setSort({ id: query.sort ?? "name", dir: query.direction ?? "asc" });
+    setPageSize(
+      query.pageSize && query.pageSize >= 1 && query.pageSize <= MAX_PAGE_SIZE
+        ? Math.trunc(query.pageSize)
+        : DEFAULT_PAGE_SIZE,
+    );
+    setViewColumns(query.columns.length ? query.columns : undefined);
+    setCurrentViewId(view.id);
+    setPage(0);
+
+    if (reconciled.droppedGroup)
+      announce("The group this view filtered on was deleted, so the filter was removed.");
+
+    if (reconciled.droppedAttributes.length > 0 || reconciled.droppedColumns.length > 0)
+      announce(
+        "Some attributes this view used were deleted, so those filters and columns were removed.",
+      );
+  };
+
+  const hasExplicitSearchParams = () =>
+    (
+      [
+        "q",
+        "status",
+        "proto",
+        "staleDays",
+        "health",
+        "push",
+        "setup",
+        "notSeenSince",
+        "activation",
+        "groupId",
+        "attributeKey",
+        "attributeValue",
+        "query",
+        "sort",
+        "direction",
+        "page",
+        "columns",
+        "pageSize",
+        "view",
+      ] as const
+    ).some((key) => {
+      const value = searchParams[key];
+
+      return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
+    });
+
+  // Restore the member's default view once, and only on a bare /devices visit.
+  // A shared link with explicit filters always wins over the default.
+  let defaultViewApplied = false;
+  createEffect(
+    () => ({
+      views: deviceViews.data?.views,
+      ready: deviceViews.isSuccess && groups.isSuccess && attributeDefinitions.isSuccess,
+      explicit: hasExplicitSearchParams(),
+    }),
+    (state) => {
+      if (defaultViewApplied || !state.views || !state.ready || state.explicit) return;
+      defaultViewApplied = true;
+      const view = state.views.find((item) => item.isDefault);
+
+      if (view) applyView(view);
+    },
+  );
 
   const filterFields = createMemo<FilterField[]>(() => {
     const attributes = (attributeDefinitions.data?.rows ?? []).filter(
@@ -881,6 +1096,8 @@ export default function DevicesPage() {
     setGroupId("");
     setHealth("");
     setPush("");
+    setSetup("");
+    setNotSeenSince("");
     setActivation("");
     setStaleDays("");
     setAttributeKey("");
@@ -958,8 +1175,184 @@ export default function DevicesPage() {
         },
       }));
 
+  const deviceColumns = createMemo<MdmColumn<DeviceRow>[]>(() => [
+    ...attributeColumns(),
+    {
+      id: "name",
+      header: "Name",
+      sort: (row) => row.name,
+      search: (row) => row.name,
+      cell: (row) => (
+        <EntityHoverCard
+          preview={{ kind: "device", device: row }}
+          href={routes.tenant(params.tenantId).device(row.id)}
+          class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
+        >
+          {row.name}
+        </EntityHoverCard>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      sort: (row) => row.status,
+      cell: (row) => <DeviceStatusTag status={row.status} />,
+    },
+    {
+      id: "health",
+      header: "Health",
+      // The API sorts this column (health is derived, not stored); the
+      // local comparator keeps the same worst-first order if a row set is
+      // ever sorted on the client.
+      sort: (row) => healthRank(row.health?.level),
+      sortId: "health",
+      cell: (row) => (
+        <DeviceHealthTag level={row.health?.level ?? "unknown"} reasons={row.health?.reasons} />
+      ),
+    },
+    {
+      id: "osUpdate",
+      header: "OS updates",
+      cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
+    },
+    {
+      id: "platform",
+      header: "Platform",
+      cell: (row) => <PlatformBadge proto={row.proto} />,
+    },
+    {
+      id: "activation",
+      header: "Activation",
+      // Sorted by the API in administrative order (activated,
+      // not-activated, unknown); the local comparator only matters if a
+      // row set is ever sorted on the client.
+      sort: (row) => row.windowsActivationStatus ?? "",
+      sortId: "activation",
+      cell: (row) => <DeviceActivationTag status={row.windowsActivationStatus} />,
+      defaultHidden: true,
+    },
+    {
+      id: "serial",
+      header: "Serial",
+      search: (row) => row.serial,
+      cell: (row) => (
+        <span class="font-mono text-[11.5px] text-muted-foreground">{row.serial ?? "Unknown"}</span>
+      ),
+    },
+    {
+      id: "model",
+      header: "Model",
+      search: (row) => row.model,
+      cell: (row) => <span class="text-muted-foreground">{row.model ?? "Unknown"}</span>,
+    },
+    {
+      id: "assetTag",
+      header: "Asset tag",
+      search: (row) => row.assetTag,
+      cell: (row) => row.assetTag ?? "—",
+      defaultHidden: true,
+    },
+    {
+      id: "groups",
+      header: "Groups",
+      cell: (row) => {
+        const groups = rowGroups(row);
+
+        if (groups.length === 0) return "—";
+        const names = groups.map((group) => group.name).join(", ");
+
+        return (
+          <Tooltip>
+            <TooltipTrigger
+              type="button"
+              class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
+            >
+              {groups.length} group{groups.length === 1 ? "" : "s"}
+            </TooltipTrigger>
+            <TooltipContent>
+              <p class="text-[11px] font-medium">Groups</p>
+              <ul class="mt-1 space-y-0.5 text-[11.5px]">
+                <For each={groups}>{(group) => <li>{group.name}</li>}</For>
+              </ul>
+            </TooltipContent>
+          </Tooltip>
+        );
+      },
+      defaultHidden: true,
+    },
+    {
+      id: "notes",
+      header: "Notes",
+      search: (row) => row.notes,
+      cell: (row) =>
+        row.notes ? (
+          <span class="line-clamp-2 whitespace-pre-line text-muted-foreground">{row.notes}</span>
+        ) : (
+          "—"
+        ),
+      defaultHidden: true,
+    },
+    {
+      id: "lastSeen",
+      header: "Last seen",
+      sort: (row) => row.lastSeenAt,
+      sortId: "lastSeenAt",
+      class: "text-right",
+      cell: (row) => (
+        <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+          <PresenceDot online={devicePresence(row, presenceNow()).online} />
+          <span title={devicePresence(row, presenceNow()).online ? "Online" : "Offline"}>
+            {formatDeviceDate(row.lastSeenAt)}
+          </span>
+        </span>
+      ),
+    },
+  ]);
+
+  /**
+   * Visible column ids for saving. A saved view owns the set; otherwise the
+   * table's persisted picker state is the source, so "save current view" keeps
+   * the columns the operator can actually see.
+   */
+  const currentVisibleColumns = () => {
+    const explicit = viewColumns();
+
+    if (explicit) return explicit;
+    const stored = readTableColumnVisibility("devices");
+
+    return deviceColumns()
+      .filter(
+        (column) => stored[column.id] === false || (!stored[column.id] && !column.defaultHidden),
+      )
+      .map((column) => column.id);
+  };
+
+  const currentViewQuery = (): DeviceViewQuery => {
+    const active = filters();
+
+    return {
+      q: active.q,
+      status: active.status,
+      proto: active.proto,
+      groupId: active.groupId,
+      staleDays: active.staleDays,
+      health: active.health,
+      push: active.push,
+      setup: active.setup,
+      notSeenSince: active.notSeenSince,
+      activation: active.activation,
+      attributes: active.attributes,
+      query: active.query,
+      sort: active.sort,
+      direction: active.direction,
+      columns: currentVisibleColumns(),
+      pageSize: pageSize(),
+    };
+  };
+
   const total = () => devices.data?.total ?? 0;
-  const pageCount = () => Math.max(1, Math.ceil(total() / PAGE_SIZE));
+  const pageCount = () => Math.max(1, Math.ceil(total() / pageSize()));
 
   /**
    * Resolve every device the active filter matches. The table's "select all
@@ -984,7 +1377,7 @@ export default function DevicesPage() {
   createEffect(
     () => ({ total: total(), page: page() }),
     ({ total, page }) => {
-      const last = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+      const last = Math.max(0, Math.ceil(total / pageSize()) - 1);
 
       if (page > last) setPage(last);
     },
@@ -999,6 +1392,8 @@ export default function DevicesPage() {
       staleDays() ||
       health() ||
       push() ||
+      setup() ||
+      notSeenSince() ||
       activation() ||
       attributeKey() ||
       deviceQuery(),
@@ -1013,11 +1408,16 @@ export default function DevicesPage() {
     setStaleDays("");
     setHealth("");
     setPush("");
+    setSetup("");
+    setNotSeenSince("");
     setActivation("");
     setAttributeKey("");
     setAttributeValue("");
     setDeviceQuery(null);
     setSort({ id: "name", dir: "asc" });
+    setPageSize(DEFAULT_PAGE_SIZE);
+    setViewColumns(undefined);
+    setCurrentViewId(undefined);
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
@@ -1175,6 +1575,8 @@ export default function DevicesPage() {
         onRefresh={() => void devices.refetch()}
         error={devices.error}
         storageKey="devices"
+        visibleColumnIds={() => viewColumns()}
+        onVisibleColumnsChange={(columns) => setViewColumns(columns)}
         rowHref={(row) => routes.tenant(params.tenantId).device(row.id)}
         searchValue={q()}
         onSearchChange={setQ}
@@ -1194,6 +1596,16 @@ export default function DevicesPage() {
                 hideClear
               />
               <div class="ml-auto flex flex-wrap items-center gap-1.5">
+                <DeviceViewsMenu
+                  tenantId={params.tenantId ?? ""}
+                  views={deviceViews.data?.views ?? []}
+                  currentViewId={currentViewId()}
+                  canSave={can("devices.read")}
+                  canPublish={can("devices.write")}
+                  currentQuery={currentViewQuery}
+                  onApply={applyView}
+                  onCurrentViewDeleted={() => setCurrentViewId(undefined)}
+                />
                 <NativeSelect
                   class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
                   aria-label="Sort devices"
@@ -1310,7 +1722,7 @@ export default function DevicesPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={(page() + 1) * PAGE_SIZE >= total()}
+                disabled={(page() + 1) * pageSize() >= total()}
                 onClick={() => setPage((value) => value + 1)}
               >
                 Next
@@ -1356,147 +1768,7 @@ export default function DevicesPage() {
             }
           />
         }
-        columns={[
-          ...attributeColumns(),
-          {
-            id: "name",
-            header: "Name",
-            sort: (row) => row.name,
-            search: (row) => row.name,
-            cell: (row) => (
-              <EntityHoverCard
-                preview={{ kind: "device", device: row }}
-                href={routes.tenant(params.tenantId).device(row.id)}
-                class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
-              >
-                {row.name}
-              </EntityHoverCard>
-            ),
-          },
-          {
-            id: "status",
-            header: "Status",
-            sort: (row) => row.status,
-            cell: (row) => <DeviceStatusTag status={row.status} />,
-          },
-          {
-            id: "health",
-            header: "Health",
-            // The API sorts this column (health is derived, not stored); the
-            // local comparator keeps the same worst-first order if a row set is
-            // ever sorted on the client.
-            sort: (row) => healthRank(row.health?.level),
-            sortId: "health",
-            cell: (row) => (
-              <DeviceHealthTag
-                level={row.health?.level ?? "unknown"}
-                reasons={row.health?.reasons}
-              />
-            ),
-          },
-          {
-            id: "osUpdate",
-            header: "OS updates",
-            cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
-          },
-          {
-            id: "platform",
-            header: "Platform",
-            cell: (row) => <PlatformBadge proto={row.proto} />,
-          },
-          {
-            id: "activation",
-            header: "Activation",
-            // Sorted by the API in administrative order (activated,
-            // not-activated, unknown); the local comparator only matters if a
-            // row set is ever sorted on the client.
-            sort: (row) => row.windowsActivationStatus ?? "",
-            sortId: "activation",
-            cell: (row) => <DeviceActivationTag status={row.windowsActivationStatus} />,
-            defaultHidden: true,
-          },
-          {
-            id: "serial",
-            header: "Serial",
-            search: (row) => row.serial,
-            cell: (row) => (
-              <span class="font-mono text-[11.5px] text-muted-foreground">
-                {row.serial ?? "Unknown"}
-              </span>
-            ),
-          },
-          {
-            id: "model",
-            header: "Model",
-            search: (row) => row.model,
-            cell: (row) => <span class="text-muted-foreground">{row.model ?? "Unknown"}</span>,
-          },
-          {
-            id: "assetTag",
-            header: "Asset tag",
-            search: (row) => row.assetTag,
-            cell: (row) => row.assetTag ?? "—",
-            defaultHidden: true,
-          },
-          {
-            id: "groups",
-            header: "Groups",
-            cell: (row) => {
-              const groups = rowGroups(row);
-
-              if (groups.length === 0) return "—";
-              const names = groups.map((group) => group.name).join(", ");
-
-              return (
-                <Tooltip>
-                  <TooltipTrigger
-                    type="button"
-                    class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                    aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
-                  >
-                    {groups.length} group{groups.length === 1 ? "" : "s"}
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p class="text-[11px] font-medium">Groups</p>
-                    <ul class="mt-1 space-y-0.5 text-[11.5px]">
-                      <For each={groups}>{(group) => <li>{group.name}</li>}</For>
-                    </ul>
-                  </TooltipContent>
-                </Tooltip>
-              );
-            },
-            defaultHidden: true,
-          },
-          {
-            id: "notes",
-            header: "Notes",
-            search: (row) => row.notes,
-            cell: (row) =>
-              row.notes ? (
-                <span class="line-clamp-2 whitespace-pre-line text-muted-foreground">
-                  {row.notes}
-                </span>
-              ) : (
-                "—"
-              ),
-            defaultHidden: true,
-          },
-          {
-            id: "lastSeen",
-            header: "Last seen",
-            sort: (row) => row.lastSeenAt,
-            sortId: "lastSeenAt",
-            class: "text-right",
-            cell: (row) => (
-              <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
-                <PresenceDot online={devicePresence(row, presenceNow()).online} />
-                <span title={devicePresence(row, presenceNow()).online ? "Online" : "Offline"}>
-                  {formatDeviceDate(row.lastSeenAt)}
-                </span>
-              </span>
-            ),
-          },
-        ]}
+        columns={deviceColumns()}
       />
 
       <input

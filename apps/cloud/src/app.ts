@@ -15,6 +15,7 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
+  enterpriseDeviceViewApi,
   enterpriseIdentityApi,
   enterpriseOnboardingApi,
   enterpriseUserApi,
@@ -36,6 +37,7 @@ import {
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
+  enterpriseDeviceViewHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
   enterpriseCutoverHandlers,
@@ -252,6 +254,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
+  .add(enterpriseDeviceViewApi)
   .add(enterpriseIdentityApi)
   .add(enterpriseOnboardingApi)
   .add(enterpriseUserApi)
@@ -320,6 +323,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseDeviceView", enterpriseDeviceViewHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseOnboarding", enterpriseOnboardingHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseUser", enterpriseUserHandlers),
