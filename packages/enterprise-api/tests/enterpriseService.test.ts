@@ -4548,6 +4548,16 @@ describe("device command lifecycle", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     expect(commands(db)).toHaveLength(0);
+
+    // Apple accepts 63 characters exactly.
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "x".repeat(63),
+      }),
+    );
+
+    expect(commands(db)).toHaveLength(1);
   });
 
   it("does not offer set-device-name on Apple User Enrollment", async () => {
@@ -4593,6 +4603,16 @@ describe("device command lifecycle", () => {
       namePushEnabled: true,
     });
     expect(db.store.audit_log.at(-1)).toMatchObject({ action: "device.renamed" });
+
+    // The same limit the command enforces applies to the opt-in path.
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "device-1", {
+          name: "x".repeat(64),
+          applyNameToDevice: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
   it("rejects the apply-name opt-in on platforms without name delivery", async () => {

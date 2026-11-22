@@ -270,29 +270,32 @@ delivery failures and invalid tokens.
 
 ## Command matrix
 
-| Action                         | Requires step-up | Notes                                |
-| ------------------------------ | ---------------- | ------------------------------------ |
-| `sync`                         | No               | APNs wake-up                         |
-| `collect-security-info`        | No               | FileVault/bootstrap key and AL state |
-| `refresh-applications`         | No               | Installed app inventory              |
-| `collect-activation-lock-code` | Yes              | Device bypass code                   |
-| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key   |
-| `set-recovery-lock`            | Yes              | Apple silicon only                   |
-| `verify-recovery-lock`         | Yes              | Checks the stored password           |
-| `lock`                         | Yes              | Returns a PIN                        |
-| `wipe`                         | Yes              | Erase with explicit flags            |
-| `restart`                      | Yes              | —                                    |
-| `shutdown`                     | Yes              | —                                    |
-| `clear-passcode`               | Yes              | Needs an unlock token                |
-| `install-app`                  | Yes              | Manifest URL or iTunes Store id      |
-| `set-device-name`             | No               | `Settings`/`DeviceName`; supervised only |
+| Action                         | Requires step-up | Notes                                    |
+| ------------------------------ | ---------------- | ---------------------------------------- |
+| `sync`                         | No               | APNs wake-up                             |
+| `collect-security-info`        | No               | FileVault/bootstrap key and AL state     |
+| `refresh-applications`         | No               | Installed app inventory                  |
+| `collect-activation-lock-code` | Yes              | Device bypass code                       |
+| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key       |
+| `set-recovery-lock`            | Yes              | Apple silicon only                       |
+| `verify-recovery-lock`         | Yes              | Checks the stored password               |
+| `lock`                         | Yes              | Returns a PIN                            |
+| `wipe`                         | Yes              | Erase with explicit flags                |
+| `restart`                      | Yes              | —                                        |
+| `shutdown`                     | Yes              | —                                        |
+| `clear-passcode`               | Yes              | Needs an unlock token                    |
+| `install-app`                  | Yes              | Manifest URL or iTunes Store id          |
+| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only |
 
 `set-device-name` queues Apple's `Settings` command with the documented
-`DeviceName` item and is available on supervised macOS, iOS, iPadOS and tvOS
-devices. Apple User Enrollment (BYOD) devices are excluded because they are not
-supervised. When "Apply name to device" is enabled, the check-in re-queues the
-same command while the reported name still differs, at most once a day. The last
-acknowledged value is stored in `appliedName`/`appliedNameAt`; see
+`DeviceName` item and works on supervised macOS, iOS, iPadOS and tvOS devices.
+Apple User Enrollment (BYOD) devices are excluded because they are not
+supervised; other Apple devices stay eligible because Apple does not report a
+supervision flag. Values longer than Apple's 63-character limit are rejected.
+"Apply name to device" defaults off, and when enabled the check-in re-queues the
+same command while the newest known name still differs, at most once a day. A
+skipped over-long automatic push is recorded as `device.name_push_skipped`. The
+last acknowledged value is stored in `appliedName`/`appliedNameAt`; see
 [Device names](../../manage/devices.md#device-names).
 
 ## Limitations

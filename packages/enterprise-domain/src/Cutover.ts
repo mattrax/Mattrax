@@ -230,6 +230,8 @@ export const CutoverDevice = Schema.Struct({
   osBuild: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   physicalName: Schema.optional(NullableString),
+  /** When the reported name was last written. */
+  physicalNameAt: Schema.optional(NullableString),
   /** "Apply name to device with each sync"; null means never chosen. */
   namePushEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
   appliedName: Schema.optional(NullableString),

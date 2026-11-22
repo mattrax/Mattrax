@@ -2056,6 +2056,8 @@ export const device = mysqlTable(
     notes: text("notes"),
     assetTag: shortText("asset_tag"),
     physicalName: shortText("physical_name"),
+    /** When `physicalName` was last written from a device report. */
+    physicalNameAt: timestamp("physical_name_at"),
     /**
      * "Apply name to device with each sync". Null means the administrator has
      * never chosen; the dashboard defaults it on for supervised Apple devices.

@@ -408,6 +408,7 @@ export const buildTenantCutover = (
           osBuild: device.osBuild,
           osEdition: device.osEdition,
           physicalName: device.physicalName,
+          physicalNameAt: device.physicalNameAt?.toISOString() ?? null,
           namePushEnabled: device.namePushEnabled,
           appliedName: device.appliedName,
           appliedNameAt: device.appliedNameAt?.toISOString() ?? null,

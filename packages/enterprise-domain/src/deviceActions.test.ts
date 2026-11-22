@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  APPLE_DEVICE_NAME_MAX_LENGTH,
   appleDeviceNameFromSettingsPayload,
   appleDeviceNameSettingsPayload,
   appleUserAvailableActions,
@@ -8,8 +7,8 @@ import {
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
-  normalizeAppleDeviceName,
 } from "./deviceActions.ts";
+import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
 describe("deviceAvailableActions", () => {
   it("offers Windows actions without a sync action", () => {

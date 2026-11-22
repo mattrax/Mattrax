@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { isMacOsDevice } from "./deviceHealth.js";
+import { normalizeAppleDeviceName } from "./deviceInventory.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -388,21 +389,6 @@ export const deviceActionUnavailableReason = (
     return "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.";
 
   return `This device does not support the ${action} action.`;
-};
-
-/**
- * Longest `DeviceName` Apple accepts in a `Settings` command.
- *
- * Apple documents 1-63 characters for the value; rejecting it here gives the
- * administrator a useful error instead of a failed command on the device.
- */
-export const APPLE_DEVICE_NAME_MAX_LENGTH = 63;
-
-/** Trim a name and reject the empty value Apple would refuse. */
-export const normalizeAppleDeviceName = (value: string | null | undefined): string | undefined => {
-  const name = value?.trim();
-
-  return name ? name : undefined;
 };
 
 /**

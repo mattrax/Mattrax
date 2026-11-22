@@ -180,7 +180,8 @@ export type DeviceActivityInputs = {
 const AUDIT_TITLES = {
   "device.updated": "Device details updated",
   "device.renamed": "Device renamed",
-  "device.name_pushed": "Device name applied",
+  "device.name_push_queued": "Device name push queued",
+  "device.name_push_skipped": "Device name push skipped",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",

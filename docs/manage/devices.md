@@ -288,23 +288,30 @@ management label, not the name the operating system presents in System Settings,
 AirDrop, the terminal hostname or a print queue. **Edit details → Apply name to
 device** closes that gap on supervised Apple devices.
 
-- The option defaults on for supervised Apple devices, so saving a new name also
-  queues Apple's `Settings` command with `DeviceName`.
+- The option defaults off. Apple does not report supervision, so Mattrax cannot
+  tell a supervised device from an unsupervised one; enable it on a device you
+  know is supervised. Saving a name with the option on queues Apple's
+  `Settings` command with `DeviceName`.
 - While the option is on, the Apple check-in re-applies the management name when
-  the device still reports a different one. A push is attempted at most once a
-  day, whatever the previous outcome, so an OS that ignores the value does not
-  receive a command on every check-in.
+  the newest evidence says the device carries a different one. A push is
+  attempted at most once a day, whatever the previous outcome, so an OS that
+  ignores the value does not receive a command on every check-in. A name longer
+  than Apple's 63-character limit is skipped and recorded as a skipped push
+  instead of being queued.
 - `appliedName` and `appliedNameAt` record the last name the device
   acknowledged, not the name that was merely queued.
-- When `physicalName` and `name` differ the device page shows a **Name drift**
-  chip and a one-click **Apply to device** action. The action pushes the current
-  management name without changing either name.
+- When `name` differs from the newest known device name — the later of the
+  device's report and the acknowledged value — the device page shows a **Name
+  drift** chip and a one-click **Apply to device** action. The action pushes
+  the current management name without changing either name.
 - Turning the option off stops check-in re-applies. It never clears the last
   applied name or renames the device back.
 - Apple User Enrollment (BYOD) devices are excluded: they are not supervised and
   Apple rejects the `Settings` command.
-- Windows and Android name delivery are not implemented yet. The API rejects an
-  opt-in on those platforms instead of storing a flag that does nothing.
+- Windows and Android name delivery are not implemented yet. AMAPI's
+  `displayName` is an enterprise label rather than the user-visible Android
+  device name, and `mattraxd` has no rename command; the API rejects an opt-in on
+  those platforms instead of storing a flag that does nothing.
 
 Every rename and every queued push writes an audit event, and the queued
 `Settings` command appears in the device's command history with its result. A

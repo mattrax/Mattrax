@@ -3974,7 +3974,13 @@ export const createEnterpriseService = ({
     appliedNameAt: row.appliedNameAt ? iso(row.appliedNameAt) : null,
     // Drift is derived from the two names the row already has, so a rename
     // that never reached the device stays visible without another query.
-    nameDrift: deviceNameDrift({ name: row.name, reportedName: row.physicalName }),
+    nameDrift: deviceNameDrift({
+      name: row.name,
+      reportedName: row.physicalName,
+      reportedNameAt: row.physicalNameAt,
+      appliedName: row.appliedName,
+      appliedNameAt: row.appliedNameAt,
+    }),
     vendor: row.vendor,
     osEdition: row.osEdition,
     osVersion: row.osVersion,
@@ -15261,8 +15267,7 @@ export const createEnterpriseService = ({
           if (!hasPermission(ctx.permissions, "devices.command"))
             return yield* Effect.fail(
               new EnterpriseForbidden({
-                message:
-                  "Applying the name to the device requires the devices.command permission.",
+                message: "Applying the name to the device requires the devices.command permission.",
               }),
             );
 
@@ -15285,6 +15290,15 @@ export const createEnterpriseService = ({
               new EnterpriseBadRequest({
                 message:
                   "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.",
+              }),
+            );
+
+          const targetName = body.name === undefined ? existing.name : body.name.trim();
+
+          if (targetName.length > APPLE_DEVICE_NAME_MAX_LENGTH)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `Apple device names must be 1-${APPLE_DEVICE_NAME_MAX_LENGTH} characters.`,
               }),
             );
         }

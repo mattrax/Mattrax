@@ -1,0 +1,1 @@
+ALTER TABLE `device` ADD `physical_name_at` datetime(3);

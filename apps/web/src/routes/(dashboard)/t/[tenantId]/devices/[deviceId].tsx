@@ -95,6 +95,7 @@ import {
   DEVICE_ARTWORK_WIDTH,
 } from "~/lib/device-artwork";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { defaultApplyNameToDevice, shouldQueueDeviceNamePush } from "~/lib/device-name";
 import {
   optimisticallyPatchItem,
   optimisticallyRemoveDevices,
@@ -640,10 +641,10 @@ export default function DeviceDetailPage() {
     row()?.proto === "apple" && supports("set-device-name") && canCommand();
 
   /**
-   * Null means the administrator never chose. Default the option on for a
-   * supervised Apple device, matching the "apply with each sync" default.
+   * Supervision is not reported by Apple, so the option starts off and only a
+   * stored `true` turns it on. User Enrollment is excluded by the action.
    */
-  const currentApplyName = () => row()?.namePushEnabled ?? canApplyName();
+  const currentApplyName = () => defaultApplyNameToDevice(row()?.namePushEnabled);
 
   createEffect(
     () => row()?.id,
@@ -654,7 +655,7 @@ export default function DeviceDetailPage() {
         setName(device.name);
         setAssetTag(device.assetTag ?? "");
         setNotes(device.notes ?? "");
-        setApplyName(device.namePushEnabled ?? canApplyName());
+        setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
       }
     },
   );
@@ -728,6 +729,12 @@ export default function DeviceDetailPage() {
         ...(canApplyName() ? { applyNameToDevice: applyName() } : {}),
       }),
     onMutate: async () => {
+      // Capture the pre-save values before the optimistic write. Reading the
+      // row in onSuccess compares against the optimistic name and loses the
+      // fact that the operator renamed the device.
+      const previousName = row()?.name ?? null;
+      const previousApplyName = currentApplyName();
+
       const restore = await optimisticallyPatchItem(
         queryClient,
         params.tenantId!,
@@ -739,19 +746,24 @@ export default function DeviceDetailPage() {
       // The dialog closes on submit; the header already shows the new values.
       setEditOpen(false);
 
-      return { restore };
+      return { restore, previousName, previousApplyName };
     },
-    onSuccess: () => {
+    onSuccess: (_result, _payload, context) => {
       toast.success("Device details saved");
 
       // The rename is already committed. Push it separately so a command
       // failure cannot undo or hide the saved name; the check-in opt-in is
       // the durable retry path. Saving an unrelated field must not queue a
       // command unless the name changed or the option was just turned on.
-      const nameChanged = Boolean(row() && name().trim() !== row()!.name);
-      const optionTurnedOn = applyName() && currentApplyName() !== true;
-
-      if (canApplyName() && applyName() && name().trim() && (nameChanged || optionTurnedOn))
+      if (
+        shouldQueueDeviceNamePush({
+          supported: canApplyName(),
+          applyName: applyName(),
+          submittedName: name(),
+          previousName: context?.previousName,
+          previousApplyName: context?.previousApplyName,
+        })
+      )
         applyNameToDevice.mutate(name().trim());
 
       void invalidate();
@@ -3812,7 +3824,7 @@ export default function DeviceDetailPage() {
                   onCheckedChange={setApplyName}
                   disabled={!writable()}
                   label="Apply name to device"
-                  description="Rename the device itself and re-apply it on check-in while the reported name differs. Only supervised Apple devices accept this command."
+                  description="Rename the device itself and re-apply it on check-in while the reported name differs. Only supervised Apple devices accept this command, and Mattrax cannot detect supervision, so this stays off until you enable it."
                 />
               </Show>
               <Field label="Asset tag">

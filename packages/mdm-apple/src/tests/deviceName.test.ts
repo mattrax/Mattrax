@@ -79,6 +79,11 @@ const commands = (db: ReturnType<typeof setup>["db"]) =>
 const settingsCommands = (db: ReturnType<typeof setup>["db"]) =>
   commands(db).filter((row) => row.requestType === "Settings");
 
+const audits = (db: ReturnType<typeof setup>["db"]) =>
+  dbRows(db, tableName(schema.auditLog)).filter((row) =>
+    String(row.action).startsWith("device.name_push_"),
+  );
+
 const enroll = async (backend: ReturnType<typeof setup>["backend"]) => {
   await run(backend.appleDeviceEvent(scope, authenticate()));
   await run(backend.appleDeviceEvent(scope, tokenUpdate()));
@@ -104,11 +109,12 @@ describe("Apple device name check-in", () => {
       Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }],
     });
     expect(settingsCommands(db)[0]!.status).toBe("queued");
-    expect(
-      dbRows(db, tableName(schema.auditLog)).some(
-        (row) => row.action === "device.name_pushed",
-      ),
-    ).toBe(true);
+    expect(audits(db).map((row) => row.action)).toEqual(["device.name_push_queued"]);
+
+    // A second poll must not duplicate the command or its audit row.
+    await run(backend.appleManagementCheckin(scope));
+    expect(settingsCommands(db)).toHaveLength(1);
+    expect(audits(db)).toHaveLength(1);
   });
 
   it("does nothing when the option is off or the name already matches", async () => {
@@ -130,6 +136,130 @@ describe("Apple device name check-in", () => {
     });
     await run(backend.appleManagementCheckin(scope));
     expect(settingsCommands(db)).toHaveLength(0);
+  });
+
+  it("queues 63 characters and audits a skipped 64-character name", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+
+    Object.assign(storedDevice(db), {
+      name: "x".repeat(64),
+      physicalName: "C02NAME01",
+      namePushEnabled: true,
+    });
+    await run(backend.appleManagementCheckin(scope));
+
+    expect(settingsCommands(db)).toHaveLength(0);
+    expect(audits(db).map((row) => row.action)).toEqual(["device.name_push_skipped"]);
+
+    // The skip is throttled like a push; another poll must not spam the feed.
+    await run(backend.appleManagementCheckin(scope));
+    expect(audits(db)).toHaveLength(1);
+
+    Object.assign(storedDevice(db), { name: "y".repeat(63) });
+    await run(backend.appleManagementCheckin(scope));
+    expect(settingsCommands(db)).toHaveLength(1);
+    expect(settingsCommands(db)[0]!.payload).toEqual({
+      Settings: [{ Item: "DeviceName", DeviceName: "y".repeat(63) }],
+    });
+  });
+
+  it("retries when the previous command expired instead of suppressing for a day", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+
+    const expiredAt = new Date(Date.now() - 5 * 60 * 1000);
+    Object.assign(storedDevice(db), {
+      name: "Reception Mac",
+      physicalName: "C02NAME01",
+      namePushEnabled: true,
+    });
+    db.store[tableName(schema.deviceCommand)]!.push({
+      id: "expired-settings",
+      organizationId: "org-1",
+      deviceId: storedDevice(db).id,
+      requestType: "Settings",
+      payload: { Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }] },
+      status: "queued",
+      dedupeKey: "expired-dedupe",
+      expiresAt: expiredAt,
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: new Date(expiredAt.getTime() - 30 * 60 * 1000),
+      updatedAt: new Date(expiredAt.getTime() - 30 * 60 * 1000),
+      __table: tableName(schema.deviceCommand),
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    const settings = settingsCommands(db);
+    expect(settings).toHaveLength(2);
+    expect(settings.find((row) => row.id === "expired-settings")).toMatchObject({
+      status: "expired",
+      dedupeKey: null,
+    });
+    expect(settings.find((row) => row.id !== "expired-settings")).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  it("pushes on a rename back when the acknowledgement is newer than the report", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+
+    const reportedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const appliedAt = new Date(Date.now() - 60 * 60 * 1000);
+
+    Object.assign(storedDevice(db), {
+      name: "Reception Mac",
+      physicalName: "Reception Mac",
+      physicalNameAt: reportedAt,
+      appliedName: "Front Desk",
+      appliedNameAt: appliedAt,
+      namePushEnabled: true,
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    expect(settingsCommands(db)).toHaveLength(1);
+    expect(settingsCommands(db)[0]!.payload).toEqual({
+      Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }],
+    });
+  });
+
+  it("does not let a duplicate acknowledgement overwrite a newer applied name", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+
+    Object.assign(storedDevice(db), {
+      name: "Reception Mac",
+      physicalName: "C02NAME01",
+      namePushEnabled: true,
+    });
+    await run(backend.appleManagementCheckin(scope));
+
+    const command = settingsCommands(db)[0]!;
+    const ack = CommandResultEvent.make({
+      commandUUID: String(command.id),
+      status: "Acknowledged",
+    });
+
+    await run(backend.appleDeviceEvent(scope, ack));
+    expect(deviceRow(db)).toMatchObject({ appliedName: "Reception Mac" });
+
+    // Simulate a newer acknowledgement having already won the race.
+    Object.assign(storedDevice(db), {
+      appliedName: "Newer Name",
+      appliedNameAt: new Date(Date.now() + 60_000),
+    });
+
+    await run(backend.appleDeviceEvent(scope, ack));
+
+    expect(deviceRow(db)).toMatchObject({ appliedName: "Newer Name" });
   });
 
   it("records the applied name when the device acknowledges the command", async () => {
