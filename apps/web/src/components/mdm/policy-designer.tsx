@@ -1910,7 +1910,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   );
 
   return (
-    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-page">
       {unsaved.prompt}
       <a
         href="#designer-editor"
@@ -1919,7 +1919,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         Skip to settings
       </a>
 
-      <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-background/85 backdrop-blur">
+      <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-page/85 backdrop-blur">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
           <div class="shrink-0">{props.pageActions}</div>
           <span class="hidden h-4 w-px bg-border sm:block" aria-hidden="true" />
@@ -2473,7 +2473,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         <section
           id="designer-editor"
           class={cn(
-            "min-h-0 min-w-0 flex-1 flex-col bg-background xl:flex",
+            "min-h-0 min-w-0 flex-1 flex-col bg-page xl:flex",
             mobileView() === "browse" ? "hidden xl:flex" : "flex",
           )}
           aria-label="Collection editor"
@@ -2523,7 +2523,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           >
             {(collection) => (
               <>
-                <div class="shrink-0 border-b border-border bg-background/90 px-3 py-2.5 backdrop-blur sm:px-5">
+                <div class="shrink-0 border-b border-border bg-page/90 px-3 py-2.5 backdrop-blur sm:px-5">
                   <div class="flex items-start gap-2">
                     <button
                       type="button"
@@ -2933,7 +2933,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </aside>
       </div>
 
-      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-background/95 px-3 py-2 backdrop-blur xl:hidden">
+      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-page/95 px-3 py-2 backdrop-blur xl:hidden">
         <div class="min-w-0 flex-1 text-[11px] text-muted-foreground">
           <p class="truncate">
             {selections().length} collection{selections().length === 1 ? "" : "s"} ·{" "}
@@ -3105,7 +3105,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       {/* Summary sheet below xl */}
       <Sheet open={summaryOpen()} onOpenChange={setSummaryOpen}>
         <Show when={summaryOpen()}>
-          <SheetContent side="right" class="w-[min(92vw,360px)] bg-background p-0">
+          <SheetContent side="right" class="w-[min(92vw,360px)] bg-page p-0">
             <SheetHeader class="sr-only">
               <SheetTitle>Policy summary</SheetTitle>
               <SheetDescription>Review collections, issues and save this policy.</SheetDescription>

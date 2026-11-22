@@ -102,8 +102,8 @@ export default function TenantSettingsLayout(props: ParentProps) {
   );
 
   return (
-    <div class="flex min-h-full w-full flex-1 flex-col bg-card">
-      <section class="flex min-h-full flex-1 flex-col bg-card">
+    <div class="flex min-h-full w-full flex-1 flex-col bg-page">
+      <section class="flex min-h-full flex-1 flex-col bg-page">
         <header class="flex flex-col gap-3 border-b border-border px-5 pb-5 pt-6 sm:px-7 sm:pb-6 sm:pt-7 lg:px-8">
           <div class="label-caps">Settings</div>
           <div class="flex flex-col gap-1.5">

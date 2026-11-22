@@ -47,6 +47,7 @@
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
   --color-shell: var(--shell);
+  --color-page: var(--page);
   --color-scrim: var(--scrim);
 
   --color-brand: var(--brand);
@@ -113,7 +114,10 @@
   --active: #e8e8e2;
   --surface: #f1f1ed;
   --surface-raised: #ffffff;
+  /** The app-frame chrome: sidebar and top bar. */
   --shell: #f7f7f4;
+  /** The content canvas inside the frame, one tone for every dashboard page. */
+  --page: #fbfbf9;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
@@ -171,6 +175,7 @@
   --surface: #1b1b19;
   --surface-raised: #242421;
   --shell: #151514;
+  --page: #131312;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;

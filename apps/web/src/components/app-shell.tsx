@@ -928,7 +928,7 @@ export function AppShell(props: {
             id="main"
             tabindex="-1"
             class={cn(
-              "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto transition-opacity duration-[140ms] ease-swift focus:outline-none",
+              "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-page transition-opacity duration-[140ms] ease-swift focus:outline-none",
               isRouting() && "opacity-70",
             )}
           >
