@@ -44,6 +44,8 @@ import {
   Menu,
   MonitorSmartphone,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRight,
   Plus,
   Search as SearchIcon,
@@ -90,6 +92,7 @@ const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
 ];
 
 const LAST_TENANT_KEY = "mattrax:last-tenant";
+const SIDEBAR_COLLAPSED_KEY = "mattrax:sidebar-collapsed";
 
 function initials(name: string | undefined | null) {
   if (!name) return "?";
@@ -131,7 +134,11 @@ export function rememberTenant(id: string | undefined) {
  */
 export { announce } from "~/components/toast";
 
-function TenantSwitcher(props: { activeId: string | undefined; userId: string | undefined }) {
+function TenantSwitcher(props: {
+  activeId: string | undefined;
+  userId: string | undefined;
+  collapsed?: boolean;
+}) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const navigate = useNavigate();
   const active = () => me.data?.tenants.find((tenant) => tenant.id === props.activeId);
@@ -141,7 +148,10 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
   return (
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
-        class="group flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover"
+        class={cn(
+          "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
+          props.collapsed ? "mx-auto h-9 w-10 justify-center px-0" : "h-8 w-full gap-2 px-2",
+        )}
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
         {/* The name is composed from the visible content so assistive tech and
@@ -149,13 +159,16 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
         <span class="sr-only">Switch tenant: </span>
         <span
           aria-hidden="true"
-          class="flex size-5 shrink-0 items-center justify-center rounded-[6px] bg-card text-[8.5px] font-[600] leading-none text-foreground/70 ring-1 ring-inset ring-border transition-colors group-hover:text-foreground"
+          class={cn(
+            "flex shrink-0 items-center justify-center rounded-[6px] bg-card font-[600] leading-none text-foreground/70 ring-1 ring-inset ring-border transition-colors group-hover:text-foreground",
+            props.collapsed ? "size-6 text-[9px]" : "size-5 text-[8.5px]",
+          )}
         >
           <Show when={active()} fallback={<Building2 class="size-3.5" />}>
             {(tenant) => tenantInitials(tenant().name)}
           </Show>
         </span>
-        <span class="min-w-0 flex-1">
+        <span class={props.collapsed ? "sr-only" : "min-w-0 flex-1"}>
           <Show when={!loading()} fallback={<Skeleton class="my-0.5 h-2.5 w-24 rounded-full" />}>
             <span class="block truncate text-[12.5px] font-[500] leading-4 text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
               <Show when={active()} fallback="Select tenant">
@@ -164,7 +177,9 @@ function TenantSwitcher(props: { activeId: string | undefined; userId: string | 
             </span>
           </Show>
         </span>
-        <ChevronsUpDown class="size-3.5 shrink-0 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+        <Show when={!props.collapsed}>
+          <ChevronsUpDown class="size-3.5 shrink-0 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+        </Show>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent class="w-[272px]">
@@ -264,10 +279,12 @@ function UserMenu(props: {
   onSignOut: () => void | Promise<void>;
   superadmin?: boolean;
   variant?: "sidebar" | "bar";
+  collapsed?: boolean;
 }) {
   const user = () => props.user;
   const navigate = useNavigate();
   const sidebar = () => props.variant !== "bar";
+  const collapsed = () => sidebar() && props.collapsed === true;
 
   return (
     <DropdownMenu placement={sidebar() ? "top-start" : "bottom-end"}>
@@ -275,7 +292,9 @@ function UserMenu(props: {
         class={cn(
           "outline-none transition-[background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
           sidebar()
-            ? "group flex h-10 w-full items-center gap-2.5 rounded-lg px-1.5 text-left hover:bg-hover data-expanded:bg-hover"
+            ? collapsed()
+              ? "mx-auto flex size-9 items-center justify-center rounded-lg hover:bg-hover data-expanded:bg-hover"
+              : "group flex h-10 w-full items-center gap-2.5 rounded-lg px-1.5 text-left hover:bg-hover data-expanded:bg-hover"
             : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
         )}
         title={user()?.name ?? "Account"}
@@ -300,12 +319,14 @@ function UserMenu(props: {
               {(image) => <img src={image()} alt="" class="size-full object-cover" />}
             </Show>
           </Avatar>
-          <span class="min-w-0 flex-1" aria-hidden="true">
-            <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
-              {user()?.name ?? "Account"}
+          <Show when={!collapsed()}>
+            <span class="min-w-0 flex-1" aria-hidden="true">
+              <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
+                {user()?.name ?? "Account"}
+              </span>
             </span>
-          </span>
-          <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+            <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+          </Show>
         </Show>
       </DropdownMenuTrigger>
       <DropdownMenuContent class="w-[248px]">
@@ -436,6 +457,7 @@ function NavGroups(props: {
   items: NavItem[];
   path: string;
   label: string;
+  collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   const grouped = (group: NavGroup) => props.items.filter((item) => item.group === group);
@@ -457,9 +479,17 @@ function NavGroups(props: {
 
           return (
             <Show when={items().length > 0}>
-              <div class="pt-3 first:pt-1">
-                <div class="label-caps px-2 pb-1.5">{group.label}</div>
-                <ul class="space-y-0.5">
+              <div
+                class={cn(
+                  props.collapsed
+                    ? "mt-1 border-t border-border/70 pt-2 first:mt-0 first:border-0 first:pt-0"
+                    : "pt-3 first:pt-1",
+                )}
+              >
+                <Show when={!props.collapsed}>
+                  <div class="label-caps px-2 pb-1.5">{group.label}</div>
+                </Show>
+                <ul class={cn(props.collapsed ? "space-y-1" : "space-y-0.5")}>
                   <For each={items()}>
                     {(item) => {
                       const active = () => activeId() === item.id;
@@ -471,21 +501,28 @@ function NavGroups(props: {
                             aria-current={active() ? "page" : undefined}
                             onClick={() => props.onNavigate?.()}
                             class={cn(
-                              "group flex h-7 items-center gap-2 rounded-md border px-2 text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                              "group flex items-center rounded-md border text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+                              props.collapsed
+                                ? "mx-auto h-8 w-10 justify-center px-0"
+                                : "h-7 gap-2 px-2",
                               active()
                                 ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
                                 : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
                             )}
+                            title={props.collapsed ? item.label : undefined}
                           >
                             <item.icon
                               class={cn(
-                                "size-3.5 shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
+                                "shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
+                                props.collapsed ? "size-4" : "size-3.5",
                                 active()
                                   ? "text-foreground"
                                   : "text-subtle-foreground group-hover:text-foreground",
                               )}
                             />
-                            <span class="truncate">{item.label}</span>
+                            <span class={props.collapsed ? "sr-only" : "truncate"}>
+                              {item.label}
+                            </span>
                           </a>
                         </li>
                       );
@@ -509,6 +546,7 @@ function SidebarPanel(props: {
   items: NavItem[];
   path: string;
   label: string;
+  collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   return (
@@ -520,12 +558,18 @@ function SidebarPanel(props: {
           aria-label="Mattrax home"
           onClick={() => props.onNavigate?.()}
         >
-          <BrandLogo class="h-3" />
+          <Show when={!props.collapsed} fallback={<BrandLogo mark class="text-[18px]" />}>
+            <BrandLogo class="h-3" />
+          </Show>
         </a>
       </div>
 
       <div class="px-2.5 pb-2">
-        <TenantSwitcher activeId={props.activeId} userId={props.user?.id} />
+        <TenantSwitcher
+          activeId={props.activeId}
+          userId={props.user?.id}
+          collapsed={props.collapsed}
+        />
       </div>
 
       <div class="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2.5 pb-4">
@@ -533,13 +577,19 @@ function SidebarPanel(props: {
           items={props.items}
           path={props.path}
           label={props.label}
+          collapsed={props.collapsed}
           onNavigate={props.onNavigate}
         />
       </div>
 
       <Separator />
       <div class="shrink-0 p-2">
-        <UserMenu user={props.user} onSignOut={props.onSignOut} superadmin={props.superadmin} />
+        <UserMenu
+          user={props.user}
+          onSignOut={props.onSignOut}
+          superadmin={props.superadmin}
+          collapsed={props.collapsed}
+        />
       </div>
     </div>
   );
@@ -588,10 +638,25 @@ export function AppShell(props: {
   const superadmin = () => me.data?.account.superadmin === true;
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
 
   onSettled(() => {
     setLastTenant(readLastTenant());
+
+    if (typeof localStorage !== "undefined") {
+      setSidebarCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+    }
   });
+
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed();
+
+    setSidebarCollapsed(next);
+
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+    }
+  };
 
   // Swap the device-wide preference for this account's own choice. The effect
   // re-runs if the session user changes (sign-in as someone else in this tab).
@@ -829,7 +894,12 @@ export function AppShell(props: {
       </a>
 
       <div class="mx-auto flex h-full min-h-0 w-full max-w-[1800px] overflow-hidden rounded-[20px] border border-border bg-shell shadow-[0_1px_2px_rgb(24_24_22/0.04),0_20px_55px_-28px_rgb(24_24_22/0.22)]">
-        <aside class="hidden h-full w-[244px] shrink-0 border-r border-border lg:block">
+        <aside
+          class={cn(
+            "hidden h-full shrink-0 overflow-hidden border-r border-border transition-[width] duration-[180ms] ease-swift lg:block",
+            sidebarCollapsed() ? "w-16" : "w-[244px]",
+          )}
+        >
           <SidebarPanel
             user={props.user}
             onSignOut={props.onSignOut}
@@ -838,6 +908,7 @@ export function AppShell(props: {
             items={navItems()}
             path={location.pathname}
             label="Primary"
+            collapsed={sidebarCollapsed()}
           />
         </aside>
 
@@ -860,6 +931,19 @@ export function AppShell(props: {
               >
                 <BrandLogo class="h-3" />
               </a>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="hidden lg:inline-flex"
+                aria-label={sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
+                aria-pressed={sidebarCollapsed() ? "true" : "false"}
+                title={sidebarCollapsed() ? "Expand sidebar" : "Collapse sidebar"}
+                onClick={toggleSidebar}
+              >
+                <Show when={sidebarCollapsed()} fallback={<PanelLeftClose class="size-4" />}>
+                  <PanelLeftOpen class="size-4" />
+                </Show>
+              </Button>
               <span class="mx-1 hidden h-3.5 w-px bg-border lg:block" aria-hidden="true" />
               <div class="hidden min-w-0 flex-1 sm:block">
                 <ShellBreadcrumb
