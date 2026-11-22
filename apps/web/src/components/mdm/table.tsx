@@ -24,6 +24,7 @@ import { chord, sequence, useCommands } from "~/lib/commands";
 import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selection";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
+import { toggleVisibleColumnIds } from "./table-columns";
 
 export type MdmColumn<T> = {
   id: string;
@@ -48,6 +49,11 @@ export type MdmBulkSelection = {
   total: number;
   setAllMatching: (value: boolean) => void;
 };
+
+/** Read a table's persisted column visibility (an empty map means defaults). */
+export function readTableColumnVisibility(key: string | undefined): Record<string, boolean> {
+  return readVisibility(key);
+}
 
 function readVisibility(key: string | undefined): Record<string, boolean> {
   if (!key || typeof localStorage === "undefined") return {};
@@ -87,6 +93,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   onSelectedChange?: (ids: ReadonlySet<string>) => void;
   /** Persist column visibility under this key. */
   storageKey?: string;
+  /**
+   * Exact visible column ids when the parent owns column state (a saved view).
+   * When omitted the table keeps its own selection, persisted under
+   * `storageKey`.
+   */
+  visibleColumnIds?: () => ReadonlyArray<string> | undefined;
+  /** Receives the next visible ids when a controlled table's picker changes. */
+  onVisibleColumnsChange?: (ids: string[]) => void;
   /**
    * When set, the row becomes a pointer target for navigation. Keyboard users
    * follow the link rendered in the name cell, so the row itself is neither
@@ -178,8 +192,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     else setInternalSort(value);
   };
 
-  const isColumnVisible = (column: MdmColumn<T>) =>
-    hidden()[column.id] === false || (!hidden()[column.id] && !column.defaultHidden);
+  const isColumnVisible = (column: MdmColumn<T>) => {
+    const external = props.visibleColumnIds?.();
+
+    if (external !== undefined) return external.includes(column.id);
+
+    return hidden()[column.id] === false || (!hidden()[column.id] && !column.defaultHidden);
+  };
 
   /** Visibility for a candidate map, used before the map is committed. */
   const visibleIn = (state: Record<string, boolean>, column: MdmColumn<T>) =>
@@ -647,8 +666,29 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     rangeGesture = false;
   };
 
+  /** Commit an externally owned column set and drop an ordering it hides. */
+  const commitVisibleColumns = (ids: ReadonlyArray<string>) => {
+    props.onVisibleColumnsChange?.([...ids]);
+
+    const current = sort();
+
+    if (!current) return;
+    const column = props.columns.find((item) => sortColumnId(item) === current.id);
+
+    // An ordering whose column is hidden has no visible cause, so clear it.
+    if (!column || !ids.includes(column.id)) setSort(null);
+  };
+
   /** Persist a visibility map and drop any sort whose column just disappeared. */
   const applyVisibility = (next: Record<string, boolean>) => {
+    if (props.visibleColumnIds?.() !== undefined) {
+      commitVisibleColumns(
+        props.columns.filter((column) => visibleIn(next, column)).map((column) => column.id),
+      );
+
+      return;
+    }
+
     setHidden(next);
 
     if (props.storageKey && typeof localStorage !== "undefined")
@@ -674,6 +714,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     // activation and a stale picker after another tab changed the storage.
     if (!visible && visibleColumns().length === 1 && isColumnVisible(column)) {
       announce("Keep at least one column visible.");
+
+      return;
+    }
+
+    const external = props.visibleColumnIds?.();
+
+    if (external !== undefined) {
+      commitVisibleColumns(toggleVisibleColumnIds(props.columns, external, column.id, visible));
 
       return;
     }

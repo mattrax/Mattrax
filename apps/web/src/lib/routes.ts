@@ -103,9 +103,12 @@ export const SORT_DIRECTIONS = ["asc", "desc"] as const;
 export const DeviceSearchParams = Schema.Struct({
   status: Schema.optional(Schema.Literals(DEVICE_STATUSES)),
   proto: Schema.optional(Schema.Literals(DEVICE_PROTOCOLS)),
-  staleDays: Schema.optional(Schema.Literals(DEVICE_STALE_DAYS)),
+  /** Positive day count; the picker shows 7/30/90 but a view may store any. */
+  staleDays: Schema.optional(Schema.String),
   health: Schema.optional(Schema.Literals(DEVICE_HEALTH_FILTERS)),
   push: Schema.optional(Schema.Literals(DEVICE_PUSH_FILTERS)),
+  setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
+  notSeenSince: Schema.optional(Schema.String),
   activation: Schema.optional(Schema.Literals(DEVICE_ACTIVATION_FILTERS)),
   sort: Schema.optional(Schema.Literals(DEVICE_SORT_FIELDS)),
   direction: Schema.optional(Schema.Literals(SORT_DIRECTIONS)),
@@ -116,6 +119,16 @@ export const DeviceSearchParams = Schema.Struct({
   query: Schema.optional(Schema.String),
   /** 1-based page index, so a paged device view is shareable. */
   page: Schema.optional(Schema.String),
+  /** Visible table column ids, comma-separated, from a saved view. */
+  columns: Schema.optional(Schema.String),
+  /** Rows per page, from a saved view. */
+  pageSize: Schema.optional(Schema.String),
+  /**
+   * The saved view the current filters came from. Only a UI marker: the exact
+   * filters and columns are also in the URL so a copied link keeps working if
+   * the view is later renamed or deleted.
+   */
+  view: Schema.optional(Schema.String),
   import: Schema.optional(Schema.Literal("1")),
 });
 
@@ -173,13 +186,35 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   const params: MutableDeviceSearchParams = {};
   const status = literalValue(DEVICE_STATUSES, values.status);
   const proto = literalValue(DEVICE_PROTOCOLS, values.proto);
-  const staleDays = literalValue(DEVICE_STALE_DAYS, values.staleDays);
+  const staleDaysValue = values.staleDays === undefined ? undefined : Number(values.staleDays);
+  const staleDays =
+    staleDaysValue !== undefined &&
+    Number.isInteger(staleDaysValue) &&
+    staleDaysValue >= 1 &&
+    staleDaysValue <= 3650
+      ? String(staleDaysValue)
+      : undefined;
   const health = literalValue(DEVICE_HEALTH_FILTERS, values.health);
   const push = literalValue(DEVICE_PUSH_FILTERS, values.push);
+  const setup = literalValue(["awaiting", "complete"], values.setup);
   const activation = literalValue(DEVICE_ACTIVATION_FILTERS, values.activation);
   const sort = literalValue(DEVICE_SORT_FIELDS, values.sort);
   const direction = literalValue(SORT_DIRECTIONS, values.direction);
   const page = pageIndexValue(values.page);
+  const pageSizeValue = values.pageSize === undefined ? undefined : Number(values.pageSize);
+  const pageSize =
+    pageSizeValue !== undefined &&
+    Number.isInteger(pageSizeValue) &&
+    pageSizeValue >= 1 &&
+    pageSizeValue <= 200
+      ? String(pageSizeValue)
+      : undefined;
+  const columns = values.columns
+    ?.split(",")
+    .map((column) => column.trim())
+    .filter(Boolean)
+    .join(",");
+  const view = values.view?.trim();
 
   if (status !== undefined) params.status = status;
 
@@ -191,7 +226,11 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
 
   if (push !== undefined) params.push = push;
 
+  if (setup !== undefined) params.setup = setup;
+
   if (activation !== undefined) params.activation = activation;
+
+  if (values.notSeenSince !== undefined) params.notSeenSince = values.notSeenSince;
 
   if (sort !== undefined) params.sort = sort;
 
@@ -208,6 +247,12 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   if (values.query !== undefined) params.query = values.query;
 
   if (page !== undefined) params.page = page;
+
+  if (columns) params.columns = columns;
+
+  if (pageSize !== undefined) params.pageSize = pageSize;
+
+  if (view) params.view = view;
 
   if (values.import === "1") params.import = "1";
 
@@ -226,6 +271,8 @@ export const readDeviceSearchParams = (search: RouteSearch): DeviceSearchParams 
     staleDays: search.staleDays,
     health: search.health,
     push: search.push,
+    setup: search.setup,
+    notSeenSince: search.notSeenSince,
     sort: search.sort,
     direction: search.direction,
     q: search.q,
@@ -234,6 +281,9 @@ export const readDeviceSearchParams = (search: RouteSearch): DeviceSearchParams 
     attributeValue: search.attributeValue,
     query: search.query,
     page: search.page,
+    columns: search.columns,
+    pageSize: search.pageSize,
+    view: search.view,
     import: search.import,
   });
 

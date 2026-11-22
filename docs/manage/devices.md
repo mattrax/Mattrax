@@ -88,6 +88,75 @@ Query parameters:
 `GET /api/v1/tenants/:tenantId/devices` returns every device without pagination. Prefer
 `/devices/search` for large fleets.
 
+### Saved views
+
+**Views** in the device toolbar saves the current combination of search, filters,
+sort, direction and visible columns under a name. Operators no longer rebuild "MIA
+Macs" or "pilot iPhones" every morning.
+
+- **Save current view** stores the filters, sort, columns and page size.
+- **Update** rewrites a saved view with the current table state.
+- **Rename** changes the name, description and visibility.
+- **Duplicate** makes a copy; a member who cannot publish gets a private copy.
+- **Delete** removes the view. A copied URL still contains the filters, so it keeps
+  working after the view is gone.
+- **Set as my default** opens that view whenever **Devices** is opened with no
+  explicit search params. Clearing the default restores the built-in unfiltered list.
+
+Applying a view writes its query into the URL (and a `view` marker) instead of
+keeping state in the page. The URL remains the source of truth, so copying the
+address bar reproduces the same view for a teammate. The `columns` search param
+holds the visible table columns; a view also records the page size.
+
+Visibility and permissions:
+
+| Visibility | Who can open it     | Who can edit or delete it     |
+| ---------- | ------------------- | ----------------------------- |
+| Private    | Its owner           | Its owner                     |
+| Tenant     | Every tenant member | Roles with **Manage devices** |
+
+A member with **View devices** can create and manage private views. Publishing a
+tenant view (and editing or deleting one) requires **Manage devices**
+(`devices.write`). Creating, updating, deleting and choosing a default are written
+to the audit log. When a member leaves the tenant, their private views and their
+default are removed; published tenant views stay with the tenant.
+
+References age gracefully: if a saved view filtered on a group or attribute that was
+later deleted, opening it drops that reference, tells you, and keeps the rest of the
+view. If the default view is missing, the page falls back to the normal unfiltered
+device list.
+
+API:
+
+| Method   | Path                                             | Purpose                          |
+| -------- | ------------------------------------------------ | -------------------------------- |
+| `GET`    | `/api/v1/tenants/:tenantId/device-views`         | List private and tenant views    |
+| `POST`   | `/api/v1/tenants/:tenantId/device-views`         | Create a view                    |
+| `PATCH`  | `/api/v1/tenants/:tenantId/device-views/:viewId` | Update name, visibility or query |
+| `DELETE` | `/api/v1/tenants/:tenantId/device-views/:viewId` | Delete a view                    |
+| `PUT`    | `/api/v1/tenants/:tenantId/device-views/default` | Set or clear your default view   |
+
+A view query is the same shape as the device search filters plus `columns` and
+`pageSize`, for example:
+
+```json
+{
+  "name": "MIA Macs",
+  "visibility": "tenant",
+  "query": {
+    "proto": "apple",
+    "health": "missing",
+    "sort": "lastSeenAt",
+    "direction": "desc",
+    "columns": ["name", "health", "lastSeen"],
+    "pageSize": 50
+  }
+}
+```
+
+Views are read-only query wrappers. They do not become dynamic groups and do not
+change the dashboard widget or report definitions.
+
 ## Health in the list
 
 The **Health** column shows each device's derived rollup (healthy, attention, **MIA**,

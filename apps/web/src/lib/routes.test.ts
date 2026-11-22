@@ -121,6 +121,31 @@ describe("device search codecs", () => {
     expect(decodeDeviceSearchParams({ page: "next" })).toEqual({});
   });
 
+  it("round-trips saved-view params and validates the page size", () => {
+    expect(
+      decodeDeviceSearchParams({
+        columns: "name, health, attribute:cost_centre",
+        pageSize: "100",
+        view: "view-1",
+        setup: "awaiting",
+        notSeenSince: "2026-01-01T00:00:00.000Z",
+        staleDays: "13",
+      }),
+    ).toEqual({
+      columns: "name,health,attribute:cost_centre",
+      pageSize: "100",
+      view: "view-1",
+      setup: "awaiting",
+      notSeenSince: "2026-01-01T00:00:00.000Z",
+      staleDays: "13",
+    });
+    expect(decodeDeviceSearchParams({ pageSize: "500" })).toEqual({});
+    expect(decodeDeviceSearchParams({ pageSize: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ setup: "bogus" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "2.5" })).toEqual({});
+  });
+
   it("serialises the page alongside the filters", () => {
     expect(routes.tenant("acme").devices({ health: "attention", page: "2" })).toBe(
       "/t/acme/devices?health=attention&page=2",

@@ -46,6 +46,8 @@ export const TenantMigrationEntryParam = {
   entryId: Schema.String,
 };
 
+export const TenantDeviceViewParam = { tenantId: Schema.String, viewId: Schema.String };
+
 export const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
 
 export const TenantDashboardWidgetParam = {

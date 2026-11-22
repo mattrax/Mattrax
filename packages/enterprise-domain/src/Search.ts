@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import { DeviceHealth } from "./Device.js";
 import { DeviceProtocol } from "./Device.js";
 import { DeviceRelation } from "./Group.js";
@@ -293,6 +293,198 @@ export const DeviceSearchResponse = Schema.Struct({
 });
 
 export type DeviceSearchResponse = typeof DeviceSearchResponse.Type;
+
+/**
+ * A reusable device-list view saves the exact query a table URL would carry.
+ *
+ * The web table is still driven by the URL; applying a view writes these
+ * values into search params. `limit`/`offset` are deliberately absent: the
+ * view stores the page size, and a copied link still starts at page one.
+ */
+export const DeviceViewQuery = Schema.Struct({
+  q: Schema.optional(Schema.String),
+  query: Schema.optional(Schema.String),
+  status: Schema.optional(DeviceStatus),
+  proto: Schema.optional(DeviceProtocol),
+  groupId: Schema.optional(Schema.String),
+  notSeenSince: Schema.optional(Schema.String),
+  staleDays: Schema.optional(Schema.Number),
+  health: Schema.optional(DeviceHealthFilter),
+  push: Schema.optional(Schema.Literals(["failing", "invalid"])),
+  setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
+  activation: Schema.optional(WindowsActivationStatus),
+  attributes: Schema.optional(Schema.String),
+  sort: Schema.optional(DeviceSearchSort),
+  direction: Schema.optional(SortDirection),
+  /** Visible table column ids, in display order. */
+  columns: Schema.Array(Schema.String),
+  /** Rows per page; the backend clamps this to its search maximum. */
+  pageSize: Schema.optional(Schema.Number),
+});
+
+export type DeviceViewQuery = typeof DeviceViewQuery.Type;
+
+export const DEVICE_VIEW_VISIBILITIES = ["private", "tenant"] as const;
+
+export const DeviceViewVisibility = Schema.Literals(DEVICE_VIEW_VISIBILITIES);
+
+export type DeviceViewVisibility = typeof DeviceViewVisibility.Type;
+
+/**
+ * Table columns the device table renders without an attribute definition.
+ * Attribute columns use `attribute:<key>` and are reconciled separately.
+ */
+export const DEVICE_VIEW_COLUMN_IDS = [
+  "name",
+  "status",
+  "health",
+  "osUpdate",
+  "platform",
+  "activation",
+  "serial",
+  "model",
+  "assetTag",
+  "groups",
+  "notes",
+  "lastSeen",
+] as const;
+
+export type DeviceViewColumnId = (typeof DEVICE_VIEW_COLUMN_IDS)[number];
+
+export const DEVICE_VIEW_DEFAULT_PAGE_SIZE = 50;
+
+/** Mirrors the device search endpoint's maximum page size. */
+export const DEVICE_VIEW_MAX_PAGE_SIZE = 200;
+
+export const DeviceView = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  visibility: DeviceViewVisibility,
+  query: DeviceViewQuery,
+  /** Missing when the owning account was deleted; the view survives. */
+  createdByAccountId: Schema.optional(Schema.NullOr(Schema.String)),
+  isOwner: Schema.Boolean,
+  /** The caller's per-member default. At most one view is true. */
+  isDefault: Schema.Boolean,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+
+export type DeviceView = typeof DeviceView.Type;
+
+export const DeviceViewListResponse = Schema.Struct({
+  views: Schema.Array(DeviceView),
+});
+
+export type DeviceViewListResponse = typeof DeviceViewListResponse.Type;
+
+export const CreateDeviceViewRequest = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  /** Private unless the caller can publish to the tenant. */
+  visibility: Schema.optional(DeviceViewVisibility),
+  query: DeviceViewQuery,
+});
+
+export type CreateDeviceViewRequest = typeof CreateDeviceViewRequest.Type;
+
+/** Every field is optional; only the supplied fields are written. */
+export const PatchDeviceViewRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  visibility: Schema.optional(DeviceViewVisibility),
+  query: Schema.optional(DeviceViewQuery),
+});
+
+export type PatchDeviceViewRequest = typeof PatchDeviceViewRequest.Type;
+
+/** `viewId: null` clears the member's default and restores the built-in list. */
+export const SetDefaultDeviceViewRequest = Schema.Struct({
+  viewId: Schema.NullOr(Schema.String),
+});
+
+export type SetDefaultDeviceViewRequest = typeof SetDefaultDeviceViewRequest.Type;
+
+/**
+ * Drop references that no longer resolve so opening an old view degrades to a
+ * wider result instead of an empty or failing one.
+ *
+ * Known sets are optional so a caller can reconcile before the group and
+ * attribute lists have loaded; absent sets leave those references untouched.
+ */
+export type DeviceViewReconciliation = {
+  query: DeviceViewQuery;
+  droppedGroup: boolean;
+  droppedAttributes: ReadonlyArray<string>;
+  droppedColumns: ReadonlyArray<string>;
+};
+
+export const reconcileDeviceViewQuery = (
+  query: DeviceViewQuery,
+  known: {
+    readonly groupIds?: ReadonlySet<string>;
+    readonly attributeKeys?: ReadonlySet<string>;
+  } = {},
+): DeviceViewReconciliation => {
+  const droppedAttributes: string[] = [];
+  let next = query;
+
+  if (query.groupId && known.groupIds && !known.groupIds.has(query.groupId)) {
+    const { groupId: _dropped, ...rest } = next;
+    next = rest;
+  }
+
+  if (query.attributes && known.attributeKeys) {
+    try {
+      const decoded: unknown = JSON.parse(query.attributes);
+      const attributes = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.String))(
+        decoded,
+      );
+
+      if (Option.isSome(attributes)) {
+        const kept: Record<string, string> = {};
+
+        for (const [key, value] of Object.entries(attributes.value)) {
+          if (known.attributeKeys.has(key)) kept[key] = value;
+          else droppedAttributes.push(key);
+        }
+
+        const { attributes: _attributes, ...rest } = next;
+        next = Object.keys(kept).length ? { ...rest, attributes: JSON.stringify(kept) } : rest;
+      }
+    } catch {
+      // A malformed filter is left for the search endpoint to report; the view
+      // is still readable and the rest of its settings apply.
+    }
+  }
+
+  const droppedColumns: string[] = [];
+  const columns = query.columns.filter((column) => {
+    if (column.startsWith("attribute:")) {
+      const key = column.slice("attribute:".length);
+
+      if (!known.attributeKeys || known.attributeKeys.has(key)) return true;
+
+      droppedColumns.push(column);
+
+      return false;
+    }
+
+    if ((DEVICE_VIEW_COLUMN_IDS as ReadonlyArray<string>).includes(column)) return true;
+
+    droppedColumns.push(column);
+
+    return false;
+  });
+
+  return {
+    query: { ...next, columns },
+    droppedGroup: Boolean(query.groupId && known.groupIds && !known.groupIds.has(query.groupId)),
+    droppedAttributes,
+    droppedColumns,
+  };
+};
 
 export const NodeResponse = Schema.Union([DeviceRow, GroupNode, PolicyRow]);
 
