@@ -79,7 +79,10 @@ export function useTenantProfileDraft(): TenantProfileDraft {
 export function createTenantProfileDraft(tenantId: string): TenantProfileDraft {
   const qc = useQueryClient();
   const { can } = useCan();
-  const tenantQuery = useQuery(() => enterpriseQueries.tenant(tenantId));
+  const tenantQuery = useQuery(() => ({
+    ...enterpriseQueries.tenant(tenantId),
+    enabled: can("tenant.read"),
+  }));
 
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
