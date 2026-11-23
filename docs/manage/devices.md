@@ -386,6 +386,38 @@ Every rename and every queued push writes an audit event, and the queued
 `Settings` command appears in the device's command history with its result. A
 failed push is shown there like any other failed command.
 
+### Lock screen message
+
+A shared iPad or loaner iPhone can show a return message and its asset tag on the
+lock screen, so the person holding it knows who to call and which asset to quote.
+The **Lock screen message** card on the device page previews the message and
+installs Apple's `com.apple.shareddeviceconfiguration` profile.
+
+- The action is available only on supervised iPhone and iPadOS devices. macOS,
+  tvOS, visionOS, Windows, Android and Apple User Enrollment (BYOD) devices are
+  refused with an explanation.
+- `LockScreenFootnote` is required (up to 500 characters). **Include asset tag**
+  adds the device's asset tag as `AssetTagInformation`; a device without an
+  asset tag cannot include one, and the API refuses the request instead of
+  sending an empty value.
+- Applying a message stores it as the device's override. The card shows what was
+  last installed (`appliedLockScreenMessage`, the applied asset tag and the
+  time) and the latest `InstallProfile`/`RemoveProfile` delivery state.
+- While a message is configured, the Apple check-in re-installs the profile when
+  the message, the asset tag or the management name changes. An unchanged,
+  failed install is retried at most once a day, so an OS that rejects the
+  profile is not hammered on every check-in.
+- A policy can provide a group default with the
+  `mttx.apple.lockScreenMessage` configuration
+  (`{ "message": "…", "includeAssetTag": true }`). The device card shows which
+  policy supplied the default; **Use policy default** clears the override, and the
+  check-in removes the profile when no message remains.
+- Every install/removal and every applied override is audited, and the profile
+  command appears in the device's command history with its result. A failed
+  install is shown there like any other failed command.
+- Apple has no dedicated "clear lock screen message" command. Mattrax removes
+  the profile instead, which clears the message on the next check-in.
+
 ### Inventory clocks
 
 `inventoryUpdatedAt` records the last hardware/OS report and `applicationsUpdatedAt` the
@@ -474,6 +506,7 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `collect-activation-lock-code` | Yes (supervised)              | No            | No          | Yes          |
 | `rotate-filevault-key`         | Yes                           | No            | No          | Yes          |
 | `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes          |
+| `set-lock-screen-message`      | Yes (supervised iPhone/iPad)  | No            | No          | No           |
 | `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes          |
 | `start-lost-mode`              | No                            | No            | Yes         | Yes          |
 | `stop-lost-mode`               | No                            | No            | Yes         | Yes          |

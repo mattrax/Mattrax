@@ -78,6 +78,13 @@ import {
   normalizeAppleDeviceName,
   APPLE_DEVICE_NAME_MAX_LENGTH,
   deviceNameDrift,
+  APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  isAppleLockScreenMessageDevice,
+  lockScreenMessageProblem,
+  normalizeAppleLockScreenMessage,
+  parseAppleLockScreenMessageConfiguration,
+  resolveAppleLockScreenMessage,
   diagnoseError,
   errorDiagnostic,
   evaluateDeviceQuery,
@@ -238,6 +245,10 @@ import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   RECONCILED_RESULT_STATUS,
+  appleLockScreenProfileIdentifier,
+  buildAppleLockScreenProfile,
+  installProfilePayload,
+  profileDigest,
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
   commandDeadline,
@@ -3986,6 +3997,49 @@ export const createEnterpriseService = ({
       Effect.orElseSucceed(() => null),
     );
 
+  /**
+   * Lock screen fields shared by list and detail payloads. The detail endpoint
+   * passes the winning policy default; list rows only carry the stored state.
+   */
+  const rowLockScreen = (
+    row: Pick<
+      EnterpriseDevice,
+      | "lockScreenMessage"
+      | "lockScreenIncludeAssetTag"
+      | "assetTag"
+      | "appliedLockScreenMessage"
+      | "appliedLockScreenAssetTag"
+      | "appliedLockScreenName"
+      | "appliedLockScreenAt"
+    >,
+    policy?: {
+      readonly message: string;
+      readonly includeAssetTag: boolean;
+      readonly policyName?: string;
+    } | null,
+  ) => {
+    const resolved = resolveAppleLockScreenMessage({
+      deviceMessage: row.lockScreenMessage,
+      deviceIncludeAssetTag: row.lockScreenIncludeAssetTag,
+      policy: policy ?? null,
+      assetTag: row.assetTag,
+    });
+
+    return {
+      lockScreenMessage: row.lockScreenMessage ?? null,
+      lockScreenIncludeAssetTag: row.lockScreenIncludeAssetTag ?? null,
+      effectiveLockScreenMessage: resolved.message ?? null,
+      effectiveLockScreenIncludeAssetTag: resolved.includeAssetTag,
+      lockScreenMessageSource: resolved.source,
+      lockScreenPolicyName: resolved.policyName ?? null,
+      lockScreenMessageProblem: resolved.problem ?? null,
+      appliedLockScreenMessage: row.appliedLockScreenMessage ?? null,
+      appliedLockScreenAssetTag: row.appliedLockScreenAssetTag ?? null,
+      appliedLockScreenName: row.appliedLockScreenName ?? null,
+      appliedLockScreenAt: row.appliedLockScreenAt ? iso(row.appliedLockScreenAt) : null,
+    };
+  };
+
   const rowDevice = (
     row: EnterpriseDevice,
     setup?: {
@@ -4004,6 +4058,13 @@ export const createEnterpriseService = ({
     android?: {
       readonly managementMode?: string | null;
       readonly ownership?: string | null;
+    },
+    lockScreen?: {
+      readonly policy?: {
+        readonly message: string;
+        readonly includeAssetTag: boolean;
+        readonly policyName?: string;
+      } | null;
     },
   ) => ({
     id: row.id,
@@ -4042,6 +4103,7 @@ export const createEnterpriseService = ({
       appliedName: row.appliedName,
       appliedNameAt: row.appliedNameAt,
     }),
+    ...rowLockScreen(row, lockScreen?.policy),
     vendor: row.vendor,
     osEdition: row.osEdition,
     osVersion: row.osVersion,
@@ -15425,6 +15487,8 @@ export const createEnterpriseService = ({
           notes?: string | null;
           assetTag?: string | null;
           applyNameToDevice?: boolean;
+          lockScreenMessage?: string | null;
+          lockScreenIncludeAssetTag?: boolean | null;
         } = payload;
 
         const existing = yield* db.query.device.findFirst({
@@ -15484,21 +15548,93 @@ export const createEnterpriseService = ({
             );
         }
 
+        // Setting a lock screen message causes system-initiated profile
+        // delivery on every check-in, so it needs the command permission. A
+        // devices.write caller can still clear an override back to policy.
+        const settingLockScreen =
+          (body.lockScreenMessage !== undefined && body.lockScreenMessage !== null) ||
+          body.lockScreenIncludeAssetTag === true;
+
+        if (settingLockScreen) {
+          if (!hasPermission(ctx.permissions, "devices.command"))
+            return yield* Effect.fail(
+              new EnterpriseForbidden({
+                message: "Setting a lock screen message requires the devices.command permission.",
+              }),
+            );
+
+          const [apple] =
+            existing.proto === "apple"
+              ? yield* db
+                  .select({ enrollmentMode: schema.deviceApple.enrollmentMode })
+                  .from(schema.deviceApple)
+                  .where(eq(schema.deviceApple.deviceId, deviceId))
+                  .limit(1)
+              : [];
+
+          if (
+            !isAppleLockScreenMessageDevice({
+              proto: existing.proto,
+              enrollmentMode: apple?.enrollmentMode ?? null,
+              osEdition: existing.osEdition,
+              model: existing.model,
+            })
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  existing.proto !== "apple"
+                    ? "Lock screen messages are only available on supervised iPhone and iPad devices."
+                    : "This Apple device cannot show a lock screen message. It is only available on supervised iPhone and iPadOS devices, not macOS, tvOS, visionOS or Apple User Enrollment (BYOD).",
+              }),
+            );
+        }
+
         // A rename or asset-tag edit can change dynamic-group membership, and
         // therefore the device's policies. Commit the name first so the audit
         // row and the group evaluation see the same value.
         const name = body.name === undefined ? existing.name : body.name.trim();
         const renamed = name !== existing.name;
+        const assetTag = body.assetTag === undefined ? existing.assetTag : body.assetTag;
+        const lockScreenMessage =
+          body.lockScreenMessage === undefined
+            ? existing.lockScreenMessage
+            : (normalizeAppleLockScreenMessage(body.lockScreenMessage) ?? null);
+        const lockScreenIncludeAssetTag =
+          body.lockScreenIncludeAssetTag === undefined
+            ? existing.lockScreenIncludeAssetTag
+            : body.lockScreenIncludeAssetTag;
+
+        if (lockScreenMessage && lockScreenMessage.length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The lock screen message must be at most ${APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH} characters.`,
+            }),
+          );
+
+        if (lockScreenIncludeAssetTag === true && !assetTag?.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "This device has no asset tag. Add one in Edit details, or turn off Include asset tag.",
+            }),
+          );
 
         yield* db
           .update(schema.device)
           .set({
             name,
             notes: body.notes === undefined ? existing.notes : body.notes,
-            assetTag: body.assetTag === undefined ? existing.assetTag : body.assetTag,
+            assetTag,
             ...(body.applyNameToDevice === undefined
               ? {}
               : { namePushEnabled: body.applyNameToDevice }),
+            ...(body.lockScreenMessage === undefined
+              ? {}
+              : { lockScreenMessage: lockScreenMessage ?? null }),
+            ...(body.lockScreenIncludeAssetTag === undefined
+              ? {}
+              : { lockScreenIncludeAssetTag: body.lockScreenIncludeAssetTag }),
           })
           .where(
             and(
@@ -15968,6 +16104,8 @@ export const createEnterpriseService = ({
         const body: {
           action?: string;
           deviceName?: string;
+          lockScreenMessage?: string;
+          lockScreenIncludeAssetTag?: boolean;
           manifestUrl?: string;
           iTunesStoreId?: number;
           recoveryLockPassword?: string;
@@ -16078,15 +16216,23 @@ export const createEnterpriseService = ({
         // a wipe or passcode reset does, so it follows inventory refreshes
         // rather than requiring a fresh step-up.
         if (
-          !["sync", "collect-security-info", "refresh-applications", "set-device-name"].includes(
-            action,
-          )
+          ![
+            "sync",
+            "collect-security-info",
+            "refresh-applications",
+            "set-device-name",
+            "set-lock-screen-message",
+          ].includes(action)
         )
           yield* requireStepUp(auth, request, "device-command");
 
         let lockPin: string | undefined;
         let command: { commandId: string; deduplicated: boolean } | undefined;
         let activationLockWarning: string | undefined;
+        let lockScreenMessage: string | undefined;
+        let lockScreenIncludeAssetTag: boolean | undefined;
+        let lockScreenProfile: { requestType: string; payload: CommandPayload } | undefined;
+        let lockScreenProfileDigest: string | undefined;
 
         let returnToService:
           | {
@@ -16162,6 +16308,46 @@ export const createEnterpriseService = ({
               );
             const timestamp = now();
             const randomPin = String(Math.floor(100000 + Math.random() * 900000));
+
+            // The asset tag is part of the payload, so a request that asks for
+            // it without one is refused before anything is persisted or
+            // queued. The dashboard shows the same explanation.
+            if (action === "set-lock-screen-message") {
+              const problem = lockScreenMessageProblem({
+                message: body.lockScreenMessage,
+                includeAssetTag: body.lockScreenIncludeAssetTag,
+                assetTag: device.assetTag,
+              });
+
+              if (problem)
+                return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+              lockScreenMessage = normalizeAppleLockScreenMessage(body.lockScreenMessage);
+              lockScreenIncludeAssetTag = body.lockScreenIncludeAssetTag === true;
+
+              if (!lockScreenMessage)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({ message: "Enter a lock screen message." }),
+                );
+
+              // Apple publishes lock screen messages as the
+              // com.apple.shareddeviceconfiguration profile, not an MDM
+              // command. Build the per-device profile now so a failure is
+              // reported before the override is persisted.
+              const profile = yield* Effect.promise(() =>
+                buildAppleLockScreenProfile({
+                  deviceId: device.id,
+                  message: lockScreenMessage!,
+                  assetTagInfo: lockScreenIncludeAssetTag ? device.assetTag : null,
+                }),
+              );
+
+              lockScreenProfileDigest = yield* Effect.promise(() => profileDigest(profile.content));
+              lockScreenProfile = {
+                requestType: "InstallProfile",
+                payload: installProfilePayload(profile),
+              };
+            }
 
             if (action === "return-to-service" && device.proto === "apple") {
               // Apple only supports Return to Service on iOS/iPadOS 17+,
@@ -16376,6 +16562,9 @@ export const createEnterpriseService = ({
                   };
                 }
 
+                case "set-lock-screen-message":
+                  return lockScreenProfile ?? null;
+
                 case "set-recovery-lock":
                   return {
                     requestType: "SetRecoveryLock",
@@ -16459,7 +16648,9 @@ export const createEnterpriseService = ({
                       ? "Provide a manifest URL or iTunes Store ID to install an app"
                       : action === "set-device-name"
                         ? `Provide a device name of 1-${APPLE_DEVICE_NAME_MAX_LENGTH} characters.`
-                        : "Unknown device action",
+                        : action === "set-lock-screen-message"
+                          ? "Provide a lock screen message."
+                          : "Unknown device action",
                 }),
               );
 
@@ -16495,6 +16686,29 @@ export const createEnterpriseService = ({
 
               request.payload = { Password: password };
             }
+
+            // Applying a message from the device page is also the per-device
+            // override: the check-in re-applies exactly what the operator last
+            // chose until they clear it back to the policy default.
+            if (action === "set-lock-screen-message" && lockScreenMessage)
+              yield* db
+                .update(schema.device)
+                .set({
+                  lockScreenMessage,
+                  lockScreenIncludeAssetTag: lockScreenIncludeAssetTag ?? false,
+                  // The profile command below is queued under this name and
+                  // digest, so the next check-in does not queue an identical
+                  // duplicate. A later rename or edit lets it re-apply.
+                  queuedLockScreenName: device.name,
+                  queuedLockScreenDigest: lockScreenProfileDigest ?? null,
+                  queuedLockScreenAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(schema.device.id, device.id),
+                    eq(schema.device.organizationId, ctx.organization.id),
+                  ),
+                );
 
             let recoveryLockClearId: string | undefined;
 
@@ -16631,6 +16845,14 @@ export const createEnterpriseService = ({
                 // declaration, where available, is delivered without a command.
                 mechanism: "schedule-os-update",
                 installAction: body.osUpdateInstallAction ?? "InstallASAP",
+              }
+            : {}),
+          // The message is public by design: it is rendered on the lock
+          // screen. Recording it makes every push auditable.
+          ...(action === "set-lock-screen-message" && lockScreenMessage
+            ? {
+                lockScreenMessage,
+                includeAssetTag: lockScreenIncludeAssetTag === true,
               }
             : {}),
         };
@@ -23978,9 +24200,101 @@ export const createEnterpriseService = ({
         yield* claimEnrollmentAnswers(db, ctx.organization.id, [row]);
         const attributes = yield* loadDeviceAttributes(db, ctx.organization.id, [row.id]);
 
+        // The lock screen default lives in the device's effective policy, so
+        // the detail page can show the exact message a check-in will apply and
+        // which policy supplied it.
+        const effective = yield* resolveEffectivePolicyForDevice(db, row);
+
+        const lockScreenConfiguration = effective.configurations.find(
+          (configuration) => configuration.kind === APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+        );
+
+        const lockScreenParsed = lockScreenConfiguration
+          ? parseAppleLockScreenMessageConfiguration(lockScreenConfiguration.data)
+          : undefined;
+
+        const lockScreen =
+          lockScreenConfiguration && lockScreenParsed
+            ? { ...lockScreenParsed, policyName: lockScreenConfiguration.policyName }
+            : null;
+
+        // The lock screen profile is delivered through the generic profile
+        // commands, so resolve the matching command here instead of making the
+        // page decode every InstallProfile payload.
+        const lockScreenIdentifier = appleLockScreenProfileIdentifier(row.id);
+        const profileCommands =
+          row.proto === "apple"
+            ? yield* db
+                .select({
+                  id: schema.deviceCommand.id,
+                  requestType: schema.deviceCommand.requestType,
+                  status: schema.deviceCommand.status,
+                  payload: schema.deviceCommand.payload,
+                  resultStatus: schema.deviceCommand.resultStatus,
+                  resultDetail: schema.deviceCommand.resultDetail,
+                  createdAt: schema.deviceCommand.createdAt,
+                  updatedAt: schema.deviceCommand.updatedAt,
+                  expiresAt: schema.deviceCommand.expiresAt,
+                })
+                .from(schema.deviceCommand)
+                .where(
+                  and(
+                    eq(schema.deviceCommand.deviceId, row.id),
+                    inArray(schema.deviceCommand.requestType, ["InstallProfile", "RemoveProfile"]),
+                  ),
+                )
+                .orderBy(desc(schema.deviceCommand.createdAt))
+                .limit(20)
+            : [];
+
+        const lockScreenCommand = profileCommands.find((command) => {
+          if (!Schema.is(Schema.JsonObject)(command.payload)) return false;
+
+          if (command.requestType === "RemoveProfile")
+            return command.payload["Identifier"] === lockScreenIdentifier;
+
+          const encoded = command.payload["Payload"];
+
+          if (!Schema.is(Schema.String)(encoded)) return false;
+
+          try {
+            const text = new TextDecoder().decode(
+              Uint8Array.from(atob(encoded.replaceAll(/\s/g, "")), (character) =>
+                character.charCodeAt(0),
+              ),
+            );
+
+            return text.includes(lockScreenIdentifier);
+          } catch {
+            return false;
+          }
+        });
+
+        const lockScreenDelivery = lockScreenCommand
+          ? (() => {
+              const at = now();
+              const status = commandIsExpired(lockScreenCommand, at)
+                ? ("expired" as const)
+                : normalizeDeviceCommandStatus(lockScreenCommand.status);
+
+              return {
+                id: lockScreenCommand.id,
+                requestType: lockScreenCommand.requestType,
+                status,
+                statusLabel: deviceCommandStatusLabel(status),
+                resultStatus: lockScreenCommand.resultStatus,
+                resultDetail: lockScreenCommand.resultDetail,
+                createdAt: iso(lockScreenCommand.createdAt),
+                updatedAt: iso(lockScreenCommand.updatedAt),
+                expiresAt: isoOrNull(commandDeadline(lockScreenCommand)),
+              };
+            })()
+          : null;
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
-          ...rowDevice(row, apple, android),
+          ...rowDevice(row, apple, android, lockScreen ? { policy: lockScreen } : undefined),
+          lockScreenDelivery,
           osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
           osCompliance: osComplianceFor(row, osPolicyRules, softwareUpdates.catalog),
           attributes: attributes.get(row.id),

@@ -148,20 +148,37 @@ export const installProfilePayload = (profile: LegacyProfile) => {
   return { Payload: btoa(binary) };
 };
 
+/** One successful profile command, newest first from the caller. */
+export type InstalledProfileCommand = {
+  readonly requestType: string;
+  readonly payload: Schema.Json | null;
+};
+
 /**
  * Profile identifier → content digest from the device's own command history.
  *
  * Commands store their payload, so this survives a server restart without
- * another table. A later successful `RemoveProfile` deletes the identifier from
- * the map, so a removed profile is not reported as installed forever.
+ * another table. The caller supplies commands newest-first; this replays them
+ * oldest-first so an install/remove/install sequence ends in the right state
+ * and an update replaces the previous digest instead of leaving the oldest.
  */
 export const installedProfiles = async (
-  installs: ReadonlyArray<{ readonly payload: Schema.Json | null }>,
-  removals: ReadonlyArray<{ readonly payload: Schema.Json | null }>,
+  commands: ReadonlyArray<InstalledProfileCommand>,
 ): Promise<ReadonlyMap<string, string>> => {
   const installed = new Map<string, string>();
 
-  for (const command of installs) {
+  for (const command of [...commands].reverse()) {
+    if (command.requestType === "RemoveProfile") {
+      const payload = Option.getOrUndefined(
+        Schema.decodeUnknownOption(RemoveProfilePayload)(command.payload),
+      );
+
+      if (payload) installed.delete(payload.Identifier);
+      continue;
+    }
+
+    if (command.requestType !== "InstallProfile") continue;
+
     const payload = Option.getOrUndefined(
       Schema.decodeUnknownOption(InstallProfilePayload)(command.payload),
     );
@@ -181,14 +198,6 @@ export const installedProfiles = async (
     const inspection = await inspectMobileconfig(bytes);
 
     if (inspection?.identifier) installed.set(inspection.identifier, await profileDigest(bytes));
-  }
-
-  for (const command of removals) {
-    const payload = Option.getOrUndefined(
-      Schema.decodeUnknownOption(RemoveProfilePayload)(command.payload),
-    );
-
-    if (payload) installed.delete(payload.Identifier);
   }
 
   return installed;

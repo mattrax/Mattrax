@@ -4827,6 +4827,348 @@ describe("device command lifecycle", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
+  it("queues Apple's shared-device lock screen profile with the message and asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+    db.store.device[0]!.osEdition = "iPadOS";
+    db.store.device[0]!.osVersion = "18.1";
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "  If found, return to the IT desk  ",
+        lockScreenIncludeAssetTag: true,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect("commandId" in result ? result.commandId : undefined).toBeDefined();
+
+    const [queued] = commands(db).filter((row: any) => row.requestType === "InstallProfile");
+
+    expect(queued).toMatchObject({ status: "queued" });
+    expect(queued.expiresAt).toBeInstanceOf(Date);
+
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(queued!.payload.Payload), (character) => character.charCodeAt(0)),
+    );
+
+    expect(profile).toContain("com.apple.shareddeviceconfiguration");
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).toContain("AssetTagInformation");
+    expect(profile).toContain("AST-1042");
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: "If found, return to the IT desk",
+      lockScreenIncludeAssetTag: true,
+    });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+        includeAssetTag: true,
+      }),
+    });
+  });
+
+  it("resolves the policy lock screen default and lets a device override it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+    db.store.device[0]!.osEdition = "iPadOS";
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, {
+        name: "Shared iPads",
+        configurations: {
+          "mttx.apple.lockScreenMessage": {
+            message: "Please return to the IT desk",
+            includeAssetTag: true,
+          },
+        },
+      }),
+    );
+
+    await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Shared iPads",
+        devices: ["device-1"],
+        policies: [policy.id],
+      }),
+    );
+
+    const detail = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(detail).toMatchObject({
+      effectiveLockScreenMessage: "Please return to the IT desk",
+      effectiveLockScreenIncludeAssetTag: true,
+      lockScreenMessageSource: "policy",
+      lockScreenPolicyName: "Shared iPads",
+      lockScreenMessageProblem: null,
+    });
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: "Call Oscar on +61 400 000 000",
+        lockScreenIncludeAssetTag: false,
+      }),
+    );
+
+    const overridden = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(overridden).toMatchObject({
+      lockScreenMessage: "Call Oscar on +61 400 000 000",
+      effectiveLockScreenMessage: "Call Oscar on +61 400 000 000",
+      effectiveLockScreenIncludeAssetTag: false,
+      lockScreenMessageSource: "device",
+    });
+  });
+
+  it("omits AssetTagInformation when Include asset tag is off", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+      }),
+    );
+
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(commands(db)[0]!.payload.Payload), (character) =>
+        character.charCodeAt(0),
+      ),
+    );
+
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).not.toContain("AssetTagInformation");
+  });
+
+  it("refuses Include asset tag when the device has no asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+        lockScreenIncludeAssetTag: true,
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("no asset tag") });
+    expect(commands(db)).toHaveLength(0);
+    expect(db.store.device[0]).not.toHaveProperty("lockScreenMessage");
+  });
+
+  it("rejects an empty or over-long lock screen message", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    for (const lockScreenMessage of ["   ", "x".repeat(501)]) {
+      const failure = await runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-lock-screen-message",
+          lockScreenMessage,
+        }),
+      ).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    }
+
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("does not offer set-lock-screen-message on macOS, tvOS, Android or BYOD Apple devices", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    const macFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(macFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(macFailure).toMatchObject({ message: expect.stringContaining("macOS") });
+
+    db.store.device[0]!.osEdition = "tvOS";
+    const tvFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(tvFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(tvFailure).toMatchObject({ message: expect.stringContaining("tvOS") });
+
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.enrollmentMode = "user";
+    const byodFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(byodFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(byodFailure).toMatchObject({ message: expect.stringContaining("User Enrollment") });
+
+    const now = new Date();
+    db.store.device.push({
+      id: "android-1",
+      organizationId: tenant.id,
+      proto: "android",
+      status: "enrolled",
+      name: "Android",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const androidFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "android-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(androidFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(androidFailure).toMatchObject({
+      message: expect.stringContaining("supervised iPhone and iPad"),
+    });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("stores and clears the per-device lock screen override", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: "Return to the IT desk",
+        lockScreenIncludeAssetTag: true,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: "Return to the IT desk",
+      lockScreenIncludeAssetTag: true,
+    });
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: null,
+      lockScreenIncludeAssetTag: null,
+    });
+  });
+
+  it("requires devices.command to set but not clear a lock screen override", async () => {
+    const base = await makeContext();
+
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(base.db, tenant.id);
+    base.db.store.device[0]!.assetTag = "AST-1042";
+    base.db.store.device[0]!.osEdition = "iPadOS";
+
+    const writer = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.write"] },
+    });
+
+    await expect(
+      runEffect(
+        writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+          lockScreenMessage: "Return to the IT desk",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    // Clearing the override does not queue work, so devices.write is enough.
+    await runEffect(
+      writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    );
+
+    expect(base.db.store.device[0]).toMatchObject({
+      lockScreenMessage: null,
+      lockScreenIncludeAssetTag: null,
+    });
+  });
+
+  it("rejects the lock screen asset-tag opt-in when the device has no asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "device-1", {
+          lockScreenMessage: "Return to the IT desk",
+          lockScreenIncludeAssetTag: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
   it("queues a fresh command when the identical one already expired", async () => {
     const { db, service, headers } = await makeContext();
 

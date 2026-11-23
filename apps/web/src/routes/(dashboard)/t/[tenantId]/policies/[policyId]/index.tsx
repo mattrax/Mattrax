@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { PolicyRow } from "@mattrax/enterprise-domain/client";
+import { APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH, PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import {
@@ -187,6 +187,17 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
       platforms: ["apple"],
     };
 
+  if (kind === "mttx.apple.lockScreenMessage")
+    return {
+      title: "Lock screen message",
+      subtitle: isString(record.message)
+        ? record.message.slice(0, 80) + (record.message.length > 80 ? "…" : "")
+        : "No message",
+      collections:
+        record.includeAssetTag === true ? [{ label: "Includes asset tag", platform: "apple" }] : [],
+      platforms: ["apple"],
+    };
+
   return {
     title: kindLabel(kind),
     subtitle: Object.keys(record).length
@@ -204,6 +215,8 @@ const kindLabel = (kind: string) => {
   if (kind === "mttx.apple.device") return "Device restrictions";
 
   if (kind.startsWith("mttx.apple.certificate")) return "Certificate";
+
+  if (kind === "mttx.apple.lockScreenMessage") return "Lock screen message";
 
   if (kind === "mttx.apple.custom.wifi" || kind === "mttx.windows.custom.wifi") return "Wi-Fi";
 
@@ -279,6 +292,8 @@ export default function PolicyDetailPage() {
   const [confirm, setConfirm] = createSignal("");
   const [addOpen, setAddOpen] = createSignal(false);
   const [seeded, setSeeded] = createSignal(false);
+  const [lockScreenMessage, setLockScreenMessage] = createSignal("");
+  const [lockScreenIncludeAssetTag, setLockScreenIncludeAssetTag] = createSignal(false);
   createEffect(
     () => `${row()?.id ?? ""}:${reseed()}`,
     () => {
@@ -526,8 +541,92 @@ export default function PolicyDetailPage() {
       }),
   }));
 
+  const LOCK_SCREEN_KIND = "mttx.apple.lockScreenMessage";
+
   const configurations = () =>
     Object.entries(Option.getOrUndefined(decodeJsonObject(row()?.configurations)) ?? {});
+
+  /** The lock screen default has its own editor, so it is not a generic card. */
+  const visibleConfigurations = () =>
+    configurations().filter(([kind]) => kind !== LOCK_SCREEN_KIND);
+
+  const lockScreenConfiguration = () => {
+    const data = configurations().find(([kind]) => kind === LOCK_SCREEN_KIND)?.[1];
+
+    return isRecord(data) ? data : undefined;
+  };
+
+  createEffect(
+    () => `${row()?.id ?? ""}:${reseed()}`,
+    () => {
+      const configuration = lockScreenConfiguration();
+
+      setLockScreenMessage(isString(configuration?.message) ? String(configuration.message) : "");
+      setLockScreenIncludeAssetTag(configuration?.includeAssetTag === true);
+    },
+  );
+
+  const lockScreenDirty = () => {
+    const configuration = lockScreenConfiguration();
+    const storedMessage = isString(configuration?.message)
+      ? String(configuration.message).trim()
+      : "";
+
+    return (
+      lockScreenMessage().trim() !== storedMessage ||
+      lockScreenIncludeAssetTag() !== (configuration?.includeAssetTag === true)
+    );
+  };
+
+  const saveLockScreen = useMutation(() => ({
+    mutationFn: (value: { message: string; includeAssetTag: boolean }) =>
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        configurations: {
+          [LOCK_SCREEN_KIND]: {
+            message: value.message,
+            includeAssetTag: value.includeAssetTag,
+          },
+        },
+        expectedUpdatedAt: row()?.updatedAt,
+      }),
+    onSuccess: () => {
+      toast.success("Lock screen default saved", {
+        description: "Scoped supervised iPhone and iPad devices apply it on their next check-in.",
+      });
+      void invalidate();
+    },
+    onError: (error) => {
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) return;
+
+      toast.error("Could not save the lock screen default", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
+
+  const removeLockScreen = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchPolicy(params.tenantId, params.policyId, {
+        configurations: { [LOCK_SCREEN_KIND]: null },
+        expectedUpdatedAt: row()?.updatedAt,
+      }),
+    onSuccess: () => {
+      toast.success("Lock screen default removed", {
+        description:
+          "Devices without a per-device override remove the lock screen profile on their next check-in.",
+      });
+      setLockScreenMessage("");
+      setLockScreenIncludeAssetTag(false);
+      void invalidate();
+    },
+    onError: (error) => {
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) return;
+
+      toast.error("Could not remove the lock screen default", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    },
+  }));
 
   const scope = useQuery(() => enterpriseQueries.policyScope(params.tenantId, params.policyId));
 
@@ -701,12 +800,89 @@ export default function PolicyDetailPage() {
         </Panel>
 
         <Panel
+          title="Lock screen default"
+          description="A return message and optional asset tag for supervised iPhone and iPad devices in this policy's scope. A per-device override on the device page wins."
+        >
+          <div class="space-y-3">
+            <p class="text-[12px] leading-relaxed text-muted-foreground">
+              Mattrax installs Apple's shared-device lock screen profile on the device's next
+              check-in and removes it when no message remains. Devices without an asset tag cannot
+              include one, and unenrolled or BYOD devices do not accept the profile.
+            </p>
+            <Field label="Message">
+              <textarea
+                class={textareaClass}
+                value={lockScreenMessage()}
+                disabled={!writable()}
+                maxlength={APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH}
+                placeholder={"If found, return to the IT desk\nAsset tag:"}
+                onInput={(event) => setLockScreenMessage(event.currentTarget.value)}
+              />
+            </Field>
+            <label class="flex items-start gap-2 text-[12.5px] text-muted-foreground">
+              <input
+                type="checkbox"
+                class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
+                checked={lockScreenIncludeAssetTag()}
+                disabled={!writable()}
+                onChange={(event) => setLockScreenIncludeAssetTag(event.currentTarget.checked)}
+              />
+              <span>
+                Include each device's asset tag
+                <span class="mt-0.5 block text-[11.5px]">
+                  Adds the asset tag as Apple's AssetTagInformation under the message.
+                </span>
+              </span>
+            </label>
+            <Show when={lockScreenMessage().trim().length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH}>
+              <p class="text-[11.5px] text-destructive">
+                The message must be at most {APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH} characters.
+              </p>
+            </Show>
+            <div class="flex flex-wrap items-center gap-2">
+              <Show when={writable()}>
+                <Button
+                  size="sm"
+                  disabled={
+                    !lockScreenDirty() ||
+                    !lockScreenMessage().trim() ||
+                    lockScreenMessage().trim().length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH ||
+                    saveLockScreen.isPending
+                  }
+                  onClick={() =>
+                    saveLockScreen.mutate({
+                      message: lockScreenMessage().trim(),
+                      includeAssetTag: lockScreenIncludeAssetTag(),
+                    })
+                  }
+                >
+                  {saveLockScreen.isPending ? "Saving…" : "Save default"}
+                </Button>
+                <Show when={lockScreenConfiguration()}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={removeLockScreen.isPending}
+                    onClick={() => removeLockScreen.mutate()}
+                  >
+                    {removeLockScreen.isPending ? "Removing…" : "Remove default"}
+                  </Button>
+                </Show>
+              </Show>
+              <Show when={lockScreenDirty()}>
+                <span class="text-[11px] text-muted-foreground">Unsaved changes</span>
+              </Show>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel
           title="Configurations"
           description="Payloads delivered to devices in this policy's scope."
           actions={
             <div class="flex flex-wrap items-center gap-2">
               <Badge variant="secondary" class="tabular-nums">
-                {configurations().length}
+                {visibleConfigurations().length}
               </Badge>
               <Button
                 as="a"
@@ -725,12 +901,12 @@ export default function PolicyDetailPage() {
           }
         >
           <Show
-            when={configurations().length > 0}
+            when={visibleConfigurations().length > 0}
             fallback={
               <div class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6">
                 <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-                  Nothing is delivered yet. Add a Wi-Fi network or passcode rule, or open the policy
-                  editor for the full catalogue.
+                  Nothing else is delivered yet. Add a Wi-Fi network or passcode rule, or open the
+                  policy editor for the full catalogue.
                 </p>
                 <div class="flex gap-2">
                   <Show when={writable()}>
@@ -764,7 +940,7 @@ export default function PolicyDetailPage() {
                   </span>
                 </div>
               </Show>
-              <For each={configurations()}>
+              <For each={visibleConfigurations()}>
                 {([kind, data]) => (
                   <ConfigurationCard
                     kind={kind}
@@ -857,7 +1033,7 @@ export default function PolicyDetailPage() {
                   when={data().devices.length > 0}
                   fallback={
                     <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
-                      {configurations().length === 0
+                      {visibleConfigurations().length === 0 && !lockScreenConfiguration()
                         ? "This policy has no settings yet. Add a configuration to see where it applies."
                         : "No device is assigned this policy yet. Assign it to a device, a group, or a directory user to see where it applies."}
                     </p>

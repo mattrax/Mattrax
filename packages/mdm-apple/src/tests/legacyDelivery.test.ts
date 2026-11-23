@@ -140,25 +140,61 @@ describe("planLegacyProfileChanges", () => {
 });
 
 describe("installedProfiles", () => {
-  it("reads install history and honours a later removal", async () => {
-    const install = {
-      payload: { Payload: customProfile("app.mattrax.custom.one") },
-    };
+  const install = (identifier: string) => ({
+    requestType: "InstallProfile",
+    payload: { Payload: customProfile(identifier) },
+  });
 
-    const installed = await installedProfiles([install], []);
+  const remove = (identifier: string) => ({
+    requestType: "RemoveProfile",
+    payload: { Identifier: identifier },
+  });
+
+  it("reads install history and honours a later removal", async () => {
+    const installed = await installedProfiles([install("app.mattrax.custom.one")]);
     expect([...installed.keys()]).toEqual(["app.mattrax.custom.one"]);
 
-    const afterRemoval = await installedProfiles(
-      [install],
-      [{ payload: { Identifier: "app.mattrax.custom.one" } }],
-    );
+    const afterRemoval = await installedProfiles([
+      remove("app.mattrax.custom.one"),
+      install("app.mattrax.custom.one"),
+    ]);
 
     expect(afterRemoval.size).toBe(0);
   });
 
+  it("uses the newest install's digest rather than the oldest", async () => {
+    const first = customProfile("app.mattrax.custom.one");
+    const second = customProfile("app.mattrax.custom.one", "<key>allowCamera</key><false/>");
+
+    const installed = await installedProfiles([
+      { requestType: "InstallProfile", payload: { Payload: second } },
+      { requestType: "InstallProfile", payload: { Payload: first } },
+    ]);
+
+    const expected = await profileDigest(
+      Uint8Array.from(atob(second), (character) => character.charCodeAt(0)),
+    );
+
+    expect(installed.get("app.mattrax.custom.one")).toBe(expected);
+  });
+
+  it("replays clear-then-reinstall-then-clear chronologically", async () => {
+    const installed = await installedProfiles([
+      remove("app.mattrax.custom.one"),
+      install("app.mattrax.custom.one"),
+      remove("app.mattrax.custom.one"),
+      install("app.mattrax.custom.one"),
+    ]);
+
+    expect(installed.size).toBe(0);
+  });
+
   it("ignores malformed history", async () => {
     await expect(
-      installedProfiles([{ payload: { Payload: "not base64!" } }, { payload: null }], []),
+      installedProfiles([
+        { requestType: "InstallProfile", payload: { Payload: "not base64!" } },
+        { requestType: "InstallProfile", payload: null },
+      ]),
     ).resolves.toEqual(new Map());
   });
 });

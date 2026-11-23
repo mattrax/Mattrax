@@ -7,7 +7,11 @@ import {
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
+  isAppleLockScreenMessageDevice,
+  parseAppleLockScreenMessageConfiguration,
+  resolveAppleLockScreenMessage,
 } from "./deviceActions.ts";
+import type { DeviceActionInput } from "./deviceActions.ts";
 import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
 describe("deviceAvailableActions", () => {
@@ -324,5 +328,130 @@ describe("appleUserAvailableActions", () => {
     expect(appleUserAvailableActions({ configured: true })).toEqual(["sync", "refresh-profiles"]);
     expect(appleUserSupportsAction({ configured: true }, "sync")).toBe(true);
     expect(appleUserSupportsAction({ configured: false }, "sync")).toBe(false);
+  });
+});
+
+describe("set-lock-screen-message", () => {
+  it("is offered on iPhone and iPad, including before the OS is known", () => {
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iPadOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(deviceAvailableActions({ proto: "apple", status: "enrolled" })).toContain(
+      "set-lock-screen-message",
+    );
+  });
+
+  it("is not offered on macOS, tvOS, visionOS, Android, Windows or BYOD devices", () => {
+    const unavailable: DeviceActionInput[] = [
+      { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
+      { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
+      { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },
+      { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+      { proto: "android", status: "enrolled" },
+      { proto: "win", status: "enrolled" },
+      { proto: "apple", status: "unenrolled", osEdition: "iOS" },
+    ];
+
+    for (const input of unavailable)
+      expect(deviceAvailableActions(input)).not.toContain("set-lock-screen-message");
+  });
+
+  it("explains why the command is unavailable", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on macOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "tvOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on tvOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("User Enrollment");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "android", status: "enrolled" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("only available on supervised iPhone and iPad");
+  });
+
+  it("recognises supported Apple families", () => {
+    expect(isAppleLockScreenMessageDevice({ proto: "apple" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "iOS" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "iPhone16,1" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "macOS" })).toBe(false);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "Apple TV 4K" })).toBe(false);
+  });
+});
+
+describe("resolveAppleLockScreenMessage", () => {
+  const policy = {
+    message: "Return to the IT desk",
+    includeAssetTag: true,
+    policyName: "Shared iPads",
+  };
+
+  it("prefers a per-device message and can override the asset-tag choice", () => {
+    expect(
+      resolveAppleLockScreenMessage({
+        deviceMessage: "Call Oscar",
+        deviceIncludeAssetTag: false,
+        policy,
+        assetTag: "AST-1042",
+      }),
+    ).toEqual({ message: "Call Oscar", includeAssetTag: false, source: "device" });
+
+    expect(
+      resolveAppleLockScreenMessage({ deviceIncludeAssetTag: true, policy, assetTag: "AST-1042" }),
+    ).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      policyName: "Shared iPads",
+    });
+  });
+
+  it("reports why a resolved default cannot be delivered", () => {
+    expect(resolveAppleLockScreenMessage({ policy, assetTag: null })).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      problem: expect.stringContaining("no asset tag"),
+    });
+  });
+
+  it("decodes a stored policy configuration", () => {
+    expect(
+      parseAppleLockScreenMessageConfiguration({
+        message: " Return to IT ",
+        includeAssetTag: true,
+      }),
+    ).toEqual({ message: "Return to IT", includeAssetTag: true });
+    expect(parseAppleLockScreenMessageConfiguration({ message: "" })).toBeUndefined();
+    expect(parseAppleLockScreenMessageConfiguration(null)).toBeUndefined();
   });
 });

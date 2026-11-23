@@ -162,6 +162,22 @@ export const scopeConfigurationsToDevice = async <T extends ConfigurationDeliver
 
     const parsed = parseConfigurationKind(configuration.kind);
 
+    // Apple publishes the lock screen message as a profile for supervised
+    // iPhone/iPadOS only. Other Apple families must not claim support.
+    if (parsed.type === "lockScreenMessage") {
+      if (apple.family !== null && apple.family !== "iOS") {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason: "the lock screen message is only available on supervised iPhone and iPadOS",
+        });
+        continue;
+      }
+
+      delivered.push(configuration);
+      continue;
+    }
+
     if (parsed.type === "certificate" && mode === "legacy") {
       delivered.push(configuration);
       continue;

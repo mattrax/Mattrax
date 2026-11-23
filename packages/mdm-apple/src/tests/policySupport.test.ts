@@ -101,6 +101,29 @@ describe("scopeConfigurationsToDevice", () => {
     expect(result.delivered).toHaveLength(1);
   });
 
+  it("scopes the lock screen profile to iOS/iPadOS only", async () => {
+    const data = { message: "Return to IT", includeAssetTag: false };
+    const ipad = { proto: "apple", osEdition: "iPadOS", osVersion: "18.1" };
+
+    const supported = await scopeConfigurationsToDevice(
+      [configuration("mttx.apple.lockScreenMessage", data)],
+      ipad,
+      "ddm",
+    );
+
+    expect(supported.delivered).toHaveLength(1);
+    expect(supported.skipped).toHaveLength(0);
+
+    const unsupported = await scopeConfigurationsToDevice(
+      [configuration("mttx.apple.lockScreenMessage", data)],
+      mac,
+      "ddm",
+    );
+
+    expect(unsupported.delivered).toHaveLength(0);
+    expect(unsupported.skipped[0]?.reason).toContain("only available on supervised iPhone");
+  });
+
   it("passes macOS-native payloads through and reports nothing", async () => {
     const result = await scopeConfigurationsToDevice(
       [configuration("mttx.apple.device", { camera: false })],

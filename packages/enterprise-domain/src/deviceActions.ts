@@ -36,6 +36,7 @@ export const DeviceActionName = Schema.Literals([
   "relinquish-ownership",
   "schedule-os-update",
   "set-device-name",
+  "set-lock-screen-message",
   "unenroll",
 ]);
 
@@ -93,6 +94,7 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "verify-recovery-lock",
   "schedule-os-update",
   "set-device-name",
+  "set-lock-screen-message",
   "unenroll",
 ];
 
@@ -159,6 +161,8 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["set-device-name", "set-device-name"],
   ["device-name", "set-device-name"],
   ["rename", "set-device-name"],
+  ["set-lock-screen-message", "set-lock-screen-message"],
+  ["lock-screen-message", "set-lock-screen-message"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -248,6 +252,35 @@ const majorOsVersion = (value: string | null | undefined): number | null => {
  * visionOS 26+. Apple does not support it on macOS at all. An unknown version
  * stays advertised and the handler gives the precise error.
  */
+/**
+ * Apple only implements the LockScreenMessage command on supervised
+ * iPhone/iPadOS devices. The command does not exist on macOS, tvOS or
+ * visionOS, and Apple User Enrollment (BYOD) devices are not supervised.
+ *
+ * Supervision is not reported by Apple, so an Apple device whose OS family is
+ * not identifiable (for example a fresh enrollment before its first inventory
+ * report) stays eligible: rejecting it would hide a valid control, and the
+ * device's command result is the authoritative confirmation.
+ */
+export const isAppleLockScreenMessageDevice = (input: DeviceActionInput): boolean => {
+  if (input.proto !== "apple") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const identity = `${input.osEdition ?? ""} ${input.model ?? ""}`;
+
+  if (/mac/i.test(identity)) return false;
+  if (/tvos|apple\s*tv/i.test(identity)) return false;
+  if (/visionos|apple\s*vision/i.test(identity)) return false;
+  if (/watchos|audioos/i.test(identity)) return false;
+
+  return true;
+};
+
+/**
+ * Return to Service is an `EraseDevice` option on iOS/iPadOS 17+, tvOS 18+ and
+ * visionOS 26+. Apple does not support it on macOS at all. An unknown version
+ * stays advertised and the handler gives the precise error.
+ */
 const supportsReturnToService = (input: DeviceActionInput): boolean => {
   // Only exclude macOS when the device identifies as a Mac. An unknown Apple
   // device stays advertised; the command handler reports the precise limit.
@@ -318,6 +351,11 @@ export const deviceAvailableActions = (
       (action) =>
         action !== "set-device-name" ||
         (input.proto === "apple" && input.enrollmentMode !== "user"),
+    )
+    // Apple's LockScreenMessage exists only for supervised iPhone and iPadOS.
+    // macOS, tvOS and visionOS have no such command.
+    .filter(
+      (action) => action !== "set-lock-screen-message" || isAppleLockScreenMessageDevice(input),
     )
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
@@ -400,6 +438,30 @@ export const deviceActionUnavailableReason = (
   if (action === "set-device-name" && input.enrollmentMode === "user")
     return "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.";
 
+  if (action === "set-lock-screen-message" && input.proto !== "apple")
+    return "Lock screen messages are only available on supervised iPhone and iPad devices. macOS, tvOS, Windows and Android do not accept Apple's LockScreenMessage command.";
+
+  if (action === "set-lock-screen-message" && input.enrollmentMode === "user")
+    return "Apple User Enrollment (BYOD) devices are not supervised, so Apple does not accept a lock screen message on them.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /mac/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is not available on macOS.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /tvos|apple\s*tv/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is not available on tvOS.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /visionos|apple\s*vision|watchos|audioos/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is only available on iPhone and iPad, not visionOS, watchOS or audioOS.";
+
   return `This device does not support the ${action} action.`;
 };
 
@@ -440,3 +502,136 @@ export const appleDeviceNameFromSettingsPayload = (
 
   return undefined;
 };
+
+/**
+ * Longest message Mattrax sends in Apple's LockScreenMessage command.
+ *
+ * Apple does not document a hard limit. 500 characters is long enough for a
+ * return address and instructions while keeping the dashboard preview legible;
+ * rejecting it here gives the administrator a useful error instead of a
+ * truncated message on the device.
+ */
+export const APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH = 500;
+
+/** Policy configuration kind holding a group's default lock screen message. */
+export const APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND = "mttx.apple.lockScreenMessage";
+
+/**
+ * Apple policy kinds delivered as DDM declarations (or their legacy profile
+ * equivalent). A kind outside this list, such as the lock screen default, is
+ * an imperative command and never has a declaration report.
+ */
+export const isDeclarableAppleConfigurationKind = (kind: string): boolean =>
+  kind === "mttx.apple.device" || /^mttx\.apple\.(custom|certificate|declaration)\..+/.test(kind);
+
+/** Normalise line endings, trim the message and reject an empty value. */
+export const normalizeAppleLockScreenMessage = (
+  value: string | null | undefined,
+): string | undefined => {
+  const message = value?.replaceAll(/\r\n?/g, "\n").trim();
+
+  return message ? message : undefined;
+};
+
+/** A policy's lock screen message default. */
+export type AppleLockScreenMessageConfiguration = {
+  readonly message: string;
+  readonly includeAssetTag: boolean;
+};
+
+/** Decode the policy configuration payload, tolerating older stored shapes. */
+export const parseAppleLockScreenMessageConfiguration = (
+  value: unknown,
+): AppleLockScreenMessageConfiguration | undefined => {
+  if (!Schema.is(Schema.JsonObject)(value)) return undefined;
+
+  const message = value["message"];
+
+  if (!Schema.is(Schema.String)(message)) return undefined;
+  const normalized = normalizeAppleLockScreenMessage(message);
+
+  if (!normalized) return undefined;
+  const includeAssetTag = value["includeAssetTag"];
+
+  return {
+    message: normalized,
+    includeAssetTag: Schema.is(Schema.Boolean)(includeAssetTag) ? includeAssetTag : false,
+  };
+};
+
+/**
+ * Why a lock screen message cannot be sent, in operator-facing wording.
+ * Undefined means the request is valid.
+ */
+export const lockScreenMessageProblem = (input: {
+  readonly message?: string | null;
+  readonly includeAssetTag?: boolean | null;
+  readonly assetTag?: string | null;
+}): string | undefined => {
+  const message = normalizeAppleLockScreenMessage(input.message);
+
+  if (!message) return "Enter a lock screen message.";
+
+  if (message.length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH)
+    return (
+      "The lock screen message must be at most " +
+      APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH +
+      " characters."
+    );
+
+  if (input.includeAssetTag === true && !input.assetTag?.trim())
+    return "This device has no asset tag. Add one in Edit details, or turn off Include asset tag.";
+
+  return undefined;
+};
+
+/** The message one device should show, after the per-device override wins. */
+export type AppleLockScreenMessageResolution = {
+  readonly message: string | undefined;
+  readonly includeAssetTag: boolean;
+  readonly source: "device" | "policy" | null;
+  /** The policy supplying the default, when the source is policy. */
+  readonly policyName?: string;
+  /** Why the resolved configuration cannot be delivered, if it cannot. */
+  readonly problem?: string;
+};
+
+/**
+ * Resolve a device's lock screen message.
+ *
+ * A per-device message wins. A per-device includeAssetTag choice can override
+ * the policy default on its own, so an operator can keep shared wording but
+ * stop appending the asset tag (or the reverse).
+ */
+export const resolveAppleLockScreenMessage = (input: {
+  readonly deviceMessage?: string | null;
+  readonly deviceIncludeAssetTag?: boolean | null;
+  readonly policy?: (AppleLockScreenMessageConfiguration & { readonly policyName?: string }) | null;
+  readonly assetTag?: string | null;
+}): AppleLockScreenMessageResolution => {
+  const deviceMessage = normalizeAppleLockScreenMessage(input.deviceMessage);
+  const policyMessage = normalizeAppleLockScreenMessage(input.policy?.message);
+  const message = deviceMessage ?? policyMessage;
+  const includeAssetTag = input.deviceIncludeAssetTag ?? input.policy?.includeAssetTag ?? false;
+  const source = deviceMessage ? ("device" as const) : policyMessage ? ("policy" as const) : null;
+  const problem = message
+    ? lockScreenMessageProblem({ message, includeAssetTag, assetTag: input.assetTag })
+    : undefined;
+
+  return {
+    message,
+    includeAssetTag,
+    source,
+    ...(source === "policy" && input.policy?.policyName
+      ? { policyName: input.policy.policyName }
+      : {}),
+    ...(problem ? { problem } : {}),
+  };
+};
+
+/**
+ * How long a failed profile install suppresses another automatic retry.
+ * Mirrors the device-name push: an OS that rejects the profile must not receive
+ * a fresh one on every check-in, while a genuine change is applied immediately.
+ */
+export const LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS = 24 * 60 * 60 * 1000;

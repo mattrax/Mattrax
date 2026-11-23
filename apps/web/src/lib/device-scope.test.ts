@@ -27,7 +27,7 @@ describe("policy declaration identifiers", () => {
 describe("policyDeliveryState", () => {
   const base = {
     policyId: "policy_1",
-    kinds: ["a", "b"],
+    kinds: ["mttx.apple.device", "mttx.apple.custom.wifi"],
     tracked: true,
   };
 
@@ -36,8 +36,8 @@ describe("policyDeliveryState", () => {
       policyDeliveryState({
         ...base,
         declarations: [
-          declaration("policy_1:a", "valid", true),
-          declaration("policy_1:b", "valid", true),
+          declaration("policy_1:mttx.apple.device", "valid", true),
+          declaration("policy_1:mttx.apple.custom.wifi", "valid", true),
           declaration("other:a", "invalid", false),
         ],
       }),
@@ -48,15 +48,15 @@ describe("policyDeliveryState", () => {
     expect(
       policyDeliveryState({
         ...base,
-        declarations: [declaration("policy_1:a", "valid", true)],
+        declarations: [declaration("policy_1:mttx.apple.device", "valid", true)],
       }),
     ).toBe("pending");
     expect(
       policyDeliveryState({
         ...base,
         declarations: [
-          declaration("policy_1:a", "invalid", true),
-          declaration("policy_1:b", "valid", true),
+          declaration("policy_1:mttx.apple.device", "invalid", true),
+          declaration("policy_1:mttx.apple.custom.wifi", "valid", true),
         ],
       }),
     ).toBe("failed");
@@ -64,11 +64,31 @@ describe("policyDeliveryState", () => {
       policyDeliveryState({
         ...base,
         declarations: [
-          declaration("policy_1:a", "valid", false),
-          declaration("policy_1:b", "valid", true),
+          declaration("policy_1:mttx.apple.device", "valid", false),
+          declaration("policy_1:mttx.apple.custom.wifi", "valid", true),
         ],
       }),
     ).toBe("inactive");
+  });
+
+  it("ignores the imperative lock screen default when a declarable kind is delivered", () => {
+    expect(
+      policyDeliveryState({
+        policyId: "policy_1",
+        kinds: ["mttx.apple.lockScreenMessage", "mttx.apple.device"],
+        tracked: true,
+        declarations: [declaration("policy_1:mttx.apple.device", "valid", true)],
+      }),
+    ).toBe("delivered");
+
+    expect(
+      policyDeliveryState({
+        policyId: "policy_1",
+        kinds: ["mttx.apple.lockScreenMessage"],
+        tracked: true,
+        declarations: [],
+      }),
+    ).toBe("not-tracked");
   });
 
   it("does not claim delivery for platforms without DDM declarations", () => {

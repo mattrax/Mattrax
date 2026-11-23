@@ -182,6 +182,7 @@ const AUDIT_TITLES = {
   "device.renamed": "Device renamed",
   "device.name_push_queued": "Device name push queued",
   "device.name_push_skipped": "Device name push skipped",
+  "device.lock_screen_message_pushed": "Lock screen message queued",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",
@@ -242,6 +243,12 @@ const auditDetail = (row: AuditRow) => {
   const deviceName = trimmed(metadata.deviceName, 80);
 
   if (deviceName) parts.push(`Name: ${deviceName}`);
+
+  const lockScreenMessage = trimmed(metadata.lockScreenMessage, 120);
+
+  if (lockScreenMessage) parts.push(`Message: ${lockScreenMessage}`);
+
+  if (metadata.includeAssetTag === true) parts.push("Asset tag included");
 
   const rawFields = metadata.fields;
 
@@ -310,6 +317,24 @@ const auditDetail = (row: AuditRow) => {
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
+/** Title for an audit row, using the operation for lock-screen profile pushes. */
+const auditTitle = (row: AuditRow) => {
+  if (row.action === "device.lock_screen_message_pushed") {
+    const metadata = Option.getOrElse(
+      Schema.decodeUnknownOption(AuditMetadata)(row.metadata),
+      () => ({}),
+    );
+
+    const operation = "operation" in metadata ? metadata.operation : undefined;
+
+    return operation === "remove"
+      ? "Lock screen message removal queued"
+      : "Lock screen message install queued";
+  }
+
+  return AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action;
+};
+
 /**
  * Merge the device-scoped sources into one newest-first feed. Kept pure so the
  * ordering, limit and redaction rules are unit tested without a database.
@@ -332,7 +357,7 @@ export const buildDeviceActivity = (
     events.push({
       id: `${DEVICE_ACTIVITY_AUDIT_PREFIX}${row.id}`,
       kind: "audit",
-      title: AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action,
+      title: auditTitle(row),
       detail: auditDetail(row),
       status: null,
       at,

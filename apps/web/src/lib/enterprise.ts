@@ -1390,6 +1390,9 @@ export const enterprise = {
     payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">> & {
       /** Opt into "Apply name to device with each sync". */
       applyNameToDevice?: boolean;
+      /** Clear the per-device lock screen override so the policy default applies. */
+      lockScreenMessage?: string | null;
+      lockScreenIncludeAssetTag?: boolean | null;
     },
   ) =>
     endpoint((api) =>
@@ -1535,8 +1538,11 @@ export const enterprise = {
         | "request-device-info"
         | "relinquish-ownership"
         | "schedule-os-update"
-        | "set-device-name";
+        | "set-device-name"
+        | "set-lock-screen-message";
       deviceName?: string;
+      lockScreenMessage?: string;
+      lockScreenIncludeAssetTag?: boolean;
       manifestUrl?: string;
       iTunesStoreId?: number;
       osUpdateInstallAction?:

@@ -220,6 +220,7 @@ const platformOf = (kind: ConfigurationKind): PolicyPlatform | null => {
     case "custom":
     case "declaration":
     case "device":
+    case "lockScreenMessage":
       return "apple";
     default:
       return null;

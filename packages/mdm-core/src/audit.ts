@@ -34,6 +34,7 @@ export const SYSTEM_AUDIT_ACTIONS = {
   commandNotNow: "device.command_not_now",
   deviceNamePushQueued: "device.name_push_queued",
   deviceNamePushSkipped: "device.name_push_skipped",
+  deviceLockScreenMessagePushed: "device.lock_screen_message_pushed",
   declarationInvalid: "device.declaration_invalid",
   pushInvalidToken: "device.push_invalid_token",
   complianceChanged: "device.compliance_changed",
