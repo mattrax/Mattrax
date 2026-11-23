@@ -3046,7 +3046,7 @@ export const deviceHandoverArchive = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     createdByAccountId: shortText("created_by_account_id").notNull(),
-    createdByEmail: shortText("created_by_email").notNull(),
+    createdByEmail: varchar("created_by_email", { length: 320 }).notNull(),
     /** Operator-supplied reason, truncated before it is written. */
     reason: text("reason").notNull(),
     deviceCount: int("device_count").notNull(),

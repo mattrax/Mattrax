@@ -11,6 +11,14 @@ describe("MCP path exposure", () => {
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices/handover-impact")).toBe(false);
   });
 
+  it("never exposes approval administration or decision endpoints", () => {
+    expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/approvals")).toBe(false);
+    expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/approvals/:approvalId/approve")).toBe(
+      false,
+    );
+    expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/approval-policies")).toBe(false);
+  });
+
   it("still exposes ordinary device reads and commands", () => {
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices")).toBe(true);
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices/:id")).toBe(true);

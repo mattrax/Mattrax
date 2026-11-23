@@ -18,7 +18,7 @@ import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
 import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
-import { EnterpriseStepUpRequired } from "../Errors.js";
+import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { HttpApiSchema } from "effect/http-api";
 import { MobileconfigPreview } from "../Policy.js";
@@ -193,7 +193,11 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
       "collectDeviceAttribute",
       "/v1/tenants/:tenantId/devices/:id/attributes/:attributeId/collect",
       {
-        error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+        error: [
+          ...EnterpriseTenantWriteErrors,
+          ...EnterpriseStepUpRequired,
+          ...EnterpriseApprovalRequired,
+        ],
         params: TenantDeviceAttributeParam,
         success: CollectDeviceAttributeResponse,
       },

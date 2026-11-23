@@ -25,6 +25,8 @@ const deviceChildTables = [
   s.deviceApplication,
   s.applicationInstall,
   s.applicationUninstall,
+  s.deviceLocalAccount,
+  s.attributeCollection,
   s.deviceVppAssignment,
   s.groupDevice,
   s.applicationDevice,

@@ -7,7 +7,9 @@ import {
   UpdateMeRequest,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseApplicationApi,
   enterpriseApprovalApi,
+  enterpriseDeviceHandoverApi,
   enterpriseAttributeApi,
   enterpriseGroupApi,
   enterpriseIdentityApi,
@@ -22,6 +24,8 @@ import { StepUpRequired } from "./stepUp.js";
 const endpoints = {
   ...enterpriseAccountApi.endpoints,
   ...enterpriseApi.endpoints,
+  ...enterpriseApplicationApi.endpoints,
+  ...enterpriseDeviceHandoverApi.endpoints,
   ...enterpriseApprovalApi.endpoints,
   ...enterpriseGroupApi.endpoints,
   ...enterpriseAttributeApi.endpoints,

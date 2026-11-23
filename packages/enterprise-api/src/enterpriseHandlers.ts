@@ -17034,6 +17034,26 @@ export const createEnterpriseService = ({
             }),
           );
 
+        // "Collect now" queues exactly the same manual run as the Scripts page,
+        // so a four-eyes policy on running scripts has to apply here too.
+        yield* requireApproval(ctx, request, {
+          action: "script.run",
+          target: { deviceIds: [device.id], groupIds: [] },
+          resourceId: script.id,
+          details: {
+            operation: "collect",
+            attributeId: definition.id,
+            attributeKey: definition.key,
+            deviceId: device.id,
+          },
+          summary: {
+            operation: "collect",
+            attributeKey: definition.key,
+            scriptId: script.id,
+            deviceId: device.id,
+          },
+        });
+
         // Reuses the manual-run path so deduplication, expiry, output caps and
         // redaction are the ones the scripts feature already guarantees.
         const result = yield* runScript(

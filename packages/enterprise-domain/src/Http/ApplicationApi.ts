@@ -91,4 +91,5 @@ export const enterpriseApplicationApi = HttpApiGroup.make("EnterpriseApplication
         success: DownloadPolicyApplicationResponse,
       },
     ),
-  );
+  )
+  .prefix("/api");

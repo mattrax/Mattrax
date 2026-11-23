@@ -3993,6 +3993,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      */
     const queueUnassignedApplicationRemovals = (
       device: DeviceRow,
+      configurations: ReadonlyArray<PolicyConfigurationRow>,
       at: Date,
     ): Effect.Effect<void, unknown, Db> =>
       Effect.gen(function* () {
@@ -4024,6 +4025,20 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         if (applications.length === 0) return;
 
         const assigned = yield* applicationAssignedIds(device);
+
+        // A policy can deliver a catalogue app without an assignment row, and
+        // it is still "assigned" for this rule. Without this an app attached to
+        // a policy would be removed at every check-in and reinstalled by the
+        // policy, flapping forever.
+        for (const configuration of configurations) {
+          if (!isApplicationKind(configuration.kind)) continue;
+
+          const applicationId = parseAppleApplicationConfiguration(
+            configuration.data,
+          )?.applicationId;
+
+          if (applicationId) assigned.add(applicationId);
+        }
 
         const candidates = applications.filter(
           (application) => application.bundleId && !assigned.has(application.id),
@@ -4114,6 +4129,27 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             yield* db
               .insert(s.applicationUninstall)
               .values({ id: crypto.randomUUID(), createdAt: at, ...values });
+
+          // The assignment-edit path audits this too; a check-in sweep is the
+          // only place Apple applies the rule, so it must leave the same trace.
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId: device.organizationId,
+              action: "application.uninstall_queued",
+              targetType: "application",
+              targetId: application.id,
+              deviceId: device.id,
+              protocol: "apple",
+              metadata: {
+                applicationId: application.id,
+                bundleId: application.bundleId,
+                reason: "remove-on-unassign",
+              },
+              coalesce: true,
+            },
+            auditOptions,
+          );
         }
       }).pipe(
         Effect.catch((error) =>
@@ -5789,6 +5825,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                             "filevault_recovery_key",
                             "activation_lock_bypass_code",
                             "recovery_lock_password",
+                            "local_admin_password",
                             "local_admin_password_pending",
                           ]),
                         ),
@@ -6086,8 +6123,6 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               return { _tag: "DdmSync" as const, serverToken: declarations.token };
             }
 
-            yield* queueUnassignedApplicationRemovals(device, at);
-
             const [appleState] = yield* db
               .select({
                 declarationMode: s.deviceApple.declarationMode,
@@ -6126,6 +6161,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               device,
               decision.mode === "legacy" ? "legacy" : "ddm",
             ).pipe(Effect.mapError(internal));
+
+            // Remove-on-unassign runs before policy installs so a policy app is
+            // excluded from removal by `scoped` and cannot flap.
+            yield* queueUnassignedApplicationRemovals(device, scoped.configurations, at);
 
             // Application installs are imperative commands, not declarations, so
             // they are queued for both delivery modes. `scoped` already applied

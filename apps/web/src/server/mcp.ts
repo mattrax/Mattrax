@@ -8,6 +8,8 @@ import {
   DeviceQuery,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseApplicationApi,
+  enterpriseApprovalApi,
   enterpriseAttributeApi,
   McpContextResponse as McpContextResponseSchema,
 } from "@mattrax/enterprise-domain/client";
@@ -296,6 +298,10 @@ export const shouldExposeMcpPath = (path: string) => {
     "/vpp",
     "/api-tokens",
     "/backups",
+    // Approving and editing four-eyes policies is never delegated to an MCP
+    // client, even one that holds approvals.write.
+    "/approvals",
+    "/approval-policies",
     // Handover archives contain every escrowed device secret and are not part
     // of the consent grant an MCP client receives. The token-bearing download
     // in particular must never be reachable through a generated tool.
@@ -371,6 +377,13 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
   for (const [identifier, endpoint] of Object.entries({
     ...enterpriseAccountApi.endpoints,
     ...enterpriseApi.endpoints,
+    // The application endpoints moved out of the main group to keep its
+    // generated declaration small; keep them in the same tool surface.
+    ...enterpriseApplicationApi.endpoints,
+    // Gated destructive endpoints now live on the approval group; the approval
+    // queue and policy administration themselves stay human-only (blocked in
+    // shouldExposeMcpPath).
+    ...enterpriseApprovalApi.endpoints,
     ...enterpriseAttributeApi.endpoints,
   })) {
     const path = endpoint.path;

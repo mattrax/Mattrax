@@ -434,6 +434,34 @@ describe("collect now", () => {
     });
   });
 
+  it("is gated by a script.run approval policy", async () => {
+    const { db, service, headers } = await context();
+
+    db.store.approval_policy.push({
+      id: "policy-script-run",
+      organizationId: orgId,
+      action: "script.run",
+      scopeType: "tenant",
+      scopeId: null,
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      createdByAccountId: user.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const blocked = await runEffect(
+      service
+        .collectDeviceAttribute(request(headers), orgId, device.id, "attr-antivirus")
+        .pipe(Effect.catchTag("ApprovalRequired", (error: any) => Effect.succeed(error))),
+    );
+
+    expect(blocked).toMatchObject({ code: "approval_required", requestId: expect.any(String) });
+    expect(db.store.script_execution).toHaveLength(0);
+    expect(db.store.approval_request).toHaveLength(1);
+  });
+
   it("rejects a manual attribute, a step-up-less caller and unsupported platforms", async () => {
     const { service, headers } = await context();
 

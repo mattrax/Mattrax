@@ -18,7 +18,9 @@ const scope = {
   mdmOrigin,
 };
 
-const setup = (options: { readonly withProvenance?: boolean } = {}) => {
+const setup = (
+  options: { readonly withProvenance?: boolean; readonly withPolicy?: boolean } = {},
+) => {
   const db = makeDb({
     [tableName(schema.organization)]: [{ id: "org-1", name: "Org", slug: "org", metadata: null }],
     [tableName(schema.device)]: [
@@ -79,6 +81,32 @@ const setup = (options: { readonly withProvenance?: boolean } = {}) => {
         lastReportedAt: at,
       },
     ],
+    [tableName(schema.policy)]: options.withPolicy
+      ? [
+          {
+            id: "policy-1",
+            organizationId: "org-1",
+            name: "Policy",
+            notes: null,
+            priority: 1,
+            createdAt: at,
+            updatedAt: at,
+          },
+        ]
+      : [],
+    [tableName(schema.devicePolicy)]: options.withPolicy
+      ? [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }]
+      : [],
+    [tableName(schema.configuration)]: options.withPolicy
+      ? [
+          {
+            policyId: "policy-1",
+            kind: "mttx.apple.application.app1",
+            data: { applicationId: "app-1" },
+            hash: "hash-1",
+          },
+        ]
+      : [],
   });
 
   const backend = ManagementBackendEnterpriseLive.make({
@@ -108,6 +136,17 @@ describe("remove on unassign at check-in", () => {
       applicationId: "app-1",
       status: "queued",
     });
+  });
+
+  it("keeps an app that a policy still delivers", async () => {
+    const { db, backend } = setup({ withPolicy: true });
+
+    await Effect.runPromise(backend.appleManagementCheckin(scope));
+
+    expect(
+      (db.store.device_command ?? []).some((row) => row.requestType === "RemoveApplication"),
+    ).toBe(false);
+    expect(db.store.application_uninstall ?? []).toHaveLength(0);
   });
 
   it("does not remove an app Mattrax has no install provenance for", async () => {
