@@ -276,6 +276,11 @@ export const isAppleLockScreenMessageDevice = (input: DeviceActionInput): boolea
   return true;
 };
 
+/**
+ * Return to Service is an `EraseDevice` option on iOS/iPadOS 17+, tvOS 18+ and
+ * visionOS 26+. Apple does not support it on macOS at all. An unknown version
+ * stays advertised and the handler gives the precise error.
+ */
 const supportsReturnToService = (input: DeviceActionInput): boolean => {
   // Only exclude macOS when the device identifies as a Mac. An unknown Apple
   // device stays advertised; the command handler reports the precise limit.
@@ -555,43 +560,6 @@ export const parseAppleLockScreenMessageConfiguration = (
 };
 
 /**
- * Apple's LockScreenMessage command. AssetTagInfo is omitted entirely when the
- * operator did not ask for the asset tag, so an empty value is never shown on
- * the lock screen.
- */
-export const appleLockScreenMessagePayload = (input: {
-  readonly message: string;
-  readonly assetTag?: string | null;
-}) => {
-  const assetTag = input.assetTag?.trim();
-
-  return {
-    Message: input.message,
-    ...(assetTag ? { AssetTagInfo: assetTag } : {}),
-  };
-};
-
-/** Read a queued lock screen command back from its payload. */
-export const appleLockScreenMessageFromPayload = (
-  payload: Schema.Json | null | undefined,
-): { message: string; assetTagInfo: string | null } | undefined => {
-  if (!Schema.is(Schema.JsonObject)(payload)) return undefined;
-
-  const rawMessage = payload["Message"];
-
-  if (!Schema.is(Schema.String)(rawMessage)) return undefined;
-  const message = normalizeAppleLockScreenMessage(rawMessage);
-
-  if (!message) return undefined;
-  const rawAssetTag = payload["AssetTagInfo"];
-
-  return {
-    message,
-    assetTagInfo: Schema.is(Schema.String)(rawAssetTag) ? rawAssetTag.trim() || null : null,
-  };
-};
-
-/**
  * Why a lock screen message cannot be sent, in operator-facing wording.
  * Undefined means the request is valid.
  */
@@ -662,86 +630,8 @@ export const resolveAppleLockScreenMessage = (input: {
 };
 
 /**
- * How long a successful push suppresses another automatic retry. Mirrors the
- * device-name push: an OS that ignores the command must not receive a fresh
- * one on every check-in, while a genuine change is applied immediately.
+ * How long a failed profile install suppresses another automatic retry.
+ * Mirrors the device-name push: an OS that rejects the profile must not receive
+ * a fresh one on every check-in, while a genuine change is applied immediately.
  */
 export const LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS = 24 * 60 * 60 * 1000;
-
-export type LockScreenMessagePushInput = {
-  readonly proto?: string | null;
-  readonly status?: string | null;
-  readonly enrollmentMode?: string | null;
-  readonly osEdition?: string | null;
-  readonly model?: string | null;
-  readonly message?: string | null;
-  readonly includeAssetTag?: boolean | null;
-  readonly assetTag?: string | null;
-  readonly deviceName?: string | null;
-  readonly appliedMessage?: string | null;
-  readonly appliedAssetTag?: string | null;
-  readonly appliedName?: string | null;
-  readonly appliedAt?: Date | string | null;
-  readonly now?: Date;
-  readonly retryAfterMs?: number;
-};
-
-/**
- * Whether an Apple check-in should queue another LockScreenMessage.
- *
- * The desired state covers the message, the optional asset tag and the
- * management name: renaming a device re-applies the message so any name-derived
- * wording and the recorded applied state stay in sync.
- */
-export const shouldPushLockScreenMessage = (input: LockScreenMessagePushInput): boolean => {
-  if (
-    !isAppleLockScreenMessageDevice({
-      proto: input.proto,
-      enrollmentMode: input.enrollmentMode,
-      osEdition: input.osEdition,
-      model: input.model,
-    })
-  )
-    return false;
-
-  if (input.status !== "enrolled") return false;
-
-  const message = normalizeAppleLockScreenMessage(input.message);
-
-  if (!message) return false;
-
-  if (
-    lockScreenMessageProblem({
-      message,
-      includeAssetTag: input.includeAssetTag,
-      assetTag: input.assetTag,
-    })
-  )
-    return false;
-
-  const assetTagInfo = input.includeAssetTag === true ? input.assetTag?.trim() || null : null;
-  const appliedAssetTag = input.appliedAssetTag?.trim() || null;
-  const unchanged =
-    normalizeAppleLockScreenMessage(input.appliedMessage) === message &&
-    appliedAssetTag === assetTagInfo &&
-    (normalizeAppleDeviceName(input.appliedName) ?? null) ===
-      (normalizeAppleDeviceName(input.deviceName) ?? null);
-
-  if (!unchanged) return true;
-
-  // The last push already carried this exact state. Give the device a day to
-  // report anything new before queueing the same command again.
-  if (input.appliedAt) {
-    const appliedAt = input.appliedAt instanceof Date ? input.appliedAt : new Date(input.appliedAt);
-    const now = input.now ?? new Date();
-
-    if (
-      Number.isFinite(appliedAt.getTime()) &&
-      now.getTime() - appliedAt.getTime() <
-        (input.retryAfterMs ?? LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS)
-    )
-      return false;
-  }
-
-  return true;
-};

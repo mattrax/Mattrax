@@ -4935,7 +4935,7 @@ describe("device command lifecycle", () => {
     });
   });
 
-  it("omits AssetTagInfo when Include asset tag is off", async () => {
+  it("omits AssetTagInformation when Include asset tag is off", async () => {
     const { db, service, headers } = await makeContext();
 
     const tenant = await runEffect(

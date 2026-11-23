@@ -734,7 +734,7 @@ export default function DeviceDetailPage() {
    * A lock screen message is a device command, so the panel needs the command
    * permission and an Apple device that advertises the action.
    */
-  const canSetLockScreen = () => supports("set-lock-screen-message") && canCommand();
+  const lockScreenSupported = () => supports("set-lock-screen-message");
 
   /** The message the device is currently configured to show. */
   const lockScreenDesiredMessage = () => row()?.effectiveLockScreenMessage ?? "";
@@ -2892,7 +2892,9 @@ export default function DeviceDetailPage() {
                       title="Lock screen message"
                       description="A return message and asset tag, delivered as Apple's shared-device lock screen profile to supervised iPhone and iPad devices."
                       action={
-                        <Show when={row()!.lockScreenMessageSource}>
+                        <Show
+                          when={lockScreenSupported() ? row()!.lockScreenMessageSource : undefined}
+                        >
                           {(source) => (
                             <Chip tone={source() === "policy" ? "brand" : "muted"}>
                               {source() === "policy" ? "Policy default" : "Device override"}
@@ -2902,7 +2904,7 @@ export default function DeviceDetailPage() {
                       }
                     >
                       <Show
-                        when={canSetLockScreen()}
+                        when={lockScreenSupported()}
                         fallback={
                           <p class="text-[12.5px] leading-relaxed text-muted-foreground">
                             Apple's shared-device lock screen profile is only available on
@@ -2912,6 +2914,15 @@ export default function DeviceDetailPage() {
                         }
                       >
                         <div class="space-y-4">
+                          <Show when={!canCommand()}>
+                            <p class="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                              <CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                              <span>
+                                Applying a message requires the devices.command permission. You can
+                                still clear this device's override back to the policy default.
+                              </span>
+                            </p>
+                          </Show>
                           <div class="rounded-xl border border-border bg-surface/70 p-4 text-center">
                             <p class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                               {row()!.name}
@@ -2948,7 +2959,7 @@ export default function DeviceDetailPage() {
                           <Field label="Message">
                             <Textarea
                               value={lockScreenMessage()}
-                              disabled={!writable()}
+                              disabled={!writable() || !canCommand()}
                               rows={3}
                               maxlength={APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH}
                               placeholder={
@@ -2963,6 +2974,7 @@ export default function DeviceDetailPage() {
                             onCheckedChange={setLockScreenIncludeAssetTag}
                             disabled={
                               !writable() ||
+                              !canCommand() ||
                               (!lockScreenIncludeAssetTag() && !row()!.assetTag?.trim())
                             }
                             label="Include asset tag"
@@ -2976,7 +2988,7 @@ export default function DeviceDetailPage() {
                           />
 
                           <div class="flex flex-wrap items-center gap-2">
-                            <Show when={writable()}>
+                            <Show when={writable() && canCommand()}>
                               <Button
                                 size="sm"
                                 disabled={
@@ -2993,6 +3005,8 @@ export default function DeviceDetailPage() {
                               >
                                 {applyLockScreenMessage.isPending ? "Applying…" : "Apply to device"}
                               </Button>
+                            </Show>
+                            <Show when={writable()}>
                               <Show
                                 when={
                                   row()!.lockScreenMessage !== null ||

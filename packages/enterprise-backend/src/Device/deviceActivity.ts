@@ -317,6 +317,24 @@ const auditDetail = (row: AuditRow) => {
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
+/** Title for an audit row, using the operation for lock-screen profile pushes. */
+const auditTitle = (row: AuditRow) => {
+  if (row.action === "device.lock_screen_message_pushed") {
+    const metadata = Option.getOrElse(
+      Schema.decodeUnknownOption(AuditMetadata)(row.metadata),
+      () => ({}),
+    );
+
+    const operation = "operation" in metadata ? metadata.operation : undefined;
+
+    return operation === "remove"
+      ? "Lock screen message removal queued"
+      : "Lock screen message install queued";
+  }
+
+  return AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action;
+};
+
 /**
  * Merge the device-scoped sources into one newest-first feed. Kept pure so the
  * ordering, limit and redaction rules are unit tested without a database.
@@ -339,7 +357,7 @@ export const buildDeviceActivity = (
     events.push({
       id: `${DEVICE_ACTIVITY_AUDIT_PREFIX}${row.id}`,
       kind: "audit",
-      title: AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action,
+      title: auditTitle(row),
       detail: auditDetail(row),
       status: null,
       at,

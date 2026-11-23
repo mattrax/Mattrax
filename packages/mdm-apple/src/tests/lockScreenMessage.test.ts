@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { AppleDeviceEvent, MdmOrigin } from "@mattrax/management-backend";
-import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
+import {
+  ManagementBackendEnterpriseLive,
+  appleLockScreenProfileIdentifier,
+  buildAppleLockScreenProfile,
+  installProfilePayload,
+  profileDigest,
+} from "@mattrax/mdm-apple";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 
@@ -161,6 +167,55 @@ describe("Apple lock screen profile check-in", () => {
         (row) => row.action === "device.lock_screen_message_pushed",
       ),
     ).toBe(true);
+  });
+
+  it("keeps the lock screen profile across legacy policy reconciliation", async () => {
+    const { db, backend } = setup();
+
+    await enroll(backend);
+    configure(db, { osVersion: "14.8" });
+
+    const deviceId = String(storedDevice(db).id);
+    const profile = await buildAppleLockScreenProfile({
+      deviceId,
+      message: "If found, return to the IT desk",
+      assetTagInfo: null,
+    });
+
+    Object.assign(storedDevice(db), {
+      lockScreenMessage: "If found, return to the IT desk",
+      lockScreenIncludeAssetTag: false,
+      queuedLockScreenName: storedDevice(db).name,
+      queuedLockScreenDigest: await profileDigest(profile.content),
+      queuedLockScreenAt: now,
+    });
+    db.store[tableName(schema.deviceCommand)]!.push({
+      id: "profile-installed",
+      organizationId: "org-1",
+      deviceId,
+      requestType: "InstallProfile",
+      payload: installProfilePayload(profile),
+      status: "succeeded",
+      dedupeKey: null,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+      resultStatus: "Acknowledged",
+      resultDetail: null,
+      createdAt: now,
+      updatedAt: now,
+      __table: tableName(schema.deviceCommand),
+    });
+
+    await checkin(backend);
+
+    const removals = profileCommands(db).filter((row) => row.requestType === "RemoveProfile");
+
+    expect(
+      removals.filter(
+        (row) =>
+          (row.payload as { Identifier?: string }).Identifier ===
+          appleLockScreenProfileIdentifier(deviceId),
+      ),
+    ).toHaveLength(0);
   });
 
   it("does not queue another profile while the installed profile is unchanged", async () => {

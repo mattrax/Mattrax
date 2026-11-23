@@ -561,6 +561,8 @@ export const configurationPayloadTypes = async (
       return inspection?.payloads.map((payload) => payload.type) ?? [];
     }
 
+    case "lockScreenMessage":
+      return ["com.apple.shareddeviceconfiguration"];
     case "certificate":
       return ["com.apple.configuration.security.certificate"];
     case "declaration": {

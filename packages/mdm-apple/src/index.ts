@@ -95,6 +95,7 @@ import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core
 import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
 import type { SkippedConfiguration } from "@mattrax/mdm-core";
 import {
+  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
   appleLockScreenProfileIdentifier,
   buildAppleLockScreenProfile,
   buildLegacyProfiles,
@@ -1872,6 +1873,22 @@ const readAppleBootstrapToken = (
     return apple?.bootstrapToken ?? null;
   });
 
+/**
+ * The profile history that belongs to policy delivery.
+ *
+ * The lock screen profile is imperative and deliberately absent from the
+ * policy's compiled configuration list, so legacy reconciliation must never
+ * treat it as a profile the policy removed.
+ */
+const policyInstalledProfiles = (
+  installed: ReadonlyMap<string, string>,
+): ReadonlyMap<string, string> =>
+  new Map(
+    [...installed].filter(
+      ([identifier]) => !identifier.startsWith(APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX),
+    ),
+  );
+
 /** Legacy profiles the device has installed, from its own command history. */
 const installedLegacyProfiles = (
   deviceId: string,
@@ -1894,8 +1911,7 @@ const installedLegacyProfiles = (
 
     return yield* Effect.promise(() =>
       installedProfiles(
-        history.filter((row) => row.requestType === "InstallProfile"),
-        history.filter((row) => row.requestType === "RemoveProfile"),
+        history.map((row) => ({ requestType: row.requestType, payload: row.payload })),
       ),
     );
   });
@@ -2155,7 +2171,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             `Legacy policy ${skipped.policyId}/${skipped.kind} not delivered to ${device.id}: ${skipped.reason}`,
           );
 
-        const installed = yield* installedLegacyProfiles(device.id);
+        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id));
 
         const changes = yield* Effect.promise(() =>
           planLegacyProfileChanges(built.profiles, installed),
@@ -2180,7 +2196,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       at: Date,
     ): Effect.Effect<void, unknown, Db> =>
       Effect.gen(function* () {
-        const installed = yield* installedLegacyProfiles(device.id);
+        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id));
 
         for (const identifier of installed.keys())
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);

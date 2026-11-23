@@ -830,7 +830,7 @@ export default function PolicyDetailPage() {
               <span>
                 Include each device's asset tag
                 <span class="mt-0.5 block text-[11.5px]">
-                  Adds the asset tag as Apple's AssetTagInfo under the message.
+                  Adds the asset tag as Apple's AssetTagInformation under the message.
                 </span>
               </span>
             </label>

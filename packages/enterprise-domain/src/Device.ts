@@ -1131,7 +1131,7 @@ export const DeviceActionRequest = Schema.Struct({
    * `set-lock-screen-message`; it is also stored as the device's override.
    */
   lockScreenMessage: Schema.optional(Schema.String),
-  /** Append the device's asset tag to the message as `AssetTagInfo`. */
+  /** Append the device's asset tag to the message as `AssetTagInformation`. */
   lockScreenIncludeAssetTag: Schema.optional(Schema.Boolean),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),

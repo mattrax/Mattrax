@@ -1,22 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
-  LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   appleDeviceNameFromSettingsPayload,
   appleDeviceNameSettingsPayload,
-  appleLockScreenMessageFromPayload,
-  appleLockScreenMessagePayload,
   appleUserAvailableActions,
   appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
   isAppleLockScreenMessageDevice,
-  lockScreenMessageProblem,
-  normalizeAppleLockScreenMessage,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
-  shouldPushLockScreenMessage,
 } from "./deviceActions.ts";
 import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
@@ -414,66 +407,6 @@ describe("set-lock-screen-message", () => {
   });
 });
 
-describe("Apple lock screen message payload", () => {
-  it("trims the message and omits AssetTagInfo when not requested", () => {
-    expect(
-      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: null }),
-    ).toEqual({ Message: "If found, return to IT" });
-    expect(
-      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: "   " }),
-    ).toEqual({ Message: "If found, return to IT" });
-  });
-
-  it("includes the trimmed asset tag when requested", () => {
-    expect(
-      appleLockScreenMessagePayload({ message: "If found, return to IT", assetTag: " AST-1042 " }),
-    ).toEqual({ Message: "If found, return to IT", AssetTagInfo: "AST-1042" });
-  });
-
-  it("round-trips a queued command", () => {
-    const payload = appleLockScreenMessagePayload({
-      message: "If found, return to IT",
-      assetTag: "AST-1042",
-    });
-
-    expect(appleLockScreenMessageFromPayload(payload)).toEqual({
-      message: "If found, return to IT",
-      assetTagInfo: "AST-1042",
-    });
-    expect(appleLockScreenMessageFromPayload({ Message: "" })).toBeUndefined();
-    expect(appleLockScreenMessageFromPayload(null)).toBeUndefined();
-  });
-
-  it("normalises and bounds the message", () => {
-    expect(normalizeAppleLockScreenMessage("  Line one\r\nLine two  ")).toBe("Line one\nLine two");
-    expect(normalizeAppleLockScreenMessage("   ")).toBeUndefined();
-    expect(APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH).toBe(500);
-    expect(
-      lockScreenMessageProblem({
-        message: "x".repeat(APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH + 1),
-        includeAssetTag: false,
-      }),
-    ).toContain("at most 500");
-  });
-
-  it("refuses Include asset tag without an asset tag", () => {
-    expect(
-      lockScreenMessageProblem({
-        message: "If found, return to IT",
-        includeAssetTag: true,
-        assetTag: null,
-      }),
-    ).toContain("no asset tag");
-    expect(
-      lockScreenMessageProblem({
-        message: "If found, return to IT",
-        includeAssetTag: true,
-        assetTag: "AST-1042",
-      }),
-    ).toBeUndefined();
-  });
-});
-
 describe("resolveAppleLockScreenMessage", () => {
   const policy = {
     message: "Return to the IT desk",
@@ -519,77 +452,5 @@ describe("resolveAppleLockScreenMessage", () => {
     ).toEqual({ message: "Return to IT", includeAssetTag: true });
     expect(parseAppleLockScreenMessageConfiguration({ message: "" })).toBeUndefined();
     expect(parseAppleLockScreenMessageConfiguration(null)).toBeUndefined();
-  });
-});
-
-describe("shouldPushLockScreenMessage", () => {
-  const base = {
-    proto: "apple",
-    status: "enrolled",
-    osEdition: "iPadOS",
-    message: "Return to the IT desk",
-    includeAssetTag: true,
-    assetTag: "AST-1042",
-    deviceName: "Cart iPad 3",
-  };
-
-  it("only runs on enrolled, supervised mobile Apple devices", () => {
-    expect(shouldPushLockScreenMessage(base)).toBe(true);
-    expect(shouldPushLockScreenMessage({ ...base, proto: "win" })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, status: "unenrolling" })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, enrollmentMode: "user" })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, osEdition: "macOS" })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, osEdition: "tvOS" })).toBe(false);
-  });
-
-  it("does not push when Include asset tag has no asset tag", () => {
-    expect(shouldPushLockScreenMessage({ ...base, assetTag: null })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, includeAssetTag: false, assetTag: null })).toBe(
-      true,
-    );
-  });
-
-  it("pushes when the message, asset tag or device name changes", () => {
-    const applied = {
-      appliedMessage: base.message,
-      appliedAssetTag: base.assetTag,
-      appliedName: base.deviceName,
-      appliedAt: new Date("2026-11-23T00:00:00Z"),
-      now: new Date("2026-11-23T01:00:00Z"),
-    };
-
-    expect(shouldPushLockScreenMessage({ ...base, ...applied })).toBe(false);
-    expect(shouldPushLockScreenMessage({ ...base, ...applied, message: "New message" })).toBe(true);
-    expect(shouldPushLockScreenMessage({ ...base, ...applied, assetTag: "AST-9999" })).toBe(true);
-    expect(shouldPushLockScreenMessage({ ...base, ...applied, deviceName: "Renamed iPad" })).toBe(
-      true,
-    );
-    expect(shouldPushLockScreenMessage({ ...base, ...applied, includeAssetTag: false })).toBe(true);
-  });
-
-  it("retries an unchanged message at most once a day", () => {
-    const appliedAt = new Date("2026-11-23T00:00:00Z");
-    const applied = {
-      appliedMessage: base.message,
-      appliedAssetTag: base.assetTag,
-      appliedName: base.deviceName,
-      appliedAt,
-    };
-
-    expect(
-      shouldPushLockScreenMessage({
-        ...base,
-        ...applied,
-        now: new Date(appliedAt.getTime() + 60 * 60 * 1000),
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldPushLockScreenMessage({
-        ...base,
-        ...applied,
-        now: new Date(appliedAt.getTime() + LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS),
-      }),
-    ).toBe(true);
   });
 });

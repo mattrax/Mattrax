@@ -525,6 +525,17 @@ describe("resolveGroupScope", () => {
 });
 
 describe("derivePolicyPlatformSupport", () => {
+  it("reports iOS/iPadOS support for the lock screen profile", async () => {
+    const support = await derivePolicyPlatformSupport([
+      configuration("policy-a", "mttx.apple.lockScreenMessage", {
+        data: { message: "Return to IT", includeAssetTag: false },
+      }),
+    ]);
+
+    expect(support.platforms).toEqual(["apple"]);
+    expect(support.apple).toContainEqual({ family: "iOS", minimum: "9.3" });
+  });
+
   it("derives platforms, OS range and channel scope from configurations", async () => {
     const support = await derivePolicyPlatformSupport([
       configuration("policy-a", "mttx.apple.device", { scope: "device" }),
