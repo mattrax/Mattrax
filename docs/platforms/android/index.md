@@ -221,8 +221,10 @@ policy does not mention are added, as `FORCE_INSTALLED` with `AUTO_UPDATE_DEFAUL
 
 Removing an assignment removes the package from the next compiled policy, which makes
 Google uninstall an app it force-installed. The policy hash changes, so the device receives
-the new policy on the next sync. See
-[Applications](/manage/applications#android) for the catalogue fields.
+the new policy on the next sync. The catalogue's **Uninstall** action is refused while the
+app is still assigned for the same reason; unassign it, or turn on **Remove from devices
+when unassigned**. Removal is confirmed from `applicationReports`, not from the policy push.
+See [Applications](/manage/applications#android) for the catalogue fields.
 
 ## Limitations
 

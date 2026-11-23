@@ -92,6 +92,8 @@ export {
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
 
+export * from "./applicationUninstall.js";
+
 export {
   ApplicationAvailability,
   DEFAULT_STOREFRONT_REGION,

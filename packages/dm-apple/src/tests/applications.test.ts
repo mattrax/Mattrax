@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   APPLE_INSTALL_ASSET_TTL_SECONDS,
   appleInstallAssetExpiresAt,
+  appleUploadKind,
+  appleUploadSupportsDevice,
   buildAppleManifest,
   buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
+  buildRemoveApplicationPayload,
+  isAppleIpaUpload,
   isApplePackageUpload,
 } from "../applications.js";
 
@@ -100,6 +104,67 @@ describe("Apple enterprise application commands", () => {
     expect(
       isApplePackageUpload({ fileName: "App.ipa", contentType: "application/octet-stream" }),
     ).toBe(false);
+  });
+
+  it("classifies .pkg and .ipa uploads and the device each targets", () => {
+    expect(appleUploadKind({ fileName: "App.pkg" })).toBe("pkg");
+    expect(appleUploadKind({ fileName: "App.ipa" })).toBe("ipa");
+    expect(appleUploadKind({ fileName: "App.zip" })).toBeUndefined();
+    expect(appleUploadKind({ fileName: "App", contentType: "application/octet-stream" })).toBe(
+      "pkg",
+    );
+    expect(isAppleIpaUpload({ fileName: "App.IPA" })).toBe(true);
+    expect(isAppleIpaUpload({ fileName: "App.pkg" })).toBe(false);
+
+    expect(appleUploadSupportsDevice({ fileName: "App.pkg", osEdition: "macOS" })).toBe(true);
+    expect(appleUploadSupportsDevice({ fileName: "App.pkg", osEdition: "iOS" })).toBe(false);
+    expect(appleUploadSupportsDevice({ fileName: "App.ipa", osEdition: "iOS" })).toBe(true);
+    expect(appleUploadSupportsDevice({ fileName: "App.ipa", osEdition: "iPadOS" })).toBe(true);
+    expect(appleUploadSupportsDevice({ fileName: "App.ipa", osEdition: "macOS" })).toBe(false);
+    expect(appleUploadSupportsDevice({ fileName: "App.ipa", osEdition: "tvOS" })).toBe(false);
+  });
+
+  it("builds the OTA manifest InstallApplication payload for an .ipa", () => {
+    expect(
+      buildInstallApplicationPayload({
+        manifestUrl: "https://mdm.test/mdm/apple/manifests/app.installer-1?token=abc",
+        managementFlags: 1,
+      }),
+    ).toEqual({
+      ManifestURL: "https://mdm.test/mdm/apple/manifests/app.installer-1?token=abc",
+      InstallAsManaged: true,
+      ManagementFlags: 1,
+    });
+
+    const manifest = buildAppleManifest({
+      url: "https://mdm.test/mdm/apple/assets/app.installer-1?token=abc",
+      sha256: "c".repeat(64),
+      bundleId: "com.example.internal",
+      version: "1.0",
+      title: "Internal",
+    });
+
+    expect(manifest.items[0]).toEqual({
+      assets: [
+        {
+          kind: "software-package",
+          url: "https://mdm.test/mdm/apple/assets/app.installer-1?token=abc",
+          sha256: "c".repeat(64),
+        },
+      ],
+      metadata: {
+        "bundle-identifier": "com.example.internal",
+        "bundle-version": "1.0",
+        kind: "software",
+        title: "Internal",
+      },
+    });
+  });
+
+  it("builds a RemoveApplication payload by bundle id", () => {
+    expect(buildRemoveApplicationPayload("com.example.internal")).toEqual({
+      BundleIdentifier: "com.example.internal",
+    });
   });
 
   it("rounds package URL expiry up to the next hour so commands de-duplicate", () => {

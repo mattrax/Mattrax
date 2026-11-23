@@ -208,6 +208,11 @@ export declare namespace AppleMdmService {
       identifier: string,
       token?: string,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
+    readonly handleManifest: (
+      identityCertificate: string | undefined,
+      identifier: string,
+      token?: string,
+    ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
     readonly handleProfile: (
       deviceToken: string,
       policyId: string,
@@ -836,6 +841,21 @@ const makeAppleMdmService = (
       Effect.mapError(toMdmError("Failed to fetch asset")),
     );
 
+  const handleManifest = (
+    identityCertificate: string | undefined,
+    identifier: string,
+    token?: string,
+  ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
+    Effect.gen(function* () {
+      if (!backend.getAppleManifest) return null;
+
+      return yield* backend.getAppleManifest(identityCertificate, identifier, token).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to fetch manifest")),
+      );
+    });
+
   const profileSecret = (): string | undefined => config.authSecret;
 
   const handleProfile = (
@@ -1037,6 +1057,7 @@ const makeAppleMdmService = (
     handleDeclarationItems,
     handleDeclaration,
     handleAsset,
+    handleManifest,
     handleProfile,
     generateEnrollmentProfile,
     recordFailure,

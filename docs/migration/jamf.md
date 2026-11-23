@@ -93,8 +93,8 @@ to translate every payload.
   pool. Licences are device-based; user-based licences are not supported.
 - **Manifest apps** — create catalogue entries with the manifest URL.
 - **Store apps** — create entries with the iTunes Store id.
-- **Uploaded packages** — Mattrax stores the package but does not generate an OTA
-  manifest. Host your own manifest or use VPP.
+- **Uploaded packages** — Mattrax stores the package and generates the OTA manifest for
+  an uploaded `.ipa`; a `.pkg` installs on macOS. No separate manifest host is needed.
 - **Scripts** — not supported. Use a custom profile or an external tool.
 
 ## FileVault

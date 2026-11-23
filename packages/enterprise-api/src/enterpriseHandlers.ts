@@ -69,6 +69,7 @@ import {
   EnterpriseUnauthorized,
   EnterpriseService,
   enterpriseApi,
+  enterpriseApplicationApi,
   enterpriseGroupApi,
   enterpriseAttributeApi,
   enterpriseSoftwareUpdateApi,
@@ -163,6 +164,8 @@ import {
   normaliseStorefrontRegion,
   resolveApplicationStoreId,
   summariseApplicationAvailability,
+  APPLICATION_UNINSTALL_DEADLINE_MS,
+  sameApplicationBundle,
 } from "@mattrax/enterprise-domain";
 import type {
   AttributeSource,
@@ -215,6 +218,7 @@ import {
   listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
   R2_PRIVATE_CACHE_CONTROL,
+  recordApplicationInstall,
   tenantLimitForAccount,
   WINDOWS_FAILURE_RETENTION_DAYS,
 } from "@mattrax/enterprise-core";
@@ -290,6 +294,7 @@ import {
   commandStatusIsActive,
   deviceCommandExpiresAt,
   extendedCommandDeadline,
+  installCommandTargetsApplication,
   planCommandQueueing,
   setAutoAdminPasswordPayload,
   WebhookPayload,
@@ -319,6 +324,7 @@ import {
   syncAutopilotDevices,
   updateAutopilotProfile,
   validateAutopilotProfileInput,
+  windowsMsiUninstallPayload,
 } from "@mattrax/enterprise-backend";
 import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
 import {
@@ -594,12 +600,15 @@ import type { CutoverTarget } from "@mattrax/enterprise-backend";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
-  appleOsFamily,
+  appleUploadKind,
+  appleUploadSupportsDevice,
   buildAppleManifest,
+  buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
+  buildRemoveApplicationPayload,
   createAppleProfileSigner,
   AppleAdeEnrollmentError,
-  isApplePackageUpload,
+  ipaProvisioningExpiresAt,
   parseAppleAdeMachineInfo,
   signAppleAssetToken,
   signAppleProfilePlist,
@@ -918,6 +927,7 @@ const PRODUCT_EVENTS = {
   resetTenantEnrollment: "enrollment_settings_reset",
   deviceAction: "device_command_sent",
   installApplication: "application_install_requested",
+  uninstallApplication: "application_uninstall_requested",
   installVppAsset: "vpp_asset_install_requested",
   runTenantBackup: "backup_started",
   billingPortal: "billing_portal_opened",
@@ -926,6 +936,43 @@ const PRODUCT_EVENTS = {
 } satisfies Record<string, string>;
 
 const PRODUCT_EVENT_BY_METHOD = new Map(Object.entries(PRODUCT_EVENTS));
+
+/**
+ * Largest application artefact accepted by an upload endpoint.
+ *
+ * Workers buffer the JSON request body before the handler runs, so the cap
+ * must reject the base64 string before decoding it as well as checking the
+ * decoded length. A hostile caller cannot make the isolate allocate an
+ * arbitrarily large package.
+ */
+export const APPLICATION_UPLOAD_MAX_BYTES = 512 * 1024 * 1024;
+
+const APPLICATION_UPLOAD_MAX_BASE64_CHARS = Math.ceil(APPLICATION_UPLOAD_MAX_BYTES / 3) * 4;
+
+/** A reason when a base64 upload is over the limit, or undefined when it fits. */
+export const applicationUploadLimitProblem = (base64Length: number): string | undefined =>
+  base64Length > APPLICATION_UPLOAD_MAX_BASE64_CHARS
+    ? `The uploaded file is too large. The limit is ${APPLICATION_UPLOAD_MAX_BYTES / (1024 * 1024)} MB.`
+    : undefined;
+
+/** Decode an upload only after proving its base64 and decoded sizes fit. */
+const decodeApplicationUpload = (content: string) =>
+  Effect.gen(function* () {
+    const problem = applicationUploadLimitProblem(content.length);
+
+    if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+    const bytes = base64ToBytes(content);
+
+    if (bytes.byteLength > APPLICATION_UPLOAD_MAX_BYTES)
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({
+          message: `The uploaded file is too large. The limit is ${APPLICATION_UPLOAD_MAX_BYTES / (1024 * 1024)} MB.`,
+        }),
+      );
+
+    return bytes;
+  });
 
 const wrapServiceErrors = <S extends object>(
   service: S,
@@ -3543,6 +3590,30 @@ export const createEnterpriseService = ({
       return devices;
     });
 
+  /** Persist install provenance through the closure's connection. */
+  const recordInstallProvenance = (input: Parameters<typeof recordApplicationInstall>[1]) =>
+    recordApplicationInstall(db, input);
+
+  /** Apple enrollment mode per device, for supervised-only command gating. */
+  const appleEnrollmentModes = (deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return new Map<string, "device" | "user">();
+
+      const rows = yield* db
+        .select({
+          deviceId: schema.deviceApple.deviceId,
+          enrollmentMode: schema.deviceApple.enrollmentMode,
+        })
+        .from(schema.deviceApple)
+        .where(inArray(schema.deviceApple.deviceId, [...deviceIds]));
+
+      return new Map(
+        rows.flatMap((row) =>
+          row.enrollmentMode ? [[row.deviceId, row.enrollmentMode] as const] : [],
+        ),
+      );
+    });
+
   /** InstallApplication payload for a device-assigned VPP licence. */
   const vppInstallPayload = (adamId: string) => ({
     iTunesStoreID: Number(adamId),
@@ -3762,6 +3833,396 @@ export const createEnterpriseService = ({
       yield* db.insert(schema.deviceCommand).values(insertValues);
 
       return { id, payload: input.payload, deduplicated: false };
+    });
+
+  /**
+   * Whether the tenant has a recorded, successful install of this app on the
+   * device. Uninstall must never claim an app the tenant did not install: a
+   * user-installed App Store app is not managed by Mattrax and Apple will
+   * refuse (or worse, silently ignore) the removal.
+   */
+  const recordedApplicationInstall = (input: {
+    readonly deviceId: string;
+    readonly application: EnterpriseApplication;
+    readonly installers: ReadonlyArray<EnterpriseApplicationInstaller>;
+    readonly installer?: EnterpriseApplicationInstaller;
+    readonly storeId?: string | null;
+  }): Effect.Effect<boolean, unknown> =>
+    Effect.gen(function* () {
+      const [provenance] = yield* db
+        .select({ id: schema.applicationInstall.id })
+        .from(schema.applicationInstall)
+        .where(
+          and(
+            eq(schema.applicationInstall.deviceId, input.deviceId),
+            eq(schema.applicationInstall.applicationId, input.application.id),
+          ),
+        )
+        .limit(1);
+
+      if (provenance) return true;
+
+      const installerIds = [
+        ...new Set(
+          [input.installer?.id, ...input.installers.map((installer) => installer.id)].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      ];
+
+      const history = yield* db
+        .select({
+          requestType: schema.deviceCommand.requestType,
+          payload: schema.deviceCommand.payload,
+        })
+        .from(schema.deviceCommand)
+        .where(
+          and(
+            eq(schema.deviceCommand.deviceId, input.deviceId),
+            eq(schema.deviceCommand.status, "succeeded"),
+            inArray(schema.deviceCommand.requestType, [
+              "InstallApplication",
+              "InstallEnterpriseApplication",
+            ]),
+          ),
+        );
+
+      const bundleId = input.installer?.bundleId ?? input.application.bundleId;
+      const platform = input.installer?.platform ?? input.application.platform;
+
+      const matchedHistory = history.some((row) => {
+        if (
+          installCommandTargetsApplication(row, {
+            bundleId,
+            manifestUrl: input.installer?.manifestUrl ?? input.application.manifestUrl,
+            storeId: input.storeId ?? input.installer?.storeId ?? input.application.storeId,
+            applicationId: input.application.id,
+            installerIds,
+          })
+        )
+          return true;
+
+        // A Windows MSI install carries the ProductCode in the CSP locURI
+        // rather than a top-level Apple/Store identifier.
+        if (platform !== "win" || !bundleId) return false;
+
+        const normalized = normalizeMsiProductCode(bundleId).toUpperCase();
+        const encoded = encodeURIComponent(normalized).toUpperCase();
+        const payload = JSON.stringify(row.payload ?? null).toUpperCase();
+
+        return payload.includes(normalized) || payload.includes(encoded);
+      });
+
+      if (matchedHistory) return true;
+
+      if (!bundleId) return false;
+
+      // Corroborate with a managed inventory row. Some Apple reports omit
+      // IsManaged, so this is evidence, never the only proof for Apple.
+      const inventory = yield* db
+        .select({ bundleId: schema.deviceApplication.bundleId })
+        .from(schema.deviceApplication)
+        .where(
+          and(
+            eq(schema.deviceApplication.deviceId, input.deviceId),
+            eq(schema.deviceApplication.isManaged, true),
+          ),
+        );
+
+      return inventory.some((row) => sameApplicationBundle(platform, row.bundleId, bundleId));
+    });
+
+  /** Whether the device's inventory still lists this package. */
+  const deviceApplicationPresent = (deviceId: string, bundleId: string) =>
+    db
+      .select({ bundleId: schema.deviceApplication.bundleId })
+      .from(schema.deviceApplication)
+      .where(
+        and(
+          eq(schema.deviceApplication.deviceId, deviceId),
+          eq(schema.deviceApplication.bundleId, bundleId),
+        ),
+      )
+      .limit(1)
+      .pipe(Effect.map((rows) => rows.length > 0));
+
+  type ApplicationUninstallOutcome =
+    | { readonly queued: true }
+    | { readonly queued: false; readonly failed: boolean; readonly reason: string };
+
+  /**
+   * Queue one device's uninstall and record the state reconciliation resolves.
+   *
+   * Android has no uninstall command: the app leaves the compiled Managed
+   * Google Play policy. When the assignment is being removed that is already
+   * happening, so only the tracking row is written; an explicit uninstall while
+   * the app is still assigned is refused because the policy would keep it.
+   */
+  const queueApplicationUninstallForDevice = (input: {
+    readonly organizationId: string;
+    readonly application: EnterpriseApplication;
+    readonly installer?: EnterpriseApplicationInstaller;
+    readonly device: EnterpriseDevice;
+    readonly bundleId: string;
+    readonly storeId?: string | null;
+    /** Whether the device still receives the app through an assignment. */
+    readonly assigned: boolean;
+    readonly at: Date;
+    readonly removal: "manual" | "unassigned";
+  }): Effect.Effect<ApplicationUninstallOutcome, unknown, never> =>
+    Effect.gen(function* () {
+      const platform = input.installer?.platform ?? input.application.platform;
+
+      let commandId: string | null = null;
+
+      if (platform === "android" && input.removal === "manual" && input.assigned)
+        return {
+          queued: false,
+          failed: true,
+          reason:
+            'Android removes an app by taking it out of the Managed Google Play policy. Unassign it from these devices first, or turn on "Remove from devices when unassigned".',
+        };
+
+      if (platform === "apple") {
+        const command = yield* queueDeviceCommand({
+          organizationId: input.organizationId,
+          deviceId: input.device.id,
+          requestType: "RemoveApplication",
+          payload: buildRemoveApplicationPayload(input.bundleId),
+          at: input.at,
+        });
+
+        commandId = command.id;
+      } else if (platform === "win") {
+        if (!isMsiProductCode(input.bundleId))
+          return {
+            queued: false,
+            failed: true,
+            reason:
+              "Windows can only uninstall an MSI product Mattrax installed. This installer has no MSI ProductCode, so there is no silent uninstall command to queue.",
+          };
+
+        const command = yield* queueDeviceCommand({
+          organizationId: input.organizationId,
+          deviceId: input.device.id,
+          requestType: "WindowsRemoveApplication",
+          payload: windowsMsiUninstallPayload({ productId: input.bundleId }),
+          at: input.at,
+        });
+
+        commandId = command.id;
+      }
+
+      // Only return a licence that is actually assigned; an app installed
+      // outside Apps and Books has no seat to release.
+      let adamId: string | null = null;
+
+      if (platform === "apple" && input.storeId) {
+        const [assignment] = yield* db
+          .select({ adamId: schema.deviceVppAssignment.adamId })
+          .from(schema.deviceVppAssignment)
+          .where(
+            and(
+              eq(schema.deviceVppAssignment.organizationId, input.organizationId),
+              eq(schema.deviceVppAssignment.deviceId, input.device.id),
+              eq(schema.deviceVppAssignment.adamId, input.storeId),
+              eq(schema.deviceVppAssignment.state, "assigned"),
+            ),
+          )
+          .limit(1);
+
+        if (assignment) adamId = assignment.adamId;
+      }
+
+      const values = {
+        organizationId: input.organizationId,
+        deviceId: input.device.id,
+        applicationId: input.application.id,
+        installerId: input.installer?.id ?? null,
+        platform,
+        bundleId: input.bundleId,
+        adamId,
+        commandId,
+        status: "queued" as const,
+        requestedAt: input.at,
+        deadline: new Date(input.at.getTime() + APPLICATION_UNINSTALL_DEADLINE_MS),
+        observedVersion: null,
+        resultDetail: null,
+        updatedAt: input.at,
+      };
+
+      const [existing] = yield* db
+        .select({ id: schema.applicationUninstall.id })
+        .from(schema.applicationUninstall)
+        .where(
+          and(
+            eq(schema.applicationUninstall.deviceId, input.device.id),
+            eq(schema.applicationUninstall.applicationId, input.application.id),
+          ),
+        )
+        .limit(1);
+
+      if (existing)
+        yield* db
+          .update(schema.applicationUninstall)
+          .set(values)
+          .where(eq(schema.applicationUninstall.id, existing.id));
+      else
+        yield* db.insert(schema.applicationUninstall).values({
+          id: id(),
+          createdAt: input.at,
+          ...values,
+        });
+
+      return { queued: true };
+    });
+
+  /**
+   * Queue uninstalls for every device that should lose the app.
+   *
+   * The installer is selected exactly as the install path does, so a mixed
+   * catalogue targets each device with its own platform artefact. Devices that
+   * never received an install from Mattrax are refused rather than removed.
+   */
+  const queueApplicationUninstalls = (input: {
+    readonly organizationId: string;
+    readonly application: EnterpriseApplication;
+    readonly installers: ReadonlyArray<EnterpriseApplicationInstaller>;
+    readonly storefronts: ReadonlyArray<{
+      region: string;
+      storeId: string | null;
+      available: boolean;
+    }>;
+    readonly preferredRegion?: string | null;
+    readonly devices: ReadonlyArray<EnterpriseDevice>;
+    /** Devices that still receive the app through an assignment. */
+    readonly assignedDeviceIds?: ReadonlySet<string>;
+    /** Apple User Enrollment (BYOD) devices, where RemoveApplication is invalid. */
+    readonly appleUserEnrollmentDeviceIds?: ReadonlySet<string>;
+    readonly at: Date;
+    readonly removal: "manual" | "unassigned";
+  }): Effect.Effect<
+    {
+      readonly queued: number;
+      readonly skipped: number;
+      readonly failed: number;
+      readonly reasons: ReadonlyArray<string>;
+      /** Devices whose removal was recorded (including Android policy-only). */
+      readonly queuedDeviceIds: ReadonlyArray<string>;
+    },
+    unknown
+  > =>
+    Effect.gen(function* () {
+      let queued = 0;
+      let skipped = 0;
+      let failed = 0;
+      const reasons: string[] = [];
+      const queuedDeviceIds: string[] = [];
+
+      for (const device of input.devices) {
+        if (device.status !== "enrolled") {
+          skipped++;
+
+          if (!reasons.includes("One or more devices are not enrolled, so no removal was queued."))
+            reasons.push("One or more devices are not enrolled, so no removal was queued.");
+
+          continue;
+        }
+
+        const candidates = input.installers.filter(
+          (installer) =>
+            installer.platform !== "apple" ||
+            installer.source !== "upload" ||
+            appleUploadSupportsDevice({
+              fileName: installer.fileName,
+              contentType: installer.contentType,
+              osEdition: device.osEdition,
+            }),
+        );
+
+        const installer = selectInstaller(candidates, {
+          proto: device.proto,
+          osVersion: device.osVersion,
+          capabilities: Array.isArray(device.capabilities)
+            ? device.capabilities.filter((value): value is string => typeof value === "string")
+            : undefined,
+        });
+
+        const bundleId = installer?.bundleId?.trim() ?? input.application.bundleId?.trim();
+
+        if (!bundleId) {
+          skipped++;
+          reasons.push(
+            "the catalogue entry has no bundle identifier or package name, so the uninstall cannot be addressed",
+          );
+          continue;
+        }
+
+        const platform = installer?.platform ?? input.application.platform;
+
+        if (platform === "apple" && input.appleUserEnrollmentDeviceIds?.has(device.id)) {
+          failed++;
+          reasons.push(
+            "Apple User Enrollment (BYOD) devices do not support removing managed applications.",
+          );
+          continue;
+        }
+
+        const storeId =
+          platform === "apple" && installer?.source === "store"
+            ? resolveApplicationStoreId({
+                storefronts: input.storefronts,
+                preferredRegion: input.preferredRegion ?? null,
+                legacyStoreId: installer.storeId,
+              })?.storeId
+            : undefined;
+
+        // Android was force-installed by the policy while the app was
+        // assigned, so its presence in inventory is the evidence. Apple and
+        // Windows need a recorded install: their inventory also lists apps the
+        // user installed, which this action must not touch.
+        const installed =
+          platform === "android"
+            ? yield* deviceApplicationPresent(device.id, bundleId)
+            : yield* recordedApplicationInstall({
+                deviceId: device.id,
+                application: input.application,
+                installers: input.installers,
+                installer,
+                storeId,
+              });
+
+        if (!installed) {
+          failed++;
+          reasons.push(
+            "Mattrax did not install this app on one or more devices, so it will not remove it",
+          );
+          continue;
+        }
+
+        const outcome = yield* queueApplicationUninstallForDevice({
+          organizationId: input.organizationId,
+          application: input.application,
+          installer,
+          device,
+          bundleId,
+          storeId,
+          assigned: input.assignedDeviceIds?.has(device.id) ?? false,
+          at: input.at,
+          removal: input.removal,
+        });
+
+        if (outcome.queued) {
+          queued++;
+          queuedDeviceIds.push(device.id);
+        } else {
+          if (outcome.failed) failed++;
+          else skipped++;
+          reasons.push(outcome.reason);
+        }
+      }
+
+      return { queued, skipped, failed, reasons, queuedDeviceIds };
     });
 
   const assertTenantGroup = (tenantId: string, groupId: string) =>
@@ -5202,6 +5663,7 @@ export const createEnterpriseService = ({
     minOsVersion: row.minOsVersion,
     requiredCapability: row.requiredCapability,
     priority: row.priority,
+    provisioningExpiresAt: row.provisioningExpiresAt ? iso(row.provisioningExpiresAt) : null,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -5565,7 +6027,14 @@ export const createEnterpriseService = ({
           keep.add(current.id);
           yield* db
             .update(schema.applicationInstaller)
-            .set({ ...values, updatedAt: at })
+            .set({
+              ...values,
+              // The expiry describes the uploaded .ipa. Changing the source
+              // (or keeping a non-upload installer) must not leave a stale one.
+              provisioningExpiresAt:
+                values.source === "upload" ? (current.provisioningExpiresAt ?? null) : null,
+              updatedAt: at,
+            })
             .where(
               and(
                 eq(schema.applicationInstaller.id, current.id),
@@ -5636,6 +6105,7 @@ export const createEnterpriseService = ({
     availability: row.availability ?? "unknown",
     availabilityReason: row.availabilityReason ?? null,
     lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
+    removeOnUnassign: row.removeOnUnassign ?? false,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -9117,6 +9587,7 @@ export const createEnterpriseService = ({
 
         const methods = [
           ...Object.keys(enterpriseApi.endpoints),
+          ...Object.keys(enterpriseApplicationApi.endpoints),
           ...Object.keys(enterpriseGroupApi.endpoints),
           ...Object.keys(enterpriseAttributeApi.endpoints),
           ...Object.keys(enterpriseSoftwareUpdateApi.endpoints),
@@ -17269,7 +17740,18 @@ export const createEnterpriseService = ({
         if (queuedDevices.length > 0) {
           const at = now();
 
-          for (const device of queuedDevices)
+          const [vppApplication] = yield* db
+            .select()
+            .from(schema.application)
+            .where(
+              and(
+                eq(schema.application.organizationId, ctx.organization.id),
+                eq(schema.application.storeId, adamId),
+              ),
+            )
+            .limit(1);
+
+          for (const device of queuedDevices) {
             yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -17277,6 +17759,20 @@ export const createEnterpriseService = ({
               payload: vppInstallPayload(adamId),
               at,
             });
+
+            const bundleId = vppApplication?.bundleId ?? asset.bundleId;
+
+            if (vppApplication && bundleId)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: vppApplication.id,
+                installerId: null,
+                platform: "apple",
+                bundleId,
+                at,
+              });
+          }
 
           yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
         }
@@ -23285,7 +23781,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
 
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
@@ -24526,6 +25022,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          removeOnUnassign?: boolean;
           installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
@@ -24567,6 +25064,7 @@ export const createEnterpriseService = ({
           manifestUrl: primary.manifestUrl,
           storeId: primary.storeId,
           notes: body.notes ?? null,
+          removeOnUnassign: body.removeOnUnassign ?? false,
           createdAt: at,
           updatedAt: at,
         });
@@ -24605,6 +25103,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          removeOnUnassign?: boolean;
           installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
@@ -24645,6 +25144,10 @@ export const createEnterpriseService = ({
               .set({
                 name: body.name?.trim() ?? current.name,
                 notes: body.notes === undefined ? current.notes : body.notes,
+                removeOnUnassign:
+                  body.removeOnUnassign === undefined
+                    ? current.removeOnUnassign
+                    : body.removeOnUnassign,
                 updatedAt: now(),
               })
               .where(
@@ -24681,6 +25184,7 @@ export const createEnterpriseService = ({
                 manifestUrl: outcome.current.manifestUrl,
                 storeId: outcome.current.storeId,
                 notes: outcome.current.notes,
+                removeOnUnassign: outcome.current.removeOnUnassign,
                 installers: (yield* applicationInstallers(ctx.organization.id, applicationId)).map(
                   (installer) => ({
                     id: installer.id,
@@ -24953,6 +25457,18 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        const beforeAssigned = yield* applicationAssignedDeviceIds(
+          ctx.organization.id,
+          applicationId,
+        );
+
         const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
 
         const total = removed.groups + removed.userGroups + removed.devices;
@@ -24964,6 +25480,49 @@ export const createEnterpriseService = ({
             trigger: "manual",
             reason: optionalText(payload?.reason) ?? null,
           });
+
+        if (application.removeOnUnassign && beforeAssigned.length > 0) {
+          const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+          const appStorefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+          const appleEnrollment = yield* appleEnrollmentModes(
+            beforeAssigned.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+          const outcome = yield* queueApplicationUninstalls({
+            organizationId: ctx.organization.id,
+            application,
+            installers: appInstallers,
+            storefronts: appStorefronts,
+            preferredRegion: ctx.organization.appStoreRegion,
+            devices: beforeAssigned,
+            assignedDeviceIds: new Set(),
+            appleUserEnrollmentDeviceIds: new Set(
+              [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+                mode === "user" ? [deviceId] : [],
+              ),
+            ),
+            at: now(),
+            removal: "unassigned",
+          });
+
+          yield* applePush.pushAppleDevices(
+            beforeAssigned.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+          yield* audit(ctx, "application.uninstall_queued", "application", applicationId, {
+            trigger: "unlink",
+            devices: beforeAssigned.length,
+            queued: outcome.queued,
+            failed: outcome.failed,
+            skipped: outcome.skipped,
+          });
+
+          for (const deviceId of outcome.queuedDeviceIds)
+            yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+              applicationId,
+              trigger: "unlink",
+            });
+        }
 
         return { status: "ok" as const, removed, retainedApplication: true };
       }),
@@ -25037,6 +25596,13 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
         const body: {
           assign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
@@ -25129,6 +25695,57 @@ export const createEnterpriseService = ({
           [...beforeAssigned, ...affected].map((device) => [device.id, device]),
         );
 
+        // "Remove when unassigned" is evaluated here, on the same pass that
+        // writes the assignment, so the removal is visible and audited rather
+        // than happening silently on a later check-in. The device is only
+        // reported removed after its next inventory confirms it.
+        if (application.removeOnUnassign) {
+          const stillAssigned = new Set(affected.map((device) => device.id));
+          const removedDevices = beforeAssigned.filter((device) => !stillAssigned.has(device.id));
+
+          if (removedDevices.length > 0) {
+            const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+            const appStorefronts = yield* applicationStorefronts(
+              ctx.organization.id,
+              applicationId,
+            );
+            const appleEnrollment = yield* appleEnrollmentModes(
+              removedDevices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+            );
+
+            const outcome = yield* queueApplicationUninstalls({
+              organizationId: ctx.organization.id,
+              application,
+              installers: appInstallers,
+              storefronts: appStorefronts,
+              preferredRegion: ctx.organization.appStoreRegion,
+              devices: removedDevices,
+              assignedDeviceIds: stillAssigned,
+              appleUserEnrollmentDeviceIds: new Set(
+                [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+                  mode === "user" ? [deviceId] : [],
+                ),
+              ),
+              at: now(),
+              removal: "unassigned",
+            });
+
+            yield* audit(ctx, "application.uninstall_queued", "application", applicationId, {
+              trigger: "remove_on_unassign",
+              devices: removedDevices.length,
+              queued: outcome.queued,
+              failed: outcome.failed,
+              skipped: outcome.skipped,
+            });
+
+            for (const deviceId of outcome.queuedDeviceIds)
+              yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+                applicationId,
+                trigger: "remove_on_unassign",
+              });
+          }
+        }
+
         const affectedDevices = [...allAffected.values()];
         yield* applePush.pushAppleDevices(affectedDevices.map((device) => device.id));
         yield* syncAndroidDevices(
@@ -25183,12 +25800,17 @@ export const createEnterpriseService = ({
                   minOsVersion: null,
                   requiredCapability: null,
                   priority: 0,
+                  provisioningExpiresAt: null,
                   createdAt: app.createdAt,
                   updatedAt: app.updatedAt,
                 },
               ];
 
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+
+        const appleEnrollment = yield* appleEnrollmentModes(
+          devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+        );
 
         const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
 
@@ -25226,15 +25848,20 @@ export const createEnterpriseService = ({
             continue;
           }
 
-          // Uploaded Apple packages are macOS-only. Filter them out before
-          // selection so an iPhone falls through to its manifest/store option.
+          // A .pkg only installs on macOS and an .ipa only on iOS/iPadOS.
+          // Filter before selection so the device falls through to whichever
+          // artefact (or manifest/store option) it can actually install.
           const candidates = installers.filter(
             (item) =>
-              !(
-                item.platform === "apple" &&
-                item.source === "upload" &&
-                appleOsFamily(device.osEdition) !== "macOS"
-              ),
+              item.platform !== "apple" ||
+              item.source !== "upload" ||
+              appleUploadKind({ fileName: item.fileName, contentType: item.contentType }) ===
+                undefined ||
+              appleUploadSupportsDevice({
+                fileName: item.fileName,
+                contentType: item.contentType,
+                osEdition: device.osEdition,
+              }),
           );
 
           const installer = selectInstaller(candidates, {
@@ -25248,10 +25875,25 @@ export const createEnterpriseService = ({
           if (!installer) {
             skipped++;
 
+            const uploadKinds = new Set<"pkg" | "ipa">();
+
+            for (const item of installers) {
+              if (item.platform !== "apple" || item.source !== "upload") continue;
+              const kind = appleUploadKind({
+                fileName: item.fileName,
+                contentType: item.contentType,
+              });
+
+              if (kind) uploadKinds.add(kind);
+            }
+
             const reason =
-              candidates.length === 0 &&
-              installers.some((item) => item.platform === "apple" && item.source === "upload")
-                ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+              candidates.length === 0 && uploadKinds.size > 0
+                ? uploadKinds.size === 1 && uploadKinds.has("pkg")
+                  ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+                  : uploadKinds.size === 1 && uploadKinds.has("ipa")
+                    ? "Uploaded .ipa installers target iOS and iPadOS only, and no assigned iPhone or iPad is enrolled."
+                    : "An uploaded .pkg installs on macOS and an .ipa on iOS/iPadOS; no assigned device matches either artefact."
                 : installerSkipReason(candidates, {
                     proto: device.proto,
                     osVersion: device.osVersion,
@@ -25304,6 +25946,17 @@ export const createEnterpriseService = ({
               reasons.push(`the Android policy could not be pushed: ${sync.failure.message}`);
               continue;
             }
+
+            for (const device of groupDevices)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "android",
+                bundleId: packageName,
+                at,
+              });
 
             queued += sync.success.updated;
             skipped += sync.success.failed;
@@ -25373,7 +26026,7 @@ export const createEnterpriseService = ({
               sha256: installer.sha256,
             });
 
-            for (const device of groupDevices)
+            for (const device of groupDevices) {
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
@@ -25382,13 +26035,24 @@ export const createEnterpriseService = ({
                 at,
               });
 
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "win",
+                bundleId: productId,
+                at,
+              });
+            }
+
             queued += groupDevices.length;
             continue;
           }
 
-          // Apple: one installer may be a .pkg upload, an OTA manifest or a
-          // store listing. The selected installer already matched the device's
-          // platform, OS version and reported capabilities.
+          // Apple: one installer may be a .pkg or .ipa upload, an OTA manifest
+          // or a store listing. The selected installer already matched the
+          // device's platform, OS version and reported capabilities.
           if (installer.source === "upload") {
             if (!installer.r2Key || !installer.sha256 || !installer.fileName) {
               skipped += groupDevices.length;
@@ -25396,37 +26060,66 @@ export const createEnterpriseService = ({
               continue;
             }
 
-            if (!installer.bundleId?.trim()) {
+            const bundleId = installer.bundleId?.trim();
+
+            if (!bundleId) {
               skipped += groupDevices.length;
               reasons.push("an uploaded Apple installer needs a bundle identifier");
               continue;
             }
 
-            if (
-              !isApplePackageUpload({
-                fileName: installer.fileName,
-                contentType: installer.contentType,
-              })
-            ) {
+            const uploadKind = appleUploadKind({
+              fileName: installer.fileName,
+              contentType: installer.contentType,
+            });
+
+            if (!uploadKind) {
               skipped += groupDevices.length;
               reasons.push(
-                "Only signed .pkg installers can be installed from an upload. An .ipa needs an OTA manifest URL.",
+                "The uploaded file is neither a signed .pkg nor an .ipa, so there is no install command for it.",
               );
               continue;
             }
 
-            const macDevices = groupDevices.filter(
-              (device) => appleOsFamily(device.osEdition) === "macOS",
+            const targets = groupDevices.filter(
+              (device) =>
+                appleUploadSupportsDevice({
+                  fileName: installer.fileName,
+                  contentType: installer.contentType,
+                  osEdition: device.osEdition,
+                }) &&
+                // Apple User Enrollment (BYOD) does not accept managed app
+                // installs or removals.
+                !(uploadKind === "ipa" && appleEnrollment.get(device.id) === "user"),
             );
 
-            skipped += groupDevices.length - macDevices.length;
+            skipped += groupDevices.length - targets.length;
 
-            if (macDevices.length === 0) {
-              reasons.push("uploaded .pkg installers target macOS only");
+            if (targets.length === 0) {
+              const userEnrolledTargets = groupDevices.filter(
+                (device) =>
+                  uploadKind === "ipa" &&
+                  appleEnrollment.get(device.id) === "user" &&
+                  appleUploadSupportsDevice({
+                    fileName: installer.fileName,
+                    contentType: installer.contentType,
+                    osEdition: device.osEdition,
+                  }),
+              );
+
+              reasons.push(
+                userEnrolledTargets.length > 0
+                  ? "Apple User Enrollment (BYOD) devices cannot install a managed .ipa."
+                  : uploadKind === "pkg"
+                    ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+                    : "Uploaded .ipa installers target iOS and iPadOS only, and no assigned iPhone or iPad is enrolled.",
+              );
               continue;
             }
 
-            for (const device of macDevices) {
+            const identifier = catalogueApplicationAssetIdentifier(installer.id);
+
+            for (const device of targets) {
               const token = yield* Effect.tryPromise(() =>
                 signAppleAssetToken(authSecret ?? "", {
                   policyId: installer.id,
@@ -25436,30 +26129,74 @@ export const createEnterpriseService = ({
                 }),
               );
 
-              const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
-                catalogueApplicationAssetIdentifier(installer.id),
-              )}?token=${encodeURIComponent(token)}`;
+              const tokenQuery = `?token=${encodeURIComponent(token)}`;
+
+              if (uploadKind === "pkg") {
+                const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
+                  identifier,
+                )}${tokenQuery}`;
+
+                yield* queueDeviceCommand({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  requestType: "InstallEnterpriseApplication",
+                  payload: buildInstallEnterpriseApplicationPayload({
+                    manifest: buildAppleManifest({
+                      url,
+                      sha256: installer.sha256,
+                      bundleId,
+                      version: installer.version?.trim() || "0",
+                      title: app.name,
+                    }),
+                    managementFlags: 1,
+                  }),
+                  at,
+                });
+
+                yield* recordInstallProvenance({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  applicationId: app.id,
+                  installerId: installer.id,
+                  platform: "apple",
+                  bundleId,
+                  at,
+                });
+
+                continue;
+              }
+
+              // InstallApplication cannot carry an inline manifest, so Mattrax
+              // hosts the OTA plist itself and points the device at it. The
+              // URL is signed and device-bound exactly like the package.
+              const manifestUrl = `${origin.replace(/\/+$/, "")}/mdm/apple/manifests/${encodeURIComponent(
+                identifier,
+              )}${tokenQuery}`;
 
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
-                requestType: "InstallEnterpriseApplication",
-                payload: buildInstallEnterpriseApplicationPayload({
-                  manifest: buildAppleManifest({
-                    url,
-                    sha256: installer.sha256,
-                    bundleId: installer.bundleId.trim(),
-                    version: installer.version?.trim() || "0",
-                    title: app.name,
-                  }),
+                requestType: "InstallApplication",
+                payload: buildInstallApplicationPayload({
+                  manifestUrl,
                   managementFlags: 1,
                 }),
                 at,
               });
+
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "apple",
+                bundleId,
+                at,
+              });
             }
 
-            yield* applePush.pushAppleDevices(macDevices.map((device) => device.id));
-            queued += macDevices.length;
+            yield* applePush.pushAppleDevices(targets.map((device) => device.id));
+            queued += targets.length;
             continue;
           }
 
@@ -25524,8 +26261,10 @@ export const createEnterpriseService = ({
                 queuedDevices.push(device);
               }
 
+              const storeBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
+
               if (queuedDevices.length > 0) {
-                for (const device of queuedDevices)
+                for (const device of queuedDevices) {
                   yield* queueDeviceCommand({
                     organizationId: ctx.organization.id,
                     deviceId: device.id,
@@ -25533,6 +26272,18 @@ export const createEnterpriseService = ({
                     payload: vppInstallPayload(storeId),
                     at,
                   });
+
+                  if (storeBundleId)
+                    yield* recordInstallProvenance({
+                      organizationId: ctx.organization.id,
+                      deviceId: device.id,
+                      applicationId: app.id,
+                      installerId: installer.id,
+                      platform: "apple",
+                      bundleId: storeBundleId,
+                      at,
+                    });
+                }
 
                 yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
               }
@@ -25547,8 +26298,9 @@ export const createEnterpriseService = ({
               InstallAsManaged: true,
               Options: { PurchaseMethod: 1 },
             };
+            const storeBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
 
-            for (const device of groupDevices)
+            for (const device of groupDevices) {
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
@@ -25556,6 +26308,18 @@ export const createEnterpriseService = ({
                 payload,
                 at,
               });
+
+              if (storeBundleId)
+                yield* recordInstallProvenance({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  applicationId: app.id,
+                  installerId: installer.id,
+                  platform: "apple",
+                  bundleId: storeBundleId,
+                  at,
+                });
+            }
 
             queued += groupDevices.length;
             continue;
@@ -25575,8 +26339,9 @@ export const createEnterpriseService = ({
             InstallAsManaged: true,
             Options: { PurchaseMethod: 1 },
           };
+          const manifestBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
 
-          for (const device of groupDevices)
+          for (const device of groupDevices) {
             yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -25584,6 +26349,18 @@ export const createEnterpriseService = ({
               payload,
               at,
             });
+
+            if (manifestBundleId)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "apple",
+                bundleId: manifestBundleId,
+                at,
+              });
+          }
 
           queued += groupDevices.length;
         }
@@ -25607,6 +26384,129 @@ export const createEnterpriseService = ({
           message: queued === 0 ? reasons[0] : reasons.length > 0 ? reasons[0] : undefined,
         };
       }),
+    uninstallApplication: (request, tenantId, applicationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+        const appStorefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+        const assignedDevices = yield* applicationAssignedDeviceIds(
+          ctx.organization.id,
+          applicationId,
+        );
+        const assignedIds = new Set(assignedDevices.map((device) => device.id));
+
+        // An unassigned device can still hold the app (removed from a group,
+        // or assigned before remove-on-unassign existed). Its inventory is the
+        // evidence that an explicit uninstall has something to remove.
+        const bundleIds = [
+          ...new Set(
+            [application.bundleId, ...appInstallers.map((installer) => installer.bundleId)].flatMap(
+              (bundleId) => (bundleId?.trim() ? [bundleId.trim()] : []),
+            ),
+          ),
+        ];
+
+        const installedDeviceIds =
+          bundleIds.length > 0
+            ? yield* db
+                .select({ deviceId: schema.deviceApplication.deviceId })
+                .from(schema.deviceApplication)
+                .where(
+                  and(
+                    eq(schema.deviceApplication.organizationId, ctx.organization.id),
+                    inArray(schema.deviceApplication.bundleId, bundleIds),
+                  ),
+                )
+            : [];
+
+        const extraDeviceIds = [
+          ...new Set(
+            installedDeviceIds
+              .map((row) => row.deviceId)
+              .filter((deviceId) => !assignedIds.has(deviceId)),
+          ),
+        ];
+
+        const extraDevices =
+          extraDeviceIds.length > 0
+            ? yield* db
+                .select()
+                .from(schema.device)
+                .where(
+                  and(
+                    eq(schema.device.organizationId, ctx.organization.id),
+                    inArray(schema.device.id, extraDeviceIds),
+                  ),
+                )
+            : [];
+
+        const devices = [...assignedDevices, ...extraDevices];
+        const at = now();
+
+        const appleEnrollment = yield* appleEnrollmentModes(
+          devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+        );
+        const appleUserEnrollmentDeviceIds = new Set(
+          [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+            mode === "user" ? [deviceId] : [],
+          ),
+        );
+
+        const outcome = yield* queueApplicationUninstalls({
+          organizationId: ctx.organization.id,
+          application,
+          installers: appInstallers,
+          storefronts: appStorefronts,
+          preferredRegion: ctx.organization.appStoreRegion,
+          devices,
+          assignedDeviceIds: assignedIds,
+          appleUserEnrollmentDeviceIds,
+          at,
+          removal: "manual",
+        });
+
+        if (outcome.queued > 0)
+          yield* applePush.pushAppleDevices(
+            devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+        yield* audit(ctx, "application.uninstall_requested", "application", applicationId, {
+          devices: devices.length,
+          queued: outcome.queued,
+          skipped: outcome.skipped,
+          failed: outcome.failed,
+        });
+
+        // Per-device rows keep the device timeline honest, including Android
+        // where no command exists because the removal happens in the policy.
+        for (const deviceId of outcome.queuedDeviceIds)
+          yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+            applicationId,
+            trigger: "manual",
+          });
+
+        return {
+          status: "ok" as const,
+          queued: outcome.queued,
+          skipped: outcome.skipped,
+          failed: outcome.failed,
+          message:
+            outcome.queued === 0
+              ? (outcome.reasons[0] ??
+                (devices.length === 0
+                  ? "This application is not assigned to an enrolled device."
+                  : "No device was eligible for removal."))
+              : undefined,
+        };
+      }),
     uploadApplication: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
@@ -25618,7 +26518,7 @@ export const createEnterpriseService = ({
         });
 
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
 
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
@@ -25630,6 +26530,10 @@ export const createEnterpriseService = ({
           },
           customMetadata: { fileName: body.fileName },
         });
+        const provisioningExpiresAt =
+          appleUploadKind({ fileName: body.fileName, contentType: body.contentType }) === "ipa"
+            ? yield* ipaProvisioningExpiresAt(bytes)
+            : undefined;
         const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
         const primary = installers[0];
 
@@ -25642,6 +26546,7 @@ export const createEnterpriseService = ({
               size: bytes.byteLength,
               sha256,
               r2Key: key,
+              provisioningExpiresAt: provisioningExpiresAt ?? null,
               updatedAt: now(),
             })
             .where(eq(schema.applicationInstaller.id, primary.id));
@@ -25665,6 +26570,7 @@ export const createEnterpriseService = ({
             size: bytes.byteLength,
             sha256,
             r2Key: key,
+            provisioningExpiresAt: provisioningExpiresAt ?? null,
             priority: 0,
             createdAt: at,
             updatedAt: at,
@@ -25743,8 +26649,12 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Installer not found" }));
 
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const provisioningExpiresAt =
+          appleUploadKind({ fileName: body.fileName, contentType: body.contentType }) === "ipa"
+            ? yield* ipaProvisioningExpiresAt(bytes)
+            : undefined;
         const key = applicationKey(ctx.organization.id, installer.id, sha256);
 
         yield* r2.put(key, bytes, {
@@ -25763,6 +26673,7 @@ export const createEnterpriseService = ({
             size: bytes.byteLength,
             sha256,
             r2Key: key,
+            provisioningExpiresAt: provisioningExpiresAt ?? null,
             updatedAt: now(),
           })
           .where(eq(schema.applicationInstaller.id, installer.id));
@@ -30726,43 +31637,6 @@ export const enterpriseHandlers = (
         service.unlinkApplicationAssignments(request, params.tenantId, params.id, payload),
       ),
     )
-    .handle("installApplication", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.installApplication(request, params.tenantId, params.id),
-      ),
-    )
-    .handle("uploadApplication", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.uploadApplication(request, params.tenantId, params.id, payload),
-      ),
-    )
-    .handle("downloadApplication", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.downloadApplication(request, params.tenantId, params.id, params.sha256),
-      ),
-    )
-    .handle("uploadApplicationInstaller", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.uploadApplicationInstaller(
-          request,
-          params.tenantId,
-          params.id,
-          params.installerId,
-          payload,
-        ),
-      ),
-    )
-    .handle("downloadApplicationInstaller", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.downloadApplicationInstaller(
-          request,
-          params.tenantId,
-          params.id,
-          params.installerId,
-          params.sha256,
-        ),
-      ),
-    )
     .handle("getPolicyAssignments", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getPolicyAssignments(request, params.tenantId, params.id),
@@ -30844,6 +31718,58 @@ export const enterpriseHandlers = (
     .handle("billingInvoices", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.billingInvoices(request, params.tenantId),
+      ),
+    );
+
+/**
+ * Catalogue uninstall handlers. Registered against `enterpriseApplicationApi`,
+ * a group kept separate so `EnterpriseApi` stays inside the compiler's
+ * declaration-emit budget.
+ */
+export const enterpriseApplicationHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApplicationApi>,
+) =>
+  handlers
+    .handle("installApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.installApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("uninstallApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uninstallApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("uploadApplication", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplication(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("downloadApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplication(request, params.tenantId, params.id, params.sha256),
+      ),
+    )
+    .handle("uploadApplicationInstaller", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          payload,
+        ),
+      ),
+    )
+    .handle("downloadApplicationInstaller", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          params.sha256,
+        ),
       ),
     );
 

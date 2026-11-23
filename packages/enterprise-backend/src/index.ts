@@ -812,6 +812,7 @@ export {
   isMsiProductCode,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
+  windowsMsiUninstallPayload,
 } from "./Device/windowsApplications.ts";
 
 export type { DeviceActivityPage } from "./Device/deviceActivity.ts";

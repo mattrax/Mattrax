@@ -16,6 +16,8 @@ export * from "./tokens.js";
 
 export * from "./applications.js";
 
+export * from "./ipa.js";
+
 export * from "./service.js";
 
 export * from "./handlers.js";

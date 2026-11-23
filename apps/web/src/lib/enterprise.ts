@@ -319,6 +319,7 @@ type RouteParam = string | undefined;
 type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApplication"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
@@ -740,6 +741,7 @@ function endpoint<A, E>(
     (headers) =>
       Effect.map(clientEffect(headers), (client) => ({
         ...client.EnterpriseApi,
+        ...client.EnterpriseApplication,
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
@@ -2257,6 +2259,8 @@ export const enterprise = {
       storeId?: string | null;
       notes?: string | null;
       installers?: ApplicationInstallerPayload[];
+      /** Remove the app from devices that lose their assignment. */
+      removeOnUnassign?: boolean;
       /** The application's `updatedAt` when the editor loaded it; 412 on a mismatch. */
       expectedUpdatedAt?: string;
     },
@@ -2337,6 +2341,13 @@ export const enterprise = {
   installApplication: (tenantId: RouteParam, id: RouteParam) =>
     endpoint((api) =>
       api.installApplication({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  /** Queue removal on devices Mattrax installed the app on. */
+  uninstallApplication: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.uninstallApplication({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),

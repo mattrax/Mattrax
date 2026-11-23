@@ -184,6 +184,20 @@ export const managementWebhookHandlers = (
         );
       }),
     )
+    .handle("getAppleManifest", ({ request, payload }) =>
+      Effect.gen(function* () {
+        yield* verifySignature(request, "getAppleManifest", payload, options.secret);
+        const backend = yield* ManagementBackend;
+
+        if (!backend.getAppleManifest) return null;
+
+        return yield* backend.getAppleManifest(
+          payload.identityCertificate,
+          payload.identifier,
+          payload.token,
+        );
+      }),
+    )
     .handle("getAppleProfile", ({ request, payload }) =>
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleProfile", payload, options.secret);

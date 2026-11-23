@@ -147,8 +147,9 @@ be assigned to groups or devices.
 - The MDM layer selects one installer per device from its platform, OS version and
   reported capabilities. `priority` breaks ties, then the highest version; `minOsVersion`
   and `requiredCapability` let a newer installer target only devices that support it.
-- Apple installs from an uploaded `.pkg` (macOS), an OTA manifest, or an iTunes Store
-  id. VPP/Apps & Books licences are assigned from the licence pool when configured.
+- Apple installs from an uploaded `.pkg` (macOS) or `.ipa` (iOS/iPadOS), an OTA
+  manifest, or an iTunes Store id; Mattrax hosts the OTA manifest for an uploaded `.ipa`.
+  VPP/Apps & Books licences are assigned from the licence pool when configured.
 - Windows installs an MSI through OMA-DM; Android pushes the selected Managed Google
   Play package in the device policy.
 - Installer uploads are stored in R2 per installer, so several versions can be uploaded

@@ -123,6 +123,7 @@ const APPLICATION_WRITE = new Set([
   "refreshApplicationStorefronts",
   "unlinkApplicationAssignments",
   "installApplication",
+  "uninstallApplication",
   "uploadApplication",
 ]);
 

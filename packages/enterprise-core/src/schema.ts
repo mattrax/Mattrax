@@ -4010,6 +4010,12 @@ export const application = mysqlTable(
     availabilityReason: text("availability_reason"),
     /** Last time any storefront still carried the app. */
     lastSeenAt: timestamp("last_seen_at"),
+    /**
+     * Remove the app from devices that lose their assignment. Evaluated when
+     * the assignment is saved; the device is only reported removed once its
+     * next application inventory no longer lists the app.
+     */
+    removeOnUnassign: boolean("remove_on_unassign").notNull().default(false),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -4098,6 +4104,13 @@ export const applicationInstaller = mysqlTable(
     requiredCapability: shortText("required_capability"),
     /** Higher values win when several installers match. */
     priority: int("priority").notNull().default(0),
+    /**
+     * Expiry of an uploaded `.ipa`'s embedded provisioning profile, read when
+     * the file was uploaded. Null when the file is not an `.ipa` or the profile
+     * could not be read; the dashboard then omits the expiry rather than
+     * guessing.
+     */
+    provisioningExpiresAt: timestamp("provisioning_expires_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -4131,6 +4144,109 @@ export const applicationDevice = mysqlTable(
       .references(() => application.id, { onDelete: "cascade" }),
   },
   (table) => [primaryKey({ columns: [table.deviceId, table.applicationId] })],
+);
+
+/**
+ * Provenance for a catalogue app Mattrax installed on a device.
+ *
+ * Command history is pruned after 90 days and a busy device can push an old
+ * install past any read window, so the uninstall guard cannot rely on it
+ * alone. This row records which application and installer the tenant actually
+ * delivered, and is kept until the application (or device) is deleted. It is
+ * updated by every install path, including policy delivery.
+ */
+export const applicationInstall = mysqlTable(
+  "application_install",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    /** Installer that delivered the app; null for legacy catalogue rows. */
+    installerId: shortText("installer_id"),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** Bundle id, MSI ProductCode or Android package name the inventory uses. */
+    bundleId: shortText("bundle_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("application_install_device_application_unique").on(
+      table.deviceId,
+      table.applicationId,
+    ),
+    index("application_install_organization_idx").on(table.organizationId),
+    // The unique (device, application) index already covers device lookups.
+    index("application_install_application_idx").on(table.applicationId),
+  ],
+);
+
+/**
+ * One device's outstanding or most recent catalogue-app uninstall.
+ *
+ * A device only proves the app is gone when it reports a new application
+ * inventory, so the request is tracked separately from the MDM command:
+ * absence before the deadline is `succeeded`, presence after it is `failed`
+ * with the version the device still runs. Android has no per-device uninstall
+ * command (the app leaves the compiled policy), so its row has no command id
+ * and is reconciled from `applicationReports` the same way.
+ *
+ * The row is unique per device and application: a second request replaces the
+ * previous outcome instead of growing history. Command history and the device
+ * timeline remain the audit trail.
+ */
+export const applicationUninstall = mysqlTable(
+  "application_uninstall",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    /** Installer whose bundle/product id was targeted, when one was selected. */
+    installerId: shortText("installer_id"),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** Bundle id, MSI ProductCode or Android package name the inventory uses. */
+    bundleId: shortText("bundle_id").notNull(),
+    /** Apps and Books asset to return once the app is gone, when licensed. */
+    adamId: shortText("adam_id"),
+    /** Queued MDM command; null for Android's policy-driven removal. */
+    commandId: shortText("command_id"),
+    status: varchar("status", {
+      length: 16,
+      enum: ["queued", "succeeded", "failed", "cancelled"],
+    })
+      .notNull()
+      .default("queued"),
+    requestedAt: timestamp("requested_at").notNull(),
+    /** Inventory reported after this instant must show the app gone. */
+    deadline: timestamp("deadline").notNull(),
+    /** Version the device still reported when the uninstall failed. */
+    observedVersion: shortText("observed_version"),
+    resultDetail: text("result_detail"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("application_uninstall_device_application_unique").on(
+      table.deviceId,
+      table.applicationId,
+    ),
+    index("application_uninstall_organization_status_idx").on(table.organizationId, table.status),
+    // The unique (device, application) index already covers device lookups.
+    index("application_uninstall_application_idx").on(table.applicationId),
+  ],
 );
 
 /** Direct device-to-policy assignment in addition to group membership. */
@@ -4774,6 +4890,8 @@ export const relations = defineRelations(
     application,
     applicationGroup,
     applicationDevice,
+    applicationInstall,
+    applicationUninstall,
     devicePolicy,
     organizationDeviceUsage,
     scepCa,

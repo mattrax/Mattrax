@@ -6,6 +6,7 @@ import {
   MSI_INSTALL_LOCURI_PREFIX,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
+  windowsMsiUninstallPayload,
 } from "../src/Device/windowsApplications.ts";
 
 const productId = "1803A630-3C38-4D2B-9B9A-0CB37243539C";
@@ -51,6 +52,17 @@ describe("Windows MSI application delivery", () => {
     expect(payload.data).toContain("<ContentURL>https://cdn.example.test/app.msi</ContentURL>");
     expect(payload.data).toContain(`<FileHash>${"AB".repeat(32)}</FileHash>`);
     expect(payload.data).toContain("<CommandLine>/quiet /norestart</CommandLine>");
+  });
+
+  it("builds the EnterpriseDesktopAppManagement uninstall command", () => {
+    const payload = windowsMsiUninstallPayload({ productId });
+
+    expect(payload).toEqual({
+      kind: "Exec",
+      locURI: `${MSI_INSTALL_LOCURI_PREFIX}/${encodeURIComponent(`{${productId}}`)}/Uninstall`,
+      data: "/quiet /norestart",
+      format: "chr",
+    });
   });
 
   it("escapes values placed in the job XML", () => {

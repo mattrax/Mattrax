@@ -735,6 +735,9 @@ export type DeviceCommandStatus = typeof DeviceCommandStatus.Type;
 /** Statuses where the device can still run the command. */
 export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "deferred"] as const;
 
+/** Result status recorded when the server, not the device, resolved a command. */
+export const DEVICE_COMMAND_RECONCILED_RESULT_STATUS = "Reconciled";
+
 export const DEVICE_COMMAND_STATUS_LABELS: Record<DeviceCommandStatus, string> = {
   queued: "Queued",
   sent: "Sent",

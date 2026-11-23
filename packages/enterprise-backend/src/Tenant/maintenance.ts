@@ -301,6 +301,8 @@ export type MaintenanceResult = {
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Uninstall rows whose inventory deadline passed without a report. */
+  readonly failedUninstalls: number;
   /** Windows state-generated command rows deleted by retention. */
   readonly purgedWindowsCommands: number;
   /** Windows enrollment/management failure records deleted by retention. */
@@ -569,6 +571,7 @@ export const runMaintenance = (
       localAdminPasswordsRotated: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      failedUninstalls: 0,
       purgedWindowsCommands: 0,
       purgedWindowsFailures: 0,
       scepCasIssued: 0,
@@ -1180,6 +1183,7 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+    result.failedUninstalls = commands.failedUninstalls;
 
     // 10a. Windows policy/inventory rows are regenerated from device state on
     //      every check-in and are written without an expiry, so the generic

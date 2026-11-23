@@ -556,6 +556,59 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
   );
 }
 
+/**
+ * The OTA manifest an iPhone/iPad downloads for an uploaded `.ipa`.
+ *
+ * `InstallApplication` only accepts a `ManifestURL`, so Mattrax hosts the
+ * plist itself. The URL carries a signed, device-bound token and the manifest
+ * points at the same signed asset endpoint the package is served from.
+ */
+function handleManifest(request: HttpServerRequest.HttpServerRequest) {
+  return Effect.gen(function* () {
+    const service = yield* AppleMdmService;
+    const url = new URL(request.url, "http://localhost");
+    const prefix = "/mdm/apple/manifests/";
+
+    if (!url.pathname.startsWith(prefix)) return HttpServerResponse.empty({ status: 404 });
+
+    // The route is unauthenticated until the signed token is verified, so a
+    // malformed escape must be a plain 404 rather than a thrown URIError.
+    const rawIdentifier = url.pathname.slice(prefix.length);
+
+    let identifier: string;
+
+    try {
+      identifier = decodeURIComponent(rawIdentifier);
+    } catch {
+      return HttpServerResponse.empty({ status: 404 });
+    }
+
+    if (!identifier) return HttpServerResponse.empty({ status: 404 });
+
+    const manifest = yield* service.handleManifest(
+      request.headers["x-device-identity-certificate"],
+      identifier,
+      url.searchParams.get("token") ?? undefined,
+    );
+
+    if (!manifest) return HttpServerResponse.empty({ status: 404 });
+
+    return HttpServerResponse.uint8Array(manifest.content, {
+      contentType: manifest.contentType,
+      headers: { "Cache-Control": MDM_ASSET_CACHE_CONTROL },
+    });
+  }).pipe(
+    Effect.match({
+      onSuccess: (value) => value,
+      onFailure: (err) => {
+        console.error("manifest error:", err);
+
+        return HttpServerResponse.empty({ status: 500 });
+      },
+    }),
+  );
+}
+
 // DDM `ProfileURL` targets. Signed URLs authenticate without the MDM check-in
 // identity certificate, because Declarative Management fetches them directly.
 function handleProfile(request: HttpServerRequest.HttpServerRequest) {
@@ -609,5 +662,6 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
 export const appleMdmRoutes = Layer.mergeAll(
   HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm),
   HttpRouter.add("GET", "/mdm/apple/assets/:identifier", handleAsset),
+  HttpRouter.add("GET", "/mdm/apple/manifests/:identifier", handleManifest),
   HttpRouter.add("GET", "/mdm/apple/profiles/:deviceToken/:policyId/:kind", handleProfile),
 );

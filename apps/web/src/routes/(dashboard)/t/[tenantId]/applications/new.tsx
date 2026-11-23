@@ -211,8 +211,8 @@ export default function NewApplicationPage() {
               <Show when={source() === "upload"}>
                 <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
                   Save the application first, then upload the installer from its detail page. Apple
-                  installs a signed .pkg from the upload; Windows and Android use the installer URL
-                  or the Managed Google Play package instead.
+                  installs a signed .pkg on Macs or a signed .ipa on iPhone and iPad; Windows and
+                  Android use the installer URL or the Managed Google Play package instead.
                 </p>
               </Show>
               <Field label="Notes" hint="Optional. Context for other admins.">
@@ -246,9 +246,9 @@ export default function NewApplicationPage() {
               </div>
               <h2 class="mt-3 text-[13px] font-semibold text-foreground">Delivery</h2>
               <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                Apple installs a manifest, App Store or uploaded .pkg app on assigned Macs and
-                iPhones. Windows queues an MSI install through the MDM channel, and Android adds
-                assigned apps to the Managed Google Play policy.
+                Apple installs a manifest, App Store, uploaded .pkg (macOS) or .ipa (iOS/iPadOS) app
+                on assigned devices. Windows queues an MSI install through the MDM channel, and
+                Android adds assigned apps to the Managed Google Play policy.
               </p>
             </Panel>
             <Panel title="Sources">
@@ -268,7 +268,8 @@ export default function NewApplicationPage() {
                 <div>
                   <dt class="font-medium text-foreground">Uploaded file</dt>
                   <dd class="text-muted-foreground">
-                    A signed .pkg installs on macOS; an .ipa needs an OTA manifest URL.
+                    A signed .pkg installs on macOS and a signed .ipa on iOS/iPadOS; Mattrax
+                    generates the OTA manifest.
                   </dd>
                 </div>
               </dl>

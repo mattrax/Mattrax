@@ -6,20 +6,20 @@ legacy `.mobileconfig` profiles where DDM does not cover the setting.
 
 ## What is supported
 
-| Area       | Support                                                                                      |
-| ---------- | -------------------------------------------------------------------------------------------- |
-| Enrollment | Profile link, optional password, QR code, device cap, asset tag                              |
-| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation                                  |
-| Push       | Tenant APNs certificate; direct, mTLS or relay transport                                     |
-| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`                      |
-| Zero-touch | ABM/ADE assignment, automatic enrollment endpoint, setup gating and Return to Service        |
-| Apps       | VPP/Apps & Books device licences; manifest, store and uploaded `.pkg` install commands       |
-| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`                               |
-| Users      | macOS/Shared iPad user channel, per-user push and profiles, BYOD profile                     |
-| Inventory  | DDM status items and `InstalledApplicationList`                                              |
-| OS updates | DDM software-update enforcement on macOS 14+/iOS 17+/iPadOS 17+; `ScheduleOSUpdate` fallback |
-| Scripts    | Assigned scripts, scheduled/manual runs, results and script-collected attributes             |
-| Health     | Derived enrollment/declaration/disk/FileVault/battery health                                 |
+| Area       | Support                                                                                       |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| Enrollment | Profile link, optional password, QR code, device cap, asset tag                               |
+| Identity   | Tenant SCEP CA, per-device certificate, renewal, revocation                                   |
+| Push       | Tenant APNs certificate; direct, mTLS or relay transport                                      |
+| Policy     | DDM declarations, legacy profiles, certificates, custom `.mobileconfig`                       |
+| Zero-touch | ABM/ADE assignment, automatic enrollment endpoint, setup gating and Return to Service         |
+| Apps       | VPP/Apps & Books device licences; manifest, store and uploaded `.pkg`/`.ipa` install commands |
+| Security   | FileVault recovery-key escrow, bootstrap token, `SecurityInfo`                                |
+| Users      | macOS/Shared iPad user channel, per-user push and profiles, BYOD profile                      |
+| Inventory  | DDM status items and `InstalledApplicationList`                                               |
+| OS updates | DDM software-update enforcement on macOS 14+/iOS 17+/iPadOS 17+; `ScheduleOSUpdate` fallback  |
+| Scripts    | Assigned scripts, scheduled/manual runs, results and script-collected attributes              |
+| Health     | Derived enrollment/declaration/disk/FileVault/battery health                                  |
 
 ## Prerequisites
 
@@ -382,8 +382,9 @@ pending actions, and a reported inventory reconciles installs that already lande
   it is not a substitute for registering the ADE profile `url`.
 - `mttx.apple.device` currently exposes only the camera restriction. Use a custom
   `.mobileconfig` or a DDM declaration for everything else.
-- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded `.pkg`
-  app on the policy's devices; uploaded packages install on macOS only.
+- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded app on
+  the policy's devices. An uploaded catalogue `.pkg` targets macOS and an uploaded `.ipa`
+  targets iOS/iPadOS; a package uploaded against the policy itself is `.pkg`-only.
 - Apple User Enrollment (BYOD) check-in is supported, but account-driven enrollment is not:
   it needs a Managed Apple Account, a `.well-known/com.apple.remotemanagement` document on the
   tenant's own domain, and a browser sign-in flow that Mattrax does not host. See

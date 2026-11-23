@@ -1,6 +1,12 @@
 import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
-import { Db, deviceLimitForOrganization, schema as s } from "@mattrax/enterprise-core";
+import {
+  Db,
+  deviceLimitForOrganization,
+  reconcileApplicationUninstalls,
+  recordApplicationInstall,
+  schema as s,
+} from "@mattrax/enterprise-core";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
@@ -21,6 +27,7 @@ import {
   APPLE_DEVICE_NAME_MAX_LENGTH,
   latestKnownDeviceName,
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  APPLICATION_UNINSTALL_DEADLINE_MS,
   LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   isAppleLockScreenMessageDevice,
   isConfirmedMacOsDevice,
@@ -41,9 +48,13 @@ import {
   appleInstallAssetExpiresAt,
   scriptProfileIdentifier,
   signAppleAssetToken,
-  isApplePackageUpload,
+  appleUploadKind,
+  appleUploadSupportsDevice,
+  buildRemoveApplicationPayload,
+  isAppleIpaUpload,
   verifyAppleAssetToken,
 } from "@mattrax/dm-apple";
+import { serializePlist } from "@mattrax/plist";
 import { buildAdeEnrollmentProfile } from "./adeProfile.js";
 import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import { resolveAssignedScriptIds, scriptAgentToken } from "@mattrax/enterprise-domain";
@@ -260,6 +271,20 @@ export const deviceInformationConfigurationToken = (
 ) => hashToken(items);
 
 type DeviceRow = typeof s.device.$inferSelect;
+
+/**
+ * Return an Apps and Books licence after the device proved the app is gone.
+ *
+ * Wired by the deployment host so this package does not depend on the VPP
+ * client; resolves false when the licence could not be returned.
+ */
+export type AppleVppLicenceRelease = (input: {
+  /** Connection owned by the caller; the release runs inside its check-in. */
+  readonly db: Db["Service"];
+  readonly organizationId: string;
+  readonly deviceId: string;
+  readonly adamId: string;
+}) => Promise<boolean>;
 
 const findDeviceByScope = (
   scope: CheckinScope,
@@ -1473,6 +1498,7 @@ const applySecurityInfo = (
 const applyInstalledApplications = (
   device: Pick<DeviceRow, "id" | "organizationId">,
   queryResponses: PlistInput,
+  options: { readonly releaseVppLicence?: AppleVppLicenceRelease } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     const applications = parseInstalledApplications(queryResponses);
@@ -1544,6 +1570,56 @@ const applyInstalledApplications = (
       .update(s.device)
       .set({ applicationsUpdatedAt: timestamp, lastSeenAt: timestamp })
       .where(eq(s.device.id, device.id));
+
+    const transitions = yield* reconcileApplicationUninstalls(db, {
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      applications,
+      at: timestamp,
+    });
+
+    // A returned licence frees the seat for another device, but only now that
+    // this device reported the app gone. A release failure is logged: the
+    // uninstall itself already succeeded and the licence can be returned from
+    // the Apps and Books page.
+    for (const transition of transitions) {
+      if (transition.status !== "succeeded" || !transition.adamId) continue;
+
+      const release = options.releaseVppLicence;
+
+      if (!release) continue;
+
+      const [assignment] = yield* db
+        .select({ adamId: s.deviceVppAssignment.adamId })
+        .from(s.deviceVppAssignment)
+        .where(
+          and(
+            eq(s.deviceVppAssignment.organizationId, device.organizationId),
+            eq(s.deviceVppAssignment.deviceId, device.id),
+            eq(s.deviceVppAssignment.adamId, transition.adamId),
+            eq(s.deviceVppAssignment.state, "assigned"),
+          ),
+        )
+        .limit(1);
+
+      if (!assignment) continue;
+
+      const released = yield* Effect.tryPromise({
+        try: () =>
+          release({
+            db,
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            adamId: transition.adamId!,
+          }),
+        catch: (cause) => cause,
+      }).pipe(Effect.catch(() => Effect.succeed(false)));
+
+      if (!released)
+        yield* Effect.logWarning(
+          `The VPP licence ${transition.adamId} for ${transition.bundleId} on ${device.id} could not be returned after the uninstall`,
+        );
+    }
   });
 
 /**
@@ -2343,6 +2419,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      * deliverable rather than returning an empty package).
      */
     readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+    /**
+     * Return an Apps and Books licence once an uninstall's inventory report
+     * proves the app is gone. Omitted deployments keep the assignment row and
+     * can release it from the Apps and Books page.
+     */
+    readonly releaseAppleVppLicence?: AppleVppLicenceRelease;
     /**
      * Deployment Apple profile signing identity. When absent, profiles are
      * signed with the tenant's SCEP CA, matching the enrollment download path.
@@ -3276,6 +3358,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         Effect.catch(() => Effect.void),
       );
 
+    /** Catalogue application ids still reaching this device. */
+    const applicationAssignedIds = (device: DeviceRow) =>
+      assignedApplicationIdsForDevice(db, {
+        organizationId: device.organizationId,
+        deviceId: device.id,
+      }).pipe(Effect.map((ids) => new Set(ids)));
+
     /** Whether an application is still assigned to the device, directly or by group. */
     const applicationAssignedToDevice = (
       organizationId: string,
@@ -3300,6 +3389,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly sha256?: string;
       readonly fileName?: string;
       readonly contentType?: string;
+      readonly uploadKind?: "pkg" | "ipa";
       readonly manifestUrl?: string;
       readonly storeId?: string;
       readonly configuration?: Schema.JsonObject;
@@ -3343,18 +3433,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         if (source === "upload") {
           const r2Key = installer?.r2Key ?? catalogue.r2Key;
           const sha256 = installer?.sha256 ?? catalogue.sha256;
+          const fileName = installer?.fileName ?? catalogue.fileName;
+          const contentType = installer?.contentType ?? catalogue.contentType;
 
           if (!r2Key || !sha256) return { reason: "the catalogue entry has no uploaded file" };
 
-          if (
-            !isApplePackageUpload({
-              fileName: installer?.fileName ?? catalogue.fileName,
-              contentType: installer?.contentType ?? catalogue.contentType,
-            })
-          )
+          const uploadKind = appleUploadKind({ fileName, contentType });
+
+          if (!uploadKind)
             return {
               reason:
-                "the uploaded file is not a .pkg; iOS enterprise apps need an OTA manifest URL",
+                "the uploaded file is neither a signed .pkg nor an .ipa, so it has no install command",
             };
 
           return {
@@ -3366,8 +3455,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               version,
               title,
               sha256,
-              fileName: installer?.fileName ?? catalogue.fileName ?? undefined,
-              contentType: installer?.contentType ?? catalogue.contentType ?? undefined,
+              fileName: fileName ?? undefined,
+              contentType: contentType ?? undefined,
+              uploadKind,
               configuration: configuration.configuration,
               managementFlags: 1,
             },
@@ -3422,6 +3512,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           sha256: configuration.sha256,
           fileName: configuration.fileName,
           contentType: configuration.contentType,
+          uploadKind:
+            configuration.source === "upload"
+              ? appleUploadKind({
+                  fileName: configuration.fileName,
+                  contentType: configuration.contentType,
+                })
+              : undefined,
           manifestUrl: configuration.manifestUrl,
           storeId: configuration.storeId,
           configuration: configuration.configuration,
@@ -3543,6 +3640,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         const macos = appleOsFamily(device.osEdition) === "macOS";
 
+        const [appleEnrollment] = yield* db
+          .select({ enrollmentMode: s.deviceApple.enrollmentMode })
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, device.id))
+          .limit(1);
+
+        const userEnrolled = appleEnrollment?.enrollmentMode === "user";
+
         // A store app in a policy has no licence consumer. When Apps and Books
         // is configured, installing it here would bypass the licence pool, so
         // it is skipped in favour of the applications page, which assigns a
@@ -3575,9 +3680,20 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               ? (installersByApplication.get(catalogueApplication.id) ?? [])
               : [];
 
+          // An uploaded .pkg only reaches macOS and an .ipa only iPhone/iPad;
+          // filter before selection so the other artefact still wins.
           const candidates = catalogueInstallers.filter(
             (installer) =>
-              !(installer.source === "upload" && appleOsFamily(device.osEdition) !== "macOS"),
+              installer.source !== "upload" ||
+              appleUploadKind({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+              }) === undefined ||
+              appleUploadSupportsDevice({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+                osEdition: device.osEdition,
+              }),
           );
 
           const installer = selectInstaller(candidates, {
@@ -3628,9 +3744,32 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           let payload: CommandPayload;
 
           if (application.source === "upload") {
-            if (!macos) {
+            const uploadKind = application.uploadKind;
+
+            if (uploadKind === "pkg" && !macos) {
               yield* Effect.logWarning(
                 `Policy application ${row.policyId}/${row.kind} is a .pkg and was not delivered to ${device.id}: uploaded packages install on macOS only`,
+              );
+              continue;
+            }
+
+            if (uploadKind === "ipa" && macos) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} is an .ipa and was not delivered to ${device.id}: .ipa installs on iOS and iPadOS only`,
+              );
+              continue;
+            }
+
+            if (uploadKind === "ipa" && userEnrolled) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: Apple User Enrollment (BYOD) devices cannot install a managed .ipa`,
+              );
+              continue;
+            }
+
+            if (!uploadKind) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: the uploaded file is neither a .pkg nor an .ipa`,
               );
               continue;
             }
@@ -3664,20 +3803,34 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               catch: internal,
             });
 
-            const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+            if (uploadKind === "pkg") {
+              const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
 
-            requestType = "InstallEnterpriseApplication";
-            payload = buildInstallEnterpriseApplicationPayload({
-              manifest: buildAppleManifest({
-                url,
-                sha256: application.sha256,
-                bundleId: application.bundleId,
-                version: application.version,
-                title: application.title,
-              }),
-              configuration: application.configuration,
-              managementFlags: application.managementFlags,
-            });
+              requestType = "InstallEnterpriseApplication";
+              payload = buildInstallEnterpriseApplicationPayload({
+                manifest: buildAppleManifest({
+                  url,
+                  sha256: application.sha256,
+                  bundleId: application.bundleId,
+                  version: application.version,
+                  title: application.title,
+                }),
+                configuration: application.configuration,
+                managementFlags: application.managementFlags,
+              });
+            } else {
+              // InstallApplication has no inline manifest: point it at the
+              // OTA manifest endpoint, which carries the same signed token and
+              // in turn points at the signed package asset.
+              const manifestUrl = `${serverOrigin}/mdm/apple/manifests/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+
+              requestType = "InstallApplication";
+              payload = buildInstallApplicationPayload({
+                manifestUrl,
+                configuration: application.configuration,
+                managementFlags: application.managementFlags,
+              });
+            }
           } else if (application.source === "store" && application.storeId) {
             payload = buildInstallApplicationPayload({
               storeId: application.storeId,
@@ -3695,6 +3848,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }
 
           yield* queueAppleCommand(device, requestType, payload, at);
+
+          if (application.catalogueApplicationId)
+            yield* recordApplicationInstall(db, {
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              applicationId: application.catalogueApplicationId,
+              installerId: application.installerId ?? null,
+              platform: "apple",
+              bundleId: application.bundleId,
+              at,
+            });
         }
       });
 
@@ -3722,6 +3886,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           .from(s.application)
           .where(eq(s.application.organizationId, device.organizationId));
 
+        const installers = yield* db
+          .select({
+            id: s.applicationInstaller.id,
+            applicationId: s.applicationInstaller.applicationId,
+            bundleId: s.applicationInstaller.bundleId,
+          })
+          .from(s.applicationInstaller)
+          .where(eq(s.applicationInstaller.organizationId, device.organizationId));
+
+        const installersById = new Map(installers.map((row) => [row.id, row] as const));
+
         const history = yield* db
           .select({
             requestType: s.deviceCommand.requestType,
@@ -3746,15 +3921,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         for (const install of installs) {
           const target = installApplicationTarget(install.payload);
+          const targetCatalogueId = target.assetIdentifier
+            ? parseCatalogueApplicationAssetIdentifier(target.assetIdentifier)
+            : null;
+          const installer = targetCatalogueId ? installersById.get(targetCatalogueId) : undefined;
 
+          // A legacy upload signs the application id rather than an installer
+          // id, so the identifier can name either row.
           const application = applications.find(
             (candidate) =>
+              candidate.id === (installer?.applicationId ?? targetCatalogueId) ||
               (target.manifestUrl != null && candidate.manifestUrl === target.manifestUrl) ||
               (target.storeId != null && candidate.storeId === target.storeId) ||
               (target.bundleId != null && candidate.bundleId === target.bundleId),
           );
 
-          if (!application?.bundleId) continue;
+          if (!application || !(application.bundleId ?? installer?.bundleId)) continue;
 
           // A policy-owned install may target a catalogue app that is not
           // assigned through the catalogue. The policy check-in re-queues that
@@ -3797,6 +3979,149 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (requeued) yield* pushEnrolledDevice(device.id, device.organizationId);
       });
+
+    /**
+     * Remove catalogue apps that are no longer assigned to this device and
+     * opted into remove-on-unassign.
+     *
+     * Assignment edits queue removals immediately, but a device can lose
+     * access through a group membership change, group deletion or direct
+     * device removal. Running the same rule at check-in makes those paths
+     * converge without a separate hook on every mutation. Only apps with
+     * persisted install provenance are removed, so a user-installed app is
+     * never claimed.
+     */
+    const queueUnassignedApplicationRemovals = (
+      device: DeviceRow,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        if (device.status !== "enrolled") return;
+
+        const [apple] = yield* db
+          .select({ enrollmentMode: s.deviceApple.enrollmentMode })
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, device.id))
+          .limit(1);
+
+        // User Enrollment (BYOD) devices do not accept RemoveApplication.
+        if (apple?.enrollmentMode === "user") return;
+
+        const applications = yield* db
+          .select({
+            id: s.application.id,
+            bundleId: s.application.bundleId,
+            removeOnUnassign: s.application.removeOnUnassign,
+          })
+          .from(s.application)
+          .where(
+            and(
+              eq(s.application.organizationId, device.organizationId),
+              eq(s.application.removeOnUnassign, true),
+            ),
+          );
+
+        if (applications.length === 0) return;
+
+        const assigned = yield* applicationAssignedIds(device);
+
+        const candidates = applications.filter(
+          (application) => application.bundleId && !assigned.has(application.id),
+        );
+
+        if (candidates.length === 0) return;
+
+        const provenance = yield* db
+          .select({
+            applicationId: s.applicationInstall.applicationId,
+            installerId: s.applicationInstall.installerId,
+          })
+          .from(s.applicationInstall)
+          .where(
+            and(
+              eq(s.applicationInstall.deviceId, device.id),
+              eq(s.applicationInstall.organizationId, device.organizationId),
+            ),
+          );
+
+        const installed = yield* db
+          .select({ bundleId: s.deviceApplication.bundleId })
+          .from(s.deviceApplication)
+          .where(eq(s.deviceApplication.deviceId, device.id));
+
+        const queued = yield* db
+          .select({ applicationId: s.applicationUninstall.applicationId })
+          .from(s.applicationUninstall)
+          .where(
+            and(
+              eq(s.applicationUninstall.deviceId, device.id),
+              eq(s.applicationUninstall.organizationId, device.organizationId),
+              eq(s.applicationUninstall.status, "queued"),
+            ),
+          );
+
+        const installedBundles = new Set(installed.map((row) => row.bundleId));
+        const queuedIds = new Set(queued.map((row) => row.applicationId));
+
+        for (const application of candidates) {
+          if (!application.bundleId || queuedIds.has(application.id)) continue;
+
+          const installedByMattrax = provenance.find((row) => row.applicationId === application.id);
+
+          if (!installedByMattrax || !installedBundles.has(application.bundleId)) continue;
+
+          const command = yield* queueAppleCommand(
+            device,
+            "RemoveApplication",
+            buildRemoveApplicationPayload(application.bundleId),
+            at,
+          );
+
+          const [existing] = yield* db
+            .select({ id: s.applicationUninstall.id })
+            .from(s.applicationUninstall)
+            .where(
+              and(
+                eq(s.applicationUninstall.deviceId, device.id),
+                eq(s.applicationUninstall.applicationId, application.id),
+              ),
+            )
+            .limit(1);
+
+          const values = {
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            applicationId: application.id,
+            installerId: installedByMattrax.installerId,
+            platform: "apple" as const,
+            bundleId: application.bundleId,
+            adamId: null,
+            commandId: command.id,
+            status: "queued" as const,
+            requestedAt: at,
+            deadline: new Date(at.getTime() + APPLICATION_UNINSTALL_DEADLINE_MS),
+            observedVersion: null,
+            resultDetail: null,
+            updatedAt: at,
+          };
+
+          if (existing)
+            yield* db
+              .update(s.applicationUninstall)
+              .set(values)
+              .where(eq(s.applicationUninstall.id, existing.id));
+          else
+            yield* db
+              .insert(s.applicationUninstall)
+              .values({ id: crypto.randomUUID(), createdAt: at, ...values });
+        }
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Failed to reconcile remove-on-unassign apps for ${device.id}: ${String(error)}`,
+          ),
+        ),
+      );
 
     /**
      * Reconcile a device's active commands against the state it reports.
@@ -3849,10 +4174,30 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 .where(eq(s.application.organizationId, device.organizationId))
             : [];
 
+        // An uploaded .ipa install carries only Mattrax's signed manifest URL,
+        // so its bundle identity has to come from the installer the URL names.
+        const installers =
+          installCommands.length > 0
+            ? yield* db
+                .select({
+                  id: s.applicationInstaller.id,
+                  bundleId: s.applicationInstaller.bundleId,
+                })
+                .from(s.applicationInstaller)
+                .where(eq(s.applicationInstaller.organizationId, device.organizationId))
+            : [];
+
+        const installerBundles = new Map(
+          installers.flatMap((row) => (row.bundleId ? [[row.id, row.bundleId] as const] : [])),
+        );
+
+        const applicationBundles = new Map(
+          applications.flatMap((row) => (row.bundleId ? [[row.id, row.bundleId] as const] : [])),
+        );
+
         const targetBundleIds = (payload: CommandPayload) => {
           const target = installApplicationTarget(payload);
-
-          return applications
+          const bundles = applications
             .filter(
               (application) =>
                 (target.manifestUrl != null && application.manifestUrl === target.manifestUrl) ||
@@ -3860,6 +4205,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 (target.bundleId != null && application.bundleId === target.bundleId),
             )
             .flatMap((application) => (application.bundleId ? [application.bundleId] : []));
+
+          const targetCatalogueId = target.assetIdentifier
+            ? parseCatalogueApplicationAssetIdentifier(target.assetIdentifier)
+            : null;
+
+          if (targetCatalogueId) {
+            const bundle =
+              installerBundles.get(targetCatalogueId) ?? applicationBundles.get(targetCatalogueId);
+
+            if (bundle) bundles.push(bundle);
+          }
+
+          return bundles;
         };
 
         const installed =
@@ -5382,7 +5740,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 }
 
                 yield* applySecurityInfo(device, queryResponses, { authSecret });
-                yield* applyInstalledApplications(device, queryResponses);
+                yield* applyInstalledApplications(device, queryResponses, {
+                  releaseVppLicence: options.releaseAppleVppLicence,
+                });
 
                 // Activation Lock bypass codes come from their own command, not
                 // `SecurityInfo`. Apple only returns a code before the device is
@@ -5725,6 +6085,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               // sync looks like one delivery, not two.
               return { _tag: "DdmSync" as const, serverToken: declarations.token };
             }
+
+            yield* queueUnassignedApplicationRemovals(device, at);
 
             const [appleState] = yield* db
               .select({
@@ -6664,6 +7026,98 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
+      /**
+       * The OTA manifest for an uploaded `.ipa`.
+       *
+       * `InstallApplication` cannot carry an inline manifest the way
+       * `InstallEnterpriseApplication` can, so the catalogue hosts the plist.
+       * The request is authenticated by the signed, device-bound token on the
+       * URL (the device fetches it outside its MDM check-in), and the manifest
+       * points back at the signed asset endpoint that serves the upload.
+       */
+      getAppleManifest: (_identityCertificate, identifier, token) =>
+        provideDb(
+          Effect.gen(function* () {
+            const catalogueApplicationId = parseCatalogueApplicationAssetIdentifier(identifier);
+
+            if (!catalogueApplicationId || !token) return null;
+
+            const [installer] = yield* db
+              .select()
+              .from(s.applicationInstaller)
+              .where(eq(s.applicationInstaller.id, catalogueApplicationId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            const [application] = yield* db
+              .select()
+              .from(s.application)
+              .where(eq(s.application.id, installer?.applicationId ?? catalogueApplicationId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            const file = installer ?? application;
+
+            if (!application || !file?.sha256) return null;
+
+            // Only an .ipa is installed through an OTA manifest; serving one
+            // for a .pkg would point InstallApplication at a package it cannot
+            // install.
+            if (
+              !isAppleIpaUpload({
+                fileName: file.fileName,
+                contentType: file.contentType,
+              })
+            )
+              return null;
+
+            const bundleId = installer?.bundleId ?? application.bundleId;
+
+            if (!bundleId) return null;
+
+            const assetToken = yield* Effect.tryPromise({
+              try: () =>
+                verifyAppleAssetToken(authSecret ?? "", token, {
+                  policyId: catalogueApplicationId,
+                  kind: CATALOGUE_APPLICATION_ASSET_KIND,
+                }),
+              catch: internal,
+            });
+
+            if (!assetToken) return null;
+
+            const [assetDevice] = yield* db
+              .select({ organizationId: s.device.organizationId, status: s.device.status })
+              .from(s.device)
+              .where(eq(s.device.id, assetToken.deviceId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            if (
+              assetDevice?.organizationId !== application.organizationId ||
+              assetDevice.status !== "enrolled"
+            )
+              return null;
+
+            const assetUrl = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+
+            const content = yield* serializePlist(
+              buildAppleManifest({
+                url: assetUrl,
+                sha256: file.sha256,
+                bundleId,
+                version: installer?.version ?? application.version ?? "0",
+                title: application.name,
+              }),
+            ).pipe(Effect.mapError(internal));
+
+            return {
+              content: new TextEncoder().encode(content),
+              contentType: "application/xml",
+            };
+          }),
+        ),
+
       getAppleProfile: (policyId, kind, deviceId) =>
         provideDb(
           Effect.gen(function* () {
@@ -6756,6 +7210,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly planLimits?: PlanLimitsConfig;
       readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
       readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+      readonly releaseAppleVppLicence?: AppleVppLicenceRelease;
       readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
       readonly enrollmentProfileTtlSeconds?: number;
       readonly auditCheckinCoalesceWindowMs?: number;

@@ -19,6 +19,7 @@ export function mockManagementBackend(
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
     getAppleAsset: ManagementBackendType["getAppleAsset"];
+    getAppleManifest: ManagementBackendType["getAppleManifest"];
     getAppleProfile: ManagementBackendType["getAppleProfile"];
     windowsDiscovery: ManagementBackendType["windowsDiscovery"];
     getWindowsEnrollmentPolicy: ManagementBackendType["getWindowsEnrollmentPolicy"];
@@ -56,6 +57,7 @@ export function mockManagementBackend(
           })),
       getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
       getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      getAppleManifest: overrides?.getAppleManifest ?? (() => Effect.succeed(null)),
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery: overrides?.windowsDiscovery ?? (() => unsupportedWindowsOperation()),
       getWindowsEnrollmentPolicy:

@@ -160,6 +160,13 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
             }),
           ),
 
+        getAppleManifest: (identityCertificate, identifier, token) =>
+          normalize(
+            client.ManagementWebhook.getAppleManifest({
+              payload: { identityCertificate, identifier, token },
+            }),
+          ),
+
         getAppleProfile: (policyId, kind, deviceId) =>
           normalize(
             client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind, deviceId } }),

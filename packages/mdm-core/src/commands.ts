@@ -1,8 +1,10 @@
 import { Schema } from "effect";
 import {
   DEVICE_COMMAND_ACTIVE_STATUSES,
+  DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
   normalizeDeviceCommandStatus,
 } from "@mattrax/enterprise-domain";
+import { parseCatalogueApplicationAssetIdentifier } from "./policy.js";
 import type { DeviceCommandStatus } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;
@@ -48,6 +50,9 @@ const BUDGETS = new Map<string, number>([
   // Installs: an app download is allowed a day to complete.
   ["InstallApplication", 24 * HOUR],
   ["InstallEnterpriseApplication", 24 * HOUR],
+  // Uninstalls wait for a matching inventory, so they share the install budget.
+  ["RemoveApplication", 24 * HOUR],
+  ["WindowsRemoveApplication", 24 * HOUR],
   ["InstalledApplicationList", 7 * DAY],
   // OS update scheduling is only meaningful while the operator still expects
   // the Mac to act on it; a month-old request would install at a random time.
@@ -108,7 +113,7 @@ export const commandStatusIsActive = (status: string | null | undefined): boolea
 };
 
 /** Result status recorded when the server, not the device, resolved a command. */
-export const RECONCILED_RESULT_STATUS = "Reconciled";
+export const RECONCILED_RESULT_STATUS = DEVICE_COMMAND_RECONCILED_RESULT_STATUS;
 
 /** Delivery deadline for a command queued at `queuedAt`; null means never. */
 export const deviceCommandExpiresAt = (requestType: string, queuedAt: Date): Date | null => {
@@ -357,6 +362,8 @@ export const supersededRequestTypes = (requestType: string): ReadonlyArray<strin
       "DeviceLocation",
       "InstallApplication",
       "InstallEnterpriseApplication",
+      "RemoveApplication",
+      "WindowsRemoveApplication",
       "InstallProfile",
       "RemoveProfile",
       "RotateFileVaultKey",
@@ -560,6 +567,12 @@ export type InstallApplicationTarget = {
   readonly bundleId: string | undefined;
   /** The signed package URL an inline enterprise manifest fetches. */
   readonly assetUrl: string | undefined;
+  /**
+   * Catalogue asset identifier parsed from a Mattrax-hosted manifest or asset
+   * URL. `InstallApplication` for an uploaded `.ipa` carries no bundle id, so
+   * this is the only way reconciliation and uninstall can attribute it.
+   */
+  readonly assetIdentifier: string | undefined;
 };
 
 const textOf = (value: Schema.Json | undefined) => {
@@ -602,6 +615,19 @@ const inlineManifestTarget = (payload: JsonObject): InlineManifestTarget => {
   return { bundleId, assetUrl };
 };
 
+/** The catalogue identifier inside a Mattrax-hosted manifest/asset URL. */
+const assetIdentifierFromUrl = (value: string | undefined): string | undefined => {
+  if (!value) return undefined;
+
+  try {
+    const match = /^\/mdm\/apple\/(?:assets|manifests)\/(.+)$/.exec(new URL(value).pathname);
+
+    return match ? decodeURIComponent(match[1]!) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 /**
  * Payload keys that identify the application an install command targets.
  * The payload is free-form JSON, so anything unexpected is treated as unknown.
@@ -612,20 +638,69 @@ export const installApplicationTarget = (
   payload: CommandPayload | undefined,
 ): InstallApplicationTarget => {
   if (!isJsonObject(payload))
-    return { manifestUrl: undefined, storeId: undefined, bundleId: undefined, assetUrl: undefined };
+    return {
+      manifestUrl: undefined,
+      storeId: undefined,
+      bundleId: undefined,
+      assetUrl: undefined,
+      assetIdentifier: undefined,
+    };
   const manifest = inlineManifestTarget(payload);
+  const manifestUrl = textOf(payload["ManifestURL"]);
 
   return {
-    manifestUrl: textOf(payload["ManifestURL"]),
+    manifestUrl,
     storeId: textOf(payload["iTunesStoreID"]),
     bundleId: manifest.bundleId,
     assetUrl: manifest.assetUrl,
+    assetIdentifier:
+      assetIdentifierFromUrl(manifestUrl) ?? assetIdentifierFromUrl(manifest.assetUrl),
   };
 };
 
 /** Whether a command asks the device to install an application. */
 export const isApplicationInstallRequest = (requestType: string): boolean =>
   requestType === "InstallApplication" || requestType === "InstallEnterpriseApplication";
+
+/**
+ * Whether a queued install command targeted this catalogue entry.
+ *
+ * Uninstall only removes apps Mattrax itself installed, so the check looks at
+ * successful command history rather than any matching inventory row. Both the
+ * top-level Apple/Store identifiers and an inline enterprise manifest's bundle
+ * id are considered.
+ */
+export const installCommandTargetsApplication = (
+  command: { readonly requestType: string; readonly payload: CommandPayload | undefined },
+  application: {
+    readonly bundleId?: string | null;
+    readonly manifestUrl?: string | null;
+    readonly storeId?: string | null;
+    /** Catalogue application id, the identifier a legacy upload signs. */
+    readonly applicationId?: string | null;
+    /** Every installer id the catalogue entry offers. */
+    readonly installerIds?: ReadonlyArray<string>;
+  },
+): boolean => {
+  if (!isApplicationInstallRequest(command.requestType)) return false;
+  const target = installApplicationTarget(command.payload);
+  const bundleId = application.bundleId?.trim();
+  const manifestUrl = application.manifestUrl?.trim();
+  const storeId = application.storeId?.trim();
+  const applicationId = application.applicationId?.trim();
+  const targetApplicationId = target.assetIdentifier
+    ? parseCatalogueApplicationAssetIdentifier(target.assetIdentifier)
+    : null;
+
+  return Boolean(
+    (bundleId && target.bundleId === bundleId) ||
+    (manifestUrl && target.manifestUrl === manifestUrl) ||
+    (storeId && target.storeId === storeId) ||
+    (targetApplicationId &&
+      ((applicationId && targetApplicationId === applicationId) ||
+        application.installerIds?.includes(targetApplicationId))),
+  );
+};
 
 /**
  * Whether another automatic attempt at installing `bundleId` is inside the

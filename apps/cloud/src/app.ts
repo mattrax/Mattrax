@@ -10,6 +10,7 @@ import {
   enterpriseAccountApi,
   enterpriseAdminApi,
   enterpriseApi,
+  enterpriseApplicationApi,
   enterpriseCutoverApi,
   enterpriseGroupApi,
   enterpriseAdeApi,
@@ -44,6 +45,7 @@ import {
   enterpriseDeviceHandoverHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
+  enterpriseApplicationHandlers,
   enterpriseCutoverHandlers,
   enterpriseSoftwareUpdateHandlers,
   enterpriseOsPolicyHandlers,
@@ -59,6 +61,7 @@ import {
   scriptHandlers,
   scimRoutes,
   ScimMembershipNotifier,
+  appleBusinessManager,
 } from "@mattrax/enterprise-api";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
@@ -253,6 +256,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
   .add(enterpriseApi)
+  .add(enterpriseApplicationApi)
   .add(enterpriseCutoverApi)
   .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
@@ -324,6 +328,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAccount", enterpriseAccountHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAdmin", enterpriseAdminHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseApplication", enterpriseApplicationHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseCutover", enterpriseCutoverHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseGroup", enterpriseGroupHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
@@ -927,6 +932,26 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
       return new Uint8Array(await object.arrayBuffer());
     },
+    // The MDM check-in owns the moment an uninstall is confirmed by inventory;
+    // returning the Apps and Books seat here keeps the licence pool correct
+    // without a separate scheduled reconciliation.
+    releaseAppleVppLicence: async ({ db, organizationId, deviceId, adamId }) =>
+      Effect.runPromise(
+        appleBusinessManager
+          .releaseVppLicence({
+            db,
+            organizationId,
+            deviceId,
+            adamId,
+            authSecret: env.AUTH_SECRET,
+          })
+          .pipe(
+            Effect.match({
+              onSuccess: () => true,
+              onFailure: () => false,
+            }),
+          ),
+      ),
     // Use the same signing identity and challenge lifetime as the enrollment
     // profile download when an ADE device asks for its profile inline.
     appleProfileSigning:

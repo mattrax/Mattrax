@@ -82,6 +82,7 @@ export const BackendLive = Layer.succeed(
     getAppleDeclarationItems: () => Effect.fail(new ManagementNotSupported()),
     getAppleDeclaration: () => Effect.succeed(null),
     getAppleAsset: () => Effect.succeed(null),
+    getAppleManifest: () => Effect.succeed(null),
     getAppleProfile: () => Effect.succeed(null),
 
     // Windows. An Apple-only deployment reports the methods it does not
@@ -112,6 +113,7 @@ device-facing response is unaffected either way.
 | `getAppleDeclarationItems`          | DDM lists the declarations that changed                          | `DdmDeclarationItems`                                           |
 | `getAppleDeclaration`               | The device fetches one declaration                               | A JSON declaration, or `null`                                   |
 | `getAppleAsset`                     | The device fetches a DDM asset by identifier                     | `{ content, contentType }`, or `null`                           |
+| `getAppleManifest`                  | An iPhone/iPad fetches the OTA manifest for an uploaded `.ipa`   | `{ content, contentType }`, or `null`                           |
 | `getAppleProfile`                   | The device fetches a legacy `.mobileconfig` behind a declaration | `{ content, contentType }`, or `null`                           |
 | `windowsDiscovery`                  | A Windows device starts enrollment from an email/URL             | `WindowsDiscoveryResponse`                                      |
 | `getWindowsEnrollmentPolicy`        | WSTEP asks for the certificate policy                            | `WindowsEnrollmentPolicy`                                       |
@@ -170,6 +172,7 @@ POST /webhook/apple/declaration-tokens
 POST /webhook/apple/declaration-items
 POST /webhook/apple/declaration
 POST /webhook/apple/asset
+POST /webhook/apple/manifest
 POST /webhook/apple/profile
 POST /webhook/windows/discovery
 POST /webhook/windows/policy

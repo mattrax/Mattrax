@@ -42,7 +42,6 @@ import { AppleFdeEscrowKeyInfo } from "../Device.js";
 import { AppleUserActionRequest } from "../Device.js";
 import { AppleUserActionResponse } from "../Device.js";
 import { BindAppleUserIdentityRequest } from "../Device.js";
-import { ApplicationInstallResult } from "../Application.js";
 import { ApplicationStorefrontListResponse } from "../Application.js";
 import { ApplicationStorefrontRefreshResult } from "../Application.js";
 import { PatchApplicationStorefrontsRequest } from "../Application.js";
@@ -117,10 +116,8 @@ import { EnterpriseStepUpRequired } from "../Errors.js";
 import { PatchTenantAndroidRequest } from "../Android.js";
 import { EnterpriseAppleReadErrors } from "../Errors.js";
 import { EnterpriseAppleWriteErrors } from "../Errors.js";
-import { EnterpriseApplicationDownloadErrors } from "../Policy.js";
 import { EnterpriseApplicationErrors } from "../Errors.js";
 import { EnterpriseConditionalWriteErrors } from "../Errors.js";
-import { EnterpriseApplicationUploadErrors } from "../Policy.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
 import { EnterpriseAutopilotReadErrors } from "../Errors.js";
 import { EnterpriseAutopilotWriteErrors } from "../Errors.js";
@@ -1670,68 +1667,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         params: TenantIdParam,
         payload: PatchApplicationAssignmentsRequest,
         success: OkResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("installApplication", "/v1/tenants/:tenantId/applications/:id/install", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      success: ApplicationInstallResult,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("uploadApplication", "/v1/tenants/:tenantId/applications/:id/upload", {
-      error: EnterpriseApplicationUploadErrors,
-      params: TenantIdParam,
-      payload: UploadPolicyApplicationRequest,
-      success: PolicyApplicationObject,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post(
-      "uploadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/upload",
-      {
-        error: EnterpriseApplicationUploadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-        }),
-        payload: UploadPolicyApplicationRequest,
-        success: PolicyApplicationObject,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplication",
-      "/v1/tenants/:tenantId/applications/:id/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
       },
     ),
   )

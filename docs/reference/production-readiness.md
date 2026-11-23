@@ -24,8 +24,9 @@ real-vendor validation. It is a status page, not a marketing page.
   short-lived per-device profile links for manual installs.
 - Apps & Books location tokens, asset sync, device licence assignment and release,
   automatic daily sync and catalogue entries created from purchased apps.
-- Apple application delivery: manifest/store installs, uploaded `.pkg` installs through
-  signed device-bound asset URLs, policy-attached applications and managed app
+- Apple application delivery: manifest/store installs, uploaded `.pkg` and `.ipa`
+  installs through signed device-bound URLs (including a generated OTA manifest for an
+  `.ipa`), removal of managed app installs, policy-attached applications and managed app
   configuration.
 - Windows MSI delivery through `EnterpriseDesktopAppManagement`, with the command result
   and the daily MSI inventory reporting status.
@@ -104,7 +105,7 @@ These are implemented but not proven end to end in this repository.
 | Windows unenroll          | Server-initiated and `1226` device-initiated paths are unit-tested, not validated on real hardware                                                                                                                                                                                                   |
 | Android                   | Signup, Pub/Sub, QR/token enrollment, work-profile/fully-managed provisioning, policy convergence, reconciliation and commands are fixture-tested; not validated against real Google Cloud/managed devices                                                                                           |
 | Android apps              | Assigned apps merge into the policy (one entry per package) and are fixture-tested; no real-device validation and no Play approval flow                                                                                                                                                              |
-| Apple app delivery        | Manifest, store and uploaded `.pkg` installs are fixture-tested; not validated on real supervised hardware                                                                                                                                                                                           |
+| Apple app delivery        | Manifest, store and uploaded `.pkg`/`.ipa` installs and uninstalls are fixture-tested; not validated on real supervised hardware                                                                                                                                                                     |
 | Windows apps              | MSI install jobs and result reporting are unit-tested; not validated against real Windows hardware                                                                                                                                                                                                   |
 | Third-party app catalogue | Settings are sourced from vendor/ProfileManifests data and validated by tests; not reviewed by the vendors                                                                                                                                                                                           |
 | Apple OS scoping          | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                                                                                                                                                        |
@@ -183,8 +184,8 @@ These are implemented but not proven end to end in this repository.
 - [ ] Recovery Lock set, verified and cleared on Apple silicon.
 - [ ] Pre-DDM fallback confirmed: a macOS 12/iOS 14 device receives profiles, not a DDM sync.
 - [ ] App inventory refresh confirmed.
-- [ ] Manifest, App Store/VPP and uploaded `.pkg` installs each confirmed on a Mac (and an
-      iOS manifest install on an iPhone).
+- [ ] Manifest, App Store/VPP and uploaded `.pkg` installs each confirmed on a Mac, and a
+      manifest and uploaded `.ipa` install confirmed on an iPhone.
 - [ ] Uploaded package URL expires and a re-check-in installs without re-adding the app.
 - [ ] `mattraxd` is signed with a Developer ID, the pkg is notarized and stapled,
       and a script runs on a real Mac with a manual run and an interval trigger. The

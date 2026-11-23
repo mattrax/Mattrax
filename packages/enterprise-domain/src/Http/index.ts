@@ -8,6 +8,8 @@ import { enterpriseAdminApi } from "./AdminApi.js";
 import { enterpriseAdeApi } from "./AdeApi.js";
 import { enterpriseAttributeApi } from "./AttributeApi.js";
 import { enterpriseApi } from "./EnterpriseApi.js";
+
+import { enterpriseApplicationApi } from "./ApplicationApi.js";
 import { enterpriseCutoverApi } from "./CutoverApi.js";
 import { enterpriseDashboardApi } from "./DashboardApi.js";
 import { enterpriseDeviceViewApi } from "./DeviceViewApi.js";
@@ -31,6 +33,8 @@ export * from "./AdeApi.js";
 export * from "./AttributeApi.js";
 
 export * from "./EnterpriseApi.js";
+
+export * from "./ApplicationApi.js";
 
 export * from "./CutoverApi.js";
 
@@ -69,6 +73,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseAccountApi
   | typeof enterpriseAdminApi
   | typeof enterpriseApi
+  | typeof enterpriseApplicationApi
   | typeof enterpriseCutoverApi
   | typeof enterpriseGroupApi
   | typeof enterpriseAdeApi
@@ -88,6 +93,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
   .add(enterpriseApi)
+  .add(enterpriseApplicationApi)
   .add(enterpriseCutoverApi)
   .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
@@ -108,6 +114,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
   HttpApiClient.Client<typeof enterpriseAdminApi> &
   HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseApplicationApi> &
   HttpApiClient.Client<typeof enterpriseCutoverApi> &
   HttpApiClient.Client<typeof enterpriseGroupApi> &
   HttpApiClient.Client<typeof enterpriseAdeApi> &
