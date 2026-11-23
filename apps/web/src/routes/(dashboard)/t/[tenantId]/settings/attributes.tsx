@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type {
   AttributeDefinitionRow,
+  AttributeSource,
   AttributeType,
   AttributeVisibility,
   DeviceAttributeImportResult,
@@ -35,6 +36,21 @@ const typeLabels: Readonly<Record<AttributeType, string>> = {
   select: "Select",
 };
 
+const sourceLabels: Readonly<Record<AttributeSource, string>> = {
+  manual: "Manual",
+  script: "Script",
+  directory: "Directory",
+};
+
+const sourceOptions: ReadonlyArray<{ value: AttributeSource; label: string }> = [
+  { value: "manual", label: "Manual — an administrator or CSV sets the value" },
+  { value: "script", label: "Script — the bound script reports the value" },
+  {
+    value: "directory",
+    label: "Directory — reserved, no directory connector collects it yet",
+  },
+];
+
 type Draft = {
   key: string;
   label: string;
@@ -42,6 +58,9 @@ type Draft = {
   options: string;
   required: boolean;
   visibility: AttributeVisibility;
+  source: AttributeSource;
+  scriptId: string;
+  scriptOutputKey: string;
   sortOrder: number;
 };
 
@@ -52,6 +71,9 @@ const emptyDraft = (sortOrder: number): Draft => ({
   options: "",
   required: false,
   visibility: "visible",
+  source: "manual",
+  scriptId: "",
+  scriptOutputKey: "",
   sortOrder,
 });
 
@@ -62,8 +84,24 @@ const draftFromRow = (row: AttributeDefinitionRow): Draft => ({
   options: (row.options ?? []).join(", "),
   required: row.required,
   visibility: row.visibility,
+  source: row.source,
+  scriptId: row.scriptId ?? "",
+  scriptOutputKey: row.scriptOutputKey ?? "",
   sortOrder: row.sortOrder,
 });
+
+/**
+ * The binding fields a save sends. A non-script source explicitly clears the
+ * binding so a stale script id cannot survive a switch to manual.
+ */
+const bindingOf = (draft: Draft) =>
+  draft.source === "script"
+    ? {
+        source: draft.source,
+        scriptId: draft.scriptId || null,
+        scriptOutputKey: draft.scriptOutputKey.trim() || null,
+      }
+    : { source: draft.source, scriptId: null, scriptOutputKey: null };
 
 const optionsOf = (draft: Draft) =>
   draft.type === "select"
@@ -90,6 +128,9 @@ export default function AttributeSettingsPage() {
   const writable = () => can("devices.write");
 
   const definitions = useQuery(() => enterpriseQueries.attributes(params.tenantId));
+  const scripts = useQuery(() => enterpriseQueries.scripts(params.tenantId));
+
+  const scriptOptions = () => scripts.data?.scripts ?? [];
 
   const [draft, setDraft] = createSignal<Draft>(emptyDraft(0));
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -140,6 +181,7 @@ export default function AttributeSettingsPage() {
           required: current.required,
           visibility: current.visibility,
           sortOrder: current.sortOrder,
+          ...bindingOf(current),
         });
       }
 
@@ -151,6 +193,7 @@ export default function AttributeSettingsPage() {
         required: current.required,
         visibility: current.visibility,
         sortOrder: current.sortOrder,
+        ...bindingOf(current),
       });
     },
     onMutate: async () => {
@@ -175,6 +218,11 @@ export default function AttributeSettingsPage() {
                   options: optionsOf(current) ?? null,
                   required: current.required,
                   visibility: current.visibility,
+                  source: current.source,
+                  scriptId: bindingOf(current).scriptId,
+                  scriptOutputKey: bindingOf(current).scriptOutputKey,
+                  scriptName:
+                    scriptOptions().find((script) => script.id === current.scriptId)?.name ?? null,
                   sortOrder: current.sortOrder,
                 }
               : row,
@@ -235,6 +283,7 @@ export default function AttributeSettingsPage() {
         </ReadOnlyNotice>
       </Show>
       <QueryError error={definitions.error} onRetry={() => void definitions.refetch()} />
+      <QueryError error={scripts.error} onRetry={() => void scripts.refetch()} />
 
       <Panel
         class="xl:col-span-2"
@@ -259,6 +308,7 @@ export default function AttributeSettingsPage() {
                   <th class="px-4 py-2 font-medium sm:px-5">Label</th>
                   <th class="px-3 py-2 font-medium">Key</th>
                   <th class="px-3 py-2 font-medium">Type</th>
+                  <th class="px-3 py-2 font-medium">Source</th>
                   <th class="px-3 py-2 font-medium">Required</th>
                   <th class="px-3 py-2 font-medium">Visibility</th>
                   <th class="px-3 py-2 font-medium">Devices</th>
@@ -274,6 +324,13 @@ export default function AttributeSettingsPage() {
                         {row.key}
                       </td>
                       <td class="px-3 py-2.5">{typeLabels[row.type]}</td>
+                      <td class="px-3 py-2.5">
+                        <Show when={row.source === "script"} fallback={sourceLabels[row.source]}>
+                          <span title={`Output key: ${row.scriptOutputKey ?? row.key}`}>
+                            Script · {row.scriptName ?? "unavailable"}
+                          </span>
+                        </Show>
+                      </td>
                       <td class="px-3 py-2.5">{row.required ? "Yes" : "No"}</td>
                       <td class="px-3 py-2.5 capitalize">{row.visibility}</td>
                       <td class="px-3 py-2.5">{row.deviceCount ?? 0}</td>
@@ -378,6 +435,67 @@ export default function AttributeSettingsPage() {
               <option value="hidden">Hidden from tables and exports</option>
             </select>
           </Field>
+          <Field
+            label="Source"
+            hint="Script values are read-only here: the bound script owns them."
+          >
+            <select
+              class={selectClass}
+              value={draft().source}
+              disabled={!writable()}
+              onChange={(event) => {
+                // SAFETY: the select only renders AttributeSource values.
+                const source = event.currentTarget.value as AttributeSource;
+
+                setDraft({ ...draft(), source });
+              }}
+            >
+              <For each={sourceOptions}>
+                {(option) => <option value={option.value}>{option.label}</option>}
+              </For>
+            </select>
+          </Field>
+          <Show when={draft().source === "script"}>
+            <Field
+              label="Script"
+              hint={
+                scriptOptions().length === 0
+                  ? "No scripts yet. Create one under Scripts first."
+                  : "The script must be enabled and assigned to the devices it should report for."
+              }
+            >
+              <select
+                class={selectClass}
+                value={draft().scriptId}
+                disabled={!writable()}
+                onChange={(event) => setDraft({ ...draft(), scriptId: event.currentTarget.value })}
+              >
+                <option value="">Choose a script…</option>
+                <For each={scriptOptions()}>
+                  {(script) => <option value={script.id}>{script.name}</option>}
+                </For>
+              </select>
+            </Field>
+            <Field
+              label="Output key"
+              hint="JSON key on stdout. Leave blank to use the attribute key; line output uses the attribute list order."
+            >
+              <Input
+                value={draft().scriptOutputKey}
+                disabled={!writable()}
+                placeholder={draft().key || "antivirus"}
+                onInput={(event) =>
+                  setDraft({ ...draft(), scriptOutputKey: event.currentTarget.value })
+                }
+              />
+            </Field>
+          </Show>
+          <Show when={draft().source === "directory"}>
+            <p class="text-[12px] text-muted-foreground sm:col-span-2">
+              Directory collection is not implemented yet. Choosing it records intent; values can
+              still be edited manually until a directory connector lands.
+            </p>
+          </Show>
           <label class="flex items-center gap-2 self-end pb-2 text-[12.5px]">
             <input
               type="checkbox"
@@ -390,7 +508,13 @@ export default function AttributeSettingsPage() {
         </div>
         <div class="mt-4 flex flex-wrap items-center gap-2">
           <Button
-            disabled={!writable() || save.isPending || !draft().key || !draft().label}
+            disabled={
+              !writable() ||
+              save.isPending ||
+              !draft().key ||
+              !draft().label ||
+              (draft().source === "script" && !draft().scriptId)
+            }
             onClick={() => save.mutate()}
           >
             {editing() ? "Save attribute" : "Add attribute"}

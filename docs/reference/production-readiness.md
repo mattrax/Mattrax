@@ -49,9 +49,12 @@ real-vendor validation. It is a status page, not a marketing page.
 - Android Enterprise signup, enrollment tokens, Pub/Sub, policy delivery, device
   inventory, installed-application inventory and commands.
 - Tenant-defined device attributes: a typed registry (text, number, boolean, date,
-  select), per-device values with merge/clear semantics, searchable and filterable device
-  columns, `attribute:<key>` CSV import/export, custom enrollment questions validated by
-  type and requiredness, and audit entries for every write.
+  select) with per-attribute sources, per-device values with merge/clear semantics,
+  searchable and filterable device columns, `attribute:<key>` CSV import/export, custom
+  enrollment questions validated by type and requiredness, and audit entries for every
+  write. Script-sourced attributes are collected from an assigned script's reported output
+  (JSON object or one value per line), validated against the declared type, read-only to
+  manual edits, and shown with their last collection and last error.
 - Policy variables (`${device.name}`, `${device.serial}`, `${device.model}`,
   `${tenant.name}` and `${attribute.<key>}`) resolved per device at compile time for
   Apple declarations, legacy profiles and Windows SyncML; unknown names fail validation
@@ -105,9 +108,10 @@ These are implemented but not proven end to end in this repository.
 | Windows apps              | MSI install jobs and result reporting are unit-tested; not validated against real Windows hardware                                                                                                                                                                                                   |
 | Third-party app catalogue | Settings are sourced from vendor/ProfileManifests data and validated by tests; not reviewed by the vendors                                                                                                                                                                                           |
 | Apple OS scoping          | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                                                                                                                                                        |
-| Scripts                   | Profile encoding, queueing, redaction, retention, result ingestion and the agent's trigger/redaction/update logic are fixture-tested; the release workflow builds and signs the pkg, but no Developer ID/notary credentials are configured here and it has not run on real hardware |
-| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist and CI builds the Windows executable, but script delivery and Authenticode signing are not configured                                                                    |
+| Scripts                   | Profile encoding, queueing, redaction, retention, result ingestion and the agent's trigger/redaction/update logic are fixture-tested; the release workflow builds and signs the pkg, but no Developer ID/notary credentials are configured here and it has not run on real hardware                  |
+| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist and CI builds the Windows executable, but script delivery and Authenticode signing are not configured                                                                                                                      |
 | Android scripts           | Unsupported by the Android Management API; devices are skipped with a reason rather than silently ignored                                                                                                                                                                                            |
+| Script attribute values   | Binding, parsing, validation, read-only enforcement, collection state and "Collect now" are fixture-tested; not driven by a real `mattraxd` on hardware. Apple only: Windows/Android unsupported, `directory` source has no collector yet                                                            |
 | Compliance                | Derived health only; no policy engine or Conditional Access                                                                                                                                                                                                                                          |
 | Bulk work                 | Synchronous; no Cloudflare Queues or job ids                                                                                                                                                                                                                                                         |
 | Transactional email       | Queued in `email_outbox`, retried hourly with exponential backoff and a 5-attempt cap; a permanent failure is audited but not re-driven automatically                                                                                                                                                |

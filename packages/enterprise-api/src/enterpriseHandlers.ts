@@ -140,6 +140,7 @@ import {
   summariseApplicationAvailability,
 } from "@mattrax/enterprise-domain";
 import type {
+  AttributeSource,
   DevicePreRegistrationImportResponse,
   Permission,
   EnterpriseAuth,
@@ -429,6 +430,7 @@ import {
   claimEnrollmentAnswers,
   definitionInputProblem,
   listAttributeDefinitions,
+  loadDeviceAttributeCollection,
   loadDeviceAttributes,
   loadEnrollmentQuestions,
   mergeAttributeValues,
@@ -2670,6 +2672,78 @@ export const createEnterpriseService = ({
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
 
   /**
+   * Resolve the source/binding fields of an attribute definition.
+   *
+   * A script-sourced attribute must name a script in the same tenant; binding
+   * another tenant's script would leak both its existence and its output into
+   * this tenant's attributes. Non-script sources never keep a stale binding.
+   */
+  const resolveAttributeBinding = (
+    input: {
+      readonly organizationId: string;
+      readonly source: AttributeSource;
+      readonly scriptId?: string | null;
+      readonly scriptOutputKey?: string | null;
+    },
+    options: { readonly requireEnabled?: boolean } = {},
+  ) =>
+    Effect.gen(function* () {
+      if (input.source !== "script")
+        return {
+          source: input.source,
+          scriptId: null,
+          scriptOutputKey: null,
+          scriptName: null,
+        };
+
+      const scriptId = input.scriptId?.trim();
+
+      if (!scriptId)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Choose the script that reports this attribute." }),
+        );
+
+      const [script] = yield* db
+        .select({
+          id: schema.script.id,
+          name: schema.script.name,
+          enabled: schema.script.enabled,
+        })
+        .from(schema.script)
+        .where(
+          and(
+            eq(schema.script.id, scriptId),
+            eq(schema.script.organizationId, input.organizationId),
+          ),
+        )
+        .limit(1);
+
+      if (!script)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "The chosen script does not exist in this tenant.",
+          }),
+        );
+
+      // An unchanged binding is allowed to survive a disabled script (so other
+      // fields stay editable), but binding *to* a disabled script would never
+      // collect, so it is rejected up front.
+      if (options.requireEnabled && !script.enabled)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: `"${script.name}" is disabled. Enable it before binding this attribute.`,
+          }),
+        );
+
+      return {
+        source: "script" as const,
+        scriptId: script.id,
+        scriptOutputKey: input.scriptOutputKey?.trim() || null,
+        scriptName: script.name,
+      };
+    });
+
+  /**
    * Write a keyed attribute-value map for one device. Values are already
    * validated and canonicalised; `null` deletes the row. The caller owns the
    * audit entry so it can name the source (dashboard, CSV, enrollment).
@@ -2677,12 +2751,24 @@ export const createEnterpriseService = ({
   const writeDeviceAttributeValues = (input: {
     readonly organizationId: string;
     readonly deviceId: string;
-    readonly definitions: ReadonlyArray<{ readonly id: string; readonly key: string }>;
+    readonly definitions: ReadonlyArray<{
+      readonly id: string;
+      readonly key: string;
+      readonly source?: string;
+    }>;
     readonly values: Readonly<Record<string, string | null>>;
     readonly updatedByAccountId: string | null;
   }) =>
     Effect.gen(function* () {
-      const byKey = new Map(input.definitions.map((definition) => [definition.key, definition.id]));
+      // Script-owned values are not the caller's to write. Filtering here
+      // covers every caller: a dashboard save echoes the values
+      // `mergeAttributeValues` preserved, and CSV import could otherwise be
+      // retargeted. The returned key lists stay honest for the audit entry.
+      const byKey = new Map(
+        input.definitions
+          .filter((definition) => definition.source !== "script")
+          .map((definition) => [definition.key, definition.id]),
+      );
       const timestamp = now();
       const cleared: Array<string> = [];
       const written: Array<string> = [];
@@ -13717,9 +13803,21 @@ export const createEnterpriseService = ({
 
         const byId = new Map(counts.map((row) => [row.attributeId, Number(row.value)]));
 
+        // Script names are resolved in the same read so the settings table can
+        // show the binding without one request per attribute.
+        const scripts = yield* db
+          .select({ id: schema.script.id, name: schema.script.name })
+          .from(schema.script)
+          .where(eq(schema.script.organizationId, ctx.organization.id));
+
+        const scriptNames = new Map(scripts.map((row) => [row.id, row.name]));
+
         return {
           rows: definitions.map((definition) =>
-            attributeDefinitionRow(definition, byId.get(definition.id) ?? 0),
+            attributeDefinitionRow(definition, {
+              deviceCount: byId.get(definition.id) ?? 0,
+              scriptName: definition.scriptId ? scriptNames.get(definition.scriptId) : null,
+            }),
           ),
         };
       }),
@@ -13729,15 +13827,29 @@ export const createEnterpriseService = ({
         const key = payload.key.trim();
         const label = payload.label.trim();
         const type = payload.type;
+        const source: AttributeSource = payload.source ?? "manual";
 
         const problem = definitionInputProblem({
           key,
           label,
           type,
           options: payload.options,
+          source,
+          scriptId: payload.scriptId,
+          scriptOutputKey: payload.scriptOutputKey,
         });
 
         if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+        const binding = yield* resolveAttributeBinding(
+          {
+            organizationId: ctx.organization.id,
+            source,
+            scriptId: payload.scriptId,
+            scriptOutputKey: payload.scriptOutputKey,
+          },
+          { requireEnabled: true },
+        );
 
         const [existing] = yield* db
           .select()
@@ -13768,6 +13880,9 @@ export const createEnterpriseService = ({
           options: normalizeDefinitionOptions(type, payload.options),
           required: payload.required ?? false,
           visibility: payload.visibility ?? "visible",
+          source: binding.source,
+          scriptId: binding.scriptId,
+          scriptOutputKey: binding.scriptOutputKey,
           sortOrder: payload.sortOrder ?? 0,
           createdAt: now(),
           updatedAt: now(),
@@ -13777,6 +13892,8 @@ export const createEnterpriseService = ({
           key,
           label,
           type,
+          source: binding.source,
+          ...(binding.scriptId ? { scriptId: binding.scriptId } : {}),
           required: payload.required ?? false,
           visibility: payload.visibility ?? "visible",
         });
@@ -13787,7 +13904,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row);
+        return attributeDefinitionRow(row, { scriptName: binding.scriptName });
       }),
     patchAttribute: (request, tenantId, attributeId, payload) =>
       Effect.gen(function* () {
@@ -13814,9 +13931,74 @@ export const createEnterpriseService = ({
         const options =
           payload.options !== undefined ? payload.options : (existing.options ?? undefined);
 
-        const problem = definitionInputProblem({ key: existing.key, label, type, options });
+        const source = payload.source ?? existing.source;
+
+        // Switching a source away from `script` must not require the caller to
+        // echo the hidden binding fields back: an omitted script id is the
+        // binding being removed, not an invalid one.
+        const clearsBinding = payload.source !== undefined && payload.source !== "script";
+        const scriptId = clearsBinding
+          ? null
+          : payload.scriptId !== undefined
+            ? payload.scriptId
+            : existing.scriptId;
+        const scriptOutputKey = clearsBinding
+          ? null
+          : payload.scriptOutputKey !== undefined
+            ? payload.scriptOutputKey
+            : existing.scriptOutputKey;
+
+        const problem = definitionInputProblem({
+          key: existing.key,
+          label,
+          type,
+          options,
+          source,
+          scriptId,
+          scriptOutputKey,
+        });
 
         if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+        const binding = yield* resolveAttributeBinding(
+          {
+            organizationId: ctx.organization.id,
+            source,
+            scriptId,
+            scriptOutputKey,
+          },
+          {
+            // Only a new or changed binding has to point at an enabled script;
+            // an existing one keeps working while the script is paused.
+            requireEnabled:
+              source === "script" &&
+              (existing.source !== "script" || scriptId?.trim() !== existing.scriptId),
+          },
+        );
+
+        // The public enrollment page would keep asking a question whose
+        // answers are never applied: `claimEnrollmentAnswers` skips
+        // script-owned attributes. Refuse the conversion until the question is
+        // removed, so the form never promises something it cannot store.
+        if (binding.source === "script" && existing.source !== "script") {
+          const [question] = yield* db
+            .select({ id: schema.enrollmentQuestion.id })
+            .from(schema.enrollmentQuestion)
+            .where(
+              and(
+                eq(schema.enrollmentQuestion.organizationId, ctx.organization.id),
+                eq(schema.enrollmentQuestion.attributeId, attributeId),
+              ),
+            )
+            .limit(1);
+
+          if (question)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${label}" is an enrollment question. Remove it from the enrollment page before collecting this attribute from a script.`,
+              }),
+            );
+        }
 
         yield* db
           .update(schema.attributeDefinition)
@@ -13826,6 +14008,9 @@ export const createEnterpriseService = ({
             options: normalizeDefinitionOptions(type, options),
             required: payload.required ?? existing.required,
             visibility: payload.visibility ?? existing.visibility,
+            source: binding.source,
+            scriptId: binding.scriptId,
+            scriptOutputKey: binding.scriptOutputKey,
             sortOrder: payload.sortOrder ?? existing.sortOrder,
             updatedAt: now(),
           })
@@ -13836,9 +14021,24 @@ export const createEnterpriseService = ({
             ),
           );
 
+        // Collection state describes the binding that produced it. Once the
+        // attribute is manual (or points at another script) the old rows would
+        // describe a value nothing maintains any more.
+        if (binding.source !== "script" || binding.scriptId !== existing.scriptId)
+          yield* db
+            .delete(schema.attributeCollection)
+            .where(
+              and(
+                eq(schema.attributeCollection.organizationId, ctx.organization.id),
+                eq(schema.attributeCollection.attributeId, attributeId),
+              ),
+            );
+
         yield* audit(ctx, "attribute.updated", "attribute", attributeId, {
           key: existing.key,
-          fields: Object.keys(payload),
+          fields: Object.keys(payload).filter((field) => field !== "expectedUpdatedAt"),
+          source: binding.source,
+          ...(binding.scriptId ? { scriptId: binding.scriptId } : {}),
         });
 
         const [row] = yield* db
@@ -13847,7 +14047,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row);
+        return attributeDefinitionRow(row, { scriptName: binding.scriptName });
       }),
     deleteAttribute: (request, tenantId, attributeId) =>
       Effect.gen(function* () {
@@ -13947,6 +14147,15 @@ export const createEnterpriseService = ({
               }),
             );
 
+          // The answer would be overwritten by the next script collection, so
+          // asking for it would be a promise the tenant cannot keep.
+          if (definition.source === "script")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${definition.label}" is collected from a script and cannot be an enrollment question.`,
+              }),
+            );
+
           if (seen.has(key))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -14035,6 +14244,21 @@ export const createEnterpriseService = ({
           notes: [...POLICY_VARIABLE_NOTES],
         };
       }),
+    listDeviceAttributeCollection: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        return {
+          collection: yield* loadDeviceAttributeCollection(db, ctx.organization.id, device.id),
+        };
+      }),
     setDeviceAttributes: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -14066,7 +14290,9 @@ export const createEnterpriseService = ({
         });
 
         for (const definition of definitions) {
-          if (!definition.required) continue;
+          // A script owns its value; a device that has not reported yet must
+          // not block an unrelated manual edit.
+          if (!definition.required || definition.source === "script") continue;
 
           if (!finalValues[definition.key])
             return yield* Effect.fail(
@@ -14091,6 +14317,111 @@ export const createEnterpriseService = ({
         });
 
         return ok;
+      }),
+    collectDeviceAttribute: (request, tenantId, deviceId, attributeId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "script-run");
+
+        if (!ctx.organization.scriptsEnabled)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Scripts are disabled for this tenant. Enable them in Scripts settings.",
+            }),
+          );
+
+        const [definition] = yield* db
+          .select()
+          .from(schema.attributeDefinition)
+          .where(
+            and(
+              eq(schema.attributeDefinition.id, attributeId),
+              eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!definition)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Attribute not found" }));
+
+        if (definition.source !== "script" || !definition.scriptId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${definition.label}" is not collected by a script.`,
+            }),
+          );
+
+        const script = yield* db.query.script.findFirst({
+          where: { id: definition.scriptId, organizationId: ctx.organization.id },
+        });
+
+        if (!script)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "The attribute's script no longer exists." }),
+          );
+
+        if (!script.enabled)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${script.name}" is disabled, so it cannot collect a value.`,
+            }),
+          );
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        // Script delivery is Apple-only today. Saying so is better than
+        // queueing a run nothing will ever collect.
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                device.proto === "win"
+                  ? "Script attribute collection is not supported on Windows yet: mattraxd does not implement the script channel there."
+                  : "Android devices cannot run scripts, so attribute collection is unsupported.",
+            }),
+          );
+
+        // Reuses the manual-run path so deduplication, expiry, output caps and
+        // redaction are the ones the scripts feature already guarantees.
+        const result = yield* runScript(
+          db,
+          ctx.organization.id,
+          script,
+          { devices: [device.id] },
+          ctx.account.id,
+          now(),
+        );
+
+        const target = result.targets.find((candidate) => candidate.deviceId === device.id);
+
+        // An unassigned script is never delivered, so queueing here would
+        // create a run the device cannot collect.
+        if (!target)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${script.name}" is not assigned to this device. Assign the device or one of its groups before collecting.`,
+            }),
+          );
+
+        if (target.skippedReason)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: target.skippedReason }));
+
+        yield* applePush.pushAppleDevices([device.id]);
+
+        yield* audit(ctx, "script.run_requested", "script", script.id, {
+          attributeId: definition.id,
+          attributeKey: definition.key,
+          deviceId: device.id,
+          source: "script",
+          executionId: target.executionId,
+        });
+
+        return { status: "ok" as const, executionId: target.executionId };
       }),
     importDeviceAttributes: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -15814,12 +16145,50 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "script-change");
 
+        // Capture the bindings first: deleting the script nulls their
+        // `script_id` on the foreign key, so they cannot be found afterwards.
+        // An attribute left "script" with no script would be read-only forever.
+        const boundAttributes = yield* db
+          .select({ id: schema.attributeDefinition.id })
+          .from(schema.attributeDefinition)
+          .where(
+            and(
+              eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+              eq(schema.attributeDefinition.scriptId, scriptId),
+            ),
+          );
+
         const result = yield* deleteScript(db, ctx.organization.id, scriptId);
 
         if (!result.deleted)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Script not found" }));
 
-        yield* audit(ctx, "script.deleted", "script", scriptId);
+        if (boundAttributes.length > 0) {
+          const attributeIds = boundAttributes.map((attribute) => attribute.id);
+
+          yield* db
+            .update(schema.attributeDefinition)
+            .set({ source: "manual", scriptId: null, scriptOutputKey: null, updatedAt: now() })
+            .where(
+              and(
+                eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+                inArray(schema.attributeDefinition.id, attributeIds),
+              ),
+            );
+
+          yield* db
+            .delete(schema.attributeCollection)
+            .where(
+              and(
+                eq(schema.attributeCollection.organizationId, ctx.organization.id),
+                inArray(schema.attributeCollection.attributeId, attributeIds),
+              ),
+            );
+        }
+
+        yield* audit(ctx, "script.deleted", "script", scriptId, {
+          unboundAttributes: boundAttributes.length,
+        });
 
         return ok;
       }),
@@ -26046,9 +26415,19 @@ export const enterpriseAttributeHandlers = (
         service.importDeviceAttributes(request, params.tenantId, payload),
       ),
     )
+    .handle("listDeviceAttributeCollection", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceAttributeCollection(request, params.tenantId, params.id),
+      ),
+    )
     .handle("setDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.setDeviceAttributes(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("collectDeviceAttribute", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.collectDeviceAttribute(request, params.tenantId, params.id, params.attributeId),
       ),
     )
     .handle("patchTenantAccountRoles", ({ request, params, payload }) =>

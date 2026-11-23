@@ -2086,8 +2086,10 @@ export default function DeviceDetailPage() {
                   <DeviceAttributesPanel
                     tenantId={params.tenantId ?? ""}
                     deviceId={row()?.id ?? ""}
+                    proto={row()?.proto ?? "apple"}
                     values={row()?.attributes}
                     writable={writable()}
+                    collectAllowed={can("scripts.write")}
                   />
                   <DetailCard
                     title="Security & inventory"
@@ -4240,14 +4242,35 @@ const attributeOptionLabel = (type: string, option: string) => {
 function DeviceAttributesPanel(props: {
   tenantId: string;
   deviceId: string;
+  proto: string;
   values: Record<string, string | null> | undefined;
   writable: boolean;
+  /** "Collect now" queues a script run, so it needs scripts.write. */
+  collectAllowed: boolean;
 }) {
   const queryClient = useQueryClient();
 
   const definitions = useQuery(() => ({
     queryKey: enterpriseKeys.attributes(props.tenantId),
     queryFn: () => enterprise.listAttributes(props.tenantId),
+  }));
+
+  // Collection state is a separate read so the device payload stays the same
+  // shape; the panel is the only place that needs it.
+  const collection = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceAttributeCollection(props.tenantId, props.deviceId),
+    queryFn: () => enterprise.listDeviceAttributeCollection(props.tenantId, props.deviceId),
+  }));
+
+  const collect = useMutation(() => ({
+    mutationFn: (attributeId: string) =>
+      enterprise.collectDeviceAttribute(props.tenantId, props.deviceId, attributeId),
+    onSuccess: () => {
+      toast.success("Collection requested", {
+        description: "The value updates when the device reports the run.",
+      });
+    },
+    onError: (cause) => setError(cause),
   }));
 
   const [draft, setDraft] = createSignal<Record<string, string>>({});
@@ -4298,6 +4321,9 @@ function DeviceAttributesPanel(props: {
       const values: Record<string, string | null> = {};
 
       for (const definition of visible()) {
+        // A script owns its value; sending it would be rejected by the API.
+        if (definition.source === "script") continue;
+
         const next = current[definition.key] ?? "";
         const previous = original[definition.key] ?? "";
 
@@ -4367,6 +4393,8 @@ function DeviceAttributesPanel(props: {
             {(definition: AttributeDefinitionRow) => {
               const value = () => draft()[definition.key] ?? "";
 
+              const collectionState = () => collection.data?.collection[definition.key];
+
               const isCleared = () => Boolean(cleared()[definition.key]);
 
               const setValue = (next: string) => {
@@ -4382,60 +4410,118 @@ function DeviceAttributesPanel(props: {
                     <Show when={definition.required}>
                       <p class="text-[10.5px] text-warning">Required</p>
                     </Show>
+                    <Show when={definition.source !== "manual"}>
+                      <p class="text-[10.5px] text-muted-foreground">
+                        {definition.source === "script"
+                          ? "Script-sourced · read-only"
+                          : "Directory (no connector yet)"}
+                      </p>
+                    </Show>
                   </div>
-                  <div class="flex items-start gap-2">
+                  <div class="flex flex-wrap items-start gap-2">
                     <Show
-                      when={definition.type === "select" || definition.type === "boolean"}
+                      when={definition.source !== "script"}
                       fallback={
-                        <Input
+                        <>
+                          <div class="min-w-0 flex-1 space-y-0.5">
+                            <p class="text-[12px] text-foreground">
+                              {value() || (
+                                <span class="text-muted-foreground">No value collected yet</span>
+                              )}
+                            </p>
+                            <p class="text-[10.5px] text-muted-foreground">
+                              From script
+                              {definition.scriptName ? ` · ${definition.scriptName}` : ""}
+                              {collectionState()?.lastCollectedAt
+                                ? ` · last collected ${formatDate(collectionState()!.lastCollectedAt)}`
+                                : " · not collected yet"}
+                            </p>
+                            <Show when={collectionState()?.lastError}>
+                              <p class="text-[10.5px] text-destructive">
+                                {collectionState()!.lastError}
+                              </p>
+                            </Show>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            class="shrink-0"
+                            disabled={
+                              !props.writable ||
+                              !props.collectAllowed ||
+                              props.proto !== "apple" ||
+                              collect.isPending
+                            }
+                            title={
+                              props.proto !== "apple"
+                                ? "Script attribute collection is not supported on this platform yet."
+                                : !props.collectAllowed
+                                  ? "Your role does not include the scripts.write permission."
+                                  : undefined
+                            }
+                            onClick={() => {
+                              setError(undefined);
+                              collect.mutate(definition.id);
+                            }}
+                          >
+                            {props.proto === "apple" ? "Collect now" : "Unsupported"}
+                          </Button>
+                        </>
+                      }
+                    >
+                      <Show
+                        when={definition.type === "select" || definition.type === "boolean"}
+                        fallback={
+                          <Input
+                            class="h-7 text-[12px]"
+                            type={attributeInputType(definition.type)}
+                            aria-label={definition.label}
+                            disabled={!props.writable}
+                            value={value()}
+                            onInput={(event) => setValue(event.currentTarget.value)}
+                          />
+                        }
+                      >
+                        <NativeSelect
                           class="h-7 text-[12px]"
-                          type={attributeInputType(definition.type)}
                           aria-label={definition.label}
                           disabled={!props.writable}
                           value={value()}
-                          onInput={(event) => setValue(event.currentTarget.value)}
-                        />
-                      }
-                    >
-                      <NativeSelect
-                        class="h-7 text-[12px]"
-                        aria-label={definition.label}
-                        disabled={!props.writable}
-                        value={value()}
-                        onChange={(event) => setValue(event.currentTarget.value)}
-                      >
-                        <option value="">No value</option>
-                        <For
-                          each={
-                            definition.type === "boolean"
-                              ? ["true", "false"]
-                              : (definition.options ?? [])
-                          }
+                          onChange={(event) => setValue(event.currentTarget.value)}
                         >
-                          {(option) => (
-                            <option value={option}>
-                              {attributeOptionLabel(definition.type, option)}
-                            </option>
-                          )}
-                        </For>
-                      </NativeSelect>
-                    </Show>
-                    <Show when={props.writable && value() !== ""}>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        class="shrink-0 text-muted-foreground"
-                        onClick={() => {
-                          setDraft({ ...draft(), [definition.key]: "" });
-                          setCleared({ ...cleared(), [definition.key]: true });
-                        }}
-                        aria-label={`Clear ${definition.label}`}
-                      >
-                        Clear
-                      </Button>
-                    </Show>
-                    <Show when={isCleared()}>
-                      <span class="pt-1.5 text-[10.5px] text-warning">Cleared</span>
+                          <option value="">No value</option>
+                          <For
+                            each={
+                              definition.type === "boolean"
+                                ? ["true", "false"]
+                                : (definition.options ?? [])
+                            }
+                          >
+                            {(option) => (
+                              <option value={option}>
+                                {attributeOptionLabel(definition.type, option)}
+                              </option>
+                            )}
+                          </For>
+                        </NativeSelect>
+                      </Show>
+                      <Show when={props.writable && value() !== ""}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          class="shrink-0 text-muted-foreground"
+                          onClick={() => {
+                            setDraft({ ...draft(), [definition.key]: "" });
+                            setCleared({ ...cleared(), [definition.key]: true });
+                          }}
+                          aria-label={`Clear ${definition.label}`}
+                        >
+                          Clear
+                        </Button>
+                      </Show>
+                      <Show when={isCleared()}>
+                        <span class="pt-1.5 text-[10.5px] text-warning">Cleared</span>
+                      </Show>
                     </Show>
                   </div>
                 </div>
@@ -4447,6 +4533,7 @@ function DeviceAttributesPanel(props: {
       <div class="px-4 pb-3">
         <ErrorText error={error()} />
         <ErrorText error={definitions.error} />
+        <ErrorText error={collection.error} />
       </div>
     </DetailCard>
   );

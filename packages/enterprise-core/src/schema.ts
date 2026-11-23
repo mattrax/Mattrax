@@ -2319,12 +2319,31 @@ export const attributeDefinition = mysqlTable(
     visibility: varchar("visibility", { length: 16, enum: ["visible", "hidden"] })
       .notNull()
       .default("visible"),
+    /**
+     * Where the value comes from. `manual` is the dashboard, CSV import and
+     * enrollment answers; `script` is only ever written by the result of the
+     * bound script, so manual writes are rejected; `directory` records an
+     * intended directory connector, which is not implemented yet, so the
+     * attribute still accepts manual values.
+     */
+    source: varchar("source", { length: 16, enum: ["manual", "script", "directory"] })
+      .notNull()
+      .default("manual"),
+    /** Script that reports a `script`-sourced value; null for the other sources. */
+    scriptId: id("script_id").references(() => script.id, { onDelete: "set null" }),
+    /**
+     * JSON key on the script's stdout object; null means the attribute key.
+     * Line-per-value output ignores it and uses the attribute list order.
+     */
+    scriptOutputKey: shortText("script_output_key"),
     sortOrder: int("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
     uniqueIndex("attribute_definition_organization_key_unique").on(table.organizationId, table.key),
+    // Ingestion looks up every attribute bound to the reporting script.
+    index("attribute_definition_script_idx").on(table.scriptId),
   ],
 );
 
@@ -2359,6 +2378,47 @@ export const deviceAttribute = mysqlTable(
     // Every read and search filters by tenant before joining the registry.
     index("device_attribute_organization_idx").on(table.organizationId),
     index("device_attribute_attribute_idx").on(table.attributeId),
+  ],
+);
+
+/**
+ * Last collection attempt for one device attribute that is not edited by hand.
+ *
+ * A successful collection clears `lastError` and moves `lastCollectedAt`; a
+ * failed one records the error and leaves `lastCollectedAt` alone, so the
+ * dashboard can say both "last worked at" and "failing since". There is no row
+ * until the bound script reports for that device.
+ */
+export const attributeCollection = mysqlTable(
+  "attribute_collection",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    attributeId: id("attribute_id")
+      .notNull()
+      .references(() => attributeDefinition.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Definition source at the last attempt; only `script` is implemented. */
+    source: varchar("source", { length: 16, enum: ["script", "directory"] }).notNull(),
+    /** Script that produced the attempt; null once the definition is unbound. */
+    scriptId: id("script_id").references(() => script.id, { onDelete: "set null" }),
+    /** Last successful collection; a later failure does not move it. */
+    lastCollectedAt: timestamp("last_collected_at"),
+    /** Most recent failure text, in operator wording; never script output. */
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.attributeId] }),
+    index("attribute_collection_organization_idx").on(table.organizationId),
+    index("attribute_collection_attribute_idx").on(table.attributeId),
+    // Covers the foreign key so InnoDB's implicit index is not the only one
+    // (see `schemaIndexes.test.ts`), and serves "drop this script's state".
+    index("attribute_collection_script_idx").on(table.scriptId),
   ],
 );
 

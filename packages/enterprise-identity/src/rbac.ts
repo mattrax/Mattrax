@@ -42,6 +42,7 @@ const DEVICE_READ = new Set([
   "listAttributes",
   "listEnrollmentQuestions",
   "getPolicyVariables",
+  "listDeviceAttributeCollection",
 ]);
 
 const DEVICE_WRITE = new Set([
@@ -140,6 +141,9 @@ const SCRIPT_WRITE = new Set([
   "patchScriptSettings",
   "patchScriptAssignments",
   "runScript",
+  // "Collect now" queues a manual run, so it needs the same write permission
+  // as Run on assigned devices.
+  "collectDeviceAttribute",
 ]);
 
 const DASHBOARD_READ = new Set([

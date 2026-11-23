@@ -220,6 +220,51 @@ a type (`text`, `number`, `boolean`, `date` or `select`), optional select option
 required flag and a visibility (`visible` attributes get table columns and CSV columns;
 `hidden` ones are API-only).
 
+### Sources
+
+Every attribute has a source:
+
+- **Manual** (the default) — the dashboard, CSV import and enrollment questions write the
+  value.
+- **Script** — the value is written only by the bound script's reported output. Manual
+  writes (dashboard, API, CSV import and enrollment questions) are rejected, so a refresh
+  cannot be confused with an administrator's edit.
+- **Directory** — reserved for a directory connector. No connector collects it yet, so the
+  attribute still accepts manual values; the dashboard labels it "not implemented".
+
+### Collecting values from a script
+
+A script-sourced attribute is bound to one script in the attribute editor. The script prints
+either:
+
+- **one JSON object**, keyed by the attribute key (or the binding's **Output key**):
+  `{"antivirus":"CrowdStrike","agent_version":"7.12"}`; or
+- **one value per line**, in the order the bound attributes are listed in
+  **Settings → Attributes**.
+
+Every value is validated against the attribute's type, options and length (the same rules
+manual values use) before it is written. A missing key or line, an empty value, a value of
+the wrong type, or a failed run records an error for that device and attribute and leaves
+the previous value in place. Only attributes declared in this tenant and bound to that exact
+script are written; an unexpected key in the JSON is ignored.
+
+Collection uses the script's existing trigger — interval, cron, login, logout,
+network change, install or a manual run — so there is no second scheduler. **Collect now**
+on the device page queues one manual run of the bound script for that device through the
+normal run path, including its expiry, output cap and redaction. The script must be assigned
+to the device or one of its groups; an unassigned script cannot be delivered.
+
+The device page shows each script-sourced value with its source, the last successful
+collection and the most recent error. Script values appear everywhere a manual value does:
+table columns, free-text search, the attribute filter, `attribute:<key>` CSV export,
+`${attribute.<key>}` policy variables and the audit log (every change is recorded with
+`source: script`, the script id and the run id).
+
+Collection is available on Apple devices through `mattraxd`. Windows and Android are not
+supported: Android has no script command, and the Windows agent does not implement the
+script channel yet. **Collect now** reports that instead of queueing a run nothing would
+collect.
+
 Manage the registry from **Settings → Attributes**. Keys are lowercase identifiers
 (`[a-z][a-z0-9_]*`, maximum 64 characters) because they become CSV headers and policy
 variables; they cannot be renamed after creation. Deleting a definition deletes every
@@ -264,6 +309,9 @@ Empty cells clear the value, unknown columns and duplicate serials are reported,
 response lists a status per row. An export from the Devices page can be edited and
 re-imported unchanged. Imports are capped at 1,000 rows and do not create devices: a
 serial that is not in the tenant fails that row.
+
+Script-sourced attributes are exported for visibility but ignored on import, so editing and
+re-importing an export never writes or clears a value the script owns.
 
 The device list's search box matches attribute values as well as the built-in columns.
 The toolbar also filters on one registered attribute (select attributes filter on their

@@ -249,6 +249,9 @@ the new policy on the next sync. See
   against a real Google Cloud project and managed device; the test suite uses an in-memory
   Google double.
 - There is no universal enrollment deep link.
+- The Android Management API has no arbitrary-script command, so scripts and
+  script-collected device attributes are unsupported. Devices are reported as skipped with a
+  reason rather than silently ignored; see [Scripts](/manage/scripts#collect-device-attributes).
 
 ## API endpoints
 

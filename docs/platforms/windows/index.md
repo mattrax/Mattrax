@@ -294,6 +294,10 @@ the API for support rather than being shown as an unexplained integer.
 - Inventory depends on the device answering `Get`; no push channel wakes it early.
 - No remote lock, shutdown or per-device policy push.
 - Only MSI application installs are supported; `.exe`/`.intunewin` and Store apps are not.
+- Scripts are not delivered: the Windows build of `mattraxd` does not implement
+  `GET /api/v1/script-agent/scripts` yet, so script runs and script-collected device
+  attributes are unsupported on Windows. The API reports that instead of queueing a run
+  nothing would collect; see [Scripts](/manage/scripts#collect-device-attributes).
 - Device-initiated unenroll is recognised from the OMA-DM `1226` Generic Alert. A device
   that is wiped or removed from management without sending it stays `enrolled` until an
   operator deletes or unenrolls it.

@@ -1,5 +1,7 @@
 import { AttributeDefinitionListResponse } from "../attributes.js";
 import { AttributeDefinitionRow } from "../attributes.js";
+import { CollectDeviceAttributeResponse } from "../attributes.js";
+import { DeviceAttributeCollectionResponse } from "../attributes.js";
 import { CreateAttributeRequest } from "../attributes.js";
 import { DeviceAttributeImportResponse } from "../attributes.js";
 import { EnrollmentQuestionListResponse } from "../attributes.js";
@@ -16,6 +18,7 @@ import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
 import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
+import { EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { HttpApiSchema } from "effect/http-api";
 import { MobileconfigPreview } from "../Policy.js";
@@ -23,6 +26,7 @@ import { GroupScopeSummary, PolicyScopeSummary } from "../PolicyScope.js";
 import { PolicyDeploymentProgressResponse } from "../PolicyDeployment.js";
 import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
+import { TenantDeviceAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantParam } from "./Params.js";
 import { BulkUpdateResult } from "../Common.js";
@@ -166,6 +170,34 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
       payload: SetDeviceAttributesRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
+  )
+  .add(
+    // Collection state is its own read rather than another field on the device
+    // payload: it is only needed by the Attributes panel, and `EnterpriseApi`
+    // is already at the compiler's declaration-size limit.
+    HttpApiEndpoint.get(
+      "listDeviceAttributeCollection",
+      "/v1/tenants/:tenantId/devices/:id/attributes/collection",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantIdParam,
+        success: DeviceAttributeCollectionResponse,
+      },
+    ),
+  )
+  .add(
+    // "Collect now" queues the attribute's bound script for this device through
+    // the normal manual-run path, so expiry, deduplication and output caps are
+    // the ones already tested there rather than a second scheduler.
+    HttpApiEndpoint.post(
+      "collectDeviceAttribute",
+      "/v1/tenants/:tenantId/devices/:id/attributes/:attributeId/collect",
+      {
+        error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+        params: TenantDeviceAttributeParam,
+        success: CollectDeviceAttributeResponse,
+      },
+    ),
   )
   .add(
     // Bulk member operations live here rather than in `EnterpriseApi`: that

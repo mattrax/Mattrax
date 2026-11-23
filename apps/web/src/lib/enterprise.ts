@@ -459,6 +459,8 @@ export const enterpriseKeys = {
   devicePreRegistrations: (tenantId: RouteParam) =>
     ["enterprise", "device-pre-registrations", keyTenant(tenantId)] as const,
   attributes: (tenantId: RouteParam) => ["enterprise", "attributes", keyTenant(tenantId)] as const,
+  deviceAttributeCollection: (tenantId: RouteParam, deviceId: RouteParam) =>
+    ["enterprise", "attributes", "collection", keyTenant(tenantId), deviceId] as const,
   enrollmentQuestions: (tenantId: RouteParam) =>
     ["enterprise", "enrollment-questions", keyTenant(tenantId)] as const,
   policyVariables: (tenantId: RouteParam) =>
@@ -1449,6 +1451,24 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId") },
         payload: { csv },
       }),
+    ),
+  listDeviceAttributeCollection: (tenantId: RouteParam, id: RouteParam) =>
+    attributeEndpoint((api) =>
+      api.listDeviceAttributeCollection({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  collectDeviceAttribute: (tenantId: RouteParam, id: RouteParam, attributeId: RouteParam) =>
+    attributeEndpoint(
+      (api) =>
+        api.collectDeviceAttribute({
+          params: {
+            tenantId: required(tenantId, "tenantId"),
+            id: required(id, "id"),
+            attributeId: required(attributeId, "attributeId"),
+          },
+        }),
+      { stepUp: "script-run" },
     ),
   listEnrollmentQuestions: (tenantId: RouteParam) =>
     attributeEndpoint((api) =>

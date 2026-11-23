@@ -26,6 +26,13 @@ export const TenantDeviceUserParam = {
 
 export const TenantAttributeParam = { tenantId: Schema.String, attributeId: Schema.String };
 
+/** One attribute's value on one device (device id is `:id`). */
+export const TenantDeviceAttributeParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  attributeId: Schema.String,
+};
+
 export const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
 
 export const TenantWebhookDeliveryParam = {

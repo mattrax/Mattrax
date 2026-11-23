@@ -2,17 +2,23 @@ import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import type { AttributeDefinitionRow, EnrollmentQuestion } from "@mattrax/enterprise-domain";
+import type {
+  AttributeDefinitionRow,
+  DeviceAttributeCollectionState,
+  EnrollmentQuestion,
+  ScriptAttributeReading,
+} from "@mattrax/enterprise-domain";
 import {
   ATTRIBUTE_LABEL_MAX,
   ATTRIBUTE_OPTIONS_MAX,
   attributeKeyProblem,
   isEmptyAttributeValue,
   parseCsvRecords,
+  parseScriptAttributeOutput,
   reservedAttributeKeyProblem,
   validateAttributeValue,
 } from "@mattrax/enterprise-domain";
-import type { AttributeType } from "@mattrax/enterprise-domain";
+import type { AttributeSource, AttributeType } from "@mattrax/enterprise-domain";
 import { writeSystemAudit } from "@mattrax/mdm-apple";
 
 /**
@@ -29,6 +35,39 @@ export type AttributeDefinition = typeof schema.attributeDefinition.$inferSelect
 export const ATTRIBUTE_IMPORT_MAX_ROWS = 1000;
 
 export const definitionInputProblem = (input: {
+  readonly key: string;
+  readonly label: string;
+  readonly type: AttributeType;
+  readonly options?: ReadonlyArray<string> | null;
+  readonly source?: AttributeSource;
+  readonly scriptId?: string | null;
+  readonly scriptOutputKey?: string | null;
+}): string | null => {
+  const source = input.source ?? "manual";
+  const scriptId = input.scriptId?.trim() || null;
+  const shapeProblem = definitionShapeProblem(input);
+
+  if (shapeProblem) return shapeProblem;
+
+  // A patch can change only the binding, so the source rules are checked after
+  // the shape: an attribute cannot promise values from a script it does not
+  // name, and a non-script attribute must not keep a stale binding.
+  if (source === "script" && !scriptId)
+    return "Choose the script that reports this attribute's value.";
+
+  if (source !== "script" && scriptId)
+    return "Only script-sourced attributes can have a bound script.";
+
+  if (source !== "script" && input.scriptOutputKey)
+    return "Only script-sourced attributes can name an output key.";
+
+  if ((input.scriptOutputKey ?? "").length > ATTRIBUTE_LABEL_MAX)
+    return `The output key must be ${ATTRIBUTE_LABEL_MAX} characters or fewer.`;
+
+  return null;
+};
+
+const definitionShapeProblem = (input: {
   readonly key: string;
   readonly label: string;
   readonly type: AttributeType;
@@ -80,7 +119,7 @@ export const normalizeDefinitionOptions = (
 
 export const attributeDefinitionRow = (
   row: AttributeDefinition,
-  deviceCount?: number,
+  options: { readonly deviceCount?: number; readonly scriptName?: string | null } = {},
 ): AttributeDefinitionRow => {
   const result: AttributeDefinitionRow = {
     id: row.id,
@@ -90,12 +129,17 @@ export const attributeDefinitionRow = (
     options: row.options ?? null,
     required: row.required,
     visibility: row.visibility,
+    source: row.source,
+    scriptId: row.scriptId ?? null,
+    scriptOutputKey: row.scriptOutputKey ?? null,
+    scriptName: options.scriptName ?? null,
     sortOrder: row.sortOrder,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 
-  if (deviceCount !== undefined) Object.assign(result, { deviceCount });
+  if (options.deviceCount !== undefined)
+    Object.assign(result, { deviceCount: options.deviceCount });
 
   return result;
 };
@@ -180,6 +224,14 @@ export const attributeValuesProblem = (
         message: `"${key}" is not a registered attribute in this tenant.`,
       };
 
+    // A script attribute's value belongs to the script's next report, so a
+    // dashboard or API write would either be overwritten or silently claimed.
+    if (definition.source === "script")
+      return {
+        key,
+        message: `"${definition.label}" is collected from a script and cannot be edited manually.`,
+      };
+
     const result = validateAttributeValue(definition, value);
 
     if (!result.ok) return { key, message: result.error };
@@ -207,14 +259,14 @@ export const canonicalAttributeValue = (
  *
  * Listed keys are written, `null` (or an empty string) clears that key, and
  * unlisted keys are left untouched unless `replace` is true, which clears every
- * registered key that is absent from `values`. The result is a keyed map the
- * caller writes row by row, so the dashboard, CSV import and API all share the
- * same rules.
+ * registered key that is absent from `values` — except script-owned keys, which
+ * this path may not write at all. The result is a keyed map the caller writes
+ * row by row, so the dashboard, CSV import and API all share the same rules.
  */
 export const mergeAttributeValues = (input: {
   readonly existing: Readonly<Record<string, string>>;
   readonly values: Readonly<Record<string, string | null | undefined>>;
-  readonly definitions: ReadonlyArray<{ readonly key: string }>;
+  readonly definitions: ReadonlyArray<{ readonly key: string; readonly source?: string }>;
   readonly replace?: boolean;
 }): Record<string, string | null> => {
   const merged = new Map<string, string | null>(Object.entries(input.existing));
@@ -224,7 +276,11 @@ export const mergeAttributeValues = (input: {
 
   if (input.replace) {
     for (const definition of input.definitions)
-      if (!(definition.key in input.values)) merged.set(definition.key, null);
+      // `replace` clears the manual fields the caller omitted. A script-owned
+      // value is not the caller's to clear, and clearing it would be a manual
+      // write through the back door.
+      if (definition.source !== "script" && !(definition.key in input.values))
+        merged.set(definition.key, null);
   }
 
   return Object.fromEntries(merged);
@@ -361,6 +417,10 @@ export const parseAttributeCsv = (
     for (const column of columns) {
       const raw = record[column.index] ?? "";
 
+      // A script column is exported for visibility but the script owns it, so
+      // an edit-and-reimport round trip must neither write nor clear it.
+      if (column.definition.source === "script") continue;
+
       if (isEmptyAttributeValue(raw)) {
         if (column.definition.required) {
           issues.push({
@@ -457,6 +517,10 @@ export const claimEnrollmentAnswers = (
       const definition = definitionsById.get(answer.attributeId);
 
       if (!definition) continue;
+
+      // A script owns its attribute's values, so an enrollment answer must not
+      // become a value the next collection silently overwrites.
+      if (definition.source === "script") continue;
 
       const result = validateAttributeValue({ ...definition, required: false }, answer.value);
 
@@ -570,3 +634,225 @@ export const canonicalCsvValues = (
       value === null ? null : (canonicalAttributeValue(definitions, key, value) ?? ""),
     ]),
   );
+
+// ─── Script collection ────────────────────────────────────────────
+
+export type ScriptAttributeCollection = {
+  /** Attribute keys whose value was written, sorted. */
+  readonly written: Array<string>;
+  /** Per-attribute failures. The previous value is kept on a failure. */
+  readonly errors: Array<{ readonly key: string; readonly message: string }>;
+};
+
+/**
+ * Apply one script result to the attributes bound to that script.
+ *
+ * Only attributes the tenant declared as `source: "script"` and bound to this
+ * exact script can be written, so a script cannot invent a column by printing
+ * an unexpected key. A type or validation failure records an error on the
+ * device/attribute row and leaves the previous value alone.
+ *
+ * The caller owns the run lifecycle; this only persists values and collection
+ * state. It is called from agent result ingestion, which is also the path
+ * "Collect now" uses.
+ */
+export const collectScriptAttributeValues = (
+  db: EnterpriseDb,
+  input: {
+    readonly organizationId: string;
+    readonly deviceId: string;
+    readonly script: { readonly id: string; readonly name: string };
+    readonly executionId: string;
+    /** Capped and redacted stdout from the run. */
+    readonly stdout: string;
+    /** Set when the run failed; every bound attribute records it. */
+    readonly failure?: string | null;
+    readonly now: Date;
+  },
+): Effect.Effect<ScriptAttributeCollection, unknown> =>
+  Effect.gen(function* () {
+    const bindings = yield* (
+      db
+        .select()
+        .from(schema.attributeDefinition)
+        .where(
+          and(
+            eq(schema.attributeDefinition.organizationId, input.organizationId),
+            eq(schema.attributeDefinition.source, "script"),
+            eq(schema.attributeDefinition.scriptId, input.script.id),
+          ),
+        )
+        // Same order as the settings list: the line contract is the order an
+        // operator sees, which is sort order then label.
+        .orderBy(schema.attributeDefinition.sortOrder, schema.attributeDefinition.label)
+    );
+
+    if (bindings.length === 0) return { written: [], errors: [] };
+
+    const readings: ReadonlyArray<ScriptAttributeReading> = input.failure
+      ? bindings.map((binding) => ({ key: binding.key, ok: false, error: input.failure! }))
+      : parseScriptAttributeOutput(
+          bindings.map((binding, index) => ({
+            key: binding.key,
+            label: binding.label,
+            type: binding.type,
+            options: binding.options ?? null,
+            outputKey: binding.scriptOutputKey,
+            line: index + 1,
+          })),
+          input.stdout,
+        );
+
+    // Only a changed value is written, so a scheduled run that reports the
+    // same value does not churn the row or produce an audit entry.
+    const current = yield* db
+      .select({
+        attributeId: schema.deviceAttribute.attributeId,
+        value: schema.deviceAttribute.value,
+      })
+      .from(schema.deviceAttribute)
+      .where(
+        and(
+          eq(schema.deviceAttribute.organizationId, input.organizationId),
+          eq(schema.deviceAttribute.deviceId, input.deviceId),
+          inArray(
+            schema.deviceAttribute.attributeId,
+            bindings.map((binding) => binding.id),
+          ),
+        ),
+      );
+
+    const currentValues = new Map(current.map((row) => [row.attributeId, row.value]));
+    const byKey = new Map(readings.map((reading) => [reading.key, reading]));
+    const written: Array<string> = [];
+    const errors: Array<{ key: string; message: string }> = [];
+
+    for (const binding of bindings) {
+      const reading = byKey.get(binding.key);
+
+      if (!reading) continue;
+
+      if (reading.ok) {
+        if (currentValues.get(binding.id) !== reading.value) {
+          written.push(binding.key);
+
+          yield* db
+            .insert(schema.deviceAttribute)
+            .values({
+              deviceId: input.deviceId,
+              attributeId: binding.id,
+              organizationId: input.organizationId,
+              value: reading.value,
+              // No account wrote this value; the audit entry names the run.
+              updatedByAccountId: null,
+              updatedAt: input.now,
+            })
+            .onDuplicateKeyUpdate({
+              set: { value: reading.value, updatedByAccountId: null, updatedAt: input.now },
+            });
+        }
+      } else {
+        errors.push({ key: binding.key, message: reading.error });
+      }
+
+      // A success clears the error and moves the timestamp; a failure records
+      // the error and leaves `lastCollectedAt` at the last good collection.
+      const state = reading.ok
+        ? {
+            source: "script" as const,
+            scriptId: input.script.id,
+            lastCollectedAt: input.now,
+            lastError: null,
+            lastErrorAt: null,
+            updatedAt: input.now,
+          }
+        : {
+            source: "script" as const,
+            scriptId: input.script.id,
+            lastError: reading.error,
+            lastErrorAt: input.now,
+            updatedAt: input.now,
+          };
+
+      yield* db
+        .insert(schema.attributeCollection)
+        .values({
+          deviceId: input.deviceId,
+          attributeId: binding.id,
+          organizationId: input.organizationId,
+          source: "script" as const,
+          scriptId: input.script.id,
+          lastCollectedAt: reading.ok ? input.now : null,
+          lastError: reading.ok ? null : reading.error,
+          lastErrorAt: reading.ok ? null : input.now,
+          updatedAt: input.now,
+        })
+        .onDuplicateKeyUpdate({ set: state });
+    }
+
+    if (written.length === 0) return { written, errors };
+
+    yield* writeSystemAudit(db, {
+      organizationId: input.organizationId,
+      action: "device.attributes_updated",
+      targetType: "device",
+      targetId: input.deviceId,
+      metadata: {
+        source: "script",
+        scriptId: input.script.id,
+        scriptName: input.script.name,
+        executionId: input.executionId,
+        written: [...written].sort(),
+        // Key names only: the messages live on the collection rows.
+        failed: errors.map((error) => error.key).sort(),
+      },
+    });
+
+    return { written, errors };
+  });
+
+/**
+ * Collection state for one device, keyed by attribute key.
+ *
+ * Only attributes with an attempted collection appear, so a script-sourced
+ * attribute that has never reported is absent rather than shown as "never
+ * collected".
+ */
+export const loadDeviceAttributeCollection = (
+  db: EnterpriseDb,
+  organizationId: string,
+  deviceId: string,
+): Effect.Effect<Record<string, DeviceAttributeCollectionState>, unknown> =>
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select({
+        key: schema.attributeDefinition.key,
+        source: schema.attributeCollection.source,
+        lastCollectedAt: schema.attributeCollection.lastCollectedAt,
+        lastError: schema.attributeCollection.lastError,
+        lastErrorAt: schema.attributeCollection.lastErrorAt,
+      })
+      .from(schema.attributeCollection)
+      .innerJoin(
+        schema.attributeDefinition,
+        eq(schema.attributeDefinition.id, schema.attributeCollection.attributeId),
+      )
+      .where(
+        and(
+          eq(schema.attributeCollection.organizationId, organizationId),
+          eq(schema.attributeCollection.deviceId, deviceId),
+        ),
+      );
+
+    return Object.fromEntries(
+      rows.map((row) => [
+        row.key,
+        {
+          source: row.source,
+          lastCollectedAt: row.lastCollectedAt ? row.lastCollectedAt.toISOString() : null,
+          lastError: row.lastError ?? null,
+          lastErrorAt: row.lastErrorAt ? row.lastErrorAt.toISOString() : null,
+        },
+      ]),
+    );
+  });
