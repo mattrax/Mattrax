@@ -414,6 +414,7 @@ snapshots:
 		"apps/cli": {
 			"dependencies": {
 				"@effect/platform-node": "catalog:",
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"effect": "catalog:",
 				"yaml": "catalog:",
@@ -868,6 +869,7 @@ snapshots:
 		"packages/enterprise-domain": {
 			"name": "@mattrax/enterprise-domain",
 			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",

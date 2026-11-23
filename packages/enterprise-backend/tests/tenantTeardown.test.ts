@@ -539,10 +539,11 @@ describe("tenant object deletion", () => {
       "p/org-1/a": "1",
       "a/org-1/b": "1",
       "backups/org-1/c": "1",
+      "handovers/org-1/d": "1",
       "p/org-10/d": "1",
     });
 
-    expect(await deleteTenantObjects(storage, "org-1")).toEqual({ deleted: 3, complete: true });
+    expect(await deleteTenantObjects(storage, "org-1")).toEqual({ deleted: 4, complete: true });
     expect([...storage.objects.keys()]).toEqual(["p/org-10/d"]);
   });
 });

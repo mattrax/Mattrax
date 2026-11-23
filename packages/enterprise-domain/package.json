@@ -10,6 +10,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/crypto": "workspace:*",
     "@xmldom/xmldom": "catalog:",
     "@yielded/auth": "catalog:",
     "effect": "catalog:"

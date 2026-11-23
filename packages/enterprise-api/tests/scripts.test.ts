@@ -441,6 +441,14 @@ describe("agent sync and result ingestion", () => {
     const db = await seed();
     const { id } = await create(db);
 
+    db.store.script_assignment.push({
+      scriptId: id,
+      organizationId: orgId,
+      targetType: "device",
+      targetId: "device-1",
+      createdAt: now,
+    });
+
     const result = await runEffect(
       recordScriptAgentResult(
         db,
@@ -463,6 +471,33 @@ describe("agent sync and result ingestion", () => {
       status: "failed",
       exitCode: 1,
     });
+  });
+
+  it("rejects a result for a script the device was never assigned", async () => {
+    const db = await seed();
+    const { id } = await create(db);
+
+    const result = await runEffect(
+      recordScriptAgentResult(
+        db,
+        { id: "device-1", organizationId: orgId },
+        {
+          runId: "forged-run",
+          scriptId: id,
+          trigger: "interval",
+          exitCode: 0,
+          stdout: "antivirus=CrowdStrike",
+          stderr: "",
+        },
+        now,
+      ),
+    );
+
+    expect(result).toMatchObject({ problem: "Script is not assigned to this device" });
+    expect(db.store.script_execution).toEqual([]);
+    expect(
+      db.store.audit_log.filter((entry: any) => entry.action === "script.run_completed"),
+    ).toEqual([]);
   });
 
   it("rejects a script from another tenant and a disabled feature", async () => {

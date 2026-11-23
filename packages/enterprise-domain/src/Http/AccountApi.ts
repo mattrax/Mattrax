@@ -32,7 +32,7 @@ import { EnterpriseNotFound } from "../Errors.js";
 import { EnterprisePublicEmailErrors } from "../Errors.js";
 import { EnterpriseStepUpErrors } from "../Errors.js";
 import { EnterpriseStepUpFactorErrors } from "../Errors.js";
-import { EnterpriseStepUpRequired } from "../Errors.js";
+import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { McpActivityRequest } from "../Account.js";
 import { McpConnectionParam } from "./Params.js";
@@ -166,7 +166,11 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
   )
   .add(
     HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", {
-      error: EnterpriseStepUpErrors,
+      error: [
+        ...EnterpriseStepUpErrors,
+        ...EnterpriseApprovalRequired,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
       payload: CreateApiTokenRequest,
       success: CreateApiTokenResponse,
     }),

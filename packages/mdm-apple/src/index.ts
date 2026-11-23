@@ -1,7 +1,14 @@
 import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
-import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
-import { Db, deviceLimitForOrganization, schema as s } from "@mattrax/enterprise-core";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
+import {
+  Db,
+  deviceLimitForOrganization,
+  reconcileApplicationUninstalls,
+  recordApplicationInstall,
+  schema as s,
+} from "@mattrax/enterprise-core";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   DeviceHealthManagementApp,
   appleSoftwareUpdateEnforcementDeclaration,
@@ -20,14 +27,16 @@ import {
   APPLE_DEVICE_NAME_MAX_LENGTH,
   latestKnownDeviceName,
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  APPLICATION_UNINSTALL_DEADLINE_MS,
   LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   isAppleLockScreenMessageDevice,
+  isConfirmedMacOsDevice,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
-import { PlistValue, serializePlist } from "@mattrax/plist";
+import { PlistValue } from "@mattrax/plist";
 import {
   appleOsFamily,
   buildInstallApplicationPayload,
@@ -39,9 +48,13 @@ import {
   appleInstallAssetExpiresAt,
   scriptProfileIdentifier,
   signAppleAssetToken,
-  isApplePackageUpload,
+  appleUploadKind,
+  appleUploadSupportsDevice,
+  buildRemoveApplicationPayload,
+  isAppleIpaUpload,
   verifyAppleAssetToken,
 } from "@mattrax/dm-apple";
+import { serializePlist } from "@mattrax/plist";
 import { buildAdeEnrollmentProfile } from "./adeProfile.js";
 import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import { resolveAssignedScriptIds, scriptAgentToken } from "@mattrax/enterprise-domain";
@@ -66,7 +79,14 @@ import { isPlistObject } from "@mattrax/mdm-core";
 import type { PlistInput, PlistObject } from "@mattrax/mdm-core";
 import { parseDeviceInventory } from "@mattrax/mdm-core";
 import {
+  APPLE_MANAGED_LOCAL_ADMIN_USERNAME,
+  applePasswordHash,
+  generateLocalAdminPassword,
+  localAdminRotationDue,
+  setAutoAdminPasswordPayload,
   parseActivationLockBypassCode,
+  parseAppleLocalAccounts,
+  parseAppleLostModeLocation,
   parseRecoveryLockVerification,
   parseRotatedRecoveryKey,
   parseSecurityInfo,
@@ -251,6 +271,20 @@ export const deviceInformationConfigurationToken = (
 ) => hashToken(items);
 
 type DeviceRow = typeof s.device.$inferSelect;
+
+/**
+ * Return an Apps and Books licence after the device proved the app is gone.
+ *
+ * Wired by the deployment host so this package does not depend on the VPP
+ * client; resolves false when the licence could not be returned.
+ */
+export type AppleVppLicenceRelease = (input: {
+  /** Connection owned by the caller; the release runs inside its check-in. */
+  readonly db: Db["Service"];
+  readonly organizationId: string;
+  readonly deviceId: string;
+  readonly adamId: string;
+}) => Promise<boolean>;
 
 const findDeviceByScope = (
   scope: CheckinScope,
@@ -1280,10 +1314,11 @@ const writeDeviceSecret = (
     | "bootstrap_token"
     | "activation_lock_bypass_code"
     | "recovery_lock_password"
-    | "local_admin_password",
+    | "local_admin_password"
+    | "local_admin_password_pending",
   plaintext: string,
   authSecret: string | undefined,
-  options: { readonly format?: "plaintext" | "cms" } = {},
+  options: { readonly format?: "plaintext" | "cms"; readonly commandId?: string } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     const format = options.format ?? "plaintext";
@@ -1319,6 +1354,7 @@ const writeDeviceSecret = (
         kind,
         sealedValue: sealed,
         format,
+        pendingCommandId: options.commandId ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
         rotatedAt: timestamp,
@@ -1338,6 +1374,7 @@ const writeDeviceSecret = (
     const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
       sealedValue: sealed,
       format,
+      pendingCommandId: options.commandId ?? null,
       updatedAt: timestamp,
     };
 
@@ -1461,6 +1498,7 @@ const applySecurityInfo = (
 const applyInstalledApplications = (
   device: Pick<DeviceRow, "id" | "organizationId">,
   queryResponses: PlistInput,
+  options: { readonly releaseVppLicence?: AppleVppLicenceRelease } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     const applications = parseInstalledApplications(queryResponses);
@@ -1532,6 +1570,199 @@ const applyInstalledApplications = (
       .update(s.device)
       .set({ applicationsUpdatedAt: timestamp, lastSeenAt: timestamp })
       .where(eq(s.device.id, device.id));
+
+    const transitions = yield* reconcileApplicationUninstalls(db, {
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      applications,
+      at: timestamp,
+    });
+
+    // A returned licence frees the seat for another device, but only now that
+    // this device reported the app gone. A release failure is logged: the
+    // uninstall itself already succeeded and the licence can be returned from
+    // the Apps and Books page.
+    for (const transition of transitions) {
+      if (transition.status !== "succeeded" || !transition.adamId) continue;
+
+      const release = options.releaseVppLicence;
+
+      if (!release) continue;
+
+      const [assignment] = yield* db
+        .select({ adamId: s.deviceVppAssignment.adamId })
+        .from(s.deviceVppAssignment)
+        .where(
+          and(
+            eq(s.deviceVppAssignment.organizationId, device.organizationId),
+            eq(s.deviceVppAssignment.deviceId, device.id),
+            eq(s.deviceVppAssignment.adamId, transition.adamId),
+            eq(s.deviceVppAssignment.state, "assigned"),
+          ),
+        )
+        .limit(1);
+
+      if (!assignment) continue;
+
+      const released = yield* Effect.tryPromise({
+        try: () =>
+          release({
+            db,
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            adamId: transition.adamId!,
+          }),
+        catch: (cause) => cause,
+      }).pipe(Effect.catch(() => Effect.succeed(false)));
+
+      if (!released)
+        yield* Effect.logWarning(
+          `The VPP licence ${transition.adamId} for ${transition.bundleId} on ${device.id} could not be returned after the uninstall`,
+        );
+    }
+  });
+
+/**
+ * Replace the local-account inventory from a `UserList` answer.
+ *
+ * Apple does not report administrator status or last-login time, so those
+ * columns stay null; only the managed account Mattrax created is known to be an
+ * administrator. The GUID Apple reports for that account is stored on
+ * `device_apple` because `SetAutoAdminPassword` needs it.
+ */
+const applyLocalAccounts = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  queryResponses: PlistInput,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const accounts = parseAppleLocalAccounts(queryResponses);
+
+    if (accounts === undefined) return;
+    const db = yield* Db;
+    const timestamp = now();
+
+    const existing = yield* db
+      .select()
+      .from(s.deviceLocalAccount)
+      .where(eq(s.deviceLocalAccount.deviceId, device.id));
+
+    const byUsername = new Map(existing.map((row) => [row.username, row]));
+    const reported = new Set(accounts.map((account) => account.username));
+
+    for (const account of accounts) {
+      const current = byUsername.get(account.username);
+      const managed = account.username === APPLE_MANAGED_LOCAL_ADMIN_USERNAME;
+
+      const values = {
+        organizationId: device.organizationId,
+        deviceId: device.id,
+        username: account.username,
+        fullName: account.fullName ?? null,
+        uid: account.uid ?? null,
+        guid: account.guid ?? null,
+        // Apple does not report admin status. The account Mattrax creates is
+        // an admin by construction; every other account is unknown.
+        isAdmin: managed ? true : null,
+        isManaged: managed,
+        hasSecureToken: account.hasSecureToken ?? null,
+        isLoggedIn: account.isLoggedIn ?? null,
+        mobileAccount: account.mobileAccount ?? null,
+        dataQuota: account.dataQuota ?? null,
+        dataUsed: account.dataUsed ?? null,
+        // Apple never reports this, so preserve a value if a future source did.
+        lastLoginAt: current?.lastLoginAt ?? null,
+        firstSeenAt: current?.firstSeenAt ?? timestamp,
+        lastSeenAt: timestamp,
+        reportedAt: timestamp,
+      };
+
+      if (current)
+        yield* db
+          .update(s.deviceLocalAccount)
+          .set(values)
+          .where(
+            and(
+              eq(s.deviceLocalAccount.deviceId, device.id),
+              eq(s.deviceLocalAccount.username, account.username),
+            ),
+          );
+      else
+        yield* db.insert(s.deviceLocalAccount).values({
+          id: crypto.randomUUID(),
+          ...values,
+        });
+
+      if (managed && account.guid)
+        yield* db
+          .update(s.deviceApple)
+          .set({ localAdminGuid: account.guid })
+          .where(eq(s.deviceApple.deviceId, device.id));
+    }
+
+    const stale = existing.filter((row) => !reported.has(row.username)).map((row) => row.username);
+
+    // A managed account that disappeared is gone; its stale GUID must never be
+    // reused for a password rotation.
+    if (!accounts.some((account) => account.username === APPLE_MANAGED_LOCAL_ADMIN_USERNAME))
+      yield* db
+        .update(s.deviceApple)
+        .set({ localAdminGuid: null })
+        .where(eq(s.deviceApple.deviceId, device.id));
+
+    if (stale.length > 0)
+      yield* db
+        .delete(s.deviceLocalAccount)
+        .where(
+          and(
+            eq(s.deviceLocalAccount.deviceId, device.id),
+            inArray(s.deviceLocalAccount.username, stale),
+          ),
+        );
+
+    yield* db
+      .update(s.deviceApple)
+      .set({ localAccountsUpdatedAt: timestamp })
+      .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
+ * Store the fix Apple returns from `DeviceLocation`. Only a device that is
+ * actually in Lost Mode may have a location, so a stale or spoofed answer after
+ * Lost Mode ends is ignored.
+ */
+const applyLostModeLocation = (
+  device: Pick<DeviceRow, "id">,
+  queryResponses: PlistInput,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const location = parseAppleLostModeLocation(queryResponses);
+
+    if (!location) return;
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ lostModeEnabled: s.deviceApple.lostModeEnabled })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (apple?.lostModeEnabled !== true) return;
+
+    const timestamp = now();
+
+    yield* db
+      .update(s.deviceApple)
+      .set({
+        lostModeLatitude: String(location.latitude),
+        lostModeLongitude: String(location.longitude),
+        lostModeHorizontalAccuracy:
+          location.horizontalAccuracy === undefined ? null : String(location.horizontalAccuracy),
+        lostModeVerticalAccuracy:
+          location.verticalAccuracy === undefined ? null : String(location.verticalAccuracy),
+        lostModeLocationReportedAt: location.reportedAt ? new Date(location.reportedAt) : timestamp,
+        lostModeLocationUpdatedAt: timestamp,
+      })
+      .where(eq(s.deviceApple.deviceId, device.id));
   });
 
 /**
@@ -1640,58 +1871,7 @@ const lockScreenProfileFromInstallPayload = async (
 
 /** Apple only has a local account during macOS Setup Assistant. */
 const appleDeviceIsMac = (device: Pick<DeviceRow, "osEdition" | "model">) =>
-  /mac/i.test(`${device.osEdition ?? ""} ${device.model ?? ""}`);
-
-/** A random password that satisfies macOS' default password policy. */
-const generateLocalAdminPassword = () => {
-  const random = base64EncodeBytes(crypto.getRandomValues(new Uint8Array(24)))
-    .replaceAll("+", "")
-    .replaceAll("/", "")
-    .replaceAll("=", "")
-    .slice(0, 24);
-
-  return `${random}aA1!`;
-};
-
-/**
- * Apple's `passwordHash` value: an XML plist containing the PBKDF2-SHA512
- * entropy, salt and iteration count, itself base64 encoded so the command
- * queue can store it as JSON. The device-facing plist builder decodes it back
- * into a `<data>` value.
- */
-const applePasswordHash = (password: string) =>
-  Effect.gen(function* () {
-    const salt = crypto.getRandomValues(new Uint8Array(32));
-    const iterations = 35_000;
-
-    const key = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
-          "deriveBits",
-        ]),
-      catch: () => new Error("Failed to import the local admin password"),
-    });
-
-    const entropy = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.deriveBits(
-          { name: "PBKDF2", salt, iterations, hash: "SHA-512" },
-          key,
-          128 * 8,
-        ),
-      catch: () => new Error("Failed to hash the local admin password"),
-    });
-
-    const plist = yield* serializePlist({
-      "SALTED-SHA512-PBKDF2": {
-        entropy: new Uint8Array(entropy),
-        iterations,
-        salt,
-      },
-    });
-
-    return base64EncodeBytes(new TextEncoder().encode(plist));
-  });
+  isConfirmedMacOsDevice(device);
 
 /**
  * Queue the managed local administrator account for a Mac that is held in
@@ -1745,6 +1925,302 @@ const queueLocalAdminAccount = (
       },
       at,
     );
+  });
+
+/**
+ * Queue `UserList` for a Mac. Apple reports local accounts only on request, so
+ * enrolment and the daily sweep are the two moments the inventory is
+ * refreshed. The request is rate-limited per device so a Mac that never answers
+ * is not asked on every check-in.
+ */
+const queueLocalAccountsInventory = (
+  device: DeviceRow,
+  at: Date,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    if (!appleDeviceIsMac(device)) return;
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ localAccountsRequestedAt: s.deviceApple.localAccountsRequestedAt })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (
+      apple?.localAccountsRequestedAt &&
+      at.getTime() - apple.localAccountsRequestedAt.getTime() < 24 * 60 * 60 * 1000
+    )
+      return;
+
+    const [existing] = yield* db
+      .select({ id: s.deviceCommand.id })
+      .from(s.deviceCommand)
+      .where(
+        and(
+          eq(s.deviceCommand.deviceId, device.id),
+          eq(s.deviceCommand.requestType, "UserList"),
+          inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES, "succeeded"]),
+        ),
+      )
+      .limit(1);
+
+    if (existing) return;
+
+    yield* queueAppleCommand(device, "UserList", {}, at);
+    yield* db
+      .update(s.deviceApple)
+      .set({ localAccountsRequestedAt: at })
+      .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
+ * How often a lost device is asked for a fresh location. A fix goes stale
+ * quickly, but Apple has no push trigger for location and a command on every
+ * check-in would be noise. One request an hour is enough to follow a device
+ * that is still checking in.
+ */
+export const LOST_MODE_LOCATION_REFRESH_MS = 60 * 60 * 1000;
+
+const queueLostModeLocation = (
+  device: DeviceRow,
+  at: Date,
+  options: { readonly force?: boolean } = {},
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({
+        lostModeEnabled: s.deviceApple.lostModeEnabled,
+        locationUpdatedAt: s.deviceApple.lostModeLocationUpdatedAt,
+      })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (apple?.lostModeEnabled !== true) return;
+
+    if (
+      options.force !== true &&
+      apple.locationUpdatedAt &&
+      at.getTime() - apple.locationUpdatedAt.getTime() < LOST_MODE_LOCATION_REFRESH_MS
+    )
+      return;
+
+    const [active] = yield* db
+      .select({ id: s.deviceCommand.id })
+      .from(s.deviceCommand)
+      .where(
+        and(
+          eq(s.deviceCommand.deviceId, device.id),
+          eq(s.deviceCommand.requestType, "DeviceLocation"),
+          inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+        ),
+      )
+      .limit(1);
+
+    if (active) return;
+
+    yield* queueAppleCommand(device, "DeviceLocation", {}, at);
+  });
+
+/**
+ * How many managed administrator passwords one tenant may rotate in a single
+ * maintenance run. A Mac must acknowledge each `SetAutoAdminPassword` before
+ * the next rotation of that device, and a fleet-wide burst would otherwise
+ * replace every password (and wake every device) at once.
+ */
+export const LOCAL_ADMIN_ROTATION_CONCURRENCY_PER_TENANT = 25;
+
+export type LocalAdminRotationResult = {
+  readonly queued: number;
+  /** Devices skipped because a rotation is already in flight or no GUID. */
+  readonly skipped: number;
+};
+
+/**
+ * Queue `SetAutoAdminPassword` for Macs whose tenant policy says the managed
+ * administrator password is due. The new password is sealed under the pending
+ * kind and only becomes the revealed value when the device acknowledges the
+ * command, so a reveal never shows a password the Mac never applied.
+ */
+export const rotateAppleLocalAdminPasswords = (
+  db: EnterpriseDb,
+  options: {
+    readonly now: Date;
+    readonly authSecret?: string;
+    readonly limitPerTenant?: number;
+    readonly organizationId?: string;
+  },
+): Effect.Effect<LocalAdminRotationResult, unknown, Db> =>
+  Effect.gen(function* () {
+    if (!options.authSecret) return { queued: 0, skipped: 0 };
+    const authSecret = options.authSecret;
+    const cap = options.limitPerTenant ?? LOCAL_ADMIN_ROTATION_CONCURRENCY_PER_TENANT;
+    const now = options.now;
+
+    const organizations = yield* db
+      .select({
+        id: s.organization.id,
+        rotationDays: s.organization.localAdminRotationDays,
+      })
+      .from(s.organization)
+      .where(
+        options.organizationId
+          ? and(
+              eq(s.organization.id, options.organizationId),
+              isNotNull(s.organization.localAdminRotationDays),
+            )
+          : isNotNull(s.organization.localAdminRotationDays),
+      );
+
+    let queued = 0;
+    let skipped = 0;
+
+    for (const organization of organizations) {
+      const days = organization.rotationDays;
+
+      if (!days || days <= 0) continue;
+      const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+      const candidates = yield* db
+        .select({
+          id: s.device.id,
+          organizationId: s.device.organizationId,
+          osEdition: s.device.osEdition,
+          model: s.device.model,
+          localAdminGuid: s.deviceApple.localAdminGuid,
+          rotatedAt: s.deviceSecret.rotatedAt,
+        })
+        .from(s.device)
+        .innerJoin(s.deviceApple, eq(s.deviceApple.deviceId, s.device.id))
+        .innerJoin(
+          s.deviceSecret,
+          and(
+            eq(s.deviceSecret.deviceId, s.device.id),
+            eq(s.deviceSecret.kind, "local_admin_password"),
+          ),
+        )
+        .where(
+          and(
+            eq(s.device.organizationId, organization.id),
+            eq(s.device.proto, "apple"),
+            eq(s.device.status, "enrolled"),
+            isNotNull(s.deviceApple.localAdminGuid),
+            lte(s.deviceSecret.rotatedAt, cutoff),
+          ),
+        )
+        .limit(cap + 1);
+
+      const macs = candidates.filter((device) => appleDeviceIsMac(device));
+      const due = macs.filter((device) =>
+        localAdminRotationDue({
+          rotationDays: days,
+          rotatedAt: device.rotatedAt,
+          now,
+          hasGuid: Boolean(device.localAdminGuid),
+        }),
+      );
+      skipped += macs.length - Math.min(due.length, cap);
+
+      for (const device of due.slice(0, cap)) {
+        if (!device.localAdminGuid) {
+          skipped += 1;
+          continue;
+        }
+
+        // A rotation already in flight must finish before another replaces it;
+        // otherwise the sealed pending password and the queued hash disagree.
+        const [active] = yield* db
+          .select({ id: s.deviceCommand.id })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.requestType, "SetAutoAdminPassword"),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .limit(1);
+
+        if (active) {
+          skipped += 1;
+          continue;
+        }
+
+        const password = generateLocalAdminPassword();
+        const passwordHash = yield* applePasswordHash(password);
+
+        const payload = setAutoAdminPasswordPayload({
+          guid: device.localAdminGuid,
+          passwordHash,
+        });
+        const dedupeKey = yield* Effect.promise(() =>
+          commandDedupeKey("SetAutoAdminPassword", payload),
+        );
+        const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+        const rotationId = crypto.randomUUID();
+
+        // Queue the command and write its pending secret together, so a crash
+        // cannot leave a password bound to no command (or the reverse).
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx.insert(s.deviceCommand).values({
+              id: rotationId,
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              requestType: "SetAutoAdminPassword",
+              payload,
+              status: "queued",
+              dedupeKey,
+              expiresAt: deviceCommandExpiresAt("SetAutoAdminPassword", now),
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: now,
+              updatedAt: now,
+            });
+            yield* tx
+              .insert(s.deviceSecret)
+              .values({
+                deviceId: device.id,
+                organizationId: device.organizationId,
+                kind: "local_admin_password_pending",
+                sealedValue,
+                format: "plaintext",
+                pendingCommandId: rotationId,
+                createdAt: now,
+                updatedAt: now,
+                rotatedAt: now,
+              })
+              .onDuplicateKeyUpdate({
+                set: {
+                  sealedValue,
+                  pendingCommandId: rotationId,
+                  updatedAt: now,
+                  rotatedAt: now,
+                },
+              });
+          }),
+        );
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId: device.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.localAdminPasswordRotationQueued,
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "apple",
+            metadata: { rotationDays: days, scheduled: true },
+          },
+          { authSecret },
+        );
+        queued += 1;
+      }
+    }
+
+    return { queued, skipped };
   });
 
 type ReturnToServiceConfig = {
@@ -1943,6 +2419,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      * deliverable rather than returning an empty package).
      */
     readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+    /**
+     * Return an Apps and Books licence once an uninstall's inventory report
+     * proves the app is gone. Omitted deployments keep the assignment row and
+     * can release it from the Apps and Books page.
+     */
+    readonly releaseAppleVppLicence?: AppleVppLicenceRelease;
     /**
      * Deployment Apple profile signing identity. When absent, profiles are
      * signed with the tenant's SCEP CA, matching the enrollment download path.
@@ -2876,6 +3358,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         Effect.catch(() => Effect.void),
       );
 
+    /** Catalogue application ids still reaching this device. */
+    const applicationAssignedIds = (device: DeviceRow) =>
+      assignedApplicationIdsForDevice(db, {
+        organizationId: device.organizationId,
+        deviceId: device.id,
+      }).pipe(Effect.map((ids) => new Set(ids)));
+
     /** Whether an application is still assigned to the device, directly or by group. */
     const applicationAssignedToDevice = (
       organizationId: string,
@@ -2900,6 +3389,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly sha256?: string;
       readonly fileName?: string;
       readonly contentType?: string;
+      readonly uploadKind?: "pkg" | "ipa";
       readonly manifestUrl?: string;
       readonly storeId?: string;
       readonly configuration?: Schema.JsonObject;
@@ -2943,18 +3433,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         if (source === "upload") {
           const r2Key = installer?.r2Key ?? catalogue.r2Key;
           const sha256 = installer?.sha256 ?? catalogue.sha256;
+          const fileName = installer?.fileName ?? catalogue.fileName;
+          const contentType = installer?.contentType ?? catalogue.contentType;
 
           if (!r2Key || !sha256) return { reason: "the catalogue entry has no uploaded file" };
 
-          if (
-            !isApplePackageUpload({
-              fileName: installer?.fileName ?? catalogue.fileName,
-              contentType: installer?.contentType ?? catalogue.contentType,
-            })
-          )
+          const uploadKind = appleUploadKind({ fileName, contentType });
+
+          if (!uploadKind)
             return {
               reason:
-                "the uploaded file is not a .pkg; iOS enterprise apps need an OTA manifest URL",
+                "the uploaded file is neither a signed .pkg nor an .ipa, so it has no install command",
             };
 
           return {
@@ -2966,8 +3455,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               version,
               title,
               sha256,
-              fileName: installer?.fileName ?? catalogue.fileName ?? undefined,
-              contentType: installer?.contentType ?? catalogue.contentType ?? undefined,
+              fileName: fileName ?? undefined,
+              contentType: contentType ?? undefined,
+              uploadKind,
               configuration: configuration.configuration,
               managementFlags: 1,
             },
@@ -3022,6 +3512,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           sha256: configuration.sha256,
           fileName: configuration.fileName,
           contentType: configuration.contentType,
+          uploadKind:
+            configuration.source === "upload"
+              ? appleUploadKind({
+                  fileName: configuration.fileName,
+                  contentType: configuration.contentType,
+                })
+              : undefined,
           manifestUrl: configuration.manifestUrl,
           storeId: configuration.storeId,
           configuration: configuration.configuration,
@@ -3143,6 +3640,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         const macos = appleOsFamily(device.osEdition) === "macOS";
 
+        const [appleEnrollment] = yield* db
+          .select({ enrollmentMode: s.deviceApple.enrollmentMode })
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, device.id))
+          .limit(1);
+
+        const userEnrolled = appleEnrollment?.enrollmentMode === "user";
+
         // A store app in a policy has no licence consumer. When Apps and Books
         // is configured, installing it here would bypass the licence pool, so
         // it is skipped in favour of the applications page, which assigns a
@@ -3175,9 +3680,20 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               ? (installersByApplication.get(catalogueApplication.id) ?? [])
               : [];
 
+          // An uploaded .pkg only reaches macOS and an .ipa only iPhone/iPad;
+          // filter before selection so the other artefact still wins.
           const candidates = catalogueInstallers.filter(
             (installer) =>
-              !(installer.source === "upload" && appleOsFamily(device.osEdition) !== "macOS"),
+              installer.source !== "upload" ||
+              appleUploadKind({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+              }) === undefined ||
+              appleUploadSupportsDevice({
+                fileName: installer.fileName,
+                contentType: installer.contentType,
+                osEdition: device.osEdition,
+              }),
           );
 
           const installer = selectInstaller(candidates, {
@@ -3228,9 +3744,32 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           let payload: CommandPayload;
 
           if (application.source === "upload") {
-            if (!macos) {
+            const uploadKind = application.uploadKind;
+
+            if (uploadKind === "pkg" && !macos) {
               yield* Effect.logWarning(
                 `Policy application ${row.policyId}/${row.kind} is a .pkg and was not delivered to ${device.id}: uploaded packages install on macOS only`,
+              );
+              continue;
+            }
+
+            if (uploadKind === "ipa" && macos) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} is an .ipa and was not delivered to ${device.id}: .ipa installs on iOS and iPadOS only`,
+              );
+              continue;
+            }
+
+            if (uploadKind === "ipa" && userEnrolled) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: Apple User Enrollment (BYOD) devices cannot install a managed .ipa`,
+              );
+              continue;
+            }
+
+            if (!uploadKind) {
+              yield* Effect.logWarning(
+                `Policy application ${row.policyId}/${row.kind} was not delivered to ${device.id}: the uploaded file is neither a .pkg nor an .ipa`,
               );
               continue;
             }
@@ -3264,20 +3803,34 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               catch: internal,
             });
 
-            const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+            if (uploadKind === "pkg") {
+              const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
 
-            requestType = "InstallEnterpriseApplication";
-            payload = buildInstallEnterpriseApplicationPayload({
-              manifest: buildAppleManifest({
-                url,
-                sha256: application.sha256,
-                bundleId: application.bundleId,
-                version: application.version,
-                title: application.title,
-              }),
-              configuration: application.configuration,
-              managementFlags: application.managementFlags,
-            });
+              requestType = "InstallEnterpriseApplication";
+              payload = buildInstallEnterpriseApplicationPayload({
+                manifest: buildAppleManifest({
+                  url,
+                  sha256: application.sha256,
+                  bundleId: application.bundleId,
+                  version: application.version,
+                  title: application.title,
+                }),
+                configuration: application.configuration,
+                managementFlags: application.managementFlags,
+              });
+            } else {
+              // InstallApplication has no inline manifest: point it at the
+              // OTA manifest endpoint, which carries the same signed token and
+              // in turn points at the signed package asset.
+              const manifestUrl = `${serverOrigin}/mdm/apple/manifests/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+
+              requestType = "InstallApplication";
+              payload = buildInstallApplicationPayload({
+                manifestUrl,
+                configuration: application.configuration,
+                managementFlags: application.managementFlags,
+              });
+            }
           } else if (application.source === "store" && application.storeId) {
             payload = buildInstallApplicationPayload({
               storeId: application.storeId,
@@ -3295,6 +3848,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }
 
           yield* queueAppleCommand(device, requestType, payload, at);
+
+          if (application.catalogueApplicationId)
+            yield* recordApplicationInstall(db, {
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              applicationId: application.catalogueApplicationId,
+              installerId: application.installerId ?? null,
+              platform: "apple",
+              bundleId: application.bundleId,
+              at,
+            });
         }
       });
 
@@ -3322,6 +3886,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           .from(s.application)
           .where(eq(s.application.organizationId, device.organizationId));
 
+        const installers = yield* db
+          .select({
+            id: s.applicationInstaller.id,
+            applicationId: s.applicationInstaller.applicationId,
+            bundleId: s.applicationInstaller.bundleId,
+          })
+          .from(s.applicationInstaller)
+          .where(eq(s.applicationInstaller.organizationId, device.organizationId));
+
+        const installersById = new Map(installers.map((row) => [row.id, row] as const));
+
         const history = yield* db
           .select({
             requestType: s.deviceCommand.requestType,
@@ -3346,15 +3921,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         for (const install of installs) {
           const target = installApplicationTarget(install.payload);
+          const targetCatalogueId = target.assetIdentifier
+            ? parseCatalogueApplicationAssetIdentifier(target.assetIdentifier)
+            : null;
+          const installer = targetCatalogueId ? installersById.get(targetCatalogueId) : undefined;
 
+          // A legacy upload signs the application id rather than an installer
+          // id, so the identifier can name either row.
           const application = applications.find(
             (candidate) =>
+              candidate.id === (installer?.applicationId ?? targetCatalogueId) ||
               (target.manifestUrl != null && candidate.manifestUrl === target.manifestUrl) ||
               (target.storeId != null && candidate.storeId === target.storeId) ||
               (target.bundleId != null && candidate.bundleId === target.bundleId),
           );
 
-          if (!application?.bundleId) continue;
+          if (!application || !(application.bundleId ?? installer?.bundleId)) continue;
 
           // A policy-owned install may target a catalogue app that is not
           // assigned through the catalogue. The policy check-in re-queues that
@@ -3397,6 +3979,185 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (requeued) yield* pushEnrolledDevice(device.id, device.organizationId);
       });
+
+    /**
+     * Remove catalogue apps that are no longer assigned to this device and
+     * opted into remove-on-unassign.
+     *
+     * Assignment edits queue removals immediately, but a device can lose
+     * access through a group membership change, group deletion or direct
+     * device removal. Running the same rule at check-in makes those paths
+     * converge without a separate hook on every mutation. Only apps with
+     * persisted install provenance are removed, so a user-installed app is
+     * never claimed.
+     */
+    const queueUnassignedApplicationRemovals = (
+      device: DeviceRow,
+      configurations: ReadonlyArray<PolicyConfigurationRow>,
+      at: Date,
+    ): Effect.Effect<void, unknown, Db> =>
+      Effect.gen(function* () {
+        if (device.status !== "enrolled") return;
+
+        const [apple] = yield* db
+          .select({ enrollmentMode: s.deviceApple.enrollmentMode })
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, device.id))
+          .limit(1);
+
+        // User Enrollment (BYOD) devices do not accept RemoveApplication.
+        if (apple?.enrollmentMode === "user") return;
+
+        const applications = yield* db
+          .select({
+            id: s.application.id,
+            bundleId: s.application.bundleId,
+            removeOnUnassign: s.application.removeOnUnassign,
+          })
+          .from(s.application)
+          .where(
+            and(
+              eq(s.application.organizationId, device.organizationId),
+              eq(s.application.removeOnUnassign, true),
+            ),
+          );
+
+        if (applications.length === 0) return;
+
+        const assigned = yield* applicationAssignedIds(device);
+
+        // A policy can deliver a catalogue app without an assignment row, and
+        // it is still "assigned" for this rule. Without this an app attached to
+        // a policy would be removed at every check-in and reinstalled by the
+        // policy, flapping forever.
+        for (const configuration of configurations) {
+          if (!isApplicationKind(configuration.kind)) continue;
+
+          const applicationId = parseAppleApplicationConfiguration(
+            configuration.data,
+          )?.applicationId;
+
+          if (applicationId) assigned.add(applicationId);
+        }
+
+        const candidates = applications.filter(
+          (application) => application.bundleId && !assigned.has(application.id),
+        );
+
+        if (candidates.length === 0) return;
+
+        const provenance = yield* db
+          .select({
+            applicationId: s.applicationInstall.applicationId,
+            installerId: s.applicationInstall.installerId,
+          })
+          .from(s.applicationInstall)
+          .where(
+            and(
+              eq(s.applicationInstall.deviceId, device.id),
+              eq(s.applicationInstall.organizationId, device.organizationId),
+            ),
+          );
+
+        const installed = yield* db
+          .select({ bundleId: s.deviceApplication.bundleId })
+          .from(s.deviceApplication)
+          .where(eq(s.deviceApplication.deviceId, device.id));
+
+        const queued = yield* db
+          .select({ applicationId: s.applicationUninstall.applicationId })
+          .from(s.applicationUninstall)
+          .where(
+            and(
+              eq(s.applicationUninstall.deviceId, device.id),
+              eq(s.applicationUninstall.organizationId, device.organizationId),
+              eq(s.applicationUninstall.status, "queued"),
+            ),
+          );
+
+        const installedBundles = new Set(installed.map((row) => row.bundleId));
+        const queuedIds = new Set(queued.map((row) => row.applicationId));
+
+        for (const application of candidates) {
+          if (!application.bundleId || queuedIds.has(application.id)) continue;
+
+          const installedByMattrax = provenance.find((row) => row.applicationId === application.id);
+
+          if (!installedByMattrax || !installedBundles.has(application.bundleId)) continue;
+
+          const command = yield* queueAppleCommand(
+            device,
+            "RemoveApplication",
+            buildRemoveApplicationPayload(application.bundleId),
+            at,
+          );
+
+          const [existing] = yield* db
+            .select({ id: s.applicationUninstall.id })
+            .from(s.applicationUninstall)
+            .where(
+              and(
+                eq(s.applicationUninstall.deviceId, device.id),
+                eq(s.applicationUninstall.applicationId, application.id),
+              ),
+            )
+            .limit(1);
+
+          const values = {
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            applicationId: application.id,
+            installerId: installedByMattrax.installerId,
+            platform: "apple" as const,
+            bundleId: application.bundleId,
+            adamId: null,
+            commandId: command.id,
+            status: "queued" as const,
+            requestedAt: at,
+            deadline: new Date(at.getTime() + APPLICATION_UNINSTALL_DEADLINE_MS),
+            observedVersion: null,
+            resultDetail: null,
+            updatedAt: at,
+          };
+
+          if (existing)
+            yield* db
+              .update(s.applicationUninstall)
+              .set(values)
+              .where(eq(s.applicationUninstall.id, existing.id));
+          else
+            yield* db
+              .insert(s.applicationUninstall)
+              .values({ id: crypto.randomUUID(), createdAt: at, ...values });
+
+          // The assignment-edit path audits this too; a check-in sweep is the
+          // only place Apple applies the rule, so it must leave the same trace.
+          yield* writeSystemAudit(
+            db,
+            {
+              organizationId: device.organizationId,
+              action: "application.uninstall_queued",
+              targetType: "application",
+              targetId: application.id,
+              deviceId: device.id,
+              protocol: "apple",
+              metadata: {
+                applicationId: application.id,
+                bundleId: application.bundleId,
+                reason: "remove-on-unassign",
+              },
+              coalesce: true,
+            },
+            auditOptions,
+          );
+        }
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Failed to reconcile remove-on-unassign apps for ${device.id}: ${String(error)}`,
+          ),
+        ),
+      );
 
     /**
      * Reconcile a device's active commands against the state it reports.
@@ -3449,10 +4210,30 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 .where(eq(s.application.organizationId, device.organizationId))
             : [];
 
+        // An uploaded .ipa install carries only Mattrax's signed manifest URL,
+        // so its bundle identity has to come from the installer the URL names.
+        const installers =
+          installCommands.length > 0
+            ? yield* db
+                .select({
+                  id: s.applicationInstaller.id,
+                  bundleId: s.applicationInstaller.bundleId,
+                })
+                .from(s.applicationInstaller)
+                .where(eq(s.applicationInstaller.organizationId, device.organizationId))
+            : [];
+
+        const installerBundles = new Map(
+          installers.flatMap((row) => (row.bundleId ? [[row.id, row.bundleId] as const] : [])),
+        );
+
+        const applicationBundles = new Map(
+          applications.flatMap((row) => (row.bundleId ? [[row.id, row.bundleId] as const] : [])),
+        );
+
         const targetBundleIds = (payload: CommandPayload) => {
           const target = installApplicationTarget(payload);
-
-          return applications
+          const bundles = applications
             .filter(
               (application) =>
                 (target.manifestUrl != null && application.manifestUrl === target.manifestUrl) ||
@@ -3460,6 +4241,19 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 (target.bundleId != null && application.bundleId === target.bundleId),
             )
             .flatMap((application) => (application.bundleId ? [application.bundleId] : []));
+
+          const targetCatalogueId = target.assetIdentifier
+            ? parseCatalogueApplicationAssetIdentifier(target.assetIdentifier)
+            : null;
+
+          if (targetCatalogueId) {
+            const bundle =
+              installerBundles.get(targetCatalogueId) ?? applicationBundles.get(targetCatalogueId);
+
+            if (bundle) bundles.push(bundle);
+          }
+
+          return bundles;
         };
 
         const installed =
@@ -4307,6 +5101,29 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .where(eq(s.device.id, device.id));
                   }
 
+                  // macOS reports local accounts only on request. Ask at
+                  // enrolment so the inventory exists before an operator looks
+                  // for it; the daily sweep covers devices that miss this.
+                  if (!awaitingConfiguration)
+                    yield* queueLocalAccountsInventory(device, timestamp).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the local-account inventory for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+
+                  // A lost device keeps reporting; refresh its location on a
+                  // bounded cadence without queueing a command per check-in.
+                  if (!awaitingConfiguration)
+                    yield* queueLostModeLocation(device, timestamp).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the Lost Mode location for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+
                   // A Return to Service re-enrolment is complete when the
                   // device reports its push token again. Record it on the
                   // timeline exactly once.
@@ -4820,8 +5637,148 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   Schema.decodeUnknownOption(PlistValue)(event.queryResponses),
                 );
 
+                if (
+                  command?.requestType === "EnableLostMode" &&
+                  nextStatus === "succeeded" &&
+                  command.status !== "succeeded"
+                ) {
+                  const [lostMode] = yield* db
+                    .select({ commandId: s.deviceApple.lostModeCommandId })
+                    .from(s.deviceApple)
+                    .where(eq(s.deviceApple.deviceId, device.id))
+                    .limit(1);
+
+                  // A delayed acknowledgement for a command a newer Lost Mode
+                  // request already replaced must not flip the state.
+                  if (!lostMode?.commandId || lostMode.commandId === command.id) {
+                    const acknowledgedAt = now();
+
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({ lostModeEnabled: true, lostModeAcknowledgedAt: acknowledgedAt })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+
+                    // Apple reports the location from its own command. Queue it
+                    // only now that Lost Mode is actually on; the device answers
+                    // it on a following check-in.
+                    yield* queueLostModeLocation(device, acknowledgedAt).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the Lost Mode location for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+                  }
+                }
+
+                if (
+                  command?.requestType === "DisableLostMode" &&
+                  nextStatus === "succeeded" &&
+                  command.status !== "succeeded"
+                ) {
+                  const [lostMode] = yield* db
+                    .select({ commandId: s.deviceApple.lostModeCommandId })
+                    .from(s.deviceApple)
+                    .where(eq(s.deviceApple.deviceId, device.id))
+                    .limit(1);
+
+                  if (!lostMode?.commandId || lostMode.commandId === command.id)
+                    // A device that is no longer lost must not keep showing a
+                    // location; the last message stays as history.
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({
+                        lostModeEnabled: false,
+                        lostModeLatitude: null,
+                        lostModeLongitude: null,
+                        lostModeHorizontalAccuracy: null,
+                        lostModeVerticalAccuracy: null,
+                        lostModeLocationReportedAt: null,
+                        lostModeLocationUpdatedAt: null,
+                      })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+                }
+
+                if (command?.requestType === "DeviceLocation")
+                  yield* applyLostModeLocation(device, queryResponses);
+
+                if (command?.requestType === "UserList")
+                  yield* applyLocalAccounts(device, queryResponses);
+
+                if (
+                  command?.requestType === "SetAutoAdminPassword" &&
+                  command.status !== nextStatus
+                ) {
+                  if (nextStatus === "succeeded") {
+                    const rotatedAt = now();
+
+                    const [pending] = yield* db
+                      .select({
+                        kind: s.deviceSecret.kind,
+                        commandId: s.deviceSecret.pendingCommandId,
+                      })
+                      .from(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                        ),
+                      )
+                      .limit(1);
+
+                    // Without a pending value there is nothing to promote; do
+                    // not delete the password the device still uses.
+                    if (pending && (!pending.commandId || pending.commandId === command.id)) {
+                      // The pending value only becomes the revealed password
+                      // once the Mac confirms it applied the hash.
+                      yield* db
+                        .delete(s.deviceSecret)
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password"),
+                          ),
+                        );
+                      yield* db
+                        .update(s.deviceSecret)
+                        .set({ kind: "local_admin_password", updatedAt: rotatedAt, rotatedAt })
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                          ),
+                        );
+                    }
+                  } else if (nextStatus === "failed") {
+                    // Never leave a password that the device rejected, but only
+                    // if this is still the pending rotation for this command.
+                    const [pending] = yield* db
+                      .select({ commandId: s.deviceSecret.pendingCommandId })
+                      .from(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                        ),
+                      )
+                      .limit(1);
+
+                    if (pending && (!pending.commandId || pending.commandId === command.id))
+                      yield* db
+                        .delete(s.deviceSecret)
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                          ),
+                        );
+                  }
+                }
+
                 yield* applySecurityInfo(device, queryResponses, { authSecret });
-                yield* applyInstalledApplications(device, queryResponses);
+                yield* applyInstalledApplications(device, queryResponses, {
+                  releaseVppLicence: options.releaseAppleVppLicence,
+                });
 
                 // Activation Lock bypass codes come from their own command, not
                 // `SecurityInfo`. Apple only returns a code before the device is
@@ -4858,18 +5815,43 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // and the device generates a new Activation Lock bypass code on
                 // its next setup, so the old escrow values are history.
                 if (command?.requestType === "EraseDevice" && nextStatus === "succeeded")
-                  yield* db
-                    .delete(s.deviceSecret)
-                    .where(
-                      and(
-                        eq(s.deviceSecret.deviceId, device.id),
-                        inArray(s.deviceSecret.kind, [
-                          "filevault_recovery_key",
-                          "activation_lock_bypass_code",
-                          "recovery_lock_password",
-                        ]),
-                      ),
-                    );
+                  yield* Effect.gen(function* () {
+                    yield* db
+                      .delete(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          inArray(s.deviceSecret.kind, [
+                            "filevault_recovery_key",
+                            "activation_lock_bypass_code",
+                            "recovery_lock_password",
+                            "local_admin_password",
+                            "local_admin_password_pending",
+                          ]),
+                        ),
+                      );
+                    // The erase destroys the managed account and any Lost Mode
+                    // state, so neither survives it.
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({
+                        localAdminGuid: null,
+                        lostModeEnabled: false,
+                        lostModeMessage: null,
+                        lostModePhone: null,
+                        lostModeFootnote: null,
+                        lostModeLatitude: null,
+                        lostModeLongitude: null,
+                        lostModeHorizontalAccuracy: null,
+                        lostModeVerticalAccuracy: null,
+                        lostModeLocationReportedAt: null,
+                        lostModeLocationUpdatedAt: null,
+                      })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+                    yield* db
+                      .delete(s.deviceLocalAccount)
+                      .where(eq(s.deviceLocalAccount.deviceId, device.id));
+                  });
 
                 // `PasswordVerified` is the answer to a `VerifyRecoveryLock`
                 // command; record it so the device page can report the check.
@@ -5179,6 +6161,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               device,
               decision.mode === "legacy" ? "legacy" : "ddm",
             ).pipe(Effect.mapError(internal));
+
+            // Remove-on-unassign runs before policy installs so a policy app is
+            // excluded from removal by `scoped` and cannot flap.
+            yield* queueUnassignedApplicationRemovals(device, scoped.configurations, at);
 
             // Application installs are imperative commands, not declarations, so
             // they are queued for both delivery modes. `scoped` already applied
@@ -6079,6 +7065,98 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
+      /**
+       * The OTA manifest for an uploaded `.ipa`.
+       *
+       * `InstallApplication` cannot carry an inline manifest the way
+       * `InstallEnterpriseApplication` can, so the catalogue hosts the plist.
+       * The request is authenticated by the signed, device-bound token on the
+       * URL (the device fetches it outside its MDM check-in), and the manifest
+       * points back at the signed asset endpoint that serves the upload.
+       */
+      getAppleManifest: (_identityCertificate, identifier, token) =>
+        provideDb(
+          Effect.gen(function* () {
+            const catalogueApplicationId = parseCatalogueApplicationAssetIdentifier(identifier);
+
+            if (!catalogueApplicationId || !token) return null;
+
+            const [installer] = yield* db
+              .select()
+              .from(s.applicationInstaller)
+              .where(eq(s.applicationInstaller.id, catalogueApplicationId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            const [application] = yield* db
+              .select()
+              .from(s.application)
+              .where(eq(s.application.id, installer?.applicationId ?? catalogueApplicationId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            const file = installer ?? application;
+
+            if (!application || !file?.sha256) return null;
+
+            // Only an .ipa is installed through an OTA manifest; serving one
+            // for a .pkg would point InstallApplication at a package it cannot
+            // install.
+            if (
+              !isAppleIpaUpload({
+                fileName: file.fileName,
+                contentType: file.contentType,
+              })
+            )
+              return null;
+
+            const bundleId = installer?.bundleId ?? application.bundleId;
+
+            if (!bundleId) return null;
+
+            const assetToken = yield* Effect.tryPromise({
+              try: () =>
+                verifyAppleAssetToken(authSecret ?? "", token, {
+                  policyId: catalogueApplicationId,
+                  kind: CATALOGUE_APPLICATION_ASSET_KIND,
+                }),
+              catch: internal,
+            });
+
+            if (!assetToken) return null;
+
+            const [assetDevice] = yield* db
+              .select({ organizationId: s.device.organizationId, status: s.device.status })
+              .from(s.device)
+              .where(eq(s.device.id, assetToken.deviceId))
+              .limit(1)
+              .pipe(Effect.mapError(internal));
+
+            if (
+              assetDevice?.organizationId !== application.organizationId ||
+              assetDevice.status !== "enrolled"
+            )
+              return null;
+
+            const assetUrl = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
+
+            const content = yield* serializePlist(
+              buildAppleManifest({
+                url: assetUrl,
+                sha256: file.sha256,
+                bundleId,
+                version: installer?.version ?? application.version ?? "0",
+                title: application.name,
+              }),
+            ).pipe(Effect.mapError(internal));
+
+            return {
+              content: new TextEncoder().encode(content),
+              contentType: "application/xml",
+            };
+          }),
+        ),
+
       getAppleProfile: (policyId, kind, deviceId) =>
         provideDb(
           Effect.gen(function* () {
@@ -6171,6 +7249,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly planLimits?: PlanLimitsConfig;
       readonly windowsFederated?: Parameters<typeof createWindowsBackend>[0]["federated"];
       readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+      readonly releaseAppleVppLicence?: AppleVppLicenceRelease;
       readonly appleProfileSigning?: Parameters<typeof createAppleProfileSigner>[0];
       readonly enrollmentProfileTtlSeconds?: number;
       readonly auditCheckinCoalesceWindowMs?: number;

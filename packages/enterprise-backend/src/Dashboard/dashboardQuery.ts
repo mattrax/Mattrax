@@ -74,6 +74,16 @@ export const rowDeviceHealth = (
     readonly reasons?: unknown;
   }>,
   awaitingConfiguration?: boolean | null,
+  options: {
+    readonly lostModeEnabled?: boolean | null;
+    readonly localAccounts?: ReadonlyArray<{
+      readonly username: string;
+      readonly isAdmin?: boolean | null;
+      readonly isManaged?: boolean;
+      readonly hasSecureToken?: boolean | null;
+    }> | null;
+    readonly localAccountHealthEnabled?: boolean;
+  } = {},
 ) =>
   deriveDeviceHealth({
     status: device.status,
@@ -94,6 +104,9 @@ export const rowDeviceHealth = (
     domainName: device.domainName,
     entraDeviceId: device.entraDeviceId,
     windowsSecurityReported: device.securityUpdatedAt != null,
+    lostModeEnabled: options.lostModeEnabled ?? null,
+    localAccounts: options.localAccounts ?? null,
+    localAccountHealthEnabled: options.localAccountHealthEnabled,
   });
 
 export type DeviceDashboardSnapshot = {
@@ -132,46 +145,85 @@ export const loadDeviceSnapshots = (
 
     // Declarations, installed applications and ADE state are independent
     // reads over the same id set; one wave instead of three sequential ones.
-    const [declarations, applications, awaiting] = yield* Effect.all(
-      [
-        queryEffect(
-          db.select().from(s.deviceDeclaration).where(inArray(s.deviceDeclaration.deviceId, ids)),
-        ),
-        // Count-only device stats do not render rows, so the application
-        // inventory scan is skipped unless the query actually references apps.
-        options.includeApplications === false
-          ? Effect.succeed(noApplications)
-          : queryEffect(
-              db
-                .select({
-                  deviceId: s.deviceApplication.deviceId,
-                  bundleId: s.deviceApplication.bundleId,
-                  name: s.deviceApplication.name,
-                })
-                .from(s.deviceApplication)
-                .where(
-                  and(
-                    eq(s.deviceApplication.organizationId, organizationId),
-                    inArray(s.deviceApplication.deviceId, ids),
+    const [declarations, applications, awaiting, localAccounts, organizationRow] =
+      yield* Effect.all(
+        [
+          queryEffect(
+            db.select().from(s.deviceDeclaration).where(inArray(s.deviceDeclaration.deviceId, ids)),
+          ),
+          // Count-only device stats do not render rows, so the application
+          // inventory scan is skipped unless the query actually references apps.
+          options.includeApplications === false
+            ? Effect.succeed(noApplications)
+            : queryEffect(
+                db
+                  .select({
+                    deviceId: s.deviceApplication.deviceId,
+                    bundleId: s.deviceApplication.bundleId,
+                    name: s.deviceApplication.name,
+                  })
+                  .from(s.deviceApplication)
+                  .where(
+                    and(
+                      eq(s.deviceApplication.organizationId, organizationId),
+                      inArray(s.deviceApplication.deviceId, ids),
+                    ),
                   ),
-                ),
-            ),
-        queryEffect(
-          db
-            .select({
-              deviceId: s.deviceApple.deviceId,
-              awaitingConfiguration: s.deviceApple.awaitingConfiguration,
-            })
-            .from(s.deviceApple)
-            .where(inArray(s.deviceApple.deviceId, ids)),
-        ),
-      ],
-      { concurrency: "unbounded" },
-    );
+              ),
+          queryEffect(
+            db
+              .select({
+                deviceId: s.deviceApple.deviceId,
+                awaitingConfiguration: s.deviceApple.awaitingConfiguration,
+                lostModeEnabled: s.deviceApple.lostModeEnabled,
+              })
+              .from(s.deviceApple)
+              .where(inArray(s.deviceApple.deviceId, ids)),
+          ),
+          queryEffect(
+            db
+              .select({
+                deviceId: s.deviceLocalAccount.deviceId,
+                username: s.deviceLocalAccount.username,
+                isAdmin: s.deviceLocalAccount.isAdmin,
+                isManaged: s.deviceLocalAccount.isManaged,
+                hasSecureToken: s.deviceLocalAccount.hasSecureToken,
+              })
+              .from(s.deviceLocalAccount)
+              .where(inArray(s.deviceLocalAccount.deviceId, ids)),
+          ),
+          queryEffect(
+            db
+              .select({ localAccountHealthEnabled: s.organization.localAccountHealthEnabled })
+              .from(s.organization)
+              .where(eq(s.organization.id, organizationId))
+              .limit(1),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
 
     const awaitingByDevice = new Map(
       awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
     );
+
+    const lostModeByDevice = new Map(awaiting.map((row) => [row.deviceId, row.lostModeEnabled]));
+
+    const localAccountsByDevice = new Map<
+      string,
+      Array<{
+        username: string;
+        isAdmin: boolean | null;
+        isManaged: boolean;
+        hasSecureToken: boolean | null;
+      }>
+    >();
+
+    for (const account of localAccounts) {
+      const list = localAccountsByDevice.get(account.deviceId) ?? [];
+      list.push(account);
+      localAccountsByDevice.set(account.deviceId, list);
+    }
 
     const declarationsByDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -198,6 +250,11 @@ export const loadDeviceSnapshots = (
         row,
         declarationsByDevice.get(row.id) ?? [],
         awaitingByDevice.get(row.id) ?? null,
+        {
+          lostModeEnabled: lostModeByDevice.get(row.id) ?? null,
+          localAccounts: localAccountsByDevice.get(row.id) ?? null,
+          localAccountHealthEnabled: organizationRow[0]?.localAccountHealthEnabled,
+        },
       ),
       applications: applicationsByDevice.get(row.id) ?? [],
     }));

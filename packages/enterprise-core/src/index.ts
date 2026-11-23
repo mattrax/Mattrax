@@ -26,6 +26,8 @@ export {
   MAX_DEVICE_APPLICATIONS,
   clearDeviceApplications,
   deviceApplicationIds,
+  reconcileApplicationUninstalls,
+  recordApplicationInstall,
   replaceDeviceApplications,
   type DeviceApplicationRecord,
 } from "./deviceApplications.ts";

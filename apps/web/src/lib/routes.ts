@@ -81,6 +81,10 @@ export const DEVICE_STALE_DAYS = ["7", "30", "90"] as const;
 
 export const DEVICE_PUSH_FILTERS = ["failing", "invalid"] as const;
 
+export const DEVICE_LOST_MODE_FILTERS = ["active", "inactive"] as const;
+
+export const DEVICE_LOCAL_ACCOUNT_FILTERS = ["without-secure-token", "not-seen-30-days"] as const;
+
 /** Windows activation states reported by mattraxd. */
 export const DEVICE_ACTIVATION_FILTERS = ["activated", "not-activated", "unknown"] as const;
 
@@ -107,6 +111,8 @@ export const DeviceSearchParams = Schema.Struct({
   staleDays: Schema.optional(Schema.String),
   health: Schema.optional(Schema.Literals(DEVICE_HEALTH_FILTERS)),
   push: Schema.optional(Schema.Literals(DEVICE_PUSH_FILTERS)),
+  lostMode: Schema.optional(Schema.Literals(DEVICE_LOST_MODE_FILTERS)),
+  localAccount: Schema.optional(Schema.Literals(DEVICE_LOCAL_ACCOUNT_FILTERS)),
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
   notSeenSince: Schema.optional(Schema.String),
   activation: Schema.optional(Schema.Literals(DEVICE_ACTIVATION_FILTERS)),
@@ -196,6 +202,8 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
       : undefined;
   const health = literalValue(DEVICE_HEALTH_FILTERS, values.health);
   const push = literalValue(DEVICE_PUSH_FILTERS, values.push);
+  const lostMode = literalValue(DEVICE_LOST_MODE_FILTERS, values.lostMode);
+  const localAccount = literalValue(DEVICE_LOCAL_ACCOUNT_FILTERS, values.localAccount);
   const setup = literalValue(["awaiting", "complete"], values.setup);
   const activation = literalValue(DEVICE_ACTIVATION_FILTERS, values.activation);
   const sort = literalValue(DEVICE_SORT_FIELDS, values.sort);
@@ -225,6 +233,10 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   if (health !== undefined) params.health = health;
 
   if (push !== undefined) params.push = push;
+
+  if (lostMode !== undefined) params.lostMode = lostMode;
+
+  if (localAccount !== undefined) params.localAccount = localAccount;
 
   if (setup !== undefined) params.setup = setup;
 
@@ -271,6 +283,8 @@ export const readDeviceSearchParams = (search: RouteSearch): DeviceSearchParams 
     staleDays: search.staleDays,
     health: search.health,
     push: search.push,
+    lostMode: search.lostMode,
+    localAccount: search.localAccount,
     setup: search.setup,
     notSeenSince: search.notSeenSince,
     sort: search.sort,
@@ -362,6 +376,7 @@ export const routes = {
         tab:
           | ""
           | "administrators"
+          | "approvals"
           | "identity"
           | "attributes"
           | "enrollment"

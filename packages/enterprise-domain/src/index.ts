@@ -75,6 +75,8 @@ export * from "./csv.ts";
 
 export * from "./stepUp.ts";
 
+export * from "./approvals.ts";
+
 export * from "./stepUpServer.ts";
 
 export * from "./ssr.ts";
@@ -89,6 +91,8 @@ export {
 } from "./applicationInstallers.js";
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
+
+export * from "./applicationUninstall.js";
 
 export {
   ApplicationAvailability,

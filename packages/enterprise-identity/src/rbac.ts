@@ -42,6 +42,7 @@ const DEVICE_READ = new Set([
   "listAttributes",
   "listEnrollmentQuestions",
   "getPolicyVariables",
+  "listDeviceAttributeCollection",
 ]);
 
 const DEVICE_WRITE = new Set([
@@ -122,6 +123,7 @@ const APPLICATION_WRITE = new Set([
   "refreshApplicationStorefronts",
   "unlinkApplicationAssignments",
   "installApplication",
+  "uninstallApplication",
   "uploadApplication",
 ]);
 
@@ -140,6 +142,9 @@ const SCRIPT_WRITE = new Set([
   "patchScriptSettings",
   "patchScriptAssignments",
   "runScript",
+  // "Collect now" queues a manual run, so it needs the same write permission
+  // as Run on assigned devices.
+  "collectDeviceAttribute",
 ]);
 
 const DASHBOARD_READ = new Set([
@@ -339,6 +344,28 @@ const EXPLICIT = {
   // secrets: reading them is as sensitive as the recovery key.
   getDeviceLocalAdmin: "devices.recovery_key",
   getDeviceActivationLockBypassCode: "devices.recovery_key",
+  // A handover archive contains every escrowed secret a device has, so it has
+  // its own permission instead of riding on devices.write or recovery_key.
+  createDeviceHandover: "devices.handover",
+  downloadDeviceHandover: "devices.handover",
+  // The impact read returns presence metadata only, the same data the device
+  // detail page already exposes.
+  deviceHandoverImpact: "devices.read",
+  // Four-eyes approvals. Reading the queue exposes destructive intent and who
+  // is deciding it, so it is not part of the read-only member baseline. A
+  // requester also needs read access to see and cancel their own request.
+  listApprovalPolicies: "approvals.read",
+  createApprovalPolicy: "approvals.write",
+  patchApprovalPolicy: "approvals.write",
+  deleteApprovalPolicy: "approvals.write",
+  // A requester can always list their own requests and cancel one without
+  // holding the queue permission. The handlers enforce that restriction: the
+  // method falls back to tenant.read, which every member already needs.
+  listApprovalRequests: "tenant.read",
+  getApprovalRequest: "tenant.read",
+  approveApprovalRequest: "approvals.write",
+  rejectApprovalRequest: "approvals.write",
+  cancelApprovalRequest: "tenant.read",
 } satisfies Record<string, Permission>;
 
 const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));

@@ -512,6 +512,7 @@ export const buildTenantExport = (
       sha256: application.sha256,
       r2Key: application.r2Key,
       notes: application.notes,
+      removeOnUnassign: application.removeOnUnassign,
       installers: (installersByApplication.get(application.id) ?? []).map((installer) => ({
         platform: installer.platform,
         source: installer.source,
@@ -527,6 +528,9 @@ export const buildTenantExport = (
         minOsVersion: installer.minOsVersion,
         requiredCapability: installer.requiredCapability,
         priority: installer.priority,
+        provisioningExpiresAt: installer.provisioningExpiresAt
+          ? iso(installer.provisioningExpiresAt)
+          : null,
       })),
       groupKeys: applicationGroupKeys.get(application.id) ?? [],
       userGroupIds: applicationUserGroupIds.get(application.id) ?? [],

@@ -1,0 +1,1 @@
+ALTER TABLE `device_handover_archive` MODIFY COLUMN `created_by_email` varchar(320) NOT NULL;

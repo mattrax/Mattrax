@@ -42,7 +42,6 @@ import { AppleFdeEscrowKeyInfo } from "../Device.js";
 import { AppleUserActionRequest } from "../Device.js";
 import { AppleUserActionResponse } from "../Device.js";
 import { BindAppleUserIdentityRequest } from "../Device.js";
-import { ApplicationInstallResult } from "../Application.js";
 import { ApplicationStorefrontListResponse } from "../Application.js";
 import { ApplicationStorefrontRefreshResult } from "../Application.js";
 import { PatchApplicationStorefrontsRequest } from "../Application.js";
@@ -66,8 +65,6 @@ import { AutopilotProfileInfo } from "../Autopilot.js";
 import { AutopilotProfilesResponse } from "../Autopilot.js";
 import { AutopilotSettingsResponse } from "../Autopilot.js";
 import { AutopilotSyncResponse } from "../Autopilot.js";
-import { BackupRestoreRequest } from "../Backup.js";
-import { BackupRestoreResponse } from "../Backup.js";
 import { BackupRunInfo } from "../Backup.js";
 import { BillingCheckoutRequest } from "../Billing.js";
 import { BillingCheckoutResponse } from "../Billing.js";
@@ -83,9 +80,6 @@ import { CreateInvitationResponse } from "../Audit.js";
 import { CreatePolicyRequest } from "../Policy.js";
 import { CreateScimTokenResponse } from "../Scim.js";
 import { CredentialHealthResponse } from "../Device.js";
-import { DeleteTenantResponse } from "../Backup.js";
-import { DeviceActionRequest } from "../Device.js";
-import { DeviceActionResponse } from "../Device.js";
 import { DeviceActivationLockBypassCodeResponse } from "../Device.js";
 import { DeviceActivityResponse } from "../Device.js";
 import { DeviceApplicationsResponse } from "../Device.js";
@@ -122,10 +116,8 @@ import { EnterpriseStepUpRequired } from "../Errors.js";
 import { PatchTenantAndroidRequest } from "../Android.js";
 import { EnterpriseAppleReadErrors } from "../Errors.js";
 import { EnterpriseAppleWriteErrors } from "../Errors.js";
-import { EnterpriseApplicationDownloadErrors } from "../Policy.js";
 import { EnterpriseApplicationErrors } from "../Errors.js";
 import { EnterpriseConditionalWriteErrors } from "../Errors.js";
-import { EnterpriseApplicationUploadErrors } from "../Policy.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
 import { EnterpriseAutopilotReadErrors } from "../Errors.js";
 import { EnterpriseAutopilotWriteErrors } from "../Errors.js";
@@ -136,7 +128,6 @@ import { EnterpriseBillingReadErrors } from "../Errors.js";
 import { EnterpriseConflict } from "../Errors.js";
 import { EnterpriseDbErrors } from "../Errors.js";
 import { EnterpriseForbidden } from "../Errors.js";
-import { EnterpriseInternal } from "../Errors.js";
 import { EnterpriseNoDomainErrors } from "../Errors.js";
 import { EnterpriseNotFound } from "../Errors.js";
 import { EnterprisePolicyApplicationDownloadErrors } from "../Errors.js";
@@ -145,9 +136,6 @@ import { EnterprisePublicAdeProfileErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterprisePublicNotFoundErrors } from "../Errors.js";
 import { EnterpriseSsoErrors } from "../Errors.js";
-import { EnterpriseTenantBackupDownloadErrors } from "../Errors.js";
-import { EnterpriseTenantDeleteErrors } from "../Errors.js";
-import { EnterpriseTenantExportErrors } from "../Errors.js";
 import { EnterpriseTenantImportErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseTenantAccountRemoveErrors } from "../Errors.js";
@@ -197,7 +185,6 @@ import { TenantDashboardWidgetParam } from "./Params.js";
 import { TenantDetail } from "../Tenant.js";
 import { TenantDeviceUserParam } from "./Params.js";
 import { TenantEnrollmentInfo } from "../Enrollment.js";
-import { TenantExportQuery } from "../Backup.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantImportRequest } from "../Backup.js";
 import { TenantImportResponse } from "../Backup.js";
@@ -276,16 +263,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.get("exportTenant", "/v1/tenants/:tenantId/export", {
-      error: EnterpriseTenantExportErrors,
-      params: TenantParam,
-      query: TenantExportQuery,
-      success: Schema.String.pipe(
-        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
-      ),
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("importTenant", "/v1/tenants/import", {
       error: EnterpriseTenantImportErrors,
       payload: TenantImportRequest,
@@ -304,15 +281,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: TenantBackupsResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("downloadTenantBackup", "/v1/tenants/:tenantId/backups/:id/download", {
-      error: [...EnterpriseTenantBackupDownloadErrors, ...EnterpriseStepUpRequired],
-      params: TenantIdParam,
-      success: Schema.String.pipe(
-        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
-      ),
     }),
   )
   .add(
@@ -337,32 +305,11 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("restoreTenantBackup", "/v1/tenants/:tenantId/backups/:id/restore", {
-      error: [
-        ...EnterpriseBackupWriteErrors,
-        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
-        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
-        ...EnterpriseStepUpRequired,
-      ],
-      params: TenantIdParam,
-      payload: BackupRestoreRequest,
-      success: BackupRestoreResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: PatchTenantRequest,
       success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", {
-      error: [...EnterpriseTenantDeleteErrors, ...EnterpriseStepUpRequired],
-      params: TenantParam,
-      success: DeleteTenantResponse,
     }),
   )
   .add(
@@ -1412,20 +1359,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", {
-      // Android and Apple command issues are upstream calls and can require a
-      // step-up grant; declare those errors so they encode instead of 500ing.
-      error: [
-        ...EnterpriseAndroidErrors,
-        ...EnterpriseAppleWriteErrors,
-        ...EnterpriseStepUpRequired,
-      ],
-      params: TenantIdParam,
-      payload: DeviceActionRequest,
-      success: DeviceActionResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.get("listDeviceCommands", "/v1/tenants/:tenantId/devices/:id/commands", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
@@ -1613,14 +1546,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: BulkOperationResult,
-    }),
-  )
-  .add(
     HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", {
       error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
@@ -1742,68 +1667,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         params: TenantIdParam,
         payload: PatchApplicationAssignmentsRequest,
         success: OkResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("installApplication", "/v1/tenants/:tenantId/applications/:id/install", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      success: ApplicationInstallResult,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("uploadApplication", "/v1/tenants/:tenantId/applications/:id/upload", {
-      error: EnterpriseApplicationUploadErrors,
-      params: TenantIdParam,
-      payload: UploadPolicyApplicationRequest,
-      success: PolicyApplicationObject,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post(
-      "uploadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/upload",
-      {
-        error: EnterpriseApplicationUploadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-        }),
-        payload: UploadPolicyApplicationRequest,
-        success: PolicyApplicationObject,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplication",
-      "/v1/tenants/:tenantId/applications/:id/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
       },
     ),
   )

@@ -4,12 +4,16 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { InfiniteData } from "@tanstack/solid-query";
 import {
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  DeviceAppleState,
+  DeviceActionNameList,
+  DeviceLocalAccount,
   DeviceLockScreenDelivery,
   DeviceRow,
   EffectivePolicyResponse,
   normalizeDeviceCommandStatus,
 } from "@mattrax/enterprise-domain/client";
 import type {
+  DeviceActionName,
   AttributeDefinitionRow,
   DeviceActivityResponse,
 } from "@mattrax/enterprise-domain/client";
@@ -77,6 +81,10 @@ import {
 } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DeviceApplication } from "~/lib/enterprise";
+import {
+  DeviceHandoverDialog,
+  deviceHandoverSecretSummary,
+} from "~/components/mdm/device-handover-dialog";
 import {
   appleUserBindingLabel,
   appleUserDisplayName,
@@ -463,8 +471,12 @@ export default function DeviceDetailPage() {
   const writable = () => can("devices.write");
   const canCommand = () => can("devices.command");
   /** The server derives the legal action set from platform, status and reported capabilities. */
-  const supports = (action: string) => (row()?.actions ?? []).some((name) => name === action);
+  const supports = (action: DeviceActionName) =>
+    (
+      Option.getOrUndefined(Schema.decodeUnknownOption(DeviceActionNameList)(row()?.actions)) ?? []
+    ).includes(action);
   const canRevealKey = () => can("devices.recovery_key");
+  const canHandover = () => can("devices.handover");
 
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
@@ -473,6 +485,28 @@ export default function DeviceDetailPage() {
 
   const row = () => Option.getOrUndefined(decodeDeviceRow(device.data));
 
+  /**
+   * Presence-only secret check. It is a separate read so the device payload
+   * (and every list row) stays out of the escrow table.
+   */
+  const handoverImpact = useQuery(() => ({
+    queryKey: ["enterprise", "device-handover-impact", params.tenantId, params.deviceId] as const,
+    queryFn: () =>
+      enterprise.deviceHandoverImpact(params.tenantId, params.deviceId ? [params.deviceId] : []),
+    enabled: Boolean(params.tenantId && params.deviceId && writable()),
+  }));
+
+  // The list payload keeps these nested objects opaque so the shared device
+  // schema stays small; the detail page decodes them here.
+  const appleState = () =>
+    Option.getOrUndefined(Schema.decodeUnknownOption(DeviceAppleState)(row()?.apple));
+
+  const lostMode = () => appleState()?.lostMode ?? null;
+
+  const localAccounts = () =>
+    Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.Array(DeviceLocalAccount))(appleState()?.localAccounts),
+    ) ?? [];
   const scopeLabel = (scope: string) => {
     if (scope === "direct") return "Direct include";
 
@@ -626,6 +660,9 @@ export default function DeviceDetailPage() {
   const [applyName, setApplyName] = createSignal(false);
   const [lockScreenMessage, setLockScreenMessage] = createSignal("");
   const [lockScreenIncludeAssetTag, setLockScreenIncludeAssetTag] = createSignal(false);
+  const [lostModeMessage, setLostModeMessage] = createSignal("");
+  const [lostModePhone, setLostModePhone] = createSignal("");
+  const [lostModeFootnote, setLostModeFootnote] = createSignal("");
   const [editOpen, setEditOpen] = createSignal(false);
   const [tab, setTab] = createSignal<"overview" | "scope">("overview");
   const [selectedGroupId, setSelectedGroupId] = createSignal("");
@@ -633,6 +670,10 @@ export default function DeviceDetailPage() {
   const [confirmAction, setConfirmAction] = createSignal<"unenroll" | "delete" | "revoke" | null>(
     null,
   );
+  const [handoverOpen, setHandoverOpen] = createSignal(false);
+
+  /** Secret kinds the delete flow must warn about, from presence metadata. */
+  const escrowedSecretKinds = () => handoverImpact.data?.devices[0]?.secretKinds ?? [];
 
   const [confirmName, setConfirmName] = createSignal("");
 
@@ -666,6 +707,13 @@ export default function DeviceDetailPage() {
         setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
         setLockScreenMessage(device.effectiveLockScreenMessage ?? "");
         setLockScreenIncludeAssetTag(device.effectiveLockScreenIncludeAssetTag ?? false);
+        const mode = Option.getOrUndefined(
+          Schema.decodeUnknownOption(DeviceAppleState)(device.apple),
+        )?.lostMode;
+
+        setLostModeMessage(mode?.message ?? "");
+        setLostModePhone(mode?.phone ?? "");
+        setLostModeFootnote(mode?.footnote ?? "");
       }
     },
   );
@@ -690,6 +738,9 @@ export default function DeviceDetailPage() {
       }),
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["enterprise", "device-handover-impact", params.tenantId, params.deviceId],
       }),
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
@@ -1157,6 +1208,9 @@ export default function DeviceDetailPage() {
         | "refresh-applications"
         | "start-lost-mode"
         | "stop-lost-mode"
+        | "play-lost-mode-sound"
+        | "refresh-local-accounts"
+        | "rotate-local-admin-password"
         | "reset-password"
         | "clear-app-data"
         | "request-device-info"
@@ -1164,6 +1218,9 @@ export default function DeviceDetailPage() {
         | "schedule-os-update"
         | "set-device-name";
       deviceName?: string;
+      lostModeMessage?: string;
+      lostModePhone?: string;
+      lostModeFootnote?: string;
       manifestUrl?: string;
       osUpdateInstallAction?:
         | "Default"
@@ -1820,11 +1877,18 @@ export default function DeviceDetailPage() {
 
   const confirmDescription = () =>
     Match.value(confirmAction()).pipe(
-      Match.when("delete", () =>
-        row()?.proto === "android"
-          ? "The device is removed from the tenant and this device's Google Enterprise record is deleted, which removes Android Device Policy and the work data it manages. The record and its history are removed from Mattrax. This cannot be undone."
-          : "The device record and its history will be removed.",
-      ),
+      Match.when("delete", () => {
+        const base =
+          row()?.proto === "android"
+            ? "The device is removed from the tenant and this device's Google Enterprise record is deleted, which removes Android Device Policy and the work data it manages. The record and its history are removed from Mattrax. This cannot be undone."
+            : "The device record and its history will be permanently removed. This cannot be undone.";
+
+        if (escrowedSecretKinds().length === 0) return base;
+
+        return `${base} Deleting also permanently destroys the escrowed ${deviceHandoverSecretSummary(
+          escrowedSecretKinds(),
+        )}. Hand the device over first if you may need them.`;
+      }),
       Match.when(
         "revoke",
         () =>
@@ -1846,6 +1910,13 @@ export default function DeviceDetailPage() {
 
   const confirmPending = () => unenroll.isPending || remove.isPending || revokeIdentity.isPending;
 
+  /** A device with escrowed secrets cannot be deleted without the export right. */
+  const deleteBlocked = () =>
+    confirmAction() === "delete" && escrowedSecretKinds().length > 0 && !canHandover();
+
+  /** Never offer delete before the presence check has answered. */
+  const deleteCheckBlocked = () =>
+    confirmAction() === "delete" && (handoverImpact.isPending || handoverImpact.isError);
   /**
    * Each mutation's `onSuccess` closes the dialog. Failures leave it open and
    * the dialog's `ErrorText` renders the mutation error.
@@ -1854,6 +1925,8 @@ export default function DeviceDetailPage() {
     const action = confirmAction();
 
     if (!action) return;
+
+    if (deleteBlocked()) return;
 
     if (action === "delete") remove.mutate();
     else if (action === "revoke") revokeIdentity.mutate();
@@ -1962,6 +2035,16 @@ export default function DeviceDetailPage() {
                     onClick={() => setEditOpen(true)}
                   >
                     <SettingsIcon class="size-3.5" />
+                  </Button>
+                </Show>
+                <Show when={canHandover()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHandoverOpen(true)}
+                    title="Export escrowed secrets in a sealed archive before the device leaves management"
+                  >
+                    Hand over
                   </Button>
                 </Show>
                 <Show when={canCommand() && supports("sync")}>
@@ -2086,8 +2169,10 @@ export default function DeviceDetailPage() {
                   <DeviceAttributesPanel
                     tenantId={params.tenantId ?? ""}
                     deviceId={row()?.id ?? ""}
+                    proto={row()?.proto ?? "apple"}
                     values={row()?.attributes}
                     writable={writable()}
+                    collectAllowed={can("scripts.write")}
                   />
                   <DetailCard
                     title="Security & inventory"
@@ -3357,6 +3442,233 @@ export default function DeviceDetailPage() {
                   </DetailCard>
                   <Show
                     when={
+                      row()!.proto === "apple" &&
+                      (supports("start-lost-mode") ||
+                        supports("stop-lost-mode") ||
+                        supports("play-lost-mode-sound"))
+                    }
+                  >
+                    <DetailCard
+                      title="Lost Mode"
+                      description="Locks a lost iPhone or iPad and shows a return message. Apple reports its location while Lost Mode is active."
+                    >
+                      <div class="space-y-3">
+                        <Show when={lostMode()?.enabled}>
+                          <div class="rounded-lg bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning">
+                            This device is in Lost Mode
+                            {lostMode()?.acknowledgedAt
+                              ? ` since ${formatDeviceDate(lostMode()!.acknowledgedAt!)}`
+                              : ""}
+                            .
+                          </div>
+                          <Show
+                            when={lostMode()?.location}
+                            fallback={
+                              <p class="text-[12px] text-muted-foreground">
+                                No location has been reported yet. Apple sends it from a separate
+                                location request after Lost Mode is acknowledged.
+                              </p>
+                            }
+                          >
+                            {(location) => (
+                              <div class="space-y-1 rounded-lg bg-surface px-3 py-2 text-[12.5px]">
+                                <p class="font-[540] text-foreground">
+                                  {location().latitude.toFixed(5)},{" "}
+                                  {location().longitude.toFixed(5)}
+                                </p>
+                                <p class="text-muted-foreground">
+                                  {location().horizontalAccuracy
+                                    ? `±${location().horizontalAccuracy} m`
+                                    : "Accuracy not reported"}
+                                  {location().reportedAt
+                                    ? ` · reported ${formatDeviceDate(location().reportedAt!)}`
+                                    : ""}
+                                </p>
+                                <a
+                                  class="text-[12px] text-primary underline underline-offset-2"
+                                  href={`https://maps.apple.com/?ll=${location().latitude},${location().longitude}&q=${location().latitude},${location().longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Open in Maps
+                                </a>
+                              </div>
+                            )}
+                          </Show>
+                        </Show>
+                        <Field label="Message">
+                          <Textarea
+                            value={lostModeMessage()}
+                            placeholder="This device is lost. Please call the IT desk."
+                            onInput={(event) => setLostModeMessage(event.currentTarget.value)}
+                          />
+                        </Field>
+                        <div class="grid grid-cols-2 gap-2">
+                          <Field label="Phone number">
+                            <Input
+                              value={lostModePhone()}
+                              placeholder="+61 400 000 000"
+                              onInput={(event) => setLostModePhone(event.currentTarget.value)}
+                            />
+                          </Field>
+                          <Field label="Footnote">
+                            <Input
+                              value={lostModeFootnote()}
+                              placeholder="Asset AST-1042"
+                              onInput={(event) => setLostModeFootnote(event.currentTarget.value)}
+                            />
+                          </Field>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                          <Show when={supports("start-lost-mode")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={command.isPending}
+                              onClick={() =>
+                                command.mutate({
+                                  action: "start-lost-mode",
+                                  lostModeMessage: lostModeMessage().trim() || undefined,
+                                  lostModePhone: lostModePhone().trim() || undefined,
+                                  lostModeFootnote: lostModeFootnote().trim() || undefined,
+                                })
+                              }
+                            >
+                              {lostMode()?.enabled ? "Update message" : "Start lost mode"}
+                            </Button>
+                          </Show>
+                          <Show when={lostMode()?.enabled && supports("play-lost-mode-sound")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "play-lost-mode-sound" })}
+                            >
+                              Play sound
+                            </Button>
+                          </Show>
+                          <Show when={lostMode()?.enabled && supports("stop-lost-mode")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "stop-lost-mode" })}
+                            >
+                              End lost mode
+                            </Button>
+                          </Show>
+                        </div>
+                        <ErrorText error={command.error} />
+                      </div>
+                    </DetailCard>
+                  </Show>
+                  <Show
+                    when={
+                      row()!.proto === "apple" &&
+                      (supports("refresh-local-accounts") || localAccounts().length > 0)
+                    }
+                  >
+                    <DetailCard
+                      title="Local accounts"
+                      description="Accounts macOS reports in /Users. Metadata only; Apple never returns passwords, home directories or keychain data."
+                    >
+                      <div class="space-y-3">
+                        <div class="flex items-center justify-between gap-2">
+                          <p class="text-[11.5px] text-muted-foreground">
+                            {appleState()?.localAccountsUpdatedAt
+                              ? `Last refreshed ${formatDeviceDate(appleState()!.localAccountsUpdatedAt!)}`
+                              : "Never refreshed"}
+                          </p>
+                          <Show when={supports("refresh-local-accounts")}>
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "refresh-local-accounts" })}
+                            >
+                              <RefreshCw class="mr-1 size-3" /> Refresh
+                            </Button>
+                          </Show>
+                          <Show when={supports("rotate-local-admin-password")}>
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Rotate the managed local administrator password? The existing password stops working once the Mac applies the new one. You can reveal the new password after the command succeeds.",
+                                  )
+                                )
+                                  command.mutate({ action: "rotate-local-admin-password" });
+                              }}
+                            >
+                              Rotate password
+                            </Button>
+                          </Show>
+                        </div>
+                        <Show
+                          when={localAccounts().length > 0}
+                          fallback={
+                            <p class="text-[12px] text-muted-foreground">
+                              No local accounts reported yet.
+                            </p>
+                          }
+                        >
+                          <div class="divide-y divide-border rounded-lg border border-border">
+                            <For each={localAccounts()}>
+                              {(account) => (
+                                <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
+                                  <div>
+                                    <p class="font-[540] text-foreground">
+                                      {account.username}
+                                      <Show when={account.isManaged}>
+                                        <Badge variant="secondary" class="ml-2">
+                                          Managed
+                                        </Badge>
+                                      </Show>
+                                      <Show when={account.isAdmin === true}>
+                                        <Badge variant="outline" class="ml-2">
+                                          Admin
+                                        </Badge>
+                                      </Show>
+                                    </p>
+                                    <p class="text-[11.5px] text-muted-foreground">
+                                      {account.fullName ?? "No full name"}
+                                      {account.uid !== null && account.uid !== undefined
+                                        ? ` · UID ${account.uid}`
+                                        : ""}
+                                      {account.guid ? ` · ${account.guid}` : ""}
+                                    </p>
+                                  </div>
+                                  <div class="text-right text-[11.5px] text-muted-foreground">
+                                    <p>
+                                      {account.hasSecureToken === true
+                                        ? "SecureToken"
+                                        : account.hasSecureToken === false
+                                          ? "No SecureToken"
+                                          : "SecureToken unknown"}
+                                    </p>
+                                    <p>
+                                      {account.isLoggedIn === true
+                                        ? "Logged in"
+                                        : account.isLoggedIn === false
+                                          ? "Logged out"
+                                          : "Login state unknown"}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                        <ErrorText error={command.error} />
+                      </div>
+                    </DetailCard>
+                  </Show>
+                  <Show
+                    when={
                       (row()!.proto === "apple" ||
                         row()!.proto === "win" ||
                         row()!.proto === "android") &&
@@ -3984,6 +4296,53 @@ export default function DeviceDetailPage() {
             <DialogTitle>{confirmLabel()}?</DialogTitle>
             <DialogDescription>{confirmDescription()}</DialogDescription>
           </DialogHeader>
+          <Show when={confirmAction() === "delete" && escrowedSecretKinds().length > 0}>
+            <div class="rounded-lg border border-warning/40 bg-warning/[0.07] p-3">
+              <p class="text-[12.5px] font-medium text-foreground">
+                This device holds escrowed secrets
+              </p>
+              <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                Deleting destroys the {deviceHandoverSecretSummary(escrowedSecretKinds())}{" "}
+                permanently. After the delete there is no recovery path: the handover archive is the
+                only supported way to keep this material.
+              </p>
+              <Show
+                when={canHandover()}
+                fallback={
+                  <p class="mt-2 text-[12px] leading-relaxed text-destructive">
+                    Your role cannot export escrowed secrets, so this delete is blocked. Ask a
+                    tenant owner to grant the <span class="font-mono">devices.handover</span>{" "}
+                    permission or perform the handover.
+                  </p>
+                }
+              >
+                <Button
+                  size="sm"
+                  class="mt-2"
+                  onClick={() => {
+                    closeConfirm();
+                    setHandoverOpen(true);
+                  }}
+                >
+                  Hand over device first
+                </Button>
+              </Show>
+            </div>
+          </Show>
+          <Show when={confirmAction() === "unenroll" && escrowedSecretKinds().length > 0}>
+            <p class="rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed text-muted-foreground">
+              Unenrolling keeps the escrowed {deviceHandoverSecretSummary(escrowedSecretKinds())} in
+              Mattrax. If you are returning the hardware, use{" "}
+              <span class="font-medium text-foreground">Hand over</span> first so the secrets leave
+              with it.
+            </p>
+          </Show>
+          <Show when={confirmAction() === "delete" && handoverImpact.isPending}>
+            <p class="text-[12px] text-muted-foreground">Checking for escrowed secrets…</p>
+          </Show>
+          <Show when={confirmAction() === "delete" && handoverImpact.error}>
+            <ErrorText error={handoverImpact.error} />
+          </Show>
           <p class="text-sm text-muted-foreground">
             Type <span class="font-mono font-medium">{row()?.name}</span> to confirm.
           </p>
@@ -3995,7 +4354,12 @@ export default function DeviceDetailPage() {
             </Button>
             <Button
               variant="destructive"
-              disabled={confirmName() !== row()?.name || confirmPending()}
+              disabled={
+                confirmName() !== row()?.name ||
+                confirmPending() ||
+                deleteBlocked() ||
+                deleteCheckBlocked()
+              }
               onClick={confirmDestructive}
             >
               {confirmPending() ? "Working…" : confirmLabel()}
@@ -4003,6 +4367,14 @@ export default function DeviceDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeviceHandoverDialog
+        open={handoverOpen()}
+        onOpenChange={setHandoverOpen}
+        ids={params.deviceId ? [params.deviceId] : []}
+        target={row()?.name ?? "this device"}
+        onExported={() => void invalidate()}
+      />
 
       <Dialog
         open={recoveryDialogOpen()}
@@ -4240,14 +4612,35 @@ const attributeOptionLabel = (type: string, option: string) => {
 function DeviceAttributesPanel(props: {
   tenantId: string;
   deviceId: string;
+  proto: string;
   values: Record<string, string | null> | undefined;
   writable: boolean;
+  /** "Collect now" queues a script run, so it needs scripts.write. */
+  collectAllowed: boolean;
 }) {
   const queryClient = useQueryClient();
 
   const definitions = useQuery(() => ({
     queryKey: enterpriseKeys.attributes(props.tenantId),
     queryFn: () => enterprise.listAttributes(props.tenantId),
+  }));
+
+  // Collection state is a separate read so the device payload stays the same
+  // shape; the panel is the only place that needs it.
+  const collection = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceAttributeCollection(props.tenantId, props.deviceId),
+    queryFn: () => enterprise.listDeviceAttributeCollection(props.tenantId, props.deviceId),
+  }));
+
+  const collect = useMutation(() => ({
+    mutationFn: (attributeId: string) =>
+      enterprise.collectDeviceAttribute(props.tenantId, props.deviceId, attributeId),
+    onSuccess: () => {
+      toast.success("Collection requested", {
+        description: "The value updates when the device reports the run.",
+      });
+    },
+    onError: (cause) => setError(cause),
   }));
 
   const [draft, setDraft] = createSignal<Record<string, string>>({});
@@ -4298,6 +4691,9 @@ function DeviceAttributesPanel(props: {
       const values: Record<string, string | null> = {};
 
       for (const definition of visible()) {
+        // A script owns its value; sending it would be rejected by the API.
+        if (definition.source === "script") continue;
+
         const next = current[definition.key] ?? "";
         const previous = original[definition.key] ?? "";
 
@@ -4367,6 +4763,8 @@ function DeviceAttributesPanel(props: {
             {(definition: AttributeDefinitionRow) => {
               const value = () => draft()[definition.key] ?? "";
 
+              const collectionState = () => collection.data?.collection[definition.key];
+
               const isCleared = () => Boolean(cleared()[definition.key]);
 
               const setValue = (next: string) => {
@@ -4382,60 +4780,118 @@ function DeviceAttributesPanel(props: {
                     <Show when={definition.required}>
                       <p class="text-[10.5px] text-warning">Required</p>
                     </Show>
+                    <Show when={definition.source !== "manual"}>
+                      <p class="text-[10.5px] text-muted-foreground">
+                        {definition.source === "script"
+                          ? "Script-sourced · read-only"
+                          : "Directory (no connector yet)"}
+                      </p>
+                    </Show>
                   </div>
-                  <div class="flex items-start gap-2">
+                  <div class="flex flex-wrap items-start gap-2">
                     <Show
-                      when={definition.type === "select" || definition.type === "boolean"}
+                      when={definition.source !== "script"}
                       fallback={
-                        <Input
+                        <>
+                          <div class="min-w-0 flex-1 space-y-0.5">
+                            <p class="text-[12px] text-foreground">
+                              {value() || (
+                                <span class="text-muted-foreground">No value collected yet</span>
+                              )}
+                            </p>
+                            <p class="text-[10.5px] text-muted-foreground">
+                              From script
+                              {definition.scriptName ? ` · ${definition.scriptName}` : ""}
+                              {collectionState()?.lastCollectedAt
+                                ? ` · last collected ${formatDate(collectionState()!.lastCollectedAt)}`
+                                : " · not collected yet"}
+                            </p>
+                            <Show when={collectionState()?.lastError}>
+                              <p class="text-[10.5px] text-destructive">
+                                {collectionState()!.lastError}
+                              </p>
+                            </Show>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            class="shrink-0"
+                            disabled={
+                              !props.writable ||
+                              !props.collectAllowed ||
+                              props.proto !== "apple" ||
+                              collect.isPending
+                            }
+                            title={
+                              props.proto !== "apple"
+                                ? "Script attribute collection is not supported on this platform yet."
+                                : !props.collectAllowed
+                                  ? "Your role does not include the scripts.write permission."
+                                  : undefined
+                            }
+                            onClick={() => {
+                              setError(undefined);
+                              collect.mutate(definition.id);
+                            }}
+                          >
+                            {props.proto === "apple" ? "Collect now" : "Unsupported"}
+                          </Button>
+                        </>
+                      }
+                    >
+                      <Show
+                        when={definition.type === "select" || definition.type === "boolean"}
+                        fallback={
+                          <Input
+                            class="h-7 text-[12px]"
+                            type={attributeInputType(definition.type)}
+                            aria-label={definition.label}
+                            disabled={!props.writable}
+                            value={value()}
+                            onInput={(event) => setValue(event.currentTarget.value)}
+                          />
+                        }
+                      >
+                        <NativeSelect
                           class="h-7 text-[12px]"
-                          type={attributeInputType(definition.type)}
                           aria-label={definition.label}
                           disabled={!props.writable}
                           value={value()}
-                          onInput={(event) => setValue(event.currentTarget.value)}
-                        />
-                      }
-                    >
-                      <NativeSelect
-                        class="h-7 text-[12px]"
-                        aria-label={definition.label}
-                        disabled={!props.writable}
-                        value={value()}
-                        onChange={(event) => setValue(event.currentTarget.value)}
-                      >
-                        <option value="">No value</option>
-                        <For
-                          each={
-                            definition.type === "boolean"
-                              ? ["true", "false"]
-                              : (definition.options ?? [])
-                          }
+                          onChange={(event) => setValue(event.currentTarget.value)}
                         >
-                          {(option) => (
-                            <option value={option}>
-                              {attributeOptionLabel(definition.type, option)}
-                            </option>
-                          )}
-                        </For>
-                      </NativeSelect>
-                    </Show>
-                    <Show when={props.writable && value() !== ""}>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        class="shrink-0 text-muted-foreground"
-                        onClick={() => {
-                          setDraft({ ...draft(), [definition.key]: "" });
-                          setCleared({ ...cleared(), [definition.key]: true });
-                        }}
-                        aria-label={`Clear ${definition.label}`}
-                      >
-                        Clear
-                      </Button>
-                    </Show>
-                    <Show when={isCleared()}>
-                      <span class="pt-1.5 text-[10.5px] text-warning">Cleared</span>
+                          <option value="">No value</option>
+                          <For
+                            each={
+                              definition.type === "boolean"
+                                ? ["true", "false"]
+                                : (definition.options ?? [])
+                            }
+                          >
+                            {(option) => (
+                              <option value={option}>
+                                {attributeOptionLabel(definition.type, option)}
+                              </option>
+                            )}
+                          </For>
+                        </NativeSelect>
+                      </Show>
+                      <Show when={props.writable && value() !== ""}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          class="shrink-0 text-muted-foreground"
+                          onClick={() => {
+                            setDraft({ ...draft(), [definition.key]: "" });
+                            setCleared({ ...cleared(), [definition.key]: true });
+                          }}
+                          aria-label={`Clear ${definition.label}`}
+                        >
+                          Clear
+                        </Button>
+                      </Show>
+                      <Show when={isCleared()}>
+                        <span class="pt-1.5 text-[10.5px] text-warning">Cleared</span>
+                      </Show>
                     </Show>
                   </div>
                 </div>
@@ -4447,6 +4903,7 @@ function DeviceAttributesPanel(props: {
       <div class="px-4 pb-3">
         <ErrorText error={error()} />
         <ErrorText error={definitions.error} />
+        <ErrorText error={collection.error} />
       </div>
     </DetailCard>
   );

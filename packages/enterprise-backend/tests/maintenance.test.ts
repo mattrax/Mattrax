@@ -1161,3 +1161,194 @@ describe("maintenance Apps and Books client", () => {
     }
   });
 });
+
+describe("maintenance approval retention", () => {
+  it("deletes terminal approval requests older than 90 days and keeps pending ones", async () => {
+    const db = makeDb();
+
+    const approval = (id: string, status: string, ageDays: number) => ({
+      id,
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status,
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: "account-1",
+      requestedByEmail: "owner@example.com",
+      requestedByCredential: "session",
+      payloadHash: "hash-" + id,
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: status === "approved" ? new Date(now.getTime() - ageDays * DAY) : null,
+      expiresAt: new Date(now.getTime() - ageDays * DAY + DAY),
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+      updatedAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.approval_request.push(
+      approval("old-approved", "approved", 91),
+      approval("old-rejected", "rejected", 120),
+      approval("fresh-approved", "approved", 10),
+      approval("old-pending", "pending", 120),
+    );
+
+    const result = await run(db);
+
+    expect(result.purgedApprovalRequests).toBe(2);
+    expect(db.store.approval_request.map((row: { id: string }) => row.id).sort()).toEqual([
+      "fresh-approved",
+      "old-pending",
+    ]);
+  });
+
+  it("can be disabled with a retention of 0", async () => {
+    const db = makeDb();
+
+    db.store.approval_request.push({
+      id: "old",
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status: "rejected",
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: null,
+      requestedByEmail: null,
+      requestedByCredential: "session",
+      payloadHash: "hash",
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: null,
+      expiresAt: new Date(0),
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        approvalRetentionDays: 0,
+        credentialAlerts: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedApprovalRequests).toBe(0);
+    expect(db.store.approval_request).toHaveLength(1);
+  });
+});
+
+describe("maintenance handover archive retention", () => {
+  const archive = (id: string, ageDays: number) => ({
+    id,
+    organizationId: "org-1",
+    createdByAccountId: "user-1",
+    createdByEmail: "owner@example.com",
+    reason: "Lease returned",
+    deviceCount: 1,
+    devices: [],
+    secretKinds: [],
+    r2Key: `handovers/org-1/${id}.json`,
+    sizeBytes: 10,
+    sha256: "a".repeat(64),
+    envelopeVersion: 1,
+    createdAt: new Date(now.getTime() - ageDays * DAY),
+    expiresAt: new Date(now.getTime() - ageDays * DAY + 15 * 60 * 1000),
+    downloadedAt: null,
+  });
+
+  it("prunes expired rows without storage and keeps live ones", async () => {
+    const db = makeDb();
+
+    db.store.device_handover_archive.push(
+      archive("expired", 2),
+      { ...archive("downloaded", 0), downloadedAt: now },
+      archive("live", 0),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(2);
+    expect(db.store.device_handover_archive.map((row: any) => row.id)).toEqual(["live"]);
+  });
+
+  it("deletes the sealed object before the row when storage is available", async () => {
+    const db = makeDb();
+    const objects = new Set(["handovers/org-1/expired.json"]);
+    const deleted: string[] = [];
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async (keys: string | ReadonlyArray<string>) => {
+        for (const key of Array.isArray(keys) ? keys : [keys]) {
+          deleted.push(key);
+          objects.delete(key);
+        }
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(1);
+    expect(deleted).toEqual(["handovers/org-1/expired.json"]);
+    expect(objects.size).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(0);
+  });
+
+  it("keeps the row when the object delete fails so a retry can finish", async () => {
+    const db = makeDb();
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async () => {
+        throw new Error("R2 outage");
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(1);
+  });
+});

@@ -81,6 +81,8 @@ Query parameters:
 | `staleDays`          | Integer                                                                 |
 | `health`             | `healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`       |
 | `push`               | `failing`, `invalid`                                                    |
+| `lostMode`           | `active`, `inactive` (Apple Lost Mode)                                  |
+| `localAccount`       | `without-secure-token`, `not-seen-30-days`                              |
 | `setup`              | `awaiting` (ADE held in Setup Assistant), `complete`                    |
 | `limit` / `offset`   | Pagination                                                              |
 | `sort` / `direction` | `name`, `health`, `lastSeenAt`, `enrolledAt`, `status` and `asc`/`desc` |
@@ -209,7 +211,7 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/export?status=enrolled" \
 
 CSV columns: name, serial, model, platform, status, OS version, OS build, last seen,
 enrolled at, asset tag, model number, FileVault, battery health, capabilities, inventory
-updated and groups. Visible custom attributes follow as `attribute:<key>` columns. Export
+updated, groups and local accounts. Visible custom attributes follow as `attribute:<key>` columns. Export
 is capped at 10,000 rows; a truncated response sets `X-Export-Truncated`.
 
 ## Custom attributes
@@ -219,6 +221,51 @@ else they track — instead of putting them in notes. A definition has a stable 
 a type (`text`, `number`, `boolean`, `date` or `select`), optional select options, a
 required flag and a visibility (`visible` attributes get table columns and CSV columns;
 `hidden` ones are API-only).
+
+### Sources
+
+Every attribute has a source:
+
+- **Manual** (the default) — the dashboard, CSV import and enrollment questions write the
+  value.
+- **Script** — the value is written only by the bound script's reported output. Manual
+  writes (dashboard, API, CSV import and enrollment questions) are rejected, so a refresh
+  cannot be confused with an administrator's edit.
+- **Directory** — reserved for a directory connector. No connector collects it yet, so the
+  attribute still accepts manual values; the dashboard labels it "not implemented".
+
+### Collecting values from a script
+
+A script-sourced attribute is bound to one script in the attribute editor. The script prints
+either:
+
+- **one JSON object**, keyed by the attribute key (or the binding's **Output key**):
+  `{"antivirus":"CrowdStrike","agent_version":"7.12"}`; or
+- **one value per line**, in the order the bound attributes are listed in
+  **Settings → Attributes**.
+
+Every value is validated against the attribute's type, options and length (the same rules
+manual values use) before it is written. A missing key or line, an empty value, a value of
+the wrong type, or a failed run records an error for that device and attribute and leaves
+the previous value in place. Only attributes declared in this tenant and bound to that exact
+script are written; an unexpected key in the JSON is ignored.
+
+Collection uses the script's existing trigger — interval, cron, login, logout,
+network change, install or a manual run — so there is no second scheduler. **Collect now**
+on the device page queues one manual run of the bound script for that device through the
+normal run path, including its expiry, output cap and redaction. The script must be assigned
+to the device or one of its groups; an unassigned script cannot be delivered.
+
+The device page shows each script-sourced value with its source, the last successful
+collection and the most recent error. Script values appear everywhere a manual value does:
+table columns, free-text search, the attribute filter, `attribute:<key>` CSV export,
+`${attribute.<key>}` policy variables and the audit log (every change is recorded with
+`source: script`, the script id and the run id).
+
+Collection is available on Apple devices through `mattraxd`. Windows and Android are not
+supported: Android has no script command, and the Windows agent does not implement the
+script channel yet. **Collect now** reports that instead of queueing a run nothing would
+collect.
 
 Manage the registry from **Settings → Attributes**. Keys are lowercase identifiers
 (`[a-z][a-z0-9_]*`, maximum 64 characters) because they become CSV headers and policy
@@ -264,6 +311,9 @@ Empty cells clear the value, unknown columns and duplicate serials are reported,
 response lists a status per row. An export from the Devices page can be edited and
 re-imported unchanged. Imports are capped at 1,000 rows and do not create devices: a
 serial that is not in the tenant fails that row.
+
+Script-sourced attributes are exported for visibility but ignored on import, so editing and
+re-importing an export never writes or clears a value the script owns.
 
 The device list's search box matches attribute values as well as the built-in columns.
 The toolbar also filters on one registered attribute (select attributes filter on their
@@ -318,6 +368,7 @@ The detail page and API expose:
   escrow age and whether the last security report is stale.
 - The managed local administrator created during macOS ADE setup; the password is
   sealed at rest and revealed through a step-up read.
+- Lost Mode state and the last reported location, plus macOS local accounts.
 - ADE setup state (`Awaiting setup` or released) with the setup release timestamp.
 - Activation Lock bypass-code presence and `IsActivationLockManageable`.
 - Passcode and software-update state, lockdown mode, managed-certificate count and
@@ -418,6 +469,64 @@ installs Apple's `com.apple.shareddeviceconfiguration` profile.
 - Apple has no dedicated "clear lock screen message" command. Mattrax removes
   the profile instead, which clears the message on the next check-in.
 
+### Lost Mode
+
+The **Lost Mode** card locks a lost iPhone or iPad and shows a return message.
+It is offered only on supervised iPhone and iPadOS; macOS, tvOS, visionOS,
+watchOS and Apple User Enrollment (BYOD) are refused with a specific reason.
+Apple requires a message or phone number, and the footnote is optional.
+
+- **Start lost mode** (or **Update message** while active) queues
+  `EnableLostMode`; **End lost mode** queues `DisableLostMode`; **Play sound**
+  queues `PlayLostModeSound` and is only offered while Lost Mode is active.
+- After Lost Mode is acknowledged Mattrax queues Apple's `DeviceLocation`.
+  The card shows the latitude/longitude, accuracy and sample time with an
+  **Open in Maps** link. Location is hidden and discarded when Lost Mode ends.
+  Location is personal data and is returned to anyone who can read the device
+  (no extra step-up); limit `devices.read` accordingly. While the device stays
+  lost it is refreshed at most once an hour.
+- The device list has a **Lost Mode** filter (`lostMode=active`) and a lost
+  device carries a `lost_mode` health reason, so it never looks healthy.
+
+### Local accounts
+
+macOS reports local accounts through Apple's `UserList`. The device page shows
+them in a **Local accounts** card — short name, full name, UID, GUID, admin
+marker, SecureToken state and login state — with a **Refresh** button that
+queues a new inventory. Mattrax also queues `UserList` at macOS enrolment and
+daily for stale inventories.
+
+Metadata only: Apple never returns passwords, home directories or keychain
+data. Apple does **not** report administrator status or last-login time, so only
+the managed `mattrax-admin` account is marked as an admin; everything else is
+`unknown` rather than guessed. Because of that there is no "unexpected admin"
+filter or health rule: production data could never produce one. Fleet filters
+`localAccount=without-secure-token` and `localAccount=not-seen-30-days` are
+available. The latter matches Macs whose local-account inventory has not been
+refreshed in 30 days (Apple does not report a per-account login time); a Mac
+that has never reported is included.
+
+`UserList` requires supervision on macOS and is forbidden for Apple User
+Enrollment. A Mac whose supervision state is wrong reports a command failure;
+Mattrax shows that failure in command history rather than pretending it
+inventoried the Mac.
+
+The local-account health reason (a managed administrator without a SecureToken)
+is on by default; a tenant can opt out with `localAccountHealthEnabled: false`.
+
+### Managed local administrator password
+
+**Rotate password** on the Local accounts card replaces the password of the
+account Mattrax created during ADE setup. It requires a Mac, the GUID Apple
+reported for that account, and an escrowed password; an older enrolment without
+a GUID is refused. The new password becomes revealable only after the Mac
+acknowledges `SetAutoAdminPassword`. The action needs a step-up grant and is
+audited without the password.
+
+Tenants can opt in to scheduled rotation (30, 60 or 90 days). Daily maintenance
+queues at most 25 rotations per tenant per run and skips devices with one
+already in flight.
+
 ### Inventory clocks
 
 `inventoryUpdatedAt` records the last hardware/OS report and `applicationsUpdatedAt` the
@@ -508,8 +617,11 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes          |
 | `set-lock-screen-message`      | Yes (supervised iPhone/iPad)  | No            | No          | No           |
 | `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes          |
-| `start-lost-mode`              | No                            | No            | Yes         | Yes          |
-| `stop-lost-mode`               | No                            | No            | Yes         | Yes          |
+| `start-lost-mode`              | Yes (supervised iPhone/iPad)  | No            | Yes         | Yes          |
+| `stop-lost-mode`               | Yes (supervised iPhone/iPad)  | No            | Yes         | Yes          |
+| `play-lost-mode-sound`         | Yes (while in Lost Mode)      | No            | No          | Yes          |
+| `refresh-local-accounts`       | Yes (macOS)                   | No            | No          | No           |
+| `rotate-local-admin-password`  | Yes (macOS ADE admin)         | No            | No          | Yes          |
 | `reset-password`               | No                            | No            | Yes         | Yes          |
 | `clear-app-data`               | No                            | No            | Yes         | Yes          |
 | `request-device-info`          | No                            | No            | Yes         | Yes          |
@@ -676,7 +788,11 @@ commands and moves the row straight to `unenrolled`; it requires a recent step-u
 because it erases work data.
 
 **Delete** removes the local device row and revokes certificates. It does not wipe or
-unenroll the physical device.
+unenroll the physical device. It also permanently destroys every escrowed secret recorded
+for the device: the FileVault recovery key, Activation Lock bypass code, Recovery Lock
+password, managed local administrator password and bootstrap token are rows in the
+`device_secret` table with a cascading foreign key. There is no grace period, recycle bin
+or undo. If the hardware is leaving your organisation, hand it over first.
 
 ```bash
 curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices" \
@@ -686,6 +802,143 @@ curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices" \
 ```
 
 Bulk delete accepts a JSON body and returns per-device results.
+
+### Hand over a device
+
+Hand over a device before deleting it whenever its escrowed secrets may still be needed
+after the lease ends or the hardware is replaced. One request exports one device or a
+batch of up to 500 and writes a single sealed archive to object storage:
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/handover" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "x-mattrax-step-up: $STEP_UP_GRANT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ids": ["device_id"],
+    "passphrase": "a long passphrase only you know",
+    "reason": "Lease returned to IT"
+  }'
+```
+
+The response contains `id`, `filename`, `expiresAt`, `deviceCount`, `secretKinds`
+and a single-use `downloadToken`:
+
+```bash
+curl -o handover.json \
+  "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/handover/$ARCHIVE_ID/download?token=$DOWNLOAD_TOKEN" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+```
+
+The download works once and the signed link expires after 15 minutes. The first
+successful read marks the archive downloaded; daily maintenance then removes the object
+and row. It also removes objects and rows whose `expiresAt` passed without a download.
+A deployment that runs maintenance without object storage must configure an R2 lifecycle
+rule on the `handovers/` prefix instead. The archive is a JSON envelope sealed with the
+passphrase:
+PBKDF2-HMAC-SHA256 with a random salt and 600,000 iterations derives an AES-256-GCM key,
+and the envelope is versioned (`version: 1`) so the format can change later. The
+passphrase, and every secret value, are never written to MySQL, the audit log, device
+lists, CSV exports, webhooks or tenant exports.
+
+Once decrypted, the archive contains the tenant name and creation time, and for each
+device its internal id, name, serial, asset tag, notes and only the secret kinds that
+device actually had:
+
+```json
+{
+  "format": "mattrax.device-handover",
+  "version": 1,
+  "createdAt": "2026-11-23T09:00:00.000Z",
+  "tenant": { "id": "tenant_id", "name": "Acme" },
+  "devices": [
+    {
+      "id": "device_id",
+      "name": "Reception Mac",
+      "serial": "C02XXXXXXX",
+      "assetTag": "AST-1042",
+      "notes": "Front desk",
+      "secretKinds": ["filevault_recovery_key", "local_admin_password"],
+      "secrets": {
+        "filevault_recovery_key": "AAAA-BBBB-CCCC-DDDD",
+        "local_admin_password": "generated-password"
+      }
+    }
+  ],
+  "secretKinds": ["filevault_recovery_key", "local_admin_password"]
+}
+```
+
+The export needs the `devices.handover` permission, the `device-handover` step-up
+action and a reason of at least five characters. Both the export and the download are
+audited per device as `device.handover_exported` and `device.handover_downloaded`,
+with the archive id and secret kinds but never a value. Both events appear on each
+device's timeline.
+
+The reason is trimmed and truncated to 500 characters before it reaches the audit log.
+The download is an authenticated GET whose signed token travels in the query string, so
+reverse proxies, browser history and request logs can record the URL. The token is
+single-use and expires after 15 minutes, and the endpoint still requires the caller's
+session and `devices.handover` permission; do not paste the URL into tickets or chat.
+Filenames include a short archive id so two handovers on the same day do not collide.
+
+Deleting a device that still holds escrowed secrets is refused with a clear explanation
+when the caller lacks `devices.handover`; the dashboard disables the delete button and
+offers the handover export instead. For hardware disposal the handover archive is the
+supported path, so keep both the file and the passphrase. Mattrax cannot reopen it for
+you. A **cutover export** is a different operation: it is gated by `tenant.export` plus
+the cutover step-up and embeds every `device_secret` (and the SCEP CA) in its own
+passphrase-sealed archive for migration to another deployment. Handover does not replace
+or change cutover, and cutover is not a device-disposal record.
+
+### Opening a handover archive
+
+The file is a JSON envelope with these fields:
+
+| Field                   | Meaning                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `version`               | Envelope format version. Currently `1`; readers must reject versions they do not understand. |
+| `kdf.name` / `kdf.hash` | `PBKDF2` / `SHA-256`.                                                                        |
+| `kdf.iterations`        | `600000` in archives Mattrax writes. Readers reject anything below `100000`.                 |
+| `kdf.salt`              | Standard base64, 16 random bytes, unique per archive.                                        |
+| `cipher.name`           | `AES-GCM` with a 256-bit derived key.                                                        |
+| `cipher.iv`             | Standard base64, 12 random bytes, unique per archive.                                        |
+| `ciphertext`            | Standard base64 AES-GCM ciphertext including the authentication tag.                         |
+
+AES-GCM authenticates the header with the additional authenticated data (AAD) string
+`mattrax-passphrase-envelope:v1`. Do not change the version/AAD together: a mismatch is
+indistinguishable from a wrong passphrase.
+
+Decrypt locally; the passphrase never has to leave the operator's machine:
+
+```bash
+# Prefer a passphrase file or the environment so the secret stays out of shell history.
+mattrax devices handover decrypt handover.json --passphrase-file ./passphrase.txt -o handover.decrypted.json
+```
+
+The command also opens `mattrax.cutover` archives. The two formats remain distinct on
+purpose: cutover has a typed payload schema, a manifest and payload/ciphertext digests
+that the import path validates, while a handover document is a disposal record with no
+import path. Both use PBKDF2-HMAC-SHA256 with 600,000 iterations and AES-256-GCM.
+
+A fixed test vector for the envelope (passphrase `mattrax-test-vector-passphrase`) is
+exercised by `apps/cli/src/handover.test.ts`:
+
+```json
+{
+  "version": 1,
+  "kdf": {
+    "name": "PBKDF2",
+    "hash": "SHA-256",
+    "iterations": 600000,
+    "salt": "FDBLTH8GFKKKV96LErlAxA=="
+  },
+  "cipher": { "name": "AES-GCM", "iv": "TmbgporKfT9oXc4x" },
+  "ciphertext": "eLaH9yyGPJizYHlwXgvEa2I8Jx6pKlsUe2aMopY/8FCKwwepgplhFqDswBpysIFvHEcc0P56R5YgHyVTX/hI0++4yvIVOuGI4z8LeVc="
+}
+```
+
+It decrypts to `{"format":"mattrax.device-handover","version":1,"devices":[]}`.
 
 ## Pre-registration
 

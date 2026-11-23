@@ -200,6 +200,7 @@ export default function ApplicationDetailPage() {
   const [name, setName] = createSignal("");
   const [bundleId, setBundleId] = createSignal("");
   const [version, setVersion] = createSignal("");
+  const [removeOnUnassign, setRemoveOnUnassign] = createSignal(false);
   const [installers, setInstallers] = createSignal<InstallerDraft[]>([]);
   const [storefronts, setStorefronts] = createSignal<StorefrontDraft[]>([]);
   const [storefrontNotice, setStorefrontNotice] = createSignal<string | null>(null);
@@ -222,6 +223,7 @@ export default function ApplicationDetailPage() {
       setName(value.name);
       setBundleId(value.bundleId ?? "");
       setVersion(value.version ?? "");
+      setRemoveOnUnassign(value.removeOnUnassign ?? false);
       setInstallers(value.installers.map(installerDraft));
       setStorefronts(
         value.storefronts.map((storefront) => ({
@@ -290,6 +292,7 @@ export default function ApplicationDetailPage() {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
         name: name(),
         notes: notes() || null,
+        removeOnUnassign: removeOnUnassign(),
         expectedUpdatedAt: guard.expectedUpdatedAt(),
         installers: installers().map((installer) => ({
           id: installer.id,
@@ -345,6 +348,7 @@ export default function ApplicationDetailPage() {
             ...current,
             name: name(),
             notes: notes() || null,
+            removeOnUnassign: removeOnUnassign(),
             installers: installers().map((draft, index) =>
               installerFromDraft(
                 draft,
@@ -435,6 +439,31 @@ export default function ApplicationDetailPage() {
                 "No devices were eligible. Assign this application to a device or group first.",
             },
       ),
+  }));
+
+  const [confirmUninstall, setConfirmUninstall] = createSignal(false);
+
+  const uninstall = useMutation(() => ({
+    mutationFn: () => enterprise.uninstallApplication(params.tenantId, params.applicationId),
+    onMutate: () => setInstallNotice(undefined),
+    onSuccess: (result) => {
+      setConfirmUninstall(false);
+      setInstallNotice(
+        result.queued > 0
+          ? {
+              tone: "success",
+              text:
+                result.message ??
+                `Queued ${result.queued} uninstall command(s); the device timeline shows when each inventory confirms removal.`,
+            }
+          : {
+              tone: "warning",
+              text:
+                result.message ??
+                "No device was eligible for removal. Mattrax only removes apps it installed.",
+            },
+      );
+    },
   }));
 
   const saveStorefronts = useMutation(() => ({
@@ -590,6 +619,14 @@ export default function ApplicationDetailPage() {
     return undefined;
   };
 
+  /** Why the uninstall button is disabled, or undefined when it can be pressed. */
+  const uninstallDisabledReason = () => {
+    if (platform() === "android" && assignedCount() > 0)
+      return 'Android removes an app by taking it out of the Managed Google Play policy. Unassign it first, or turn on "Remove from devices when unassigned".';
+
+    return undefined;
+  };
+
   /** Prefer the installer column, then the first available storefront's id. */
   const storeId = () =>
     installers().find((installer) => installer.platform === "apple" && installer.storeId)
@@ -660,6 +697,15 @@ export default function ApplicationDetailPage() {
                   viaVpp: Boolean(vppAsset()),
                   platform: platform(),
                 })}
+              </Button>
+              <Button
+                variant="outline"
+                class="text-destructive-foreground"
+                disabled={uninstall.isPending || uninstallDisabledReason() !== undefined}
+                title={uninstallDisabledReason()}
+                onClick={() => setConfirmUninstall(true)}
+              >
+                {uninstall.isPending ? "Uninstalling…" : "Uninstall from devices"}
               </Button>
             </Show>
           </>
@@ -1057,6 +1103,21 @@ export default function ApplicationDetailPage() {
                                     : "No file uploaded"}
                                 </span>
                               </div>
+                              <Show
+                                when={
+                                  application().installers.find((item) => item.id === installer.id)
+                                    ?.provisioningExpiresAt
+                                }
+                              >
+                                {(expiresAt) => (
+                                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                                    The embedded provisioning profile expires{" "}
+                                    {relativeTime(expiresAt())}. Mattrax does not re-sign the
+                                    upload; renew the enterprise or ad-hoc profile and upload the
+                                    signed .ipa again before then.
+                                  </p>
+                                )}
+                              </Show>
                             </Show>
                           </div>
                         )}
@@ -1071,6 +1132,27 @@ export default function ApplicationDetailPage() {
                       onInput={(e) => setNotes(e.currentTarget.value)}
                     />
                   </Field>
+                  <label class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                      checked={removeOnUnassign()}
+                      disabled={!writable()}
+                      onChange={(event) => setRemoveOnUnassign(event.currentTarget.checked)}
+                    />
+                    <span class="min-w-0">
+                      <span class="block text-[12.5px] font-medium text-foreground">
+                        Remove from devices when unassigned
+                      </span>
+                      <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+                        When this app's assignment is removed, Mattrax queues a removal on devices
+                        where it recorded installing it. Apple devices also apply the rule at every
+                        check-in, covering group membership changes. The device is only reported
+                        removed once its next application inventory confirms the app is gone.
+                        Android removes the package from the compiled Managed Google Play policy.
+                      </span>
+                    </span>
+                  </label>
                   <div class="flex flex-wrap items-center gap-2 pt-1">
                     <Show when={writable()}>
                       <Button disabled={save.isPending} onClick={() => save.mutate()}>
@@ -1103,7 +1185,8 @@ export default function ApplicationDetailPage() {
                       uploadInstaller.error ??
                       remove.error ??
                       unlink.error ??
-                      install.error
+                      install.error ??
+                      uninstall.error
                     }
                   />
                   <Show when={message()}>
@@ -1133,7 +1216,7 @@ export default function ApplicationDetailPage() {
                   <Show when={application().source === "upload"}>
                     <p class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
                       {application().platform === "apple"
-                        ? "Upload a signed .pkg. Mattrax serves it to each assigned Mac through a signed, expiring URL and installs it with InstallEnterpriseApplication. An .ipa needs an OTA manifest URL."
+                        ? "Upload a signed .pkg for Macs or a signed .ipa for iPhone and iPad. Mattrax serves the file through a signed, expiring, device-bound URL: Macs install with InstallEnterpriseApplication and iOS/iPadOS install with InstallApplication against an OTA manifest Mattrax generates. The upload keeps its own provisioning profile; Mattrax does not re-sign it."
                         : "Uploaded files are kept for download; Windows installs from the MSI URL and Android installs from Managed Google Play."}
                     </p>
                   </Show>
@@ -1489,6 +1572,17 @@ export default function ApplicationDetailPage() {
         confirmLabel="Unlink assignments"
         pending={unlink.isPending}
         onConfirm={() => unlink.mutate()}
+      />
+
+      <ConfirmDialog
+        open={confirmUninstall()}
+        onOpenChange={setConfirmUninstall}
+        title={`Remove ${row()?.name ?? "this application"} from its devices?`}
+        description="Mattrax queues a removal only on devices where it recorded installing the app. The app stays assigned, so the next install or check-in can put it back. Managed app data may be removed with the app; no platform here offers a separate keep-data switch."
+        confirmLabel="Queue uninstall"
+        destructive
+        pending={uninstall.isPending}
+        onConfirm={() => uninstall.mutate()}
       />
     </Page>
   );

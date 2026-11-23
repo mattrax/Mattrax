@@ -328,3 +328,56 @@ describe("MIA device health", () => {
     expect(codes(staleAndMissing)).toEqual(["missing"]);
   });
 });
+
+describe("Lost Mode and local-account health", () => {
+  const mac = (overrides: Partial<DeviceHealthInput> = {}) =>
+    deriveDeviceHealth({
+      proto: "apple",
+      status: "enrolled",
+      lastSeenAt: now,
+      osEdition: "macOS 15.1",
+      now,
+      ...overrides,
+    });
+
+  it("flags a device in Lost Mode so it never looks healthy", () => {
+    const summary = mac({ lostModeEnabled: true });
+
+    expect(codes(summary)).toContain("lost_mode");
+    expect(summary.level).toBe("attention");
+    expect(codes(mac({ lostModeEnabled: false }))).not.toContain("lost_mode");
+  });
+
+  it("flags a managed administrator without a SecureToken", () => {
+    const summary = mac({
+      localAccounts: [
+        {
+          username: "shared",
+          isAdmin: true,
+          isManaged: false,
+          hasSecureToken: false,
+        },
+        { username: "mattrax-admin", isAdmin: true, isManaged: true, hasSecureToken: true },
+      ],
+    });
+
+    expect(codes(summary)).toEqual(["local_admin_no_secure_token"]);
+  });
+
+  it("does not guess administrator status and honours the tenant opt-out", () => {
+    const unknownAdmin = mac({
+      localAccounts: [{ username: "student", isAdmin: null, hasSecureToken: false }],
+    });
+
+    expect(codes(unknownAdmin)).toEqual([]);
+
+    const optedOut = mac({
+      localAccountHealthEnabled: false,
+      localAccounts: [
+        { username: "shared", isAdmin: true, isManaged: false, hasSecureToken: false },
+      ],
+    });
+
+    expect(codes(optedOut)).toEqual([]);
+  });
+});

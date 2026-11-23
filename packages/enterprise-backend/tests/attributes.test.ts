@@ -4,11 +4,13 @@ import {
   attributeCsvCells,
   attributeCsvHeaders,
   attributeValuesProblem,
+  collectScriptAttributeValues,
   definitionInputProblem,
   mergeAttributeValues,
   parseAttributeCsv,
 } from "../src/Policy/attributes.ts";
 import { normalizeDeviceSearchQuery } from "../src/Device/deviceSearch.ts";
+import { makeDb, runEffect } from "./helpers.js";
 
 const definition = (overrides: Partial<AttributeDefinition> = {}): AttributeDefinition => ({
   id: "attr-1",
@@ -19,6 +21,9 @@ const definition = (overrides: Partial<AttributeDefinition> = {}): AttributeDefi
   options: ["EMEA", "AMER"],
   required: false,
   visibility: "visible",
+  source: "manual",
+  scriptId: null,
+  scriptOutputKey: null,
   sortOrder: 0,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -237,5 +242,332 @@ describe("device attribute filters", () => {
     expect(() => normalizeDeviceSearchQuery({ attributes: JSON.stringify({ cost: 1 }) })).toThrow(
       /key\/value strings/,
     );
+  });
+});
+
+describe("attribute sources and script bindings", () => {
+  it("requires a script for a script-sourced attribute", () => {
+    expect(
+      definitionInputProblem({
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "script",
+      }),
+    ).toMatch(/Choose the script/);
+
+    expect(
+      definitionInputProblem({
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "script",
+        scriptId: "script-1",
+        scriptOutputKey: "product",
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects a binding or output key on another source", () => {
+    expect(
+      definitionInputProblem({
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "manual",
+        scriptId: "script-1",
+      }),
+    ).toMatch(/Only script-sourced/);
+
+    expect(
+      definitionInputProblem({
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "directory",
+        scriptOutputKey: "product",
+      }),
+    ).toMatch(/output key/);
+  });
+
+  it("refuses manual writes to a script-sourced attribute", () => {
+    const definitions = [
+      definition(),
+      definition({
+        id: "attr-2",
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "script",
+        scriptId: "script-1",
+      }),
+    ];
+
+    expect(attributeValuesProblem(definitions, { antivirus: "CrowdStrike" })).toEqual({
+      key: "antivirus",
+      message: '"Antivirus" is collected from a script and cannot be edited manually.',
+    });
+
+    // The manual attribute in the same request is unaffected.
+    expect(attributeValuesProblem(definitions, { cost_centre: "EMEA" })).toBeNull();
+  });
+
+  it("exports script values but never imports them", () => {
+    const definitions = [
+      definition({
+        id: "attr-2",
+        key: "antivirus",
+        label: "Antivirus",
+        type: "text",
+        source: "script",
+        scriptId: "script-1",
+      }),
+      definition({ id: "attr-3", key: "notes", label: "Notes", type: "text" }),
+    ];
+
+    expect(attributeCsvHeaders(definitions)).toEqual(["attribute:antivirus", "attribute:notes"]);
+    expect(attributeCsvCells(definitions, { antivirus: "CrowdStrike" })).toEqual([
+      "CrowdStrike",
+      "",
+    ]);
+
+    // A re-import of an export keeps the script's value: the column is ignored
+    // rather than treated as a write or a clear.
+    const imported = parseAttributeCsv(
+      definitions,
+      "serial,attribute:antivirus,attribute:notes\r\nC02XYZ,CrowdStrike,hello\r\n",
+    );
+
+    expect(imported.issues).toEqual([]);
+    expect(imported.rows[0]?.values).toEqual({ notes: "hello" });
+  });
+
+  it("keeps script values when a replace clears the manual fields", () => {
+    expect(
+      mergeAttributeValues({
+        existing: { cost_centre: "EMEA", antivirus: "CrowdStrike" },
+        values: { cost_centre: "AMER" },
+        definitions: [
+          { key: "cost_centre", source: "manual" },
+          { key: "warranty_end", source: "manual" },
+          { key: "antivirus", source: "script" },
+        ],
+        replace: true,
+      }),
+    ).toEqual({ cost_centre: "AMER", warranty_end: null, antivirus: "CrowdStrike" });
+  });
+});
+
+describe("script attribute collection", () => {
+  const now = new Date("2026-11-20T10:00:00Z");
+
+  const script = { id: "script-1", name: "Security inventory" };
+
+  const seed = (definitions: AttributeDefinition[], extra: Record<string, unknown[]> = {}) =>
+    makeDb({
+      attribute_definition: definitions,
+      device_attribute: [],
+      attribute_collection: [],
+      audit_log: [],
+      ...extra,
+    });
+
+  const definitions = [
+    definition({
+      id: "attr-antivirus",
+      key: "antivirus",
+      label: "Antivirus",
+      type: "text",
+      options: null,
+      source: "script",
+      scriptId: script.id,
+      sortOrder: 0,
+    }),
+    definition({
+      id: "attr-version",
+      key: "agent_version",
+      label: "Agent version",
+      type: "number",
+      options: null,
+      source: "script",
+      scriptId: script.id,
+      sortOrder: 1,
+    }),
+  ];
+
+  const collect = (db: any, stdout: string, failure?: string) =>
+    runEffect(
+      collectScriptAttributeValues(db, {
+        organizationId: "tenant-1",
+        deviceId: "device-1",
+        script,
+        executionId: "execution-1",
+        stdout,
+        failure: failure ?? null,
+        now,
+      }),
+    );
+
+  it("writes only the declared attributes and records their state", async () => {
+    const db = seed(definitions);
+
+    const result = await collect(
+      db,
+      JSON.stringify({ antivirus: "CrowdStrike", agent_version: 7.12, rogue: "ignored" }),
+    );
+
+    expect(result.written).toEqual(["antivirus", "agent_version"]);
+    expect(result.errors).toEqual([]);
+    expect(db.store.device_attribute).toEqual([
+      expect.objectContaining({ attributeId: "attr-antivirus", value: "CrowdStrike" }),
+      expect.objectContaining({ attributeId: "attr-version", value: "7.12" }),
+    ]);
+    expect(db.store.attribute_collection).toHaveLength(2);
+    expect(db.store.attribute_collection[0]).toMatchObject({
+      attributeId: "attr-antivirus",
+      source: "script",
+      scriptId: script.id,
+      lastCollectedAt: now,
+      lastError: null,
+    });
+  });
+
+  it("records a per-attribute error and does not write the invalid value", async () => {
+    const db = seed(definitions, {
+      device_attribute: [
+        {
+          deviceId: "device-1",
+          attributeId: "attr-version",
+          organizationId: "tenant-1",
+          value: "7.11",
+          updatedByAccountId: null,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    const result = await collect(
+      db,
+      JSON.stringify({ antivirus: "CrowdStrike", agent_version: "seven" }),
+    );
+
+    expect(result.written).toEqual(["antivirus"]);
+    expect(result.errors[0]).toMatchObject({ key: "agent_version" });
+    expect(result.errors[0]?.message).toMatch(/must be a number/);
+
+    // The previous value is untouched, and the failure is on the state row.
+    expect(
+      db.store.device_attribute.find((row: any) => row.attributeId === "attr-version"),
+    ).toMatchObject({ value: "7.11" });
+    expect(
+      db.store.attribute_collection.find((row: any) => row.attributeId === "attr-version"),
+    ).toMatchObject({
+      lastError: expect.stringContaining("must be a number"),
+      lastCollectedAt: null,
+    });
+  });
+
+  it("audits the change with the script and run id", async () => {
+    const db = seed(definitions);
+
+    await collect(db, "CrowdStrike\n7.12");
+
+    expect(db.store.audit_log).toHaveLength(1);
+    expect(db.store.audit_log[0]).toMatchObject({
+      action: "device.attributes_updated",
+      targetType: "device",
+      targetId: "device-1",
+      metadata: {
+        source: "script",
+        scriptId: script.id,
+        scriptName: script.name,
+        executionId: "execution-1",
+        written: ["agent_version", "antivirus"],
+      },
+    });
+  });
+
+  it("records a failed run without touching values", async () => {
+    const db = seed(definitions);
+
+    const result = await collect(
+      db,
+      "",
+      "The script exited with code 2, so no attribute values were collected.",
+    );
+
+    expect(result.written).toEqual([]);
+    expect(result.errors).toHaveLength(2);
+    expect(db.store.device_attribute).toEqual([]);
+    expect(db.store.attribute_collection[0]).toMatchObject({
+      lastError: expect.stringContaining("exited with code 2"),
+      lastCollectedAt: null,
+    });
+    expect(db.store.audit_log).toEqual([]);
+  });
+
+  it("orders line-mode values by sort order then label, like the settings list", async () => {
+    const db = seed([
+      definition({
+        id: "attr-z",
+        key: "z_key",
+        label: "Alpha",
+        type: "text",
+        options: null,
+        source: "script",
+        scriptId: script.id,
+        sortOrder: 5,
+      }),
+      definition({
+        id: "attr-a",
+        key: "a_key",
+        label: "Zulu",
+        type: "text",
+        options: null,
+        source: "script",
+        scriptId: script.id,
+        sortOrder: 5,
+      }),
+    ]);
+
+    const result = await collect(db, "first\nsecond");
+
+    expect(result.written).toEqual(["z_key", "a_key"]);
+    expect(db.store.device_attribute).toEqual([
+      expect.objectContaining({ attributeId: "attr-z", value: "first" }),
+      expect.objectContaining({ attributeId: "attr-a", value: "second" }),
+    ]);
+  });
+
+  it("does not rewrite or audit a value that did not change", async () => {
+    const db = seed([definitions[0]], {
+      device_attribute: [
+        {
+          deviceId: "device-1",
+          attributeId: "attr-antivirus",
+          organizationId: "tenant-1",
+          value: "CrowdStrike",
+          updatedByAccountId: null,
+          updatedAt: new Date("2026-11-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const result = await collect(db, JSON.stringify({ antivirus: "CrowdStrike" }));
+
+    expect(result.written).toEqual([]);
+    expect(db.store.device_attribute[0]?.updatedAt).toEqual(new Date("2026-11-01T00:00:00Z"));
+    expect(db.store.audit_log).toEqual([]);
+    // The collection still refreshes, so the dashboard shows a fresh check.
+    expect(db.store.attribute_collection[0]).toMatchObject({ lastCollectedAt: now });
+  });
+
+  it("does nothing when the script has no bound attributes", async () => {
+    const db = seed([definition()]);
+
+    const result = await collect(db, "CrowdStrike");
+
+    expect(result).toEqual({ written: [], errors: [] });
+    expect(db.store.attribute_collection).toEqual([]);
   });
 });

@@ -8,6 +8,8 @@ import {
   DeviceQuery,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseApplicationApi,
+  enterpriseApprovalApi,
   enterpriseAttributeApi,
   McpContextResponse as McpContextResponseSchema,
 } from "@mattrax/enterprise-domain/client";
@@ -270,7 +272,8 @@ const toolName = (identifier: string) => {
 const pathParameters = (path: string) =>
   [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]);
 
-const shouldExpose = (path: string) => {
+/** Exported for the MCP exposure test; paths are matched as substrings. */
+export const shouldExposeMcpPath = (path: string) => {
   if (path.includes("/account")) return false;
 
   if (path.includes("/mcp/")) return false;
@@ -295,6 +298,14 @@ const shouldExpose = (path: string) => {
     "/vpp",
     "/api-tokens",
     "/backups",
+    // Approving and editing four-eyes policies is never delegated to an MCP
+    // client, even one that holds approvals.write.
+    "/approvals",
+    "/approval-policies",
+    // Handover archives contain every escrowed device secret and are not part
+    // of the consent grant an MCP client receives. The token-bearing download
+    // in particular must never be reachable through a generated tool.
+    "/devices/handover",
   ])
     if (path.includes(blocked)) return false;
 
@@ -366,11 +377,18 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
   for (const [identifier, endpoint] of Object.entries({
     ...enterpriseAccountApi.endpoints,
     ...enterpriseApi.endpoints,
+    // The application endpoints moved out of the main group to keep its
+    // generated declaration small; keep them in the same tool surface.
+    ...enterpriseApplicationApi.endpoints,
+    // Gated destructive endpoints now live on the approval group; the approval
+    // queue and policy administration themselves stay human-only (blocked in
+    // shouldExposeMcpPath).
+    ...enterpriseApprovalApi.endpoints,
     ...enterpriseAttributeApi.endpoints,
   })) {
     const path = endpoint.path;
 
-    if (!shouldExpose(path) || !allowed.has(identifier)) continue;
+    if (!shouldExposeMcpPath(path) || !allowed.has(identifier)) continue;
     const name = toolName(identifier);
 
     if (name === "list_tenants" || name === "query_data" || rest.has(name)) continue;

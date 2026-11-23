@@ -943,6 +943,16 @@ describe("enterprise service tenant flow", () => {
     expect(writeContext.methods).toContain("patchDevice");
     expect(writeContext.methods).not.toContain("createGroup");
     expect(writeContext.methods).not.toContain("createApiToken");
+
+    // Handover exports carry every escrowed secret and the derived zip download
+    // is a token-bearing GET, so the methods are never advertised even when
+    // the account's role holds the permission.
+    const ownerContext = await runEffect(base.service.mcpContext(request(base.headers)));
+
+    expect(ownerContext.permissions).toContain("devices.handover");
+    expect(ownerContext.methods).not.toContain("createDeviceHandover");
+    expect(ownerContext.methods).not.toContain("downloadDeviceHandover");
+    expect(ownerContext.methods).not.toContain("deviceHandoverImpact");
   });
 
   it("enforces fine-grained API token permissions per method", async () => {
@@ -5259,6 +5269,408 @@ describe("device command lifecycle", () => {
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
 
     expect(commands(db)[0]).toMatchObject({ status: "cancelled", dedupeKey: null });
+  });
+
+  it("queues Lost Mode with the message and persists the requested state", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "  This iPad is lost  ",
+        lostModePhone: "+61 400 000 000",
+        lostModeFootnote: "AST-1042",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect(commands(db)).toEqual([
+      expect.objectContaining({
+        requestType: "EnableLostMode",
+        payload: {
+          Message: "This iPad is lost",
+          PhoneNumber: "+61 400 000 000",
+          Footnote: "AST-1042",
+        },
+        status: "queued",
+      }),
+    ]);
+    expect(db.store.device_apple[0]).toMatchObject({
+      lostModeMessage: "This iPad is lost",
+      lostModePhone: "+61 400 000 000",
+      lostModeFootnote: "AST-1042",
+    });
+    expect(db.store.device_apple[0]!.lostModeRequestedAt).toBeInstanceOf(Date);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "start-lost-mode",
+        lostModeMessage: "This iPad is lost",
+      }),
+    });
+  });
+
+  it("requires a message or phone number and rejects Lost Mode off iPhone/iPad", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const empty = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "   ",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(empty).toBeInstanceOf(EnterpriseBadRequest);
+    expect(empty).toMatchObject({ message: expect.stringContaining("at least one") });
+    expect(commands(db)).toHaveLength(0);
+
+    db.store.device[0]!.osEdition = "macOS";
+    const mac = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "Lost",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(mac).toBeInstanceOf(EnterpriseBadRequest);
+    expect(mac).toMatchObject({ message: expect.stringContaining("macOS") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("de-duplicates an identical Lost Mode request", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const payload = {
+      action: "start-lost-mode",
+      lostModeMessage: "Lost iPad",
+      lostModePhone: "+61 400 000 000",
+    } as const;
+
+    const first = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", payload),
+    );
+    const second = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", payload),
+    );
+
+    expect(second).toMatchObject({
+      commandId: first.commandId,
+      deduplicated: true,
+    });
+    expect(commands(db)).toHaveLength(1);
+  });
+
+  it("offers PlayLostModeSound only while Lost Mode is active", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "play-lost-mode-sound",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "play-lost-mode-sound",
+      }),
+    );
+
+    expect(commands(db)).toEqual([
+      expect.objectContaining({ requestType: "PlayLostModeSound", status: "queued" }),
+    ]);
+  });
+
+  it("queues UserList for a Mac and records the local-account request time", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "refresh-local-accounts",
+      }),
+    );
+
+    expect(commands(db)).toEqual([
+      expect.objectContaining({ requestType: "UserList", status: "queued" }),
+    ]);
+    expect(db.store.device_apple[0]!.localAccountsRequestedAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses local administrator rotation without a reported GUID", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("GUID") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("queues SetAutoAdminPassword with the reported GUID and a pending secret", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const now = new Date();
+    db.store.device_secret.push({
+      deviceId: "device-1",
+      organizationId: tenant.id,
+      kind: "local_admin_password",
+      sealedValue: "sealed-current",
+      format: "plaintext",
+      createdAt: now,
+      updatedAt: now,
+      rotatedAt: now,
+    });
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    );
+
+    const [command] = commands(db);
+
+    expect(command).toMatchObject({ requestType: "SetAutoAdminPassword", status: "queued" });
+    expect(command!.payload).toMatchObject({
+      GUID: "11111111-AAAA-BBBB-CCCC-222222222222",
+      passwordHash: expect.any(String),
+    });
+    expect(atob(command!.payload.passwordHash)).toContain("SALTED-SHA512-PBKDF2");
+    expect(db.store.device_secret).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "local_admin_password_pending",
+          sealedValue: expect.not.stringMatching(/^sealed-current$/),
+        }),
+      ]),
+    );
+  });
+
+  it("refuses a concurrent local administrator rotation", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const now = new Date();
+    db.store.device_secret.push({
+      deviceId: "device-1",
+      organizationId: tenant.id,
+      kind: "local_admin_password",
+      sealedValue: "sealed-current",
+      format: "plaintext",
+      createdAt: now,
+      updatedAt: now,
+      rotatedAt: now,
+    });
+    db.store.device_command.push({
+      id: "rotation-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      requestType: "SetAutoAdminPassword",
+      payload: { GUID: "11111111-AAAA-BBBB-CCCC-222222222222", passwordHash: "hash" },
+      status: "queued",
+      dedupeKey: null,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseConflict);
+    expect(failure).toMatchObject({ message: expect.stringContaining("already in progress") });
+  });
+
+  it("filters the fleet by Lost Mode and local-account risk", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    const active = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "active",
+        limit: 50,
+      }),
+    );
+
+    expect(active.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    db.store.device_apple[0]!.lostModeEnabled = false;
+
+    const inactive = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "inactive",
+        limit: 50,
+      }),
+    );
+
+    expect(inactive.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    const now = new Date();
+    db.store.device.push({
+      id: "windows-1",
+      organizationId: tenant.id,
+      proto: "win",
+      status: "enrolled",
+      name: "DESKTOP-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const inactiveAfterWindows = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "inactive",
+        limit: 50,
+      }),
+    );
+
+    expect(inactiveAfterWindows.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    // A Mac that has never reported a local-account inventory is included in
+    // the stale-inventory filter, not silently excluded.
+    db.store.device[0]!.osEdition = "macOS 15.1";
+
+    const staleInventory = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        localAccount: "not-seen-30-days",
+        limit: 50,
+      }),
+    );
+
+    expect(staleInventory.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    db.store.device_local_account.push({
+      id: "local-account-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      username: "shared",
+      fullName: "Shared",
+      uid: 502,
+      guid: null,
+      isAdmin: null,
+      isManaged: false,
+      hasSecureToken: false,
+      isLoggedIn: false,
+      mobileAccount: false,
+      dataQuota: null,
+      dataUsed: null,
+      lastLoginAt: null,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      reportedAt: now,
+    });
+
+    const noToken = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        localAccount: "without-secure-token",
+        limit: 50,
+      }),
+    );
+
+    expect(noToken.devices.map((device) => device.id)).toEqual(["device-1"]);
+  });
+
+  it("advertises the Lost Mode sound and rotation only when their state allows it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    const lost = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(lost.actions).toContain("play-lost-mode-sound");
+
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.lostModeEnabled = false;
+
+    const withoutGuid = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(withoutGuid.actions).not.toContain("rotate-local-admin-password");
+
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const withGuid = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(withGuid.actions).toContain("rotate-local-admin-password");
   });
 });
 

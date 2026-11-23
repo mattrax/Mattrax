@@ -1,16 +1,19 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { and, count, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   Db,
   billableDeviceCount,
   pruneWindowsFailures,
   schema as s,
 } from "@mattrax/enterprise-core";
+import type { R2Bucket } from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
+  refreshAppleLocalAccounts,
+  rotateAppleLocalAdminPasswords,
   sweepDeviceCommands,
   sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
@@ -223,6 +226,20 @@ export type MaintenanceOptions = {
    */
   readonly tenantDeletionLogRetentionDays?: number;
   /**
+   * Object storage for expired handover archives. When present, maintenance
+   * deletes the sealed object before the row. Without it the rows are still
+   * pruned; a deployment in that position must configure an R2 lifecycle rule
+   * on the `handovers/` prefix, because the archive is encrypted and useless
+   * after its link expires.
+   */
+  readonly storage?: R2Bucket;
+  /**
+   * Terminal approval requests and their decisions older than this many days
+   * are deleted. Defaults to 90; pending requests are never pruned. Set to
+   * `0` to keep approval history indefinitely.
+   */
+  readonly approvalRetentionDays?: number;
+  /**
    * Billing client used to report per-tenant usage. The services deployment
    * reconciles Stripe seats from these snapshots; omit it to skip the sweep.
    */
@@ -276,10 +293,16 @@ export type MaintenanceResult = {
    * Activation Lock state). Additive to the maintenance result.
    */
   readonly securityInfoRefreshes: number;
+  /** Macs asked for a fresh `UserList` local-account inventory. */
+  readonly localAccountRefreshes: number;
+  /** Managed local administrator passwords queued for scheduled rotation. */
+  readonly localAdminPasswordsRotated: number;
   /** Active commands whose delivery deadline elapsed during this run. */
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Uninstall rows whose inventory deadline passed without a report. */
+  readonly failedUninstalls: number;
   /** Windows state-generated command rows deleted by retention. */
   readonly purgedWindowsCommands: number;
   /** Windows enrollment/management failure records deleted by retention. */
@@ -308,6 +331,10 @@ export type MaintenanceResult = {
   readonly migrationDevicesStuck: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
+  /** Expired handover archive rows (and objects, when storage is available). */
+  readonly purgedHandoverArchives: number;
+  /** Terminal approval requests (and their decisions) deleted by retention. */
+  readonly purgedApprovalRequests: number;
   /** Tenant usage snapshots accepted by the billing service. */
   readonly billingUsageReported: number;
   /** Tenant usage snapshots the billing service rejected; retried next run. */
@@ -513,6 +540,7 @@ export const runMaintenance = (
 
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
+    const approvalRetentionDays = options.approvalRetentionDays ?? 90;
 
     /** Latest origin observation, reused by the missing-certificate sweep. */
     let serverCertificateState: ServerCertificateInfo | null = null;
@@ -539,8 +567,11 @@ export const runMaintenance = (
       webhookRetryFailed: 0,
       applicationInventoryRefreshes: 0,
       securityInfoRefreshes: 0,
+      localAccountRefreshes: 0,
+      localAdminPasswordsRotated: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      failedUninstalls: 0,
       purgedWindowsCommands: 0,
       purgedWindowsFailures: 0,
       scepCasIssued: 0,
@@ -555,6 +586,8 @@ export const runMaintenance = (
       migrationDevicesEnrolled: 0,
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
+      purgedHandoverArchives: 0,
+      purgedApprovalRequests: 0,
       billingUsageReported: 0,
       billingUsageFailed: 0,
       emailOutboxSent: 0,
@@ -710,6 +743,33 @@ export const runMaintenance = (
     yield* db
       .delete(s.realtimeEvent)
       .where(lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)));
+
+    // 4c. Approval history is security evidence, not live state. Terminal
+    // requests older than the retention window are deleted; MySQL cascades
+    // their decisions. Pending requests are never pruned here.
+    if (approvalRetentionDays > 0) {
+      const approvalCutoff = new Date(now.getTime() - approvalRetentionDays * day);
+
+      const staleApprovals = yield* db
+        .select({ id: s.approvalRequest.id })
+        .from(s.approvalRequest)
+        .where(
+          and(
+            inArray(s.approvalRequest.status, ["approved", "rejected", "expired", "cancelled"]),
+            lt(s.approvalRequest.updatedAt, approvalCutoff),
+          ),
+        );
+
+      if (staleApprovals.length > 0) {
+        yield* db.delete(s.approvalRequest).where(
+          inArray(
+            s.approvalRequest.id,
+            staleApprovals.map((row) => row.id),
+          ),
+        );
+        result.purgedApprovalRequests = staleApprovals.length;
+      }
+    }
 
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {
@@ -1056,6 +1116,29 @@ export const runMaintenance = (
       result.securityInfoRefreshes = securityInfo.requested;
     }
 
+    // 9b-bis. Local-account inventory. macOS reports local accounts only on
+    //    request, so the daily sweep queues one `UserList` per Mac whose
+    //    inventory is missing or older than a day. A device that never answers
+    //    is not asked again inside the rate-limit window.
+    if (options.applicationInventory !== false) {
+      const localAccounts = yield* refreshAppleLocalAccounts(db, { now });
+
+      result.localAccountRefreshes = localAccounts.requested;
+    }
+
+    // 9b-ter. Managed local administrator rotation. The tenant policy decides
+    //    the interval, the sweep caps how many devices change per tenant per
+    //    run, and the new password only replaces the sealed secret once the Mac
+    //    acknowledges `SetAutoAdminPassword`.
+    if (options.applicationInventory !== false && options.authSecret) {
+      const rotation = yield* rotateAppleLocalAdminPasswords(db, {
+        now,
+        authSecret: options.authSecret,
+      });
+
+      result.localAdminPasswordsRotated = rotation.queued;
+    }
+
     // 9c. Apps and Books licence pools. Apple's counts change when licences are
     //     purchased, returned or revoked elsewhere, and the manual sync button
     //     is easy to forget. Tenants are refreshed at most once a day; a failed
@@ -1100,6 +1183,7 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+    result.failedUninstalls = commands.failedUninstalls;
 
     // 10a. Windows policy/inventory rows are regenerated from device state on
     //      every check-in and are written without an expiry, so the generic
@@ -1160,6 +1244,61 @@ export const runMaintenance = (
         );
 
       result.purgedTenantDeletionLogs = staleJournals.length;
+    }
+
+    // 11b. Spent handover archives. Once `expiresAt` passes the download
+    //      token is dead, and a downloaded row has already served its one-time
+    //      purpose. Delete the object first when storage is available; a failed
+    //      delete leaves the row for the next run instead of orphaning an
+    //      object no database row points at.
+    const expiredHandoverArchives = yield* db
+      .select({ id: s.deviceHandoverArchive.id, r2Key: s.deviceHandoverArchive.r2Key })
+      .from(s.deviceHandoverArchive)
+      .where(
+        or(
+          lt(s.deviceHandoverArchive.expiresAt, now),
+          isNotNull(s.deviceHandoverArchive.downloadedAt),
+        ),
+      )
+      .limit(5_000);
+
+    if (expiredHandoverArchives.length > 0) {
+      let purgeable = expiredHandoverArchives;
+      const storage = options.storage;
+
+      if (storage) {
+        const deleted = new Set<string>();
+
+        for (let offset = 0; offset < expiredHandoverArchives.length; offset += 500) {
+          const batch = expiredHandoverArchives.slice(offset, offset + 500);
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(batch.map((row) => row.r2Key)),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired handover archive objects; rows are retried next run",
+              { cause: failure },
+            );
+            continue;
+          }
+
+          for (const row of batch) deleted.add(row.id);
+        }
+
+        purgeable = expiredHandoverArchives.filter((row) => deleted.has(row.id));
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceHandoverArchive).where(
+          inArray(
+            s.deviceHandoverArchive.id,
+            purgeable.map((row) => row.id),
+          ),
+        );
+
+      result.purgedHandoverArchives = purgeable.length;
     }
 
     // 12. Billing usage. Devices live in this database but billing lives in

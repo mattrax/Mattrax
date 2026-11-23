@@ -10,12 +10,14 @@ import {
   enterpriseAccountApi,
   enterpriseAdminApi,
   enterpriseApi,
+  enterpriseApplicationApi,
   enterpriseCutoverApi,
   enterpriseGroupApi,
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseDeviceViewApi,
+  enterpriseDeviceHandoverApi,
   enterpriseIdentityApi,
   enterpriseOnboardingApi,
   enterpriseUserApi,
@@ -23,6 +25,7 @@ import {
   enterpriseOsPolicyApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  enterpriseApprovalApi,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
@@ -34,12 +37,15 @@ import {
   androidRoutes,
   enterpriseAccountHandlers,
   enterpriseAdminHandlers,
+  enterpriseApprovalHandlers,
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
   enterpriseDeviceViewHandlers,
+  enterpriseDeviceHandoverHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
+  enterpriseApplicationHandlers,
   enterpriseCutoverHandlers,
   enterpriseSoftwareUpdateHandlers,
   enterpriseOsPolicyHandlers,
@@ -55,6 +61,7 @@ import {
   scriptHandlers,
   scimRoutes,
   ScimMembershipNotifier,
+  appleBusinessManager,
 } from "@mattrax/enterprise-api";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
@@ -249,12 +256,14 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
   .add(enterpriseApi)
+  .add(enterpriseApplicationApi)
   .add(enterpriseCutoverApi)
   .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
   .add(enterpriseDeviceViewApi)
+  .add(enterpriseDeviceHandoverApi)
   .add(enterpriseIdentityApi)
   .add(enterpriseOnboardingApi)
   .add(enterpriseUserApi)
@@ -262,6 +271,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
   .add(enterpriseWindowsApi)
+  .add(enterpriseApprovalApi)
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
@@ -318,12 +328,14 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAccount", enterpriseAccountHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAdmin", enterpriseAdminHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseApplication", enterpriseApplicationHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseCutover", enterpriseCutoverHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseGroup", enterpriseGroupHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDeviceView", enterpriseDeviceViewHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseDeviceHandover", enterpriseDeviceHandoverHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseOnboarding", enterpriseOnboardingHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseUser", enterpriseUserHandlers),
@@ -331,6 +343,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseOsPolicy", enterpriseOsPolicyHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseApproval", enterpriseApprovalHandlers),
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
@@ -919,6 +932,26 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
       return new Uint8Array(await object.arrayBuffer());
     },
+    // The MDM check-in owns the moment an uninstall is confirmed by inventory;
+    // returning the Apps and Books seat here keeps the licence pool correct
+    // without a separate scheduled reconciliation.
+    releaseAppleVppLicence: async ({ db, organizationId, deviceId, adamId }) =>
+      Effect.runPromise(
+        appleBusinessManager
+          .releaseVppLicence({
+            db,
+            organizationId,
+            deviceId,
+            adamId,
+            authSecret: env.AUTH_SECRET,
+          })
+          .pipe(
+            Effect.match({
+              onSuccess: () => true,
+              onFailure: () => false,
+            }),
+          ),
+      ),
     // Use the same signing identity and challenge lifetime as the enrollment
     // profile download when an ADE device asks for its profile inline.
     appleProfileSigning:
@@ -1747,6 +1780,7 @@ export const createApiRuntime = (
         const maintenance = yield* Effect.exit(
           runMaintenance({
             staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+            storage,
             auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
             windowsFailureRetentionDays,
             // Outbound webhook retries need the same secret used to seal endpoint

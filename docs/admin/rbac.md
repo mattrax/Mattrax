@@ -14,7 +14,9 @@ custom roles for their organisation.
 | Auditor       | Read-only tenant data, including audit history                           |
 
 Webhook endpoints and delivery history are restricted to administrators and
-owners.
+owners. The approval queue is restricted the same way: `approvals.read` and
+`approvals.write` are administrator/owner capabilities, not part of the
+read-only member baseline.
 
 ## Custom roles
 
@@ -30,6 +32,37 @@ reassigning every member first.
 Sensitive owner-only capabilities can be delegated deliberately: a custom role
 can include `tenant.export`, `backups.read`, `backups.write` or
 `tenant.delete`. Only an owner can change an owner's role.
+
+## Approvals
+
+Two permissions cover four-eyes approval:
+
+| Permission        | Grants                                                              |
+| ----------------- | ------------------------------------------------------------------- |
+| `approvals.read`  | View approval policies, the queue and the decisions on each request |
+| `approvals.write` | Create/edit/delete policies and approve or reject requests          |
+
+Every approver needs `approvals.write`. A policy can then narrow the set further
+with one of:
+
+- **A permission** (for example `devices.command` or `tenant.delete`). The
+  approver's effective role must include it. Custom roles work here because the
+  check uses effective permissions.
+- **A built-in role**. The requirement is a floor (`owner` > `admin` >
+  `member`/`auditor`), and a custom role never satisfies it because a custom
+  role replaces the built-in capabilities.
+
+The requester is always excluded from the count, even if they hold the required
+permission or role. A requester can list and cancel their own requests with only
+`tenant.read`; the full queue still requires `approvals.read`.
+
+API tokens and MCP connections can hold these permissions in their ceiling, but
+the approval decision endpoint refuses any bearer credential. A token can request
+an approval; a signed-in administrator must decide it.
+
+Policy configuration and decisions use the same permission catalogue as every
+other endpoint, so a narrowed credential cannot read or decide approvals its
+grant omits.
 
 ## Bulk role changes
 

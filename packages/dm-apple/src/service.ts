@@ -208,6 +208,11 @@ export declare namespace AppleMdmService {
       identifier: string,
       token?: string,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
+    readonly handleManifest: (
+      identityCertificate: string | undefined,
+      identifier: string,
+      token?: string,
+    ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
     readonly handleProfile: (
       deviceToken: string,
       policyId: string,
@@ -569,6 +574,21 @@ const makeAppleMdmService = (
       );
   };
 
+  /** Result keys defined by the command-result envelope, not a command answer. */
+  const COMMAND_RESULT_ENVELOPE_KEYS = new Set([
+    "UDID",
+    "EnrollmentID",
+    "UserID",
+    "EnrollmentUserID",
+    "UserShortName",
+    "UserLongName",
+    "Status",
+    "CommandUUID",
+    "Command",
+    "QueryResponses",
+    "ErrorChain",
+  ]);
+
   const handleCommandResult = (
     result: CommandResultPlist,
     identityCertificate?: string,
@@ -597,6 +617,17 @@ const makeAppleMdmService = (
 
     if (!result.CommandUUID) return Effect.void;
 
+    // `UserList` and `DeviceLocation` put their payload at the top level, while
+    // most commands use `QueryResponses`. Keep both available to the parser.
+    const topLevelResponses = Object.fromEntries(
+      Object.entries(result).filter(([key]) => !COMMAND_RESULT_ENVELOPE_KEYS.has(key)),
+    );
+
+    const queryResponses =
+      result.QueryResponses || Object.keys(topLevelResponses).length > 0
+        ? { ...result.QueryResponses, ...topLevelResponses }
+        : undefined;
+
     return backend
       .appleDeviceEvent(
         scope,
@@ -604,7 +635,7 @@ const makeAppleMdmService = (
           commandUUID: result.CommandUUID,
           status: result.Status,
           errorDetail: detail,
-          queryResponses: result.QueryResponses,
+          queryResponses,
         }),
       )
       .pipe(
@@ -623,6 +654,8 @@ const makeAppleMdmService = (
     ["RotateFileVaultKey", ["ReplyEncryptionCertificate"]],
     // A managed local admin's password hash is a binary plist `<data>` value.
     ["AccountConfiguration", ["AutoSetupAdminAccounts.0.passwordHash"]],
+    // Rotating the managed local admin uses the same binary hash shape.
+    ["SetAutoAdminPassword", ["passwordHash"]],
     // Return to Service carries the Wi-Fi/MDM profile and bootstrap token as
     // data values. A JSON payload has no byte type, so they are base64 in the
     // queue and decoded when the command plist is built.
@@ -807,6 +840,21 @@ const makeAppleMdmService = (
       Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
       Effect.mapError(toMdmError("Failed to fetch asset")),
     );
+
+  const handleManifest = (
+    identityCertificate: string | undefined,
+    identifier: string,
+    token?: string,
+  ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
+    Effect.gen(function* () {
+      if (!backend.getAppleManifest) return null;
+
+      return yield* backend.getAppleManifest(identityCertificate, identifier, token).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to fetch manifest")),
+      );
+    });
 
   const profileSecret = (): string | undefined => config.authSecret;
 
@@ -1009,6 +1057,7 @@ const makeAppleMdmService = (
     handleDeclarationItems,
     handleDeclaration,
     handleAsset,
+    handleManifest,
     handleProfile,
     generateEnrollmentProfile,
     recordFailure,

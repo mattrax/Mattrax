@@ -496,6 +496,22 @@ export declare namespace ManagementBackend {
       ManagementNotSupported | UnknownDevice | InternalServerError
     >;
     /**
+     * Serve the OTA manifest an iPhone/iPad downloads for an uploaded `.ipa`.
+     *
+     * `InstallApplication` accepts a `ManifestURL`, not an inline manifest, so
+     * the catalogue has to host the plist itself. The URL is signed and bound
+     * to one enrolled device, exactly like the package asset it points at.
+     * Optional so protocol adapters without a database keep working.
+     */
+    readonly getAppleManifest?: (
+      identityCertificate: string | undefined,
+      identifier: string,
+      token?: string,
+    ) => Effect.Effect<
+      { content: Uint8Array; contentType: string } | null,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    /**
      * Fetch the legacy `.mobileconfig` behind a DDM `com.apple.configuration.legacy`
      * declaration. The device-facing route verifies the signed URL before calling
      * this, so this lookup only resolves policy content.

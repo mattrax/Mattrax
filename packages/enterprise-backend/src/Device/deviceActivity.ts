@@ -182,6 +182,8 @@ const AUDIT_TITLES = {
   "device.renamed": "Device renamed",
   "device.name_push_queued": "Device name push queued",
   "device.name_push_skipped": "Device name push skipped",
+  "application.uninstall_queued": "Application uninstall requested",
+  "application.uninstall_requested": "Application uninstall requested",
   "device.lock_screen_message_pushed": "Lock screen message queued",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",

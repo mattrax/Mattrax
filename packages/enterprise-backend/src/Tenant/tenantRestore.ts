@@ -102,6 +102,7 @@ type ParsedBundle = {
     sha256: string | null;
     r2Key: string | null;
     notes: string | null;
+    removeOnUnassign?: boolean | null;
     installers?: ReadonlyArray<{
       platform: "apple" | "win" | "android";
       source: "manifest" | "store" | "upload";
@@ -117,6 +118,7 @@ type ParsedBundle = {
       minOsVersion: string | null;
       requiredCapability: string | null;
       priority: number;
+      provisioningExpiresAt?: string | null;
     }>;
     groupKeys: ReadonlyArray<string>;
     userGroupIds: ReadonlyArray<string>;
@@ -589,6 +591,7 @@ export const parseTenantRestoreBundle = (
         sha256: text(application.sha256, 255),
         r2Key: application.r2Key ?? null,
         notes: text(application.notes, 10_000),
+        removeOnUnassign: application.removeOnUnassign ?? false,
         installers: application.installers?.map((installer) => ({
           platform: installer.platform,
           source: installer.source,
@@ -604,6 +607,7 @@ export const parseTenantRestoreBundle = (
           minOsVersion: text(installer.minOsVersion, 255),
           requiredCapability: text(installer.requiredCapability, 255),
           priority: installer.priority ?? 0,
+          provisioningExpiresAt: installer.provisioningExpiresAt ?? null,
         })),
         groupKeys: application.groupKeys ?? [],
         userGroupIds: Array.isArray(application.userGroupIds)
@@ -1197,6 +1201,7 @@ export const applyTenantBundle = (
             // Same tenant, so the object under `a/<tenant>/` still exists.
             r2Key: application.r2Key,
             notes: application.notes,
+            removeOnUnassign: application.removeOnUnassign ?? false,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
@@ -1241,6 +1246,9 @@ export const applyTenantBundle = (
               minOsVersion: installer.minOsVersion ?? null,
               requiredCapability: installer.requiredCapability ?? null,
               priority: installer.priority ?? 0,
+              provisioningExpiresAt: installer.provisioningExpiresAt
+                ? new Date(installer.provisioningExpiresAt)
+                : null,
               createdAt: timestamp,
               updatedAt: timestamp,
             });

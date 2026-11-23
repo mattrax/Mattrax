@@ -88,6 +88,38 @@ A terminal run reported by `mattraxd` also writes a `script.run_completed` or
 result has no device event. Metadata contains the script id and name, trigger, status, exit code,
 duration and timeout flag — never output or environment values.
 
+## Collect device attributes
+
+A script can populate tenant-defined [device attributes](/manage/devices#custom-attributes).
+Bind the attribute to the script in **Settings → Attributes**, then have the script print one
+of:
+
+- a JSON object keyed by attribute key (or the binding's **Output key**):
+  `{"antivirus":"CrowdStrike","agent_version":"7.12"}`; or
+- one value per line, in the attribute list order. A blank line is an empty value and
+  is reported as an error; it does not shift the lines after it.
+
+The server maps the result through the bindings declared in the tenant, validates every
+value with the attribute's type, options and length, and writes only those attributes. An
+unexpected key is ignored. A value of the wrong type, a missing key or line, an empty value
+or a failed run records a per-device/per-attribute error and keeps the previous value
+instead of writing a partial result.
+
+Collection runs whenever the script runs, so an interval or cron trigger gives periodic
+refreshes without another scheduler. Editing the script's output does not require re-arming
+the trigger. The device page's **Collect now** button queues a single manual run for that
+device through the normal run path (24-hour expiry, deduplication, 64 KiB output cap and
+redaction), so it obeys the same limits as **Run on assigned devices**. The script must be
+assigned to the device or one of its groups.
+
+Every write is audited as a device attribute change with `source: script`, the script id and
+the run id. Nothing else — environment values, stderr or unrelated stdout — is stored beyond
+the existing run history.
+
+**Platform support:** Apple only. Android has no script command, and the Windows agent does
+not implement the script delivery channel yet, so both report attribute collection as
+unsupported rather than queueing a run that never happens.
+
 ## Queue and retention
 
 - A manual run is `queued` until the device reports a result, then `succeeded` or `failed`.

@@ -323,8 +323,9 @@ a `mttx.apple.application.<id>` configuration (with `sha256`, `fileName`, `bundl
 ## Limitations
 
 - The built-in Apple device configuration is limited to the camera restriction.
-- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded `.pkg`
-  app; uploaded packages install on macOS only.
+- `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded app.
+  A catalogue `.pkg` targets macOS and a catalogue `.ipa` targets iOS/iPadOS; a package
+  uploaded against the policy itself is `.pkg`-only.
 - Policy resolution is application-side; very large fleets may see slower syncs.
 - Windows only supports OMA-URI `Replace`.
 - Android merge rules concatenate arrays; plan fragments accordingly.

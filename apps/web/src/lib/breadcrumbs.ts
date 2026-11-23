@@ -40,6 +40,7 @@ const ROUTE_LABELS = new Map<string, string>([
   ["audit", "Audit log"],
   ["billing", "Billing"],
   ["administrators", "Administrators"],
+  ["approvals", "Approvals"],
 ]);
 
 const normalise = (value: string) => value.trim().toLocaleLowerCase();

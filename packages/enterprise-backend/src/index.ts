@@ -598,8 +598,10 @@ export {
   attributeDefinitionRow,
   attributeValuesProblem,
   claimEnrollmentAnswers,
+  collectScriptAttributeValues,
   definitionInputProblem,
   listAttributeDefinitions,
+  loadDeviceAttributeCollection,
   loadDeviceAttributes,
   loadEnrollmentQuestions,
   mergeAttributeValues,
@@ -810,6 +812,7 @@ export {
   isMsiProductCode,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
+  windowsMsiUninstallPayload,
 } from "./Device/windowsApplications.ts";
 
 export type { DeviceActivityPage } from "./Device/deviceActivity.ts";

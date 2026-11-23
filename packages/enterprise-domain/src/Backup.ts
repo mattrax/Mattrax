@@ -123,6 +123,8 @@ export const TenantExportInstaller = Schema.Struct({
   minOsVersion: Schema.optional(NullableString),
   requiredCapability: Schema.optional(NullableString),
   priority: Schema.optional(Schema.Number),
+  /** Provisioning-profile expiry read from an uploaded `.ipa`, when known. */
+  provisioningExpiresAt: Schema.optional(NullableString),
 });
 
 export type TenantExportInstaller = typeof TenantExportInstaller.Type;
@@ -143,6 +145,8 @@ export const TenantExportApplication = Schema.Struct({
   /** Hint only. Object bytes are never part of a bundle. */
   r2Key: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Remove the app from devices that lose their assignment. */
+  removeOnUnassign: Schema.optional(Schema.Boolean),
   /** Multi-installer catalogues; older bundles omit this and use the flat fields. */
   installers: Schema.optional(Schema.Array(TenantExportInstaller)),
   groupKeys: Schema.Array(Schema.String),

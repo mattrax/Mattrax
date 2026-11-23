@@ -22,6 +22,7 @@ const webhookOperations = new Map([
   ["/webhook/apple/declaration-items", "getAppleDeclarationItems"],
   ["/webhook/apple/declaration", "getAppleDeclaration"],
   ["/webhook/apple/asset", "getAppleAsset"],
+  ["/webhook/apple/manifest", "getAppleManifest"],
   ["/webhook/apple/profile", "getAppleProfile"],
   ["/webhook/windows/discovery", "windowsDiscovery"],
   ["/webhook/windows/policy", "getWindowsEnrollmentPolicy"],

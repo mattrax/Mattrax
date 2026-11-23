@@ -29,6 +29,19 @@ export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>
   },
 ) {}
 
+/**
+ * A four-eyes policy blocks the action until another administrator decides.
+ * Kept deliberately small: the large enterprise endpoint group is already at
+ * the compiler's declaration-emit limit, so this carries the request handle and
+ * effective status rather than a copy of the policy.
+ */
+export class ApprovalRequired extends Schema.TaggedError<ApprovalRequired>()("ApprovalRequired", {
+  message: Schema.String,
+  code: Schema.optional(Schema.Literal("approval_required")),
+  requestId: Schema.String,
+  status: Schema.Literals(["pending", "approved"]),
+}) {}
+
 /** A tenant member's RBAC role does not grant the endpoint's permission. */
 export class EnterprisePermissionDenied extends Schema.TaggedError<EnterprisePermissionDenied>()(
   "EnterprisePermissionDenied",
@@ -238,6 +251,22 @@ export const EnterprisePolicyApplicationDownloadErrors = [
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
 
+/** Handover archives are sealed client-side of the database and stored in R2. */
+export const EnterpriseDeviceHandoverErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseDeviceHandoverDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
 export const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
@@ -313,6 +342,11 @@ export const EnterpriseAccountErrors = [
 
 /** Sensitive account/tenant actions also require a recent step-up. */
 export const EnterpriseStepUpRequired = [StepUpRequired.pipe(HttpApiSchema.status(403))] as const;
+
+/** A second administrator must approve the action before it can run. */
+export const EnterpriseApprovalRequired = [
+  ApprovalRequired.pipe(HttpApiSchema.status(403)),
+] as const;
 
 export const EnterpriseAutopilotReadErrors = [
   ...EnterpriseTenantReadErrors,
@@ -393,6 +427,11 @@ export const ENTERPRISE_ERROR_CODES = [
   "last_tenant_account",
   "step_up_required",
   "step_up_unavailable",
+  "approval_required",
+  "approval_expired",
+  "approval_consumed",
+  "approval_not_approved",
+  "approval_payload_mismatch",
   "invitation_expired",
   "slug_taken",
   "token_scope",
@@ -472,6 +511,8 @@ export const defaultErrorCode = (tag: string): EnterpriseErrorCode | undefined =
       return "tenant_has_members";
     case "EnterpriseLastTenantAccount":
       return "last_tenant_account";
+    case "ApprovalRequired":
+      return "approval_required";
     case "StepUpRequired":
       return "step_up_required";
     case "StepUpUnavailable":

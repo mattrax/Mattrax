@@ -1,4 +1,5 @@
 import { Option, Schema } from "effect";
+import { PASSPHRASE_PBKDF2_ITERATIONS } from "@mattrax/crypto";
 import { NullableString } from "./Errors.js";
 import { TenantExportAuditEntry, TenantExportEnvelope } from "./Backup.js";
 
@@ -25,7 +26,9 @@ export const CUTOVER_VERSION = 1;
  * PBKDF2-SHA256 work factor. WebCrypto is available in Workers and Node, which
  * keeps the codec portable; 600k iterations is the current OWASP figure.
  */
-export const CUTOVER_KDF_ITERATIONS = 600_000;
+// Shared with the device-handover envelope so the two sealed formats cannot
+// drift to different work factors.
+export const CUTOVER_KDF_ITERATIONS = PASSPHRASE_PBKDF2_ITERATIONS;
 
 /** Bounds accepted on import, so an archive cannot ask us to burn CPU. */
 export const CUTOVER_KDF_MIN_ITERATIONS = 10_000;

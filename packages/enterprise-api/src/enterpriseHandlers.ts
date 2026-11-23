@@ -14,10 +14,12 @@ import type {
   enterpriseUserApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  enterpriseApprovalApi,
   fleetMigrationApi,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
+import { enterpriseDeviceHandoverApi } from "@mattrax/enterprise-domain";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -40,6 +42,25 @@ import {
   EnterpriseTenantHasMembers,
   EnterpriseTenantTeardownFailed,
   EnterpriseUpstreamError,
+  APPROVAL_ACTION_LABELS,
+  APPROVAL_ACTIONS,
+  APPROVAL_BREAK_GLASS_HEADER,
+  APPROVAL_ID_HEADER,
+  APPROVAL_MAX_NOTE_LENGTH,
+  APPROVAL_MAX_REASON_LENGTH,
+  APPROVAL_MAX_REQUIRED,
+  APPROVAL_REQUEST_TTL_MS,
+  ApprovalRequired,
+  approvalActionSupportsScope,
+  approvalEligibilityMessage,
+  approvalPayloadBinding,
+  approvalPayloadHash,
+  hashCanonicalJson,
+  approverEligibility,
+  effectiveApprovalStatus,
+  emptyApprovalTarget,
+  isPermission,
+  selectApprovalPolicy,
   updatedAtSatisfiesPrecondition,
   credentialPermissions,
   hasAnyWritePermission,
@@ -48,6 +69,7 @@ import {
   EnterpriseUnauthorized,
   EnterpriseService,
   enterpriseApi,
+  enterpriseApplicationApi,
   enterpriseGroupApi,
   enterpriseAttributeApi,
   enterpriseSoftwareUpdateApi,
@@ -64,6 +86,7 @@ import {
   dynamicGroupRuleGroupIds,
   dynamicGroupReferenceProblem,
   isMacOsDevice,
+  isConfirmedMacOsDevice,
   DEVICE_SECURITY_INFO_STALE_AFTER_DAYS,
   defaultOverviewWidgets,
   DASHBOARD_REPORTS_PER_DASHBOARD,
@@ -80,6 +103,8 @@ import {
   deviceNameDrift,
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  appleLostModePayload,
+  appleLostModeProblem,
   isAppleLockScreenMessageDevice,
   lockScreenMessageProblem,
   normalizeAppleLockScreenMessage,
@@ -97,6 +122,7 @@ import {
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   DynamicGroupRules,
+  DeviceLocalAccount,
   DeviceManagementApp,
   verifyScriptAgentToken,
   POLICY_SNAPSHOT_ENABLED_KEY,
@@ -138,8 +164,11 @@ import {
   normaliseStorefrontRegion,
   resolveApplicationStoreId,
   summariseApplicationAvailability,
+  APPLICATION_UNINSTALL_DEADLINE_MS,
+  sameApplicationBundle,
 } from "@mattrax/enterprise-domain";
 import type {
+  AttributeSource,
   DevicePreRegistrationImportResponse,
   Permission,
   EnterpriseAuth,
@@ -148,6 +177,10 @@ import type {
   TenantImportResponse,
   DashboardQueryBatchRequest,
   StepUpAction,
+  ApprovalAction,
+  ApprovalPolicy,
+  ApprovalScopeType,
+  ApprovalStatus,
   TenantScepCaInfo,
   BillingCheckoutRequest,
   WebhookDeliveryQuery,
@@ -184,6 +217,8 @@ import {
   listWindowsFailuresForDevice,
   listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
+  R2_PRIVATE_CACHE_CONTROL,
+  recordApplicationInstall,
   tenantLimitForAccount,
   WINDOWS_FAILURE_RETENTION_DAYS,
 } from "@mattrax/enterprise-core";
@@ -245,8 +280,10 @@ import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   RECONCILED_RESULT_STATUS,
+  applePasswordHash,
   appleLockScreenProfileIdentifier,
   buildAppleLockScreenProfile,
+  generateLocalAdminPassword,
   installProfilePayload,
   profileDigest,
   CATALOGUE_APPLICATION_ASSET_KIND,
@@ -257,7 +294,9 @@ import {
   commandStatusIsActive,
   deviceCommandExpiresAt,
   extendedCommandDeadline,
+  installCommandTargetsApplication,
   planCommandQueueing,
+  setAutoAdminPasswordPayload,
   WebhookPayload,
   writeSystemAudit,
 } from "@mattrax/mdm-apple";
@@ -285,6 +324,7 @@ import {
   syncAutopilotDevices,
   updateAutopilotProfile,
   validateAutopilotProfileInput,
+  windowsMsiUninstallPayload,
 } from "@mattrax/enterprise-backend";
 import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
 import {
@@ -310,7 +350,16 @@ import {
   makeApnsService,
   validateApnsCertificate,
 } from "@mattrax/apns";
-import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import {
+  exportPrivateKeyJwk,
+  openSecret,
+  sealSecret,
+  sealWithPassphrase,
+  signScopedToken,
+  verifyScopedToken,
+  PASSPHRASE_ENVELOPE_VERSION,
+  PASSPHRASE_PBKDF2_ITERATIONS,
+} from "@mattrax/crypto";
 import {
   EscrowKeyError,
   escrowKeyInfo,
@@ -429,6 +478,7 @@ import {
   claimEnrollmentAnswers,
   definitionInputProblem,
   listAttributeDefinitions,
+  loadDeviceAttributeCollection,
   loadDeviceAttributes,
   loadEnrollmentQuestions,
   mergeAttributeValues,
@@ -550,12 +600,15 @@ import type { CutoverTarget } from "@mattrax/enterprise-backend";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
-  appleOsFamily,
+  appleUploadKind,
+  appleUploadSupportsDevice,
   buildAppleManifest,
+  buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
+  buildRemoveApplicationPayload,
   createAppleProfileSigner,
   AppleAdeEnrollmentError,
-  isApplePackageUpload,
+  ipaProvisioningExpiresAt,
   parseAppleAdeMachineInfo,
   signAppleAssetToken,
   signAppleProfilePlist,
@@ -763,7 +816,10 @@ const errorTag = (error: ServiceFailure): string | undefined =>
 const isModelledError = (error: ServiceFailure): boolean => {
   const tag = errorTag(error);
 
-  return tag !== undefined && (tag.startsWith("Enterprise") || tag.startsWith("StepUp"));
+  return (
+    tag !== undefined &&
+    (tag.startsWith("Enterprise") || tag.startsWith("StepUp") || tag === "ApprovalRequired")
+  );
 };
 
 const expectedClientTags = new Set([
@@ -776,6 +832,7 @@ const expectedClientTags = new Set([
   "EnterpriseLastTenantAccount",
   "StepUpRequired",
   "StepUpUnavailable",
+  "ApprovalRequired",
 ]);
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
@@ -870,6 +927,7 @@ const PRODUCT_EVENTS = {
   resetTenantEnrollment: "enrollment_settings_reset",
   deviceAction: "device_command_sent",
   installApplication: "application_install_requested",
+  uninstallApplication: "application_uninstall_requested",
   installVppAsset: "vpp_asset_install_requested",
   runTenantBackup: "backup_started",
   billingPortal: "billing_portal_opened",
@@ -878,6 +936,43 @@ const PRODUCT_EVENTS = {
 } satisfies Record<string, string>;
 
 const PRODUCT_EVENT_BY_METHOD = new Map(Object.entries(PRODUCT_EVENTS));
+
+/**
+ * Largest application artefact accepted by an upload endpoint.
+ *
+ * Workers buffer the JSON request body before the handler runs, so the cap
+ * must reject the base64 string before decoding it as well as checking the
+ * decoded length. A hostile caller cannot make the isolate allocate an
+ * arbitrarily large package.
+ */
+export const APPLICATION_UPLOAD_MAX_BYTES = 512 * 1024 * 1024;
+
+const APPLICATION_UPLOAD_MAX_BASE64_CHARS = Math.ceil(APPLICATION_UPLOAD_MAX_BYTES / 3) * 4;
+
+/** A reason when a base64 upload is over the limit, or undefined when it fits. */
+export const applicationUploadLimitProblem = (base64Length: number): string | undefined =>
+  base64Length > APPLICATION_UPLOAD_MAX_BASE64_CHARS
+    ? `The uploaded file is too large. The limit is ${APPLICATION_UPLOAD_MAX_BYTES / (1024 * 1024)} MB.`
+    : undefined;
+
+/** Decode an upload only after proving its base64 and decoded sizes fit. */
+const decodeApplicationUpload = (content: string) =>
+  Effect.gen(function* () {
+    const problem = applicationUploadLimitProblem(content.length);
+
+    if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+    const bytes = base64ToBytes(content);
+
+    if (bytes.byteLength > APPLICATION_UPLOAD_MAX_BYTES)
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({
+          message: `The uploaded file is too large. The limit is ${APPLICATION_UPLOAD_MAX_BYTES / (1024 * 1024)} MB.`,
+        }),
+      );
+
+    return bytes;
+  });
 
 const wrapServiceErrors = <S extends object>(
   service: S,
@@ -1180,6 +1275,51 @@ const safeFilename = (value: string) =>
     .replaceAll(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
 
+/**
+ * Escrowed secret kinds a handover archive may carry. The list is explicit
+ * rather than "every device_secret row" so a future kind cannot leave the
+ * deployment until it is deliberately added here and covered by the docs.
+ */
+const DEVICE_HANDOVER_SECRET_KINDS = [
+  "filevault_recovery_key",
+  "activation_lock_bypass_code",
+  "recovery_lock_password",
+  "local_admin_password",
+  "bootstrap_token",
+] as const;
+
+type DeviceHandoverSecretKind = (typeof DEVICE_HANDOVER_SECRET_KINDS)[number];
+
+const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, string> = {
+  filevault_recovery_key: "FileVault recovery key",
+  activation_lock_bypass_code: "Activation Lock bypass code",
+  recovery_lock_password: "Recovery Lock password",
+  local_admin_password: "managed local administrator password",
+  bootstrap_token: "bootstrap token",
+};
+
+/** A single export is bounded so one request cannot hold the database open. */
+const DEVICE_HANDOVER_MAX_DEVICES = 500;
+
+/** Long enough to save the file, short enough that a copied URL is useless. */
+const DEVICE_HANDOVER_TTL_MS = 15 * 60 * 1000;
+
+const DEVICE_HANDOVER_DOWNLOAD_SCOPE = "device-handover";
+
+const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
+
+const DEVICE_HANDOVER_REASON_MAX_LENGTH = 500;
+
+/**
+ * Bound the plaintext archive before sealing it. 500 devices with long notes
+ * can exceed a MySQL packet, so a refused export is safer than a write that
+ * fails after the operator already started deleting hardware.
+ */
+const DEVICE_HANDOVER_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+
+const isDeviceHandoverSecretKind = (value: string): value is DeviceHandoverSecretKind =>
+  (DEVICE_HANDOVER_SECRET_KINDS as ReadonlyArray<string>).includes(value);
+
 /** Slug candidates are derived from tenant input and bounded for MySQL indexes. */
 const slugBase = (value: string) =>
   value
@@ -1373,6 +1513,25 @@ const hashJson = (value: Schema.Json) =>
       Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
     ),
   );
+
+/**
+ * Canonical hash for a script write. Object key order must not change the
+ * approval binding, and the optimistic-concurrency timestamp is not part of
+ * the operation: the same logical edit sent twice must reuse one request.
+ */
+const scriptWritePayloadHash = (value: unknown) =>
+  Effect.promise(() => {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const { expectedUpdatedAt: _expectedUpdatedAt, ...rest } = value as Record<
+        string,
+        Schema.Json
+      >;
+
+      return hashCanonicalJson(rest);
+    }
+
+    return hashCanonicalJson(value as Schema.Json);
+  });
 
 const TENANT_ROLES = new Set(["owner", "admin", "member", "auditor"]);
 
@@ -2670,6 +2829,78 @@ export const createEnterpriseService = ({
   const WEBHOOK_EVENTS = new Set<string>(WEBHOOK_EVENT_TYPES);
 
   /**
+   * Resolve the source/binding fields of an attribute definition.
+   *
+   * A script-sourced attribute must name a script in the same tenant; binding
+   * another tenant's script would leak both its existence and its output into
+   * this tenant's attributes. Non-script sources never keep a stale binding.
+   */
+  const resolveAttributeBinding = (
+    input: {
+      readonly organizationId: string;
+      readonly source: AttributeSource;
+      readonly scriptId?: string | null;
+      readonly scriptOutputKey?: string | null;
+    },
+    options: { readonly requireEnabled?: boolean } = {},
+  ) =>
+    Effect.gen(function* () {
+      if (input.source !== "script")
+        return {
+          source: input.source,
+          scriptId: null,
+          scriptOutputKey: null,
+          scriptName: null,
+        };
+
+      const scriptId = input.scriptId?.trim();
+
+      if (!scriptId)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Choose the script that reports this attribute." }),
+        );
+
+      const [script] = yield* db
+        .select({
+          id: schema.script.id,
+          name: schema.script.name,
+          enabled: schema.script.enabled,
+        })
+        .from(schema.script)
+        .where(
+          and(
+            eq(schema.script.id, scriptId),
+            eq(schema.script.organizationId, input.organizationId),
+          ),
+        )
+        .limit(1);
+
+      if (!script)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "The chosen script does not exist in this tenant.",
+          }),
+        );
+
+      // An unchanged binding is allowed to survive a disabled script (so other
+      // fields stay editable), but binding *to* a disabled script would never
+      // collect, so it is rejected up front.
+      if (options.requireEnabled && !script.enabled)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: `"${script.name}" is disabled. Enable it before binding this attribute.`,
+          }),
+        );
+
+      return {
+        source: "script" as const,
+        scriptId: script.id,
+        scriptOutputKey: input.scriptOutputKey?.trim() || null,
+        scriptName: script.name,
+      };
+    });
+
+  /**
    * Write a keyed attribute-value map for one device. Values are already
    * validated and canonicalised; `null` deletes the row. The caller owns the
    * audit entry so it can name the source (dashboard, CSV, enrollment).
@@ -2677,12 +2908,24 @@ export const createEnterpriseService = ({
   const writeDeviceAttributeValues = (input: {
     readonly organizationId: string;
     readonly deviceId: string;
-    readonly definitions: ReadonlyArray<{ readonly id: string; readonly key: string }>;
+    readonly definitions: ReadonlyArray<{
+      readonly id: string;
+      readonly key: string;
+      readonly source?: string;
+    }>;
     readonly values: Readonly<Record<string, string | null>>;
     readonly updatedByAccountId: string | null;
   }) =>
     Effect.gen(function* () {
-      const byKey = new Map(input.definitions.map((definition) => [definition.key, definition.id]));
+      // Script-owned values are not the caller's to write. Filtering here
+      // covers every caller: a dashboard save echoes the values
+      // `mergeAttributeValues` preserved, and CSV import could otherwise be
+      // retargeted. The returned key lists stay honest for the audit entry.
+      const byKey = new Map(
+        input.definitions
+          .filter((definition) => definition.source !== "script")
+          .map((definition) => [definition.key, definition.id]),
+      );
       const timestamp = now();
       const cleared: Array<string> = [];
       const written: Array<string> = [];
@@ -3347,6 +3590,30 @@ export const createEnterpriseService = ({
       return devices;
     });
 
+  /** Persist install provenance through the closure's connection. */
+  const recordInstallProvenance = (input: Parameters<typeof recordApplicationInstall>[1]) =>
+    recordApplicationInstall(db, input);
+
+  /** Apple enrollment mode per device, for supervised-only command gating. */
+  const appleEnrollmentModes = (deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return new Map<string, "device" | "user">();
+
+      const rows = yield* db
+        .select({
+          deviceId: schema.deviceApple.deviceId,
+          enrollmentMode: schema.deviceApple.enrollmentMode,
+        })
+        .from(schema.deviceApple)
+        .where(inArray(schema.deviceApple.deviceId, [...deviceIds]));
+
+      return new Map(
+        rows.flatMap((row) =>
+          row.enrollmentMode ? [[row.deviceId, row.enrollmentMode] as const] : [],
+        ),
+      );
+    });
+
   /** InstallApplication payload for a device-assigned VPP licence. */
   const vppInstallPayload = (adamId: string) => ({
     iTunesStoreID: Number(adamId),
@@ -3566,6 +3833,396 @@ export const createEnterpriseService = ({
       yield* db.insert(schema.deviceCommand).values(insertValues);
 
       return { id, payload: input.payload, deduplicated: false };
+    });
+
+  /**
+   * Whether the tenant has a recorded, successful install of this app on the
+   * device. Uninstall must never claim an app the tenant did not install: a
+   * user-installed App Store app is not managed by Mattrax and Apple will
+   * refuse (or worse, silently ignore) the removal.
+   */
+  const recordedApplicationInstall = (input: {
+    readonly deviceId: string;
+    readonly application: EnterpriseApplication;
+    readonly installers: ReadonlyArray<EnterpriseApplicationInstaller>;
+    readonly installer?: EnterpriseApplicationInstaller;
+    readonly storeId?: string | null;
+  }): Effect.Effect<boolean, unknown> =>
+    Effect.gen(function* () {
+      const [provenance] = yield* db
+        .select({ id: schema.applicationInstall.id })
+        .from(schema.applicationInstall)
+        .where(
+          and(
+            eq(schema.applicationInstall.deviceId, input.deviceId),
+            eq(schema.applicationInstall.applicationId, input.application.id),
+          ),
+        )
+        .limit(1);
+
+      if (provenance) return true;
+
+      const installerIds = [
+        ...new Set(
+          [input.installer?.id, ...input.installers.map((installer) => installer.id)].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      ];
+
+      const history = yield* db
+        .select({
+          requestType: schema.deviceCommand.requestType,
+          payload: schema.deviceCommand.payload,
+        })
+        .from(schema.deviceCommand)
+        .where(
+          and(
+            eq(schema.deviceCommand.deviceId, input.deviceId),
+            eq(schema.deviceCommand.status, "succeeded"),
+            inArray(schema.deviceCommand.requestType, [
+              "InstallApplication",
+              "InstallEnterpriseApplication",
+            ]),
+          ),
+        );
+
+      const bundleId = input.installer?.bundleId ?? input.application.bundleId;
+      const platform = input.installer?.platform ?? input.application.platform;
+
+      const matchedHistory = history.some((row) => {
+        if (
+          installCommandTargetsApplication(row, {
+            bundleId,
+            manifestUrl: input.installer?.manifestUrl ?? input.application.manifestUrl,
+            storeId: input.storeId ?? input.installer?.storeId ?? input.application.storeId,
+            applicationId: input.application.id,
+            installerIds,
+          })
+        )
+          return true;
+
+        // A Windows MSI install carries the ProductCode in the CSP locURI
+        // rather than a top-level Apple/Store identifier.
+        if (platform !== "win" || !bundleId) return false;
+
+        const normalized = normalizeMsiProductCode(bundleId).toUpperCase();
+        const encoded = encodeURIComponent(normalized).toUpperCase();
+        const payload = JSON.stringify(row.payload ?? null).toUpperCase();
+
+        return payload.includes(normalized) || payload.includes(encoded);
+      });
+
+      if (matchedHistory) return true;
+
+      if (!bundleId) return false;
+
+      // Corroborate with a managed inventory row. Some Apple reports omit
+      // IsManaged, so this is evidence, never the only proof for Apple.
+      const inventory = yield* db
+        .select({ bundleId: schema.deviceApplication.bundleId })
+        .from(schema.deviceApplication)
+        .where(
+          and(
+            eq(schema.deviceApplication.deviceId, input.deviceId),
+            eq(schema.deviceApplication.isManaged, true),
+          ),
+        );
+
+      return inventory.some((row) => sameApplicationBundle(platform, row.bundleId, bundleId));
+    });
+
+  /** Whether the device's inventory still lists this package. */
+  const deviceApplicationPresent = (deviceId: string, bundleId: string) =>
+    db
+      .select({ bundleId: schema.deviceApplication.bundleId })
+      .from(schema.deviceApplication)
+      .where(
+        and(
+          eq(schema.deviceApplication.deviceId, deviceId),
+          eq(schema.deviceApplication.bundleId, bundleId),
+        ),
+      )
+      .limit(1)
+      .pipe(Effect.map((rows) => rows.length > 0));
+
+  type ApplicationUninstallOutcome =
+    | { readonly queued: true }
+    | { readonly queued: false; readonly failed: boolean; readonly reason: string };
+
+  /**
+   * Queue one device's uninstall and record the state reconciliation resolves.
+   *
+   * Android has no uninstall command: the app leaves the compiled Managed
+   * Google Play policy. When the assignment is being removed that is already
+   * happening, so only the tracking row is written; an explicit uninstall while
+   * the app is still assigned is refused because the policy would keep it.
+   */
+  const queueApplicationUninstallForDevice = (input: {
+    readonly organizationId: string;
+    readonly application: EnterpriseApplication;
+    readonly installer?: EnterpriseApplicationInstaller;
+    readonly device: EnterpriseDevice;
+    readonly bundleId: string;
+    readonly storeId?: string | null;
+    /** Whether the device still receives the app through an assignment. */
+    readonly assigned: boolean;
+    readonly at: Date;
+    readonly removal: "manual" | "unassigned";
+  }): Effect.Effect<ApplicationUninstallOutcome, unknown, never> =>
+    Effect.gen(function* () {
+      const platform = input.installer?.platform ?? input.application.platform;
+
+      let commandId: string | null = null;
+
+      if (platform === "android" && input.removal === "manual" && input.assigned)
+        return {
+          queued: false,
+          failed: true,
+          reason:
+            'Android removes an app by taking it out of the Managed Google Play policy. Unassign it from these devices first, or turn on "Remove from devices when unassigned".',
+        };
+
+      if (platform === "apple") {
+        const command = yield* queueDeviceCommand({
+          organizationId: input.organizationId,
+          deviceId: input.device.id,
+          requestType: "RemoveApplication",
+          payload: buildRemoveApplicationPayload(input.bundleId),
+          at: input.at,
+        });
+
+        commandId = command.id;
+      } else if (platform === "win") {
+        if (!isMsiProductCode(input.bundleId))
+          return {
+            queued: false,
+            failed: true,
+            reason:
+              "Windows can only uninstall an MSI product Mattrax installed. This installer has no MSI ProductCode, so there is no silent uninstall command to queue.",
+          };
+
+        const command = yield* queueDeviceCommand({
+          organizationId: input.organizationId,
+          deviceId: input.device.id,
+          requestType: "WindowsRemoveApplication",
+          payload: windowsMsiUninstallPayload({ productId: input.bundleId }),
+          at: input.at,
+        });
+
+        commandId = command.id;
+      }
+
+      // Only return a licence that is actually assigned; an app installed
+      // outside Apps and Books has no seat to release.
+      let adamId: string | null = null;
+
+      if (platform === "apple" && input.storeId) {
+        const [assignment] = yield* db
+          .select({ adamId: schema.deviceVppAssignment.adamId })
+          .from(schema.deviceVppAssignment)
+          .where(
+            and(
+              eq(schema.deviceVppAssignment.organizationId, input.organizationId),
+              eq(schema.deviceVppAssignment.deviceId, input.device.id),
+              eq(schema.deviceVppAssignment.adamId, input.storeId),
+              eq(schema.deviceVppAssignment.state, "assigned"),
+            ),
+          )
+          .limit(1);
+
+        if (assignment) adamId = assignment.adamId;
+      }
+
+      const values = {
+        organizationId: input.organizationId,
+        deviceId: input.device.id,
+        applicationId: input.application.id,
+        installerId: input.installer?.id ?? null,
+        platform,
+        bundleId: input.bundleId,
+        adamId,
+        commandId,
+        status: "queued" as const,
+        requestedAt: input.at,
+        deadline: new Date(input.at.getTime() + APPLICATION_UNINSTALL_DEADLINE_MS),
+        observedVersion: null,
+        resultDetail: null,
+        updatedAt: input.at,
+      };
+
+      const [existing] = yield* db
+        .select({ id: schema.applicationUninstall.id })
+        .from(schema.applicationUninstall)
+        .where(
+          and(
+            eq(schema.applicationUninstall.deviceId, input.device.id),
+            eq(schema.applicationUninstall.applicationId, input.application.id),
+          ),
+        )
+        .limit(1);
+
+      if (existing)
+        yield* db
+          .update(schema.applicationUninstall)
+          .set(values)
+          .where(eq(schema.applicationUninstall.id, existing.id));
+      else
+        yield* db.insert(schema.applicationUninstall).values({
+          id: id(),
+          createdAt: input.at,
+          ...values,
+        });
+
+      return { queued: true };
+    });
+
+  /**
+   * Queue uninstalls for every device that should lose the app.
+   *
+   * The installer is selected exactly as the install path does, so a mixed
+   * catalogue targets each device with its own platform artefact. Devices that
+   * never received an install from Mattrax are refused rather than removed.
+   */
+  const queueApplicationUninstalls = (input: {
+    readonly organizationId: string;
+    readonly application: EnterpriseApplication;
+    readonly installers: ReadonlyArray<EnterpriseApplicationInstaller>;
+    readonly storefronts: ReadonlyArray<{
+      region: string;
+      storeId: string | null;
+      available: boolean;
+    }>;
+    readonly preferredRegion?: string | null;
+    readonly devices: ReadonlyArray<EnterpriseDevice>;
+    /** Devices that still receive the app through an assignment. */
+    readonly assignedDeviceIds?: ReadonlySet<string>;
+    /** Apple User Enrollment (BYOD) devices, where RemoveApplication is invalid. */
+    readonly appleUserEnrollmentDeviceIds?: ReadonlySet<string>;
+    readonly at: Date;
+    readonly removal: "manual" | "unassigned";
+  }): Effect.Effect<
+    {
+      readonly queued: number;
+      readonly skipped: number;
+      readonly failed: number;
+      readonly reasons: ReadonlyArray<string>;
+      /** Devices whose removal was recorded (including Android policy-only). */
+      readonly queuedDeviceIds: ReadonlyArray<string>;
+    },
+    unknown
+  > =>
+    Effect.gen(function* () {
+      let queued = 0;
+      let skipped = 0;
+      let failed = 0;
+      const reasons: string[] = [];
+      const queuedDeviceIds: string[] = [];
+
+      for (const device of input.devices) {
+        if (device.status !== "enrolled") {
+          skipped++;
+
+          if (!reasons.includes("One or more devices are not enrolled, so no removal was queued."))
+            reasons.push("One or more devices are not enrolled, so no removal was queued.");
+
+          continue;
+        }
+
+        const candidates = input.installers.filter(
+          (installer) =>
+            installer.platform !== "apple" ||
+            installer.source !== "upload" ||
+            appleUploadSupportsDevice({
+              fileName: installer.fileName,
+              contentType: installer.contentType,
+              osEdition: device.osEdition,
+            }),
+        );
+
+        const installer = selectInstaller(candidates, {
+          proto: device.proto,
+          osVersion: device.osVersion,
+          capabilities: Array.isArray(device.capabilities)
+            ? device.capabilities.filter((value): value is string => typeof value === "string")
+            : undefined,
+        });
+
+        const bundleId = installer?.bundleId?.trim() ?? input.application.bundleId?.trim();
+
+        if (!bundleId) {
+          skipped++;
+          reasons.push(
+            "the catalogue entry has no bundle identifier or package name, so the uninstall cannot be addressed",
+          );
+          continue;
+        }
+
+        const platform = installer?.platform ?? input.application.platform;
+
+        if (platform === "apple" && input.appleUserEnrollmentDeviceIds?.has(device.id)) {
+          failed++;
+          reasons.push(
+            "Apple User Enrollment (BYOD) devices do not support removing managed applications.",
+          );
+          continue;
+        }
+
+        const storeId =
+          platform === "apple" && installer?.source === "store"
+            ? resolveApplicationStoreId({
+                storefronts: input.storefronts,
+                preferredRegion: input.preferredRegion ?? null,
+                legacyStoreId: installer.storeId,
+              })?.storeId
+            : undefined;
+
+        // Android was force-installed by the policy while the app was
+        // assigned, so its presence in inventory is the evidence. Apple and
+        // Windows need a recorded install: their inventory also lists apps the
+        // user installed, which this action must not touch.
+        const installed =
+          platform === "android"
+            ? yield* deviceApplicationPresent(device.id, bundleId)
+            : yield* recordedApplicationInstall({
+                deviceId: device.id,
+                application: input.application,
+                installers: input.installers,
+                installer,
+                storeId,
+              });
+
+        if (!installed) {
+          failed++;
+          reasons.push(
+            "Mattrax did not install this app on one or more devices, so it will not remove it",
+          );
+          continue;
+        }
+
+        const outcome = yield* queueApplicationUninstallForDevice({
+          organizationId: input.organizationId,
+          application: input.application,
+          installer,
+          device,
+          bundleId,
+          storeId,
+          assigned: input.assignedDeviceIds?.has(device.id) ?? false,
+          at: input.at,
+          removal: input.removal,
+        });
+
+        if (outcome.queued) {
+          queued++;
+          queuedDeviceIds.push(device.id);
+        } else {
+          if (outcome.failed) failed++;
+          else skipped++;
+          reasons.push(outcome.reason);
+        }
+      }
+
+      return { queued, skipped, failed, reasons, queuedDeviceIds };
     });
 
   const assertTenantGroup = (tenantId: string, groupId: string) =>
@@ -3897,6 +4554,194 @@ export const createEnterpriseService = ({
     });
 
   /**
+   * Secret kinds escrowed per device, in catalogue order. Presence metadata
+   * only: this powers the pre-delete warning and never reads a sealed value.
+   */
+  const deviceSecretKindsFor = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      const kinds = new Map<string, ReadonlyArray<DeviceHandoverSecretKind>>();
+
+      if (deviceIds.length === 0) return kinds;
+
+      const rows = yield* db
+        .select({
+          deviceId: schema.deviceSecret.deviceId,
+          kind: schema.deviceSecret.kind,
+        })
+        .from(schema.deviceSecret)
+        .where(
+          and(
+            eq(schema.deviceSecret.organizationId, organizationId),
+            inArray(schema.deviceSecret.deviceId, [...deviceIds]),
+          ),
+        );
+      const found = new Map<string, Set<DeviceHandoverSecretKind>>();
+
+      for (const row of rows) {
+        if (!isDeviceHandoverSecretKind(row.kind)) continue;
+
+        const current = found.get(row.deviceId) ?? new Set<DeviceHandoverSecretKind>();
+
+        current.add(row.kind);
+        found.set(row.deviceId, current);
+      }
+
+      for (const [deviceId, present] of found)
+        kinds.set(
+          deviceId,
+          DEVICE_HANDOVER_SECRET_KINDS.filter((kind) => present.has(kind)),
+        );
+
+      return kinds;
+    });
+
+  /** One secret, decrypted into the shape an operator can actually use. */
+  const decryptHandoverSecret = (
+    authSecret: string,
+    organizationId: string,
+    device: { readonly id: string; readonly name: string },
+    secret: {
+      readonly kind: DeviceHandoverSecretKind;
+      readonly sealedValue: string;
+      readonly format: "plaintext" | "cms";
+    },
+  ) =>
+    Effect.gen(function* () {
+      const label = DEVICE_HANDOVER_SECRET_LABELS[secret.kind];
+
+      if (secret.kind === "filevault_recovery_key")
+        return yield* revealRecoveryKey({
+          db,
+          organizationId,
+          sealedValue: secret.sealedValue,
+          format: secret.format,
+          authSecret,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseBadRequest({
+                message: `The ${label} for "${device.name}" could not be decrypted. No handover archive was created and nothing was exported.`,
+              }),
+          ),
+        );
+
+      return yield* Effect.tryPromise({
+        try: () => openSecret(authSecret, secret.sealedValue),
+        catch: () =>
+          new EnterpriseBadRequest({
+            message: `The ${label} for "${device.name}" could not be decrypted. No handover archive was created and nothing was exported.`,
+          }),
+      });
+    });
+
+  type DeviceHandoverArchiveDevice = {
+    readonly id: string;
+    readonly name: string;
+    readonly serial: string | null;
+    readonly assetTag: string | null;
+    readonly notes: string | null;
+    readonly secretKinds: ReadonlyArray<DeviceHandoverSecretKind>;
+    readonly secrets: Partial<Record<DeviceHandoverSecretKind, string>>;
+  };
+
+  /**
+   * Assemble the plaintext archive and its metadata. Values are decrypted only
+   * here, held in memory long enough to seal them, and never returned by the
+   * API or written to the database.
+   */
+  const buildDeviceHandoverArchive = (input: {
+    readonly organization: { readonly id: string; readonly name: string };
+    readonly devices: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly serial: string | null;
+      readonly assetTag: string | null;
+      readonly notes: string | null;
+    }>;
+    readonly at: Date;
+    readonly authSecret: string;
+  }) =>
+    Effect.gen(function* () {
+      const ids = input.devices.map((device) => device.id);
+      const rows = ids.length
+        ? yield* db
+            .select()
+            .from(schema.deviceSecret)
+            .where(
+              and(
+                eq(schema.deviceSecret.organizationId, input.organization.id),
+                inArray(schema.deviceSecret.deviceId, ids),
+              ),
+            )
+        : [];
+
+      const byDevice = new Map<string, typeof rows>();
+
+      for (const row of rows) {
+        const current = byDevice.get(row.deviceId) ?? [];
+
+        current.push(row);
+        byDevice.set(row.deviceId, current);
+      }
+
+      const devices: DeviceHandoverArchiveDevice[] = [];
+
+      for (const device of input.devices) {
+        const secrets: Partial<Record<DeviceHandoverSecretKind, string>> = {};
+
+        for (const secret of byDevice.get(device.id) ?? []) {
+          if (!isDeviceHandoverSecretKind(secret.kind)) continue;
+
+          const value = yield* decryptHandoverSecret(
+            input.authSecret,
+            input.organization.id,
+            device,
+            {
+              kind: secret.kind,
+              sealedValue: secret.sealedValue,
+              format: secret.format,
+            },
+          );
+
+          // An empty escrow is not a secret worth handing over; leave the kind
+          // out so the archive records only what it actually contains.
+          if (value.trim().length === 0) continue;
+
+          secrets[secret.kind] = value;
+        }
+
+        devices.push({
+          id: device.id,
+          name: device.name,
+          serial: device.serial,
+          assetTag: device.assetTag,
+          notes: device.notes,
+          secretKinds: DEVICE_HANDOVER_SECRET_KINDS.filter((kind) => secrets[kind] !== undefined),
+          secrets,
+        });
+      }
+
+      const secretKinds = DEVICE_HANDOVER_SECRET_KINDS.filter((kind) =>
+        devices.some((device) => device.secretKinds.includes(kind)),
+      );
+
+      const document = {
+        format: "mattrax.device-handover" as const,
+        version: 1,
+        createdAt: iso(input.at),
+        tenant: { id: input.organization.id, name: input.organization.name },
+        devices,
+        secretKinds,
+      };
+
+      return {
+        document,
+        devices: devices.map(({ secrets: _secrets, ...device }) => device),
+        secretKinds,
+      };
+    });
+
+  /**
    * Payload for `RotateFileVaultKey`.
    *
    * Changing the personal recovery key requires the current key as the
@@ -4054,6 +4899,19 @@ export const createEnterpriseService = ({
        * cannot apply a supervised system-scoped declaration.
        */
       readonly enrollmentMode?: "device" | "user" | null;
+      readonly lostModeEnabled?: boolean;
+      readonly lostModeMessage?: string | null;
+      readonly lostModePhone?: string | null;
+      readonly lostModeFootnote?: string | null;
+      readonly lostModeRequestedAt?: Date | null;
+      readonly lostModeAcknowledgedAt?: Date | null;
+      readonly lostModeLatitude?: string | null;
+      readonly lostModeLongitude?: string | null;
+      readonly lostModeHorizontalAccuracy?: string | null;
+      readonly lostModeVerticalAccuracy?: string | null;
+      readonly lostModeLocationReportedAt?: Date | null;
+      readonly localAccountsUpdatedAt?: Date | null;
+      readonly localAdminGuid?: string | null;
     },
     android?: {
       readonly managementMode?: string | null;
@@ -4104,6 +4962,40 @@ export const createEnterpriseService = ({
       appliedNameAt: row.appliedNameAt,
     }),
     ...rowLockScreen(row, lockScreen?.policy),
+    apple: setup
+      ? {
+          lostMode: {
+            enabled: setup.lostModeEnabled ?? false,
+            message: setup.lostModeMessage ?? null,
+            phone: setup.lostModePhone ?? null,
+            footnote: setup.lostModeFootnote ?? null,
+            requestedAt: setup.lostModeRequestedAt ? iso(setup.lostModeRequestedAt) : null,
+            acknowledgedAt: setup.lostModeAcknowledgedAt ? iso(setup.lostModeAcknowledgedAt) : null,
+            // A device that is not in Lost Mode must not show a location; Apple's
+            // DeviceLocation fix has no meaning outside Lost Mode.
+            location:
+              setup.lostModeEnabled === true &&
+              setup.lostModeLatitude !== null &&
+              setup.lostModeLatitude !== undefined &&
+              setup.lostModeLongitude !== null &&
+              setup.lostModeLongitude !== undefined
+                ? {
+                    latitude: Number(setup.lostModeLatitude),
+                    longitude: Number(setup.lostModeLongitude),
+                    horizontalAccuracy: setup.lostModeHorizontalAccuracy ?? null,
+                    verticalAccuracy: setup.lostModeVerticalAccuracy ?? null,
+                    reportedAt: setup.lostModeLocationReportedAt
+                      ? iso(setup.lostModeLocationReportedAt)
+                      : null,
+                  }
+                : null,
+          },
+          localAccountsUpdatedAt: setup.localAccountsUpdatedAt
+            ? iso(setup.localAccountsUpdatedAt)
+            : null,
+          localAdminGuidKnown: Boolean(setup.localAdminGuid),
+        }
+      : null,
     vendor: row.vendor,
     osEdition: row.osEdition,
     osVersion: row.osVersion,
@@ -4152,6 +5044,8 @@ export const createEnterpriseService = ({
       model: row.model,
       declarationMode: setup?.declarationMode ?? null,
       enrollmentMode: setup?.enrollmentMode ?? null,
+      lostModeEnabled: setup?.lostModeEnabled ?? null,
+      localAdminGuid: setup?.localAdminGuid ?? null,
       capabilities: Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
       ),
@@ -4282,6 +5176,19 @@ export const createEnterpriseService = ({
             returnToServiceCompletedAt: Date | null;
             declarationMode: "ddm" | "legacy" | null;
             enrollmentMode: "device" | "user" | null;
+            lostModeEnabled: boolean;
+            lostModeMessage: string | null;
+            lostModePhone: string | null;
+            lostModeFootnote: string | null;
+            lostModeRequestedAt: Date | null;
+            lostModeAcknowledgedAt: Date | null;
+            lostModeLatitude: string | null;
+            lostModeLongitude: string | null;
+            lostModeHorizontalAccuracy: string | null;
+            lostModeVerticalAccuracy: string | null;
+            lostModeLocationReportedAt: Date | null;
+            localAccountsUpdatedAt: Date | null;
+            localAdminGuid: string | null;
           }
         >();
 
@@ -4295,11 +5202,62 @@ export const createEnterpriseService = ({
           returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
           declarationMode: schema.deviceApple.declarationMode,
           enrollmentMode: schema.deviceApple.enrollmentMode,
+          lostModeEnabled: schema.deviceApple.lostModeEnabled,
+          lostModeMessage: schema.deviceApple.lostModeMessage,
+          lostModePhone: schema.deviceApple.lostModePhone,
+          lostModeFootnote: schema.deviceApple.lostModeFootnote,
+          lostModeRequestedAt: schema.deviceApple.lostModeRequestedAt,
+          lostModeAcknowledgedAt: schema.deviceApple.lostModeAcknowledgedAt,
+          lostModeLatitude: schema.deviceApple.lostModeLatitude,
+          lostModeLongitude: schema.deviceApple.lostModeLongitude,
+          lostModeHorizontalAccuracy: schema.deviceApple.lostModeHorizontalAccuracy,
+          lostModeVerticalAccuracy: schema.deviceApple.lostModeVerticalAccuracy,
+          lostModeLocationReportedAt: schema.deviceApple.lostModeLocationReportedAt,
+          localAccountsUpdatedAt: schema.deviceApple.localAccountsUpdatedAt,
+          localAdminGuid: schema.deviceApple.localAdminGuid,
         })
         .from(schema.deviceApple)
         .where(inArray(schema.deviceApple.deviceId, [...deviceIds]));
 
       return new Map(rows.map((row) => [row.deviceId, row]));
+    });
+
+  /**
+   * Local accounts for a page of devices. Health needs them for the admin and
+   * SecureToken rules; the device detail response also returns the full rows.
+   */
+  const deviceLocalAccountsFor = (deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return new Map<string, DeviceLocalAccount[]>();
+
+      const rows = yield* db
+        .select()
+        .from(schema.deviceLocalAccount)
+        .where(inArray(schema.deviceLocalAccount.deviceId, [...deviceIds]))
+        .orderBy(asc(schema.deviceLocalAccount.username));
+
+      const byDevice = new Map<string, DeviceLocalAccount[]>();
+
+      for (const row of rows) {
+        const list = byDevice.get(row.deviceId) ?? [];
+        list.push({
+          username: row.username,
+          fullName: row.fullName,
+          uid: row.uid,
+          guid: row.guid,
+          isAdmin: row.isAdmin,
+          isManaged: row.isManaged,
+          hasSecureToken: row.hasSecureToken,
+          isLoggedIn: row.isLoggedIn,
+          mobileAccount: row.mobileAccount,
+          lastLoginAt: row.lastLoginAt ? iso(row.lastLoginAt) : null,
+          lastSeenAt: iso(row.lastSeenAt),
+          reportedAt: iso(row.reportedAt),
+        });
+        byDevice.set(row.deviceId, list);
+      }
+
+      return byDevice;
     });
 
   /** Android Management API fields shown on the device page. */
@@ -4511,6 +5469,19 @@ export const createEnterpriseService = ({
     devices: ReadonlyArray<EnterpriseDevice>,
     declarations: ReadonlyArray<typeof schema.deviceDeclaration.$inferSelect>,
     awaitingByDevice: ReadonlyMap<string, boolean | null>,
+    options: {
+      readonly lostModeByDevice?: ReadonlyMap<string, boolean>;
+      readonly localAccountsByDevice?: ReadonlyMap<
+        string,
+        ReadonlyArray<{
+          readonly username: string;
+          readonly isAdmin?: boolean | null;
+          readonly isManaged?: boolean;
+          readonly hasSecureToken?: boolean | null;
+        }>
+      >;
+      readonly localAccountHealthEnabled?: boolean;
+    } = {},
   ) => {
     const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -4527,6 +5498,11 @@ export const createEnterpriseService = ({
           device,
           byDevice.get(device.id) ?? [],
           awaitingByDevice.get(device.id) ?? null,
+          {
+            lostModeEnabled: options.lostModeByDevice?.get(device.id) ?? null,
+            localAccounts: options.localAccountsByDevice?.get(device.id) ?? null,
+            localAccountHealthEnabled: options.localAccountHealthEnabled,
+          },
         ),
       ]),
     );
@@ -4687,6 +5663,7 @@ export const createEnterpriseService = ({
     minOsVersion: row.minOsVersion,
     requiredCapability: row.requiredCapability,
     priority: row.priority,
+    provisioningExpiresAt: row.provisioningExpiresAt ? iso(row.provisioningExpiresAt) : null,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -5050,7 +6027,14 @@ export const createEnterpriseService = ({
           keep.add(current.id);
           yield* db
             .update(schema.applicationInstaller)
-            .set({ ...values, updatedAt: at })
+            .set({
+              ...values,
+              // The expiry describes the uploaded .ipa. Changing the source
+              // (or keeping a non-upload installer) must not leave a stale one.
+              provisioningExpiresAt:
+                values.source === "upload" ? (current.provisioningExpiresAt ?? null) : null,
+              updatedAt: at,
+            })
             .where(
               and(
                 eq(schema.applicationInstaller.id, current.id),
@@ -5121,6 +6105,7 @@ export const createEnterpriseService = ({
     availability: row.availability ?? "unknown",
     availabilityReason: row.availabilityReason ?? null,
     lastSeenAt: row.lastSeenAt ? iso(row.lastSeenAt) : null,
+    removeOnUnassign: row.removeOnUnassign ?? false,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   });
@@ -5390,8 +6375,12 @@ export const createEnterpriseService = ({
    * export endpoints. Group filtering resolves the membership list up front
    * (one extra query) instead of joining per row.
    */
-  const deviceSearchWhere = (organizationId: string, filters: DeviceSearchFilters) =>
+  const deviceSearchWhere = (
+    organization: { readonly id: string; readonly localAccountHealthEnabled?: boolean },
+    filters: DeviceSearchFilters,
+  ) =>
     Effect.gen(function* () {
+      const organizationId = organization.id;
       const conditions: SQL[] = [eq(schema.device.organizationId, organizationId)];
 
       if (filters.q) {
@@ -5445,9 +6434,10 @@ export const createEnterpriseService = ({
           ),
         );
 
-        // Attribute values are visible as extra table columns. The two column
-        // subqueries stay in separate push calls so each reads on its own.
-        // oxlint-disable-next-line unicorn/prefer-single-call -- one push per searchable column.
+        // Attribute values are visible as extra table columns, and local account
+        // names let an operator find the Mac that owns a shared or unexpected
+        // account.
+        // oxlint-disable-next-line unicorn/prefer-single-call -- one subquery per searchable column.
         search.push(
           inArray(
             schema.device.id,
@@ -5458,6 +6448,18 @@ export const createEnterpriseService = ({
                 and(
                   eq(schema.deviceAttribute.organizationId, organizationId),
                   like(schema.deviceAttribute.value, pattern),
+                ),
+              ),
+          ),
+          inArray(
+            schema.device.id,
+            db
+              .select({ deviceId: schema.deviceLocalAccount.deviceId })
+              .from(schema.deviceLocalAccount)
+              .where(
+                and(
+                  eq(schema.deviceLocalAccount.organizationId, organizationId),
+                  like(schema.deviceLocalAccount.username, pattern),
                 ),
               ),
           ),
@@ -5560,14 +6562,48 @@ export const createEnterpriseService = ({
               .select({
                 deviceId: schema.deviceApple.deviceId,
                 awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+                lostModeEnabled: schema.deviceApple.lostModeEnabled,
               })
               .from(schema.deviceApple)
               .where(inArray(schema.deviceApple.deviceId, deviceIds))
           : [];
 
+        const localAccounts = deviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceLocalAccount.deviceId,
+                username: schema.deviceLocalAccount.username,
+                isAdmin: schema.deviceLocalAccount.isAdmin,
+                isManaged: schema.deviceLocalAccount.isManaged,
+                hasSecureToken: schema.deviceLocalAccount.hasSecureToken,
+              })
+              .from(schema.deviceLocalAccount)
+              .where(inArray(schema.deviceLocalAccount.deviceId, deviceIds))
+          : [];
+
         const awaitingByDevice = new Map(
           awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
         );
+
+        const lostModeByDevice = new Map(
+          awaiting.map((row) => [row.deviceId, row.lostModeEnabled]),
+        );
+
+        const localAccountsByDevice = new Map<
+          string,
+          Array<{
+            username: string;
+            isAdmin: boolean | null;
+            isManaged: boolean;
+            hasSecureToken: boolean | null;
+          }>
+        >();
+
+        for (const account of localAccounts) {
+          const list = localAccountsByDevice.get(account.deviceId) ?? [];
+          list.push(account);
+          localAccountsByDevice.set(account.deviceId, list);
+        }
 
         const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -5583,6 +6619,11 @@ export const createEnterpriseService = ({
               device,
               byDevice.get(device.id) ?? [],
               awaitingByDevice.get(device.id) ?? null,
+              {
+                lostModeEnabled: lostModeByDevice.get(device.id) ?? null,
+                localAccounts: localAccountsByDevice.get(device.id) ?? null,
+                localAccountHealthEnabled: organization.localAccountHealthEnabled,
+              },
             );
 
             return filters.health === "stale" ? health.stale : health.level === filters.health;
@@ -5659,6 +6700,97 @@ export const createEnterpriseService = ({
           deviceIds.length > 0
             ? inArray(schema.device.id, deviceIds)
             : eq(schema.device.id, "__no_matching_push__"),
+        );
+      }
+
+      if (filters.lostMode) {
+        // Lost Mode is stored on `device_apple`; the subquery keeps the filter
+        // set-based and tenant scoping remains on the outer device query.
+        conditions.push(eq(schema.device.proto, "apple"));
+        const appleDevices = db
+          .select({ deviceId: schema.deviceApple.deviceId })
+          .from(schema.deviceApple);
+
+        conditions.push(
+          filters.lostMode === "active"
+            ? inArray(
+                schema.device.id,
+                db
+                  .select({ deviceId: schema.deviceApple.deviceId })
+                  .from(schema.deviceApple)
+                  .where(eq(schema.deviceApple.lostModeEnabled, true)),
+              )
+            : (or(
+                inArray(
+                  schema.device.id,
+                  db
+                    .select({ deviceId: schema.deviceApple.deviceId })
+                    .from(schema.deviceApple)
+                    .where(eq(schema.deviceApple.lostModeEnabled, false)),
+                ),
+                notInArray(schema.device.id, appleDevices),
+              ) ?? sql`false`),
+        );
+      }
+
+      if (filters.localAccount) {
+        // Local accounts are rows on `device_local_account`. Resolve the
+        // matching device ids up front so the predicate stays set-based.
+        const accounts = yield* db
+          .select()
+          .from(schema.deviceLocalAccount)
+          .where(eq(schema.deviceLocalAccount.organizationId, organizationId));
+        const matching = new Set<string>();
+
+        if (filters.localAccount === "without-secure-token") {
+          for (const account of accounts)
+            if (account.hasSecureToken === false) matching.add(account.deviceId);
+        } else {
+          const cutoff = new Date(now().getTime() - 30 * 24 * 60 * 60 * 1000);
+
+          // Apple does not report a local login time, so "not seen recently"
+          // means the inventory itself has not been refreshed. A Mac that has
+          // never reported is included, not silently excluded.
+          const macs = yield* db
+            .select({
+              id: schema.device.id,
+              osEdition: schema.device.osEdition,
+              model: schema.device.model,
+            })
+            .from(schema.device)
+            .where(eq(schema.device.organizationId, organizationId));
+
+          const appleRows = macs.length
+            ? yield* db
+                .select({
+                  deviceId: schema.deviceApple.deviceId,
+                  localAccountsUpdatedAt: schema.deviceApple.localAccountsUpdatedAt,
+                })
+                .from(schema.deviceApple)
+                .where(
+                  inArray(
+                    schema.deviceApple.deviceId,
+                    macs.map((mac) => mac.id),
+                  ),
+                )
+            : [];
+
+          const updatedAt = new Map(
+            appleRows.map((row) => [row.deviceId, row.localAccountsUpdatedAt]),
+          );
+
+          for (const mac of macs) {
+            if (!isConfirmedMacOsDevice(mac)) continue;
+            const at = updatedAt.get(mac.id);
+
+            if (!at || at < cutoff) matching.add(mac.id);
+          }
+        }
+
+        conditions.push(
+          matching.size > 0
+            ? inArray(schema.device.id, [...matching])
+            : eq(schema.device.id, "__no_matching_local_account__"),
         );
       }
 
@@ -7505,6 +8637,912 @@ export const createEnterpriseService = ({
       return row;
     });
 
+  /**
+   * Four-eyes approvals.
+   *
+   * A policy is optional. When none matches, `requireApproval` returns without
+   * doing anything and the endpoint keeps its previous behaviour. When one
+   * does, the action is bound to a canonical payload hash, executed only after
+   * the policy's threshold of decisions, and recorded as consumed so it cannot
+   * be replayed. The helper deliberately runs *after* the existing step-up
+   * checks: approval is an additional control, never a replacement.
+   */
+  type ApprovalRequestRow = typeof schema.approvalRequest.$inferSelect;
+  type ApprovalPolicyRow = typeof schema.approvalPolicy.$inferSelect;
+  type ApprovalDecisionRow = typeof schema.approvalDecision.$inferSelect;
+
+  type ApprovalAuditContext = Parameters<typeof audit>[0];
+
+  type ApprovalActor = ApprovalAuditContext & {
+    readonly organization: ApprovalAuditContext["organization"] & {
+      readonly name: string;
+      readonly displayName?: string | null;
+    };
+    readonly member: { readonly role: string; readonly customRoleId?: string | null };
+    readonly role: {
+      readonly roleName: string;
+      readonly roleKind: "built-in" | "custom";
+      readonly roleId: string | null;
+      readonly permissions: ReadonlySet<string>;
+    };
+    readonly permissions: ReadonlySet<string>;
+  };
+
+  type ApprovalGate = {
+    readonly action: ApprovalAction;
+    readonly target?: {
+      readonly deviceIds: ReadonlyArray<string>;
+      readonly groupIds: ReadonlyArray<string>;
+    };
+    readonly resourceId?: string | null;
+    readonly details?: Schema.Json;
+    /** Metadata-only description stored on the request for the queue. */
+    readonly summary: Schema.Json;
+  };
+
+  const approvalCredentialType = (ctx: ApprovalActor): string =>
+    ctx.credential ? (ctx.credential.type === "api_token" ? "api-token" : "oauth") : "session";
+
+  const approvalPolicyInfo = (row: ApprovalPolicyRow): ApprovalPolicy => ({
+    id: row.id,
+    action: row.action as ApprovalAction,
+    scopeType: row.scopeType as ApprovalScopeType,
+    scopeId: row.scopeId,
+    approverPermission: row.approverPermission,
+    approverRole: row.approverRole,
+    approvalsRequired: row.approvalsRequired,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
+  const approvalPoliciesFor = (organizationId: string, action?: ApprovalAction) =>
+    db
+      .select()
+      .from(schema.approvalPolicy)
+      .where(
+        action
+          ? and(
+              eq(schema.approvalPolicy.organizationId, organizationId),
+              eq(schema.approvalPolicy.action, action),
+            )
+          : eq(schema.approvalPolicy.organizationId, organizationId),
+      )
+      .orderBy(asc(schema.approvalPolicy.action), asc(schema.approvalPolicy.createdAt));
+
+  const approvalRequestFor = (organizationId: string, requestId: string) =>
+    Effect.gen(function* () {
+      const [row] = yield* db
+        .select()
+        .from(schema.approvalRequest)
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, organizationId),
+            eq(schema.approvalRequest.id, requestId),
+          ),
+        )
+        .limit(1);
+
+      return row;
+    });
+
+  const approvalDecisionsFor = (organizationId: string, requestId: string) =>
+    db
+      .select()
+      .from(schema.approvalDecision)
+      .where(
+        and(
+          eq(schema.approvalDecision.organizationId, organizationId),
+          eq(schema.approvalDecision.requestId, requestId),
+        ),
+      )
+      .orderBy(asc(schema.approvalDecision.createdAt));
+
+  /**
+   * Group ids containing these devices. A policy may be narrowed to a group,
+   * and the group membership table already includes inherited rows, so one
+   * indexed read answers the common case.
+   */
+  const deviceGroupIds = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return [] as string[];
+
+      const rows = yield* db
+        .select({ groupId: schema.groupDevice.groupId })
+        .from(schema.groupDevice)
+        .innerJoin(
+          schema.enterpriseGroup,
+          eq(schema.enterpriseGroup.id, schema.groupDevice.groupId),
+        )
+        .where(
+          and(
+            eq(schema.enterpriseGroup.organizationId, organizationId),
+            inArray(schema.groupDevice.deviceId, [...deviceIds]),
+          ),
+        );
+
+      return [...new Set(rows.map((row) => row.groupId))];
+    });
+
+  const approvalDecisionsCount = (organizationId: string, requestId: string) =>
+    Effect.gen(function* () {
+      const [row] = yield* db
+        .select({ value: count() })
+        .from(schema.approvalDecision)
+        .where(
+          and(
+            eq(schema.approvalDecision.organizationId, organizationId),
+            eq(schema.approvalDecision.requestId, requestId),
+            eq(schema.approvalDecision.decision, "approve"),
+          ),
+        );
+
+      return Number(row?.value ?? 0);
+    });
+
+  /**
+   * Persist expiry when a read observes it. The conditional update makes this
+   * safe to call from parallel requests; only the writer that changed the row
+   * appends the audit entry.
+   */
+  const expireApprovalRow = (organizationId: string, row: ApprovalRequestRow, at: Date) =>
+    Effect.gen(function* () {
+      const effective = effectiveApprovalStatus(
+        { status: row.status as ApprovalStatus, expiresAt: row.expiresAt },
+        at,
+      );
+
+      if (effective !== "expired" || row.status === "expired") return effective;
+
+      const updated = yield* db
+        .update(schema.approvalRequest)
+        .set({ status: "expired", updatedAt: at })
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, organizationId),
+            eq(schema.approvalRequest.id, row.id),
+            inArray(schema.approvalRequest.status, ["pending", "approved"]),
+          ),
+        );
+
+      if (updated.affectedRows > 0)
+        yield* writeSystemAudit(db, {
+          organizationId,
+          category: "account",
+          action: "approval.expired",
+          targetType: "approval_request",
+          targetId: row.id,
+          metadata: {
+            action: row.action,
+            policyId: row.policyId,
+            requestedBy: row.requestedByAccountId,
+          },
+        });
+
+      return "expired" as const;
+    });
+
+  const expireApprovalRows = (organizationId: string, at: Date) =>
+    Effect.gen(function* () {
+      const stale = yield* db
+        .select()
+        .from(schema.approvalRequest)
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, organizationId),
+            inArray(schema.approvalRequest.status, ["pending", "approved"]),
+            lte(schema.approvalRequest.expiresAt, at),
+          ),
+        );
+
+      for (const row of stale) yield* expireApprovalRow(organizationId, row, at);
+    });
+
+  const approvalRequirement = (row: {
+    readonly approverPermission: string | null;
+    readonly approverRole: string | null;
+  }) => ({
+    approverPermission: row.approverPermission,
+    approverRole: row.approverRole,
+  });
+
+  const approvalStatusMessage = (status: ApprovalStatus): string => {
+    switch (status) {
+      case "pending":
+        return "This approval has not been decided yet.";
+      case "rejected":
+        return "This approval was rejected and cannot be used.";
+      case "expired":
+        return "This approval has expired and cannot be used.";
+      case "cancelled":
+        return "This approval was cancelled and cannot be used.";
+      case "approved":
+        return "This approval is not available.";
+    }
+  };
+
+  const approvalRequiredError = (
+    row: Pick<ApprovalRequestRow, "id" | "action" | "status" | "approvalsRequired" | "expiresAt">,
+    approvalsReceived: number,
+  ) => {
+    const status: "pending" | "approved" =
+      effectiveApprovalStatus(
+        { status: row.status as ApprovalStatus, expiresAt: row.expiresAt },
+        now(),
+      ) === "approved"
+        ? "approved"
+        : "pending";
+    const message =
+      status === "approved"
+        ? "Approval request " + row.id + " is approved — retry with this approval."
+        : "Approval request " +
+          row.id +
+          " is pending" +
+          (approvalsReceived > 0
+            ? " (" + approvalsReceived + " of " + row.approvalsRequired + " approvals)"
+            : "") +
+          ". Another administrator must approve it before this action can run.";
+
+    return new ApprovalRequired({
+      message,
+      code: "approval_required",
+      requestId: row.id,
+      status,
+    });
+  };
+
+  /**
+   * Tell eligible approvers that a request exists. Best effort: a mail outage
+   * must not fail the caller's request, and deployments without a transport
+   * simply rely on the dashboard queue.
+   */
+  const notifyApprovers = (
+    organization: {
+      readonly id: string;
+      readonly name: string;
+      readonly displayName?: string | null;
+    },
+    request: ApprovalRequestRow,
+    requesterAccountId: string,
+  ) =>
+    Effect.gen(function* () {
+      if (!email) return;
+
+      const rows = yield* db
+        .select({ member: schema.member, account: schema.account })
+        .from(schema.member)
+        .innerJoin(schema.account, eq(schema.account.id, schema.member.accountId))
+        .where(
+          and(
+            eq(schema.member.organizationId, organization.id),
+            eq(schema.account.disabled, false),
+            eq(schema.account.emailVerified, true),
+          ),
+        );
+
+      const tenantName = organization.displayName ?? organization.name;
+      const label = APPROVAL_ACTION_LABELS[request.action as ApprovalAction] ?? request.action;
+      const url = origin + "/t/" + organization.id + "/settings/approvals";
+
+      yield* Effect.forEach(
+        rows,
+        (row) =>
+          Effect.gen(function* () {
+            if (row.account.id === requesterAccountId) return;
+            if (!row.account.email) return;
+
+            const access = yield* loadTenantAccess(db, row.account.id, organization.id);
+
+            if (!access) return;
+            if (!hasPermission(access.role.permissions, "approvals.write")) return;
+
+            const eligibility = approverEligibility(
+              {
+                permissions: access.role.permissions,
+                role: access.member.role,
+                customRoleId: access.member.customRoleId,
+              },
+              approvalRequirement(request),
+            );
+
+            if (eligibility !== "eligible") return;
+
+            yield* sendTransactionalEmail({
+              db,
+              email,
+              template: "approval_request",
+              recipient: row.account.email,
+              organizationId: organization.id,
+              dedupeKey: "approval:" + request.id + ":" + row.account.id,
+              message: {
+                to: row.account.email,
+                from: { name: tenantName, email: invitationFromEmail ?? DEFAULT_INVITATION_FROM },
+                subject: "Approval needed: " + label,
+                text:
+                  (row.account.name || "An administrator") +
+                  " requested approval to " +
+                  label.toLowerCase() +
+                  " in " +
+                  tenantName +
+                  ". Review it at " +
+                  url +
+                  ". The request expires " +
+                  iso(request.expiresAt) +
+                  ".",
+              },
+            });
+          }),
+        { concurrency: 4 },
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Approval notification failed", {
+            organizationId: organization.id,
+            requestId: request.id,
+            cause,
+          }),
+        ),
+      );
+    });
+
+  const approvalRequestInfo = (
+    row: ApprovalRequestRow,
+    viewer: ApprovalActor,
+    decisions: ReadonlyArray<ApprovalDecisionRow>,
+  ) =>
+    Effect.gen(function* () {
+      const accountIds = [
+        row.requestedByAccountId,
+        ...decisions.map((decision) => decision.approverAccountId),
+      ].filter((value): value is string => value != null);
+
+      const accounts = accountIds.length
+        ? yield* db
+            .select({
+              id: schema.account.id,
+              name: schema.account.name,
+              email: schema.account.email,
+            })
+            .from(schema.account)
+            .where(inArray(schema.account.id, [...new Set(accountIds)]))
+        : [];
+
+      const byId = new Map(accounts.map((account) => [account.id, account]));
+      const requester = row.requestedByAccountId ? byId.get(row.requestedByAccountId) : undefined;
+      const status = effectiveApprovalStatus(
+        { status: row.status as ApprovalStatus, expiresAt: row.expiresAt },
+        now(),
+      );
+      const approvalsReceived = decisions.filter(
+        (decision) => decision.decision === "approve",
+      ).length;
+      const requirement = approvalRequirement(row);
+      const eligibility = approverEligibility(
+        {
+          permissions: viewer.permissions,
+          role: viewer.member.role,
+          customRoleId: viewer.member.customRoleId,
+        },
+        requirement,
+      );
+      const requestedByMe = row.requestedByAccountId === viewer.account.id;
+
+      const payloadSummary = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Json)(row.payloadSummary),
+      );
+
+      return {
+        id: row.id,
+        action: row.action as ApprovalAction,
+        actionLabel: APPROVAL_ACTION_LABELS[row.action as ApprovalAction] ?? row.action,
+        status,
+        policyId: row.policyId,
+        scopeType: row.scopeType as ApprovalScopeType,
+        scopeId: row.scopeId,
+        requesterAccountId: row.requestedByAccountId,
+        requesterEmail: requester?.email ?? row.requestedByEmail,
+        requesterName: requester?.name ?? null,
+        approvalsRequired: row.approvalsRequired,
+        approvalsReceived,
+        approverPermission: row.approverPermission,
+        approverRole: row.approverRole,
+        payloadSummary: payloadSummary ?? {},
+        decisions: decisions.map((decision) => ({
+          id: decision.id,
+          approverAccountId: decision.approverAccountId,
+          approverEmail:
+            decision.approverEmail ??
+            (decision.approverAccountId
+              ? (byId.get(decision.approverAccountId)?.email ?? null)
+              : null),
+          approverName: decision.approverAccountId
+            ? (byId.get(decision.approverAccountId)?.name ?? null)
+            : null,
+          decision: decision.decision as "approve" | "reject",
+          note: decision.note,
+          createdAt: iso(decision.createdAt),
+        })),
+        breakGlass: row.breakGlass,
+        breakGlassReason: row.breakGlassReason,
+        canApprove:
+          status === "pending" &&
+          !viewer.credential &&
+          !requestedByMe &&
+          hasPermission(viewer.permissions, "approvals.write") &&
+          eligibility === "eligible",
+        canCancel: status === "pending" && requestedByMe,
+        requestedByMe,
+        expiresAt: iso(row.expiresAt),
+        consumedAt: isoOrNull(row.consumedAt),
+        createdAt: iso(row.createdAt),
+        updatedAt: iso(row.updatedAt),
+      };
+    });
+
+  /**
+   * Consume an approval before the gated action runs. The conditional update is
+   * the single-use guarantee: two concurrent retries cannot both observe
+   * `affectedRows === 1`.
+   */
+  const consumeApprovalRow = (ctx: ApprovalActor, row: ApprovalRequestRow, at: Date) =>
+    Effect.gen(function* () {
+      const updated = yield* db
+        .update(schema.approvalRequest)
+        .set({ consumedAt: at, updatedAt: at })
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, ctx.organization.id),
+            eq(schema.approvalRequest.id, row.id),
+            eq(schema.approvalRequest.status, "approved"),
+            isNull(schema.approvalRequest.consumedAt),
+            gt(schema.approvalRequest.expiresAt, at),
+          ),
+        );
+
+      if (updated.affectedRows !== 1)
+        return yield* Effect.fail(
+          diagnoseError(
+            new EnterpriseConflict({
+              message: "This approval has already been used or expired.",
+            }),
+            { code: "approval_consumed", reason: "not_usable" },
+          ),
+        );
+
+      yield* audit(ctx, "approval.consumed", "approval_request", row.id, {
+        action: row.action,
+        policyId: row.policyId,
+      });
+    });
+
+  const requireApproval = (ctx: ApprovalActor, request: HttpServerRequest, gate: ApprovalGate) =>
+    Effect.gen(function* () {
+      const at = now();
+      const policies = yield* approvalPoliciesFor(ctx.organization.id, gate.action);
+
+      if (policies.length === 0) return;
+
+      const baseTarget = gate.target ?? emptyApprovalTarget;
+      const groupIds = policies.some((policy) => policy.scopeType === "group")
+        ? yield* deviceGroupIds(ctx.organization.id, baseTarget.deviceIds)
+        : [];
+      const target = {
+        deviceIds: baseTarget.deviceIds,
+        groupIds: [...new Set([...baseTarget.groupIds, ...groupIds])],
+      };
+
+      const selected = selectApprovalPolicy(
+        policies.map((row) => ({
+          id: row.id,
+          scopeType: row.scopeType as ApprovalScopeType,
+          scopeId: row.scopeId,
+          approvalsRequired: row.approvalsRequired,
+          createdAt: row.createdAt,
+          row,
+        })),
+        target,
+      );
+
+      if (!selected) return;
+
+      const policyRow = selected.row;
+      const payloadHash = yield* Effect.promise(() =>
+        approvalPayloadHash(
+          approvalPayloadBinding({
+            action: gate.action,
+            policyId: policyRow.id,
+            resourceId: gate.resourceId,
+            targets: target.deviceIds,
+            details: gate.details,
+          }),
+        ),
+      );
+
+      const approvalId = headerValue(request.headers, APPROVAL_ID_HEADER)?.trim();
+      const breakGlassReason = headerValue(request.headers, APPROVAL_BREAK_GLASS_HEADER)?.trim();
+
+      // A supplied approval takes precedence: the caller has already gathered
+      // the second signature and is retrying the original request.
+      if (approvalId) {
+        const row = yield* approvalRequestFor(ctx.organization.id, approvalId);
+
+        // Scoped lookup: an id from another tenant must look missing.
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+        const status = yield* expireApprovalRow(ctx.organization.id, row, at);
+
+        if (status === "expired")
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseBadRequest({
+                message: "This approval has expired. Start a new request.",
+              }),
+              { code: "approval_expired" },
+            ),
+          );
+
+        if (row.status === "pending") {
+          const received = yield* approvalDecisionsCount(ctx.organization.id, row.id);
+
+          return yield* Effect.fail(approvalRequiredError(row, received));
+        }
+
+        if (row.status !== "approved")
+          return yield* Effect.fail(
+            diagnoseError(new EnterpriseBadRequest({ message: approvalStatusMessage(status) }), {
+              code: "approval_not_approved",
+              reason: status,
+            }),
+          );
+
+        if (row.consumedAt != null)
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseConflict({
+                message: "This approval has already been used. Start a new request.",
+              }),
+              { code: "approval_consumed" },
+            ),
+          );
+
+        // The approval belongs to the administrator who asked for it. Another
+        // administrator cannot borrow a colleague's approved request.
+        if (row.requestedByAccountId !== ctx.account.id)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only the administrator who requested this approval can use it.",
+            }),
+          );
+
+        if (row.payloadHash !== payloadHash)
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseBadRequest({
+                message:
+                  "This approval was issued for a different request. Start a new approval for the current action.",
+              }),
+              { code: "approval_payload_mismatch" },
+            ),
+          );
+
+        yield* consumeApprovalRow(ctx, row, at);
+
+        return;
+      }
+
+      // Break-glass is an explicit owner override. It is never available to a
+      // bearer credential, and the reason is mandatory so the audit entry
+      // explains why the second signature was skipped.
+      if (breakGlassReason !== undefined) {
+        if (ctx.credential)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Break-glass approval requires a signed-in owner, not an API token.",
+            }),
+          );
+
+        if (!isBuiltInOwnerMember(ctx.member))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only a built-in owner can use break-glass approval.",
+            }),
+          );
+
+        const reason = breakGlassReason.trim();
+
+        if (reason.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Break-glass approval requires a reason.",
+            }),
+          );
+
+        if (reason.length > APPROVAL_MAX_REASON_LENGTH)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "The break-glass reason is too long.",
+            }),
+          );
+
+        const requestId = id();
+        const expiresAt = new Date(at.getTime() + APPROVAL_REQUEST_TTL_MS);
+
+        yield* db.insert(schema.approvalRequest).values({
+          id: requestId,
+          organizationId: ctx.organization.id,
+          policyId: policyRow.id,
+          action: gate.action,
+          status: "approved",
+          scopeType: policyRow.scopeType,
+          scopeId: policyRow.scopeId,
+          requestedByAccountId: ctx.account.id,
+          requestedByEmail: ctx.account.email,
+          requestedByCredential: approvalCredentialType(ctx),
+          payloadHash,
+          payloadSummary: gate.summary,
+          approverPermission: policyRow.approverPermission,
+          approverRole: policyRow.approverRole,
+          // The override is explicit; there is no second signature to count.
+          approvalsRequired: 0,
+          breakGlass: true,
+          breakGlassReason: reason,
+          consumedAt: null,
+          expiresAt,
+          createdAt: at,
+          updatedAt: at,
+        });
+
+        // Prominent, separate audit action so a break-glass is never mistaken
+        // for an ordinary approval in the tenant log.
+        yield* audit(ctx, "approval.break_glass_used", "approval_request", requestId, {
+          action: gate.action,
+          policyId: policyRow.id,
+          reason,
+        });
+
+        const [created] = yield* db
+          .select()
+          .from(schema.approvalRequest)
+          .where(eq(schema.approvalRequest.id, requestId))
+          .limit(1);
+
+        if (created) yield* consumeApprovalRow(ctx, created, at);
+
+        return;
+      }
+
+      // A usable approved request already exists for this exact binding and
+      // requester: return it so a caller who lost the id can retry instead of
+      // asking for a second signature.
+      const [approved] = yield* db
+        .select()
+        .from(schema.approvalRequest)
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, ctx.organization.id),
+            eq(schema.approvalRequest.payloadHash, payloadHash),
+            eq(schema.approvalRequest.requestedByAccountId, ctx.account.id),
+            eq(schema.approvalRequest.status, "approved"),
+            isNull(schema.approvalRequest.consumedAt),
+            gt(schema.approvalRequest.expiresAt, at),
+          ),
+        )
+        .orderBy(desc(schema.approvalRequest.createdAt))
+        .limit(1);
+
+      if (approved) {
+        const received = yield* approvalDecisionsCount(ctx.organization.id, approved.id);
+
+        return yield* Effect.fail(approvalRequiredError(approved, received));
+      }
+
+      const [pending] = yield* db
+        .select()
+        .from(schema.approvalRequest)
+        .where(
+          and(
+            eq(schema.approvalRequest.organizationId, ctx.organization.id),
+            eq(schema.approvalRequest.payloadHash, payloadHash),
+            eq(schema.approvalRequest.requestedByAccountId, ctx.account.id),
+            eq(schema.approvalRequest.status, "pending"),
+            gt(schema.approvalRequest.expiresAt, at),
+          ),
+        )
+        .orderBy(desc(schema.approvalRequest.createdAt))
+        .limit(1);
+
+      if (pending) {
+        const received = yield* approvalDecisionsCount(ctx.organization.id, pending.id);
+
+        return yield* Effect.fail(approvalRequiredError(pending, received));
+      }
+
+      const requestId = id();
+      const expiresAt = new Date(at.getTime() + APPROVAL_REQUEST_TTL_MS);
+
+      yield* db.insert(schema.approvalRequest).values({
+        id: requestId,
+        organizationId: ctx.organization.id,
+        policyId: policyRow.id,
+        action: gate.action,
+        status: "pending",
+        scopeType: policyRow.scopeType,
+        scopeId: policyRow.scopeId,
+        requestedByAccountId: ctx.account.id,
+        requestedByEmail: ctx.account.email,
+        requestedByCredential: approvalCredentialType(ctx),
+        payloadHash,
+        payloadSummary: gate.summary,
+        approverPermission: policyRow.approverPermission,
+        approverRole: policyRow.approverRole,
+        approvalsRequired: policyRow.approvalsRequired,
+        breakGlass: false,
+        breakGlassReason: null,
+        consumedAt: null,
+        expiresAt,
+        createdAt: at,
+        updatedAt: at,
+      });
+
+      yield* audit(ctx, "approval.requested", "approval_request", requestId, {
+        action: gate.action,
+        policyId: policyRow.id,
+        approvalsRequired: policyRow.approvalsRequired,
+        approverPermission: policyRow.approverPermission,
+        approverRole: policyRow.approverRole,
+      });
+
+      yield* notifyApprovers(
+        ctx.organization,
+        {
+          id: requestId,
+          organizationId: ctx.organization.id,
+          policyId: policyRow.id,
+          action: gate.action,
+          status: "pending",
+          scopeType: policyRow.scopeType,
+          scopeId: policyRow.scopeId,
+          requestedByAccountId: ctx.account.id,
+          requestedByEmail: ctx.account.email,
+          requestedByCredential: approvalCredentialType(ctx),
+          payloadHash,
+          payloadSummary: gate.summary,
+          approverPermission: policyRow.approverPermission,
+          approverRole: policyRow.approverRole,
+          approvalsRequired: policyRow.approvalsRequired,
+          breakGlass: false,
+          breakGlassReason: null,
+          consumedAt: null,
+          expiresAt,
+          createdAt: at,
+          updatedAt: at,
+        },
+        ctx.account.id,
+      );
+
+      return yield* Effect.fail(
+        approvalRequiredError(
+          {
+            id: requestId,
+            action: gate.action,
+            status: "pending",
+            approvalsRequired: policyRow.approvalsRequired,
+            expiresAt,
+          },
+          0,
+        ),
+      );
+    });
+
+  /**
+   * Shape and validate an approval policy. Existence checks are scoped to the
+   * tenant so a scope id from another tenant cannot be configured.
+   */
+  const validateApprovalPolicy = (
+    organizationId: string,
+    action: ApprovalAction,
+    input: {
+      readonly scopeType?: ApprovalScopeType;
+      readonly scopeId?: string | null;
+      readonly approverPermission?: string | null;
+      readonly approverRole?: string | null;
+      readonly approvalsRequired?: number;
+    },
+  ) =>
+    Effect.gen(function* () {
+      if (!(APPROVAL_ACTIONS as ReadonlyArray<string>).includes(action))
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Choose a valid approval action." }),
+        );
+
+      const approverPermission = input.approverPermission ?? null;
+      const approverRole = input.approverRole ?? null;
+
+      if ((approverPermission == null) === (approverRole == null))
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "Choose exactly one permission or built-in role an approver must hold.",
+          }),
+        );
+
+      if (approverPermission != null && !isPermission(approverPermission))
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Choose a valid approver permission." }),
+        );
+
+      if (approverRole != null && !isBuiltInTenantRole(approverRole))
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "Choose a valid built-in approver role." }),
+        );
+
+      const approvalsRequired = input.approvalsRequired ?? 1;
+
+      if (
+        !Number.isInteger(approvalsRequired) ||
+        approvalsRequired < 1 ||
+        approvalsRequired > APPROVAL_MAX_REQUIRED
+      )
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "Choose between 1 and " + APPROVAL_MAX_REQUIRED + " approvals.",
+          }),
+        );
+
+      const scopeType = input.scopeType ?? "tenant";
+      const scopeId = scopeType === "tenant" ? null : (input.scopeId ?? null);
+
+      if (scopeType !== "tenant") {
+        if (!approvalActionSupportsScope(action))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "This action can only be approved tenant-wide.",
+            }),
+          );
+
+        if (!scopeId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Choose the group or device this policy applies to.",
+            }),
+          );
+
+        if (scopeType === "group") {
+          const [group] = yield* db
+            .select({ id: schema.enterpriseGroup.id })
+            .from(schema.enterpriseGroup)
+            .where(
+              and(
+                eq(schema.enterpriseGroup.id, scopeId),
+                eq(schema.enterpriseGroup.organizationId, organizationId),
+              ),
+            )
+            .limit(1);
+
+          if (!group)
+            return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
+        } else {
+          const [device] = yield* db
+            .select({ id: schema.device.id })
+            .from(schema.device)
+            .where(
+              and(eq(schema.device.id, scopeId), eq(schema.device.organizationId, organizationId)),
+            )
+            .limit(1);
+
+          if (!device)
+            return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        }
+      }
+
+      return {
+        action,
+        scopeType,
+        scopeId,
+        approverPermission,
+        approverRole,
+        approvalsRequired,
+      };
+    });
+
   const service = {
     /**
      * The account and tenant shell. Kept as one helper so bootstrap reuses the
@@ -7549,6 +9587,7 @@ export const createEnterpriseService = ({
 
         const methods = [
           ...Object.keys(enterpriseApi.endpoints),
+          ...Object.keys(enterpriseApplicationApi.endpoints),
           ...Object.keys(enterpriseGroupApi.endpoints),
           ...Object.keys(enterpriseAttributeApi.endpoints),
           ...Object.keys(enterpriseSoftwareUpdateApi.endpoints),
@@ -7867,6 +9906,30 @@ export const createEnterpriseService = ({
             .where(eq(schema.member.organizationId, membership.organizationId));
 
           if ((members?.value ?? 0) <= 1) {
+            // Deleting the account would delete the tenant. That path was
+            // never the explicit tenant delete, so it must not bypass the
+            // four-eyes policy a tenant configured for it.
+            if (!isBuiltInOwnerMember(membership))
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message:
+                    "Only the tenant owner can delete this tenant by deleting their account. Transfer ownership or remove the membership explicitly.",
+                }),
+              );
+
+            const deletePolicies = yield* approvalPoliciesFor(
+              membership.organizationId,
+              "tenant.delete",
+            );
+
+            if (deletePolicies.length > 0)
+              return yield* Effect.fail(
+                new EnterpriseForbidden({
+                  message:
+                    "This tenant requires approval to delete. Open the tenant settings and delete the tenant explicitly so another administrator can approve it.",
+                }),
+              );
+
             // A solo tenant is deleted with the account, so its subscription,
             // devices and objects must be reclaimed exactly as the explicit
             // tenant delete does. A failed teardown keeps both rows so the
@@ -8408,10 +10471,16 @@ export const createEnterpriseService = ({
         // The method-level RBAC permission (tenant.export) gates this bundle,
         // which contains member emails, application metadata and policy data.
         const ctx = yield* requireTenant(request, tenantId, "read");
+        const includeAudit = query?.includeAudit === "true" || query?.includeAudit === "1";
 
-        return yield* buildTenantExport(db, ctx.organization, {
-          includeAudit: query?.includeAudit === "true" || query?.includeAudit === "1",
+        yield* requireApproval(ctx, request, {
+          action: "tenant.export",
+          resourceId: tenantId,
+          details: { includeAudit },
+          summary: { tenantId, includeAudit },
         });
+
+        return yield* buildTenantExport(db, ctx.organization, { includeAudit });
       }),
     runTenantBackup: (request, tenantId) =>
       Effect.gen(function* () {
@@ -8451,6 +10520,13 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Backup not found or not restorable" }),
           );
+
+        yield* requireApproval(ctx, request, {
+          action: "backup.download",
+          resourceId: run.id,
+          summary: { backupId: run.id },
+        });
+
         const r2 = yield* R2Storage;
         const object = yield* r2.get(run.r2Key);
 
@@ -8511,6 +10587,16 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "backup-restore");
+
+        // Restoring replaces the policy catalogue and the rest of the stored
+        // configuration. It is covered by policy.delete so a tenant that
+        // protects policy deletion also protects a whole-tenant restore.
+        yield* requireApproval(ctx, request, {
+          action: "policy.delete",
+          resourceId: backupId,
+          details: { format: "restore", backupId },
+          summary: { format: "restore", backupId },
+        });
 
         const body: { confirm?: string } = payload ?? {};
 
@@ -9161,6 +11247,23 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "read");
         yield* requireStepUp(auth, request, "cutover-export");
 
+        // A cutover archive is a superset of the plain export: it carries device
+        // identities, the SCEP CA and escrowed secrets. It is governed by the
+        // same tenant.export policy, with the archive format bound into the
+        // request. The passphrase is never part of the binding or summary.
+        yield* requireApproval(ctx, request, {
+          action: "tenant.export",
+          resourceId: ctx.organization.id,
+          details: {
+            format: "cutover",
+            sections: payload.sections ?? null,
+          },
+          summary: {
+            format: "cutover",
+            sections: payload.sections ?? null,
+          },
+        });
+
         const identity = yield* deploymentId();
 
         return yield* buildTenantCutover(db, ctx.organization, {
@@ -9311,6 +11414,8 @@ export const createEnterpriseService = ({
           metadata?: Record<string, Schema.Json> | null;
           appStoreRegion?: string | null;
           autoUnlinkUnavailableApplications?: boolean;
+          localAccountHealthEnabled?: boolean;
+          localAdminRotationDays?: 30 | 60 | 90 | null;
         } = payload;
 
         let appStoreRegion: string | null | undefined;
@@ -9366,6 +11471,8 @@ export const createEnterpriseService = ({
                   : JSON.stringify(body.metadata),
             appStoreRegion,
             autoUnlinkUnavailableApplications: body.autoUnlinkUnavailableApplications,
+            localAccountHealthEnabled: body.localAccountHealthEnabled,
+            localAdminRotationDays: body.localAdminRotationDays,
             updatedAt: now(),
           })
           .where(eq(schema.organization.id, tenantId));
@@ -9393,6 +11500,9 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "tenant-delete");
         const count = yield* memberCount(tenantId);
 
+        // The explicit delete only accepts a solo tenant. Check that before
+        // asking for approval: a request that can never be satisfied would
+        // force a solo owner to break-glass every time.
         if (count > 1)
           return yield* Effect.fail(
             diagnoseError(
@@ -9402,6 +11512,12 @@ export const createEnterpriseService = ({
               { code: "tenant_has_members" },
             ),
           );
+
+        yield* requireApproval(ctx, request, {
+          action: "tenant.delete",
+          resourceId: ctx.organization.id,
+          summary: { tenantId: ctx.organization.id, name: ctx.organization.name },
+        });
 
         // Teardown contacts devices, cancels billing and deletes every
         // tenant-prefixed object before removing the row. A failed step keeps
@@ -10983,6 +13099,624 @@ export const createEnterpriseService = ({
           truncated,
           rowCount: entries.length,
         };
+      }),
+    listApprovalPolicies: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const rows = yield* approvalPoliciesFor(ctx.organization.id);
+
+        return { policies: rows.map(approvalPolicyInfo) };
+      }),
+    createApprovalPolicy: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const input = yield* validateApprovalPolicy(ctx.organization.id, payload.action, payload);
+
+        const duplicate = yield* db
+          .select({ id: schema.approvalPolicy.id })
+          .from(schema.approvalPolicy)
+          .where(
+            and(
+              eq(schema.approvalPolicy.organizationId, ctx.organization.id),
+              eq(schema.approvalPolicy.action, input.action),
+              eq(schema.approvalPolicy.scopeType, input.scopeType),
+              input.scopeId === null
+                ? isNull(schema.approvalPolicy.scopeId)
+                : eq(schema.approvalPolicy.scopeId, input.scopeId),
+            ),
+          )
+          .limit(1);
+
+        if (duplicate.length > 0)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "An approval policy already covers this action and scope.",
+            }),
+          );
+
+        const at = now();
+        const policyId = id();
+
+        yield* db.insert(schema.approvalPolicy).values({
+          id: policyId,
+          organizationId: ctx.organization.id,
+          action: input.action,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          approverPermission: input.approverPermission,
+          approverRole: input.approverRole,
+          approvalsRequired: input.approvalsRequired,
+          createdByAccountId: ctx.account.id,
+          createdAt: at,
+          updatedAt: at,
+        });
+
+        yield* audit(ctx, "approval.policy_created", "approval_policy", policyId, {
+          action: input.action,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          approverPermission: input.approverPermission,
+          approverRole: input.approverRole,
+          approvalsRequired: input.approvalsRequired,
+        });
+
+        return { id: policyId };
+      }),
+    patchApprovalPolicy: (request, tenantId, policyId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const [existing] = yield* db
+          .select()
+          .from(schema.approvalPolicy)
+          .where(
+            and(
+              eq(schema.approvalPolicy.organizationId, ctx.organization.id),
+              eq(schema.approvalPolicy.id, policyId),
+            ),
+          )
+          .limit(1);
+
+        if (!existing)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Approval policy not found" }),
+          );
+
+        const input = yield* validateApprovalPolicy(
+          ctx.organization.id,
+          existing.action as ApprovalAction,
+          {
+            scopeType: (payload.scopeType ?? existing.scopeType) as ApprovalScopeType,
+            scopeId: payload.scopeId === undefined ? existing.scopeId : payload.scopeId,
+            approverPermission:
+              payload.approverPermission === undefined
+                ? existing.approverPermission
+                : payload.approverPermission,
+            approverRole:
+              payload.approverRole === undefined ? existing.approverRole : payload.approverRole,
+            approvalsRequired:
+              payload.approvalsRequired === undefined
+                ? existing.approvalsRequired
+                : payload.approvalsRequired,
+          },
+        );
+
+        const duplicate = yield* db
+          .select({ id: schema.approvalPolicy.id })
+          .from(schema.approvalPolicy)
+          .where(
+            and(
+              eq(schema.approvalPolicy.organizationId, ctx.organization.id),
+              eq(schema.approvalPolicy.action, existing.action),
+              eq(schema.approvalPolicy.scopeType, input.scopeType),
+              input.scopeId === null
+                ? isNull(schema.approvalPolicy.scopeId)
+                : eq(schema.approvalPolicy.scopeId, input.scopeId),
+            ),
+          );
+
+        if (duplicate.some((row) => row.id !== policyId))
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "An approval policy already covers this action and scope.",
+            }),
+          );
+
+        yield* db
+          .update(schema.approvalPolicy)
+          .set({
+            scopeType: input.scopeType,
+            scopeId: input.scopeId,
+            approverPermission: input.approverPermission,
+            approverRole: input.approverRole,
+            approvalsRequired: input.approvalsRequired,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.approvalPolicy.organizationId, ctx.organization.id),
+              eq(schema.approvalPolicy.id, policyId),
+            ),
+          );
+
+        yield* audit(ctx, "approval.policy_updated", "approval_policy", policyId, {
+          fields: Object.keys(payload),
+          approvalsRequired: input.approvalsRequired,
+        });
+
+        return ok;
+      }),
+    deleteApprovalPolicy: (request, tenantId, policyId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const deleted = yield* db
+          .delete(schema.approvalPolicy)
+          .where(
+            and(
+              eq(schema.approvalPolicy.organizationId, ctx.organization.id),
+              eq(schema.approvalPolicy.id, policyId),
+            ),
+          );
+
+        if (deleted.affectedRows === 0)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Approval policy not found" }),
+          );
+
+        yield* audit(ctx, "approval.policy_deleted", "approval_policy", policyId);
+
+        return ok;
+      }),
+    listApprovalRequests: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        // The full queue needs approvals.read; a requester can always read
+        // their own requests, which is how a member without the permission
+        // finds and cancels a token request they started.
+        if (query?.mine !== "true" && !hasPermission(ctx.permissions, "approvals.read"))
+          return yield* Effect.fail(
+            new EnterprisePermissionDenied({
+              message: "Your role does not include the approvals.read permission.",
+              permission: "approvals.read",
+              roleName: ctx.role.roleName,
+              roleKind: ctx.role.roleKind,
+            }),
+          );
+
+        const at = now();
+
+        yield* expireApprovalRows(ctx.organization.id, at);
+
+        const statuses =
+          query?.status === "decided"
+            ? (["approved", "rejected", "expired", "cancelled"] as const)
+            : query?.status === "all"
+              ? undefined
+              : (["pending"] as const);
+
+        const rows = yield* db
+          .select()
+          .from(schema.approvalRequest)
+          .where(
+            and(
+              eq(schema.approvalRequest.organizationId, ctx.organization.id),
+              ...(query?.mine === "true"
+                ? [eq(schema.approvalRequest.requestedByAccountId, ctx.account.id)]
+                : []),
+              ...(statuses ? [inArray(schema.approvalRequest.status, [...statuses])] : []),
+            ),
+          )
+          .orderBy(desc(schema.approvalRequest.createdAt))
+          .limit(50);
+
+        const requests = yield* Effect.forEach(
+          rows,
+          (row) =>
+            Effect.gen(function* () {
+              const decisions = yield* approvalDecisionsFor(ctx.organization.id, row.id);
+
+              return yield* approvalRequestInfo(row, ctx, decisions);
+            }),
+          { concurrency: 5 },
+        );
+
+        return { requests };
+      }),
+    getApprovalRequest: (request, tenantId, approvalId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const row = yield* approvalRequestFor(ctx.organization.id, approvalId);
+
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+        // A requester can inspect their own request without the queue
+        // permission; anyone else needs approvals.read.
+        if (
+          !hasPermission(ctx.permissions, "approvals.read") &&
+          row.requestedByAccountId !== ctx.account.id
+        )
+          return yield* Effect.fail(
+            new EnterprisePermissionDenied({
+              message: "Your role does not include the approvals.read permission.",
+              permission: "approvals.read",
+              roleName: ctx.role.roleName,
+              roleKind: ctx.role.roleKind,
+            }),
+          );
+
+        yield* expireApprovalRow(ctx.organization.id, row, now());
+        const decisions = yield* approvalDecisionsFor(ctx.organization.id, row.id);
+
+        return yield* approvalRequestInfo(row, ctx, decisions);
+      }),
+    approveApprovalRequest: (request, tenantId, approvalId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        // A credential is not a person. Tokens may request approval, but a
+        // decision always needs a signed-in administrator.
+        if (ctx.credential)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "API tokens cannot approve requests. Sign in to decide.",
+            }),
+          );
+
+        const at = now();
+        const row = yield* approvalRequestFor(ctx.organization.id, approvalId);
+
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+        const status = yield* expireApprovalRow(ctx.organization.id, row, at);
+
+        if (status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: approvalStatusMessage(status),
+            }),
+          );
+
+        if (row.requestedByAccountId === ctx.account.id)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "You cannot approve your own request.",
+            }),
+          );
+
+        const requirement = approvalRequirement(row);
+        const eligibility = approverEligibility(
+          {
+            permissions: ctx.permissions,
+            role: ctx.member.role,
+            customRoleId: ctx.member.customRoleId,
+          },
+          requirement,
+        );
+
+        if (eligibility !== "eligible")
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: approvalEligibilityMessage(eligibility, requirement),
+            }),
+          );
+
+        const note = (payload?.note ?? "").trim();
+
+        if (note.length > APPROVAL_MAX_NOTE_LENGTH)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "The note is too long." }));
+
+        // Lock the request, write the decision and flip the status in one
+        // transaction. Without the row lock two simultaneous approvers can
+        // both count N-1 and leave the request pending at N of N.
+        const outcome = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [locked] = yield* tx
+              .select()
+              .from(schema.approvalRequest)
+              .where(
+                and(
+                  eq(schema.approvalRequest.organizationId, ctx.organization.id),
+                  eq(schema.approvalRequest.id, row.id),
+                ),
+              )
+              .limit(1)
+              .for("update");
+
+            if (!locked)
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+            if (locked.status !== "pending" || locked.expiresAt <= at)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "This request was decided, expired or cancelled.",
+                }),
+              );
+
+            const [existing] = yield* tx
+              .select({ id: schema.approvalDecision.id })
+              .from(schema.approvalDecision)
+              .where(
+                and(
+                  eq(schema.approvalDecision.organizationId, ctx.organization.id),
+                  eq(schema.approvalDecision.requestId, row.id),
+                  eq(schema.approvalDecision.approverAccountId, ctx.account.id),
+                ),
+              )
+              .limit(1);
+
+            if (existing)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "You have already decided this request.",
+                }),
+              );
+
+            yield* tx.insert(schema.approvalDecision).values({
+              id: id(),
+              organizationId: ctx.organization.id,
+              requestId: row.id,
+              approverAccountId: ctx.account.id,
+              approverEmail: ctx.account.email,
+              decision: "approve",
+              note: note.length > 0 ? note : null,
+              rbac: {
+                permission: "approvals.write",
+                roleName: ctx.role.roleName,
+                roleKind: ctx.role.roleKind,
+                roleId: ctx.role.roleId,
+              },
+              createdAt: at,
+            });
+
+            const [counted] = yield* tx
+              .select({ value: count() })
+              .from(schema.approvalDecision)
+              .where(
+                and(
+                  eq(schema.approvalDecision.organizationId, ctx.organization.id),
+                  eq(schema.approvalDecision.requestId, row.id),
+                  eq(schema.approvalDecision.decision, "approve"),
+                ),
+              );
+            const received = Number(counted?.value ?? 0);
+            const nextStatus = received >= locked.approvalsRequired ? "approved" : "pending";
+
+            if (nextStatus === "approved")
+              yield* tx
+                .update(schema.approvalRequest)
+                .set({ status: "approved", updatedAt: at })
+                .where(
+                  and(
+                    eq(schema.approvalRequest.organizationId, ctx.organization.id),
+                    eq(schema.approvalRequest.id, row.id),
+                  ),
+                );
+
+            return { received, nextStatus };
+          }),
+        );
+
+        const received = outcome.received;
+        const effective =
+          outcome.nextStatus === "approved"
+            ? { ...row, status: "approved" as const, updatedAt: at }
+            : row;
+
+        yield* audit(ctx, "approval.approved", "approval_request", row.id, {
+          action: row.action,
+          decision: "approve",
+          approvalsReceived: received,
+          approvalsRequired: row.approvalsRequired,
+          noteProvided: note.length > 0,
+        });
+
+        const decisions = yield* approvalDecisionsFor(ctx.organization.id, row.id);
+
+        return yield* approvalRequestInfo(effective, ctx, decisions);
+      }),
+    rejectApprovalRequest: (request, tenantId, approvalId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        if (ctx.credential)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "API tokens cannot approve requests. Sign in to decide.",
+            }),
+          );
+
+        const at = now();
+        const row = yield* approvalRequestFor(ctx.organization.id, approvalId);
+
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+        const status = yield* expireApprovalRow(ctx.organization.id, row, at);
+
+        if (status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: approvalStatusMessage(status) }),
+          );
+
+        if (row.requestedByAccountId === ctx.account.id)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "You cannot reject your own request. Cancel it instead.",
+            }),
+          );
+
+        const requirement = approvalRequirement(row);
+        const eligibility = approverEligibility(
+          {
+            permissions: ctx.permissions,
+            role: ctx.member.role,
+            customRoleId: ctx.member.customRoleId,
+          },
+          requirement,
+        );
+
+        if (eligibility !== "eligible")
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: approvalEligibilityMessage(eligibility, requirement),
+            }),
+          );
+
+        const note = (payload?.note ?? "").trim();
+
+        if (note.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Explain why this request is being rejected.",
+            }),
+          );
+
+        if (note.length > APPROVAL_MAX_NOTE_LENGTH)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "The note is too long." }));
+
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [locked] = yield* tx
+              .select()
+              .from(schema.approvalRequest)
+              .where(
+                and(
+                  eq(schema.approvalRequest.organizationId, ctx.organization.id),
+                  eq(schema.approvalRequest.id, row.id),
+                ),
+              )
+              .limit(1)
+              .for("update");
+
+            if (!locked)
+              return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+            if (locked.status !== "pending" || locked.expiresAt <= at)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "This request was decided, expired or cancelled.",
+                }),
+              );
+
+            const [existing] = yield* tx
+              .select({ id: schema.approvalDecision.id })
+              .from(schema.approvalDecision)
+              .where(
+                and(
+                  eq(schema.approvalDecision.organizationId, ctx.organization.id),
+                  eq(schema.approvalDecision.requestId, row.id),
+                  eq(schema.approvalDecision.approverAccountId, ctx.account.id),
+                ),
+              )
+              .limit(1);
+
+            if (existing)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message: "You have already decided this request.",
+                }),
+              );
+
+            yield* tx.insert(schema.approvalDecision).values({
+              id: id(),
+              organizationId: ctx.organization.id,
+              requestId: row.id,
+              approverAccountId: ctx.account.id,
+              approverEmail: ctx.account.email,
+              decision: "reject",
+              note,
+              rbac: {
+                permission: "approvals.write",
+                roleName: ctx.role.roleName,
+                roleKind: ctx.role.roleKind,
+                roleId: ctx.role.roleId,
+              },
+              createdAt: at,
+            });
+
+            yield* tx
+              .update(schema.approvalRequest)
+              .set({ status: "rejected", updatedAt: at })
+              .where(
+                and(
+                  eq(schema.approvalRequest.organizationId, ctx.organization.id),
+                  eq(schema.approvalRequest.id, row.id),
+                ),
+              );
+          }),
+        );
+
+        yield* audit(ctx, "approval.rejected", "approval_request", row.id, {
+          action: row.action,
+          decision: "reject",
+          noteProvided: true,
+        });
+
+        const decisions = yield* approvalDecisionsFor(ctx.organization.id, row.id);
+
+        return yield* approvalRequestInfo(
+          { ...row, status: "rejected", updatedAt: at },
+          ctx,
+          decisions,
+        );
+      }),
+    cancelApprovalRequest: (request, tenantId, approvalId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const at = now();
+        const row = yield* approvalRequestFor(ctx.organization.id, approvalId);
+
+        if (!row)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Approval not found" }));
+
+        if (row.requestedByAccountId !== ctx.account.id)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Only the administrator who requested this approval can cancel it.",
+            }),
+          );
+
+        const status = yield* expireApprovalRow(ctx.organization.id, row, at);
+
+        if (status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseConflict({ message: approvalStatusMessage(status) }),
+          );
+
+        const updated = yield* db
+          .update(schema.approvalRequest)
+          .set({ status: "cancelled", updatedAt: at })
+          .where(
+            and(
+              eq(schema.approvalRequest.organizationId, ctx.organization.id),
+              eq(schema.approvalRequest.id, row.id),
+              eq(schema.approvalRequest.status, "pending"),
+            ),
+          );
+
+        if (updated.affectedRows !== 1)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This request was decided by someone else.",
+            }),
+          );
+
+        yield* audit(ctx, "approval.cancelled", "approval_request", row.id, {
+          action: row.action,
+        });
+
+        const decisions = yield* approvalDecisionsFor(ctx.organization.id, row.id);
+
+        return yield* approvalRequestInfo(
+          { ...row, status: "cancelled", updatedAt: at },
+          ctx,
+          decisions,
+        );
       }),
     listTenantRoles: (request, tenantId) =>
       Effect.gen(function* () {
@@ -13717,9 +16451,21 @@ export const createEnterpriseService = ({
 
         const byId = new Map(counts.map((row) => [row.attributeId, Number(row.value)]));
 
+        // Script names are resolved in the same read so the settings table can
+        // show the binding without one request per attribute.
+        const scripts = yield* db
+          .select({ id: schema.script.id, name: schema.script.name })
+          .from(schema.script)
+          .where(eq(schema.script.organizationId, ctx.organization.id));
+
+        const scriptNames = new Map(scripts.map((row) => [row.id, row.name]));
+
         return {
           rows: definitions.map((definition) =>
-            attributeDefinitionRow(definition, byId.get(definition.id) ?? 0),
+            attributeDefinitionRow(definition, {
+              deviceCount: byId.get(definition.id) ?? 0,
+              scriptName: definition.scriptId ? scriptNames.get(definition.scriptId) : null,
+            }),
           ),
         };
       }),
@@ -13729,15 +16475,29 @@ export const createEnterpriseService = ({
         const key = payload.key.trim();
         const label = payload.label.trim();
         const type = payload.type;
+        const source: AttributeSource = payload.source ?? "manual";
 
         const problem = definitionInputProblem({
           key,
           label,
           type,
           options: payload.options,
+          source,
+          scriptId: payload.scriptId,
+          scriptOutputKey: payload.scriptOutputKey,
         });
 
         if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+        const binding = yield* resolveAttributeBinding(
+          {
+            organizationId: ctx.organization.id,
+            source,
+            scriptId: payload.scriptId,
+            scriptOutputKey: payload.scriptOutputKey,
+          },
+          { requireEnabled: true },
+        );
 
         const [existing] = yield* db
           .select()
@@ -13768,6 +16528,9 @@ export const createEnterpriseService = ({
           options: normalizeDefinitionOptions(type, payload.options),
           required: payload.required ?? false,
           visibility: payload.visibility ?? "visible",
+          source: binding.source,
+          scriptId: binding.scriptId,
+          scriptOutputKey: binding.scriptOutputKey,
           sortOrder: payload.sortOrder ?? 0,
           createdAt: now(),
           updatedAt: now(),
@@ -13777,6 +16540,8 @@ export const createEnterpriseService = ({
           key,
           label,
           type,
+          source: binding.source,
+          ...(binding.scriptId ? { scriptId: binding.scriptId } : {}),
           required: payload.required ?? false,
           visibility: payload.visibility ?? "visible",
         });
@@ -13787,7 +16552,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row);
+        return attributeDefinitionRow(row, { scriptName: binding.scriptName });
       }),
     patchAttribute: (request, tenantId, attributeId, payload) =>
       Effect.gen(function* () {
@@ -13814,9 +16579,74 @@ export const createEnterpriseService = ({
         const options =
           payload.options !== undefined ? payload.options : (existing.options ?? undefined);
 
-        const problem = definitionInputProblem({ key: existing.key, label, type, options });
+        const source = payload.source ?? existing.source;
+
+        // Switching a source away from `script` must not require the caller to
+        // echo the hidden binding fields back: an omitted script id is the
+        // binding being removed, not an invalid one.
+        const clearsBinding = payload.source !== undefined && payload.source !== "script";
+        const scriptId = clearsBinding
+          ? null
+          : payload.scriptId !== undefined
+            ? payload.scriptId
+            : existing.scriptId;
+        const scriptOutputKey = clearsBinding
+          ? null
+          : payload.scriptOutputKey !== undefined
+            ? payload.scriptOutputKey
+            : existing.scriptOutputKey;
+
+        const problem = definitionInputProblem({
+          key: existing.key,
+          label,
+          type,
+          options,
+          source,
+          scriptId,
+          scriptOutputKey,
+        });
 
         if (problem) return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+        const binding = yield* resolveAttributeBinding(
+          {
+            organizationId: ctx.organization.id,
+            source,
+            scriptId,
+            scriptOutputKey,
+          },
+          {
+            // Only a new or changed binding has to point at an enabled script;
+            // an existing one keeps working while the script is paused.
+            requireEnabled:
+              source === "script" &&
+              (existing.source !== "script" || scriptId?.trim() !== existing.scriptId),
+          },
+        );
+
+        // The public enrollment page would keep asking a question whose
+        // answers are never applied: `claimEnrollmentAnswers` skips
+        // script-owned attributes. Refuse the conversion until the question is
+        // removed, so the form never promises something it cannot store.
+        if (binding.source === "script" && existing.source !== "script") {
+          const [question] = yield* db
+            .select({ id: schema.enrollmentQuestion.id })
+            .from(schema.enrollmentQuestion)
+            .where(
+              and(
+                eq(schema.enrollmentQuestion.organizationId, ctx.organization.id),
+                eq(schema.enrollmentQuestion.attributeId, attributeId),
+              ),
+            )
+            .limit(1);
+
+          if (question)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${label}" is an enrollment question. Remove it from the enrollment page before collecting this attribute from a script.`,
+              }),
+            );
+        }
 
         yield* db
           .update(schema.attributeDefinition)
@@ -13826,6 +16656,9 @@ export const createEnterpriseService = ({
             options: normalizeDefinitionOptions(type, options),
             required: payload.required ?? existing.required,
             visibility: payload.visibility ?? existing.visibility,
+            source: binding.source,
+            scriptId: binding.scriptId,
+            scriptOutputKey: binding.scriptOutputKey,
             sortOrder: payload.sortOrder ?? existing.sortOrder,
             updatedAt: now(),
           })
@@ -13836,9 +16669,24 @@ export const createEnterpriseService = ({
             ),
           );
 
+        // Collection state describes the binding that produced it. Once the
+        // attribute is manual (or points at another script) the old rows would
+        // describe a value nothing maintains any more.
+        if (binding.source !== "script" || binding.scriptId !== existing.scriptId)
+          yield* db
+            .delete(schema.attributeCollection)
+            .where(
+              and(
+                eq(schema.attributeCollection.organizationId, ctx.organization.id),
+                eq(schema.attributeCollection.attributeId, attributeId),
+              ),
+            );
+
         yield* audit(ctx, "attribute.updated", "attribute", attributeId, {
           key: existing.key,
-          fields: Object.keys(payload),
+          fields: Object.keys(payload).filter((field) => field !== "expectedUpdatedAt"),
+          source: binding.source,
+          ...(binding.scriptId ? { scriptId: binding.scriptId } : {}),
         });
 
         const [row] = yield* db
@@ -13847,7 +16695,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.attributeDefinition.id, attributeId))
           .limit(1);
 
-        return attributeDefinitionRow(row);
+        return attributeDefinitionRow(row, { scriptName: binding.scriptName });
       }),
     deleteAttribute: (request, tenantId, attributeId) =>
       Effect.gen(function* () {
@@ -13947,6 +16795,15 @@ export const createEnterpriseService = ({
               }),
             );
 
+          // The answer would be overwritten by the next script collection, so
+          // asking for it would be a promise the tenant cannot keep.
+          if (definition.source === "script")
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${definition.label}" is collected from a script and cannot be an enrollment question.`,
+              }),
+            );
+
           if (seen.has(key))
             return yield* Effect.fail(
               new EnterpriseBadRequest({
@@ -14035,6 +16892,21 @@ export const createEnterpriseService = ({
           notes: [...POLICY_VARIABLE_NOTES],
         };
       }),
+    listDeviceAttributeCollection: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        return {
+          collection: yield* loadDeviceAttributeCollection(db, ctx.organization.id, device.id),
+        };
+      }),
     setDeviceAttributes: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -14066,7 +16938,9 @@ export const createEnterpriseService = ({
         });
 
         for (const definition of definitions) {
-          if (!definition.required) continue;
+          // A script owns its value; a device that has not reported yet must
+          // not block an unrelated manual edit.
+          if (!definition.required || definition.source === "script") continue;
 
           if (!finalValues[definition.key])
             return yield* Effect.fail(
@@ -14091,6 +16965,131 @@ export const createEnterpriseService = ({
         });
 
         return ok;
+      }),
+    collectDeviceAttribute: (request, tenantId, deviceId, attributeId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "script-run");
+
+        if (!ctx.organization.scriptsEnabled)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Scripts are disabled for this tenant. Enable them in Scripts settings.",
+            }),
+          );
+
+        const [definition] = yield* db
+          .select()
+          .from(schema.attributeDefinition)
+          .where(
+            and(
+              eq(schema.attributeDefinition.id, attributeId),
+              eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!definition)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Attribute not found" }));
+
+        if (definition.source !== "script" || !definition.scriptId)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${definition.label}" is not collected by a script.`,
+            }),
+          );
+
+        const script = yield* db.query.script.findFirst({
+          where: { id: definition.scriptId, organizationId: ctx.organization.id },
+        });
+
+        if (!script)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "The attribute's script no longer exists." }),
+          );
+
+        if (!script.enabled)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${script.name}" is disabled, so it cannot collect a value.`,
+            }),
+          );
+
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        // Script delivery is Apple-only today. Saying so is better than
+        // queueing a run nothing will ever collect.
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                device.proto === "win"
+                  ? "Script attribute collection is not supported on Windows yet: mattraxd does not implement the script channel there."
+                  : "Android devices cannot run scripts, so attribute collection is unsupported.",
+            }),
+          );
+
+        // "Collect now" queues exactly the same manual run as the Scripts page,
+        // so a four-eyes policy on running scripts has to apply here too.
+        yield* requireApproval(ctx, request, {
+          action: "script.run",
+          target: { deviceIds: [device.id], groupIds: [] },
+          resourceId: script.id,
+          details: {
+            operation: "collect",
+            attributeId: definition.id,
+            attributeKey: definition.key,
+            deviceId: device.id,
+          },
+          summary: {
+            operation: "collect",
+            attributeKey: definition.key,
+            scriptId: script.id,
+            deviceId: device.id,
+          },
+        });
+
+        // Reuses the manual-run path so deduplication, expiry, output caps and
+        // redaction are the ones the scripts feature already guarantees.
+        const result = yield* runScript(
+          db,
+          ctx.organization.id,
+          script,
+          { devices: [device.id] },
+          ctx.account.id,
+          now(),
+        );
+
+        const target = result.targets.find((candidate) => candidate.deviceId === device.id);
+
+        // An unassigned script is never delivered, so queueing here would
+        // create a run the device cannot collect.
+        if (!target)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${script.name}" is not assigned to this device. Assign the device or one of its groups before collecting.`,
+            }),
+          );
+
+        if (target.skippedReason)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: target.skippedReason }));
+
+        yield* applePush.pushAppleDevices([device.id]);
+
+        yield* audit(ctx, "script.run_requested", "script", script.id, {
+          attributeId: definition.id,
+          attributeKey: definition.key,
+          deviceId: device.id,
+          source: "script",
+          executionId: target.executionId,
+        });
+
+        return { status: "ok" as const, executionId: target.executionId };
       }),
     importDeviceAttributes: (request, tenantId, payload) =>
       Effect.gen(function* () {
@@ -14761,7 +17760,18 @@ export const createEnterpriseService = ({
         if (queuedDevices.length > 0) {
           const at = now();
 
-          for (const device of queuedDevices)
+          const [vppApplication] = yield* db
+            .select()
+            .from(schema.application)
+            .where(
+              and(
+                eq(schema.application.organizationId, ctx.organization.id),
+                eq(schema.application.storeId, adamId),
+              ),
+            )
+            .limit(1);
+
+          for (const device of queuedDevices) {
             yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -14769,6 +17779,20 @@ export const createEnterpriseService = ({
               payload: vppInstallPayload(adamId),
               at,
             });
+
+            const bundleId = vppApplication?.bundleId ?? asset.bundleId;
+
+            if (vppApplication && bundleId)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: vppApplication.id,
+                installerId: null,
+                platform: "apple",
+                bundleId,
+                at,
+              });
+          }
 
           yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
         }
@@ -15143,6 +18167,47 @@ export const createEnterpriseService = ({
               )
           : [];
 
+        // Deleting a device cascades its secret rows. When any of them hold
+        // escrowed material, the operator must be able to export it first: the
+        // handover archive is the only supported path, so a role without the
+        // export permission cannot silently destroy a recovery key.
+        const escrowedKinds = yield* deviceSecretKindsFor(
+          ctx.organization.id,
+          devices.map((device) => device.id),
+        );
+        const devicesWithSecrets = devices.filter(
+          (device) => (escrowedKinds.get(device.id)?.length ?? 0) > 0,
+        );
+
+        if (devicesWithSecrets.length > 0 && !hasPermission(ctx.permissions, "devices.handover")) {
+          const names = devicesWithSecrets
+            .slice(0, 3)
+            .map((device) => '"' + device.name + '"')
+            .join(", ");
+          const more =
+            devicesWithSecrets.length > 3
+              ? " and " + (devicesWithSecrets.length - 3) + " more"
+              : "";
+
+          return yield* Effect.fail(
+            new EnterprisePermissionDenied({
+              message:
+                names +
+                more +
+                " hold escrowed secrets. Deleting would permanently destroy them. Hand the devices over first to export a sealed archive, or ask an owner to grant the devices.handover permission.",
+              permission: "devices.handover",
+              roleName: ctx.role.roleName,
+              roleKind: ctx.role.roleKind,
+            }),
+          );
+        }
+
+        // Recorded on the delete event so the audit trail explains what left
+        // with the rows. The values themselves are never written here.
+        const destroyedSecretKinds = DEVICE_HANDOVER_SECRET_KINDS.filter((kind) =>
+          devicesWithSecrets.some((device) => escrowedKinds.get(device.id)?.includes(kind)),
+        );
+
         // An Android row is a pointer at a Google-side device. Deleting the row
         // without deleting that device leaves Google applying the last policy
         // forever, to a machine the dashboard no longer knows about. Retire
@@ -15189,12 +18254,406 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.deleted", "device", null, {
           ids: [...ids],
           revokedCertificates: revoked,
+          destroyedSecretKinds,
         });
         // Deleting devices frees seats on the per-device plan.
         yield* reportSeats(ctx.organization.id, ctx.account.id);
 
         return ok;
       }),
+    deviceHandoverImpact: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const body: { readonly ids: ReadonlyArray<string> } = payload;
+        const ids = [...new Set(body.ids.filter((id) => id.length > 0))];
+
+        if (ids.length > 1000)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Check at most 1000 devices at a time for escrowed secrets.",
+            }),
+          );
+
+        const canExport = hasPermission(ctx.permissions, "devices.handover");
+
+        if (ids.length === 0) return { devices: [], canExport };
+
+        const devices = yield* db
+          .select({ id: schema.device.id, name: schema.device.name })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              inArray(schema.device.id, ids),
+            ),
+          );
+        const kinds = yield* deviceSecretKindsFor(ctx.organization.id, ids);
+
+        return {
+          devices: devices
+            .filter((device) => (kinds.get(device.id)?.length ?? 0) > 0)
+            .map((device) => ({
+              id: device.id,
+              name: device.name,
+              secretKinds: kinds.get(device.id) ?? [],
+            })),
+          canExport,
+        };
+      }),
+    createDeviceHandover: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        // Exporting every escrowed secret a device has needs the dedicated
+        // permission, a fresh step-up and a recorded reason. Deleting the
+        // device is permanent, so this is the only supported recovery path.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "device-handover");
+        const body: {
+          readonly ids: ReadonlyArray<string>;
+          readonly passphrase: string;
+          readonly reason: string;
+        } = payload;
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Secret escrow is not configured on this deployment",
+            }),
+          );
+
+        const reason = body.reason.trim().slice(0, DEVICE_HANDOVER_REASON_MAX_LENGTH);
+
+        if (reason.length < 5)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Give a reason for the handover so the audit log explains it.",
+            }),
+          );
+
+        const passphrase = body.passphrase;
+
+        if (passphrase.length < DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH || passphrase.length > 1024)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The archive passphrase must be between ${DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH} and 1024 characters.`,
+            }),
+          );
+
+        const ids = [...new Set(body.ids.filter((id) => id.length > 0))];
+
+        if (ids.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Select at least one device to hand over." }),
+          );
+
+        if (ids.length > DEVICE_HANDOVER_MAX_DEVICES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Hand over at most ${DEVICE_HANDOVER_MAX_DEVICES} devices at a time.`,
+            }),
+          );
+
+        const devices = yield* db
+          .select({
+            id: schema.device.id,
+            name: schema.device.name,
+            serial: schema.device.serial,
+            assetTag: schema.device.assetTag,
+            notes: schema.device.notes,
+          })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              inArray(schema.device.id, ids),
+            ),
+          );
+
+        // A partial archive is worse than a refused one: the operator would
+        // delete a device believing its secrets were handed over.
+        if (devices.length !== ids.length)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message: "Some selected devices were not found in this tenant.",
+            }),
+          );
+
+        const at = now();
+        const built = yield* buildDeviceHandoverArchive({
+          organization: { id: ctx.organization.id, name: ctx.organization.name },
+          devices,
+          at,
+          authSecret,
+        });
+
+        const archiveId = id();
+        const expiresAt = new Date(at.getTime() + DEVICE_HANDOVER_TTL_MS);
+        // Session ids are random, so two exports on the same day never collide
+        // in a Downloads folder. The archive id is already public in the URL.
+        const filename = `device-handover-${safeFilename(
+          ctx.organization.slug,
+        )}-${iso(at).slice(0, 10)}-${archiveId.slice(0, 8)}.json`;
+
+        const plaintext = JSON.stringify(built.document);
+        const plaintextBytes = new TextEncoder().encode(plaintext);
+
+        if (plaintextBytes.byteLength > DEVICE_HANDOVER_MAX_PAYLOAD_BYTES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The handover archive would be larger than ${Math.floor(
+                DEVICE_HANDOVER_MAX_PAYLOAD_BYTES / 1024 / 1024,
+              )} MB. Shorten device notes or hand over fewer devices at a time.`,
+            }),
+          );
+
+        const envelope = yield* Effect.tryPromise({
+          try: () =>
+            sealWithPassphrase(passphrase, plaintext, {
+              iterations: PASSPHRASE_PBKDF2_ITERATIONS,
+            }),
+          catch: () => new EnterpriseInternal({ message: "Could not seal the handover archive" }),
+        });
+
+        const archiveText = JSON.stringify(envelope);
+        const bytes = new TextEncoder().encode(archiveText);
+        const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const key = `handovers/${ctx.organization.id}/${archiveId}.json`;
+        const r2 = yield* R2Storage;
+
+        yield* r2
+          .put(key, archiveText, {
+            httpMetadata: {
+              contentType: "application/json; charset=utf-8",
+              cacheControl: R2_PRIVATE_CACHE_CONTROL,
+              contentDisposition: `attachment; filename="${filename}"`,
+            },
+            // The envelope is opaque even if the bucket is inspected; these
+            // fields describe it without exposing any secret.
+            customMetadata: {
+              tenantId: ctx.organization.id,
+              archiveId,
+              version: String(PASSPHRASE_ENVELOPE_VERSION),
+              expiresAt: iso(expiresAt),
+            },
+          })
+          .pipe(
+            Effect.mapError(
+              () =>
+                new EnterpriseR2InternalError({
+                  message: "Could not store the handover archive",
+                }),
+            ),
+          );
+
+        // The row stores only the declared presence metadata; asset tags,
+        // notes and the secret values stay inside the sealed archive. A bulk
+        // JSON column is not the place for free text that can be megabytes.
+        yield* Effect.gen(function* () {
+          yield* db.insert(schema.deviceHandoverArchive).values({
+            id: archiveId,
+            organizationId: ctx.organization.id,
+            createdByAccountId: ctx.account.id,
+            createdByEmail: ctx.account.email,
+            reason,
+            deviceCount: built.devices.length,
+            devices: built.devices.map(({ id, name, serial, secretKinds }) => ({
+              id,
+              name,
+              serial,
+              secretKinds,
+            })),
+            secretKinds: built.secretKinds,
+            r2Key: key,
+            sizeBytes: bytes.byteLength,
+            sha256,
+            envelopeVersion: PASSPHRASE_ENVELOPE_VERSION,
+            createdAt: at,
+            expiresAt,
+            downloadedAt: null,
+          });
+        }).pipe(
+          // The object is already written. A failed row must not leave an
+          // archive nothing points at, so remove it before surfacing the
+          // database error. A failed cleanup is best effort and logged.
+          Effect.catch((error) =>
+            Effect.logWarning(`Could not record handover archive: ${String(error)}`).pipe(
+              Effect.flatMap(() => r2.delete(key)),
+              Effect.catch((cleanupError) =>
+                Effect.logWarning(
+                  `Could not remove orphaned handover archive ${archiveId}: ${String(cleanupError)}`,
+                ),
+              ),
+              Effect.flatMap(() =>
+                Effect.fail(
+                  new EnterpriseDbError({ message: "Could not record the handover archive" }),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // One audit row per device so the tenant audit log and each device's
+        // timeline both show the export. Metadata names the kinds, never a
+        // sealed or decrypted value.
+        for (const device of built.devices)
+          yield* audit(ctx, "device.handover_exported", "device", device.id, {
+            archiveId,
+            reason,
+            deviceCount: built.devices.length,
+            secretKinds: device.secretKinds,
+          });
+
+        const downloadToken = yield* Effect.tryPromise({
+          try: () =>
+            signScopedToken(
+              authSecret,
+              DEVICE_HANDOVER_DOWNLOAD_SCOPE,
+              `${ctx.organization.id}:${archiveId}`,
+              Math.floor(expiresAt.getTime() / 1000),
+            ),
+          catch: () => new EnterpriseInternal({ message: "Could not sign the download token" }),
+        });
+
+        return {
+          id: archiveId,
+          filename,
+          expiresAt: iso(expiresAt),
+          deviceCount: built.devices.length,
+          secretKinds: built.secretKinds,
+          downloadToken,
+        };
+      }).pipe(Effect.provide(r2Layer)),
+    downloadDeviceHandover: (request, tenantId, archiveId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const at = now();
+
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceHandoverArchive)
+          .where(
+            and(
+              eq(schema.deviceHandoverArchive.id, archiveId),
+              eq(schema.deviceHandoverArchive.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!archive)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Handover archive not found" }),
+          );
+
+        if (archive.downloadedAt)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "This handover archive has already been downloaded. Create a new handover if the file was lost.",
+            }),
+          );
+
+        if (archive.expiresAt.getTime() <= at.getTime())
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This handover download has expired. Create a new handover archive.",
+            }),
+          );
+
+        const token = query?.token ?? "";
+        const valid =
+          authSecret !== undefined &&
+          (yield* Effect.promise(() =>
+            verifyScopedToken(
+              authSecret,
+              DEVICE_HANDOVER_DOWNLOAD_SCOPE,
+              `${ctx.organization.id}:${archiveId}`,
+              token,
+              at.getTime(),
+            ),
+          ));
+
+        if (!valid)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "The download link is invalid or has expired. Create a new handover archive.",
+            }),
+          );
+
+        const r2 = yield* R2Storage;
+        const object = yield* r2.get(archive.r2Key).pipe(
+          // Only a missing object is a 404. An R2 outage must not tell the
+          // operator their archive was deleted.
+          Effect.mapError((cause) =>
+            cause._tag === "R2FileNotFound"
+              ? new EnterpriseR2FileNotFound({
+                  message: "The handover archive is no longer available",
+                })
+              : new EnterpriseR2InternalError({
+                  message: "Could not read the handover archive",
+                }),
+          ),
+        );
+        const content = yield* Effect.tryPromise({
+          try: () => object.text(),
+          catch: () =>
+            new EnterpriseR2InternalError({ message: "Could not read the handover archive" }),
+        });
+
+        // Claim the single download after the body is in hand: a transient R2
+        // failure must not burn the archive, while a concurrent second request
+        // still loses the compare-and-set.
+        const claimed = yield* db
+          .update(schema.deviceHandoverArchive)
+          .set({ downloadedAt: at })
+          .where(
+            and(
+              eq(schema.deviceHandoverArchive.id, archive.id),
+              eq(schema.deviceHandoverArchive.organizationId, ctx.organization.id),
+              isNull(schema.deviceHandoverArchive.downloadedAt),
+            ),
+          );
+
+        if (claimed.affectedRows !== 1)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "This handover archive has already been downloaded. Create a new handover if the file was lost.",
+            }),
+          );
+
+        // The row is the one-time authority. Keeping the object until the next
+        // maintenance sweep avoids racing a concurrent download: both requests
+        // may read the bytes, but only one compare-and-set claims the archive.
+        // The sweep also removes downloaded objects, so nothing lingers beyond
+        // a day and a restored row cannot hand out a second copy.
+
+        // The claim above is already committed and the file is about to leave
+        // Mattrax. An audit outage must not turn a successful download into an
+        // error the operator retries against a consumed one-time link.
+        yield* Effect.forEach(
+          archive.devices,
+          (device) =>
+            audit(ctx, "device.handover_downloaded", "device", device.id, {
+              archiveId: archive.id,
+              secretKinds: device.secretKinds,
+              deviceCount: archive.deviceCount,
+            }),
+          { discard: true },
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Handover download audit write failed for ${archive.id}: ${String(error)}`,
+            ),
+          ),
+        );
+
+        return {
+          content,
+          filename: `device-handover-${safeFilename(
+            ctx.organization.slug,
+          )}-${iso(archive.createdAt).slice(0, 10)}-${archive.id.slice(0, 8)}.json`,
+        };
+      }).pipe(Effect.provide(r2Layer)),
     listDevicePreRegistrations: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -15732,6 +19191,21 @@ export const createEnterpriseService = ({
             }),
           );
 
+        yield* requireApproval(ctx, request, {
+          action: "script.write",
+          details: {
+            operation: "create",
+            name: payload.name.trim(),
+            language: payload.language,
+            bodyHash: yield* scriptWritePayloadHash(payload),
+          },
+          summary: {
+            operation: "create",
+            name: payload.name.trim(),
+            language: payload.language,
+          },
+        });
+
         const result = yield* createScript(db, ctx.organization.id, ctx.account.id, payload, now());
 
         if (!("id" in result))
@@ -15753,6 +19227,25 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "script-change");
 
         const precondition = yield* preconditionFromRequest(request, payload.expectedUpdatedAt);
+
+        yield* requireApproval(ctx, request, {
+          action: "script.write",
+          resourceId: scriptId,
+          details: {
+            operation: "patch",
+            fields: Object.keys(payload)
+              .filter((field) => field !== "expectedUpdatedAt")
+              .sort(),
+            bodyHash: yield* scriptWritePayloadHash(payload),
+          },
+          summary: {
+            operation: "patch",
+            scriptId,
+            fields: Object.keys(payload)
+              .filter((field) => field !== "expectedUpdatedAt")
+              .sort(),
+          },
+        });
 
         const result = yield* updateScript(
           db,
@@ -15814,12 +19307,56 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "script-change");
 
+        // Capture the bindings first: deleting the script nulls their
+        // `script_id` on the foreign key, so they cannot be found afterwards.
+        // An attribute left "script" with no script would be read-only forever.
+        const boundAttributes = yield* db
+          .select({ id: schema.attributeDefinition.id })
+          .from(schema.attributeDefinition)
+          .where(
+            and(
+              eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+              eq(schema.attributeDefinition.scriptId, scriptId),
+            ),
+          );
+        yield* requireApproval(ctx, request, {
+          action: "script.write",
+          resourceId: scriptId,
+          details: { operation: "delete" },
+          summary: { operation: "delete", scriptId },
+        });
+
         const result = yield* deleteScript(db, ctx.organization.id, scriptId);
 
         if (!result.deleted)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Script not found" }));
 
-        yield* audit(ctx, "script.deleted", "script", scriptId);
+        if (boundAttributes.length > 0) {
+          const attributeIds = boundAttributes.map((attribute) => attribute.id);
+
+          yield* db
+            .update(schema.attributeDefinition)
+            .set({ source: "manual", scriptId: null, scriptOutputKey: null, updatedAt: now() })
+            .where(
+              and(
+                eq(schema.attributeDefinition.organizationId, ctx.organization.id),
+                inArray(schema.attributeDefinition.id, attributeIds),
+              ),
+            );
+
+          yield* db
+            .delete(schema.attributeCollection)
+            .where(
+              and(
+                eq(schema.attributeCollection.organizationId, ctx.organization.id),
+                inArray(schema.attributeCollection.attributeId, attributeIds),
+              ),
+            );
+        }
+
+        yield* audit(ctx, "script.deleted", "script", scriptId, {
+          unboundAttributes: boundAttributes.length,
+        });
 
         return ok;
       }),
@@ -15837,6 +19374,13 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* requireStepUp(auth, request, "script-change");
+
+        yield* requireApproval(ctx, request, {
+          action: "script.write",
+          resourceId: scriptId,
+          details: { operation: "assignments", bodyHash: yield* scriptWritePayloadHash(payload) },
+          summary: { operation: "assignments", scriptId },
+        });
 
         const result = yield* patchScriptAssignments(
           db,
@@ -15883,6 +19427,54 @@ export const createEnterpriseService = ({
 
         if (!script)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Script not found" }));
+
+        // Bind the approval to the devices this run will actually touch. An
+        // omitted selector means "everything assigned now", so resolve that set
+        // and include it in the digest; a later assignment change is a
+        // different request.
+        const requestedDevices: string[] = [...new Set<string>(payload?.devices ?? [])];
+        const requestedGroups: string[] = [...new Set<string>(payload?.groups ?? [])];
+        const allAssigned = requestedDevices.length === 0 && requestedGroups.length === 0;
+        const groupDevices =
+          requestedGroups.length > 0
+            ? yield* db
+                .select({ deviceId: schema.groupDevice.deviceId })
+                .from(schema.groupDevice)
+                .innerJoin(
+                  schema.enterpriseGroup,
+                  eq(schema.enterpriseGroup.id, schema.groupDevice.groupId),
+                )
+                .where(
+                  and(
+                    eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+                    inArray(schema.groupDevice.groupId, requestedGroups),
+                  ),
+                )
+            : [];
+        const assignedDevices = allAssigned
+          ? yield* scriptAssignedDeviceIds(db, ctx.organization.id, scriptId)
+          : [];
+        const targetDevices = [
+          ...new Set([
+            ...requestedDevices,
+            ...groupDevices.map((row) => row.deviceId),
+            ...assignedDevices.map((row) => row.id),
+          ]),
+        ].sort();
+
+        yield* requireApproval(ctx, request, {
+          action: "script.run",
+          target: { deviceIds: targetDevices, groupIds: requestedGroups },
+          resourceId: scriptId,
+          details: { groups: [...requestedGroups].sort(), allAssigned },
+          summary: {
+            scriptId,
+            scriptName: script.name,
+            devices: targetDevices.length,
+            groups: requestedGroups.length,
+            allAssigned,
+          },
+        });
 
         const result = yield* runScript(
           db,
@@ -16106,6 +19698,9 @@ export const createEnterpriseService = ({
           deviceName?: string;
           lockScreenMessage?: string;
           lockScreenIncludeAssetTag?: boolean;
+          lostModeMessage?: string;
+          lostModePhone?: string;
+          lostModeFootnote?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
           recoveryLockPassword?: string;
@@ -16145,6 +19740,8 @@ export const createEnterpriseService = ({
                 .select({
                   enrollmentMode: schema.deviceApple.enrollmentMode,
                   declarationMode: schema.deviceApple.declarationMode,
+                  lostModeEnabled: schema.deviceApple.lostModeEnabled,
+                  localAdminGuid: schema.deviceApple.localAdminGuid,
                 })
                 .from(schema.deviceApple)
                 .where(eq(schema.deviceApple.deviceId, device.id))
@@ -16162,6 +19759,8 @@ export const createEnterpriseService = ({
           model: device.model,
           declarationMode: apple?.declarationMode ?? null,
           enrollmentMode: apple?.enrollmentMode ?? null,
+          lostModeEnabled: apple?.lostModeEnabled ?? null,
+          localAdminGuid: apple?.localAdminGuid ?? null,
           managementMode: android?.managementMode ?? null,
           ownership: android?.ownership ?? null,
           capabilities: Option.getOrUndefined(
@@ -16182,6 +19781,15 @@ export const createEnterpriseService = ({
               message: requestedAction
                 ? deviceActionUnavailableReason(deviceActionInput, requestedAction)
                 : "Unknown device action",
+            }),
+          );
+
+        // Leaving management has its own lifecycle endpoint and must not go
+        // through the command queue.
+        if (requestedAction === "unenroll")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Use the device unenroll endpoint to remove management.",
             }),
           );
 
@@ -16220,14 +19828,34 @@ export const createEnterpriseService = ({
             "sync",
             "collect-security-info",
             "refresh-applications",
+            "refresh-local-accounts",
             "set-device-name",
             "set-lock-screen-message",
           ].includes(action)
         )
           yield* requireStepUp(auth, request, "device-command");
 
+        // Wipe and Return to Service both erase the device; the mode is bound
+        // into the request so an approval for one cannot run the other. Other
+        // commands keep their existing step-up-only treatment.
+        if (requestedAction === "wipe" || requestedAction === "return-to-service")
+          yield* requireApproval(ctx, request, {
+            action: "device.wipe",
+            target: { deviceIds: [device.id], groupIds: [] },
+            resourceId: device.id,
+            details: { platform: device.proto, mode: requestedAction },
+            summary: {
+              deviceId: device.id,
+              deviceName: device.name,
+              platform: device.proto,
+              mode: requestedAction,
+            },
+          });
+
         let lockPin: string | undefined;
         let command: { commandId: string; deduplicated: boolean } | undefined;
+        /** A rotation is inserted with its pending secret in one transaction. */
+        let preQueuedRotationId: string | undefined;
         let activationLockWarning: string | undefined;
         let lockScreenMessage: string | undefined;
         let lockScreenIncludeAssetTag: boolean | undefined;
@@ -16308,6 +19936,52 @@ export const createEnterpriseService = ({
               );
             const timestamp = now();
             const randomPin = String(Math.floor(100000 + Math.random() * 900000));
+
+            // Lost Mode's message and phone number are rendered on the lock
+            // screen, so validate them before anything is persisted. Apple
+            // requires at least one of Message and PhoneNumber.
+            if (action === "start-lost-mode" && device.proto === "apple") {
+              const problem = appleLostModeProblem({
+                message: body.lostModeMessage,
+                phone: body.lostModePhone,
+                footnote: body.lostModeFootnote,
+              });
+
+              if (problem)
+                return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+              const payload = appleLostModePayload({
+                message: body.lostModeMessage,
+                phone: body.lostModePhone,
+                footnote: body.lostModeFootnote,
+              });
+
+              if (Object.keys(payload).length === 0)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "Enter a message or a phone number. Apple requires at least one of them for Lost Mode.",
+                  }),
+                );
+
+              yield* db
+                .update(schema.deviceApple)
+                .set({
+                  lostModeMessage: payload.Message ?? null,
+                  lostModePhone: payload.PhoneNumber ?? null,
+                  lostModeFootnote: payload.Footnote ?? null,
+                  lostModeRequestedAt: timestamp,
+                })
+                .where(eq(schema.deviceApple.deviceId, device.id));
+            }
+
+            // A local-account refresh is an inventory query; record the request
+            // so the daily sweep does not ask again immediately.
+            if (action === "refresh-local-accounts" && device.proto === "apple")
+              yield* db
+                .update(schema.deviceApple)
+                .set({ localAccountsRequestedAt: timestamp })
+                .where(eq(schema.deviceApple.deviceId, device.id));
 
             // The asset tag is part of the payload, so a request that asks for
             // it without one is refused before anything is persisted or
@@ -16565,6 +20239,30 @@ export const createEnterpriseService = ({
                 case "set-lock-screen-message":
                   return lockScreenProfile ?? null;
 
+                case "start-lost-mode":
+                  return {
+                    requestType: "EnableLostMode",
+                    payload: appleLostModePayload({
+                      message: body.lostModeMessage,
+                      phone: body.lostModePhone,
+                      footnote: body.lostModeFootnote,
+                    }),
+                  };
+
+                case "stop-lost-mode":
+                  return { requestType: "DisableLostMode", payload: {} };
+
+                case "play-lost-mode-sound":
+                  return { requestType: "PlayLostModeSound", payload: {} };
+
+                case "refresh-local-accounts":
+                  return { requestType: "UserList", payload: {} };
+
+                case "rotate-local-admin-password":
+                  // The payload is completed below once the GUID and sealed
+                  // secret have been checked.
+                  return { requestType: "SetAutoAdminPassword", payload: {} };
+
                 case "set-recovery-lock":
                   return {
                     requestType: "SetRecoveryLock",
@@ -16687,6 +20385,126 @@ export const createEnterpriseService = ({
               request.payload = { Password: password };
             }
 
+            if (action === "rotate-local-admin-password") {
+              if (!apple?.localAdminGuid)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "This Mac has not reported the GUID of its managed local administrator yet. Rotate after its next local-account inventory.",
+                  }),
+                );
+
+              const [secret] = yield* db
+                .select({ sealedValue: schema.deviceSecret.sealedValue })
+                .from(schema.deviceSecret)
+                .where(
+                  and(
+                    eq(schema.deviceSecret.deviceId, device.id),
+                    eq(schema.deviceSecret.kind, "local_admin_password"),
+                  ),
+                )
+                .limit(1);
+
+              if (!secret)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "This Mac has no managed local administrator password to rotate. Mattrax only rotates the account it created during ADE setup.",
+                  }),
+                );
+
+              const [activeRotation] = yield* db
+                .select({ id: schema.deviceCommand.id })
+                .from(schema.deviceCommand)
+                .where(
+                  and(
+                    eq(schema.deviceCommand.deviceId, device.id),
+                    eq(schema.deviceCommand.requestType, "SetAutoAdminPassword"),
+                    inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                  ),
+                )
+                .limit(1);
+
+              if (activeRotation)
+                return yield* Effect.fail(
+                  new EnterpriseConflict({
+                    message:
+                      "A local administrator password rotation is already in progress for this Mac. Wait for its result before rotating again.",
+                  }),
+                );
+
+              if (!authSecret)
+                return yield* Effect.fail(
+                  new EnterpriseInternal({
+                    message:
+                      "Rotating the local administrator password requires a configured AUTH_SECRET.",
+                  }),
+                );
+
+              const password = generateLocalAdminPassword();
+              const passwordHash = yield* applePasswordHash(password);
+              const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+
+              const payload = setAutoAdminPasswordPayload({
+                guid: apple.localAdminGuid,
+                passwordHash,
+              });
+              const dedupeKey = yield* Effect.promise(() =>
+                commandDedupeKey("SetAutoAdminPassword", payload),
+              );
+
+              // The command and its pending secret are written together so a
+              // crash cannot leave a password bound to no command. The pending
+              // value records the command id and is promoted only when that
+              // exact command is acknowledged.
+              preQueuedRotationId = yield* db.transaction((tx) =>
+                Effect.gen(function* () {
+                  const id = crypto.randomUUID();
+
+                  yield* tx.insert(schema.deviceCommand).values({
+                    id,
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    requestType: "SetAutoAdminPassword",
+                    payload,
+                    status: "queued",
+                    dedupeKey,
+                    expiresAt: deviceCommandExpiresAt("SetAutoAdminPassword", timestamp),
+                    resultStatus: null,
+                    resultDetail: null,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                  });
+
+                  yield* tx
+                    .insert(schema.deviceSecret)
+                    .values({
+                      deviceId: device.id,
+                      organizationId: ctx.organization.id,
+                      kind: "local_admin_password_pending",
+                      sealedValue,
+                      format: "plaintext",
+                      pendingCommandId: id,
+                      createdAt: timestamp,
+                      updatedAt: timestamp,
+                      rotatedAt: timestamp,
+                    })
+                    .onDuplicateKeyUpdate({
+                      set: {
+                        sealedValue,
+                        pendingCommandId: id,
+                        updatedAt: timestamp,
+                        rotatedAt: timestamp,
+                      },
+                    });
+
+                  return id;
+                }),
+              );
+
+              request.payload = payload;
+            }
+
             // Applying a message from the device page is also the per-device
             // override: the check-in re-applies exactly what the operator last
             // chose until they clear it back to the policy default.
@@ -16768,16 +20586,27 @@ export const createEnterpriseService = ({
                   "Activation Lock cannot be confirmed as manageable for this enrolment. If it is enabled, the device will stay locked after erase until the bypass code is used or the user removes it with their Apple Account.";
             }
 
-            const queued = yield* queueDeviceCommand({
-              organizationId: ctx.organization.id,
-              deviceId: device.id,
-              requestType: request.requestType,
-              payload: request.payload,
-              at: timestamp,
-              protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
-            });
+            const queued =
+              preQueuedRotationId !== undefined
+                ? { id: preQueuedRotationId, payload: request.payload, deduplicated: false }
+                : yield* queueDeviceCommand({
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    requestType: request.requestType,
+                    payload: request.payload,
+                    at: timestamp,
+                    protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
+                  });
 
             command = { commandId: queued.id, deduplicated: queued.deduplicated };
+
+            // Remember which Lost Mode command is newest. A delayed result for
+            // an older one must not flip the state after a re-send.
+            if (action === "start-lost-mode" || action === "stop-lost-mode")
+              yield* db
+                .update(schema.deviceApple)
+                .set({ lostModeCommandId: queued.id })
+                .where(eq(schema.deviceApple.deviceId, device.id));
 
             // Keep the Recovery Lock password so a later verify/erase can use
             // it as `CurrentPassword`. Re-queuing an identical command reuses
@@ -16853,6 +20682,15 @@ export const createEnterpriseService = ({
             ? {
                 lockScreenMessage,
                 includeAssetTag: lockScreenIncludeAssetTag === true,
+              }
+            : {}),
+          // The Lost Mode message is public by design: it is rendered on the
+          // lock screen. Recording it makes every push auditable without
+          // including the device's location.
+          ...(action === "start-lost-mode"
+            ? {
+                lostModeMessage: body.lostModeMessage?.trim() || null,
+                lostModePhone: body.lostModePhone?.trim() || null,
               }
             : {}),
         };
@@ -17421,7 +21259,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        const [declarations, certificates, apple] = yield* Effect.all(
+        const [declarations, certificates, apple, localAccounts] = yield* Effect.all(
           [
             queryEffect(deviceDeclarationsFor(device.id)),
             queryEffect(deviceCertificatesFor(ctx.organization.id, device)),
@@ -17430,13 +21268,18 @@ export const createEnterpriseService = ({
                 ? db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
                 : Effect.succeed(undefined),
             ),
+            queryEffect(deviceLocalAccountsFor([device.id])),
           ],
           { concurrency: "unbounded" },
         );
 
         return {
           health: normalizeDeviceHealth(
-            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null),
+            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null, {
+              lostModeEnabled: apple?.lostModeEnabled ?? null,
+              localAccounts: localAccounts.get(device.id) ?? null,
+              localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+            }),
           ),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
@@ -17572,7 +21415,7 @@ export const createEnterpriseService = ({
 
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
 
-        const [declarations, setupRows] = yield* Effect.all(
+        const [declarations, setupRows, localAccounts] = yield* Effect.all(
           [
             queryEffect(
               deviceIds.length
@@ -17588,11 +21431,17 @@ export const createEnterpriseService = ({
                     .select({
                       deviceId: schema.deviceApple.deviceId,
                       awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+                      lostModeEnabled: schema.deviceApple.lostModeEnabled,
                     })
                     .from(schema.deviceApple)
                     .where(inArray(schema.deviceApple.deviceId, deviceIds))
-                : emptyRows<{ deviceId: string; awaitingConfiguration: boolean }>(),
+                : emptyRows<{
+                    deviceId: string;
+                    awaitingConfiguration: boolean;
+                    lostModeEnabled: boolean;
+                  }>(),
             ),
+            queryEffect(deviceLocalAccountsFor(deviceIds)),
           ],
           { concurrency: "unbounded" },
         );
@@ -17607,8 +21456,16 @@ export const createEnterpriseService = ({
 
         const setup = new Map(setupRows.map((row) => [row.deviceId, row.awaitingConfiguration]));
 
+        const lostModeByDevice = new Map(
+          setupRows.map((row) => [row.deviceId, row.lostModeEnabled]),
+        );
+
         const summaries = devices.map((device: EnterpriseDevice) =>
-          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null),
+          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null, {
+            lostModeEnabled: lostModeByDevice.get(device.id) ?? null,
+            localAccounts: localAccounts.get(device.id) ?? null,
+            localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+          }),
         );
 
         const levelRank = {
@@ -19274,6 +23131,13 @@ export const createEnterpriseService = ({
     deletePolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
+        const policyIds = [...ids].sort((left, right) => left.localeCompare(right));
+
+        yield* requireApproval(ctx, request, {
+          action: "policy.delete",
+          details: { policyIds },
+          summary: { policyIds, count: policyIds.length },
+        });
 
         const results = yield* Effect.forEach(
           [...ids],
@@ -19937,7 +23801,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantPolicies(ctx.organization.id, [policyId]);
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
 
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
@@ -21178,6 +25042,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          removeOnUnassign?: boolean;
           installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
@@ -21219,6 +25084,7 @@ export const createEnterpriseService = ({
           manifestUrl: primary.manifestUrl,
           storeId: primary.storeId,
           notes: body.notes ?? null,
+          removeOnUnassign: body.removeOnUnassign ?? false,
           createdAt: at,
           updatedAt: at,
         });
@@ -21257,6 +25123,7 @@ export const createEnterpriseService = ({
           manifestUrl?: string | null;
           storeId?: string | null;
           notes?: string | null;
+          removeOnUnassign?: boolean;
           installers?: ReadonlyArray<InstallerInput>;
         } = payload;
 
@@ -21297,6 +25164,10 @@ export const createEnterpriseService = ({
               .set({
                 name: body.name?.trim() ?? current.name,
                 notes: body.notes === undefined ? current.notes : body.notes,
+                removeOnUnassign:
+                  body.removeOnUnassign === undefined
+                    ? current.removeOnUnassign
+                    : body.removeOnUnassign,
                 updatedAt: now(),
               })
               .where(
@@ -21333,6 +25204,7 @@ export const createEnterpriseService = ({
                 manifestUrl: outcome.current.manifestUrl,
                 storeId: outcome.current.storeId,
                 notes: outcome.current.notes,
+                removeOnUnassign: outcome.current.removeOnUnassign,
                 installers: (yield* applicationInstallers(ctx.organization.id, applicationId)).map(
                   (installer) => ({
                     id: installer.id,
@@ -21605,6 +25477,18 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
 
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        const beforeAssigned = yield* applicationAssignedDeviceIds(
+          ctx.organization.id,
+          applicationId,
+        );
+
         const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
 
         const total = removed.groups + removed.userGroups + removed.devices;
@@ -21616,6 +25500,49 @@ export const createEnterpriseService = ({
             trigger: "manual",
             reason: optionalText(payload?.reason) ?? null,
           });
+
+        if (application.removeOnUnassign && beforeAssigned.length > 0) {
+          const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+          const appStorefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+          const appleEnrollment = yield* appleEnrollmentModes(
+            beforeAssigned.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+          const outcome = yield* queueApplicationUninstalls({
+            organizationId: ctx.organization.id,
+            application,
+            installers: appInstallers,
+            storefronts: appStorefronts,
+            preferredRegion: ctx.organization.appStoreRegion,
+            devices: beforeAssigned,
+            assignedDeviceIds: new Set(),
+            appleUserEnrollmentDeviceIds: new Set(
+              [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+                mode === "user" ? [deviceId] : [],
+              ),
+            ),
+            at: now(),
+            removal: "unassigned",
+          });
+
+          yield* applePush.pushAppleDevices(
+            beforeAssigned.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+          yield* audit(ctx, "application.uninstall_queued", "application", applicationId, {
+            trigger: "unlink",
+            devices: beforeAssigned.length,
+            queued: outcome.queued,
+            failed: outcome.failed,
+            skipped: outcome.skipped,
+          });
+
+          for (const deviceId of outcome.queuedDeviceIds)
+            yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+              applicationId,
+              trigger: "unlink",
+            });
+        }
 
         return { status: "ok" as const, removed, retainedApplication: true };
       }),
@@ -21689,6 +25616,13 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
 
         const body: {
           assign?: { groups?: Array<string>; userGroups?: Array<string>; devices?: Array<string> };
@@ -21781,6 +25715,57 @@ export const createEnterpriseService = ({
           [...beforeAssigned, ...affected].map((device) => [device.id, device]),
         );
 
+        // "Remove when unassigned" is evaluated here, on the same pass that
+        // writes the assignment, so the removal is visible and audited rather
+        // than happening silently on a later check-in. The device is only
+        // reported removed after its next inventory confirms it.
+        if (application.removeOnUnassign) {
+          const stillAssigned = new Set(affected.map((device) => device.id));
+          const removedDevices = beforeAssigned.filter((device) => !stillAssigned.has(device.id));
+
+          if (removedDevices.length > 0) {
+            const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+            const appStorefronts = yield* applicationStorefronts(
+              ctx.organization.id,
+              applicationId,
+            );
+            const appleEnrollment = yield* appleEnrollmentModes(
+              removedDevices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+            );
+
+            const outcome = yield* queueApplicationUninstalls({
+              organizationId: ctx.organization.id,
+              application,
+              installers: appInstallers,
+              storefronts: appStorefronts,
+              preferredRegion: ctx.organization.appStoreRegion,
+              devices: removedDevices,
+              assignedDeviceIds: stillAssigned,
+              appleUserEnrollmentDeviceIds: new Set(
+                [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+                  mode === "user" ? [deviceId] : [],
+                ),
+              ),
+              at: now(),
+              removal: "unassigned",
+            });
+
+            yield* audit(ctx, "application.uninstall_queued", "application", applicationId, {
+              trigger: "remove_on_unassign",
+              devices: removedDevices.length,
+              queued: outcome.queued,
+              failed: outcome.failed,
+              skipped: outcome.skipped,
+            });
+
+            for (const deviceId of outcome.queuedDeviceIds)
+              yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+                applicationId,
+                trigger: "remove_on_unassign",
+              });
+          }
+        }
+
         const affectedDevices = [...allAffected.values()];
         yield* applePush.pushAppleDevices(affectedDevices.map((device) => device.id));
         yield* syncAndroidDevices(
@@ -21835,12 +25820,17 @@ export const createEnterpriseService = ({
                   minOsVersion: null,
                   requiredCapability: null,
                   priority: 0,
+                  provisioningExpiresAt: null,
                   createdAt: app.createdAt,
                   updatedAt: app.updatedAt,
                 },
               ];
 
         const devices = yield* applicationAssignedDeviceIds(ctx.organization.id, applicationId);
+
+        const appleEnrollment = yield* appleEnrollmentModes(
+          devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+        );
 
         const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
 
@@ -21878,15 +25868,20 @@ export const createEnterpriseService = ({
             continue;
           }
 
-          // Uploaded Apple packages are macOS-only. Filter them out before
-          // selection so an iPhone falls through to its manifest/store option.
+          // A .pkg only installs on macOS and an .ipa only on iOS/iPadOS.
+          // Filter before selection so the device falls through to whichever
+          // artefact (or manifest/store option) it can actually install.
           const candidates = installers.filter(
             (item) =>
-              !(
-                item.platform === "apple" &&
-                item.source === "upload" &&
-                appleOsFamily(device.osEdition) !== "macOS"
-              ),
+              item.platform !== "apple" ||
+              item.source !== "upload" ||
+              appleUploadKind({ fileName: item.fileName, contentType: item.contentType }) ===
+                undefined ||
+              appleUploadSupportsDevice({
+                fileName: item.fileName,
+                contentType: item.contentType,
+                osEdition: device.osEdition,
+              }),
           );
 
           const installer = selectInstaller(candidates, {
@@ -21900,10 +25895,25 @@ export const createEnterpriseService = ({
           if (!installer) {
             skipped++;
 
+            const uploadKinds = new Set<"pkg" | "ipa">();
+
+            for (const item of installers) {
+              if (item.platform !== "apple" || item.source !== "upload") continue;
+              const kind = appleUploadKind({
+                fileName: item.fileName,
+                contentType: item.contentType,
+              });
+
+              if (kind) uploadKinds.add(kind);
+            }
+
             const reason =
-              candidates.length === 0 &&
-              installers.some((item) => item.platform === "apple" && item.source === "upload")
-                ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+              candidates.length === 0 && uploadKinds.size > 0
+                ? uploadKinds.size === 1 && uploadKinds.has("pkg")
+                  ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+                  : uploadKinds.size === 1 && uploadKinds.has("ipa")
+                    ? "Uploaded .ipa installers target iOS and iPadOS only, and no assigned iPhone or iPad is enrolled."
+                    : "An uploaded .pkg installs on macOS and an .ipa on iOS/iPadOS; no assigned device matches either artefact."
                 : installerSkipReason(candidates, {
                     proto: device.proto,
                     osVersion: device.osVersion,
@@ -21956,6 +25966,17 @@ export const createEnterpriseService = ({
               reasons.push(`the Android policy could not be pushed: ${sync.failure.message}`);
               continue;
             }
+
+            for (const device of groupDevices)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "android",
+                bundleId: packageName,
+                at,
+              });
 
             queued += sync.success.updated;
             skipped += sync.success.failed;
@@ -22025,7 +26046,7 @@ export const createEnterpriseService = ({
               sha256: installer.sha256,
             });
 
-            for (const device of groupDevices)
+            for (const device of groupDevices) {
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
@@ -22034,13 +26055,24 @@ export const createEnterpriseService = ({
                 at,
               });
 
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "win",
+                bundleId: productId,
+                at,
+              });
+            }
+
             queued += groupDevices.length;
             continue;
           }
 
-          // Apple: one installer may be a .pkg upload, an OTA manifest or a
-          // store listing. The selected installer already matched the device's
-          // platform, OS version and reported capabilities.
+          // Apple: one installer may be a .pkg or .ipa upload, an OTA manifest
+          // or a store listing. The selected installer already matched the
+          // device's platform, OS version and reported capabilities.
           if (installer.source === "upload") {
             if (!installer.r2Key || !installer.sha256 || !installer.fileName) {
               skipped += groupDevices.length;
@@ -22048,37 +26080,66 @@ export const createEnterpriseService = ({
               continue;
             }
 
-            if (!installer.bundleId?.trim()) {
+            const bundleId = installer.bundleId?.trim();
+
+            if (!bundleId) {
               skipped += groupDevices.length;
               reasons.push("an uploaded Apple installer needs a bundle identifier");
               continue;
             }
 
-            if (
-              !isApplePackageUpload({
-                fileName: installer.fileName,
-                contentType: installer.contentType,
-              })
-            ) {
+            const uploadKind = appleUploadKind({
+              fileName: installer.fileName,
+              contentType: installer.contentType,
+            });
+
+            if (!uploadKind) {
               skipped += groupDevices.length;
               reasons.push(
-                "Only signed .pkg installers can be installed from an upload. An .ipa needs an OTA manifest URL.",
+                "The uploaded file is neither a signed .pkg nor an .ipa, so there is no install command for it.",
               );
               continue;
             }
 
-            const macDevices = groupDevices.filter(
-              (device) => appleOsFamily(device.osEdition) === "macOS",
+            const targets = groupDevices.filter(
+              (device) =>
+                appleUploadSupportsDevice({
+                  fileName: installer.fileName,
+                  contentType: installer.contentType,
+                  osEdition: device.osEdition,
+                }) &&
+                // Apple User Enrollment (BYOD) does not accept managed app
+                // installs or removals.
+                !(uploadKind === "ipa" && appleEnrollment.get(device.id) === "user"),
             );
 
-            skipped += groupDevices.length - macDevices.length;
+            skipped += groupDevices.length - targets.length;
 
-            if (macDevices.length === 0) {
-              reasons.push("uploaded .pkg installers target macOS only");
+            if (targets.length === 0) {
+              const userEnrolledTargets = groupDevices.filter(
+                (device) =>
+                  uploadKind === "ipa" &&
+                  appleEnrollment.get(device.id) === "user" &&
+                  appleUploadSupportsDevice({
+                    fileName: installer.fileName,
+                    contentType: installer.contentType,
+                    osEdition: device.osEdition,
+                  }),
+              );
+
+              reasons.push(
+                userEnrolledTargets.length > 0
+                  ? "Apple User Enrollment (BYOD) devices cannot install a managed .ipa."
+                  : uploadKind === "pkg"
+                    ? "Uploaded .pkg installers target macOS only, and no assigned Mac is enrolled."
+                    : "Uploaded .ipa installers target iOS and iPadOS only, and no assigned iPhone or iPad is enrolled.",
+              );
               continue;
             }
 
-            for (const device of macDevices) {
+            const identifier = catalogueApplicationAssetIdentifier(installer.id);
+
+            for (const device of targets) {
               const token = yield* Effect.tryPromise(() =>
                 signAppleAssetToken(authSecret ?? "", {
                   policyId: installer.id,
@@ -22088,30 +26149,74 @@ export const createEnterpriseService = ({
                 }),
               );
 
-              const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
-                catalogueApplicationAssetIdentifier(installer.id),
-              )}?token=${encodeURIComponent(token)}`;
+              const tokenQuery = `?token=${encodeURIComponent(token)}`;
+
+              if (uploadKind === "pkg") {
+                const url = `${origin.replace(/\/+$/, "")}/mdm/apple/assets/${encodeURIComponent(
+                  identifier,
+                )}${tokenQuery}`;
+
+                yield* queueDeviceCommand({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  requestType: "InstallEnterpriseApplication",
+                  payload: buildInstallEnterpriseApplicationPayload({
+                    manifest: buildAppleManifest({
+                      url,
+                      sha256: installer.sha256,
+                      bundleId,
+                      version: installer.version?.trim() || "0",
+                      title: app.name,
+                    }),
+                    managementFlags: 1,
+                  }),
+                  at,
+                });
+
+                yield* recordInstallProvenance({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  applicationId: app.id,
+                  installerId: installer.id,
+                  platform: "apple",
+                  bundleId,
+                  at,
+                });
+
+                continue;
+              }
+
+              // InstallApplication cannot carry an inline manifest, so Mattrax
+              // hosts the OTA plist itself and points the device at it. The
+              // URL is signed and device-bound exactly like the package.
+              const manifestUrl = `${origin.replace(/\/+$/, "")}/mdm/apple/manifests/${encodeURIComponent(
+                identifier,
+              )}${tokenQuery}`;
 
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
-                requestType: "InstallEnterpriseApplication",
-                payload: buildInstallEnterpriseApplicationPayload({
-                  manifest: buildAppleManifest({
-                    url,
-                    sha256: installer.sha256,
-                    bundleId: installer.bundleId.trim(),
-                    version: installer.version?.trim() || "0",
-                    title: app.name,
-                  }),
+                requestType: "InstallApplication",
+                payload: buildInstallApplicationPayload({
+                  manifestUrl,
                   managementFlags: 1,
                 }),
                 at,
               });
+
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "apple",
+                bundleId,
+                at,
+              });
             }
 
-            yield* applePush.pushAppleDevices(macDevices.map((device) => device.id));
-            queued += macDevices.length;
+            yield* applePush.pushAppleDevices(targets.map((device) => device.id));
+            queued += targets.length;
             continue;
           }
 
@@ -22176,8 +26281,10 @@ export const createEnterpriseService = ({
                 queuedDevices.push(device);
               }
 
+              const storeBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
+
               if (queuedDevices.length > 0) {
-                for (const device of queuedDevices)
+                for (const device of queuedDevices) {
                   yield* queueDeviceCommand({
                     organizationId: ctx.organization.id,
                     deviceId: device.id,
@@ -22185,6 +26292,18 @@ export const createEnterpriseService = ({
                     payload: vppInstallPayload(storeId),
                     at,
                   });
+
+                  if (storeBundleId)
+                    yield* recordInstallProvenance({
+                      organizationId: ctx.organization.id,
+                      deviceId: device.id,
+                      applicationId: app.id,
+                      installerId: installer.id,
+                      platform: "apple",
+                      bundleId: storeBundleId,
+                      at,
+                    });
+                }
 
                 yield* applePush.pushAppleDevices(queuedDevices.map((device) => device.id));
               }
@@ -22199,8 +26318,9 @@ export const createEnterpriseService = ({
               InstallAsManaged: true,
               Options: { PurchaseMethod: 1 },
             };
+            const storeBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
 
-            for (const device of groupDevices)
+            for (const device of groupDevices) {
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
@@ -22208,6 +26328,18 @@ export const createEnterpriseService = ({
                 payload,
                 at,
               });
+
+              if (storeBundleId)
+                yield* recordInstallProvenance({
+                  organizationId: ctx.organization.id,
+                  deviceId: device.id,
+                  applicationId: app.id,
+                  installerId: installer.id,
+                  platform: "apple",
+                  bundleId: storeBundleId,
+                  at,
+                });
+            }
 
             queued += groupDevices.length;
             continue;
@@ -22227,8 +26359,9 @@ export const createEnterpriseService = ({
             InstallAsManaged: true,
             Options: { PurchaseMethod: 1 },
           };
+          const manifestBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
 
-          for (const device of groupDevices)
+          for (const device of groupDevices) {
             yield* queueDeviceCommand({
               organizationId: ctx.organization.id,
               deviceId: device.id,
@@ -22236,6 +26369,18 @@ export const createEnterpriseService = ({
               payload,
               at,
             });
+
+            if (manifestBundleId)
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "apple",
+                bundleId: manifestBundleId,
+                at,
+              });
+          }
 
           queued += groupDevices.length;
         }
@@ -22259,6 +26404,129 @@ export const createEnterpriseService = ({
           message: queued === 0 ? reasons[0] : reasons.length > 0 ? reasons[0] : undefined,
         };
       }),
+    uninstallApplication: (request, tenantId, applicationId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const application = yield* db.query.application.findFirst({
+          where: { id: applicationId, organizationId: ctx.organization.id },
+        });
+
+        if (!application)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+        const appInstallers = yield* applicationInstallers(ctx.organization.id, applicationId);
+        const appStorefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+        const assignedDevices = yield* applicationAssignedDeviceIds(
+          ctx.organization.id,
+          applicationId,
+        );
+        const assignedIds = new Set(assignedDevices.map((device) => device.id));
+
+        // An unassigned device can still hold the app (removed from a group,
+        // or assigned before remove-on-unassign existed). Its inventory is the
+        // evidence that an explicit uninstall has something to remove.
+        const bundleIds = [
+          ...new Set(
+            [application.bundleId, ...appInstallers.map((installer) => installer.bundleId)].flatMap(
+              (bundleId) => (bundleId?.trim() ? [bundleId.trim()] : []),
+            ),
+          ),
+        ];
+
+        const installedDeviceIds =
+          bundleIds.length > 0
+            ? yield* db
+                .select({ deviceId: schema.deviceApplication.deviceId })
+                .from(schema.deviceApplication)
+                .where(
+                  and(
+                    eq(schema.deviceApplication.organizationId, ctx.organization.id),
+                    inArray(schema.deviceApplication.bundleId, bundleIds),
+                  ),
+                )
+            : [];
+
+        const extraDeviceIds = [
+          ...new Set(
+            installedDeviceIds
+              .map((row) => row.deviceId)
+              .filter((deviceId) => !assignedIds.has(deviceId)),
+          ),
+        ];
+
+        const extraDevices =
+          extraDeviceIds.length > 0
+            ? yield* db
+                .select()
+                .from(schema.device)
+                .where(
+                  and(
+                    eq(schema.device.organizationId, ctx.organization.id),
+                    inArray(schema.device.id, extraDeviceIds),
+                  ),
+                )
+            : [];
+
+        const devices = [...assignedDevices, ...extraDevices];
+        const at = now();
+
+        const appleEnrollment = yield* appleEnrollmentModes(
+          devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+        );
+        const appleUserEnrollmentDeviceIds = new Set(
+          [...appleEnrollment.entries()].flatMap(([deviceId, mode]) =>
+            mode === "user" ? [deviceId] : [],
+          ),
+        );
+
+        const outcome = yield* queueApplicationUninstalls({
+          organizationId: ctx.organization.id,
+          application,
+          installers: appInstallers,
+          storefronts: appStorefronts,
+          preferredRegion: ctx.organization.appStoreRegion,
+          devices,
+          assignedDeviceIds: assignedIds,
+          appleUserEnrollmentDeviceIds,
+          at,
+          removal: "manual",
+        });
+
+        if (outcome.queued > 0)
+          yield* applePush.pushAppleDevices(
+            devices.flatMap((device) => (device.proto === "apple" ? [device.id] : [])),
+          );
+
+        yield* audit(ctx, "application.uninstall_requested", "application", applicationId, {
+          devices: devices.length,
+          queued: outcome.queued,
+          skipped: outcome.skipped,
+          failed: outcome.failed,
+        });
+
+        // Per-device rows keep the device timeline honest, including Android
+        // where no command exists because the removal happens in the policy.
+        for (const deviceId of outcome.queuedDeviceIds)
+          yield* audit(ctx, "application.uninstall_queued", "device", deviceId, {
+            applicationId,
+            trigger: "manual",
+          });
+
+        return {
+          status: "ok" as const,
+          queued: outcome.queued,
+          skipped: outcome.skipped,
+          failed: outcome.failed,
+          message:
+            outcome.queued === 0
+              ? (outcome.reasons[0] ??
+                (devices.length === 0
+                  ? "This application is not assigned to an enrolled device."
+                  : "No device was eligible for removal."))
+              : undefined,
+        };
+      }),
     uploadApplication: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
         const r2 = yield* R2Storage;
@@ -22270,7 +26538,7 @@ export const createEnterpriseService = ({
         });
 
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
 
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
 
@@ -22282,6 +26550,10 @@ export const createEnterpriseService = ({
           },
           customMetadata: { fileName: body.fileName },
         });
+        const provisioningExpiresAt =
+          appleUploadKind({ fileName: body.fileName, contentType: body.contentType }) === "ipa"
+            ? yield* ipaProvisioningExpiresAt(bytes)
+            : undefined;
         const installers = yield* applicationInstallers(ctx.organization.id, applicationId);
         const primary = installers[0];
 
@@ -22294,6 +26566,7 @@ export const createEnterpriseService = ({
               size: bytes.byteLength,
               sha256,
               r2Key: key,
+              provisioningExpiresAt: provisioningExpiresAt ?? null,
               updatedAt: now(),
             })
             .where(eq(schema.applicationInstaller.id, primary.id));
@@ -22317,6 +26590,7 @@ export const createEnterpriseService = ({
             size: bytes.byteLength,
             sha256,
             r2Key: key,
+            provisioningExpiresAt: provisioningExpiresAt ?? null,
             priority: 0,
             createdAt: at,
             updatedAt: at,
@@ -22395,8 +26669,12 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Installer not found" }));
 
         const body: { fileName: string; contentType?: string; content: string } = payload;
-        const bytes = base64ToBytes(body.content);
+        const bytes = yield* decodeApplicationUpload(body.content);
         const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const provisioningExpiresAt =
+          appleUploadKind({ fileName: body.fileName, contentType: body.contentType }) === "ipa"
+            ? yield* ipaProvisioningExpiresAt(bytes)
+            : undefined;
         const key = applicationKey(ctx.organization.id, installer.id, sha256);
 
         yield* r2.put(key, bytes, {
@@ -22415,6 +26693,7 @@ export const createEnterpriseService = ({
             size: bytes.byteLength,
             sha256,
             r2Key: key,
+            provisioningExpiresAt: provisioningExpiresAt ?? null,
             updatedAt: now(),
           })
           .where(eq(schema.applicationInstaller.id, installer.id));
@@ -22808,7 +27087,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
-        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const where = yield* deviceSearchWhere(ctx.organization, filters);
 
         if (filters.query) {
           // Structured filters use the same evaluator as dynamic groups and
@@ -22915,7 +27194,7 @@ export const createEnterpriseService = ({
 
           const matchIds = matches.map((row) => row.id);
 
-          const [declarations, setup] = yield* Effect.all(
+          const [declarations, setup, localAccounts] = yield* Effect.all(
             [
               queryEffect(
                 db
@@ -22924,6 +27203,7 @@ export const createEnterpriseService = ({
                   .where(inArray(schema.deviceDeclaration.deviceId, matchIds)),
               ),
               queryEffect(deviceSetupStateFor(matchIds)),
+              queryEffect(deviceLocalAccountsFor(matchIds)),
             ],
             { concurrency: "unbounded" },
           );
@@ -22932,6 +27212,11 @@ export const createEnterpriseService = ({
             matches,
             declarations,
             new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
+            {
+              lostModeByDevice: new Map([...setup].map(([id, row]) => [id, row.lostModeEnabled])),
+              localAccountsByDevice: localAccounts,
+              localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+            },
           );
 
           const rank = { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 } as const;
@@ -22975,7 +27260,12 @@ export const createEnterpriseService = ({
                 osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
                 attributes: values,
                 health: normalizeDeviceHealth(
-                  summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
+                  summary ??
+                    rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration, {
+                      lostModeEnabled: setup.get(row.id)?.lostModeEnabled ?? null,
+                      localAccounts: localAccounts.get(row.id) ?? null,
+                      localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+                    }),
                 ),
                 groups: groups.get(row.id) ?? [],
               };
@@ -23004,7 +27294,7 @@ export const createEnterpriseService = ({
 
         // Groups, health and setup state are independent reads; claiming
         // enrollment answers is a write that the attribute read depends on.
-        const [groups, declarations, , setup, androidByDevice] = yield* Effect.all(
+        const [groups, declarations, , setup, androidByDevice, localAccounts] = yield* Effect.all(
           [
             queryEffect(deviceGroupsFor(ctx.organization.id, ids)),
             queryEffect(
@@ -23016,6 +27306,7 @@ export const createEnterpriseService = ({
             queryEffect(claimEnrollmentAnswers(db, ctx.organization.id, rows)),
             queryEffect(deviceSetupStateFor(ids)),
             queryEffect(androidDeviceAccessFor(ctx.organization.id, ids)),
+            queryEffect(deviceLocalAccountsFor(ids)),
           ],
           { concurrency: "unbounded" },
         );
@@ -23024,6 +27315,11 @@ export const createEnterpriseService = ({
           rows,
           declarations,
           new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
+          {
+            lostModeByDevice: new Map([...setup].map(([id, row]) => [id, row.lostModeEnabled])),
+            localAccountsByDevice: localAccounts,
+            localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+          },
         );
 
         const [attributes, softwareUpdates] = yield* Effect.all(
@@ -23041,7 +27337,12 @@ export const createEnterpriseService = ({
               osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
               attributes: values,
               health: normalizeDeviceHealth(
-                summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
+                summary ??
+                  rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration, {
+                    lostModeEnabled: setup.get(row.id)?.lostModeEnabled ?? null,
+                    localAccounts: localAccounts.get(row.id) ?? null,
+                    localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+                  }),
               ),
               groups: groups.get(row.id) ?? [],
             };
@@ -23976,7 +28277,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
-        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const where = yield* deviceSearchWhere(ctx.organization, filters);
         // Fetch one extra row so truncation is detected without a second count
         // query; the extra row is never written to the CSV.
         let rows: Array<typeof schema.device.$inferSelect>;
@@ -24057,6 +28358,8 @@ export const createEnterpriseService = ({
           exportedRows.map((row) => row.id),
         );
 
+        const localAccounts = yield* deviceLocalAccountsFor(exportedRows.map((row) => row.id));
+
         const csv = toCsv(
           [
             "Name",
@@ -24077,6 +28380,7 @@ export const createEnterpriseService = ({
             "Inventory updated",
             "Notes",
             "Groups",
+            "Local accounts",
             ...attributeCsvHeaders(definitions),
           ],
           exportedRows.map((row) => [
@@ -24104,6 +28408,7 @@ export const createEnterpriseService = ({
             row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : "",
             row.notes,
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
+            (localAccounts.get(row.id) ?? []).map((account) => account.username).join("; "),
             ...attributeCsvCells(definitions, attributes.get(row.id)),
           ]),
         );
@@ -24291,9 +28596,21 @@ export const createEnterpriseService = ({
             })()
           : null;
 
+        const localAccounts = yield* deviceLocalAccountsFor([row.id]);
+
+        const baseDevice = rowDevice(
+          row,
+          apple,
+          android,
+          lockScreen ? { policy: lockScreen } : undefined,
+        );
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
-          ...rowDevice(row, apple, android, lockScreen ? { policy: lockScreen } : undefined),
+          ...baseDevice,
+          apple: baseDevice.apple
+            ? { ...baseDevice.apple, localAccounts: localAccounts.get(row.id) ?? [] }
+            : null,
           lockScreenDelivery,
           osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
           osCompliance: osComplianceFor(row, osPolicyRules, softwareUpdates.catalog),
@@ -25465,7 +29782,88 @@ export const createEnterpriseService = ({
         return ok;
       }),
     createApiToken: (request, payload) =>
-      auth.createApiToken(webRequestFromRequest(request, origin), payload),
+      Effect.gen(function* () {
+        const webRequest = webRequestFromRequest(request, origin);
+
+        // Step-up is checked here first so an unproven session cannot create
+        // approval requests. `auth.createApiToken` re-checks the same grant
+        // before it writes the token.
+        const resolved = yield* auth.requireStepUp(webRequest, "api-token-create");
+
+        // An account-wide token has no owning tenant, so no tenant policy can
+        // bind it and it can be used against every tenant the owner belongs
+        // to. Keep that capability with platform administrators rather than
+        // leaving a policy bypass for ordinary members.
+        if (!payload.tenantId && !isSuperadmin(resolved.user, superadminAllowlist))
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message:
+                "Account-wide API tokens are restricted to platform administrators. Create a tenant-bound token instead.",
+            }),
+          );
+
+        // A token bound to a tenant is governed by that tenant's policies.
+        if (payload.tenantId) {
+          const access = yield* loadTenantAccess(db, resolved.user.id, payload.tenantId);
+
+          if (access) {
+            const credential = resolved.apiToken
+              ? {
+                  type: "api_token" as const,
+                  id: resolved.apiToken.id,
+                  name: resolved.apiToken.name,
+                }
+              : resolved.oauth
+                ? {
+                    type: "oauth" as const,
+                    id: resolved.oauth.connectionId,
+                    name: resolved.oauth.clientName,
+                    clientId: resolved.oauth.clientId,
+                  }
+                : undefined;
+            const scopes = [...(payload.permissions ?? payload.scopes ?? [])].sort((left, right) =>
+              String(left).localeCompare(String(right)),
+            );
+
+            yield* requireApproval(
+              {
+                account: resolved.user,
+                organization: access.organization,
+                member: access.member,
+                role: access.role,
+                permissions: access.role.permissions,
+                credential,
+                ip: headerValue(request.headers, "x-mattrax-client-address")?.slice(0, 64) ?? null,
+                userAgent: headerValue(request.headers, "user-agent")?.slice(0, 512) ?? null,
+                rbac: {
+                  roleName: access.role.roleName,
+                  roleKind: access.role.roleKind,
+                  roleId: access.role.roleId,
+                },
+              },
+              request,
+              {
+                action: "api-token.create",
+                resourceId: payload.tenantId,
+                details: {
+                  name: payload.name.trim(),
+                  scopes,
+                  expiresAt: payload.expiresAt ?? null,
+                  tenantId: payload.tenantId,
+                },
+                summary: {
+                  name: payload.name.trim(),
+                  scopes,
+                  tenantId: payload.tenantId,
+                  expiresAt: payload.expiresAt ?? null,
+                },
+              },
+            );
+          }
+        }
+
+        return yield* auth.createApiToken(webRequest, payload);
+      }),
     revokeApiToken: (request, tokenId) =>
       auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId),
     /**
@@ -25759,6 +30157,37 @@ export const createEnterpriseService = ({
   return wrapServiceErrors(service, true, analytics);
 };
 
+/** Device handover export and one-time download. */
+export const enterpriseDeviceHandoverHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDeviceHandoverApi>,
+) =>
+  handlers
+    .handle("deviceHandoverImpact", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deviceHandoverImpact(request, params.tenantId, payload),
+      ),
+    )
+    .handle("createDeviceHandover", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createDeviceHandover(request, params.tenantId, payload),
+      ),
+    )
+    .handleRaw("downloadDeviceHandover", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.downloadDeviceHandover(request, params.tenantId, params.archiveId, query),
+          (result: { content: string; filename: string }) =>
+            HttpServerResponse.text(result.content, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+              },
+            }),
+        ),
+      ),
+    );
+
 /** macOS update summary. Registered against its own small API group. */
 export const enterpriseSoftwareUpdateHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseSoftwareUpdateApi>,
@@ -25961,6 +30390,107 @@ export const enterpriseUserHandlers = (
       ),
     );
 
+export const enterpriseApprovalHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApprovalApi>,
+) =>
+  handlers
+    .handle("listApprovalPolicies", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listApprovalPolicies(request, params.tenantId),
+      ),
+    )
+    .handle("createApprovalPolicy", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createApprovalPolicy(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchApprovalPolicy", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchApprovalPolicy(request, params.tenantId, params.policyId, payload),
+      ),
+    )
+    .handle("deleteApprovalPolicy", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteApprovalPolicy(request, params.tenantId, params.policyId),
+      ),
+    )
+    .handle("listApprovalRequests", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listApprovalRequests(request, params.tenantId, query),
+      ),
+    )
+    .handle("getApprovalRequest", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getApprovalRequest(request, params.tenantId, params.approvalId),
+      ),
+    )
+    .handle("approveApprovalRequest", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.approveApprovalRequest(request, params.tenantId, params.approvalId, payload),
+      ),
+    )
+    .handle("rejectApprovalRequest", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.rejectApprovalRequest(request, params.tenantId, params.approvalId, payload),
+      ),
+    )
+    .handle("cancelApprovalRequest", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.cancelApprovalRequest(request, params.tenantId, params.approvalId),
+      ),
+    )
+    .handleRaw("exportTenant", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.exportTenant(request, params.tenantId, query),
+          (result: { body: string; filename: string; version: number }) =>
+            HttpServerResponse.text(result.body, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+                "X-Tenant-Export-Version": String(result.version),
+              },
+            }),
+        ),
+      ),
+    )
+    .handleRaw("downloadTenantBackup", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.downloadTenantBackup(request, params.tenantId, params.id),
+          (result: { content: string; filename: string }) =>
+            HttpServerResponse.text(result.content, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+              },
+            }),
+        ),
+      ),
+    )
+    .handle("restoreTenantBackup", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.restoreTenantBackup(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("deleteTenant", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteTenant(request, params.tenantId),
+      ),
+    )
+    .handle("deletePolicies", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deletePolicies(request, params.tenantId, payload),
+      ),
+    )
+    .handle("deviceAction", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deviceAction(request, params.tenantId, params.id, payload),
+      ),
+    );
+
 export const enterpriseWindowsHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseWindowsApi>,
 ) =>
@@ -26046,9 +30576,19 @@ export const enterpriseAttributeHandlers = (
         service.importDeviceAttributes(request, params.tenantId, payload),
       ),
     )
+    .handle("listDeviceAttributeCollection", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceAttributeCollection(request, params.tenantId, params.id),
+      ),
+    )
     .handle("setDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.setDeviceAttributes(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("collectDeviceAttribute", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.collectDeviceAttribute(request, params.tenantId, params.id, params.attributeId),
       ),
     )
     .handle("patchTenantAccountRoles", ({ request, params, payload }) =>
@@ -26304,22 +30844,6 @@ export const enterpriseHandlers = (
     .handle("getTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.getTenant(request, params.tenantId)),
     )
-    .handleRaw("exportTenant", ({ request, params, query }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        Effect.map(
-          service.exportTenant(request, params.tenantId, query),
-          (result: { body: string; filename: string; version: number }) =>
-            HttpServerResponse.text(result.body, {
-              contentType: "application/json; charset=utf-8",
-              headers: {
-                "Content-Disposition": `attachment; filename="${result.filename}"`,
-                "Cache-Control": "no-store",
-                "X-Tenant-Export-Version": String(result.version),
-              },
-            }),
-        ),
-      ),
-    )
     .handle("runTenantBackup", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.runTenantBackup(request, params.tenantId),
@@ -26328,21 +30852,6 @@ export const enterpriseHandlers = (
     .handle("listTenantBackups", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listTenantBackups(request, params.tenantId),
-      ),
-    )
-    .handleRaw("downloadTenantBackup", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        Effect.map(
-          service.downloadTenantBackup(request, params.tenantId, params.id),
-          (result: { content: string; filename: string }) =>
-            HttpServerResponse.text(result.content, {
-              contentType: "application/json; charset=utf-8",
-              headers: {
-                "Content-Disposition": `attachment; filename="${result.filename}"`,
-                "Cache-Control": "no-store",
-              },
-            }),
-        ),
       ),
     )
     .handle("pinTenantBackup", ({ request, params }) =>
@@ -26360,19 +30869,9 @@ export const enterpriseHandlers = (
         service.deleteTenantBackup(request, params.tenantId, params.id),
       ),
     )
-    .handle("restoreTenantBackup", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.restoreTenantBackup(request, params.tenantId, params.id, payload),
-      ),
-    )
     .handle("patchTenant", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.patchTenant(request, params.tenantId, payload),
-      ),
-    )
-    .handle("deleteTenant", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.deleteTenant(request, params.tenantId),
       ),
     )
     .handle("getEntraDirectorySync", ({ request, params }) =>
@@ -27043,11 +31542,6 @@ export const enterpriseHandlers = (
         service.patchDevice(request, params.tenantId, params.id, payload),
       ),
     )
-    .handle("deviceAction", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.deviceAction(request, params.tenantId, params.id, payload),
-      ),
-    )
     .handle("listDeviceCommands", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.listDeviceCommands(request, params.tenantId, params.id),
@@ -27163,43 +31657,6 @@ export const enterpriseHandlers = (
         service.unlinkApplicationAssignments(request, params.tenantId, params.id, payload),
       ),
     )
-    .handle("installApplication", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.installApplication(request, params.tenantId, params.id),
-      ),
-    )
-    .handle("uploadApplication", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.uploadApplication(request, params.tenantId, params.id, payload),
-      ),
-    )
-    .handle("downloadApplication", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.downloadApplication(request, params.tenantId, params.id, params.sha256),
-      ),
-    )
-    .handle("uploadApplicationInstaller", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.uploadApplicationInstaller(
-          request,
-          params.tenantId,
-          params.id,
-          params.installerId,
-          payload,
-        ),
-      ),
-    )
-    .handle("downloadApplicationInstaller", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.downloadApplicationInstaller(
-          request,
-          params.tenantId,
-          params.id,
-          params.installerId,
-          params.sha256,
-        ),
-      ),
-    )
     .handle("getPolicyAssignments", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.getPolicyAssignments(request, params.tenantId, params.id),
@@ -27223,11 +31680,6 @@ export const enterpriseHandlers = (
     .handle("createPolicy", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.createPolicy(request, params.tenantId, payload),
-      ),
-    )
-    .handle("deletePolicies", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.deletePolicies(request, params.tenantId, payload),
       ),
     )
     .handle("patchPolicy", ({ request, params, payload }) =>
@@ -27286,6 +31738,58 @@ export const enterpriseHandlers = (
     .handle("billingInvoices", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.billingInvoices(request, params.tenantId),
+      ),
+    );
+
+/**
+ * Catalogue uninstall handlers. Registered against `enterpriseApplicationApi`,
+ * a group kept separate so `EnterpriseApi` stays inside the compiler's
+ * declaration-emit budget.
+ */
+export const enterpriseApplicationHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApplicationApi>,
+) =>
+  handlers
+    .handle("installApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.installApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("uninstallApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uninstallApplication(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("uploadApplication", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplication(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("downloadApplication", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplication(request, params.tenantId, params.id, params.sha256),
+      ),
+    )
+    .handle("uploadApplicationInstaller", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.uploadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          payload,
+        ),
+      ),
+    )
+    .handle("downloadApplicationInstaller", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadApplicationInstaller(
+          request,
+          params.tenantId,
+          params.id,
+          params.installerId,
+          params.sha256,
+        ),
       ),
     );
 

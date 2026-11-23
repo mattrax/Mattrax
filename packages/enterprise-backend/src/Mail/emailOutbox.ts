@@ -33,6 +33,7 @@ export const EMAIL_OUTBOX_TEMPLATES = [
   "email_change_notice",
   "credential_expiry",
   "dashboard_report",
+  "approval_request",
 ] as const;
 
 export type EmailOutboxTemplate = (typeof EMAIL_OUTBOX_TEMPLATES)[number];

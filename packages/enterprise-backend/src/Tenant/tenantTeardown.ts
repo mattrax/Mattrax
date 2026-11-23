@@ -9,6 +9,7 @@ export const tenantObjectPrefixes = (organizationId: string): ReadonlyArray<stri
   `p/${organizationId}/`,
   `a/${organizationId}/`,
   `backups/${organizationId}/`,
+  `handovers/${organizationId}/`,
 ];
 
 /**

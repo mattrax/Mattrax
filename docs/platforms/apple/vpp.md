@@ -88,6 +88,10 @@ Release requires a revocable asset and an active assignment. It disassociates th
 marks the assignment `revoked` and returns the seat to the pool. It does **not** queue an
 uninstall command.
 
+An uninstall requested from the application catalogue does the reverse: the seat is
+returned automatically once the device reports an application inventory that no longer
+contains the app. A licence is never released on the strength of the command alone.
+
 ## Where VPP fits with the app catalogue
 
 - **VPP** — licensed App Store apps, assigned by device serial, installed from the licence
@@ -104,7 +108,8 @@ falling back to a user-account App Store install.
 
 - Only **device-based** licensing is implemented. User-based VPP (`clientUserId`) is not.
 - Microsoft/Intune purchased apps are not synced; see above.
-- Release does not uninstall the app.
+- Release does not uninstall the app. Use Uninstall from the application catalogue and the
+  licence is returned after inventory confirms the removal.
 - Apps without a serial (for example Android devices) cannot receive a VPP licence.
 - VPP sync and install require a valid APNs certificate for push delivery.
 

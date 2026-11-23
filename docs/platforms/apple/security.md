@@ -143,6 +143,86 @@ The password is sealed as `recovery_lock_password`. A Mac erase clears it first
 out of recoveryOS. Intel Macs do not support either command, so they report a
 command failure rather than pretending it worked.
 
+## Lost Mode
+
+Apple's `EnableLostMode` locks a supervised iPhone or iPad and shows a return
+message on the Lock Screen. `DisableLostMode` ends it, and
+`PlayLostModeSound` plays a sound on a device that is still in Lost Mode.
+
+Start (or update) Lost Mode with `action: "start-lost-mode"` and
+`lostModeMessage`/`lostModePhone`/`lostModeFootnote`; end it with
+`action: "stop-lost-mode"`. The dashboard exposes the same form and buttons.
+
+- Only supervised iPhone and iPadOS are supported. macOS, tvOS, visionOS,
+  watchOS and Apple User Enrollment (BYOD) are refused with a specific reason;
+  Apple defines no Lost Mode command for them. Supervision itself is not
+  reported by Apple, so an Apple device whose OS family is not yet known stays
+  eligible and the device's command result is the confirmation.
+- Apple requires at least one of `Message` and `PhoneNumber`; `Footnote` is
+  optional. Mattrax rejects an empty request and messages longer than 500
+  characters before queueing.
+- The device reports its location from the separate `DeviceLocation` command,
+  which Mattrax queues once `EnableLostMode` is acknowledged. The fix is stored
+  with latitude, longitude, horizontal/vertical accuracy and the sample time,
+  and shown on the device page with a Maps link. Location is only shown (and
+  only accepted) while Lost Mode is active; ending Lost Mode clears it.
+- Location is personal data. It is part of the ordinary device read (no extra
+  step-up), and a lost device is asked for a fresh fix at most once an hour
+  while it keeps checking in.
+- The message, phone, footnote, request time and acknowledgement time are kept
+  on `device_apple`. A failed enable does not leave the device marked lost.
+- `play-lost-mode-sound` is advertised only while Lost Mode is active and uses
+  Apple's `PlayLostModeSound`.
+
+## Local accounts
+
+`UserList` is the only Apple command that reports local macOS accounts. Mattrax
+queues it at macOS enrolment, daily for Macs whose inventory is missing or more
+than a day old, and on demand with `refresh-local-accounts`.
+
+Apple implements `UserList` on macOS only and requires supervision; it is
+forbidden for Apple User Enrollment. A Mac that is not supervised reports a
+command failure, which is shown in command history. The daily sweep only selects
+devices with a positive macOS identity (edition or model), so unidentified Apple
+devices and iPhones cannot starve the Mac fleet.
+
+Each answer replaces `device_local_account` for the device. Stored fields are
+the short name, full name, UID, GeneratedUID, SecureToken state, login state and
+mobile-account flag, with the first-seen, last-seen and report timestamps.
+`DataQuota`/`DataUsed` are iOS/Shared iPad fields only; they are stored in
+bigint columns so a large byte count cannot overflow, and are never populated
+for macOS. Metadata only: Apple never returns passwords, home-directory contents
+or keychain data.
+
+Apple does **not** report whether an account is an administrator and does not
+report a last-login time. `is_admin` is therefore `true` only for the managed
+administrator Mattrax creates (`mattrax-admin`), `null` for every other
+account, and `last_login_at` stays null rather than being guessed. The
+`UserList` GeneratedUID for that managed account is stored on
+`device_apple.local_admin_guid` for password rotation. Mattrax does not queue
+`UserList` for Shared iPad: the reported items describe macOS accounts, and the
+Shared iPad user channel is already inventoried from `TokenUpdate`.
+
+## Managed local administrator rotation
+
+`rotate-local-admin-password` rotates the password for the account Mattrax
+created during ADE setup. It requires a Mac, a known `local_admin_guid`, and an
+escrowed `local_admin_password`; an older enrolment without a GUID is refused
+instead of touching an arbitrary account (Apple rejects a GUID that does not
+match its ADE-created administrator).
+
+The new password is generated with the same policy-compliant generator as ADE
+setup and hashed as a `SALTED-SHA512-PBKDF2` plist. It is sealed under
+`local_admin_password_pending` and queued as `SetAutoAdminPassword`. Only when
+the Mac acknowledges success does the pending value replace
+`local_admin_password` and move the rotation timestamp; a failure or erase
+discards it, so a reveal never shows a password the device never applied. The
+action requires a step-up grant and is audited without the password or hash.
+
+A tenant can opt in to scheduled rotation with `localAdminRotationDays` (30, 60
+or 90). Daily maintenance queues at most 25 rotations per tenant per run and
+skips any device that already has one in flight.
+
 ## Erase
 
 `EraseDevice` is queued with explicit flags rather than relying on defaults:
@@ -205,23 +285,25 @@ update availability, managed flag and last-reported time.
 
 ### Inventory fields on a device
 
-| Field                                               | Source                      |
-| --------------------------------------------------- | --------------------------- |
-| `serial`, `model`, `modelIdentifier`, `modelNumber` | DDM status                  |
-| `osVersion`, `osBuild`, `osEdition`                 | DDM status                  |
-| `diskTotal`, `diskUsed`                             | DDM status                  |
-| `fileVaultEnabled`                                  | DDM status / `SecurityInfo` |
-| `batteryHealth`                                     | DDM status                  |
-| `capabilities`                                      | DDM status                  |
-| `passcodePresent`, `passcodeCompliant`              | DDM status (iOS family)     |
-| `osUpdateInstallState`, `osUpdatePendingVersion`    | DDM status                  |
-| `osUpdateFailureCount`, `osUpdateFailureReason`     | DDM status                  |
-| `securityLockdownMode`, `managedCertificateCount`   | DDM status                  |
-| `managementApps`                                    | DDM status                  |
-| `lastSeenAt`                                        | Check-in                    |
-| `inventoryUpdatedAt`                                | Last inventory write        |
-| `applicationsUpdatedAt`                             | Last app inventory write    |
-| `securityInfoUpdatedAt`                             | Last `SecurityInfo` answer  |
+| Field                                               | Source                       |
+| --------------------------------------------------- | ---------------------------- |
+| `serial`, `model`, `modelIdentifier`, `modelNumber` | DDM status                   |
+| `osVersion`, `osBuild`, `osEdition`                 | DDM status                   |
+| `diskTotal`, `diskUsed`                             | DDM status                   |
+| `fileVaultEnabled`                                  | DDM status / `SecurityInfo`  |
+| `batteryHealth`                                     | DDM status                   |
+| `capabilities`                                      | DDM status                   |
+| `passcodePresent`, `passcodeCompliant`              | DDM status (iOS family)      |
+| `osUpdateInstallState`, `osUpdatePendingVersion`    | DDM status                   |
+| `osUpdateFailureCount`, `osUpdateFailureReason`     | DDM status                   |
+| `securityLockdownMode`, `managedCertificateCount`   | DDM status                   |
+| `managementApps`                                    | DDM status                   |
+| `lastSeenAt`                                        | Check-in                     |
+| `inventoryUpdatedAt`                                | Last inventory write         |
+| `applicationsUpdatedAt`                             | Last app inventory write     |
+| `securityInfoUpdatedAt`                             | Last `SecurityInfo` answer   |
+| `apple.lostMode`                                    | Lost Mode + `DeviceLocation` |
+| `apple.localAccounts`                               | `UserList` (macOS)           |
 
 ## Device health
 
@@ -245,6 +327,8 @@ Health is a derived rollup, not a compliance engine. It evaluates:
 | Software update pending                | Info     |
 | Management app failed to install       | Warning  |
 | Battery service/replace/poor           | Warning  |
+| Device is in Lost Mode                 | Warning  |
+| Managed admin without a SecureToken    | Warning  |
 
 Levels are `healthy`, `attention`, `missing` (MIA), `critical` and `unknown`. MIA only
 applies to an enrolled device; `unenrolled`/`unenrolling` take precedence and a critical
@@ -270,23 +354,28 @@ delivery failures and invalid tokens.
 
 ## Command matrix
 
-| Action                         | Requires step-up | Notes                                            |
-| ------------------------------ | ---------------- | ------------------------------------------------ |
-| `sync`                         | No               | APNs wake-up                                     |
-| `collect-security-info`        | No               | FileVault/bootstrap key and AL state             |
-| `refresh-applications`         | No               | Installed app inventory                          |
-| `collect-activation-lock-code` | Yes              | Device bypass code                               |
-| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key               |
-| `set-recovery-lock`            | Yes              | Apple silicon only                               |
-| `verify-recovery-lock`         | Yes              | Checks the stored password                       |
-| `lock`                         | Yes              | Returns a PIN                                    |
-| `wipe`                         | Yes              | Erase with explicit flags                        |
-| `restart`                      | Yes              | —                                                |
-| `shutdown`                     | Yes              | —                                                |
-| `clear-passcode`               | Yes              | Needs an unlock token                            |
-| `install-app`                  | Yes              | Manifest URL or iTunes Store id                  |
-| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only         |
+| Action                         | Requires step-up | Notes                                              |
+| ------------------------------ | ---------------- | -------------------------------------------------- |
+| `sync`                         | No               | APNs wake-up                                       |
+| `collect-security-info`        | No               | FileVault/bootstrap key and AL state               |
+| `refresh-applications`         | No               | Installed app inventory                            |
+| `collect-activation-lock-code` | Yes              | Device bypass code                                 |
+| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key                 |
+| `set-recovery-lock`            | Yes              | Apple silicon only                                 |
+| `verify-recovery-lock`         | Yes              | Checks the stored password                         |
+| `lock`                         | Yes              | Returns a PIN                                      |
+| `wipe`                         | Yes              | Erase with explicit flags                          |
+| `restart`                      | Yes              | —                                                  |
+| `shutdown`                     | Yes              | —                                                  |
+| `clear-passcode`               | Yes              | Needs an unlock token                              |
+| `install-app`                  | Yes              | Manifest URL or iTunes Store id                    |
+| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only           |
 | `set-lock-screen-message`      | No               | shared-device profile; supervised iPhone/iPad only |
+| `start-lost-mode`              | Yes              | `EnableLostMode`; supervised iPhone/iPad only      |
+| `stop-lost-mode`               | Yes              | `DisableLostMode`                                  |
+| `play-lost-mode-sound`         | Yes              | Only while Lost Mode is active                     |
+| `refresh-local-accounts`       | No               | `UserList`; macOS only                             |
+| `rotate-local-admin-password`  | Yes              | `SetAutoAdminPassword`; managed ADE admin only     |
 
 `set-device-name` queues Apple's `Settings` command with the documented
 `DeviceName` item and works on supervised macOS, iOS, iPadOS and tvOS devices.
@@ -322,7 +411,27 @@ install for an unchanged value. The last installed message is stored in
   persisted.
 - FileVault, activation-lock and Recovery Lock flows are fixture-tested. Validate
   them on real supervised Apple silicon hardware before relying on them.
-- There is no bulk recovery-key export.
+
+Device escrow leaves the deployment in two audited, passphrase-sealed forms:
+
+- The **Hand over device** flow (`POST /devices/handover`) is the hardware-disposal
+  path. It writes one archive containing the FileVault recovery key (CMS-unwrapped),
+  Activation Lock bypass code, Recovery Lock password, managed local administrator
+  password and bootstrap token for up to 500 devices, plus serial, name, asset tag and
+  notes. The archive is stored in object storage, not MySQL, is downloadable once within
+  15 minutes, and appears in the audit log and device timeline without any secret values.
+- A **cutover export** (`POST /cutover/export`, gated by `tenant.export` and the
+  cutover step-up) still embeds every `device_secret` and the tenant SCEP CA in its own
+  encrypted archive for migration to another deployment. It is not a disposal record.
+
+There is still no plaintext bulk key listing: an operator must supply the archive
+passphrase and decrypt the file locally. See
+[Manage devices](/manage/devices#hand-over-a-device).
+
+- `UserList` does not report administrator status or last-login time. Only the
+  managed administrator Mattrax creates is known to be an admin, so there is no
+  "unexpected admin" filter or health rule; the SecureToken rule can only judge
+  that managed account.
 - Compliance is derived health only. There is no policy engine, baseline or
   remediation.
 

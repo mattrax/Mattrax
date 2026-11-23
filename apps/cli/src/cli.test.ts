@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Effect, Layer, Option, Exit } from "effect";
 import { Command } from "effect/cli";
 import { NodeServices } from "@effect/platform-node";
@@ -123,6 +126,44 @@ describe("CLI argument parsing", () => {
       limit: 5,
       offset: 0,
     });
+  });
+
+  it("decrypts a handover archive through the nested devices command", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mattrax-cli-handover-"));
+    const file = join(directory, "handover.json");
+    const capture: Capture = { lines: [], err: [] };
+
+    try {
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 1,
+          kdf: {
+            name: "PBKDF2",
+            hash: "SHA-256",
+            iterations: 600000,
+            salt: "FDBLTH8GFKKKV96LErlAxA==",
+          },
+          cipher: { name: "AES-GCM", iv: "TmbgporKfT9oXc4x" },
+          ciphertext:
+            "eLaH9yyGPJizYHlwXgvEa2I8Jx6pKlsUe2aMopY/8FCKwwepgplhFqDswBpysIFvHEcc0P56R5YgHyVTX/hI0++4yvIVOuGI4z8LeVc=",
+        }),
+      );
+
+      await run(
+        ["devices", "handover", "decrypt", file, "--passphrase", "mattrax-test-vector-passphrase"],
+        fakeApi(),
+        capture,
+      );
+
+      expect(JSON.parse(capture.lines.join("\n"))).toEqual({
+        format: "mattrax.device-handover",
+        version: 1,
+        devices: [],
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("accepts global flags before the subcommand", async () => {

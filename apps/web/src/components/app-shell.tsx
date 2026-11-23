@@ -840,6 +840,7 @@ export function AppShell(props: {
   const settingsLabels = new Map([
     ["", "General"],
     ["administrators", "Administrators"],
+    ["approvals", "Approvals"],
     ["identity", "Identity"],
     ["enrollment", "Enrollment"],
     ["management", "Management"],

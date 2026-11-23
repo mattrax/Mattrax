@@ -38,6 +38,7 @@ const tabs: ReadonlyArray<{
 }> = [
   { id: "", label: "General", group: "Workspace", icon: Settings },
   { id: "administrators", label: "Administrators", group: "Workspace", icon: UsersRound },
+  { id: "approvals", label: "Approvals", group: "Access", icon: ShieldCheck },
   { id: "identity", label: "Identity", group: "Access", icon: KeyRound },
   { id: "enrollment", label: "Enrollment", group: "Access", icon: MonitorSmartphone },
   { id: "attributes", label: "Attributes", group: "Access", icon: SlidersHorizontal },
@@ -57,6 +58,10 @@ const groupOrder = ["Workspace", "Access", "Fleet", "Organisation"] as const;
 const sectionDescriptions = new Map([
   ["", "Rename the tenant, set the branding people see, and export or delete it."],
   ["administrators", "Invite administrators, assign roles, and review pending invitations."],
+  [
+    "approvals",
+    "Require a second administrator before destructive actions run, and review the approval queue.",
+  ],
   ["identity", "Single sign-on, SCIM provisioning, and the domains that route sign-in."],
   ["enrollment", "Choose which platforms can enroll, and control the enrollment link."],
   ["attributes", "Define the custom fields your organisation tracks on every device."],

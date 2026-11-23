@@ -17,6 +17,7 @@ export const STEP_UP_ACTIONS = [
   "sessions-revoke-all",
   "recovery-approve",
   "recovery-key-reveal",
+  "device-handover",
   "backup-download",
   "backup-pin",
   "backup-delete",

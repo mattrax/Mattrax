@@ -485,12 +485,14 @@ describe("install retry budget", () => {
       storeId: undefined,
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
     expect(installApplicationTarget({ iTunesStoreID: 42 })).toEqual({
       manifestUrl: undefined,
       storeId: "42",
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
     expect(
       installApplicationTarget({
@@ -508,13 +510,41 @@ describe("install retry budget", () => {
       storeId: undefined,
       bundleId: "com.example.app",
       assetUrl: "https://mdm.test/asset",
+      assetIdentifier: undefined,
     });
     expect(installApplicationTarget(null)).toEqual({
       manifestUrl: undefined,
       storeId: undefined,
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
+  });
+
+  it("reads Mattrax's catalogue identifier from a signed manifest or asset URL", () => {
+    expect(
+      installApplicationTarget({
+        ManifestURL: "https://mdm.test/mdm/apple/manifests/app.installer-1?token=abc",
+      }),
+    ).toMatchObject({ assetIdentifier: "app.installer-1" });
+
+    expect(
+      installApplicationTarget({
+        Manifest: {
+          items: [
+            {
+              assets: [
+                {
+                  kind: "software-package",
+                  url: "https://mdm.test/mdm/apple/assets/app.installer-1?token=abc",
+                },
+              ],
+              metadata: { "bundle-identifier": "com.example.app", "bundle-version": "1.0" },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ assetIdentifier: "app.installer-1" });
   });
 
   it("treats both Apple install commands as application installs", () => {
