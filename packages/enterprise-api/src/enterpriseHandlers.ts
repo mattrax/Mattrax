@@ -491,7 +491,6 @@ import type {
   EnrollmentAttemptPlatform,
 } from "@mattrax/enterprise-backend";
 import type { AppleBusinessManagerError } from "@mattrax/apple-business-manager";
-import type * as AppleBusinessManager from "@mattrax/apple-business-manager";
 import type { AppleApiConfig } from "@mattrax/apple-business-manager";
 import type { VppError } from "@mattrax/apple-business-manager";
 import {
@@ -581,76 +580,28 @@ import type {
   EnterpriseSchema,
 } from "@mattrax/enterprise-backend";
 import type { EmailTransport } from "@mattrax/email";
+import { appleBusinessManager } from "./appleBusinessManager.ts";
 
-/**
- * Apple Business Manager and the volume-purchase client are deployment
- * administration paths, not part of a normal request. The module is imported on
- * first use so its evaluation stays off the request path; these wrappers keep
- * the call sites identical to a static import.
- */
-type AppleBusinessManagerModule = typeof AppleBusinessManager;
-
-const loadAppleBusinessManagerModule = () => import("@mattrax/apple-business-manager");
-
-const withAppleBusinessManager = <A, E>(
-  run: (module: AppleBusinessManagerModule) => Effect.Effect<A, E>,
-): Effect.Effect<A, E> => Effect.flatMap(Effect.promise(loadAppleBusinessManagerModule), run);
-
-const loadAppleBusinessManager: AppleBusinessManagerModule["loadAppleBusinessManager"] = (
-  ...args
-) => withAppleBusinessManager((module) => module.loadAppleBusinessManager(...args));
-
-const appleBusinessManagerInfo: AppleBusinessManagerModule["appleBusinessManagerInfo"] = (
-  ...args
-) => withAppleBusinessManager((module) => module.appleBusinessManagerInfo(...args));
-
-const saveAppleBusinessManagerToken: AppleBusinessManagerModule["saveAppleBusinessManagerToken"] = (
-  ...args
-) => withAppleBusinessManager((module) => module.saveAppleBusinessManagerToken(...args));
-
-const clearAppleBusinessManagerToken: AppleBusinessManagerModule["clearAppleBusinessManagerToken"] =
-  (...args) => withAppleBusinessManager((module) => module.clearAppleBusinessManagerToken(...args));
-
-const syncAppleBusinessManagerDevices: AppleBusinessManagerModule["syncAppleBusinessManagerDevices"] =
-  (...args) =>
-    withAppleBusinessManager((module) => module.syncAppleBusinessManagerDevices(...args));
-
-const assignAppleBusinessManagerDevice: AppleBusinessManagerModule["assignAppleBusinessManagerDevice"] =
-  (...args) =>
-    withAppleBusinessManager((module) => module.assignAppleBusinessManagerDevice(...args));
-
-const createAdeProfileToken: AppleBusinessManagerModule["createAdeProfileToken"] = (...args) =>
-  withAppleBusinessManager((module) => module.createAdeProfileToken(...args));
-
-const readAdeProfileToken: AppleBusinessManagerModule["readAdeProfileToken"] = (...args) =>
-  withAppleBusinessManager((module) => module.readAdeProfileToken(...args));
-
-const openAbmCredential: AppleBusinessManagerModule["openAbmCredential"] = async (...args) =>
-  (await loadAppleBusinessManagerModule()).openAbmCredential(...args);
-
-const vppInfo: AppleBusinessManagerModule["vppInfo"] = (...args) =>
-  withAppleBusinessManager((module) => module.vppInfo(...args));
-
-const saveVppToken: AppleBusinessManagerModule["saveVppToken"] = (...args) =>
-  withAppleBusinessManager((module) => module.saveVppToken(...args));
-
-const clearVppToken: AppleBusinessManagerModule["clearVppToken"] = (...args) =>
-  withAppleBusinessManager((module) => module.clearVppToken(...args));
-
-const syncVppAssets: AppleBusinessManagerModule["syncVppAssets"] = (...args) =>
-  withAppleBusinessManager((module) => module.syncVppAssets(...args));
-
-const findVppAsset: AppleBusinessManagerModule["findVppAsset"] = (...args) =>
-  withAppleBusinessManager((module) => module.findVppAsset(...args));
-
-const findVppAssetByStoreId: AppleBusinessManagerModule["findVppAssetByStoreId"] = (...args) =>
-  withAppleBusinessManager((module) => module.findVppAssetByStoreId(...args));
-
-const assignVppLicence: AppleBusinessManagerModule["assignVppLicence"] = (...args) =>
-  withAppleBusinessManager((module) => module.assignVppLicence(...args));
-
-const releaseVppLicence: AppleBusinessManagerModule["releaseVppLicence"] = (...args) =>
-  withAppleBusinessManager((module) => module.releaseVppLicence(...args));
+const {
+  loadAppleBusinessManager,
+  appleBusinessManagerInfo,
+  saveAppleBusinessManagerToken,
+  clearAppleBusinessManagerToken,
+  syncAppleBusinessManagerDevices,
+  assignAppleBusinessManagerDevice,
+  createAdeProfileToken,
+  readAdeProfileToken,
+  openAbmCredential,
+  vppInfo,
+  saveVppToken,
+  clearVppToken,
+  syncVppAssets,
+  findVppAsset,
+  findVppAssetByStoreId,
+  assignVppLicence,
+  releaseVppLicence,
+  withAppleBusinessManager,
+} = appleBusinessManager;
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
@@ -4004,7 +3955,7 @@ export const createEnterpriseService = ({
         ),
       );
 
-      const escrowCertificateDer = yield* Effect.tryPromise({
+      const escrowCertificateDer = yield* Effect.try({
         try: () => certificateDer(escrowKey.certificatePem),
         catch: () =>
           new EnterpriseInternal({

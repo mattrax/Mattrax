@@ -374,9 +374,11 @@ export const importScepCa = (input: {
   readonly privateKeyPem: string;
 }): Effect.Effect<ScepStoredCa, ScepError> =>
   Effect.gen(function* () {
-    const [pkijs, asn1js] = yield* Effect.promise(() =>
-      Promise.all([loadPkijs(), import("asn1js")]),
-    );
+    const [pkijs, asn1js] = yield* Effect.tryPromise({
+      try: () => Promise.all([loadPkijs(), import("asn1js")]),
+      catch: (cause) =>
+        new ScepError({ message: "The SCEP certificate library could not be loaded", cause }),
+    });
 
     const caCert = yield* Effect.tryPromise({
       try: () => pemToCert(input.certificatePem),

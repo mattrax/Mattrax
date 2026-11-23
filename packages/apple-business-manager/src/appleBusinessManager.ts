@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect, Option, Predicate, Schema } from "effect";
+import { Effect, Option, Predicate, Schema } from "effect";
 import { fetchWithTimeout } from "@mattrax/net";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import type { PlistValue } from "@mattrax/plist";
@@ -7,6 +7,8 @@ import { parsePlist } from "@mattrax/plist";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import { AppleBusinessManagerError } from "./errors.js";
+import type { AppleBusinessManagerErrorKind } from "./errors.js";
 
 /**
  * Apple Business Manager (ABM/ADE) integration.
@@ -27,22 +29,8 @@ import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
  * `fetch` implementation is injectable so tests never touch Apple.
  */
 
-export type AppleBusinessManagerErrorKind =
-  | "not_configured"
-  | "invalid_token"
-  | "expired"
-  | "unauthorized"
-  | "forbidden"
-  | "not_found"
-  | "conflict"
-  | "invalid_response"
-  | "upstream";
-
-export class AppleBusinessManagerError extends Data.TaggedError("AppleBusinessManagerError")<{
-  message: string;
-  kind: AppleBusinessManagerErrorKind;
-  cause?: unknown;
-}> {}
+export { AppleBusinessManagerError };
+export type { AppleBusinessManagerErrorKind };
 
 const now = () => new Date();
 

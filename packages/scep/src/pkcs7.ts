@@ -1231,9 +1231,16 @@ export async function createEscrowCertificate(
   return certificate;
 }
 
-/** DER bytes of a PEM certificate, for hashing or embedding in a plist. */
-export async function certificateDer(certificatePem: string): Promise<Uint8Array> {
-  return new Uint8Array((await pemToCert(trimPem(certificatePem))).toSchema().toBER(false));
+/**
+ * DER bytes of a PEM certificate, for hashing or embedding in a plist.
+ *
+ * The PEM body *is* the DER, so this decodes it directly instead of parsing the
+ * certificate with pkijs: the callers only need the bytes, and keeping the
+ * large PKI module out of this path means the escrow and policy delivery paths
+ * never load it.
+ */
+export function certificateDer(certificatePem: string): Uint8Array {
+  return new Uint8Array(pemDecode("CERTIFICATE", trimPem(certificatePem)));
 }
 
 /** Common name of a PEM certificate, or null when it has none. */

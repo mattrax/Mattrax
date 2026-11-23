@@ -51,7 +51,7 @@ export const escrowCertificateFingerprint = (
           await crypto.subtle.digest(
             "SHA-256",
             // SAFETY: WebCrypto accepts a Uint8Array view as a BufferSource.
-            (await certificateDer(certificatePem)) as BufferSource,
+            certificateDer(certificatePem) as BufferSource,
           ),
         ),
       ),
@@ -62,8 +62,14 @@ const describeCertificate = (certificatePem: string) =>
   Effect.gen(function* () {
     return {
       certificateFingerprintSha256: yield* escrowCertificateFingerprint(certificatePem),
-      subject: yield* Effect.promise(() => certificateCommonName(certificatePem)),
-      certificateNotAfter: yield* Effect.promise(() => certificateNotAfter(certificatePem)),
+      subject: yield* Effect.tryPromise({
+        try: () => certificateCommonName(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
+      certificateNotAfter: yield* Effect.tryPromise({
+        try: () => certificateNotAfter(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
     };
   });
 

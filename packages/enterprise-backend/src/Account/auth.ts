@@ -133,6 +133,100 @@ export type AuthLiveOptions = {
   readonly trustedOrigins?: ReadonlyArray<string>;
 };
 
+/**
+ * The WebAuthn server module the passkey protocol layer delegates to. Only
+ * `make` is used, so a test can supply a stand-in and exercise a rejected
+ * chunk load.
+ */
+type PasskeyServerModule = Pick<typeof import("@yielded/auth-simplewebauthn/Server"), "make">;
+
+/** Loads the WebAuthn server module. Injectable so tests can reject the chunk. */
+export type PasskeyServerLoader = () => Promise<PasskeyServerModule>;
+
+/** Stable log message for a verifier whose chunk could not be loaded. */
+export const PASSKEY_VERIFIER_LOAD_FAILED =
+  "Passkey ceremonies are unavailable: the WebAuthn verifier could not be loaded";
+
+/** Stable log message for a rejected relying-party profile. */
+export const PASSKEY_PROFILE_INVALID =
+  "Passkey ceremonies are unavailable: the WebAuthn relying-party profile is invalid";
+
+/** One-line, secret-free description of a boundary failure cause. */
+const describeFailure = (cause: unknown): string =>
+  cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+
+/**
+ * The WebAuthn verifier layer for the passkey protocol.
+ *
+ * The verifier is the single largest dependency in the auth graph and only a
+ * passkey ceremony exercises it, so the module is imported on first use rather
+ * than at module evaluation. Every protocol method delegates to one verifier,
+ * memoised per layer, so a request that performs several ceremonies (including
+ * concurrent ones) loads and builds it once.
+ *
+ * Both ways the verifier can fail to exist are logged for the operator at error
+ * level and then surface to the client as `PasskeyUnavailable`:
+ *
+ * - the chunk could not be loaded (a transient deployment or edge failure);
+ * - the relying-party profile was rejected (a permanent deployment
+ *   misconfiguration, such as an origin that cannot host WebAuthn).
+ *
+ * A rejected profile cannot be a distinct client tag: the auth HTTP contract
+ * declares `PasskeyFailure` (rejected, unavailable, action required, method
+ * unsupported, hook denied) and `PasskeyConfigurationError` is not part of it,
+ * so a new tag would change the API schema owned by `@yielded/auth`. The error
+ * log is the actionable signal; the ceremony fails closed, as it did when the
+ * layer was eager.
+ */
+export const makePasskeyProtocolLayer = (
+  load: PasskeyServerLoader = () => import("@yielded/auth-simplewebauthn/Server"),
+): Layer.Layer<Passkey.PasskeyProtocol, never, Passkey.PasskeyConfig> =>
+  Layer.effect(
+    Passkey.PasskeyProtocol,
+    Effect.gen(function* () {
+      const config = yield* Passkey.PasskeyConfig;
+
+      // `Effect.cached` memoises the verifier effect for this layer: the import
+      // runs once and concurrent first ceremonies await the same result.
+      const verifier = yield* Effect.cached(
+        Effect.gen(function* () {
+          const module = yield* Effect.tryPromise({
+            try: () => load(),
+            catch: (cause) => cause,
+          }).pipe(
+            // A rejected dynamic import stays a typed failure, not a defect, so
+            // caller `Effect.catch` handlers keep working.
+            Effect.catch((error) =>
+              Effect.logError(PASSKEY_VERIFIER_LOAD_FAILED, {
+                cause: describeFailure(error),
+              }).pipe(Effect.andThen(Effect.fail(Passkey.PasskeyUnavailable.make({})))),
+            ),
+          );
+
+          return yield* module.make(config).pipe(
+            Effect.catchTag("PasskeyConfigurationError", () =>
+              Effect.logError(PASSKEY_PROFILE_INVALID, {
+                profileIds: config.profiles.map((profile) => profile.profileId),
+                rpIds: config.profiles.map((profile) => profile.rpId),
+              }).pipe(Effect.andThen(Effect.fail(Passkey.PasskeyUnavailable.make({})))),
+            ),
+          );
+        }),
+      );
+
+      return Passkey.PasskeyProtocol.of({
+        prepareAuthentication: (input) =>
+          Effect.flatMap(verifier, (service) => service.prepareAuthentication(input)),
+        prepareRegistration: (input) =>
+          Effect.flatMap(verifier, (service) => service.prepareRegistration(input)),
+        verifyAuthentication: (input) =>
+          Effect.flatMap(verifier, (service) => service.verifyAuthentication(input)),
+        verifyRegistration: (input) =>
+          Effect.flatMap(verifier, (service) => service.verifyRegistration(input)),
+      });
+    }),
+  );
+
 export const makeAuthLive = ({
   appAuth,
   cryptoLayer,
@@ -295,41 +389,7 @@ export const makeAuthLive = ({
    */
   const PasskeyConfigLive = Passkey.PasskeyConfig.layer(passkeyProfile(origin, trustedOrigins));
 
-  /**
-   * The WebAuthn verifier is the single largest dependency in the auth graph and
-   * it is only exercised by a passkey ceremony, so it is imported on first use
-   * rather than at module evaluation. Every method delegates to the same
-   * lazily-built verifier, which keeps the layer's other behaviour (one verifier
-   * per layer, configuration errors surfacing on first ceremony) unchanged.
-   */
-  const PasskeyProtocolLive = Layer.effect(
-    Passkey.PasskeyProtocol,
-    Effect.gen(function* () {
-      const config = yield* Passkey.PasskeyConfig;
-
-      // `Effect.cached` memoises the verifier for this layer, so a request that
-      // performs several ceremonies builds it once, as before. A relying-party
-      // profile the verifier refuses is reported as "unavailable": the ceremony
-      // fails closed instead of taking the whole API down with it.
-      const verifier = yield* Effect.cached(
-        Effect.flatMap(
-          Effect.promise(() => import("@yielded/auth-simplewebauthn/Server")),
-          (module) => module.make(config),
-        ).pipe(Effect.mapError(() => Passkey.PasskeyUnavailable.make({}))),
-      );
-
-      return Passkey.PasskeyProtocol.of({
-        prepareAuthentication: (input) =>
-          Effect.flatMap(verifier, (service) => service.prepareAuthentication(input)),
-        prepareRegistration: (input) =>
-          Effect.flatMap(verifier, (service) => service.prepareRegistration(input)),
-        verifyAuthentication: (input) =>
-          Effect.flatMap(verifier, (service) => service.verifyAuthentication(input)),
-        verifyRegistration: (input) =>
-          Effect.flatMap(verifier, (service) => service.verifyRegistration(input)),
-      });
-    }),
-  ).pipe(Layer.provide(PasskeyConfigLive));
+  const PasskeyProtocolLive = makePasskeyProtocolLayer().pipe(Layer.provide(PasskeyConfigLive));
 
   const PasskeyClaimsLive = Layer.effect(
     appAuth.strategies.passkey.SessionClaims,

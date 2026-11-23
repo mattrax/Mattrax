@@ -336,6 +336,17 @@ export type MaintenanceResult = {
 
 const day = 24 * 60 * 60 * 1000;
 
+/**
+ * Stable log message for a scheduled Apps and Books client that could not be
+ * loaded. The sweep is skipped for the run; the next daily tick retries.
+ */
+export const VPP_CLIENT_LOAD_FAILED =
+  "Scheduled Apps and Books sync skipped: the client could not be loaded";
+
+/** One-line, secret-free description of a boundary failure cause. */
+const describeFailure = (cause: unknown): string =>
+  cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /** Audit action recorded once per organisation per threshold per day. */
@@ -1051,19 +1062,30 @@ export const runMaintenance = (
     //     sync is recorded on the token row and retried by the next run.
     if (options.vppSync !== false && options.authSecret) {
       // Apps and Books sync is a daily cron path; the VPP client is imported
-      // here so it stays out of the API Worker's startup closure.
-      const { syncScheduledVppAssets } = yield* Effect.promise(
-        () => import("@mattrax/apple-business-manager"),
+      // here so it stays out of the API Worker's startup closure. A chunk that
+      // cannot be loaded is logged and skips this step: it must not fail the
+      // rest of maintenance (or become a defect `Effect.catch` cannot see).
+      const vppClient = yield* Effect.tryPromise({
+        try: () => import("@mattrax/apple-business-manager"),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(VPP_CLIENT_LOAD_FAILED, { cause: describeFailure(error) }).pipe(
+            Effect.as(undefined),
+          ),
+        ),
       );
 
-      const vpp = yield* syncScheduledVppAssets({
-        db,
-        authSecret: options.authSecret,
-        now,
-      });
+      if (vppClient) {
+        const vpp = yield* vppClient.syncScheduledVppAssets({
+          db,
+          authSecret: options.authSecret,
+          now,
+        });
 
-      result.vppSynced = vpp.synced;
-      result.vppFailed = vpp.failed;
+        result.vppSynced = vpp.synced;
+        result.vppFailed = vpp.failed;
+      }
     }
 
     // 10. Command queue housekeeping. Android commands are issued directly and

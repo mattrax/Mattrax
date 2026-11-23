@@ -20,8 +20,9 @@ import { parsePlist, PlistValue } from "@mattrax/plist";
 import { loadPkijs } from "./pkijs.js";
 import type { PkijsModule } from "./pkijs.js";
 
-// pkijs is loaded on first use (see `loadPkijs`) so an enrollment request that
-// is not CMS signed never pays for it, and it stays out of the startup closure.
+// pkijs is loaded on first use (see `loadPkijs`) rather than at module
+// evaluation: it stays out of the Worker's startup closure and is only loaded
+// when an ADE MachineInfo actually needs its CMS signature verified.
 
 /** Bound the CMS body before ASN.1 parsing. */
 export const MAX_ADE_MACHINE_INFO_BYTES = 64 * 1024;
