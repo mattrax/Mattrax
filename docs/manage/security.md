@@ -132,8 +132,8 @@ A policy can name any of these action keys:
 
 `device.wipe` and `script.run` accept a **scope**: the whole tenant, a device, or a
 group. Other actions are tenant-wide. `api-token.create` covers tokens bound to the
-tenant; account-wide token creation is restricted to platform administrators, because a
-token with no owning tenant cannot be governed by any tenant policy. When scopes overlap,
+tenant; an account-wide token is reviewed by the first tenant the account belongs to, because a
+token with no owning tenant can be used against every one of them. When scopes overlap,
 the most specific policy wins (device, then group, then tenant); ties prefer the policy with the higher approval count,
 then the newest. The request stores the policy id and the rules it was created under, so
 editing a policy affects new requests, not in-flight ones.
@@ -225,9 +225,9 @@ Create tokens under **Account → API tokens**:
 - Permissions: pick groups (No access / Read / Write) and expand to individual
   permissions. The picker only offers permissions your role holds in at least
   one tenant.
-- Tenant binding. Account-wide tokens are restricted to platform administrators, so a
-  tenant member creates a token bound to that tenant (and therefore governed by its
-  `api-token.create` policy).
+- Tenant binding. A tenant member should usually create a token bound to that tenant, so
+  it is governed by that tenant's `api-token.create` policy. An account-wide token is
+  reviewed by the first tenant the account belongs to that has such a policy.
 - Optional expiry.
 
 The token's grant is a ceiling, never a grant: every request also checks your

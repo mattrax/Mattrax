@@ -1124,26 +1124,8 @@ describe("account deletion cannot bypass tenant.delete approval", () => {
 });
 
 describe("account-wide API tokens", () => {
-  it("are restricted to platform administrators", async () => {
+  it("can be created when no tenant has an api-token.create policy", async () => {
     const context = makeContext();
-
-    const outcome = await submit(
-      context.service.createApiToken(request(headers("owner")), {
-        name: "Global CI",
-        permissions: ["devices.read"],
-      }),
-    );
-
-    expect(isFailure(outcome)).toBe(true);
-    expect((outcome as any).failure._tag).toBe("EnterpriseForbidden");
-    expect((outcome as any).failure.message).toContain("platform administrators");
-    expect(context.db.store.account_api_token).toHaveLength(0);
-  });
-
-  it("allows a platform administrator to create one", async () => {
-    const context = makeContext();
-
-    context.db.store.account[0].superadmin = true;
 
     const outcome = await submit(
       context.service.createApiToken(request(headers("owner")), {
@@ -1153,6 +1135,24 @@ describe("account-wide API tokens", () => {
     );
 
     expect(isFailure(outcome)).toBe(false);
+  });
+
+  it("is reviewed by the first tenant the account belongs to with a policy", async () => {
+    const context = makeContext();
+
+    seedPolicy(context, { action: "api-token.create" });
+
+    const outcome = await submit(
+      context.service.createApiToken(request(headers("owner")), {
+        name: "Global CI",
+        permissions: ["devices.read"],
+      }),
+    );
+
+    expect(isFailure(outcome)).toBe(true);
+    expect((outcome as any).failure._tag).toBe("ApprovalRequired");
+    expect(context.db.store.account_api_token).toHaveLength(0);
+    expect(context.db.store.approval_request).toHaveLength(1);
   });
 });
 
