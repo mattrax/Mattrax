@@ -11,6 +11,7 @@ import {
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "./deviceActions.ts";
+import type { DeviceActionInput } from "./deviceActions.ts";
 import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
 describe("deviceAvailableActions", () => {
@@ -354,7 +355,7 @@ describe("set-lock-screen-message", () => {
   });
 
   it("is not offered on macOS, tvOS, visionOS, Android, Windows or BYOD devices", () => {
-    const unavailable = [
+    const unavailable: DeviceActionInput[] = [
       { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
       { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
       { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },

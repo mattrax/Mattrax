@@ -2723,7 +2723,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         if (
           !isAppleLockScreenMessageDevice({
             proto: device.proto,
-            enrollmentMode,
+            enrollmentMode: enrollmentMode === "user" ? "user" : null,
             osEdition: device.osEdition,
             model: device.model,
           })
