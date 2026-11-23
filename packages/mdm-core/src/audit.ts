@@ -35,6 +35,8 @@ export const SYSTEM_AUDIT_ACTIONS = {
   deviceNamePushQueued: "device.name_push_queued",
   deviceNamePushSkipped: "device.name_push_skipped",
   deviceLockScreenMessagePushed: "device.lock_screen_message_pushed",
+  /** A scheduled rotation of the managed local administrator password was queued. */
+  localAdminPasswordRotationQueued: "device.local_admin_password_rotation_queued",
   declarationInvalid: "device.declaration_invalid",
   pushInvalidToken: "device.push_invalid_token",
   complianceChanged: "device.compliance_changed",

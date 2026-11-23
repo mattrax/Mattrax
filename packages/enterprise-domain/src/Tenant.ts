@@ -82,6 +82,10 @@ export const TenantDetail = Schema.Struct({
   appStoreRegion: Schema.optional(NullableString),
   /** Remove assignments automatically when every storefront loses the app. */
   autoUnlinkUnavailableApplications: Schema.optional(Schema.Boolean),
+  /** Whether macOS local-account risk reasons make a device unhealthy. */
+  localAccountHealthEnabled: Schema.optional(Schema.Boolean),
+  /** Managed local administrator rotation interval in days; null is off. */
+  localAdminRotationDays: Schema.optional(Schema.NullOr(Schema.Literals([30, 60, 90]))),
   createdAt: Schema.String,
 });
 
@@ -200,6 +204,10 @@ export const PatchTenantRequest = Schema.Struct({
   metadata: Schema.optional(Schema.NullOr(JsonRecord)),
   appStoreRegion: Schema.optional(NullableString),
   autoUnlinkUnavailableApplications: Schema.optional(Schema.Boolean),
+  /** Turn the macOS local-account health reasons on or off for this tenant. */
+  localAccountHealthEnabled: Schema.optional(Schema.Boolean),
+  /** Rotate the managed local administrator every 30, 60 or 90 days; null off. */
+  localAdminRotationDays: Schema.optional(Schema.NullOr(Schema.Literals([30, 60, 90]))),
 });
 
 export const TenantListResponse = Schema.Struct({ tenants: Schema.Array(TenantInfo) });

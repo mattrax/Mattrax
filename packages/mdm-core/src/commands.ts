@@ -33,6 +33,14 @@ const BUDGETS = new Map<string, number>([
   ["SetRecoveryLock", 30 * MINUTE],
   ["Settings", 30 * MINUTE],
   ["VerifyRecoveryLock", HOUR],
+  // Lost Mode stays meaningful while the device is out with the user.
+  ["EnableLostMode", 24 * HOUR],
+  ["DisableLostMode", HOUR],
+  ["PlayLostModeSound", HOUR],
+  ["DeviceLocation", 24 * HOUR],
+  // Local-account inventory and the managed admin password.
+  ["UserList", 24 * HOUR],
+  ["SetAutoAdminPassword", HOUR],
   // ADE setup: the device is sitting in Setup Assistant, so these are bounded
   // to one setup window rather than a fleet-policy budget.
   ["AccountConfiguration", 24 * HOUR],
@@ -312,6 +320,11 @@ const SINGLETON_REQUEST_TYPES: ReadonlySet<string> = new Set([
   "ActivationLockBypassCode",
   "InstalledApplicationList",
   "DeviceInformation",
+  "EnableLostMode",
+  "DisableLostMode",
+  "DeviceLocation",
+  "UserList",
+  "SetAutoAdminPassword",
 ]);
 
 /**
@@ -338,6 +351,10 @@ export const supersededRequestTypes = (requestType: string): ReadonlyArray<strin
       "ActivationLockBypassCode",
       "InstalledApplicationList",
       "DeviceInformation",
+      "EnableLostMode",
+      "DisableLostMode",
+      "PlayLostModeSound",
+      "DeviceLocation",
       "InstallApplication",
       "InstallEnterpriseApplication",
       "InstallProfile",

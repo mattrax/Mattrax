@@ -217,7 +217,15 @@ class SelectBuilder {
   }
 
   limit(count: number) {
-    return Effect.succeed(this.execute().slice(0, count));
+    const start = this.offsetCount;
+
+    return Effect.succeed(this.execute().slice(start, start + count));
+  }
+
+  offset(count: number) {
+    this.offsetCount = count;
+
+    return this;
   }
 
   [Symbol.iterator]() {
@@ -226,6 +234,7 @@ class SelectBuilder {
 
   private condition: any = undefined;
   private order: string[] = [];
+  private offsetCount = 0;
 
   private execute() {
     const rows = this.rows().filter((row) => row.__table === this.table);

@@ -30,6 +30,9 @@ export const DeviceActionName = Schema.Literals([
   "verify-recovery-lock",
   "start-lost-mode",
   "stop-lost-mode",
+  "play-lost-mode-sound",
+  "refresh-local-accounts",
+  "rotate-local-admin-password",
   "reset-password",
   "clear-app-data",
   "request-device-info",
@@ -41,6 +44,9 @@ export const DeviceActionName = Schema.Literals([
 ]);
 
 export type DeviceActionName = typeof DeviceActionName.Type;
+
+/** Decode a stored `actions` array into the typed action union. */
+export const DeviceActionNameList = Schema.Array(DeviceActionName);
 
 /**
  * Actions that address one Apple user channel instead of the device.
@@ -95,6 +101,11 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "schedule-os-update",
   "set-device-name",
   "set-lock-screen-message",
+  "start-lost-mode",
+  "stop-lost-mode",
+  "play-lost-mode-sound",
+  "refresh-local-accounts",
+  "rotate-local-admin-password",
   "unenroll",
 ];
 
@@ -163,6 +174,15 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["rename", "set-device-name"],
   ["set-lock-screen-message", "set-lock-screen-message"],
   ["lock-screen-message", "set-lock-screen-message"],
+  ["start-lost-mode", "start-lost-mode"],
+  ["enable-lost-mode", "start-lost-mode"],
+  ["stop-lost-mode", "stop-lost-mode"],
+  ["disable-lost-mode", "stop-lost-mode"],
+  ["play-lost-mode-sound", "play-lost-mode-sound"],
+  ["refresh-local-accounts", "refresh-local-accounts"],
+  ["user-list", "refresh-local-accounts"],
+  ["rotate-local-admin-password", "rotate-local-admin-password"],
+  ["set-auto-admin-password", "rotate-local-admin-password"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -236,6 +256,14 @@ export type DeviceActionInput = {
   readonly managementMode?: string | null;
   /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
   readonly ownership?: string | null;
+  /**
+   * Apple Lost Mode state from `device_apple`. `play-lost-mode-sound` is only
+   * meaningful while the device is actually in Lost Mode; Apple rejects it
+   * otherwise.
+   */
+  readonly lostModeEnabled?: boolean | null;
+  /** GUID of the managed local administrator, reported by `UserList`. */
+  readonly localAdminGuid?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -274,6 +302,87 @@ export const isAppleLockScreenMessageDevice = (input: DeviceActionInput): boolea
   if (/watchos|audioos/i.test(identity)) return false;
 
   return true;
+};
+
+/**
+ * Apple implements `EnableLostMode`, `DisableLostMode`, `PlayLostModeSound`
+ * and `DeviceLocation` for supervised iPhone and iPadOS only. macOS, tvOS and
+ * visionOS have no such commands, and an Apple User Enrollment (BYOD) device is
+ * not supervised. Supervision itself is not reported by Apple, so an Apple
+ * device whose OS family is not identifiable stays eligible; the device's
+ * command result is the authoritative confirmation.
+ */
+export const isAppleLostModeDevice = (input: DeviceActionInput): boolean => {
+  if (input.proto !== "apple") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const identity = `${input.osEdition ?? ""} ${input.model ?? ""}`;
+
+  if (/mac/i.test(identity)) return false;
+  if (/tvos|apple\s*tv/i.test(identity)) return false;
+  if (/visionos|apple\s*vision|watchos|audioos/i.test(identity)) return false;
+
+  return true;
+};
+
+/** Longest Lost Mode message or footnote Mattrax sends. */
+export const APPLE_LOST_MODE_MESSAGE_MAX_LENGTH = 500;
+
+/** Longest phone number companion field; Apple does not document a limit. */
+export const APPLE_LOST_MODE_PHONE_MAX_LENGTH = 64;
+
+export type AppleLostModeDetails = {
+  readonly message?: string;
+  readonly phone?: string;
+  readonly footnote?: string;
+};
+
+const normalizeLostModeText = (value: string | null | undefined): string | undefined => {
+  const text = value?.replaceAll(/\r\n?/g, "\n").trim();
+
+  return text ? text : undefined;
+};
+
+/**
+ * Why a Lost Mode request cannot be sent, in operator-facing wording.
+ * Undefined means the request is valid.
+ */
+export const appleLostModeProblem = (input: AppleLostModeDetails): string | undefined => {
+  const message = normalizeLostModeText(input.message);
+  const phone = normalizeLostModeText(input.phone);
+  const footnote = normalizeLostModeText(input.footnote);
+
+  // Apple requires at least one of Message and PhoneNumber.
+  if (!message && !phone)
+    return "Enter a message or a phone number. Apple requires at least one of them for Lost Mode.";
+
+  if ((message?.length ?? 0) > APPLE_LOST_MODE_MESSAGE_MAX_LENGTH)
+    return `The Lost Mode message must be at most ${APPLE_LOST_MODE_MESSAGE_MAX_LENGTH} characters.`;
+
+  if ((footnote?.length ?? 0) > APPLE_LOST_MODE_MESSAGE_MAX_LENGTH)
+    return `The Lost Mode footnote must be at most ${APPLE_LOST_MODE_MESSAGE_MAX_LENGTH} characters.`;
+
+  if ((phone?.length ?? 0) > APPLE_LOST_MODE_PHONE_MAX_LENGTH)
+    return `The Lost Mode phone number must be at most ${APPLE_LOST_MODE_PHONE_MAX_LENGTH} characters.`;
+
+  return undefined;
+};
+
+/**
+ * Apple's `EnableLostMode` payload. Only the keys with a value are sent:
+ * `Footnote` is optional, and an empty string would be rendered on the lock
+ * screen.
+ */
+export const appleLostModePayload = (input: AppleLostModeDetails) => {
+  const message = normalizeLostModeText(input.message);
+  const phone = normalizeLostModeText(input.phone);
+  const footnote = normalizeLostModeText(input.footnote);
+
+  return {
+    ...(message ? { Message: message } : {}),
+    ...(phone ? { PhoneNumber: phone } : {}),
+    ...(footnote ? { Footnote: footnote } : {}),
+  };
 };
 
 /**
@@ -357,6 +466,29 @@ export const deviceAvailableActions = (
     .filter(
       (action) => action !== "set-lock-screen-message" || isAppleLockScreenMessageDevice(input),
     )
+    // Lost Mode is supervised iPhone/iPadOS only; the sound is only valid
+    // while the device is actually in Lost Mode.
+    .filter(
+      (action) =>
+        input.proto !== "apple" ||
+        (action !== "start-lost-mode" && action !== "stop-lost-mode") ||
+        isAppleLostModeDevice(input),
+    )
+    .filter(
+      (action) =>
+        input.proto !== "apple" ||
+        action !== "play-lost-mode-sound" ||
+        (isAppleLostModeDevice(input) && input.lostModeEnabled === true),
+    )
+    // `UserList` and `SetAutoAdminPassword` are macOS commands.
+    .filter(
+      (action) =>
+        (action !== "refresh-local-accounts" && action !== "rotate-local-admin-password") ||
+        (input.proto === "apple" && isMacOsDevice(input)),
+    )
+    // Rotation is only meaningful once Apple has reported the managed
+    // account's GUID; an older ADE enrolment cannot be rotated.
+    .filter((action) => action !== "rotate-local-admin-password" || Boolean(input.localAdminGuid))
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
@@ -461,6 +593,56 @@ export const deviceActionUnavailableReason = (
     /visionos|apple\s*vision|watchos|audioos/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
   )
     return "Apple's LockScreenMessage command is only available on iPhone and iPad, not visionOS, watchOS or audioOS.";
+
+  if ((action === "start-lost-mode" || action === "stop-lost-mode") && input.proto !== "apple")
+    return "Lost Mode is only available on Apple devices.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    input.enrollmentMode === "user"
+  )
+    return "Apple User Enrollment (BYOD) devices are not supervised, so Apple does not accept Lost Mode commands on them.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /mac/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are not available on macOS.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /tvos|apple\s*tv/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are not available on tvOS.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /visionos|apple\s*vision|watchos|audioos/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are only available on iPhone and iPad, not visionOS, watchOS or audioOS.";
+
+  if (action === "play-lost-mode-sound" && input.lostModeEnabled !== true)
+    return "Play Lost Mode Sound is only available while the device is in Lost Mode.";
+
+  if (action === "refresh-local-accounts" && (input.proto !== "apple" || !isMacOsDevice(input)))
+    return "Local accounts are only reported by macOS. Apple does not inventory local accounts on iOS, iPadOS, tvOS or visionOS.";
+
+  if (
+    action === "rotate-local-admin-password" &&
+    (input.proto !== "apple" || !isMacOsDevice(input))
+  )
+    return "Only macOS devices have a managed local administrator password.";
+
+  if (action === "rotate-local-admin-password" && !input.localAdminGuid)
+    return "This Mac has not reported the GUID of its managed local administrator yet. Rotate after its next local-account inventory.";
 
   return `This device does not support the ${action} action.`;
 };

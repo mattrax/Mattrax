@@ -14,6 +14,8 @@ const filterState = {
   groupId: "",
   health: "",
   push: "",
+  lostMode: "",
+  localAccount: "",
   setup: "",
   notSeenSince: "",
   activation: "",

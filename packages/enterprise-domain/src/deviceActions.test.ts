@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   appleDeviceNameFromSettingsPayload,
   appleDeviceNameSettingsPayload,
+  appleLostModePayload,
+  appleLostModeProblem,
   appleUserAvailableActions,
   appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
   isAppleLockScreenMessageDevice,
+  isAppleLostModeDevice,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "./deviceActions.ts";
@@ -453,5 +456,128 @@ describe("resolveAppleLockScreenMessage", () => {
     ).toEqual({ message: "Return to IT", includeAssetTag: true });
     expect(parseAppleLockScreenMessageConfiguration({ message: "" })).toBeUndefined();
     expect(parseAppleLockScreenMessageConfiguration(null)).toBeUndefined();
+  });
+});
+
+describe("Apple Lost Mode", () => {
+  const iphone: DeviceActionInput = { proto: "apple", status: "enrolled", osEdition: "iOS" };
+
+  it("offers enable and disable on supervised iPhone and iPadOS", () => {
+    expect(deviceAvailableActions(iphone)).toEqual(
+      expect.arrayContaining(["start-lost-mode", "stop-lost-mode"]),
+    );
+    expect(deviceAvailableActions({ ...iphone, osEdition: "iPadOS", osVersion: "18.1" })).toContain(
+      "start-lost-mode",
+    );
+    expect(isAppleLostModeDevice(iphone)).toBe(true);
+  });
+
+  it("rejects macOS, tvOS, visionOS, watchOS and BYOD", () => {
+    for (const input of [
+      { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
+      { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
+      { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },
+      { proto: "apple", status: "enrolled", osEdition: "watchOS", osVersion: "11" },
+      { proto: "apple", status: "enrolled", enrollmentMode: "user" as const },
+    ] satisfies DeviceActionInput[]) {
+      expect(deviceAvailableActions(input)).not.toContain("start-lost-mode");
+      expect(deviceAvailableActions(input)).not.toContain("stop-lost-mode");
+    }
+  });
+
+  it("offers the sound only while Lost Mode is active", () => {
+    expect(deviceAvailableActions(iphone)).not.toContain("play-lost-mode-sound");
+    expect(deviceAvailableActions({ ...iphone, lostModeEnabled: false })).not.toContain(
+      "play-lost-mode-sound",
+    );
+    expect(deviceAvailableActions({ ...iphone, lostModeEnabled: true })).toContain(
+      "play-lost-mode-sound",
+    );
+    expect(deviceActionUnavailableReason(iphone, "play-lost-mode-sound")).toContain(
+      "only available while the device is in Lost Mode",
+    );
+  });
+
+  it("explains the platform limits", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS" },
+        "start-lost-mode",
+      ),
+    ).toContain("not available on macOS");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "start-lost-mode",
+      ),
+    ).toContain("User Enrollment");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "visionOS" },
+        "stop-lost-mode",
+      ),
+    ).toContain("visionOS");
+  });
+
+  it("builds the documented payload and validates the required message", () => {
+    expect(
+      appleLostModePayload({
+        message: "  Return to the IT desk  ",
+        phone: " +61 400 000 000 ",
+        footnote: " AST-1042 ",
+      }),
+    ).toEqual({
+      Message: "Return to the IT desk",
+      PhoneNumber: "+61 400 000 000",
+      Footnote: "AST-1042",
+    });
+    expect(appleLostModePayload({ message: "   " })).toEqual({});
+
+    expect(appleLostModeProblem({})).toContain("at least one");
+    expect(appleLostModeProblem({ phone: "123" })).toBeUndefined();
+    expect(appleLostModeProblem({ message: "x".repeat(501) })).toContain("at most");
+    expect(appleLostModeProblem({ message: "Hi", phone: "1".repeat(65) })).toContain("at most");
+  });
+});
+
+describe("macOS local account and rotation actions", () => {
+  const mac: DeviceActionInput = {
+    proto: "apple",
+    status: "enrolled",
+    osEdition: "macOS",
+    osVersion: "15.1",
+  };
+
+  it("offers the local-account refresh and rotation only on a Mac", () => {
+    expect(deviceAvailableActions({ ...mac, localAdminGuid: "GUID-1" })).toEqual(
+      expect.arrayContaining(["refresh-local-accounts", "rotate-local-admin-password"]),
+    );
+    // Rotation waits for the managed account's GUID from UserList.
+    expect(deviceAvailableActions(mac)).not.toContain("rotate-local-admin-password");
+    expect(deviceAvailableActions(mac)).toContain("refresh-local-accounts");
+    expect(
+      deviceAvailableActions({ proto: "apple", status: "enrolled", osEdition: "iOS" }),
+    ).not.toContain("refresh-local-accounts");
+    expect(deviceAvailableActions({ proto: "win", status: "enrolled" })).not.toContain(
+      "refresh-local-accounts",
+    );
+  });
+
+  it("explains why local accounts and rotation are unavailable", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS" },
+        "refresh-local-accounts",
+      ),
+    ).toContain("only reported by macOS");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iOS" },
+        "rotate-local-admin-password",
+      ),
+    ).toContain("managed local administrator");
+    expect(deviceActionUnavailableReason(mac, "rotate-local-admin-password")).toContain(
+      "has not reported the GUID",
+    );
   });
 });

@@ -26,9 +26,11 @@ import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
   Laptop,
+  MonitorSmartphone,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  Smartphone,
   UsersRound,
   Wifi,
 } from "~/components/ui/icons";
@@ -102,6 +104,8 @@ const deviceListOverrides = [
   "staleDays",
   "health",
   "push",
+  "lostMode",
+  "localAccount",
   "setup",
   "notSeenSince",
   "activation",
@@ -191,6 +195,8 @@ const FILTER_PARAM_KEYS = [
   "staleDays",
   "health",
   "push",
+  "lostMode",
+  "localAccount",
   "setup",
   "notSeenSince",
   "activation",
@@ -236,6 +242,8 @@ const healthMeta = {
 type DeviceActivationStatus = "activated" | "not-activated" | "unknown";
 
 type DeviceActivationFilter = DeviceActivationStatus | "";
+
+type LocalAccountFilter = "without-secure-token" | "not-seen-30-days" | "";
 
 const activationMeta = {
   activated: { variant: "success", dot: "success", label: "Activated" },
@@ -372,6 +380,18 @@ export default function DevicesPage() {
 
   const initialPush = (): "failing" | "invalid" | "" => search().push ?? "";
 
+  const initialLostMode = (): "active" | "inactive" | "" => {
+    const value = search().lostMode;
+
+    return value === "active" || value === "inactive" ? value : "";
+  };
+
+  const initialLocalAccount = (): LocalAccountFilter => {
+    const value = search().localAccount;
+
+    return value === "without-secure-token" || value === "not-seen-30-days" ? value : "";
+  };
+
   const initialSetup = (): "" | "awaiting" | "complete" => search().setup ?? "";
 
   const initialNotSeenSince = () => search().notSeenSince ?? "";
@@ -391,6 +411,8 @@ export default function DevicesPage() {
   const [staleDays, setStaleDays] = createSignal(initialStale());
   const [health, setHealth] = createSignal<DeviceHealthFilter | "">(initialHealth());
   const [push, setPush] = createSignal<"failing" | "invalid" | "">(initialPush());
+  const [lostMode, setLostMode] = createSignal<"active" | "inactive" | "">(initialLostMode());
+  const [localAccount, setLocalAccount] = createSignal<LocalAccountFilter>(initialLocalAccount());
   const [setup, setSetup] = createSignal<"" | "awaiting" | "complete">(initialSetup());
   const [notSeenSince, setNotSeenSince] = createSignal(initialNotSeenSince());
   const [activation, setActivation] = createSignal<DeviceActivationFilter>(initialActivation());
@@ -570,6 +592,8 @@ export default function DevicesPage() {
       staleDays: staleDays(),
       health: health(),
       push: push(),
+      lostMode: lostMode(),
+      localAccount: localAccount(),
       setup: setup(),
       notSeenSince: notSeenSince(),
       activation: activation(),
@@ -605,6 +629,10 @@ export default function DevicesPage() {
       if (state.health) next.health = state.health;
 
       if (state.push) next.push = state.push;
+
+      if (state.lostMode) next.lostMode = state.lostMode;
+
+      if (state.localAccount) next.localAccount = state.localAccount;
 
       if (state.setup) next.setup = state.setup;
 
@@ -650,6 +678,8 @@ export default function DevicesPage() {
     staleDays: initialStale(),
     health: initialHealth(),
     push: initialPush(),
+    lostMode: initialLostMode(),
+    localAccount: initialLocalAccount(),
     setup: initialSetup(),
     notSeenSince: initialNotSeenSince(),
     activation: initialActivation(),
@@ -677,6 +707,8 @@ export default function DevicesPage() {
         staleDays: staleDays(),
         health: health(),
         push: push(),
+        lostMode: lostMode(),
+        localAccount: localAccount(),
         setup: setup(),
         notSeenSince: notSeenSince(),
         activation: activation(),
@@ -707,6 +739,23 @@ export default function DevicesPage() {
       if (filters.health !== local.health) setHealth(filters.health);
 
       if (filters.push !== local.push) setPush(filters.push);
+
+      if (filters.lostMode !== local.lostMode) {
+        setLostMode(
+          filters.lostMode === "active" || filters.lostMode === "inactive" ? filters.lostMode : "",
+        );
+        setPage(0);
+      }
+
+      if (filters.localAccount !== local.localAccount) {
+        setLocalAccount(
+          filters.localAccount === "without-secure-token" ||
+            filters.localAccount === "not-seen-30-days"
+            ? filters.localAccount
+            : "",
+        );
+        setPage(0);
+      }
 
       if (filters.setup !== local.setup) setSetup(filters.setup);
 
@@ -782,6 +831,8 @@ export default function DevicesPage() {
     staleDays: staleDays() ? Number(staleDays()) : undefined,
     health: health() || undefined,
     push: push() || undefined,
+    lostMode: lostMode() || undefined,
+    localAccount: localAccount() || undefined,
     setup: setup() || undefined,
     notSeenSince: notSeenSince() || undefined,
     activation: activation() || undefined,
@@ -875,6 +926,12 @@ export default function DevicesPage() {
     setStaleDays(staleDays ?? "");
     setHealth(query.health ?? "");
     setPush(query.push ?? "");
+    setLostMode(query.lostMode === "active" || query.lostMode === "inactive" ? query.lostMode : "");
+    setLocalAccount(
+      query.localAccount === "without-secure-token" || query.localAccount === "not-seen-30-days"
+        ? query.localAccount
+        : "",
+    );
     setSetup(query.setup ?? "");
     setNotSeenSince(query.notSeenSince ?? "");
     setActivation(query.activation ?? "");
@@ -1003,6 +1060,29 @@ export default function DevicesPage() {
         ],
       },
       {
+        id: "lostMode",
+        label: "Lost Mode",
+        icon: Smartphone,
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "active", label: "In Lost Mode" },
+          { value: "inactive", label: "Not in Lost Mode" },
+        ],
+      },
+      {
+        id: "localAccount",
+        label: "Local accounts",
+        icon: MonitorSmartphone,
+        group: "macOS",
+        kind: "select",
+        operators: [{ value: "is", label: "is" }],
+        options: [
+          { value: "without-secure-token", label: "Account without SecureToken" },
+          { value: "not-seen-30-days", label: "Inventory not refreshed in 30 days" },
+        ],
+      },
+      {
         id: "setup",
         label: "ADE setup",
         icon: Laptop,
@@ -1082,6 +1162,8 @@ export default function DevicesPage() {
       groupId: groupId(),
       health: health(),
       push: push(),
+      lostMode: lostMode(),
+      localAccount: localAccount(),
       setup: setup(),
       notSeenSince: notSeenSince(),
       activation: activation(),
@@ -1097,6 +1179,8 @@ export default function DevicesPage() {
     setGroupId("");
     setHealth("");
     setPush("");
+    setLostMode("");
+    setLocalAccount("");
     setSetup("");
     setNotSeenSince("");
     setActivation("");
@@ -1142,6 +1226,20 @@ export default function DevicesPage() {
         setPush(
           Option.getOrUndefined(
             Schema.decodeUnknownOption(Schema.Literals(["failing", "invalid"]))(value),
+          ) ?? "",
+        );
+      else if (condition.field === "lostMode")
+        setLostMode(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Literals(["active", "inactive"]))(value),
+          ) ?? "",
+        );
+      else if (condition.field === "localAccount")
+        setLocalAccount(
+          Option.getOrUndefined(
+            Schema.decodeUnknownOption(
+              Schema.Literals(["without-secure-token", "not-seen-30-days"]),
+            )(value),
           ) ?? "",
         );
       else if (condition.field === "setup")
@@ -1341,6 +1439,8 @@ export default function DevicesPage() {
       staleDays: state.staleDays,
       health: state.health,
       push: state.push,
+      lostMode: state.lostMode,
+      localAccount: state.localAccount,
       setup: state.setup,
       notSeenSince: state.notSeenSince,
       activation: state.activation,

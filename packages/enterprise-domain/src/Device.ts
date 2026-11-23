@@ -233,6 +233,76 @@ export const DeviceLockScreenDelivery = Schema.Struct({
 
 export type DeviceLockScreenDelivery = typeof DeviceLockScreenDelivery.Type;
 
+/** Where the device was when it last reported from Lost Mode. */
+export const DeviceLostModeLocation = Schema.Struct({
+  latitude: Schema.Number,
+  longitude: Schema.Number,
+  /** Radius of uncertainty in metres; absent when Apple did not report it. */
+  horizontalAccuracy: Schema.optional(NullableString),
+  verticalAccuracy: Schema.optional(NullableString),
+  /** RFC 3339 instant Apple sampled the location. */
+  reportedAt: Schema.optional(NullableString),
+});
+
+export type DeviceLostModeLocation = typeof DeviceLostModeLocation.Type;
+
+/**
+ * Apple Lost Mode state for one device.
+ *
+ * `location` is only present while Lost Mode is active: Apple's
+ * `DeviceLocation` command has no meaning outside Lost Mode, and showing a
+ * stale fix for a device that is no longer lost would be misleading.
+ */
+export const DeviceLostMode = Schema.Struct({
+  enabled: Schema.Boolean,
+  message: Schema.optional(NullableString),
+  phone: Schema.optional(NullableString),
+  footnote: Schema.optional(NullableString),
+  requestedAt: Schema.optional(NullableString),
+  acknowledgedAt: Schema.optional(NullableString),
+  location: Schema.optional(Schema.NullOr(DeviceLostModeLocation)),
+});
+
+export type DeviceLostMode = typeof DeviceLostMode.Type;
+
+/**
+ * One local account from Apple's `UserList`.
+ *
+ * Metadata only. Apple does not report a password, home-directory contents or
+ * keychain data, and it does not report whether an account is an administrator
+ * or when it last logged in — those fields stay null instead of being guessed.
+ */
+export const DeviceLocalAccount = Schema.Struct({
+  username: Schema.String,
+  fullName: Schema.optional(NullableString),
+  uid: Schema.optional(Schema.NullOr(Schema.Number)),
+  guid: Schema.optional(NullableString),
+  isAdmin: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  isManaged: Schema.Boolean,
+  hasSecureToken: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  isLoggedIn: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  mobileAccount: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  lastLoginAt: Schema.optional(NullableString),
+  lastSeenAt: Schema.String,
+  reportedAt: Schema.String,
+});
+
+export type DeviceLocalAccount = typeof DeviceLocalAccount.Type;
+
+/**
+ * Apple-only state that is not part of the shared inventory row: Lost Mode and
+ * the local-account inventory. Kept in one grouped field so the common device
+ * payload (and the endpoint contract) stays small.
+ */
+export const DeviceAppleState = Schema.Struct({
+  lostMode: Schema.optional(Schema.NullOr(DeviceLostMode)),
+  localAccounts: Schema.optional(Schema.Array(DeviceLocalAccount)),
+  localAccountsUpdatedAt: Schema.optional(NullableString),
+  localAdminGuidKnown: Schema.optional(Schema.Boolean),
+});
+
+export type DeviceAppleState = typeof DeviceAppleState.Type;
+
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
   proto: DeviceProtocol,
@@ -356,6 +426,11 @@ export const DeviceRow = Schema.Struct({
   /** True when that answer is older than the refresh window. */
   securityInfoStale: Schema.optional(Schema.Boolean),
   /**
+   * Lost Mode and local-account state, present on Apple devices. Decode with
+   * `DeviceAppleState`; other platforms omit it.
+   */
+  apple: Schema.optional(Schema.Unknown),
+  /**
    * Device detail escrow metadata. The recovery key and bootstrap token are
    * never included in device payloads; use the recovery-key endpoint to read
    * the decrypted FileVault key.
@@ -391,7 +466,13 @@ export const DeviceRow = Schema.Struct({
    * enrollment status and reported capabilities. The dashboard renders its
    * action menu from this instead of guessing per platform.
    */
-  actions: Schema.optional(Schema.Array(DeviceActionName)),
+  /**
+   * Kept as strings in the stored schema: expanding the action literal union
+   * into every `DeviceRow` field pushes the endpoint group's declaration emit
+   * past TypeScript's serialization limit. Decode with
+   * `DeviceActionNameList` for the typed union.
+   */
+  actions: Schema.optional(Schema.Array(Schema.String)),
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
   /**
@@ -1161,33 +1242,7 @@ export const DeviceActionResponse = Schema.Struct({
 });
 
 export const DeviceActionRequest = Schema.Struct({
-  action: Schema.optional(
-    Schema.Literals([
-      "sync",
-      "lock",
-      "wipe",
-      "return-to-service",
-      "restart",
-      "shutdown",
-      "clear-passcode",
-      "install-app",
-      "collect-security-info",
-      "refresh-applications",
-      "collect-activation-lock-code",
-      "rotate-filevault-key",
-      "set-recovery-lock",
-      "verify-recovery-lock",
-      "start-lost-mode",
-      "stop-lost-mode",
-      "reset-password",
-      "clear-app-data",
-      "request-device-info",
-      "relinquish-ownership",
-      "schedule-os-update",
-      "set-device-name",
-      "set-lock-screen-message",
-    ]),
-  ),
+  action: Schema.optional(DeviceActionName),
   /**
    * The name to write to an Apple device's own `DeviceName`. Required by
    * `set-device-name`; it does not change the management name.
@@ -1200,6 +1255,10 @@ export const DeviceActionRequest = Schema.Struct({
   lockScreenMessage: Schema.optional(Schema.String),
   /** Append the device's asset tag to the message as `AssetTagInformation`. */
   lockScreenIncludeAssetTag: Schema.optional(Schema.Boolean),
+  /** Lost Mode message and companion fields for `start-lost-mode`. */
+  lostModeMessage: Schema.optional(Schema.String),
+  lostModePhone: Schema.optional(Schema.String),
+  lostModeFootnote: Schema.optional(Schema.String),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */

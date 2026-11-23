@@ -12,6 +12,8 @@ import {
   pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
+  refreshAppleLocalAccounts,
+  rotateAppleLocalAdminPasswords,
   sweepDeviceCommands,
   sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
@@ -291,6 +293,10 @@ export type MaintenanceResult = {
    * Activation Lock state). Additive to the maintenance result.
    */
   readonly securityInfoRefreshes: number;
+  /** Macs asked for a fresh `UserList` local-account inventory. */
+  readonly localAccountRefreshes: number;
+  /** Managed local administrator passwords queued for scheduled rotation. */
+  readonly localAdminPasswordsRotated: number;
   /** Active commands whose delivery deadline elapsed during this run. */
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
@@ -559,6 +565,8 @@ export const runMaintenance = (
       webhookRetryFailed: 0,
       applicationInventoryRefreshes: 0,
       securityInfoRefreshes: 0,
+      localAccountRefreshes: 0,
+      localAdminPasswordsRotated: 0,
       expiredCommands: 0,
       purgedCommands: 0,
       purgedWindowsCommands: 0,
@@ -1103,6 +1111,29 @@ export const runMaintenance = (
       const securityInfo = yield* refreshAppleSecurityInfo(db, { now });
 
       result.securityInfoRefreshes = securityInfo.requested;
+    }
+
+    // 9b-bis. Local-account inventory. macOS reports local accounts only on
+    //    request, so the daily sweep queues one `UserList` per Mac whose
+    //    inventory is missing or older than a day. A device that never answers
+    //    is not asked again inside the rate-limit window.
+    if (options.applicationInventory !== false) {
+      const localAccounts = yield* refreshAppleLocalAccounts(db, { now });
+
+      result.localAccountRefreshes = localAccounts.requested;
+    }
+
+    // 9b-ter. Managed local administrator rotation. The tenant policy decides
+    //    the interval, the sweep caps how many devices change per tenant per
+    //    run, and the new password only replaces the sealed secret once the Mac
+    //    acknowledges `SetAutoAdminPassword`.
+    if (options.applicationInventory !== false && options.authSecret) {
+      const rotation = yield* rotateAppleLocalAdminPasswords(db, {
+        now,
+        authSecret: options.authSecret,
+      });
+
+      result.localAdminPasswordsRotated = rotation.queued;
     }
 
     // 9c. Apps and Books licence pools. Apple's counts change when licences are

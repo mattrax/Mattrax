@@ -486,6 +486,78 @@ describe("Apple MDM handlers", () => {
 
       expect(response.status).toBe(200);
     });
+
+    it("forwards top-level UserList and DeviceLocation keys to the backend", async () => {
+      const responses: Array<unknown> = [];
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
+          Effect.sync(() => {
+            responses.push(
+              Predicate.isTagged("CommandResult")(event) ? event.queryResponses : undefined,
+            );
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-result-002</string>
+  <key>Status</key><string>Acknowledged</string>
+  <key>CommandUUID</key><string>cmd-users</string>
+  <key>Users</key>
+  <array>
+    <dict>
+      <key>UserName</key><string>mattrax-admin</string>
+      <key>UserGUID</key><string>11111111-AAAA-BBBB-CCCC-222222222222</string>
+    </dict>
+  </array>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(responses[0]).toMatchObject({
+        Users: [{ UserName: "mattrax-admin", UserGUID: "11111111-AAAA-BBBB-CCCC-222222222222" }],
+      });
+
+      const location = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-result-002</string>
+  <key>Status</key><string>Acknowledged</string>
+  <key>CommandUUID</key><string>cmd-location</string>
+  <key>Latitude</key><real>-33.8688</real>
+  <key>Longitude</key><real>151.2093</real>
+  <key>HorizontalAccuracy</key><real>12</real>
+</dict>
+</plist>`;
+
+      await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: location,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      expect(responses[1]).toMatchObject({
+        Latitude: -33.8688,
+        Longitude: 151.2093,
+        HorizontalAccuracy: 12,
+      });
+    });
   });
 
   describe("PUT /mdm/apple/mdm - DeclarativeManagement tokens", () => {
@@ -776,6 +848,45 @@ describe("Apple MDM handlers", () => {
       expect(body).toContain("<string>EraseDevice</string>");
       expect(body).toContain("<key>WiFiProfileData</key><data>AQID</data>");
       expect(body).toContain("<key>BootstrapToken</key><data>BAUG</data>");
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - SetAutoAdminPassword payload", () => {
+    it("serializes passwordHash as plist data, not a string", async () => {
+      const hash = btoa("<plist><dict/></plist>");
+
+      const backend = mockManagementBackend({
+        appleManagementCheckin: () =>
+          Effect.succeed(
+            ManagementManifest.members[1].make({
+              commandUUID: "cmd-rotate",
+              requestType: "SetAutoAdminPassword",
+              payload: { GUID: "11111111-AAAA-BBBB-CCCC-222222222222", passwordHash: hash },
+            }),
+          ),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-rotate-001</string>
+</dict>
+</plist>`,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      const body = await response.text();
+
+      expect(body).toContain("<string>SetAutoAdminPassword</string>");
+      expect(body).toContain("<key>passwordHash</key><data>");
+      expect(body).not.toContain(`<key>passwordHash</key><string>${hash}</string>`);
     });
   });
 

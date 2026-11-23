@@ -1620,6 +1620,9 @@ export const enterprise = {
         | "refresh-applications"
         | "start-lost-mode"
         | "stop-lost-mode"
+        | "play-lost-mode-sound"
+        | "refresh-local-accounts"
+        | "rotate-local-admin-password"
         | "reset-password"
         | "clear-app-data"
         | "request-device-info"
@@ -1630,6 +1633,9 @@ export const enterprise = {
       deviceName?: string;
       lockScreenMessage?: string;
       lockScreenIncludeAssetTag?: boolean;
+      lostModeMessage?: string;
+      lostModePhone?: string;
+      lostModeFootnote?: string;
       manifestUrl?: string;
       iTunesStoreId?: number;
       osUpdateInstallAction?:

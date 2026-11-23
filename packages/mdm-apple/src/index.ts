@@ -1,7 +1,8 @@
 import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
-import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { Db, deviceLimitForOrganization, schema as s } from "@mattrax/enterprise-core";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   DeviceHealthManagementApp,
   appleSoftwareUpdateEnforcementDeclaration,
@@ -22,12 +23,13 @@ import {
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   isAppleLockScreenMessageDevice,
+  isConfirmedMacOsDevice,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
-import { PlistValue, serializePlist } from "@mattrax/plist";
+import { PlistValue } from "@mattrax/plist";
 import {
   appleOsFamily,
   buildInstallApplicationPayload,
@@ -66,7 +68,14 @@ import { isPlistObject } from "@mattrax/mdm-core";
 import type { PlistInput, PlistObject } from "@mattrax/mdm-core";
 import { parseDeviceInventory } from "@mattrax/mdm-core";
 import {
+  APPLE_MANAGED_LOCAL_ADMIN_USERNAME,
+  applePasswordHash,
+  generateLocalAdminPassword,
+  localAdminRotationDue,
+  setAutoAdminPasswordPayload,
   parseActivationLockBypassCode,
+  parseAppleLocalAccounts,
+  parseAppleLostModeLocation,
   parseRecoveryLockVerification,
   parseRotatedRecoveryKey,
   parseSecurityInfo,
@@ -1280,10 +1289,11 @@ const writeDeviceSecret = (
     | "bootstrap_token"
     | "activation_lock_bypass_code"
     | "recovery_lock_password"
-    | "local_admin_password",
+    | "local_admin_password"
+    | "local_admin_password_pending",
   plaintext: string,
   authSecret: string | undefined,
-  options: { readonly format?: "plaintext" | "cms" } = {},
+  options: { readonly format?: "plaintext" | "cms"; readonly commandId?: string } = {},
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
     const format = options.format ?? "plaintext";
@@ -1319,6 +1329,7 @@ const writeDeviceSecret = (
         kind,
         sealedValue: sealed,
         format,
+        pendingCommandId: options.commandId ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
         rotatedAt: timestamp,
@@ -1338,6 +1349,7 @@ const writeDeviceSecret = (
     const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
       sealedValue: sealed,
       format,
+      pendingCommandId: options.commandId ?? null,
       updatedAt: timestamp,
     };
 
@@ -1535,6 +1547,149 @@ const applyInstalledApplications = (
   });
 
 /**
+ * Replace the local-account inventory from a `UserList` answer.
+ *
+ * Apple does not report administrator status or last-login time, so those
+ * columns stay null; only the managed account Mattrax created is known to be an
+ * administrator. The GUID Apple reports for that account is stored on
+ * `device_apple` because `SetAutoAdminPassword` needs it.
+ */
+const applyLocalAccounts = (
+  device: Pick<DeviceRow, "id" | "organizationId">,
+  queryResponses: PlistInput,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const accounts = parseAppleLocalAccounts(queryResponses);
+
+    if (accounts === undefined) return;
+    const db = yield* Db;
+    const timestamp = now();
+
+    const existing = yield* db
+      .select()
+      .from(s.deviceLocalAccount)
+      .where(eq(s.deviceLocalAccount.deviceId, device.id));
+
+    const byUsername = new Map(existing.map((row) => [row.username, row]));
+    const reported = new Set(accounts.map((account) => account.username));
+
+    for (const account of accounts) {
+      const current = byUsername.get(account.username);
+      const managed = account.username === APPLE_MANAGED_LOCAL_ADMIN_USERNAME;
+
+      const values = {
+        organizationId: device.organizationId,
+        deviceId: device.id,
+        username: account.username,
+        fullName: account.fullName ?? null,
+        uid: account.uid ?? null,
+        guid: account.guid ?? null,
+        // Apple does not report admin status. The account Mattrax creates is
+        // an admin by construction; every other account is unknown.
+        isAdmin: managed ? true : null,
+        isManaged: managed,
+        hasSecureToken: account.hasSecureToken ?? null,
+        isLoggedIn: account.isLoggedIn ?? null,
+        mobileAccount: account.mobileAccount ?? null,
+        dataQuota: account.dataQuota ?? null,
+        dataUsed: account.dataUsed ?? null,
+        // Apple never reports this, so preserve a value if a future source did.
+        lastLoginAt: current?.lastLoginAt ?? null,
+        firstSeenAt: current?.firstSeenAt ?? timestamp,
+        lastSeenAt: timestamp,
+        reportedAt: timestamp,
+      };
+
+      if (current)
+        yield* db
+          .update(s.deviceLocalAccount)
+          .set(values)
+          .where(
+            and(
+              eq(s.deviceLocalAccount.deviceId, device.id),
+              eq(s.deviceLocalAccount.username, account.username),
+            ),
+          );
+      else
+        yield* db.insert(s.deviceLocalAccount).values({
+          id: crypto.randomUUID(),
+          ...values,
+        });
+
+      if (managed && account.guid)
+        yield* db
+          .update(s.deviceApple)
+          .set({ localAdminGuid: account.guid })
+          .where(eq(s.deviceApple.deviceId, device.id));
+    }
+
+    const stale = existing.filter((row) => !reported.has(row.username)).map((row) => row.username);
+
+    // A managed account that disappeared is gone; its stale GUID must never be
+    // reused for a password rotation.
+    if (!accounts.some((account) => account.username === APPLE_MANAGED_LOCAL_ADMIN_USERNAME))
+      yield* db
+        .update(s.deviceApple)
+        .set({ localAdminGuid: null })
+        .where(eq(s.deviceApple.deviceId, device.id));
+
+    if (stale.length > 0)
+      yield* db
+        .delete(s.deviceLocalAccount)
+        .where(
+          and(
+            eq(s.deviceLocalAccount.deviceId, device.id),
+            inArray(s.deviceLocalAccount.username, stale),
+          ),
+        );
+
+    yield* db
+      .update(s.deviceApple)
+      .set({ localAccountsUpdatedAt: timestamp })
+      .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
+ * Store the fix Apple returns from `DeviceLocation`. Only a device that is
+ * actually in Lost Mode may have a location, so a stale or spoofed answer after
+ * Lost Mode ends is ignored.
+ */
+const applyLostModeLocation = (
+  device: Pick<DeviceRow, "id">,
+  queryResponses: PlistInput,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const location = parseAppleLostModeLocation(queryResponses);
+
+    if (!location) return;
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ lostModeEnabled: s.deviceApple.lostModeEnabled })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (apple?.lostModeEnabled !== true) return;
+
+    const timestamp = now();
+
+    yield* db
+      .update(s.deviceApple)
+      .set({
+        lostModeLatitude: String(location.latitude),
+        lostModeLongitude: String(location.longitude),
+        lostModeHorizontalAccuracy:
+          location.horizontalAccuracy === undefined ? null : String(location.horizontalAccuracy),
+        lostModeVerticalAccuracy:
+          location.verticalAccuracy === undefined ? null : String(location.verticalAccuracy),
+        lostModeLocationReportedAt: location.reportedAt ? new Date(location.reportedAt) : timestamp,
+        lostModeLocationUpdatedAt: timestamp,
+      })
+      .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
  * The tenant's FileVault escrow certificate, when one has been configured.
  * Profiles that escrow recovery keys are rewritten with it so the CMS payload a
  * Mac returns can be unwrapped during a reveal.
@@ -1640,58 +1795,7 @@ const lockScreenProfileFromInstallPayload = async (
 
 /** Apple only has a local account during macOS Setup Assistant. */
 const appleDeviceIsMac = (device: Pick<DeviceRow, "osEdition" | "model">) =>
-  /mac/i.test(`${device.osEdition ?? ""} ${device.model ?? ""}`);
-
-/** A random password that satisfies macOS' default password policy. */
-const generateLocalAdminPassword = () => {
-  const random = base64EncodeBytes(crypto.getRandomValues(new Uint8Array(24)))
-    .replaceAll("+", "")
-    .replaceAll("/", "")
-    .replaceAll("=", "")
-    .slice(0, 24);
-
-  return `${random}aA1!`;
-};
-
-/**
- * Apple's `passwordHash` value: an XML plist containing the PBKDF2-SHA512
- * entropy, salt and iteration count, itself base64 encoded so the command
- * queue can store it as JSON. The device-facing plist builder decodes it back
- * into a `<data>` value.
- */
-const applePasswordHash = (password: string) =>
-  Effect.gen(function* () {
-    const salt = crypto.getRandomValues(new Uint8Array(32));
-    const iterations = 35_000;
-
-    const key = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
-          "deriveBits",
-        ]),
-      catch: () => new Error("Failed to import the local admin password"),
-    });
-
-    const entropy = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.deriveBits(
-          { name: "PBKDF2", salt, iterations, hash: "SHA-512" },
-          key,
-          128 * 8,
-        ),
-      catch: () => new Error("Failed to hash the local admin password"),
-    });
-
-    const plist = yield* serializePlist({
-      "SALTED-SHA512-PBKDF2": {
-        entropy: new Uint8Array(entropy),
-        iterations,
-        salt,
-      },
-    });
-
-    return base64EncodeBytes(new TextEncoder().encode(plist));
-  });
+  isConfirmedMacOsDevice(device);
 
 /**
  * Queue the managed local administrator account for a Mac that is held in
@@ -1745,6 +1849,302 @@ const queueLocalAdminAccount = (
       },
       at,
     );
+  });
+
+/**
+ * Queue `UserList` for a Mac. Apple reports local accounts only on request, so
+ * enrolment and the daily sweep are the two moments the inventory is
+ * refreshed. The request is rate-limited per device so a Mac that never answers
+ * is not asked on every check-in.
+ */
+const queueLocalAccountsInventory = (
+  device: DeviceRow,
+  at: Date,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    if (!appleDeviceIsMac(device)) return;
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({ localAccountsRequestedAt: s.deviceApple.localAccountsRequestedAt })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (
+      apple?.localAccountsRequestedAt &&
+      at.getTime() - apple.localAccountsRequestedAt.getTime() < 24 * 60 * 60 * 1000
+    )
+      return;
+
+    const [existing] = yield* db
+      .select({ id: s.deviceCommand.id })
+      .from(s.deviceCommand)
+      .where(
+        and(
+          eq(s.deviceCommand.deviceId, device.id),
+          eq(s.deviceCommand.requestType, "UserList"),
+          inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES, "succeeded"]),
+        ),
+      )
+      .limit(1);
+
+    if (existing) return;
+
+    yield* queueAppleCommand(device, "UserList", {}, at);
+    yield* db
+      .update(s.deviceApple)
+      .set({ localAccountsRequestedAt: at })
+      .where(eq(s.deviceApple.deviceId, device.id));
+  });
+
+/**
+ * How often a lost device is asked for a fresh location. A fix goes stale
+ * quickly, but Apple has no push trigger for location and a command on every
+ * check-in would be noise. One request an hour is enough to follow a device
+ * that is still checking in.
+ */
+export const LOST_MODE_LOCATION_REFRESH_MS = 60 * 60 * 1000;
+
+const queueLostModeLocation = (
+  device: DeviceRow,
+  at: Date,
+  options: { readonly force?: boolean } = {},
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    const [apple] = yield* db
+      .select({
+        lostModeEnabled: s.deviceApple.lostModeEnabled,
+        locationUpdatedAt: s.deviceApple.lostModeLocationUpdatedAt,
+      })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, device.id))
+      .limit(1);
+
+    if (apple?.lostModeEnabled !== true) return;
+
+    if (
+      options.force !== true &&
+      apple.locationUpdatedAt &&
+      at.getTime() - apple.locationUpdatedAt.getTime() < LOST_MODE_LOCATION_REFRESH_MS
+    )
+      return;
+
+    const [active] = yield* db
+      .select({ id: s.deviceCommand.id })
+      .from(s.deviceCommand)
+      .where(
+        and(
+          eq(s.deviceCommand.deviceId, device.id),
+          eq(s.deviceCommand.requestType, "DeviceLocation"),
+          inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+        ),
+      )
+      .limit(1);
+
+    if (active) return;
+
+    yield* queueAppleCommand(device, "DeviceLocation", {}, at);
+  });
+
+/**
+ * How many managed administrator passwords one tenant may rotate in a single
+ * maintenance run. A Mac must acknowledge each `SetAutoAdminPassword` before
+ * the next rotation of that device, and a fleet-wide burst would otherwise
+ * replace every password (and wake every device) at once.
+ */
+export const LOCAL_ADMIN_ROTATION_CONCURRENCY_PER_TENANT = 25;
+
+export type LocalAdminRotationResult = {
+  readonly queued: number;
+  /** Devices skipped because a rotation is already in flight or no GUID. */
+  readonly skipped: number;
+};
+
+/**
+ * Queue `SetAutoAdminPassword` for Macs whose tenant policy says the managed
+ * administrator password is due. The new password is sealed under the pending
+ * kind and only becomes the revealed value when the device acknowledges the
+ * command, so a reveal never shows a password the Mac never applied.
+ */
+export const rotateAppleLocalAdminPasswords = (
+  db: EnterpriseDb,
+  options: {
+    readonly now: Date;
+    readonly authSecret?: string;
+    readonly limitPerTenant?: number;
+    readonly organizationId?: string;
+  },
+): Effect.Effect<LocalAdminRotationResult, unknown, Db> =>
+  Effect.gen(function* () {
+    if (!options.authSecret) return { queued: 0, skipped: 0 };
+    const authSecret = options.authSecret;
+    const cap = options.limitPerTenant ?? LOCAL_ADMIN_ROTATION_CONCURRENCY_PER_TENANT;
+    const now = options.now;
+
+    const organizations = yield* db
+      .select({
+        id: s.organization.id,
+        rotationDays: s.organization.localAdminRotationDays,
+      })
+      .from(s.organization)
+      .where(
+        options.organizationId
+          ? and(
+              eq(s.organization.id, options.organizationId),
+              isNotNull(s.organization.localAdminRotationDays),
+            )
+          : isNotNull(s.organization.localAdminRotationDays),
+      );
+
+    let queued = 0;
+    let skipped = 0;
+
+    for (const organization of organizations) {
+      const days = organization.rotationDays;
+
+      if (!days || days <= 0) continue;
+      const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+      const candidates = yield* db
+        .select({
+          id: s.device.id,
+          organizationId: s.device.organizationId,
+          osEdition: s.device.osEdition,
+          model: s.device.model,
+          localAdminGuid: s.deviceApple.localAdminGuid,
+          rotatedAt: s.deviceSecret.rotatedAt,
+        })
+        .from(s.device)
+        .innerJoin(s.deviceApple, eq(s.deviceApple.deviceId, s.device.id))
+        .innerJoin(
+          s.deviceSecret,
+          and(
+            eq(s.deviceSecret.deviceId, s.device.id),
+            eq(s.deviceSecret.kind, "local_admin_password"),
+          ),
+        )
+        .where(
+          and(
+            eq(s.device.organizationId, organization.id),
+            eq(s.device.proto, "apple"),
+            eq(s.device.status, "enrolled"),
+            isNotNull(s.deviceApple.localAdminGuid),
+            lte(s.deviceSecret.rotatedAt, cutoff),
+          ),
+        )
+        .limit(cap + 1);
+
+      const macs = candidates.filter((device) => appleDeviceIsMac(device));
+      const due = macs.filter((device) =>
+        localAdminRotationDue({
+          rotationDays: days,
+          rotatedAt: device.rotatedAt,
+          now,
+          hasGuid: Boolean(device.localAdminGuid),
+        }),
+      );
+      skipped += macs.length - Math.min(due.length, cap);
+
+      for (const device of due.slice(0, cap)) {
+        if (!device.localAdminGuid) {
+          skipped += 1;
+          continue;
+        }
+
+        // A rotation already in flight must finish before another replaces it;
+        // otherwise the sealed pending password and the queued hash disagree.
+        const [active] = yield* db
+          .select({ id: s.deviceCommand.id })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              eq(s.deviceCommand.requestType, "SetAutoAdminPassword"),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .limit(1);
+
+        if (active) {
+          skipped += 1;
+          continue;
+        }
+
+        const password = generateLocalAdminPassword();
+        const passwordHash = yield* applePasswordHash(password);
+
+        const payload = setAutoAdminPasswordPayload({
+          guid: device.localAdminGuid,
+          passwordHash,
+        });
+        const dedupeKey = yield* Effect.promise(() =>
+          commandDedupeKey("SetAutoAdminPassword", payload),
+        );
+        const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+        const rotationId = crypto.randomUUID();
+
+        // Queue the command and write its pending secret together, so a crash
+        // cannot leave a password bound to no command (or the reverse).
+        yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx.insert(s.deviceCommand).values({
+              id: rotationId,
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              requestType: "SetAutoAdminPassword",
+              payload,
+              status: "queued",
+              dedupeKey,
+              expiresAt: deviceCommandExpiresAt("SetAutoAdminPassword", now),
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: now,
+              updatedAt: now,
+            });
+            yield* tx
+              .insert(s.deviceSecret)
+              .values({
+                deviceId: device.id,
+                organizationId: device.organizationId,
+                kind: "local_admin_password_pending",
+                sealedValue,
+                format: "plaintext",
+                pendingCommandId: rotationId,
+                createdAt: now,
+                updatedAt: now,
+                rotatedAt: now,
+              })
+              .onDuplicateKeyUpdate({
+                set: {
+                  sealedValue,
+                  pendingCommandId: rotationId,
+                  updatedAt: now,
+                  rotatedAt: now,
+                },
+              });
+          }),
+        );
+        yield* writeSystemAudit(
+          db,
+          {
+            organizationId: device.organizationId,
+            action: SYSTEM_AUDIT_ACTIONS.localAdminPasswordRotationQueued,
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "apple",
+            metadata: { rotationDays: days, scheduled: true },
+          },
+          { authSecret },
+        );
+        queued += 1;
+      }
+    }
+
+    return { queued, skipped };
   });
 
 type ReturnToServiceConfig = {
@@ -4307,6 +4707,29 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       .where(eq(s.device.id, device.id));
                   }
 
+                  // macOS reports local accounts only on request. Ask at
+                  // enrolment so the inventory exists before an operator looks
+                  // for it; the daily sweep covers devices that miss this.
+                  if (!awaitingConfiguration)
+                    yield* queueLocalAccountsInventory(device, timestamp).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the local-account inventory for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+
+                  // A lost device keeps reporting; refresh its location on a
+                  // bounded cadence without queueing a command per check-in.
+                  if (!awaitingConfiguration)
+                    yield* queueLostModeLocation(device, timestamp).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the Lost Mode location for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+
                   // A Return to Service re-enrolment is complete when the
                   // device reports its push token again. Record it on the
                   // timeline exactly once.
@@ -4820,6 +5243,144 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   Schema.decodeUnknownOption(PlistValue)(event.queryResponses),
                 );
 
+                if (
+                  command?.requestType === "EnableLostMode" &&
+                  nextStatus === "succeeded" &&
+                  command.status !== "succeeded"
+                ) {
+                  const [lostMode] = yield* db
+                    .select({ commandId: s.deviceApple.lostModeCommandId })
+                    .from(s.deviceApple)
+                    .where(eq(s.deviceApple.deviceId, device.id))
+                    .limit(1);
+
+                  // A delayed acknowledgement for a command a newer Lost Mode
+                  // request already replaced must not flip the state.
+                  if (!lostMode?.commandId || lostMode.commandId === command.id) {
+                    const acknowledgedAt = now();
+
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({ lostModeEnabled: true, lostModeAcknowledgedAt: acknowledgedAt })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+
+                    // Apple reports the location from its own command. Queue it
+                    // only now that Lost Mode is actually on; the device answers
+                    // it on a following check-in.
+                    yield* queueLostModeLocation(device, acknowledgedAt).pipe(
+                      Effect.catch((error) =>
+                        Effect.logWarning(
+                          `Failed to queue the Lost Mode location for ${device.id}: ${String(error)}`,
+                        ),
+                      ),
+                    );
+                  }
+                }
+
+                if (
+                  command?.requestType === "DisableLostMode" &&
+                  nextStatus === "succeeded" &&
+                  command.status !== "succeeded"
+                ) {
+                  const [lostMode] = yield* db
+                    .select({ commandId: s.deviceApple.lostModeCommandId })
+                    .from(s.deviceApple)
+                    .where(eq(s.deviceApple.deviceId, device.id))
+                    .limit(1);
+
+                  if (!lostMode?.commandId || lostMode.commandId === command.id)
+                    // A device that is no longer lost must not keep showing a
+                    // location; the last message stays as history.
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({
+                        lostModeEnabled: false,
+                        lostModeLatitude: null,
+                        lostModeLongitude: null,
+                        lostModeHorizontalAccuracy: null,
+                        lostModeVerticalAccuracy: null,
+                        lostModeLocationReportedAt: null,
+                        lostModeLocationUpdatedAt: null,
+                      })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+                }
+
+                if (command?.requestType === "DeviceLocation")
+                  yield* applyLostModeLocation(device, queryResponses);
+
+                if (command?.requestType === "UserList")
+                  yield* applyLocalAccounts(device, queryResponses);
+
+                if (
+                  command?.requestType === "SetAutoAdminPassword" &&
+                  command.status !== nextStatus
+                ) {
+                  if (nextStatus === "succeeded") {
+                    const rotatedAt = now();
+
+                    const [pending] = yield* db
+                      .select({
+                        kind: s.deviceSecret.kind,
+                        commandId: s.deviceSecret.pendingCommandId,
+                      })
+                      .from(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                        ),
+                      )
+                      .limit(1);
+
+                    // Without a pending value there is nothing to promote; do
+                    // not delete the password the device still uses.
+                    if (pending && (!pending.commandId || pending.commandId === command.id)) {
+                      // The pending value only becomes the revealed password
+                      // once the Mac confirms it applied the hash.
+                      yield* db
+                        .delete(s.deviceSecret)
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password"),
+                          ),
+                        );
+                      yield* db
+                        .update(s.deviceSecret)
+                        .set({ kind: "local_admin_password", updatedAt: rotatedAt, rotatedAt })
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                          ),
+                        );
+                    }
+                  } else if (nextStatus === "failed") {
+                    // Never leave a password that the device rejected, but only
+                    // if this is still the pending rotation for this command.
+                    const [pending] = yield* db
+                      .select({ commandId: s.deviceSecret.pendingCommandId })
+                      .from(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                        ),
+                      )
+                      .limit(1);
+
+                    if (pending && (!pending.commandId || pending.commandId === command.id))
+                      yield* db
+                        .delete(s.deviceSecret)
+                        .where(
+                          and(
+                            eq(s.deviceSecret.deviceId, device.id),
+                            eq(s.deviceSecret.kind, "local_admin_password_pending"),
+                          ),
+                        );
+                  }
+                }
+
                 yield* applySecurityInfo(device, queryResponses, { authSecret });
                 yield* applyInstalledApplications(device, queryResponses);
 
@@ -4858,18 +5419,42 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // and the device generates a new Activation Lock bypass code on
                 // its next setup, so the old escrow values are history.
                 if (command?.requestType === "EraseDevice" && nextStatus === "succeeded")
-                  yield* db
-                    .delete(s.deviceSecret)
-                    .where(
-                      and(
-                        eq(s.deviceSecret.deviceId, device.id),
-                        inArray(s.deviceSecret.kind, [
-                          "filevault_recovery_key",
-                          "activation_lock_bypass_code",
-                          "recovery_lock_password",
-                        ]),
-                      ),
-                    );
+                  yield* Effect.gen(function* () {
+                    yield* db
+                      .delete(s.deviceSecret)
+                      .where(
+                        and(
+                          eq(s.deviceSecret.deviceId, device.id),
+                          inArray(s.deviceSecret.kind, [
+                            "filevault_recovery_key",
+                            "activation_lock_bypass_code",
+                            "recovery_lock_password",
+                            "local_admin_password_pending",
+                          ]),
+                        ),
+                      );
+                    // The erase destroys the managed account and any Lost Mode
+                    // state, so neither survives it.
+                    yield* db
+                      .update(s.deviceApple)
+                      .set({
+                        localAdminGuid: null,
+                        lostModeEnabled: false,
+                        lostModeMessage: null,
+                        lostModePhone: null,
+                        lostModeFootnote: null,
+                        lostModeLatitude: null,
+                        lostModeLongitude: null,
+                        lostModeHorizontalAccuracy: null,
+                        lostModeVerticalAccuracy: null,
+                        lostModeLocationReportedAt: null,
+                        lostModeLocationUpdatedAt: null,
+                      })
+                      .where(eq(s.deviceApple.deviceId, device.id));
+                    yield* db
+                      .delete(s.deviceLocalAccount)
+                      .where(eq(s.deviceLocalAccount.deviceId, device.id));
+                  });
 
                 // `PasswordVerified` is the answer to a `VerifyRecoveryLock`
                 // command; record it so the device page can report the check.

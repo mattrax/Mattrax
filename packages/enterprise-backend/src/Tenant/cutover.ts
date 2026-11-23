@@ -349,6 +349,10 @@ export const buildTenantCutover = (
       for (const row of secretRows) {
         let value: string | null = null;
 
+        // A rotation that has not been acknowledged is not the account's
+        // current password; never export or migrate it.
+        if (row.kind === "local_admin_password_pending") continue;
+
         if (authSecret)
           value = yield* Effect.tryPromise({
             try: () => openSecret(authSecret, row.sealedValue),

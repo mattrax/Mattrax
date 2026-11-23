@@ -569,6 +569,21 @@ const makeAppleMdmService = (
       );
   };
 
+  /** Result keys defined by the command-result envelope, not a command answer. */
+  const COMMAND_RESULT_ENVELOPE_KEYS = new Set([
+    "UDID",
+    "EnrollmentID",
+    "UserID",
+    "EnrollmentUserID",
+    "UserShortName",
+    "UserLongName",
+    "Status",
+    "CommandUUID",
+    "Command",
+    "QueryResponses",
+    "ErrorChain",
+  ]);
+
   const handleCommandResult = (
     result: CommandResultPlist,
     identityCertificate?: string,
@@ -597,6 +612,17 @@ const makeAppleMdmService = (
 
     if (!result.CommandUUID) return Effect.void;
 
+    // `UserList` and `DeviceLocation` put their payload at the top level, while
+    // most commands use `QueryResponses`. Keep both available to the parser.
+    const topLevelResponses = Object.fromEntries(
+      Object.entries(result).filter(([key]) => !COMMAND_RESULT_ENVELOPE_KEYS.has(key)),
+    );
+
+    const queryResponses =
+      result.QueryResponses || Object.keys(topLevelResponses).length > 0
+        ? { ...result.QueryResponses, ...topLevelResponses }
+        : undefined;
+
     return backend
       .appleDeviceEvent(
         scope,
@@ -604,7 +630,7 @@ const makeAppleMdmService = (
           commandUUID: result.CommandUUID,
           status: result.Status,
           errorDetail: detail,
-          queryResponses: result.QueryResponses,
+          queryResponses,
         }),
       )
       .pipe(
@@ -623,6 +649,8 @@ const makeAppleMdmService = (
     ["RotateFileVaultKey", ["ReplyEncryptionCertificate"]],
     // A managed local admin's password hash is a binary plist `<data>` value.
     ["AccountConfiguration", ["AutoSetupAdminAccounts.0.passwordHash"]],
+    // Rotating the managed local admin uses the same binary hash shape.
+    ["SetAutoAdminPassword", ["passwordHash"]],
     // Return to Service carries the Wi-Fi/MDM profile and bootstrap token as
     // data values. A JSON payload has no byte type, so they are base64 in the
     // queue and decoded when the command plist is built.

@@ -250,6 +250,14 @@ export const DeviceSearchQuery = Schema.Struct({
   health: Schema.optional(DeviceHealthFilter),
   /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
   push: Schema.optional(Schema.Literals(["failing", "invalid"])),
+  /** Only Apple devices currently in Lost Mode (or explicitly not in it). */
+  lostMode: Schema.optional(Schema.String),
+  /**
+   * macOS local-account risk filters. `multiple-admins` and
+   * `unmanaged-admin` only match accounts whose administrator status is
+   * known: Apple's `UserList` normally does not report it.
+   */
+  localAccount: Schema.optional(Schema.String),
   /**
    * ADE setup state. `awaiting` matches devices held in Setup Assistant;
    * `complete` matches devices that were released (or never awaited).
@@ -311,6 +319,8 @@ export const DeviceViewQuery = Schema.Struct({
   staleDays: Schema.optional(Schema.Number),
   health: Schema.optional(DeviceHealthFilter),
   push: Schema.optional(Schema.Literals(["failing", "invalid"])),
+  lostMode: Schema.optional(Schema.String),
+  localAccount: Schema.optional(Schema.String),
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
   activation: Schema.optional(WindowsActivationStatus),
   attributes: Schema.optional(Schema.String),

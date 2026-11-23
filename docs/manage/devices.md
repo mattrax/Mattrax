@@ -81,6 +81,8 @@ Query parameters:
 | `staleDays`          | Integer                                                                 |
 | `health`             | `healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`       |
 | `push`               | `failing`, `invalid`                                                    |
+| `lostMode`           | `active`, `inactive` (Apple Lost Mode)                                  |
+| `localAccount`       | `without-secure-token`, `not-seen-30-days`                              |
 | `setup`              | `awaiting` (ADE held in Setup Assistant), `complete`                    |
 | `limit` / `offset`   | Pagination                                                              |
 | `sort` / `direction` | `name`, `health`, `lastSeenAt`, `enrolledAt`, `status` and `asc`/`desc` |
@@ -209,7 +211,7 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/export?status=enrolled" \
 
 CSV columns: name, serial, model, platform, status, OS version, OS build, last seen,
 enrolled at, asset tag, model number, FileVault, battery health, capabilities, inventory
-updated and groups. Visible custom attributes follow as `attribute:<key>` columns. Export
+updated, groups and local accounts. Visible custom attributes follow as `attribute:<key>` columns. Export
 is capped at 10,000 rows; a truncated response sets `X-Export-Truncated`.
 
 ## Custom attributes
@@ -366,6 +368,7 @@ The detail page and API expose:
   escrow age and whether the last security report is stale.
 - The managed local administrator created during macOS ADE setup; the password is
   sealed at rest and revealed through a step-up read.
+- Lost Mode state and the last reported location, plus macOS local accounts.
 - ADE setup state (`Awaiting setup` or released) with the setup release timestamp.
 - Activation Lock bypass-code presence and `IsActivationLockManageable`.
 - Passcode and software-update state, lockdown mode, managed-certificate count and
@@ -466,6 +469,64 @@ installs Apple's `com.apple.shareddeviceconfiguration` profile.
 - Apple has no dedicated "clear lock screen message" command. Mattrax removes
   the profile instead, which clears the message on the next check-in.
 
+### Lost Mode
+
+The **Lost Mode** card locks a lost iPhone or iPad and shows a return message.
+It is offered only on supervised iPhone and iPadOS; macOS, tvOS, visionOS,
+watchOS and Apple User Enrollment (BYOD) are refused with a specific reason.
+Apple requires a message or phone number, and the footnote is optional.
+
+- **Start lost mode** (or **Update message** while active) queues
+  `EnableLostMode`; **End lost mode** queues `DisableLostMode`; **Play sound**
+  queues `PlayLostModeSound` and is only offered while Lost Mode is active.
+- After Lost Mode is acknowledged Mattrax queues Apple's `DeviceLocation`.
+  The card shows the latitude/longitude, accuracy and sample time with an
+  **Open in Maps** link. Location is hidden and discarded when Lost Mode ends.
+  Location is personal data and is returned to anyone who can read the device
+  (no extra step-up); limit `devices.read` accordingly. While the device stays
+  lost it is refreshed at most once an hour.
+- The device list has a **Lost Mode** filter (`lostMode=active`) and a lost
+  device carries a `lost_mode` health reason, so it never looks healthy.
+
+### Local accounts
+
+macOS reports local accounts through Apple's `UserList`. The device page shows
+them in a **Local accounts** card — short name, full name, UID, GUID, admin
+marker, SecureToken state and login state — with a **Refresh** button that
+queues a new inventory. Mattrax also queues `UserList` at macOS enrolment and
+daily for stale inventories.
+
+Metadata only: Apple never returns passwords, home directories or keychain
+data. Apple does **not** report administrator status or last-login time, so only
+the managed `mattrax-admin` account is marked as an admin; everything else is
+`unknown` rather than guessed. Because of that there is no "unexpected admin"
+filter or health rule: production data could never produce one. Fleet filters
+`localAccount=without-secure-token` and `localAccount=not-seen-30-days` are
+available. The latter matches Macs whose local-account inventory has not been
+refreshed in 30 days (Apple does not report a per-account login time); a Mac
+that has never reported is included.
+
+`UserList` requires supervision on macOS and is forbidden for Apple User
+Enrollment. A Mac whose supervision state is wrong reports a command failure;
+Mattrax shows that failure in command history rather than pretending it
+inventoried the Mac.
+
+The local-account health reason (a managed administrator without a SecureToken)
+is on by default; a tenant can opt out with `localAccountHealthEnabled: false`.
+
+### Managed local administrator password
+
+**Rotate password** on the Local accounts card replaces the password of the
+account Mattrax created during ADE setup. It requires a Mac, the GUID Apple
+reported for that account, and an escrowed password; an older enrolment without
+a GUID is refused. The new password becomes revealable only after the Mac
+acknowledges `SetAutoAdminPassword`. The action needs a step-up grant and is
+audited without the password.
+
+Tenants can opt in to scheduled rotation (30, 60 or 90 days). Daily maintenance
+queues at most 25 rotations per tenant per run and skips devices with one
+already in flight.
+
 ### Inventory clocks
 
 `inventoryUpdatedAt` records the last hardware/OS report and `applicationsUpdatedAt` the
@@ -556,8 +617,11 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `set-recovery-lock`            | Yes (Apple silicon)           | No            | No          | Yes          |
 | `set-lock-screen-message`      | Yes (supervised iPhone/iPad)  | No            | No          | No           |
 | `verify-recovery-lock`         | Yes (Apple silicon)           | No            | No          | Yes          |
-| `start-lost-mode`              | No                            | No            | Yes         | Yes          |
-| `stop-lost-mode`               | No                            | No            | Yes         | Yes          |
+| `start-lost-mode`              | Yes (supervised iPhone/iPad)  | No            | Yes         | Yes          |
+| `stop-lost-mode`               | Yes (supervised iPhone/iPad)  | No            | Yes         | Yes          |
+| `play-lost-mode-sound`         | Yes (while in Lost Mode)      | No            | No          | Yes          |
+| `refresh-local-accounts`       | Yes (macOS)                   | No            | No          | No           |
+| `rotate-local-admin-password`  | Yes (macOS ADE admin)         | No            | No          | Yes          |
 | `reset-password`               | No                            | No            | Yes         | Yes          |
 | `clear-app-data`               | No                            | No            | Yes         | Yes          |
 | `request-device-info`          | No                            | No            | Yes         | Yes          |

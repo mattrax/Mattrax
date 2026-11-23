@@ -10,6 +10,8 @@ export const DEVICE_SEARCH_KEYS = [
   "staleDays",
   "health",
   "push",
+  "lostMode",
+  "localAccount",
   "setup",
   "notSeenSince",
   "activation",
@@ -31,6 +33,8 @@ export type DeviceFilterState = {
   groupId: string;
   health: string;
   push: string;
+  lostMode: string;
+  localAccount: string;
   setup: string;
   notSeenSince: string;
   activation: string;
@@ -58,6 +62,12 @@ export const deviceFilterConditions = (state: DeviceFilterState): FilterConditio
   if (state.health) conditions.push({ field: "health", operator: "is", values: [state.health] });
 
   if (state.push) conditions.push({ field: "push", operator: "is", values: [state.push] });
+
+  if (state.lostMode)
+    conditions.push({ field: "lostMode", operator: "is", values: [state.lostMode] });
+
+  if (state.localAccount)
+    conditions.push({ field: "localAccount", operator: "is", values: [state.localAccount] });
 
   if (state.setup) conditions.push({ field: "setup", operator: "is", values: [state.setup] });
 

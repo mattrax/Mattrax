@@ -85,6 +85,7 @@ import {
   dynamicGroupRuleGroupIds,
   dynamicGroupReferenceProblem,
   isMacOsDevice,
+  isConfirmedMacOsDevice,
   DEVICE_SECURITY_INFO_STALE_AFTER_DAYS,
   defaultOverviewWidgets,
   DASHBOARD_REPORTS_PER_DASHBOARD,
@@ -101,6 +102,8 @@ import {
   deviceNameDrift,
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  appleLostModePayload,
+  appleLostModeProblem,
   isAppleLockScreenMessageDevice,
   lockScreenMessageProblem,
   normalizeAppleLockScreenMessage,
@@ -118,6 +121,7 @@ import {
   WEBHOOK_EVENT_TYPES,
   webhookUrlProblem,
   DynamicGroupRules,
+  DeviceLocalAccount,
   DeviceManagementApp,
   verifyScriptAgentToken,
   POLICY_SNAPSHOT_ENABLED_KEY,
@@ -272,8 +276,10 @@ import {
   ACTIVE_COMMAND_STATUSES,
   COMMAND_EXPIRED_DETAIL,
   RECONCILED_RESULT_STATUS,
+  applePasswordHash,
   appleLockScreenProfileIdentifier,
   buildAppleLockScreenProfile,
+  generateLocalAdminPassword,
   installProfilePayload,
   profileDigest,
   CATALOGUE_APPLICATION_ASSET_KIND,
@@ -285,6 +291,7 @@ import {
   deviceCommandExpiresAt,
   extendedCommandDeadline,
   planCommandQueueing,
+  setAutoAdminPasswordPayload,
   WebhookPayload,
   writeSystemAudit,
 } from "@mattrax/mdm-apple";
@@ -4431,6 +4438,19 @@ export const createEnterpriseService = ({
        * cannot apply a supervised system-scoped declaration.
        */
       readonly enrollmentMode?: "device" | "user" | null;
+      readonly lostModeEnabled?: boolean;
+      readonly lostModeMessage?: string | null;
+      readonly lostModePhone?: string | null;
+      readonly lostModeFootnote?: string | null;
+      readonly lostModeRequestedAt?: Date | null;
+      readonly lostModeAcknowledgedAt?: Date | null;
+      readonly lostModeLatitude?: string | null;
+      readonly lostModeLongitude?: string | null;
+      readonly lostModeHorizontalAccuracy?: string | null;
+      readonly lostModeVerticalAccuracy?: string | null;
+      readonly lostModeLocationReportedAt?: Date | null;
+      readonly localAccountsUpdatedAt?: Date | null;
+      readonly localAdminGuid?: string | null;
     },
     android?: {
       readonly managementMode?: string | null;
@@ -4481,6 +4501,40 @@ export const createEnterpriseService = ({
       appliedNameAt: row.appliedNameAt,
     }),
     ...rowLockScreen(row, lockScreen?.policy),
+    apple: setup
+      ? {
+          lostMode: {
+            enabled: setup.lostModeEnabled ?? false,
+            message: setup.lostModeMessage ?? null,
+            phone: setup.lostModePhone ?? null,
+            footnote: setup.lostModeFootnote ?? null,
+            requestedAt: setup.lostModeRequestedAt ? iso(setup.lostModeRequestedAt) : null,
+            acknowledgedAt: setup.lostModeAcknowledgedAt ? iso(setup.lostModeAcknowledgedAt) : null,
+            // A device that is not in Lost Mode must not show a location; Apple's
+            // DeviceLocation fix has no meaning outside Lost Mode.
+            location:
+              setup.lostModeEnabled === true &&
+              setup.lostModeLatitude !== null &&
+              setup.lostModeLatitude !== undefined &&
+              setup.lostModeLongitude !== null &&
+              setup.lostModeLongitude !== undefined
+                ? {
+                    latitude: Number(setup.lostModeLatitude),
+                    longitude: Number(setup.lostModeLongitude),
+                    horizontalAccuracy: setup.lostModeHorizontalAccuracy ?? null,
+                    verticalAccuracy: setup.lostModeVerticalAccuracy ?? null,
+                    reportedAt: setup.lostModeLocationReportedAt
+                      ? iso(setup.lostModeLocationReportedAt)
+                      : null,
+                  }
+                : null,
+          },
+          localAccountsUpdatedAt: setup.localAccountsUpdatedAt
+            ? iso(setup.localAccountsUpdatedAt)
+            : null,
+          localAdminGuidKnown: Boolean(setup.localAdminGuid),
+        }
+      : null,
     vendor: row.vendor,
     osEdition: row.osEdition,
     osVersion: row.osVersion,
@@ -4529,6 +4583,8 @@ export const createEnterpriseService = ({
       model: row.model,
       declarationMode: setup?.declarationMode ?? null,
       enrollmentMode: setup?.enrollmentMode ?? null,
+      lostModeEnabled: setup?.lostModeEnabled ?? null,
+      localAdminGuid: setup?.localAdminGuid ?? null,
       capabilities: Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
       ),
@@ -4659,6 +4715,19 @@ export const createEnterpriseService = ({
             returnToServiceCompletedAt: Date | null;
             declarationMode: "ddm" | "legacy" | null;
             enrollmentMode: "device" | "user" | null;
+            lostModeEnabled: boolean;
+            lostModeMessage: string | null;
+            lostModePhone: string | null;
+            lostModeFootnote: string | null;
+            lostModeRequestedAt: Date | null;
+            lostModeAcknowledgedAt: Date | null;
+            lostModeLatitude: string | null;
+            lostModeLongitude: string | null;
+            lostModeHorizontalAccuracy: string | null;
+            lostModeVerticalAccuracy: string | null;
+            lostModeLocationReportedAt: Date | null;
+            localAccountsUpdatedAt: Date | null;
+            localAdminGuid: string | null;
           }
         >();
 
@@ -4672,11 +4741,62 @@ export const createEnterpriseService = ({
           returnToServiceCompletedAt: schema.deviceApple.returnToServiceCompletedAt,
           declarationMode: schema.deviceApple.declarationMode,
           enrollmentMode: schema.deviceApple.enrollmentMode,
+          lostModeEnabled: schema.deviceApple.lostModeEnabled,
+          lostModeMessage: schema.deviceApple.lostModeMessage,
+          lostModePhone: schema.deviceApple.lostModePhone,
+          lostModeFootnote: schema.deviceApple.lostModeFootnote,
+          lostModeRequestedAt: schema.deviceApple.lostModeRequestedAt,
+          lostModeAcknowledgedAt: schema.deviceApple.lostModeAcknowledgedAt,
+          lostModeLatitude: schema.deviceApple.lostModeLatitude,
+          lostModeLongitude: schema.deviceApple.lostModeLongitude,
+          lostModeHorizontalAccuracy: schema.deviceApple.lostModeHorizontalAccuracy,
+          lostModeVerticalAccuracy: schema.deviceApple.lostModeVerticalAccuracy,
+          lostModeLocationReportedAt: schema.deviceApple.lostModeLocationReportedAt,
+          localAccountsUpdatedAt: schema.deviceApple.localAccountsUpdatedAt,
+          localAdminGuid: schema.deviceApple.localAdminGuid,
         })
         .from(schema.deviceApple)
         .where(inArray(schema.deviceApple.deviceId, [...deviceIds]));
 
       return new Map(rows.map((row) => [row.deviceId, row]));
+    });
+
+  /**
+   * Local accounts for a page of devices. Health needs them for the admin and
+   * SecureToken rules; the device detail response also returns the full rows.
+   */
+  const deviceLocalAccountsFor = (deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      if (deviceIds.length === 0) return new Map<string, DeviceLocalAccount[]>();
+
+      const rows = yield* db
+        .select()
+        .from(schema.deviceLocalAccount)
+        .where(inArray(schema.deviceLocalAccount.deviceId, [...deviceIds]))
+        .orderBy(asc(schema.deviceLocalAccount.username));
+
+      const byDevice = new Map<string, DeviceLocalAccount[]>();
+
+      for (const row of rows) {
+        const list = byDevice.get(row.deviceId) ?? [];
+        list.push({
+          username: row.username,
+          fullName: row.fullName,
+          uid: row.uid,
+          guid: row.guid,
+          isAdmin: row.isAdmin,
+          isManaged: row.isManaged,
+          hasSecureToken: row.hasSecureToken,
+          isLoggedIn: row.isLoggedIn,
+          mobileAccount: row.mobileAccount,
+          lastLoginAt: row.lastLoginAt ? iso(row.lastLoginAt) : null,
+          lastSeenAt: iso(row.lastSeenAt),
+          reportedAt: iso(row.reportedAt),
+        });
+        byDevice.set(row.deviceId, list);
+      }
+
+      return byDevice;
     });
 
   /** Android Management API fields shown on the device page. */
@@ -4888,6 +5008,19 @@ export const createEnterpriseService = ({
     devices: ReadonlyArray<EnterpriseDevice>,
     declarations: ReadonlyArray<typeof schema.deviceDeclaration.$inferSelect>,
     awaitingByDevice: ReadonlyMap<string, boolean | null>,
+    options: {
+      readonly lostModeByDevice?: ReadonlyMap<string, boolean>;
+      readonly localAccountsByDevice?: ReadonlyMap<
+        string,
+        ReadonlyArray<{
+          readonly username: string;
+          readonly isAdmin?: boolean | null;
+          readonly isManaged?: boolean;
+          readonly hasSecureToken?: boolean | null;
+        }>
+      >;
+      readonly localAccountHealthEnabled?: boolean;
+    } = {},
   ) => {
     const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -4904,6 +5037,11 @@ export const createEnterpriseService = ({
           device,
           byDevice.get(device.id) ?? [],
           awaitingByDevice.get(device.id) ?? null,
+          {
+            lostModeEnabled: options.lostModeByDevice?.get(device.id) ?? null,
+            localAccounts: options.localAccountsByDevice?.get(device.id) ?? null,
+            localAccountHealthEnabled: options.localAccountHealthEnabled,
+          },
         ),
       ]),
     );
@@ -5767,8 +5905,12 @@ export const createEnterpriseService = ({
    * export endpoints. Group filtering resolves the membership list up front
    * (one extra query) instead of joining per row.
    */
-  const deviceSearchWhere = (organizationId: string, filters: DeviceSearchFilters) =>
+  const deviceSearchWhere = (
+    organization: { readonly id: string; readonly localAccountHealthEnabled?: boolean },
+    filters: DeviceSearchFilters,
+  ) =>
     Effect.gen(function* () {
+      const organizationId = organization.id;
       const conditions: SQL[] = [eq(schema.device.organizationId, organizationId)];
 
       if (filters.q) {
@@ -5822,9 +5964,10 @@ export const createEnterpriseService = ({
           ),
         );
 
-        // Attribute values are visible as extra table columns. The two column
-        // subqueries stay in separate push calls so each reads on its own.
-        // oxlint-disable-next-line unicorn/prefer-single-call -- one push per searchable column.
+        // Attribute values are visible as extra table columns, and local account
+        // names let an operator find the Mac that owns a shared or unexpected
+        // account.
+        // oxlint-disable-next-line unicorn/prefer-single-call -- one subquery per searchable column.
         search.push(
           inArray(
             schema.device.id,
@@ -5835,6 +5978,18 @@ export const createEnterpriseService = ({
                 and(
                   eq(schema.deviceAttribute.organizationId, organizationId),
                   like(schema.deviceAttribute.value, pattern),
+                ),
+              ),
+          ),
+          inArray(
+            schema.device.id,
+            db
+              .select({ deviceId: schema.deviceLocalAccount.deviceId })
+              .from(schema.deviceLocalAccount)
+              .where(
+                and(
+                  eq(schema.deviceLocalAccount.organizationId, organizationId),
+                  like(schema.deviceLocalAccount.username, pattern),
                 ),
               ),
           ),
@@ -5937,14 +6092,48 @@ export const createEnterpriseService = ({
               .select({
                 deviceId: schema.deviceApple.deviceId,
                 awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+                lostModeEnabled: schema.deviceApple.lostModeEnabled,
               })
               .from(schema.deviceApple)
               .where(inArray(schema.deviceApple.deviceId, deviceIds))
           : [];
 
+        const localAccounts = deviceIds.length
+          ? yield* db
+              .select({
+                deviceId: schema.deviceLocalAccount.deviceId,
+                username: schema.deviceLocalAccount.username,
+                isAdmin: schema.deviceLocalAccount.isAdmin,
+                isManaged: schema.deviceLocalAccount.isManaged,
+                hasSecureToken: schema.deviceLocalAccount.hasSecureToken,
+              })
+              .from(schema.deviceLocalAccount)
+              .where(inArray(schema.deviceLocalAccount.deviceId, deviceIds))
+          : [];
+
         const awaitingByDevice = new Map(
           awaiting.map((row) => [row.deviceId, row.awaitingConfiguration]),
         );
+
+        const lostModeByDevice = new Map(
+          awaiting.map((row) => [row.deviceId, row.lostModeEnabled]),
+        );
+
+        const localAccountsByDevice = new Map<
+          string,
+          Array<{
+            username: string;
+            isAdmin: boolean | null;
+            isManaged: boolean;
+            hasSecureToken: boolean | null;
+          }>
+        >();
+
+        for (const account of localAccounts) {
+          const list = localAccountsByDevice.get(account.deviceId) ?? [];
+          list.push(account);
+          localAccountsByDevice.set(account.deviceId, list);
+        }
 
         const byDevice = new Map<string, Array<(typeof declarations)[number]>>();
 
@@ -5960,6 +6149,11 @@ export const createEnterpriseService = ({
               device,
               byDevice.get(device.id) ?? [],
               awaitingByDevice.get(device.id) ?? null,
+              {
+                lostModeEnabled: lostModeByDevice.get(device.id) ?? null,
+                localAccounts: localAccountsByDevice.get(device.id) ?? null,
+                localAccountHealthEnabled: organization.localAccountHealthEnabled,
+              },
             );
 
             return filters.health === "stale" ? health.stale : health.level === filters.health;
@@ -6036,6 +6230,97 @@ export const createEnterpriseService = ({
           deviceIds.length > 0
             ? inArray(schema.device.id, deviceIds)
             : eq(schema.device.id, "__no_matching_push__"),
+        );
+      }
+
+      if (filters.lostMode) {
+        // Lost Mode is stored on `device_apple`; the subquery keeps the filter
+        // set-based and tenant scoping remains on the outer device query.
+        conditions.push(eq(schema.device.proto, "apple"));
+        const appleDevices = db
+          .select({ deviceId: schema.deviceApple.deviceId })
+          .from(schema.deviceApple);
+
+        conditions.push(
+          filters.lostMode === "active"
+            ? inArray(
+                schema.device.id,
+                db
+                  .select({ deviceId: schema.deviceApple.deviceId })
+                  .from(schema.deviceApple)
+                  .where(eq(schema.deviceApple.lostModeEnabled, true)),
+              )
+            : (or(
+                inArray(
+                  schema.device.id,
+                  db
+                    .select({ deviceId: schema.deviceApple.deviceId })
+                    .from(schema.deviceApple)
+                    .where(eq(schema.deviceApple.lostModeEnabled, false)),
+                ),
+                notInArray(schema.device.id, appleDevices),
+              ) ?? sql`false`),
+        );
+      }
+
+      if (filters.localAccount) {
+        // Local accounts are rows on `device_local_account`. Resolve the
+        // matching device ids up front so the predicate stays set-based.
+        const accounts = yield* db
+          .select()
+          .from(schema.deviceLocalAccount)
+          .where(eq(schema.deviceLocalAccount.organizationId, organizationId));
+        const matching = new Set<string>();
+
+        if (filters.localAccount === "without-secure-token") {
+          for (const account of accounts)
+            if (account.hasSecureToken === false) matching.add(account.deviceId);
+        } else {
+          const cutoff = new Date(now().getTime() - 30 * 24 * 60 * 60 * 1000);
+
+          // Apple does not report a local login time, so "not seen recently"
+          // means the inventory itself has not been refreshed. A Mac that has
+          // never reported is included, not silently excluded.
+          const macs = yield* db
+            .select({
+              id: schema.device.id,
+              osEdition: schema.device.osEdition,
+              model: schema.device.model,
+            })
+            .from(schema.device)
+            .where(eq(schema.device.organizationId, organizationId));
+
+          const appleRows = macs.length
+            ? yield* db
+                .select({
+                  deviceId: schema.deviceApple.deviceId,
+                  localAccountsUpdatedAt: schema.deviceApple.localAccountsUpdatedAt,
+                })
+                .from(schema.deviceApple)
+                .where(
+                  inArray(
+                    schema.deviceApple.deviceId,
+                    macs.map((mac) => mac.id),
+                  ),
+                )
+            : [];
+
+          const updatedAt = new Map(
+            appleRows.map((row) => [row.deviceId, row.localAccountsUpdatedAt]),
+          );
+
+          for (const mac of macs) {
+            if (!isConfirmedMacOsDevice(mac)) continue;
+            const at = updatedAt.get(mac.id);
+
+            if (!at || at < cutoff) matching.add(mac.id);
+          }
+        }
+
+        conditions.push(
+          matching.size > 0
+            ? inArray(schema.device.id, [...matching])
+            : eq(schema.device.id, "__no_matching_local_account__"),
         );
       }
 
@@ -10658,6 +10943,8 @@ export const createEnterpriseService = ({
           metadata?: Record<string, Schema.Json> | null;
           appStoreRegion?: string | null;
           autoUnlinkUnavailableApplications?: boolean;
+          localAccountHealthEnabled?: boolean;
+          localAdminRotationDays?: 30 | 60 | 90 | null;
         } = payload;
 
         let appStoreRegion: string | null | undefined;
@@ -10713,6 +11000,8 @@ export const createEnterpriseService = ({
                   : JSON.stringify(body.metadata),
             appStoreRegion,
             autoUnlinkUnavailableApplications: body.autoUnlinkUnavailableApplications,
+            localAccountHealthEnabled: body.localAccountHealthEnabled,
+            localAdminRotationDays: body.localAdminRotationDays,
             updatedAt: now(),
           })
           .where(eq(schema.organization.id, tenantId));
@@ -18893,6 +19182,9 @@ export const createEnterpriseService = ({
           deviceName?: string;
           lockScreenMessage?: string;
           lockScreenIncludeAssetTag?: boolean;
+          lostModeMessage?: string;
+          lostModePhone?: string;
+          lostModeFootnote?: string;
           manifestUrl?: string;
           iTunesStoreId?: number;
           recoveryLockPassword?: string;
@@ -18932,6 +19224,8 @@ export const createEnterpriseService = ({
                 .select({
                   enrollmentMode: schema.deviceApple.enrollmentMode,
                   declarationMode: schema.deviceApple.declarationMode,
+                  lostModeEnabled: schema.deviceApple.lostModeEnabled,
+                  localAdminGuid: schema.deviceApple.localAdminGuid,
                 })
                 .from(schema.deviceApple)
                 .where(eq(schema.deviceApple.deviceId, device.id))
@@ -18949,6 +19243,8 @@ export const createEnterpriseService = ({
           model: device.model,
           declarationMode: apple?.declarationMode ?? null,
           enrollmentMode: apple?.enrollmentMode ?? null,
+          lostModeEnabled: apple?.lostModeEnabled ?? null,
+          localAdminGuid: apple?.localAdminGuid ?? null,
           managementMode: android?.managementMode ?? null,
           ownership: android?.ownership ?? null,
           capabilities: Option.getOrUndefined(
@@ -18969,6 +19265,15 @@ export const createEnterpriseService = ({
               message: requestedAction
                 ? deviceActionUnavailableReason(deviceActionInput, requestedAction)
                 : "Unknown device action",
+            }),
+          );
+
+        // Leaving management has its own lifecycle endpoint and must not go
+        // through the command queue.
+        if (requestedAction === "unenroll")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Use the device unenroll endpoint to remove management.",
             }),
           );
 
@@ -19007,6 +19312,7 @@ export const createEnterpriseService = ({
             "sync",
             "collect-security-info",
             "refresh-applications",
+            "refresh-local-accounts",
             "set-device-name",
             "set-lock-screen-message",
           ].includes(action)
@@ -19032,6 +19338,8 @@ export const createEnterpriseService = ({
 
         let lockPin: string | undefined;
         let command: { commandId: string; deduplicated: boolean } | undefined;
+        /** A rotation is inserted with its pending secret in one transaction. */
+        let preQueuedRotationId: string | undefined;
         let activationLockWarning: string | undefined;
         let lockScreenMessage: string | undefined;
         let lockScreenIncludeAssetTag: boolean | undefined;
@@ -19112,6 +19420,52 @@ export const createEnterpriseService = ({
               );
             const timestamp = now();
             const randomPin = String(Math.floor(100000 + Math.random() * 900000));
+
+            // Lost Mode's message and phone number are rendered on the lock
+            // screen, so validate them before anything is persisted. Apple
+            // requires at least one of Message and PhoneNumber.
+            if (action === "start-lost-mode" && device.proto === "apple") {
+              const problem = appleLostModeProblem({
+                message: body.lostModeMessage,
+                phone: body.lostModePhone,
+                footnote: body.lostModeFootnote,
+              });
+
+              if (problem)
+                return yield* Effect.fail(new EnterpriseBadRequest({ message: problem }));
+
+              const payload = appleLostModePayload({
+                message: body.lostModeMessage,
+                phone: body.lostModePhone,
+                footnote: body.lostModeFootnote,
+              });
+
+              if (Object.keys(payload).length === 0)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "Enter a message or a phone number. Apple requires at least one of them for Lost Mode.",
+                  }),
+                );
+
+              yield* db
+                .update(schema.deviceApple)
+                .set({
+                  lostModeMessage: payload.Message ?? null,
+                  lostModePhone: payload.PhoneNumber ?? null,
+                  lostModeFootnote: payload.Footnote ?? null,
+                  lostModeRequestedAt: timestamp,
+                })
+                .where(eq(schema.deviceApple.deviceId, device.id));
+            }
+
+            // A local-account refresh is an inventory query; record the request
+            // so the daily sweep does not ask again immediately.
+            if (action === "refresh-local-accounts" && device.proto === "apple")
+              yield* db
+                .update(schema.deviceApple)
+                .set({ localAccountsRequestedAt: timestamp })
+                .where(eq(schema.deviceApple.deviceId, device.id));
 
             // The asset tag is part of the payload, so a request that asks for
             // it without one is refused before anything is persisted or
@@ -19369,6 +19723,30 @@ export const createEnterpriseService = ({
                 case "set-lock-screen-message":
                   return lockScreenProfile ?? null;
 
+                case "start-lost-mode":
+                  return {
+                    requestType: "EnableLostMode",
+                    payload: appleLostModePayload({
+                      message: body.lostModeMessage,
+                      phone: body.lostModePhone,
+                      footnote: body.lostModeFootnote,
+                    }),
+                  };
+
+                case "stop-lost-mode":
+                  return { requestType: "DisableLostMode", payload: {} };
+
+                case "play-lost-mode-sound":
+                  return { requestType: "PlayLostModeSound", payload: {} };
+
+                case "refresh-local-accounts":
+                  return { requestType: "UserList", payload: {} };
+
+                case "rotate-local-admin-password":
+                  // The payload is completed below once the GUID and sealed
+                  // secret have been checked.
+                  return { requestType: "SetAutoAdminPassword", payload: {} };
+
                 case "set-recovery-lock":
                   return {
                     requestType: "SetRecoveryLock",
@@ -19491,6 +19869,126 @@ export const createEnterpriseService = ({
               request.payload = { Password: password };
             }
 
+            if (action === "rotate-local-admin-password") {
+              if (!apple?.localAdminGuid)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "This Mac has not reported the GUID of its managed local administrator yet. Rotate after its next local-account inventory.",
+                  }),
+                );
+
+              const [secret] = yield* db
+                .select({ sealedValue: schema.deviceSecret.sealedValue })
+                .from(schema.deviceSecret)
+                .where(
+                  and(
+                    eq(schema.deviceSecret.deviceId, device.id),
+                    eq(schema.deviceSecret.kind, "local_admin_password"),
+                  ),
+                )
+                .limit(1);
+
+              if (!secret)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message:
+                      "This Mac has no managed local administrator password to rotate. Mattrax only rotates the account it created during ADE setup.",
+                  }),
+                );
+
+              const [activeRotation] = yield* db
+                .select({ id: schema.deviceCommand.id })
+                .from(schema.deviceCommand)
+                .where(
+                  and(
+                    eq(schema.deviceCommand.deviceId, device.id),
+                    eq(schema.deviceCommand.requestType, "SetAutoAdminPassword"),
+                    inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                  ),
+                )
+                .limit(1);
+
+              if (activeRotation)
+                return yield* Effect.fail(
+                  new EnterpriseConflict({
+                    message:
+                      "A local administrator password rotation is already in progress for this Mac. Wait for its result before rotating again.",
+                  }),
+                );
+
+              if (!authSecret)
+                return yield* Effect.fail(
+                  new EnterpriseInternal({
+                    message:
+                      "Rotating the local administrator password requires a configured AUTH_SECRET.",
+                  }),
+                );
+
+              const password = generateLocalAdminPassword();
+              const passwordHash = yield* applePasswordHash(password);
+              const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+
+              const payload = setAutoAdminPasswordPayload({
+                guid: apple.localAdminGuid,
+                passwordHash,
+              });
+              const dedupeKey = yield* Effect.promise(() =>
+                commandDedupeKey("SetAutoAdminPassword", payload),
+              );
+
+              // The command and its pending secret are written together so a
+              // crash cannot leave a password bound to no command. The pending
+              // value records the command id and is promoted only when that
+              // exact command is acknowledged.
+              preQueuedRotationId = yield* db.transaction((tx) =>
+                Effect.gen(function* () {
+                  const id = crypto.randomUUID();
+
+                  yield* tx.insert(schema.deviceCommand).values({
+                    id,
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    requestType: "SetAutoAdminPassword",
+                    payload,
+                    status: "queued",
+                    dedupeKey,
+                    expiresAt: deviceCommandExpiresAt("SetAutoAdminPassword", timestamp),
+                    resultStatus: null,
+                    resultDetail: null,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                  });
+
+                  yield* tx
+                    .insert(schema.deviceSecret)
+                    .values({
+                      deviceId: device.id,
+                      organizationId: ctx.organization.id,
+                      kind: "local_admin_password_pending",
+                      sealedValue,
+                      format: "plaintext",
+                      pendingCommandId: id,
+                      createdAt: timestamp,
+                      updatedAt: timestamp,
+                      rotatedAt: timestamp,
+                    })
+                    .onDuplicateKeyUpdate({
+                      set: {
+                        sealedValue,
+                        pendingCommandId: id,
+                        updatedAt: timestamp,
+                        rotatedAt: timestamp,
+                      },
+                    });
+
+                  return id;
+                }),
+              );
+
+              request.payload = payload;
+            }
+
             // Applying a message from the device page is also the per-device
             // override: the check-in re-applies exactly what the operator last
             // chose until they clear it back to the policy default.
@@ -19572,16 +20070,27 @@ export const createEnterpriseService = ({
                   "Activation Lock cannot be confirmed as manageable for this enrolment. If it is enabled, the device will stay locked after erase until the bypass code is used or the user removes it with their Apple Account.";
             }
 
-            const queued = yield* queueDeviceCommand({
-              organizationId: ctx.organization.id,
-              deviceId: device.id,
-              requestType: request.requestType,
-              payload: request.payload,
-              at: timestamp,
-              protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
-            });
+            const queued =
+              preQueuedRotationId !== undefined
+                ? { id: preQueuedRotationId, payload: request.payload, deduplicated: false }
+                : yield* queueDeviceCommand({
+                    organizationId: ctx.organization.id,
+                    deviceId: device.id,
+                    requestType: request.requestType,
+                    payload: request.payload,
+                    at: timestamp,
+                    protectIds: recoveryLockClearId ? [recoveryLockClearId] : undefined,
+                  });
 
             command = { commandId: queued.id, deduplicated: queued.deduplicated };
+
+            // Remember which Lost Mode command is newest. A delayed result for
+            // an older one must not flip the state after a re-send.
+            if (action === "start-lost-mode" || action === "stop-lost-mode")
+              yield* db
+                .update(schema.deviceApple)
+                .set({ lostModeCommandId: queued.id })
+                .where(eq(schema.deviceApple.deviceId, device.id));
 
             // Keep the Recovery Lock password so a later verify/erase can use
             // it as `CurrentPassword`. Re-queuing an identical command reuses
@@ -19657,6 +20166,15 @@ export const createEnterpriseService = ({
             ? {
                 lockScreenMessage,
                 includeAssetTag: lockScreenIncludeAssetTag === true,
+              }
+            : {}),
+          // The Lost Mode message is public by design: it is rendered on the
+          // lock screen. Recording it makes every push auditable without
+          // including the device's location.
+          ...(action === "start-lost-mode"
+            ? {
+                lostModeMessage: body.lostModeMessage?.trim() || null,
+                lostModePhone: body.lostModePhone?.trim() || null,
               }
             : {}),
         };
@@ -20225,7 +20743,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        const [declarations, certificates, apple] = yield* Effect.all(
+        const [declarations, certificates, apple, localAccounts] = yield* Effect.all(
           [
             queryEffect(deviceDeclarationsFor(device.id)),
             queryEffect(deviceCertificatesFor(ctx.organization.id, device)),
@@ -20234,13 +20752,18 @@ export const createEnterpriseService = ({
                 ? db.query.deviceApple.findFirst({ where: { deviceId: device.id } })
                 : Effect.succeed(undefined),
             ),
+            queryEffect(deviceLocalAccountsFor([device.id])),
           ],
           { concurrency: "unbounded" },
         );
 
         return {
           health: normalizeDeviceHealth(
-            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null),
+            rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null, {
+              lostModeEnabled: apple?.lostModeEnabled ?? null,
+              localAccounts: localAccounts.get(device.id) ?? null,
+              localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+            }),
           ),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
@@ -20376,7 +20899,7 @@ export const createEnterpriseService = ({
 
         const deviceIds = devices.map((device: EnterpriseDevice) => device.id);
 
-        const [declarations, setupRows] = yield* Effect.all(
+        const [declarations, setupRows, localAccounts] = yield* Effect.all(
           [
             queryEffect(
               deviceIds.length
@@ -20392,11 +20915,17 @@ export const createEnterpriseService = ({
                     .select({
                       deviceId: schema.deviceApple.deviceId,
                       awaitingConfiguration: schema.deviceApple.awaitingConfiguration,
+                      lostModeEnabled: schema.deviceApple.lostModeEnabled,
                     })
                     .from(schema.deviceApple)
                     .where(inArray(schema.deviceApple.deviceId, deviceIds))
-                : emptyRows<{ deviceId: string; awaitingConfiguration: boolean }>(),
+                : emptyRows<{
+                    deviceId: string;
+                    awaitingConfiguration: boolean;
+                    lostModeEnabled: boolean;
+                  }>(),
             ),
+            queryEffect(deviceLocalAccountsFor(deviceIds)),
           ],
           { concurrency: "unbounded" },
         );
@@ -20411,8 +20940,16 @@ export const createEnterpriseService = ({
 
         const setup = new Map(setupRows.map((row) => [row.deviceId, row.awaitingConfiguration]));
 
+        const lostModeByDevice = new Map(
+          setupRows.map((row) => [row.deviceId, row.lostModeEnabled]),
+        );
+
         const summaries = devices.map((device: EnterpriseDevice) =>
-          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null),
+          rowDeviceHealth(device, byDevice.get(device.id) ?? [], setup.get(device.id) ?? null, {
+            lostModeEnabled: lostModeByDevice.get(device.id) ?? null,
+            localAccounts: localAccounts.get(device.id) ?? null,
+            localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+          }),
         );
 
         const levelRank = {
@@ -25619,7 +26156,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
-        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const where = yield* deviceSearchWhere(ctx.organization, filters);
 
         if (filters.query) {
           // Structured filters use the same evaluator as dynamic groups and
@@ -25726,7 +26263,7 @@ export const createEnterpriseService = ({
 
           const matchIds = matches.map((row) => row.id);
 
-          const [declarations, setup] = yield* Effect.all(
+          const [declarations, setup, localAccounts] = yield* Effect.all(
             [
               queryEffect(
                 db
@@ -25735,6 +26272,7 @@ export const createEnterpriseService = ({
                   .where(inArray(schema.deviceDeclaration.deviceId, matchIds)),
               ),
               queryEffect(deviceSetupStateFor(matchIds)),
+              queryEffect(deviceLocalAccountsFor(matchIds)),
             ],
             { concurrency: "unbounded" },
           );
@@ -25743,6 +26281,11 @@ export const createEnterpriseService = ({
             matches,
             declarations,
             new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
+            {
+              lostModeByDevice: new Map([...setup].map(([id, row]) => [id, row.lostModeEnabled])),
+              localAccountsByDevice: localAccounts,
+              localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+            },
           );
 
           const rank = { critical: 0, missing: 1, attention: 2, unknown: 3, healthy: 4 } as const;
@@ -25786,7 +26329,12 @@ export const createEnterpriseService = ({
                 osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
                 attributes: values,
                 health: normalizeDeviceHealth(
-                  summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
+                  summary ??
+                    rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration, {
+                      lostModeEnabled: setup.get(row.id)?.lostModeEnabled ?? null,
+                      localAccounts: localAccounts.get(row.id) ?? null,
+                      localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+                    }),
                 ),
                 groups: groups.get(row.id) ?? [],
               };
@@ -25815,7 +26363,7 @@ export const createEnterpriseService = ({
 
         // Groups, health and setup state are independent reads; claiming
         // enrollment answers is a write that the attribute read depends on.
-        const [groups, declarations, , setup, androidByDevice] = yield* Effect.all(
+        const [groups, declarations, , setup, androidByDevice, localAccounts] = yield* Effect.all(
           [
             queryEffect(deviceGroupsFor(ctx.organization.id, ids)),
             queryEffect(
@@ -25827,6 +26375,7 @@ export const createEnterpriseService = ({
             queryEffect(claimEnrollmentAnswers(db, ctx.organization.id, rows)),
             queryEffect(deviceSetupStateFor(ids)),
             queryEffect(androidDeviceAccessFor(ctx.organization.id, ids)),
+            queryEffect(deviceLocalAccountsFor(ids)),
           ],
           { concurrency: "unbounded" },
         );
@@ -25835,6 +26384,11 @@ export const createEnterpriseService = ({
           rows,
           declarations,
           new Map([...setup].map(([id, row]) => [id, row.awaitingConfiguration])),
+          {
+            lostModeByDevice: new Map([...setup].map(([id, row]) => [id, row.lostModeEnabled])),
+            localAccountsByDevice: localAccounts,
+            localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+          },
         );
 
         const [attributes, softwareUpdates] = yield* Effect.all(
@@ -25852,7 +26406,12 @@ export const createEnterpriseService = ({
               osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
               attributes: values,
               health: normalizeDeviceHealth(
-                summary ?? rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration),
+                summary ??
+                  rowDeviceHealth(row, [], setup.get(row.id)?.awaitingConfiguration, {
+                    lostModeEnabled: setup.get(row.id)?.lostModeEnabled ?? null,
+                    localAccounts: localAccounts.get(row.id) ?? null,
+                    localAccountHealthEnabled: ctx.organization.localAccountHealthEnabled,
+                  }),
               ),
               groups: groups.get(row.id) ?? [],
             };
@@ -26787,7 +27346,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
         const filters = normalizeDeviceSearchQuery(query);
-        const where = yield* deviceSearchWhere(ctx.organization.id, filters);
+        const where = yield* deviceSearchWhere(ctx.organization, filters);
         // Fetch one extra row so truncation is detected without a second count
         // query; the extra row is never written to the CSV.
         let rows: Array<typeof schema.device.$inferSelect>;
@@ -26868,6 +27427,8 @@ export const createEnterpriseService = ({
           exportedRows.map((row) => row.id),
         );
 
+        const localAccounts = yield* deviceLocalAccountsFor(exportedRows.map((row) => row.id));
+
         const csv = toCsv(
           [
             "Name",
@@ -26888,6 +27449,7 @@ export const createEnterpriseService = ({
             "Inventory updated",
             "Notes",
             "Groups",
+            "Local accounts",
             ...attributeCsvHeaders(definitions),
           ],
           exportedRows.map((row) => [
@@ -26915,6 +27477,7 @@ export const createEnterpriseService = ({
             row.inventoryUpdatedAt ? iso(row.inventoryUpdatedAt) : "",
             row.notes,
             (groups.get(row.id) ?? []).map((group) => group.name).join("; "),
+            (localAccounts.get(row.id) ?? []).map((account) => account.username).join("; "),
             ...attributeCsvCells(definitions, attributes.get(row.id)),
           ]),
         );
@@ -27102,9 +27665,21 @@ export const createEnterpriseService = ({
             })()
           : null;
 
+        const localAccounts = yield* deviceLocalAccountsFor([row.id]);
+
+        const baseDevice = rowDevice(
+          row,
+          apple,
+          android,
+          lockScreen ? { policy: lockScreen } : undefined,
+        );
+
         // Presence metadata only — the sealed value never leaves the backend.
         return {
-          ...rowDevice(row, apple, android, lockScreen ? { policy: lockScreen } : undefined),
+          ...baseDevice,
+          apple: baseDevice.apple
+            ? { ...baseDevice.apple, localAccounts: localAccounts.get(row.id) ?? [] }
+            : null,
           lockScreenDelivery,
           osUpdate: softwareUpdateFor(row, softwareUpdates.catalog),
           osCompliance: osComplianceFor(row, osPolicyRules, softwareUpdates.catalog),

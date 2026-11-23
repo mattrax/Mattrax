@@ -710,6 +710,18 @@ export const organization = mysqlTable(
      */
     scriptsEnabled: boolean("scripts_enabled").notNull().default(true),
     /**
+     * Tenant opt-out for local-account health reasons on macOS. Apple's
+     * `UserList` inventory is useful but a shared Mac with deliberate extra
+     * admin accounts should not be flagged as unhealthy unless the tenant
+     * wants it. Off suppresses those reasons; the inventory itself is kept.
+     */
+    localAccountHealthEnabled: boolean("local_account_health_enabled").notNull().default(true),
+    /**
+     * Days between automatic rotations of the managed local administrator
+     * password. Null disables the schedule; the manual action still works.
+     */
+    localAdminRotationDays: int("local_admin_rotation_days"),
+    /**
      * Default App Store storefront used to resolve a store id when a device
      * does not report a region. Null keeps the historical US default.
      */
@@ -2853,7 +2865,104 @@ export const deviceApple = mysqlTable("device_apple", {
    * re-queue the same command.
    */
   securityInfoRequestedAt: timestamp("security_info_requested_at"),
+  /**
+   * Lost Mode state. Apple only accepts `EnableLostMode` on supervised
+   * iPhone/iPadOS, so a Mac, Apple TV or BYOD device never sets these columns.
+   * The message fields are what the operator asked for; the acknowledged clock
+   * is set only when the device accepts the command.
+   */
+  lostModeEnabled: boolean("lost_mode_enabled").notNull().default(false),
+  lostModeMessage: text("lost_mode_message"),
+  lostModePhone: shortText("lost_mode_phone"),
+  lostModeFootnote: text("lost_mode_footnote"),
+  lostModeRequestedAt: timestamp("lost_mode_requested_at"),
+  lostModeAcknowledgedAt: timestamp("lost_mode_acknowledged_at"),
+  /**
+   * Last location the device reported from Apple's `DeviceLocation` command
+   * while Lost Mode is active. Stored as text because Apple reports floats and
+   * the value is only ever displayed, never calculated with.
+   */
+  lostModeLatitude: shortText("lost_mode_latitude"),
+  lostModeLongitude: shortText("lost_mode_longitude"),
+  lostModeHorizontalAccuracy: shortText("lost_mode_horizontal_accuracy"),
+  lostModeVerticalAccuracy: shortText("lost_mode_vertical_accuracy"),
+  lostModeLocationReportedAt: timestamp("lost_mode_location_reported_at"),
+  lostModeLocationUpdatedAt: timestamp("lost_mode_location_updated_at"),
+  /**
+   * The GUID of the managed local administrator Apple created during ADE
+   * setup. `SetAutoAdminPassword` needs it; Apple reports it in `UserList`,
+   * not in the `AccountConfiguration` result. Null until the first
+   * `UserList` answer names the managed account.
+   */
+  localAdminGuid: shortText("local_admin_guid"),
+  /**
+   * The latest Lost Mode command Mattrax queued. An acknowledgement for an
+   * older command must not flip the state after a newer request superseded it.
+   */
+  lostModeCommandId: shortText("lost_mode_command_id"),
+  /** When a `UserList` answer last replaced the local-account inventory. */
+  localAccountsUpdatedAt: timestamp("local_accounts_updated_at"),
+  /** When Mattrax last queued `UserList`; throttles the daily refresh. */
+  localAccountsRequestedAt: timestamp("local_accounts_requested_at"),
 });
+
+/**
+ * One local account reported by macOS `UserList`.
+ *
+ * Metadata only: Apple never returns a password, home-directory contents or
+ * keychain data. Apple reports the username, full name, UID, GUID, secure
+ * token state, login state and data quota. It does **not** report whether an
+ * account is an administrator or when it last logged in, so those columns stay
+ * null rather than guessing.
+ */
+export const deviceLocalAccount = mysqlTable(
+  "device_local_account",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    /** macOS short name (`UserName`). */
+    username: shortText("username").notNull(),
+    fullName: shortText("full_name"),
+    uid: int("uid"),
+    /** `GeneratedUID` from `UserList`; also identifies the managed admin. */
+    guid: shortText("guid"),
+    /**
+     * Whether the account is an administrator. Apple does not report this, so
+     * it is null for every account except the managed administrator Mattrax
+     * created, which is known to be an admin. Never guessed from the UID.
+     */
+    isAdmin: boolean("is_admin"),
+    /** Whether the managed administrator is the one Mattrax provisioned. */
+    isManaged: boolean("is_managed").notNull().default(false),
+    /** `HasSecureToken`; only macOS 11+ reports it. */
+    hasSecureToken: boolean("has_secure_token"),
+    /** `IsLoggedIn` at the time of the report. */
+    isLoggedIn: boolean("is_logged_in"),
+    mobileAccount: boolean("mobile_account"),
+    /** `DataQuota`/`DataUsed` in bytes; iOS-family fields only. */
+    /** Bytes; Apple can report values above int32 (bigint column). */
+    dataQuota: bigint("data_quota", { mode: "number" }),
+    dataUsed: bigint("data_used", { mode: "number" }),
+    /**
+     * When the account last logged in. Apple's `UserList` does not report it,
+     * so this is null unless a future source provides it.
+     */
+    lastLoginAt: timestamp("last_login_at"),
+    firstSeenAt: timestamp("first_seen_at").notNull(),
+    /** Last report that still listed this account. */
+    lastSeenAt: timestamp("last_seen_at").notNull(),
+    reportedAt: timestamp("reported_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_local_account_device_username_unique").on(table.deviceId, table.username),
+    index("device_local_account_organization_idx").on(table.organizationId, table.deviceId),
+  ],
+);
 
 /**
  * Device secrets escrowed from a managed device. Values are sealed with the
@@ -2877,6 +2986,12 @@ export const deviceSecret = mysqlTable(
         "activation_lock_bypass_code",
         "recovery_lock_password",
         "local_admin_password",
+        /**
+         * A rotation queued but not yet acknowledged. It replaces
+         * `local_admin_password` only when the device reports success, so a
+         * reveal never shows a password the device never applied.
+         */
+        "local_admin_password_pending",
       ],
     }).notNull(),
     /** AES-256-GCM sealed value produced by `sealSecret`. */
@@ -2893,6 +3008,12 @@ export const deviceSecret = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
     /** When the escrowed value last changed (not merely re-reported). */
     rotatedAt: timestamp("rotated_at"),
+    /**
+     * For `local_admin_password_pending`: the command whose password hash this
+     * value belongs to. The secret is promoted only when that command is the
+     * one the device acknowledged.
+     */
+    pendingCommandId: shortText("pending_command_id"),
   },
   (table) => [
     primaryKey({ columns: [table.deviceId, table.kind] }),
@@ -4624,6 +4745,7 @@ export const relations = defineRelations(
     deviceDeclaration,
     deviceApple,
     deviceAppleUser,
+    deviceLocalAccount,
     deviceUserDeclaration,
     deviceSecret,
     appleFdeEscrowKey,
@@ -4875,6 +4997,10 @@ export const relations = defineRelations(
       android: r.one.androidDevice({ from: r.device.id, to: r.androidDevice.deviceId }),
       groups: r.many.groupDevice({ from: r.device.id, to: r.groupDevice.deviceId }),
       secrets: r.many.deviceSecret({ from: r.device.id, to: r.deviceSecret.deviceId }),
+      localAccounts: r.many.deviceLocalAccount({
+        from: r.device.id,
+        to: r.deviceLocalAccount.deviceId,
+      }),
       applications: r.many.deviceApplication({
         from: r.device.id,
         to: r.deviceApplication.deviceId,
@@ -4883,6 +5009,13 @@ export const relations = defineRelations(
         from: r.device.id,
         to: r.scriptExecution.deviceId,
       }),
+    },
+    deviceLocalAccount: {
+      organization: r.one.organization({
+        from: r.deviceLocalAccount.organizationId,
+        to: r.organization.id,
+      }),
+      device: r.one.device({ from: r.deviceLocalAccount.deviceId, to: r.device.id }),
     },
     script: {
       organization: r.one.organization({ from: r.script.organizationId, to: r.organization.id }),
