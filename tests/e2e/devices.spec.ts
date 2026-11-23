@@ -52,7 +52,7 @@ test.describe("device fleet management", () => {
     expect(response.headers()["content-type"]).toContain("text/csv");
     expect(response.headers()["content-disposition"]).toContain("attachment");
     expect(await response.text()).toBe(
-      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Model number,FileVault,Activation,Battery health,Capabilities,Inventory updated,Notes,Groups\r\n",
+      "Name,Serial,Model,Platform,Status,OS version,OS build,Last seen,Enrolled at,Asset tag,Model number,FileVault,Activation,Battery health,Capabilities,Inventory updated,Notes,Groups,Local accounts\r\n",
     );
 
     // The toolbar action downloads a dated CSV file.
