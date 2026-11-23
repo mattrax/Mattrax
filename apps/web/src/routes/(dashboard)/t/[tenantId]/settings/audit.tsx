@@ -83,6 +83,13 @@ const KNOWN_ACTIONS = [
   "sso.updated",
   "scim.token_created",
   "scim.token_revoked",
+  "approval.requested",
+  "approval.approved",
+  "approval.rejected",
+  "approval.cancelled",
+  "approval.expired",
+  "approval.consumed",
+  "approval.break_glass_used",
 ];
 
 const auditFieldClass =

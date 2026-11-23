@@ -73,6 +73,10 @@ export const TenantDashboardReportParam = {
 
 export const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
 
+export const TenantApprovalParam = { tenantId: Schema.String, approvalId: Schema.String };
+
+export const TenantApprovalPolicyParam = { tenantId: Schema.String, policyId: Schema.String };
+
 export const McpConnectionParam = { connectionId: Schema.String };
 
 export const ApiTokenParam = { tokenId: Schema.String };

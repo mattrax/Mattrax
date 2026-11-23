@@ -362,6 +362,7 @@ export const routes = {
         tab:
           | ""
           | "administrators"
+          | "approvals"
           | "identity"
           | "attributes"
           | "enrollment"

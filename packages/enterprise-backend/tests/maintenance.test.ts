@@ -1162,6 +1162,91 @@ describe("maintenance Apps and Books client", () => {
   });
 });
 
+describe("maintenance approval retention", () => {
+  it("deletes terminal approval requests older than 90 days and keeps pending ones", async () => {
+    const db = makeDb();
+
+    const approval = (id: string, status: string, ageDays: number) => ({
+      id,
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status,
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: "account-1",
+      requestedByEmail: "owner@example.com",
+      requestedByCredential: "session",
+      payloadHash: "hash-" + id,
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: status === "approved" ? new Date(now.getTime() - ageDays * DAY) : null,
+      expiresAt: new Date(now.getTime() - ageDays * DAY + DAY),
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+      updatedAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.approval_request.push(
+      approval("old-approved", "approved", 91),
+      approval("old-rejected", "rejected", 120),
+      approval("fresh-approved", "approved", 10),
+      approval("old-pending", "pending", 120),
+    );
+
+    const result = await run(db);
+
+    expect(result.purgedApprovalRequests).toBe(2);
+    expect(db.store.approval_request.map((row: { id: string }) => row.id).sort()).toEqual([
+      "fresh-approved",
+      "old-pending",
+    ]);
+  });
+
+  it("can be disabled with a retention of 0", async () => {
+    const db = makeDb();
+
+    db.store.approval_request.push({
+      id: "old",
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status: "rejected",
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: null,
+      requestedByEmail: null,
+      requestedByCredential: "session",
+      payloadHash: "hash",
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: null,
+      expiresAt: new Date(0),
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        approvalRetentionDays: 0,
+        credentialAlerts: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedApprovalRequests).toBe(0);
+    expect(db.store.approval_request).toHaveLength(1);
+  });
+});
+
 describe("maintenance handover archive retention", () => {
   const archive = (id: string, ageDays: number) => ({
     id,

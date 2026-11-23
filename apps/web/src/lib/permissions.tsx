@@ -208,6 +208,11 @@ export function settingsTabPermission(tab: string): Permission {
   switch (tab) {
     case "administrators":
       return "members.read";
+    case "approvals":
+      // Requesters without the queue permission still need to see and cancel
+      // their own requests, so the tab is open to every member. The page and
+      // API hide the full queue behind approvals.read.
+      return "tenant.read";
     case "identity":
       return "identity.read";
     case "enrollment":
@@ -239,11 +244,13 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "webhooks.read",
   "audit.read",
   "billing.read",
+  "approvals.read",
 ];
 
 const SETTINGS_TABS = [
   "",
   "administrators",
+  "approvals",
   "identity",
   "enrollment",
   "attributes",

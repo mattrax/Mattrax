@@ -19,6 +19,7 @@ import { enterpriseUserApi } from "./UserApi.js";
 import { enterpriseSoftwareUpdateApi } from "./SoftwareUpdateApi.js";
 import { enterpriseOsPolicyApi } from "./OsPolicyApi.js";
 import { enterpriseListApi } from "./ListApi.js";
+import { enterpriseApprovalApi } from "./ApprovalApi.js";
 import { enterpriseWindowsApi } from "./WindowsApi.js";
 
 export * from "./AccountApi.js";
@@ -61,6 +62,8 @@ export * from "./ScriptApi.js";
 
 export * from "./MigrationApi.js";
 
+export * from "./ApprovalApi.js";
+
 export const enterpriseHttpApi: HttpApi.HttpApi<
   "MattraxEnterprise",
   | typeof enterpriseAccountApi
@@ -80,6 +83,7 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseOsPolicyApi
   | typeof enterpriseListApi
   | typeof enterpriseWindowsApi
+  | typeof enterpriseApprovalApi
 > = HttpApi.make("MattraxEnterprise")
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
@@ -97,7 +101,8 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   .add(enterpriseSoftwareUpdateApi)
   .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
-  .add(enterpriseWindowsApi);
+  .add(enterpriseWindowsApi)
+  .add(enterpriseApprovalApi);
 
 /** The flattened client groups the dashboard can call. */
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
@@ -116,7 +121,8 @@ export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi>
   HttpApiClient.Client<typeof enterpriseSoftwareUpdateApi> &
   HttpApiClient.Client<typeof enterpriseOsPolicyApi> &
   HttpApiClient.Client<typeof enterpriseListApi> &
-  HttpApiClient.Client<typeof enterpriseWindowsApi>;
+  HttpApiClient.Client<typeof enterpriseWindowsApi> &
+  HttpApiClient.Client<typeof enterpriseApprovalApi>;
 
 export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
 

@@ -350,6 +350,21 @@ const EXPLICIT = {
   // The impact read returns presence metadata only, the same data the device
   // detail page already exposes.
   deviceHandoverImpact: "devices.read",
+  // Four-eyes approvals. Reading the queue exposes destructive intent and who
+  // is deciding it, so it is not part of the read-only member baseline. A
+  // requester also needs read access to see and cancel their own request.
+  listApprovalPolicies: "approvals.read",
+  createApprovalPolicy: "approvals.write",
+  patchApprovalPolicy: "approvals.write",
+  deleteApprovalPolicy: "approvals.write",
+  // A requester can always list their own requests and cancel one without
+  // holding the queue permission. The handlers enforce that restriction: the
+  // method falls back to tenant.read, which every member already needs.
+  listApprovalRequests: "tenant.read",
+  getApprovalRequest: "tenant.read",
+  approveApprovalRequest: "approvals.write",
+  rejectApprovalRequest: "approvals.write",
+  cancelApprovalRequest: "tenant.read",
 } satisfies Record<string, Permission>;
 
 const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));

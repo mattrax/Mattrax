@@ -11,7 +11,13 @@ import { Effect, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
-import { errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
+import { approvalFailure, errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
+import {
+  ApprovalRequiredError,
+  approvalHeaders,
+  registerApprovalRetry,
+} from "~/lib/approval-retry";
+import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { readMeCache, writeMeCache } from "~/lib/me-cache";
 import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
 import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
@@ -88,6 +94,9 @@ import type {
   TenantInfo,
   BackupRestoreResponse,
   CreateTenantRoleRequest,
+  CreateApprovalPolicyRequest,
+  PatchApprovalPolicyRequest,
+  ApprovalRequestQuery,
   ListTenantInvitationsQuery,
   PatchTenantRoleRequest,
   UpdateAutopilotProfileRequest,
@@ -313,7 +322,8 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
-  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"];
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
@@ -433,6 +443,10 @@ export const enterpriseKeys = {
   accounts: (tenantId: RouteParam) =>
     ["enterprise", "tenant-accounts", keyTenant(tenantId)] as const,
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
+  approvalPolicies: (tenantId: RouteParam) =>
+    ["enterprise", "approval-policies", keyTenant(tenantId)] as const,
+  approvalRequests: (tenantId: RouteParam, query: ApprovalRequestQuery = {}) =>
+    ["enterprise", "approval-requests", keyTenant(tenantId), query] as const,
   invitations: (tenantId: RouteParam) =>
     ["enterprise", "tenant-invitations", keyTenant(tenantId)] as const,
   invitationOptions: (tenantId: RouteParam) =>
@@ -642,20 +656,18 @@ function endpointWith<Client, A, E>(
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   const action = options.stepUp === false ? undefined : options.stepUp;
 
-  const requestHeaders = (grant?: string) => {
+  const requestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
     const event = isServer ? getRequestEvent() : undefined;
     const cookie = event?.request.headers.get("cookie");
-    const headers: Record<string, string> = {};
-
-    if (grant) headers["x-mattrax-step-up"] = grant;
-
-    if (cookie) headers.cookie = cookie;
-
-    return headers;
+    return {
+      ...approvalHeaders(approval),
+      ...(grant ? { "x-mattrax-step-up": grant } : {}),
+      ...(cookie ? { cookie } : {}),
+    };
   };
 
-  const attempt = (grant?: string) => {
-    const effect = makeClient(requestHeaders(grant)).pipe(Effect.flatMap(call));
+  const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
+    const effect = makeClient(requestHeaders(grant, approval)).pipe(Effect.flatMap(call));
 
     // SAFETY: Effect.runPromise resolves with the effect success value A; the
     // assertion restores the generic success type the client erases.
@@ -665,11 +677,41 @@ function endpointWith<Client, A, E>(
   const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
   const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
 
-  const run = async (): Promise<A> => {
+  const run = async (approval?: ApprovalRetryInput): Promise<A> => {
     try {
-      return await attempt(stepUpGrant(action));
+      return await attempt(stepUpGrant(action), approval);
     } catch (error) {
       const failure = raisedFailure(error);
+
+      if (errorTag(failure) === "ApprovalRequired") {
+        const fields = approvalFailure(failure);
+        const requestId = fields.requestId;
+
+        if (requestId) {
+          const status = fields.status === "approved" ? "approved" : "pending";
+
+          // Keep the exact call that was blocked so the approvals page can
+          // replay it with the decision, without reconstructing the payload.
+          registerApprovalRetry({
+            requestId,
+            action: action ?? "approval",
+            retry: async (input) => {
+              await run(input);
+            },
+          });
+
+          throw new ApprovalRequiredError({
+            message:
+              status === "approved"
+                ? "This request is approved. Retry with this approval."
+                : "This action needs approval from another administrator.",
+            requestId,
+            status,
+          });
+        }
+
+        throw error;
+      }
 
       if (errorTag(failure) !== "StepUpRequired") throw error;
 
@@ -681,7 +723,7 @@ function endpointWith<Client, A, E>(
       const methods = Option.getOrUndefined(decodeMethods(fields.methods));
       const grant = await requestStepUp(required, methods);
 
-      return await attempt(grant);
+      return await attempt(grant, approval);
     }
   };
 
@@ -702,6 +744,7 @@ function endpoint<A, E>(
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
         ...client.EnterpriseOnboarding,
+        ...client.EnterpriseApproval,
       })),
     call,
     options,
@@ -2986,6 +3029,76 @@ export const enterprise = {
     endpoint((api) =>
       api.listTenantRoles({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
+  listApprovalPolicies: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listApprovalPolicies({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createApprovalPolicy: (tenantId: RouteParam, payload: CreateApprovalPolicyRequest) =>
+    endpoint((api) =>
+      api.createApprovalPolicy({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  patchApprovalPolicy: (
+    tenantId: RouteParam,
+    policyId: RouteParam,
+    payload: PatchApprovalPolicyRequest,
+  ) =>
+    endpoint((api) =>
+      api.patchApprovalPolicy({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          policyId: required(policyId, "policyId"),
+        },
+        payload,
+      }),
+    ),
+  deleteApprovalPolicy: (tenantId: RouteParam, policyId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteApprovalPolicy({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          policyId: required(policyId, "policyId"),
+        },
+      }),
+    ),
+  listApprovalRequests: (tenantId: RouteParam, query: ApprovalRequestQuery = {}) =>
+    endpoint((api) =>
+      api.listApprovalRequests({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
+      }),
+    ),
+  approveApprovalRequest: (tenantId: RouteParam, approvalId: RouteParam, note?: string) =>
+    endpoint((api) =>
+      api.approveApprovalRequest({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          approvalId: required(approvalId, "approvalId"),
+        },
+        payload: { note: note && note.trim().length > 0 ? note.trim() : null },
+      }),
+    ),
+  rejectApprovalRequest: (tenantId: RouteParam, approvalId: RouteParam, note: string) =>
+    endpoint((api) =>
+      api.rejectApprovalRequest({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          approvalId: required(approvalId, "approvalId"),
+        },
+        payload: { note },
+      }),
+    ),
+  cancelApprovalRequest: (tenantId: RouteParam, approvalId: RouteParam) =>
+    endpoint((api) =>
+      api.cancelApprovalRequest({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          approvalId: required(approvalId, "approvalId"),
+        },
+      }),
+    ),
   createRole: (tenantId: RouteParam, payload: CreateTenantRoleRequest) =>
     endpoint((api) =>
       api.createTenantRole({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -3127,6 +3240,18 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.attributes(tenantId),
       queryFn: () => enterprise.listAttributes(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  approvalPolicies: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.approvalPolicies(tenantId),
+      queryFn: () => enterprise.listApprovalPolicies(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  approvalRequests: (tenantId: RouteParam, query: ApprovalRequestQuery = {}) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.approvalRequests(tenantId, query),
+      queryFn: () => enterprise.listApprovalRequests(tenantId, query),
       enabled: Boolean(tenantId),
     }),
   enrollmentQuestions: (tenantId: RouteParam) =>

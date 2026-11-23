@@ -43,6 +43,8 @@ export const PERMISSIONS = [
   "members.write",
   "roles.read",
   "roles.write",
+  "approvals.read",
+  "approvals.write",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -264,6 +266,23 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
     ],
   },
   {
+    id: "approvals",
+    label: "Approvals",
+    description: "Second-person approval policies and the approval queue.",
+    permissions: [
+      {
+        id: "approvals.read",
+        label: "View approvals",
+        description: "See approval requests, their payload summary and decisions.",
+      },
+      {
+        id: "approvals.write",
+        label: "Manage approvals",
+        description: "Configure approval policies and approve or reject requests.",
+      },
+    ],
+  },
+  {
     id: "tenant",
     label: "Tenant",
     description: "Tenant-wide settings, export and lifecycle.",
@@ -297,13 +316,20 @@ export const BUILT_IN_ROLE_PERMISSIONS: Record<BuiltInTenantRole, ReadonlyArray<
       permission !== "tenant.export" &&
       !permission.startsWith("backups."),
   ),
-  // Webhook secrets and delivery history are operational admin surfaces.
-  // Backups contain full tenant data and stay with owners.
+  // Webhook secrets, delivery history, backups and the approval queue are
+  // operational admin surfaces. Backups contain full tenant data and stay with
+  // owners; the queue exposes destructive requests and who is deciding them.
   member: READ_PERMISSIONS.filter(
-    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+    (permission) =>
+      permission !== "webhooks.read" &&
+      permission !== "approvals.read" &&
+      !permission.startsWith("backups."),
   ),
   auditor: READ_PERMISSIONS.filter(
-    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+    (permission) =>
+      permission !== "webhooks.read" &&
+      permission !== "approvals.read" &&
+      !permission.startsWith("backups."),
   ),
 };
 

@@ -796,6 +796,164 @@ export const member = mysqlTable(
 );
 
 /**
+ * A tenant's four-eyes policy for one destructive action.
+ *
+ * Policies are optional: when no row matches an action, the endpoint behaves
+ * exactly as it did before approvals existed. `scope_type` narrows a policy to
+ * a group or device where the action names one; anything else is tenant-wide.
+ * `approver_permission` and `approver_role` are alternatives (exactly one is
+ * expected), and `approvals_required` counts distinct approvers other than the
+ * requester.
+ */
+export const approvalPolicy = mysqlTable(
+  "approval_policy",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** A closed action key from `APPROVAL_ACTIONS`; not a free-text label. */
+    action: varchar("action", { length: 64 }).notNull(),
+    scopeType: varchar("scope_type", {
+      length: 16,
+      enum: ["tenant", "group", "device"],
+    })
+      .notNull()
+      .default("tenant"),
+    /** Group or device id for a narrowed policy; null for a tenant policy. */
+    scopeId: id("scope_id"),
+    approverPermission: varchar("approver_permission", { length: 64 }),
+    approverRole: varchar("approver_role", { length: 32 }),
+    approvalsRequired: int("approvals_required").notNull().default(1),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // Every lookup is one action in one tenant; the pair also serves the list.
+    index("approval_policy_organization_action_idx").on(table.organizationId, table.action),
+    index("approval_policy_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * One request for a second administrator to approve a destructive action.
+ *
+ * `payload_hash` is the canonical SHA-256 binding for the exact operation: the
+ * action, the policy, the resource and every device/argument involved. The
+ * request stores a metadata-only summary for the queue, never the payload or
+ * any secret. A request is single use; `consumed_at` records the execution and
+ * the row is kept as evidence. Expiry is enforced when the row is read and
+ * again before execution, so a missed sweep cannot extend a request's life.
+ */
+export const approvalRequest = mysqlTable(
+  "approval_request",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Policy that required the request; deleting the policy leaves the history. */
+    policyId: id("policy_id").references(() => approvalPolicy.id, { onDelete: "set null" }),
+    action: varchar("action", { length: 64 }).notNull(),
+    status: varchar("status", {
+      length: 16,
+      enum: ["pending", "approved", "rejected", "expired", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    scopeType: varchar("scope_type", {
+      length: 16,
+      enum: ["tenant", "group", "device"],
+    })
+      .notNull()
+      .default("tenant"),
+    scopeId: id("scope_id"),
+    requestedByAccountId: id("requested_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Snapshot so history survives an account deletion. */
+    requestedByEmail: varchar("requested_by_email", { length: 320 }),
+    /** `session`, `api-token` or `oauth`; API credentials can request, never approve. */
+    requestedByCredential: varchar("requested_by_credential", { length: 16 }),
+    payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    /** Metadata-only description shown in the queue. Never secrets. */
+    payloadSummary: json("payload_summary").notNull(),
+    /** Policy snapshot: in-flight requests keep the rules they were created under. */
+    approverPermission: varchar("approver_permission", { length: 64 }),
+    approverRole: varchar("approver_role", { length: 32 }),
+    approvalsRequired: int("approvals_required").notNull(),
+    breakGlass: boolean("break_glass").notNull().default(false),
+    breakGlassReason: text("break_glass_reason"),
+    consumedAt: timestamp("consumed_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // Queue reads filter by tenant and status, then order by creation.
+    index("approval_request_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.expiresAt,
+    ),
+    // "My pending requests" is the requester's own list. The account id leads
+    // so this also supports the foreign key that nulls it on account deletion.
+    index("approval_request_requester_idx").on(
+      table.requestedByAccountId,
+      table.organizationId,
+      table.createdAt,
+    ),
+    // Approval retention deletes terminal rows by age after filtering status.
+    index("approval_request_status_updated_idx").on(table.status, table.updatedAt),
+    // Reuse/dedupe looks up an existing request for the same binding.
+    index("approval_request_payload_idx").on(table.organizationId, table.payloadHash),
+    index("approval_request_policy_idx").on(table.policyId),
+  ],
+);
+
+/**
+ * One administrator's decision on a request.
+ *
+ * The unique key makes a decision idempotent per approver and prevents a
+ * double-click from counting twice. Rejections are terminal; approvals are
+ * counted until the policy's threshold is met. `rbac` records the effective
+ * role, permission and role kind at decision time.
+ */
+export const approvalDecision = mysqlTable(
+  "approval_decision",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    requestId: id("request_id")
+      .notNull()
+      .references(() => approvalRequest.id, { onDelete: "cascade" }),
+    approverAccountId: id("approver_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    approverEmail: varchar("approver_email", { length: 320 }),
+    decision: varchar("decision", { length: 16, enum: ["approve", "reject"] }).notNull(),
+    /** Bounded free-text rationale; never rendered as HTML. */
+    note: text("note"),
+    /** Effective RBAC snapshot at decision time. */
+    rbac: json("rbac"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("approval_decision_request_approver_unique").on(
+      table.requestId,
+      table.approverAccountId,
+    ),
+    index("approval_decision_organization_created_idx").on(table.organizationId, table.createdAt),
+    index("approval_decision_approver_idx").on(table.approverAccountId),
+  ],
+);
+
+/**
  * Account-scoped audit stream: authentication and credential lifecycle events
  * that exist before, or independently of, a tenant. `audit_log` requires an
  * organisation, so pre-tenant events get their own table.
@@ -4427,6 +4585,9 @@ export const relations = defineRelations(
     registrationVerification,
     invitation,
     tenantOwnershipTransfer,
+    approvalPolicy,
+    approvalRequest,
+    approvalDecision,
     accountApiToken,
     mcpOAuthClient,
     mcpOAuthConnection,

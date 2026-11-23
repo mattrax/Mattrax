@@ -24,6 +24,7 @@ import {
   enterpriseOsPolicyApi,
   enterpriseListApi,
   enterpriseWindowsApi,
+  enterpriseApprovalApi,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
@@ -35,6 +36,7 @@ import {
   androidRoutes,
   enterpriseAccountHandlers,
   enterpriseAdminHandlers,
+  enterpriseApprovalHandlers,
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
@@ -265,6 +267,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
   .add(enterpriseWindowsApi)
+  .add(enterpriseApprovalApi)
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
@@ -335,6 +338,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseOsPolicy", enterpriseOsPolicyHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseApproval", enterpriseApprovalHandlers),
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),

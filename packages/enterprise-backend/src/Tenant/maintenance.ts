@@ -232,6 +232,12 @@ export type MaintenanceOptions = {
    */
   readonly storage?: R2Bucket;
   /**
+   * Terminal approval requests and their decisions older than this many days
+   * are deleted. Defaults to 90; pending requests are never pruned. Set to
+   * `0` to keep approval history indefinitely.
+   */
+  readonly approvalRetentionDays?: number;
+  /**
    * Billing client used to report per-tenant usage. The services deployment
    * reconciles Stripe seats from these snapshots; omit it to skip the sweep.
    */
@@ -319,6 +325,8 @@ export type MaintenanceResult = {
   readonly purgedTenantDeletionLogs: number;
   /** Expired handover archive rows (and objects, when storage is available). */
   readonly purgedHandoverArchives: number;
+  /** Terminal approval requests (and their decisions) deleted by retention. */
+  readonly purgedApprovalRequests: number;
   /** Tenant usage snapshots accepted by the billing service. */
   readonly billingUsageReported: number;
   /** Tenant usage snapshots the billing service rejected; retried next run. */
@@ -524,6 +532,7 @@ export const runMaintenance = (
 
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
+    const approvalRetentionDays = options.approvalRetentionDays ?? 90;
 
     /** Latest origin observation, reused by the missing-certificate sweep. */
     let serverCertificateState: ServerCertificateInfo | null = null;
@@ -567,6 +576,7 @@ export const runMaintenance = (
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
       purgedHandoverArchives: 0,
+      purgedApprovalRequests: 0,
       billingUsageReported: 0,
       billingUsageFailed: 0,
       emailOutboxSent: 0,
@@ -722,6 +732,33 @@ export const runMaintenance = (
     yield* db
       .delete(s.realtimeEvent)
       .where(lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)));
+
+    // 4c. Approval history is security evidence, not live state. Terminal
+    // requests older than the retention window are deleted; MySQL cascades
+    // their decisions. Pending requests are never pruned here.
+    if (approvalRetentionDays > 0) {
+      const approvalCutoff = new Date(now.getTime() - approvalRetentionDays * day);
+
+      const staleApprovals = yield* db
+        .select({ id: s.approvalRequest.id })
+        .from(s.approvalRequest)
+        .where(
+          and(
+            inArray(s.approvalRequest.status, ["approved", "rejected", "expired", "cancelled"]),
+            lt(s.approvalRequest.updatedAt, approvalCutoff),
+          ),
+        );
+
+      if (staleApprovals.length > 0) {
+        yield* db.delete(s.approvalRequest).where(
+          inArray(
+            s.approvalRequest.id,
+            staleApprovals.map((row) => row.id),
+          ),
+        );
+        result.purgedApprovalRequests = staleApprovals.length;
+      }
+    }
 
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {

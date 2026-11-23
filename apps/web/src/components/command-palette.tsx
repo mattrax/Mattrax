@@ -367,6 +367,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
           path: "administrators",
         },
         {
+          key: "approvals",
+          title: "Approvals",
+          keywords: ["four-eyes", "approve", "queue", "destructive", "policies"],
+          path: "approvals",
+        },
+        {
           key: "identity",
           title: "Identity & SSO",
           keywords: ["sso", "scim", "entra", "directory", "single sign-on"],

@@ -106,6 +106,117 @@ API tokens are exempt from step-up because they are already an explicitly issued
 credential. Protect them accordingly.
 :::
 
+## Four-eyes approvals
+
+Step-up proves the **same** administrator is present. It does not prove a **different**
+person agreed to a destructive change. Four-eyes approval adds that second signature for
+the actions a tenant chooses to gate.
+
+Approval policies are optional. When no policy matches an action, the endpoint behaves
+exactly as before: step-up still applies where it already did, and nothing else changes.
+
+### Gated actions
+
+A policy can name any of these action keys:
+
+| Action key         | Endpoint(s)                                                       |
+| ------------------ | ----------------------------------------------------------------- |
+| `device.wipe`      | Device actions `wipe` and `return-to-service` (mode is bound)     |
+| `tenant.delete`    | Delete the tenant                                                 |
+| `tenant.export`    | Export tenant data, including the encrypted cutover archive       |
+| `policy.delete`    | Bulk policy deletion, and a backup restore (it replaces policies) |
+| `script.run`       | Run a script                                                      |
+| `script.write`     | Create, edit, delete or reassign a script                         |
+| `backup.download`  | Download a tenant backup                                          |
+| `api-token.create` | Create an API token bound to the tenant                           |
+
+`device.wipe` and `script.run` accept a **scope**: the whole tenant, a device, or a
+group. Other actions are tenant-wide. `api-token.create` covers tokens bound to the
+tenant; account-wide token creation is restricted to platform administrators, because a
+token with no owning tenant cannot be governed by any tenant policy. When scopes overlap,
+the most specific policy wins (device, then group, then tenant); ties prefer the policy with the higher approval count,
+then the newest. The request stores the policy id and the rules it was created under, so
+editing a policy affects new requests, not in-flight ones.
+
+### Request and approve
+
+1. The caller runs the action as usual. If a policy matches and no approval id is
+   supplied, **nothing executes**. The API returns a 403 `ApprovalRequired` naming the
+   pending request; an approved request returns the same error with `status: "approved"`
+   and the message asks the caller to retry.
+2. Eligible administrators open **Settings → Approvals**. The queue shows the requester,
+   the action, a metadata-only summary, the approvals needed and the decisions so far.
+   They approve with an optional note or reject with a required note.
+3. The requester retries the original request with
+   `x-mattrax-approval: <request id>`. The server checks the state, expiry, requester,
+   canonical payload and single-use before executing. The dashboard keeps the blocked
+   call in memory and offers **Retry with this approval** on the approved request; after
+   a reload, run the action again and retry from the request it names.
+
+Approvals are bound to a canonical SHA-256 digest of the action, policy, resource and
+targets. An approval for one device, one set of script targets, one script body, one
+backup or one API-token scope cannot be reused for another. A request names the number of
+distinct approvers required, **excluding the requester**: the requester can never approve
+their own request.
+
+Requests last 24 hours. Expiry is enforced both when the queue is read and immediately
+before execution; an approved request that is not used in time expires. Execution consumes
+the request atomically, so two retries cannot both run the action. Decisions and the status
+flip run in one transaction with the request row locked, so concurrent approvers cannot
+leave a request at N of N while still pending. The payload summary is metadata only — device
+counts, ids, script names, token scopes and similar — and never a secret; the script body
+itself is hashed with canonical JSON, not stored.
+
+Terminal approval history is deleted after 90 days by the daily maintenance sweep. Pending
+requests are never pruned. A tenant owner deleting their **account** cannot take a tenant
+with it when that tenant has a `tenant.delete` policy: the operator must delete the tenant
+explicitly so another administrator can approve it or the owner can break-glass.
+
+Bearer credentials (API tokens and MCP connections) can **request** approval but can never
+**approve**: decisions require a signed-in administrator session.
+
+### Who can approve
+
+An approver needs `approvals.write` and then the configured requirement from the policy:
+
+- a permission (for example `devices.command`), checked against the approver's effective
+  role in that tenant; or
+- a built-in role, which is a floor: an owner can approve anything an administrator can.
+  A custom role never satisfies a built-in role requirement.
+
+A member without the configured permission is rejected with a typed
+`EnterpriseForbidden` naming the permission or role. Policy configuration itself requires
+`approvals.write`. Owners and administrators have it by default; members and auditors do
+not.
+
+### Break-glass
+
+An owner can bypass a policy when a second administrator is genuinely unavailable. Send
+`x-mattrax-approval-break-glass: <reason>` on the original request. The reason is
+mandatory (maximum 1,000 characters), only a built-in owner can use it, and bearer
+credentials are refused. The server records a prominent `approval.break_glass_used` audit
+event with the action, policy and reason, plus the normal consumption event, then runs the
+action. Break-glass is a deliberate exception for an emergency, not an administrative
+shortcut. While the blocked call is still in the browser session, **Settings → Approvals →
+Mine** offers **Break-glass and run** with the mandatory reason field.
+
+### Audit
+
+The tenant audit log records:
+
+- `approval.policy_created`, `approval.policy_updated`, `approval.policy_deleted`;
+- `approval.requested` (with the effective requester RBAC);
+- `approval.approved` and `approval.rejected` (with the approver's effective RBAC);
+- `approval.cancelled`;
+- `approval.expired` (system actor);
+- `approval.consumed` (execution);
+- `approval.break_glass_used`.
+
+A gated request that is blocked returns a 403 `ApprovalRequired` with `requestId` and
+`status` (`pending` or `approved`), so a client can prompt for the decision and retry
+with the header. Expired, consumed and payload-mismatched approvals return typed
+`EnterpriseBadRequest`/`EnterpriseConflict` errors.
+
 ## API tokens
 
 Create tokens under **Account → API tokens**:
@@ -114,7 +225,9 @@ Create tokens under **Account → API tokens**:
 - Permissions: pick groups (No access / Read / Write) and expand to individual
   permissions. The picker only offers permissions your role holds in at least
   one tenant.
-- Optional tenant binding.
+- Tenant binding. Account-wide tokens are restricted to platform administrators, so a
+  tenant member creates a token bound to that tenant (and therefore governed by its
+  `api-token.create` policy).
 - Optional expiry.
 
 The token's grant is a ceiling, never a grant: every request also checks your

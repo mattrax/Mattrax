@@ -10,7 +10,9 @@ import {
   CutoverPreviewRequest,
 } from "../Cutover.js";
 import {
+  EnterpriseApprovalRequired,
   EnterpriseBadRequest,
+  EnterpriseConflict,
   EnterpriseStepUpRequired,
   EnterpriseTenantExportErrors,
   EnterpriseTenantImportErrors,
@@ -31,7 +33,9 @@ export const enterpriseCutoverApi = HttpApiGroup.make("EnterpriseCutover")
       error: [
         ...EnterpriseTenantExportErrors,
         ...EnterpriseStepUpRequired,
+        ...EnterpriseApprovalRequired,
         EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
       ],
       params: TenantParam,
       payload: CutoverExportRequest,
