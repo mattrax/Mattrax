@@ -78,6 +78,10 @@ import {
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DeviceApplication } from "~/lib/enterprise";
 import {
+  DeviceHandoverDialog,
+  deviceHandoverSecretSummary,
+} from "~/components/mdm/device-handover-dialog";
+import {
   appleUserBindingLabel,
   appleUserDisplayName,
   appleUserEnrollmentLabel,
@@ -465,6 +469,7 @@ export default function DeviceDetailPage() {
   /** The server derives the legal action set from platform, status and reported capabilities. */
   const supports = (action: string) => (row()?.actions ?? []).some((name) => name === action);
   const canRevealKey = () => can("devices.recovery_key");
+  const canHandover = () => can("devices.handover");
 
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
@@ -473,6 +478,16 @@ export default function DeviceDetailPage() {
 
   const row = () => Option.getOrUndefined(decodeDeviceRow(device.data));
 
+  /**
+   * Presence-only secret check. It is a separate read so the device payload
+   * (and every list row) stays out of the escrow table.
+   */
+  const handoverImpact = useQuery(() => ({
+    queryKey: ["enterprise", "device-handover-impact", params.tenantId, params.deviceId] as const,
+    queryFn: () =>
+      enterprise.deviceHandoverImpact(params.tenantId, params.deviceId ? [params.deviceId] : []),
+    enabled: Boolean(params.tenantId && params.deviceId && writable()),
+  }));
   const scopeLabel = (scope: string) => {
     if (scope === "direct") return "Direct include";
 
@@ -633,6 +648,10 @@ export default function DeviceDetailPage() {
   const [confirmAction, setConfirmAction] = createSignal<"unenroll" | "delete" | "revoke" | null>(
     null,
   );
+  const [handoverOpen, setHandoverOpen] = createSignal(false);
+
+  /** Secret kinds the delete flow must warn about, from presence metadata. */
+  const escrowedSecretKinds = () => handoverImpact.data?.devices[0]?.secretKinds ?? [];
 
   const [confirmName, setConfirmName] = createSignal("");
 
@@ -690,6 +709,9 @@ export default function DeviceDetailPage() {
       }),
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceActivity(params.tenantId, params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["enterprise", "device-handover-impact", params.tenantId, params.deviceId],
       }),
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceEffectivePolicy(params.tenantId, params.deviceId),
@@ -1820,11 +1842,18 @@ export default function DeviceDetailPage() {
 
   const confirmDescription = () =>
     Match.value(confirmAction()).pipe(
-      Match.when("delete", () =>
-        row()?.proto === "android"
-          ? "The device is removed from the tenant and this device's Google Enterprise record is deleted, which removes Android Device Policy and the work data it manages. The record and its history are removed from Mattrax. This cannot be undone."
-          : "The device record and its history will be removed.",
-      ),
+      Match.when("delete", () => {
+        const base =
+          row()?.proto === "android"
+            ? "The device is removed from the tenant and this device's Google Enterprise record is deleted, which removes Android Device Policy and the work data it manages. The record and its history are removed from Mattrax. This cannot be undone."
+            : "The device record and its history will be permanently removed. This cannot be undone.";
+
+        if (escrowedSecretKinds().length === 0) return base;
+
+        return `${base} Deleting also permanently destroys the escrowed ${deviceHandoverSecretSummary(
+          escrowedSecretKinds(),
+        )}. Hand the device over first if you may need them.`;
+      }),
       Match.when(
         "revoke",
         () =>
@@ -1846,6 +1875,13 @@ export default function DeviceDetailPage() {
 
   const confirmPending = () => unenroll.isPending || remove.isPending || revokeIdentity.isPending;
 
+  /** A device with escrowed secrets cannot be deleted without the export right. */
+  const deleteBlocked = () =>
+    confirmAction() === "delete" && escrowedSecretKinds().length > 0 && !canHandover();
+
+  /** Never offer delete before the presence check has answered. */
+  const deleteCheckBlocked = () =>
+    confirmAction() === "delete" && (handoverImpact.isPending || handoverImpact.isError);
   /**
    * Each mutation's `onSuccess` closes the dialog. Failures leave it open and
    * the dialog's `ErrorText` renders the mutation error.
@@ -1854,6 +1890,8 @@ export default function DeviceDetailPage() {
     const action = confirmAction();
 
     if (!action) return;
+
+    if (deleteBlocked()) return;
 
     if (action === "delete") remove.mutate();
     else if (action === "revoke") revokeIdentity.mutate();
@@ -1962,6 +2000,16 @@ export default function DeviceDetailPage() {
                     onClick={() => setEditOpen(true)}
                   >
                     <SettingsIcon class="size-3.5" />
+                  </Button>
+                </Show>
+                <Show when={canHandover()}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setHandoverOpen(true)}
+                    title="Export escrowed secrets in a sealed archive before the device leaves management"
+                  >
+                    Hand over
                   </Button>
                 </Show>
                 <Show when={canCommand() && supports("sync")}>
@@ -3986,6 +4034,53 @@ export default function DeviceDetailPage() {
             <DialogTitle>{confirmLabel()}?</DialogTitle>
             <DialogDescription>{confirmDescription()}</DialogDescription>
           </DialogHeader>
+          <Show when={confirmAction() === "delete" && escrowedSecretKinds().length > 0}>
+            <div class="rounded-lg border border-warning/40 bg-warning/[0.07] p-3">
+              <p class="text-[12.5px] font-medium text-foreground">
+                This device holds escrowed secrets
+              </p>
+              <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                Deleting destroys the {deviceHandoverSecretSummary(escrowedSecretKinds())}{" "}
+                permanently. After the delete there is no recovery path: the handover archive is the
+                only supported way to keep this material.
+              </p>
+              <Show
+                when={canHandover()}
+                fallback={
+                  <p class="mt-2 text-[12px] leading-relaxed text-destructive">
+                    Your role cannot export escrowed secrets, so this delete is blocked. Ask a
+                    tenant owner to grant the <span class="font-mono">devices.handover</span>{" "}
+                    permission or perform the handover.
+                  </p>
+                }
+              >
+                <Button
+                  size="sm"
+                  class="mt-2"
+                  onClick={() => {
+                    closeConfirm();
+                    setHandoverOpen(true);
+                  }}
+                >
+                  Hand over device first
+                </Button>
+              </Show>
+            </div>
+          </Show>
+          <Show when={confirmAction() === "unenroll" && escrowedSecretKinds().length > 0}>
+            <p class="rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed text-muted-foreground">
+              Unenrolling keeps the escrowed {deviceHandoverSecretSummary(escrowedSecretKinds())} in
+              Mattrax. If you are returning the hardware, use{" "}
+              <span class="font-medium text-foreground">Hand over</span> first so the secrets leave
+              with it.
+            </p>
+          </Show>
+          <Show when={confirmAction() === "delete" && handoverImpact.isPending}>
+            <p class="text-[12px] text-muted-foreground">Checking for escrowed secrets…</p>
+          </Show>
+          <Show when={confirmAction() === "delete" && handoverImpact.error}>
+            <ErrorText error={handoverImpact.error} />
+          </Show>
           <p class="text-sm text-muted-foreground">
             Type <span class="font-mono font-medium">{row()?.name}</span> to confirm.
           </p>
@@ -3997,7 +4092,12 @@ export default function DeviceDetailPage() {
             </Button>
             <Button
               variant="destructive"
-              disabled={confirmName() !== row()?.name || confirmPending()}
+              disabled={
+                confirmName() !== row()?.name ||
+                confirmPending() ||
+                deleteBlocked() ||
+                deleteCheckBlocked()
+              }
               onClick={confirmDestructive}
             >
               {confirmPending() ? "Working…" : confirmLabel()}
@@ -4005,6 +4105,14 @@ export default function DeviceDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeviceHandoverDialog
+        open={handoverOpen()}
+        onOpenChange={setHandoverOpen}
+        ids={params.deviceId ? [params.deviceId] : []}
+        target={row()?.name ?? "this device"}
+        onExported={() => void invalidate()}
+      />
 
       <Dialog
         open={recoveryDialogOpen()}

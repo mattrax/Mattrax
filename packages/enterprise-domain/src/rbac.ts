@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   "devices.write",
   "devices.command",
   "devices.recovery_key",
+  "devices.handover",
   "groups.read",
   "groups.write",
   "policies.read",
@@ -72,6 +73,12 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
         id: "devices.recovery_key",
         label: "Reveal recovery keys",
         description: "Read escrowed FileVault recovery keys.",
+      },
+      {
+        id: "devices.handover",
+        label: "Hand over devices",
+        description:
+          "Export escrowed device secrets in a passphrase-sealed archive before deleting the device.",
       },
     ],
   },

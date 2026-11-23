@@ -1,11 +1,12 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { and, count, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, count, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import {
   Db,
   billableDeviceCount,
   pruneWindowsFailures,
   schema as s,
 } from "@mattrax/enterprise-core";
+import type { R2Bucket } from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
@@ -223,6 +224,14 @@ export type MaintenanceOptions = {
    */
   readonly tenantDeletionLogRetentionDays?: number;
   /**
+   * Object storage for expired handover archives. When present, maintenance
+   * deletes the sealed object before the row. Without it the rows are still
+   * pruned; a deployment in that position must configure an R2 lifecycle rule
+   * on the `handovers/` prefix, because the archive is encrypted and useless
+   * after its link expires.
+   */
+  readonly storage?: R2Bucket;
+  /**
    * Billing client used to report per-tenant usage. The services deployment
    * reconciles Stripe seats from these snapshots; omit it to skip the sweep.
    */
@@ -308,6 +317,8 @@ export type MaintenanceResult = {
   readonly migrationDevicesStuck: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
+  /** Expired handover archive rows (and objects, when storage is available). */
+  readonly purgedHandoverArchives: number;
   /** Tenant usage snapshots accepted by the billing service. */
   readonly billingUsageReported: number;
   /** Tenant usage snapshots the billing service rejected; retried next run. */
@@ -555,6 +566,7 @@ export const runMaintenance = (
       migrationDevicesEnrolled: 0,
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
+      purgedHandoverArchives: 0,
       billingUsageReported: 0,
       billingUsageFailed: 0,
       emailOutboxSent: 0,
@@ -1160,6 +1172,61 @@ export const runMaintenance = (
         );
 
       result.purgedTenantDeletionLogs = staleJournals.length;
+    }
+
+    // 11b. Spent handover archives. Once `expiresAt` passes the download
+    //      token is dead, and a downloaded row has already served its one-time
+    //      purpose. Delete the object first when storage is available; a failed
+    //      delete leaves the row for the next run instead of orphaning an
+    //      object no database row points at.
+    const expiredHandoverArchives = yield* db
+      .select({ id: s.deviceHandoverArchive.id, r2Key: s.deviceHandoverArchive.r2Key })
+      .from(s.deviceHandoverArchive)
+      .where(
+        or(
+          lt(s.deviceHandoverArchive.expiresAt, now),
+          isNotNull(s.deviceHandoverArchive.downloadedAt),
+        ),
+      )
+      .limit(5_000);
+
+    if (expiredHandoverArchives.length > 0) {
+      let purgeable = expiredHandoverArchives;
+      const storage = options.storage;
+
+      if (storage) {
+        const deleted = new Set<string>();
+
+        for (let offset = 0; offset < expiredHandoverArchives.length; offset += 500) {
+          const batch = expiredHandoverArchives.slice(offset, offset + 500);
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(batch.map((row) => row.r2Key)),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired handover archive objects; rows are retried next run",
+              { cause: failure },
+            );
+            continue;
+          }
+
+          for (const row of batch) deleted.add(row.id);
+        }
+
+        purgeable = expiredHandoverArchives.filter((row) => deleted.has(row.id));
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceHandoverArchive).where(
+          inArray(
+            s.deviceHandoverArchive.id,
+            purgeable.map((row) => row.id),
+          ),
+        );
+
+      result.purgedHandoverArchives = purgeable.length;
     }
 
     // 12. Billing usage. Devices live in this database but billing lives in

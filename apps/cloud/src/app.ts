@@ -16,6 +16,7 @@ import {
   enterpriseAttributeApi,
   enterpriseDashboardApi,
   enterpriseDeviceViewApi,
+  enterpriseDeviceHandoverApi,
   enterpriseIdentityApi,
   enterpriseOnboardingApi,
   enterpriseUserApi,
@@ -38,6 +39,7 @@ import {
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
   enterpriseDeviceViewHandlers,
+  enterpriseDeviceHandoverHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
   enterpriseCutoverHandlers,
@@ -255,6 +257,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
   .add(enterpriseDeviceViewApi)
+  .add(enterpriseDeviceHandoverApi)
   .add(enterpriseIdentityApi)
   .add(enterpriseOnboardingApi)
   .add(enterpriseUserApi)
@@ -324,6 +327,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDeviceView", enterpriseDeviceViewHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseDeviceHandover", enterpriseDeviceHandoverHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseOnboarding", enterpriseOnboardingHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseUser", enterpriseUserHandlers),
@@ -1747,6 +1751,7 @@ export const createApiRuntime = (
         const maintenance = yield* Effect.exit(
           runMaintenance({
             staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+            storage,
             auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
             windowsFailureRetentionDays,
             // Outbound webhook retries need the same secret used to seal endpoint

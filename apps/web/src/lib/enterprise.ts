@@ -60,6 +60,7 @@ import type {
   SetDeviceAttributesRequest,
   CreateAutopilotProfileRequest,
   DevicePreRegistrationImportRequest,
+  DeviceHandoverRequest,
   DeviceRow,
   DeviceSearchQuery,
   DeviceViewQuery,
@@ -311,6 +312,7 @@ type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
@@ -698,6 +700,7 @@ function endpoint<A, E>(
         ...client.EnterpriseApi,
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
+        ...client.EnterpriseDeviceHandover,
         ...client.EnterpriseOnboarding,
       })),
     call,
@@ -1406,6 +1409,27 @@ export const enterprise = {
   deleteDevices: (tenantId: RouteParam, ids: string[]) =>
     endpoint((api) =>
       api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
+    ),
+  /**
+   * Presence-only check used by the delete dialogs. It never returns a secret
+   * value, only which kinds deleting these devices would destroy.
+   */
+  deviceHandoverImpact: (tenantId: RouteParam, ids: string[]) =>
+    endpoint((api) =>
+      api.deviceHandoverImpact({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { ids },
+      }),
+    ),
+  /** Seal every escrowed secret for these devices into a one-time archive. */
+  createDeviceHandover: (tenantId: RouteParam, payload: DeviceHandoverRequest) =>
+    endpoint(
+      (api) =>
+        api.createDeviceHandover({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "device-handover" },
     ),
   listAttributes: (tenantId: RouteParam) =>
     attributeEndpoint((api) =>

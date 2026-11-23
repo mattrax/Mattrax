@@ -9,6 +9,8 @@ export const TenantParam = { tenantId: Schema.String };
 
 export const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 
+export const TenantHandoverParam = { tenantId: Schema.String, archiveId: Schema.String };
+
 export const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 
 export const TenantAccountParam = { tenantId: Schema.String, accountId: Schema.String };

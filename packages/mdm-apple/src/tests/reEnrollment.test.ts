@@ -279,8 +279,10 @@ describe("Apple device re-enrollment", () => {
       targetId: "old-tenant-device",
       metadata: expect.objectContaining({
         previousTenantId: "org-2",
+        destroyedSecretKinds: ["bootstrap_token"],
       }),
     });
+    expect(JSON.stringify(audit?.metadata)).not.toContain("sealed");
     expect(JSON.stringify(audit?.metadata)).not.toContain("newTenantId");
     expect(JSON.stringify(audit?.metadata)).not.toContain("org-1");
   });

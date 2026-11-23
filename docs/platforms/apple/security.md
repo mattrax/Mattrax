@@ -270,22 +270,22 @@ delivery failures and invalid tokens.
 
 ## Command matrix
 
-| Action                         | Requires step-up | Notes                                            |
-| ------------------------------ | ---------------- | ------------------------------------------------ |
-| `sync`                         | No               | APNs wake-up                                     |
-| `collect-security-info`        | No               | FileVault/bootstrap key and AL state             |
-| `refresh-applications`         | No               | Installed app inventory                          |
-| `collect-activation-lock-code` | Yes              | Device bypass code                               |
-| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key               |
-| `set-recovery-lock`            | Yes              | Apple silicon only                               |
-| `verify-recovery-lock`         | Yes              | Checks the stored password                       |
-| `lock`                         | Yes              | Returns a PIN                                    |
-| `wipe`                         | Yes              | Erase with explicit flags                        |
-| `restart`                      | Yes              | —                                                |
-| `shutdown`                     | Yes              | —                                                |
-| `clear-passcode`               | Yes              | Needs an unlock token                            |
-| `install-app`                  | Yes              | Manifest URL or iTunes Store id                  |
-| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only         |
+| Action                         | Requires step-up | Notes                                              |
+| ------------------------------ | ---------------- | -------------------------------------------------- |
+| `sync`                         | No               | APNs wake-up                                       |
+| `collect-security-info`        | No               | FileVault/bootstrap key and AL state               |
+| `refresh-applications`         | No               | Installed app inventory                            |
+| `collect-activation-lock-code` | Yes              | Device bypass code                                 |
+| `rotate-filevault-key`         | Yes              | Replaces the escrowed recovery key                 |
+| `set-recovery-lock`            | Yes              | Apple silicon only                                 |
+| `verify-recovery-lock`         | Yes              | Checks the stored password                         |
+| `lock`                         | Yes              | Returns a PIN                                      |
+| `wipe`                         | Yes              | Erase with explicit flags                          |
+| `restart`                      | Yes              | —                                                  |
+| `shutdown`                     | Yes              | —                                                  |
+| `clear-passcode`               | Yes              | Needs an unlock token                              |
+| `install-app`                  | Yes              | Manifest URL or iTunes Store id                    |
+| `set-device-name`              | No               | `Settings`/`DeviceName`; supervised only           |
 | `set-lock-screen-message`      | No               | shared-device profile; supervised iPhone/iPad only |
 
 `set-device-name` queues Apple's `Settings` command with the documented
@@ -322,7 +322,23 @@ install for an unchanged value. The last installed message is stored in
   persisted.
 - FileVault, activation-lock and Recovery Lock flows are fixture-tested. Validate
   them on real supervised Apple silicon hardware before relying on them.
-- There is no bulk recovery-key export.
+
+Device escrow leaves the deployment in two audited, passphrase-sealed forms:
+
+- The **Hand over device** flow (`POST /devices/handover`) is the hardware-disposal
+  path. It writes one archive containing the FileVault recovery key (CMS-unwrapped),
+  Activation Lock bypass code, Recovery Lock password, managed local administrator
+  password and bootstrap token for up to 500 devices, plus serial, name, asset tag and
+  notes. The archive is stored in object storage, not MySQL, is downloadable once within
+  15 minutes, and appears in the audit log and device timeline without any secret values.
+- A **cutover export** (`POST /cutover/export`, gated by `tenant.export` and the
+  cutover step-up) still embeds every `device_secret` and the tenant SCEP CA in its own
+  encrypted archive for migration to another deployment. It is not a disposal record.
+
+There is still no plaintext bulk key listing: an operator must supply the archive
+passphrase and decrypt the file locally. See
+[Manage devices](/manage/devices#hand-over-a-device).
+
 - Compliance is derived health only. There is no policy engine, baseline or
   remediation.
 

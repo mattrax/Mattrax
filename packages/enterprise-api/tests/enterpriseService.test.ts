@@ -943,6 +943,16 @@ describe("enterprise service tenant flow", () => {
     expect(writeContext.methods).toContain("patchDevice");
     expect(writeContext.methods).not.toContain("createGroup");
     expect(writeContext.methods).not.toContain("createApiToken");
+
+    // Handover exports carry every escrowed secret and the derived zip download
+    // is a token-bearing GET, so the methods are never advertised even when
+    // the account's role holds the permission.
+    const ownerContext = await runEffect(base.service.mcpContext(request(base.headers)));
+
+    expect(ownerContext.permissions).toContain("devices.handover");
+    expect(ownerContext.methods).not.toContain("createDeviceHandover");
+    expect(ownerContext.methods).not.toContain("downloadDeviceHandover");
+    expect(ownerContext.methods).not.toContain("deviceHandoverImpact");
   });
 
   it("enforces fine-grained API token permissions per method", async () => {

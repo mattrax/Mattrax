@@ -1,7 +1,12 @@
 import { Schema } from "effect";
 
 /** The object families Mattrax writes under a tenant prefix. */
-export const StorageCategoryId = Schema.Literals(["applications", "policies", "backups"]);
+export const StorageCategoryId = Schema.Literals([
+  "applications",
+  "policies",
+  "backups",
+  "handovers",
+]);
 
 export type StorageCategoryId = typeof StorageCategoryId.Type;
 

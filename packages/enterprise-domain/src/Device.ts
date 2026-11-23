@@ -16,6 +16,20 @@ export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "un
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
 
 /**
+ * Escrowed secret kinds a device handover archive can contain. The order is
+ * stable so the dashboard and audit metadata render it consistently.
+ */
+export const DeviceHandoverSecretKind = Schema.Literals([
+  "filevault_recovery_key",
+  "activation_lock_bypass_code",
+  "recovery_lock_password",
+  "local_admin_password",
+  "bootstrap_token",
+]);
+
+export type DeviceHandoverSecretKind = typeof DeviceHandoverSecretKind.Type;
+
+/**
  * Android Management API state that does not apply to Apple or Windows.
  * Enum values are the raw AMAPI identifiers so a new Google value is surfaced
  * rather than dropped; the dashboard humanises them for display.
@@ -536,6 +550,59 @@ export const DeviceActivationLockBypassCodeResponse = Schema.Struct({
 
 export type DeviceActivationLockBypassCodeResponse =
   typeof DeviceActivationLockBypassCodeResponse.Type;
+
+/**
+ * Export escrowed secrets for one device or a batch before deleting the rows.
+ * The passphrase seals the archive in the browser-facing API and is never
+ * persisted; the reason is mandatory so the audit trail explains the export.
+ */
+export const DeviceHandoverRequest = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+  /** Operator-supplied passphrase for the sealed archive. Never stored. */
+  passphrase: Schema.String,
+  /** Why the devices are leaving management, recorded in the audit log. */
+  reason: Schema.String,
+});
+
+export type DeviceHandoverRequest = typeof DeviceHandoverRequest.Type;
+
+/** One archive that was written to object storage, without its contents. */
+export const DeviceHandoverArchiveInfo = Schema.Struct({
+  id: Schema.String,
+  filename: Schema.String,
+  /** Unix ISO timestamp; the signed download stops working after this. */
+  expiresAt: Schema.String,
+  deviceCount: Schema.Number,
+  /** Every secret kind across the archive; per-device kinds are inside it. */
+  secretKinds: Schema.Array(DeviceHandoverSecretKind),
+  /** Single-use token for the download endpoint. */
+  downloadToken: Schema.String,
+});
+
+export type DeviceHandoverArchiveInfo = typeof DeviceHandoverArchiveInfo.Type;
+
+/** Presence-only impact of deleting devices, used to warn before delete. */
+export const DeviceHandoverImpactRequest = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+});
+
+export type DeviceHandoverImpactRequest = typeof DeviceHandoverImpactRequest.Type;
+
+export const DeviceHandoverImpactEntry = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  secretKinds: Schema.Array(DeviceHandoverSecretKind),
+});
+
+export type DeviceHandoverImpactEntry = typeof DeviceHandoverImpactEntry.Type;
+
+export const DeviceHandoverImpactResponse = Schema.Struct({
+  devices: Schema.Array(DeviceHandoverImpactEntry),
+  /** Whether the caller holds `devices.handover` and can export or delete. */
+  canExport: Schema.Boolean,
+});
+
+export type DeviceHandoverImpactResponse = typeof DeviceHandoverImpactResponse.Type;
 
 /** Tenant FileVault personal recovery key escrow identity (public half only). */
 export const AppleFdeEscrowKeyInfo = Schema.Struct({

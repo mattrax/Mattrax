@@ -1161,3 +1161,109 @@ describe("maintenance Apps and Books client", () => {
     }
   });
 });
+
+describe("maintenance handover archive retention", () => {
+  const archive = (id: string, ageDays: number) => ({
+    id,
+    organizationId: "org-1",
+    createdByAccountId: "user-1",
+    createdByEmail: "owner@example.com",
+    reason: "Lease returned",
+    deviceCount: 1,
+    devices: [],
+    secretKinds: [],
+    r2Key: `handovers/org-1/${id}.json`,
+    sizeBytes: 10,
+    sha256: "a".repeat(64),
+    envelopeVersion: 1,
+    createdAt: new Date(now.getTime() - ageDays * DAY),
+    expiresAt: new Date(now.getTime() - ageDays * DAY + 15 * 60 * 1000),
+    downloadedAt: null,
+  });
+
+  it("prunes expired rows without storage and keeps live ones", async () => {
+    const db = makeDb();
+
+    db.store.device_handover_archive.push(
+      archive("expired", 2),
+      { ...archive("downloaded", 0), downloadedAt: now },
+      archive("live", 0),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(2);
+    expect(db.store.device_handover_archive.map((row: any) => row.id)).toEqual(["live"]);
+  });
+
+  it("deletes the sealed object before the row when storage is available", async () => {
+    const db = makeDb();
+    const objects = new Set(["handovers/org-1/expired.json"]);
+    const deleted: string[] = [];
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async (keys: string | ReadonlyArray<string>) => {
+        for (const key of Array.isArray(keys) ? keys : [keys]) {
+          deleted.push(key);
+          objects.delete(key);
+        }
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(1);
+    expect(deleted).toEqual(["handovers/org-1/expired.json"]);
+    expect(objects.size).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(0);
+  });
+
+  it("keeps the row when the object delete fails so a retry can finish", async () => {
+    const db = makeDb();
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async () => {
+        throw new Error("R2 outage");
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(1);
+  });
+});

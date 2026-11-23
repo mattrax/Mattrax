@@ -724,7 +724,11 @@ commands and moves the row straight to `unenrolled`; it requires a recent step-u
 because it erases work data.
 
 **Delete** removes the local device row and revokes certificates. It does not wipe or
-unenroll the physical device.
+unenroll the physical device. It also permanently destroys every escrowed secret recorded
+for the device: the FileVault recovery key, Activation Lock bypass code, Recovery Lock
+password, managed local administrator password and bootstrap token are rows in the
+`device_secret` table with a cascading foreign key. There is no grace period, recycle bin
+or undo. If the hardware is leaving your organisation, hand it over first.
 
 ```bash
 curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices" \
@@ -734,6 +738,143 @@ curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices" \
 ```
 
 Bulk delete accepts a JSON body and returns per-device results.
+
+### Hand over a device
+
+Hand over a device before deleting it whenever its escrowed secrets may still be needed
+after the lease ends or the hardware is replaced. One request exports one device or a
+batch of up to 500 and writes a single sealed archive to object storage:
+
+```bash
+curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/handover" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "x-mattrax-step-up: $STEP_UP_GRANT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ids": ["device_id"],
+    "passphrase": "a long passphrase only you know",
+    "reason": "Lease returned to IT"
+  }'
+```
+
+The response contains `id`, `filename`, `expiresAt`, `deviceCount`, `secretKinds`
+and a single-use `downloadToken`:
+
+```bash
+curl -o handover.json \
+  "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/handover/$ARCHIVE_ID/download?token=$DOWNLOAD_TOKEN" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN"
+```
+
+The download works once and the signed link expires after 15 minutes. The first
+successful read marks the archive downloaded; daily maintenance then removes the object
+and row. It also removes objects and rows whose `expiresAt` passed without a download.
+A deployment that runs maintenance without object storage must configure an R2 lifecycle
+rule on the `handovers/` prefix instead. The archive is a JSON envelope sealed with the
+passphrase:
+PBKDF2-HMAC-SHA256 with a random salt and 600,000 iterations derives an AES-256-GCM key,
+and the envelope is versioned (`version: 1`) so the format can change later. The
+passphrase, and every secret value, are never written to MySQL, the audit log, device
+lists, CSV exports, webhooks or tenant exports.
+
+Once decrypted, the archive contains the tenant name and creation time, and for each
+device its internal id, name, serial, asset tag, notes and only the secret kinds that
+device actually had:
+
+```json
+{
+  "format": "mattrax.device-handover",
+  "version": 1,
+  "createdAt": "2026-11-23T09:00:00.000Z",
+  "tenant": { "id": "tenant_id", "name": "Acme" },
+  "devices": [
+    {
+      "id": "device_id",
+      "name": "Reception Mac",
+      "serial": "C02XXXXXXX",
+      "assetTag": "AST-1042",
+      "notes": "Front desk",
+      "secretKinds": ["filevault_recovery_key", "local_admin_password"],
+      "secrets": {
+        "filevault_recovery_key": "AAAA-BBBB-CCCC-DDDD",
+        "local_admin_password": "generated-password"
+      }
+    }
+  ],
+  "secretKinds": ["filevault_recovery_key", "local_admin_password"]
+}
+```
+
+The export needs the `devices.handover` permission, the `device-handover` step-up
+action and a reason of at least five characters. Both the export and the download are
+audited per device as `device.handover_exported` and `device.handover_downloaded`,
+with the archive id and secret kinds but never a value. Both events appear on each
+device's timeline.
+
+The reason is trimmed and truncated to 500 characters before it reaches the audit log.
+The download is an authenticated GET whose signed token travels in the query string, so
+reverse proxies, browser history and request logs can record the URL. The token is
+single-use and expires after 15 minutes, and the endpoint still requires the caller's
+session and `devices.handover` permission; do not paste the URL into tickets or chat.
+Filenames include a short archive id so two handovers on the same day do not collide.
+
+Deleting a device that still holds escrowed secrets is refused with a clear explanation
+when the caller lacks `devices.handover`; the dashboard disables the delete button and
+offers the handover export instead. For hardware disposal the handover archive is the
+supported path, so keep both the file and the passphrase. Mattrax cannot reopen it for
+you. A **cutover export** is a different operation: it is gated by `tenant.export` plus
+the cutover step-up and embeds every `device_secret` (and the SCEP CA) in its own
+passphrase-sealed archive for migration to another deployment. Handover does not replace
+or change cutover, and cutover is not a device-disposal record.
+
+### Opening a handover archive
+
+The file is a JSON envelope with these fields:
+
+| Field                   | Meaning                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| `version`               | Envelope format version. Currently `1`; readers must reject versions they do not understand. |
+| `kdf.name` / `kdf.hash` | `PBKDF2` / `SHA-256`.                                                                        |
+| `kdf.iterations`        | `600000` in archives Mattrax writes. Readers reject anything below `100000`.                 |
+| `kdf.salt`              | Standard base64, 16 random bytes, unique per archive.                                        |
+| `cipher.name`           | `AES-GCM` with a 256-bit derived key.                                                        |
+| `cipher.iv`             | Standard base64, 12 random bytes, unique per archive.                                        |
+| `ciphertext`            | Standard base64 AES-GCM ciphertext including the authentication tag.                         |
+
+AES-GCM authenticates the header with the additional authenticated data (AAD) string
+`mattrax-passphrase-envelope:v1`. Do not change the version/AAD together: a mismatch is
+indistinguishable from a wrong passphrase.
+
+Decrypt locally; the passphrase never has to leave the operator's machine:
+
+```bash
+# Prefer a passphrase file or the environment so the secret stays out of shell history.
+mattrax devices handover decrypt handover.json --passphrase-file ./passphrase.txt -o handover.decrypted.json
+```
+
+The command also opens `mattrax.cutover` archives. The two formats remain distinct on
+purpose: cutover has a typed payload schema, a manifest and payload/ciphertext digests
+that the import path validates, while a handover document is a disposal record with no
+import path. Both use PBKDF2-HMAC-SHA256 with 600,000 iterations and AES-256-GCM.
+
+A fixed test vector for the envelope (passphrase `mattrax-test-vector-passphrase`) is
+exercised by `apps/cli/src/handover.test.ts`:
+
+```json
+{
+  "version": 1,
+  "kdf": {
+    "name": "PBKDF2",
+    "hash": "SHA-256",
+    "iterations": 600000,
+    "salt": "FDBLTH8GFKKKV96LErlAxA=="
+  },
+  "cipher": { "name": "AES-GCM", "iv": "TmbgporKfT9oXc4x" },
+  "ciphertext": "eLaH9yyGPJizYHlwXgvEa2I8Jx6pKlsUe2aMopY/8FCKwwepgplhFqDswBpysIFvHEcc0P56R5YgHyVTX/hI0++4yvIVOuGI4z8LeVc="
+}
+```
+
+It decrypts to `{"format":"mattrax.device-handover","version":1,"devices":[]}`.
 
 ## Pre-registration
 

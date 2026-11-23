@@ -14,6 +14,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { ErrorText } from "./common";
+import { DeviceHandoverDialog } from "./device-handover-dialog";
 import { useCan } from "~/lib/permissions";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type { DeviceRow, Entity, GroupRow, PolicyRow } from "~/lib/enterprise";
@@ -306,6 +307,9 @@ export function EntityActions(props: {
   const { can } = useCan();
   const rows = (): Named[] => props.selected.map((row) => ({ id: row.id, name: row.name }));
   const count = () => (props.allMatching ? (props.total ?? rows().length) : rows().length);
+  const [handoverOpen, setHandoverOpen] = createSignal(false);
+  const [handoverTargets, setHandoverTargets] = createSignal<Named[]>([]);
+  const [handoverPending, setHandoverPending] = createSignal(false);
 
   /**
    * The rows the action should touch. An "all matching" selection asks the
@@ -333,6 +337,29 @@ export function EntityActions(props: {
     if (props.entity === "group") return can("groups.write");
 
     return can("policies.write");
+  };
+
+  /**
+   * Resolve an "all matching" selection before opening the passphrase prompt,
+   * so the dialog always names the rows it will actually export.
+   */
+  const startHandover = async () => {
+    setHandoverPending(true);
+
+    try {
+      const selected = await targets();
+
+      if (selected.length === 0) return;
+
+      setHandoverTargets(selected);
+      setHandoverOpen(true);
+    } catch (error) {
+      toast.error("Could not prepare the handover", {
+        description: errorMessage(raisedFailure(error), "Try again in a moment."),
+      });
+    } finally {
+      setHandoverPending(false);
+    }
   };
 
   /** Refetch the list, then keep only the rows that still need attention. */
@@ -387,6 +414,11 @@ export function EntityActions(props: {
 
   return (
     <>
+      <Show when={props.entity === "device" && can("devices.handover")}>
+        <Button variant="outline" disabled={handoverPending()} onClick={() => void startHandover()}>
+          Hand over
+        </Button>
+      </Show>
       <Show when={props.entity !== "group" && can("groups.write")}>
         <ScopeGroupsAction
           targets={targets}
@@ -516,6 +548,22 @@ export function EntityActions(props: {
           }}
         />
       </Show>
+      <DeviceHandoverDialog
+        open={handoverOpen()}
+        onOpenChange={setHandoverOpen}
+        ids={handoverTargets().map((row) => row.id)}
+        target={
+          handoverTargets().length > 3
+            ? `${handoverTargets().length} devices`
+            : handoverTargets()
+                .map((row) => row.name)
+                .join(", ")
+        }
+        onExported={() => {
+          setHandoverTargets([]);
+          void invalidate();
+        }}
+      />
     </>
   );
 }

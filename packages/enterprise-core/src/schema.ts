@@ -2742,6 +2742,58 @@ export const deviceSecret = mysqlTable(
   ],
 );
 
+/** One device entry in a handover archive's audit metadata; never a value. */
+export type DeviceHandoverArchiveEntry = {
+  readonly id: string;
+  readonly name: string;
+  readonly serial: string | null;
+  readonly secretKinds: ReadonlyArray<string>;
+};
+
+/**
+ * A passphrase-sealed device handover archive stored in R2.
+ *
+ * The row keeps only presence metadata: which devices and secret kinds were
+ * exported, who asked and why. The passphrase is never persisted, so losing the
+ * row (or the bucket) cannot expose an archive, and losing the passphrase
+ * cannot be recovered by Mattrax. The download is single-use: `downloadedAt`
+ * is set on the first successful read and the object is then deleted.
+ */
+export const deviceHandoverArchive = mysqlTable(
+  "device_handover_archive",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdByAccountId: shortText("created_by_account_id").notNull(),
+    createdByEmail: shortText("created_by_email").notNull(),
+    /** Operator-supplied reason, truncated before it is written. */
+    reason: text("reason").notNull(),
+    deviceCount: int("device_count").notNull(),
+    /** Devices and the kinds each one contributed; values stay in R2. */
+    devices: json("devices").$type<ReadonlyArray<DeviceHandoverArchiveEntry>>().notNull(),
+    secretKinds: json("secret_kinds").$type<ReadonlyArray<string>>().notNull(),
+    r2Key: text("r2_key").notNull(),
+    sizeBytes: int("size_bytes").notNull(),
+    /** SHA-256 of the envelope bytes written to R2, for integrity checks. */
+    sha256: shortText("sha256").notNull(),
+    /** Envelope format version recorded so a reader rejects what it cannot open. */
+    envelopeVersion: int("envelope_version").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    /** After this the signed download token and the row both refuse. */
+    expiresAt: timestamp("expires_at").notNull(),
+    /** Set once, on the first successful download. */
+    downloadedAt: timestamp("downloaded_at"),
+  },
+  (table) => [
+    index("device_handover_archive_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+  ],
+);
+
 /**
  * Per-tenant FileVault personal recovery key (PRK) escrow identity.
  *

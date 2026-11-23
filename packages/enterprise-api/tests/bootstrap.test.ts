@@ -119,6 +119,11 @@ describe("GET /api/v1/bootstrap", () => {
     // the managed local-admin password or Activation Lock bypass code.
     expect(permissionForMethod("getDeviceLocalAdmin")).toBe("devices.recovery_key");
     expect(permissionForMethod("getDeviceActivationLockBypassCode")).toBe("devices.recovery_key");
+    // Handing over every escrowed secret is its own permission, while the
+    // delete-warning check returns presence metadata only.
+    expect(permissionForMethod("createDeviceHandover")).toBe("devices.handover");
+    expect(permissionForMethod("downloadDeviceHandover")).toBe("devices.handover");
+    expect(permissionForMethod("deviceHandoverImpact")).toBe("devices.read");
   });
 
   it("returns the session, me shell and a verifiable token after one requireUser", async () => {

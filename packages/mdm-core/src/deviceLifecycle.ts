@@ -66,8 +66,19 @@ export const deleteDepartedTenantDevice = (input: {
   );
 
   return Effect.gen(function* () {
+    const destroyedSecretKinds = new Set<string>();
+
     yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        // Capture what is about to be destroyed so the losing tenant's audit
+        // log explains the loss without storing any sealed value.
+        const secrets = yield* tx
+          .select({ kind: s.deviceSecret.kind })
+          .from(s.deviceSecret)
+          .where(eq(s.deviceSecret.deviceId, device.id));
+
+        for (const secret of secrets) destroyedSecretKinds.add(secret.kind);
+
         if (certificateDeviceIds.length > 0)
           yield* tx
             .update(s.scepIssuedCertificate)
@@ -115,6 +126,7 @@ export const deleteDepartedTenantDevice = (input: {
           previousTenantId: device.organizationId,
           deviceId: device.id,
           dmIdentifier: device.dmIdentifier ?? null,
+          destroyedSecretKinds: [...destroyedSecretKinds].sort(),
         },
       },
       { authSecret: input.authSecret },

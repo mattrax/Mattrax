@@ -73,6 +73,9 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
       if (op.includes(" = ") && "value" in param)
         predicates.push((row) => (key in row ? row[key] : row[fallback]) === param.value);
 
+      if (op.toLowerCase().includes(" is not null"))
+        predicates.push((row) => (key in row ? row[key] : row[fallback]) != null);
+
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (key in row ? row[key] : row[fallback]) == null);
     }
@@ -200,6 +203,10 @@ const rowValue = (row: Row, table: string | undefined, column: string) => {
 };
 
 const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
+  const isNotNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+not\s+null$/i);
+
+  if (isNotNull) return rowValue(row, isNotNull[1], isNotNull[2]) != null;
+
   const isNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+null$/i);
 
   if (isNull) return rowValue(row, isNull[1], isNull[2]) == null;

@@ -18,6 +18,7 @@ import type {
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
+import { enterpriseDeviceHandoverApi } from "@mattrax/enterprise-domain";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -185,6 +186,7 @@ import {
   listWindowsFailuresForDevice,
   listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
+  R2_PRIVATE_CACHE_CONTROL,
   tenantLimitForAccount,
   WINDOWS_FAILURE_RETENTION_DAYS,
 } from "@mattrax/enterprise-core";
@@ -311,7 +313,16 @@ import {
   makeApnsService,
   validateApnsCertificate,
 } from "@mattrax/apns";
-import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import {
+  exportPrivateKeyJwk,
+  openSecret,
+  sealSecret,
+  sealWithPassphrase,
+  signScopedToken,
+  verifyScopedToken,
+  PASSPHRASE_ENVELOPE_VERSION,
+  PASSPHRASE_PBKDF2_ITERATIONS,
+} from "@mattrax/crypto";
 import {
   EscrowKeyError,
   escrowKeyInfo,
@@ -1181,6 +1192,51 @@ const safeFilename = (value: string) =>
     .replaceAll(/[^a-z0-9._-]+/g, "-")
     .replaceAll(/^-+|-+$/g, "")
     .slice(0, 64) || "tenant";
+
+/**
+ * Escrowed secret kinds a handover archive may carry. The list is explicit
+ * rather than "every device_secret row" so a future kind cannot leave the
+ * deployment until it is deliberately added here and covered by the docs.
+ */
+const DEVICE_HANDOVER_SECRET_KINDS = [
+  "filevault_recovery_key",
+  "activation_lock_bypass_code",
+  "recovery_lock_password",
+  "local_admin_password",
+  "bootstrap_token",
+] as const;
+
+type DeviceHandoverSecretKind = (typeof DEVICE_HANDOVER_SECRET_KINDS)[number];
+
+const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, string> = {
+  filevault_recovery_key: "FileVault recovery key",
+  activation_lock_bypass_code: "Activation Lock bypass code",
+  recovery_lock_password: "Recovery Lock password",
+  local_admin_password: "managed local administrator password",
+  bootstrap_token: "bootstrap token",
+};
+
+/** A single export is bounded so one request cannot hold the database open. */
+const DEVICE_HANDOVER_MAX_DEVICES = 500;
+
+/** Long enough to save the file, short enough that a copied URL is useless. */
+const DEVICE_HANDOVER_TTL_MS = 15 * 60 * 1000;
+
+const DEVICE_HANDOVER_DOWNLOAD_SCOPE = "device-handover";
+
+const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
+
+const DEVICE_HANDOVER_REASON_MAX_LENGTH = 500;
+
+/**
+ * Bound the plaintext archive before sealing it. 500 devices with long notes
+ * can exceed a MySQL packet, so a refused export is safer than a write that
+ * fails after the operator already started deleting hardware.
+ */
+const DEVICE_HANDOVER_MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+
+const isDeviceHandoverSecretKind = (value: string): value is DeviceHandoverSecretKind =>
+  (DEVICE_HANDOVER_SECRET_KINDS as ReadonlyArray<string>).includes(value);
 
 /** Slug candidates are derived from tenant input and bounded for MySQL indexes. */
 const slugBase = (value: string) =>
@@ -3980,6 +4036,194 @@ export const createEnterpriseService = ({
       return yield* Effect.tryPromise(() => openSecret(authSecret, secret.sealedValue)).pipe(
         Effect.orElseSucceed(() => null),
       );
+    });
+
+  /**
+   * Secret kinds escrowed per device, in catalogue order. Presence metadata
+   * only: this powers the pre-delete warning and never reads a sealed value.
+   */
+  const deviceSecretKindsFor = (organizationId: string, deviceIds: ReadonlyArray<string>) =>
+    Effect.gen(function* () {
+      const kinds = new Map<string, ReadonlyArray<DeviceHandoverSecretKind>>();
+
+      if (deviceIds.length === 0) return kinds;
+
+      const rows = yield* db
+        .select({
+          deviceId: schema.deviceSecret.deviceId,
+          kind: schema.deviceSecret.kind,
+        })
+        .from(schema.deviceSecret)
+        .where(
+          and(
+            eq(schema.deviceSecret.organizationId, organizationId),
+            inArray(schema.deviceSecret.deviceId, [...deviceIds]),
+          ),
+        );
+      const found = new Map<string, Set<DeviceHandoverSecretKind>>();
+
+      for (const row of rows) {
+        if (!isDeviceHandoverSecretKind(row.kind)) continue;
+
+        const current = found.get(row.deviceId) ?? new Set<DeviceHandoverSecretKind>();
+
+        current.add(row.kind);
+        found.set(row.deviceId, current);
+      }
+
+      for (const [deviceId, present] of found)
+        kinds.set(
+          deviceId,
+          DEVICE_HANDOVER_SECRET_KINDS.filter((kind) => present.has(kind)),
+        );
+
+      return kinds;
+    });
+
+  /** One secret, decrypted into the shape an operator can actually use. */
+  const decryptHandoverSecret = (
+    authSecret: string,
+    organizationId: string,
+    device: { readonly id: string; readonly name: string },
+    secret: {
+      readonly kind: DeviceHandoverSecretKind;
+      readonly sealedValue: string;
+      readonly format: "plaintext" | "cms";
+    },
+  ) =>
+    Effect.gen(function* () {
+      const label = DEVICE_HANDOVER_SECRET_LABELS[secret.kind];
+
+      if (secret.kind === "filevault_recovery_key")
+        return yield* revealRecoveryKey({
+          db,
+          organizationId,
+          sealedValue: secret.sealedValue,
+          format: secret.format,
+          authSecret,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseBadRequest({
+                message: `The ${label} for "${device.name}" could not be decrypted. No handover archive was created and nothing was exported.`,
+              }),
+          ),
+        );
+
+      return yield* Effect.tryPromise({
+        try: () => openSecret(authSecret, secret.sealedValue),
+        catch: () =>
+          new EnterpriseBadRequest({
+            message: `The ${label} for "${device.name}" could not be decrypted. No handover archive was created and nothing was exported.`,
+          }),
+      });
+    });
+
+  type DeviceHandoverArchiveDevice = {
+    readonly id: string;
+    readonly name: string;
+    readonly serial: string | null;
+    readonly assetTag: string | null;
+    readonly notes: string | null;
+    readonly secretKinds: ReadonlyArray<DeviceHandoverSecretKind>;
+    readonly secrets: Partial<Record<DeviceHandoverSecretKind, string>>;
+  };
+
+  /**
+   * Assemble the plaintext archive and its metadata. Values are decrypted only
+   * here, held in memory long enough to seal them, and never returned by the
+   * API or written to the database.
+   */
+  const buildDeviceHandoverArchive = (input: {
+    readonly organization: { readonly id: string; readonly name: string };
+    readonly devices: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly serial: string | null;
+      readonly assetTag: string | null;
+      readonly notes: string | null;
+    }>;
+    readonly at: Date;
+    readonly authSecret: string;
+  }) =>
+    Effect.gen(function* () {
+      const ids = input.devices.map((device) => device.id);
+      const rows = ids.length
+        ? yield* db
+            .select()
+            .from(schema.deviceSecret)
+            .where(
+              and(
+                eq(schema.deviceSecret.organizationId, input.organization.id),
+                inArray(schema.deviceSecret.deviceId, ids),
+              ),
+            )
+        : [];
+
+      const byDevice = new Map<string, typeof rows>();
+
+      for (const row of rows) {
+        const current = byDevice.get(row.deviceId) ?? [];
+
+        current.push(row);
+        byDevice.set(row.deviceId, current);
+      }
+
+      const devices: DeviceHandoverArchiveDevice[] = [];
+
+      for (const device of input.devices) {
+        const secrets: Partial<Record<DeviceHandoverSecretKind, string>> = {};
+
+        for (const secret of byDevice.get(device.id) ?? []) {
+          if (!isDeviceHandoverSecretKind(secret.kind)) continue;
+
+          const value = yield* decryptHandoverSecret(
+            input.authSecret,
+            input.organization.id,
+            device,
+            {
+              kind: secret.kind,
+              sealedValue: secret.sealedValue,
+              format: secret.format,
+            },
+          );
+
+          // An empty escrow is not a secret worth handing over; leave the kind
+          // out so the archive records only what it actually contains.
+          if (value.trim().length === 0) continue;
+
+          secrets[secret.kind] = value;
+        }
+
+        devices.push({
+          id: device.id,
+          name: device.name,
+          serial: device.serial,
+          assetTag: device.assetTag,
+          notes: device.notes,
+          secretKinds: DEVICE_HANDOVER_SECRET_KINDS.filter((kind) => secrets[kind] !== undefined),
+          secrets,
+        });
+      }
+
+      const secretKinds = DEVICE_HANDOVER_SECRET_KINDS.filter((kind) =>
+        devices.some((device) => device.secretKinds.includes(kind)),
+      );
+
+      const document = {
+        format: "mattrax.device-handover" as const,
+        version: 1,
+        createdAt: iso(input.at),
+        tenant: { id: input.organization.id, name: input.organization.name },
+        devices,
+        secretKinds,
+      };
+
+      return {
+        document,
+        devices: devices.map(({ secrets: _secrets, ...device }) => device),
+        secretKinds,
+      };
     });
 
   /**
@@ -15474,6 +15718,47 @@ export const createEnterpriseService = ({
               )
           : [];
 
+        // Deleting a device cascades its secret rows. When any of them hold
+        // escrowed material, the operator must be able to export it first: the
+        // handover archive is the only supported path, so a role without the
+        // export permission cannot silently destroy a recovery key.
+        const escrowedKinds = yield* deviceSecretKindsFor(
+          ctx.organization.id,
+          devices.map((device) => device.id),
+        );
+        const devicesWithSecrets = devices.filter(
+          (device) => (escrowedKinds.get(device.id)?.length ?? 0) > 0,
+        );
+
+        if (devicesWithSecrets.length > 0 && !hasPermission(ctx.permissions, "devices.handover")) {
+          const names = devicesWithSecrets
+            .slice(0, 3)
+            .map((device) => '"' + device.name + '"')
+            .join(", ");
+          const more =
+            devicesWithSecrets.length > 3
+              ? " and " + (devicesWithSecrets.length - 3) + " more"
+              : "";
+
+          return yield* Effect.fail(
+            new EnterprisePermissionDenied({
+              message:
+                names +
+                more +
+                " hold escrowed secrets. Deleting would permanently destroy them. Hand the devices over first to export a sealed archive, or ask an owner to grant the devices.handover permission.",
+              permission: "devices.handover",
+              roleName: ctx.role.roleName,
+              roleKind: ctx.role.roleKind,
+            }),
+          );
+        }
+
+        // Recorded on the delete event so the audit trail explains what left
+        // with the rows. The values themselves are never written here.
+        const destroyedSecretKinds = DEVICE_HANDOVER_SECRET_KINDS.filter((kind) =>
+          devicesWithSecrets.some((device) => escrowedKinds.get(device.id)?.includes(kind)),
+        );
+
         // An Android row is a pointer at a Google-side device. Deleting the row
         // without deleting that device leaves Google applying the last policy
         // forever, to a machine the dashboard no longer knows about. Retire
@@ -15520,12 +15805,406 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.deleted", "device", null, {
           ids: [...ids],
           revokedCertificates: revoked,
+          destroyedSecretKinds,
         });
         // Deleting devices frees seats on the per-device plan.
         yield* reportSeats(ctx.organization.id, ctx.account.id);
 
         return ok;
       }),
+    deviceHandoverImpact: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const body: { readonly ids: ReadonlyArray<string> } = payload;
+        const ids = [...new Set(body.ids.filter((id) => id.length > 0))];
+
+        if (ids.length > 1000)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Check at most 1000 devices at a time for escrowed secrets.",
+            }),
+          );
+
+        const canExport = hasPermission(ctx.permissions, "devices.handover");
+
+        if (ids.length === 0) return { devices: [], canExport };
+
+        const devices = yield* db
+          .select({ id: schema.device.id, name: schema.device.name })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              inArray(schema.device.id, ids),
+            ),
+          );
+        const kinds = yield* deviceSecretKindsFor(ctx.organization.id, ids);
+
+        return {
+          devices: devices
+            .filter((device) => (kinds.get(device.id)?.length ?? 0) > 0)
+            .map((device) => ({
+              id: device.id,
+              name: device.name,
+              secretKinds: kinds.get(device.id) ?? [],
+            })),
+          canExport,
+        };
+      }),
+    createDeviceHandover: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        // Exporting every escrowed secret a device has needs the dedicated
+        // permission, a fresh step-up and a recorded reason. Deleting the
+        // device is permanent, so this is the only supported recovery path.
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "device-handover");
+        const body: {
+          readonly ids: ReadonlyArray<string>;
+          readonly passphrase: string;
+          readonly reason: string;
+        } = payload;
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Secret escrow is not configured on this deployment",
+            }),
+          );
+
+        const reason = body.reason.trim().slice(0, DEVICE_HANDOVER_REASON_MAX_LENGTH);
+
+        if (reason.length < 5)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Give a reason for the handover so the audit log explains it.",
+            }),
+          );
+
+        const passphrase = body.passphrase;
+
+        if (passphrase.length < DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH || passphrase.length > 1024)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The archive passphrase must be between ${DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH} and 1024 characters.`,
+            }),
+          );
+
+        const ids = [...new Set(body.ids.filter((id) => id.length > 0))];
+
+        if (ids.length === 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "Select at least one device to hand over." }),
+          );
+
+        if (ids.length > DEVICE_HANDOVER_MAX_DEVICES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `Hand over at most ${DEVICE_HANDOVER_MAX_DEVICES} devices at a time.`,
+            }),
+          );
+
+        const devices = yield* db
+          .select({
+            id: schema.device.id,
+            name: schema.device.name,
+            serial: schema.device.serial,
+            assetTag: schema.device.assetTag,
+            notes: schema.device.notes,
+          })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              inArray(schema.device.id, ids),
+            ),
+          );
+
+        // A partial archive is worse than a refused one: the operator would
+        // delete a device believing its secrets were handed over.
+        if (devices.length !== ids.length)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message: "Some selected devices were not found in this tenant.",
+            }),
+          );
+
+        const at = now();
+        const built = yield* buildDeviceHandoverArchive({
+          organization: { id: ctx.organization.id, name: ctx.organization.name },
+          devices,
+          at,
+          authSecret,
+        });
+
+        const archiveId = id();
+        const expiresAt = new Date(at.getTime() + DEVICE_HANDOVER_TTL_MS);
+        // Session ids are random, so two exports on the same day never collide
+        // in a Downloads folder. The archive id is already public in the URL.
+        const filename = `device-handover-${safeFilename(
+          ctx.organization.slug,
+        )}-${iso(at).slice(0, 10)}-${archiveId.slice(0, 8)}.json`;
+
+        const plaintext = JSON.stringify(built.document);
+        const plaintextBytes = new TextEncoder().encode(plaintext);
+
+        if (plaintextBytes.byteLength > DEVICE_HANDOVER_MAX_PAYLOAD_BYTES)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `The handover archive would be larger than ${Math.floor(
+                DEVICE_HANDOVER_MAX_PAYLOAD_BYTES / 1024 / 1024,
+              )} MB. Shorten device notes or hand over fewer devices at a time.`,
+            }),
+          );
+
+        const envelope = yield* Effect.tryPromise({
+          try: () =>
+            sealWithPassphrase(passphrase, plaintext, {
+              iterations: PASSPHRASE_PBKDF2_ITERATIONS,
+            }),
+          catch: () => new EnterpriseInternal({ message: "Could not seal the handover archive" }),
+        });
+
+        const archiveText = JSON.stringify(envelope);
+        const bytes = new TextEncoder().encode(archiveText);
+        const sha256 = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const key = `handovers/${ctx.organization.id}/${archiveId}.json`;
+        const r2 = yield* R2Storage;
+
+        yield* r2
+          .put(key, archiveText, {
+            httpMetadata: {
+              contentType: "application/json; charset=utf-8",
+              cacheControl: R2_PRIVATE_CACHE_CONTROL,
+              contentDisposition: `attachment; filename="${filename}"`,
+            },
+            // The envelope is opaque even if the bucket is inspected; these
+            // fields describe it without exposing any secret.
+            customMetadata: {
+              tenantId: ctx.organization.id,
+              archiveId,
+              version: String(PASSPHRASE_ENVELOPE_VERSION),
+              expiresAt: iso(expiresAt),
+            },
+          })
+          .pipe(
+            Effect.mapError(
+              () =>
+                new EnterpriseR2InternalError({
+                  message: "Could not store the handover archive",
+                }),
+            ),
+          );
+
+        // The row stores only the declared presence metadata; asset tags,
+        // notes and the secret values stay inside the sealed archive. A bulk
+        // JSON column is not the place for free text that can be megabytes.
+        yield* Effect.gen(function* () {
+          yield* db.insert(schema.deviceHandoverArchive).values({
+            id: archiveId,
+            organizationId: ctx.organization.id,
+            createdByAccountId: ctx.account.id,
+            createdByEmail: ctx.account.email,
+            reason,
+            deviceCount: built.devices.length,
+            devices: built.devices.map(({ id, name, serial, secretKinds }) => ({
+              id,
+              name,
+              serial,
+              secretKinds,
+            })),
+            secretKinds: built.secretKinds,
+            r2Key: key,
+            sizeBytes: bytes.byteLength,
+            sha256,
+            envelopeVersion: PASSPHRASE_ENVELOPE_VERSION,
+            createdAt: at,
+            expiresAt,
+            downloadedAt: null,
+          });
+        }).pipe(
+          // The object is already written. A failed row must not leave an
+          // archive nothing points at, so remove it before surfacing the
+          // database error. A failed cleanup is best effort and logged.
+          Effect.catch((error) =>
+            Effect.logWarning(`Could not record handover archive: ${String(error)}`).pipe(
+              Effect.flatMap(() => r2.delete(key)),
+              Effect.catch((cleanupError) =>
+                Effect.logWarning(
+                  `Could not remove orphaned handover archive ${archiveId}: ${String(cleanupError)}`,
+                ),
+              ),
+              Effect.flatMap(() =>
+                Effect.fail(
+                  new EnterpriseDbError({ message: "Could not record the handover archive" }),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        // One audit row per device so the tenant audit log and each device's
+        // timeline both show the export. Metadata names the kinds, never a
+        // sealed or decrypted value.
+        for (const device of built.devices)
+          yield* audit(ctx, "device.handover_exported", "device", device.id, {
+            archiveId,
+            reason,
+            deviceCount: built.devices.length,
+            secretKinds: device.secretKinds,
+          });
+
+        const downloadToken = yield* Effect.tryPromise({
+          try: () =>
+            signScopedToken(
+              authSecret,
+              DEVICE_HANDOVER_DOWNLOAD_SCOPE,
+              `${ctx.organization.id}:${archiveId}`,
+              Math.floor(expiresAt.getTime() / 1000),
+            ),
+          catch: () => new EnterpriseInternal({ message: "Could not sign the download token" }),
+        });
+
+        return {
+          id: archiveId,
+          filename,
+          expiresAt: iso(expiresAt),
+          deviceCount: built.devices.length,
+          secretKinds: built.secretKinds,
+          downloadToken,
+        };
+      }).pipe(Effect.provide(r2Layer)),
+    downloadDeviceHandover: (request, tenantId, archiveId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const at = now();
+
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceHandoverArchive)
+          .where(
+            and(
+              eq(schema.deviceHandoverArchive.id, archiveId),
+              eq(schema.deviceHandoverArchive.organizationId, ctx.organization.id),
+            ),
+          )
+          .limit(1);
+
+        if (!archive)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Handover archive not found" }),
+          );
+
+        if (archive.downloadedAt)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "This handover archive has already been downloaded. Create a new handover if the file was lost.",
+            }),
+          );
+
+        if (archive.expiresAt.getTime() <= at.getTime())
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "This handover download has expired. Create a new handover archive.",
+            }),
+          );
+
+        const token = query?.token ?? "";
+        const valid =
+          authSecret !== undefined &&
+          (yield* Effect.promise(() =>
+            verifyScopedToken(
+              authSecret,
+              DEVICE_HANDOVER_DOWNLOAD_SCOPE,
+              `${ctx.organization.id}:${archiveId}`,
+              token,
+              at.getTime(),
+            ),
+          ));
+
+        if (!valid)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "The download link is invalid or has expired. Create a new handover archive.",
+            }),
+          );
+
+        const r2 = yield* R2Storage;
+        const object = yield* r2.get(archive.r2Key).pipe(
+          // Only a missing object is a 404. An R2 outage must not tell the
+          // operator their archive was deleted.
+          Effect.mapError((cause) =>
+            cause._tag === "R2FileNotFound"
+              ? new EnterpriseR2FileNotFound({
+                  message: "The handover archive is no longer available",
+                })
+              : new EnterpriseR2InternalError({
+                  message: "Could not read the handover archive",
+                }),
+          ),
+        );
+        const content = yield* Effect.tryPromise({
+          try: () => object.text(),
+          catch: () =>
+            new EnterpriseR2InternalError({ message: "Could not read the handover archive" }),
+        });
+
+        // Claim the single download after the body is in hand: a transient R2
+        // failure must not burn the archive, while a concurrent second request
+        // still loses the compare-and-set.
+        const claimed = yield* db
+          .update(schema.deviceHandoverArchive)
+          .set({ downloadedAt: at })
+          .where(
+            and(
+              eq(schema.deviceHandoverArchive.id, archive.id),
+              eq(schema.deviceHandoverArchive.organizationId, ctx.organization.id),
+              isNull(schema.deviceHandoverArchive.downloadedAt),
+            ),
+          );
+
+        if (claimed.affectedRows !== 1)
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message:
+                "This handover archive has already been downloaded. Create a new handover if the file was lost.",
+            }),
+          );
+
+        // The row is the one-time authority. Keeping the object until the next
+        // maintenance sweep avoids racing a concurrent download: both requests
+        // may read the bytes, but only one compare-and-set claims the archive.
+        // The sweep also removes downloaded objects, so nothing lingers beyond
+        // a day and a restored row cannot hand out a second copy.
+
+        // The claim above is already committed and the file is about to leave
+        // Mattrax. An audit outage must not turn a successful download into an
+        // error the operator retries against a consumed one-time link.
+        yield* Effect.forEach(
+          archive.devices,
+          (device) =>
+            audit(ctx, "device.handover_downloaded", "device", device.id, {
+              archiveId: archive.id,
+              secretKinds: device.secretKinds,
+              deviceCount: archive.deviceCount,
+            }),
+          { discard: true },
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Handover download audit write failed for ${archive.id}: ${String(error)}`,
+            ),
+          ),
+        );
+
+        return {
+          content,
+          filename: `device-handover-${safeFilename(
+            ctx.organization.slug,
+          )}-${iso(archive.createdAt).slice(0, 10)}-${archive.id.slice(0, 8)}.json`,
+        };
+      }).pipe(Effect.provide(r2Layer)),
     listDevicePreRegistrations: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -26127,6 +26806,37 @@ export const createEnterpriseService = ({
 
   return wrapServiceErrors(service, true, analytics);
 };
+
+/** Device handover export and one-time download. */
+export const enterpriseDeviceHandoverHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDeviceHandoverApi>,
+) =>
+  handlers
+    .handle("deviceHandoverImpact", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deviceHandoverImpact(request, params.tenantId, payload),
+      ),
+    )
+    .handle("createDeviceHandover", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createDeviceHandover(request, params.tenantId, payload),
+      ),
+    )
+    .handleRaw("downloadDeviceHandover", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.map(
+          service.downloadDeviceHandover(request, params.tenantId, params.archiveId, query),
+          (result: { content: string; filename: string }) =>
+            HttpServerResponse.text(result.content, {
+              contentType: "application/json; charset=utf-8",
+              headers: {
+                "Content-Disposition": `attachment; filename="${result.filename}"`,
+                "Cache-Control": "no-store",
+              },
+            }),
+        ),
+      ),
+    );
 
 /** macOS update summary. Registered against its own small API group. */
 export const enterpriseSoftwareUpdateHandlers = (

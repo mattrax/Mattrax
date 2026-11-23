@@ -238,6 +238,22 @@ export const EnterprisePolicyApplicationDownloadErrors = [
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
 
+/** Handover archives are sealed client-side of the database and stored in R2. */
+export const EnterpriseDeviceHandoverErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseNotConfigured.pipe(HttpApiSchema.status(503)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+  EnterpriseInternal.pipe(HttpApiSchema.status(500)),
+] as const;
+
+export const EnterpriseDeviceHandoverDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+
 export const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),

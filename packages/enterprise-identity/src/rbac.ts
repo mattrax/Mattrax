@@ -343,6 +343,13 @@ const EXPLICIT = {
   // secrets: reading them is as sensitive as the recovery key.
   getDeviceLocalAdmin: "devices.recovery_key",
   getDeviceActivationLockBypassCode: "devices.recovery_key",
+  // A handover archive contains every escrowed secret a device has, so it has
+  // its own permission instead of riding on devices.write or recovery_key.
+  createDeviceHandover: "devices.handover",
+  downloadDeviceHandover: "devices.handover",
+  // The impact read returns presence metadata only, the same data the device
+  // detail page already exposes.
+  deviceHandoverImpact: "devices.read",
 } satisfies Record<string, Permission>;
 
 const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
