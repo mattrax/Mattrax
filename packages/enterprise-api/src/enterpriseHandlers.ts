@@ -29790,41 +29790,34 @@ export const createEnterpriseService = ({
         // before it writes the token.
         const resolved = yield* auth.requireStepUp(webRequest, "api-token-create");
 
-        // An account-wide token has no owning tenant, so no tenant policy can
-        // bind it and it can be used against every tenant the owner belongs
-        // to. Keep that capability with platform administrators rather than
-        // leaving a policy bypass for ordinary members.
-        if (!payload.tenantId && !isSuperadmin(resolved.user, superadminAllowlist))
-          return yield* Effect.fail(
-            new EnterpriseForbidden({
-              message:
-                "Account-wide API tokens are restricted to platform administrators. Create a tenant-bound token instead.",
-            }),
-          );
+        const credential = resolved.apiToken
+          ? {
+              type: "api_token" as const,
+              id: resolved.apiToken.id,
+              name: resolved.apiToken.name,
+            }
+          : resolved.oauth
+            ? {
+                type: "oauth" as const,
+                id: resolved.oauth.connectionId,
+                name: resolved.oauth.clientName,
+                clientId: resolved.oauth.clientId,
+              }
+            : undefined;
+        const scopes = [...(payload.permissions ?? payload.scopes ?? [])].sort((left, right) =>
+          String(left).localeCompare(String(right)),
+        );
+        const tokenDetails = {
+          name: payload.name.trim(),
+          scopes,
+          expiresAt: payload.expiresAt ?? null,
+        };
 
-        // A token bound to a tenant is governed by that tenant's policies.
+        // A token bound to a tenant is governed by that tenant's policy.
         if (payload.tenantId) {
           const access = yield* loadTenantAccess(db, resolved.user.id, payload.tenantId);
 
-          if (access) {
-            const credential = resolved.apiToken
-              ? {
-                  type: "api_token" as const,
-                  id: resolved.apiToken.id,
-                  name: resolved.apiToken.name,
-                }
-              : resolved.oauth
-                ? {
-                    type: "oauth" as const,
-                    id: resolved.oauth.connectionId,
-                    name: resolved.oauth.clientName,
-                    clientId: resolved.oauth.clientId,
-                  }
-                : undefined;
-            const scopes = [...(payload.permissions ?? payload.scopes ?? [])].sort((left, right) =>
-              String(left).localeCompare(String(right)),
-            );
-
+          if (access)
             yield* requireApproval(
               {
                 account: resolved.user,
@@ -29845,20 +29838,65 @@ export const createEnterpriseService = ({
               {
                 action: "api-token.create",
                 resourceId: payload.tenantId,
-                details: {
-                  name: payload.name.trim(),
-                  scopes,
-                  expiresAt: payload.expiresAt ?? null,
-                  tenantId: payload.tenantId,
-                },
-                summary: {
-                  name: payload.name.trim(),
-                  scopes,
-                  tenantId: payload.tenantId,
-                  expiresAt: payload.expiresAt ?? null,
-                },
+                details: { ...tokenDetails, tenantId: payload.tenantId },
+                summary: { ...tokenDetails, tenantId: payload.tenantId },
               },
             );
+        } else {
+          // An account-wide token has no owning tenant, but it can be used
+          // against every tenant the account belongs to. Any of those tenants
+          // with an api-token.create policy must review it, so gate on the
+          // first such tenant rather than leaving the policy bypassed.
+          const memberships = yield* db
+            .select({ organizationId: schema.member.organizationId })
+            .from(schema.member)
+            .where(eq(schema.member.accountId, resolved.user.id));
+          const organizationIds = [...new Set(memberships.map((row) => row.organizationId))];
+
+          if (organizationIds.length > 0) {
+            const [policy] = yield* db
+              .select({ organizationId: schema.approvalPolicy.organizationId })
+              .from(schema.approvalPolicy)
+              .where(
+                and(
+                  inArray(schema.approvalPolicy.organizationId, organizationIds),
+                  eq(schema.approvalPolicy.action, "api-token.create"),
+                ),
+              )
+              .orderBy(asc(schema.approvalPolicy.organizationId))
+              .limit(1);
+
+            if (policy) {
+              const access = yield* loadTenantAccess(db, resolved.user.id, policy.organizationId);
+
+              if (access)
+                yield* requireApproval(
+                  {
+                    account: resolved.user,
+                    organization: access.organization,
+                    member: access.member,
+                    role: access.role,
+                    permissions: access.role.permissions,
+                    credential,
+                    ip:
+                      headerValue(request.headers, "x-mattrax-client-address")?.slice(0, 64) ??
+                      null,
+                    userAgent: headerValue(request.headers, "user-agent")?.slice(0, 512) ?? null,
+                    rbac: {
+                      roleName: access.role.roleName,
+                      roleKind: access.role.roleKind,
+                      roleId: access.role.roleId,
+                    },
+                  },
+                  request,
+                  {
+                    action: "api-token.create",
+                    resourceId: null,
+                    details: { ...tokenDetails, tenantId: null, scope: "account" },
+                    summary: { ...tokenDetails, tenantId: null, scope: "account" },
+                  },
+                );
+            }
           }
         }
 
