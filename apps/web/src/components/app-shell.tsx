@@ -8,6 +8,7 @@ import {
   Errored,
   For,
   Loading,
+  onCleanup,
   onSettled,
   Show,
   untrack,
@@ -188,7 +189,7 @@ function TenantSwitcher(props: {
         </Show>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="w-[272px]">
+      <DropdownMenuContent class="max-h-[min(32rem,calc(100dvh-7rem))] w-[272px]">
         <DropdownMenuGroup>
           <Show
             when={tenants().length > 0}
@@ -997,13 +998,55 @@ export function AppShell(props: {
   );
 
   /**
-   * After a route change, move focus to the main landmark so keyboard and
-   * screen-reader users land on the new page instead of the link they followed.
-   * Modals keep focus while they are open, and query-string-only navigations
-   * (filters, pagination) never trigger this because only the pathname is
-   * tracked.
+   * After a completed pathname change, move focus to the main landmark so
+   * keyboard and screen-reader users land on the new page instead of the link
+   * they followed. Closing sheets and menus keep their content mounted for an
+   * exit transition, so wait until those overlays and the route transition have
+   * settled before moving focus. Query-string-only navigations (filters,
+   * pagination) never trigger this because only the pathname is tracked.
    */
   let initialRoute = true;
+  let pendingFocusPath: string | undefined;
+  let focusFrame: number | undefined;
+  let focusDeadline = 0;
+
+  const cancelPendingFocus = () => {
+    if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+    focusFrame = undefined;
+    pendingFocusPath = undefined;
+  };
+
+  const focusMainWhenReady = () => {
+    focusFrame = undefined;
+
+    if (!pendingFocusPath || pendingFocusPath !== location.pathname) return;
+    if (typeof document === "undefined") return;
+
+    const overlayOpen = document.querySelector(
+      '[data-slot="dialog-content"], [data-slot="command-palette"], [data-slot="menu-content"]',
+    );
+
+    if (isRouting() || mobileNavOpen() || overlayOpen) {
+      // A dialog that intentionally stays open must not cause a stale focus
+      // jump when it is dismissed much later.
+      if (performance.now() >= focusDeadline) {
+        pendingFocusPath = undefined;
+
+        return;
+      }
+
+      focusFrame = requestAnimationFrame(focusMainWhenReady);
+
+      return;
+    }
+
+    pendingFocusPath = undefined;
+    document.getElementById("main")?.focus({ preventScroll: true });
+    announce(untrack(pageTitle));
+  };
+
+  onCleanup(cancelPendingFocus);
+
   createEffect(
     () => location.pathname,
     () => {
@@ -1015,17 +1058,15 @@ export function AppShell(props: {
 
       if (typeof document === "undefined") return;
 
+      cancelPendingFocus();
+
       // The shell scrolls inside `main`, not the document, so the router's
       // pathname change has to reset that scrollport explicitly.
       document.getElementById("main")?.scrollTo({ top: 0 });
 
-      // A dialog owns focus while it is open; moving focus into the inert
-      // background would strand it.
-      if (document.querySelector('[data-slot="dialog-content"], [data-slot="command-palette"]'))
-        return;
-
-      document.getElementById("main")?.focus({ preventScroll: true });
-      announce(untrack(pageTitle));
+      pendingFocusPath = location.pathname;
+      focusDeadline = performance.now() + 2_000;
+      focusFrame = requestAnimationFrame(focusMainWhenReady);
     },
   );
 
@@ -1036,6 +1077,7 @@ export function AppShell(props: {
     >
       <a
         href="#main"
+        onClick={() => document.getElementById("main")?.focus({ preventScroll: true })}
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
       >
         Skip to content

@@ -242,6 +242,26 @@ test.describe("tenant settings", () => {
     ).toHaveText("Migration");
   });
 
+  test("links a standalone migration cohort back to the cohort list", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Standalone Cohort Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/migration`);
+
+    await page.getByLabel("Name").fill("Standalone exit");
+    await page.getByLabel("Device serials").fill("C02XYZ123");
+    await page.getByRole("button", { name: "Create cohort" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration/[^/]+$`));
+    await expect(page.getByRole("heading", { name: "Standalone exit" })).toBeVisible();
+
+    const back = page
+      .locator('[data-slot="breadcrumb"]')
+      .getByRole("link", { name: "Migration", exact: true });
+    await expect(back).toHaveAttribute("href", `/t/${tenant.slug}/migration`);
+    await back.click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration$`));
+    await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+  });
+
   test("picks an App Store region on the globe", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Region Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
@@ -252,8 +272,13 @@ test.describe("tenant settings", () => {
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Choose App Store region" });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("textbox", { name: "Search countries" }).fill("Japan");
-    await dialog.getByRole("button", { name: /Japan/ }).click();
+    const search = dialog.getByRole("textbox", { name: "Search countries" });
+    await search.fill("Japan");
+    const result = dialog.getByRole("button", { name: /Japan/ });
+    await result.focus();
+    await page.keyboard.press("Enter");
+    await expect(search).toBeFocused();
+    await expect(result).toHaveCount(0);
     await dialog.getByRole("button", { name: "Use JP" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
     // The dialog's dismiss layer lingers while it animates out; a click in that

@@ -100,6 +100,15 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("links standalone migration detail back to the cohort list", () => {
+    expect(
+      buildBreadcrumbs({ pathname: `${tenant}/migration/migration_123`, title: "Migration" }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Migration", href: `${tenant}/migration` },
+    ]);
+  });
+
   it("gives settings sub-pages the section trail without the tenant", () => {
     expect(
       buildBreadcrumbs({
