@@ -119,10 +119,12 @@ without exposing it to other networks. If the proxy runs on another host, set
 `MATTRAX_BIND_ADDRESS` to a private host interface and restrict that interface
 with a firewall; do not publish it on a public address.
 
-The following Caddy v2 configuration terminates TLS, verifies any presented
-device certificate, and forwards the certificate's SHA-256 fingerprint:
+The following Caddyfile configures Caddy v2 to terminate TLS, verify any
+presented device certificate, and forward the certificate's SHA-256
+fingerprint. It is highlighted as nginx because the docs bundle has no Caddy
+grammar:
 
-```caddy
+```nginx
 mdm.example.com {
 	tls {
 		client_auth {
