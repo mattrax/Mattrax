@@ -2,12 +2,14 @@ import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { BrandLogo } from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
-import { createSignal, onSettled, Show, untrack } from "solid-js";
+import { createSignal, onCleanup, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { KeyRound } from "~/components/ui/icons";
 import { redirectToProvider, startOrganisationSso } from "~/lib/sso-start";
-import { passkeySignInFailureMessage } from "~/lib/passkey-sign-in";
+import { conditionalPasskeyAvailable, passkeySignInFailureMessage } from "~/lib/passkey-sign-in";
+
+/* oxlint-disable jsx-a11y/autocomplete-valid -- "webauthn" opts the email field into passkey autofill; browsers rely on the token even though the rule's list predates it. */
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
@@ -51,6 +53,8 @@ export default function LoginPage() {
   let passkeyAttempt = 0;
   let passkeyInFlight = false;
   let redirectStarted = false;
+  let conditionalAbort: AbortController | undefined;
+  let conditionalRestart: ReturnType<typeof setTimeout> | undefined;
 
   onSettled(() => {
     document.title = "Sign in · Mattrax";
@@ -59,6 +63,7 @@ export default function LoginPage() {
     // SSO decision once, without starting a passkey ceremony automatically.
     if (typeof window !== "undefined" && initialEmail && looksLikeEmail(initialEmail))
       void inspectEmail();
+    else void startConditionalPasskey();
   });
 
   const returnTo = () =>
@@ -117,6 +122,7 @@ export default function LoginPage() {
       return;
     }
 
+    cancelConditionalPasskey();
     lookupInFlight = true;
     setEmail(value);
     setEmailError(null);
@@ -184,6 +190,8 @@ export default function LoginPage() {
   const signInWithPasskey = async () => {
     if (passkeyInFlight || lookupInFlight || redirectStarted) return;
 
+    // The explicit prompt takes over from the inline autofill offer.
+    cancelConditionalPasskey();
     const attempt = ++passkeyAttempt;
     const current = () => attempt === passkeyAttempt && !redirectStarted;
 
@@ -232,6 +240,77 @@ export default function LoginPage() {
     }
   };
 
+  /** Stop the browser's inline passkey picker without surfacing an error. */
+  const cancelConditionalPasskey = () => {
+    if (conditionalRestart !== undefined) clearTimeout(conditionalRestart);
+
+    conditionalRestart = undefined;
+    conditionalAbort?.abort();
+    conditionalAbort = undefined;
+  };
+
+  const canStartConditionalPasskey = () =>
+    step() === "email" &&
+    !checkingEmail() &&
+    !redirecting() &&
+    !passkeyPending() &&
+    !mfaPending() &&
+    !redirectStarted;
+
+  /**
+   * Conditional UI holds a discoverable assertion open while the email field
+   * is visible, which is what lets password managers offer a saved passkey
+   * inline instead of only inside the explicit button's prompt. It is an
+   * enhancement: failures stay silent and the explicit button keeps the
+   * recovery copy.
+   */
+  const startConditionalPasskey = async () => {
+    if (!canStartConditionalPasskey() || conditionalAbort) return;
+    if (!(await conditionalPasskeyAvailable())) return;
+    if (!canStartConditionalPasskey() || conditionalAbort) return;
+
+    const controller = new AbortController();
+
+    conditionalAbort = controller;
+
+    const result = await authClient.passkeySignIn({ conditional: controller.signal });
+
+    // A changed email, unmount or newer ceremony owns the screen now. Throw
+    // away a late success rather than signing in as the wrong person.
+    if (controller.signal.aborted || conditionalAbort !== controller) {
+      if (!result.error && !result.data?.pending) await authClient.signOut().catch(() => undefined);
+
+      return;
+    }
+
+    conditionalAbort = undefined;
+
+    // Dismissing the autofill sheet is not a failed sign-in.
+    if (result.error) return;
+
+    if (result.data?.pending) {
+      setMfaPending(true);
+
+      return;
+    }
+
+    await finishSignIn(() => !controller.signal.aborted);
+  };
+
+  onCleanup(() => cancelConditionalPasskey());
+
+  /** Restart conditional UI after typing stops so the inline offer survives edits. */
+  const scheduleConditionalPasskey = () => {
+    cancelConditionalPasskey();
+
+    if (!canStartConditionalPasskey()) return;
+
+    conditionalRestart = setTimeout(() => {
+      conditionalRestart = undefined;
+      void startConditionalPasskey();
+    }, 200);
+  };
+
   const changeEmail = () => {
     // Invalidate any lookup or ceremony already in flight before showing the
     // email field; their late results must not write to this newer step.
@@ -248,6 +327,7 @@ export default function LoginPage() {
     setCheckingEmail(false);
     setRedirecting(false);
     redirectStarted = false;
+    scheduleConditionalPasskey();
   };
 
   return (
@@ -285,7 +365,15 @@ export default function LoginPage() {
             fallback={
               <div class={`space-y-4 ${feedbackEnter}`}>
                 <div class="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
-                  <span class="min-w-0 truncate text-[13px] text-stone-700">{email()}</span>
+                  {/* The address is a lookup preview: show it once the lookup
+                      settles and step aside while a ceremony or redirect owns the
+                      screen. Change stays usable throughout. */}
+                  <Show
+                    when={!checkingEmail() && !passkeyPending() && !redirecting()}
+                    fallback={<span class="min-w-0 flex-1" />}
+                  >
+                    <span class="min-w-0 truncate text-[13px] text-stone-700">{email()}</span>
+                  </Show>
                   <button
                     type="button"
                     onClick={changeEmail}
@@ -339,11 +427,6 @@ export default function LoginPage() {
                   <Show when={checkingEmail()}>
                     <p role="status" class="text-center text-[12.5px] text-stone-500">
                       Checking your organisation…
-                    </p>
-                  </Show>
-                  <Show when={passkeyPending()}>
-                    <p role="status" class="text-center text-[12.5px] text-stone-500">
-                      Waiting for your device…
                     </p>
                   </Show>
 
@@ -425,7 +508,7 @@ export default function LoginPage() {
                   type="email"
                   required
                   autofocus
-                  autocomplete="username"
+                  autocomplete="username webauthn"
                   autocapitalize="none"
                   spellcheck={false}
                   placeholder="you@company.com"
@@ -436,6 +519,7 @@ export default function LoginPage() {
                   onInput={(event) => {
                     setEmail(event.currentTarget.value);
                     setEmailError(null);
+                    scheduleConditionalPasskey();
                   }}
                   class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
                 />
@@ -451,13 +535,6 @@ export default function LoginPage() {
                     {message()}
                   </p>
                 )}
-              </Show>
-              <Show when={checkingEmail() || redirecting()}>
-                <p role="status" class="text-center text-[12.5px] text-stone-500">
-                  {redirecting()
-                    ? "Redirecting to your organisation…"
-                    : "Checking your organisation…"}
-                </p>
               </Show>
               <Button
                 type="submit"

@@ -10,12 +10,13 @@ const state = vi.hoisted(() => ({
   passkey: vi.fn(),
   session: vi.fn(),
   signOut: vi.fn(),
+  navigate: vi.fn(),
 }));
 
 vi.mock("@solidjs/router", () => ({
   useSearchParams: () => [state.params, vi.fn()],
 }));
-vi.mock("~/lib/navigation", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("~/lib/navigation", () => ({ useNavigate: () => state.navigate }));
 vi.mock("~/lib/auth", () => ({
   authClient: {
     useSession: () => () => ({ data: { user: undefined }, isPending: false }),
@@ -49,6 +50,26 @@ const mount = () => {
 const button = (host: HTMLElement, label: RegExp) =>
   [...host.querySelectorAll("button")].find((item) => label.test(item.textContent ?? ""));
 
+const stubConditionalPasskey = () => {
+  Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+  Object.defineProperty(window, "PublicKeyCredential", {
+    configurable: true,
+    value: class {
+      static isConditionalMediationAvailable = () => Promise.resolve(true);
+    },
+  });
+  Object.defineProperty(navigator, "credentials", {
+    configurable: true,
+    value: { get: vi.fn() },
+  });
+};
+
+const restoreConditionalPasskey = () => {
+  Object.defineProperty(window, "isSecureContext", { configurable: true, value: false });
+  Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: undefined });
+  Object.defineProperty(navigator, "credentials", { configurable: true, value: undefined });
+};
+
 const submitEmail = (host: HTMLElement, email = "person@example.com") => {
   const input = host.querySelector<HTMLInputElement>("#email")!;
 
@@ -65,11 +86,13 @@ beforeEach(() => {
   state.passkey.mockReset();
   state.session.mockReset();
   state.signOut.mockReset().mockResolvedValue(undefined);
+  state.navigate.mockReset();
 });
 
 afterEach(() => {
   for (const dispose of cleanups.splice(0)) dispose();
   document.body.replaceChildren();
+  restoreConditionalPasskey();
   vi.clearAllMocks();
 });
 
@@ -341,5 +364,148 @@ describe("email-first sign-in", () => {
 
     if (tag !== "PasskeyRejected")
       expect(host.querySelector("#login-error")?.textContent).not.toContain("wasn't accepted");
+  });
+});
+
+describe("sign-in progress", () => {
+  it("shows one loading indicator while the organisation lookup is in flight", async () => {
+    let resolve!: (value: unknown) => void;
+    state.startSso.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const host = mount();
+
+    submitEmail(host, "ada@acme.com");
+
+    await vi.waitFor(() => expect(button(host, /checking/i)).toBeDefined());
+    expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(host.querySelectorAll('[data-slot="spinner"]')).toHaveLength(1);
+    expect(host.textContent).not.toContain("Checking your organisation");
+
+    resolve({ kind: "unavailable" });
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+  });
+
+  it("shows the account preview only once the lookup has settled", async () => {
+    state.params = { email: "ada@acme.com", created: "1" };
+    let resolve!: (value: unknown) => void;
+    state.startSso.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const host = mount();
+
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    expect(host.textContent).not.toContain("ada@acme.com");
+    expect(button(host, /^change$/i)).toBeDefined();
+
+    resolve({ kind: "unavailable" });
+    await vi.waitFor(() => expect(host.textContent).toContain("ada@acme.com"));
+  });
+
+  it("hides the account preview while a passkey sign-in is pending", async () => {
+    let resolve!: (value: unknown) => void;
+    state.startSso.mockResolvedValue({ kind: "unavailable" });
+    state.passkey.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const host = mount();
+
+    submitEmail(host, "person@example.com");
+    await vi.waitFor(() => expect(button(host, /sign in with a passkey/i)).toBeDefined());
+    expect(host.textContent).toContain("person@example.com");
+
+    button(host, /sign in with a passkey/i)!.click();
+    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"));
+    expect(host.textContent).not.toContain("person@example.com");
+
+    resolve({ error: { tag: "PasskeyCancelled" } });
+    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"));
+    expect(host.querySelector("#login-error")).not.toBeNull();
+  });
+});
+
+describe("conditional passkey autofill", () => {
+  it("starts on the email step and completes a chosen passkey", async () => {
+    stubConditionalPasskey();
+    let resolve!: (value: unknown) => void;
+    state.passkey.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const host = mount();
+
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
+    const { conditional } = state.passkey.mock.calls[0]![0] as { conditional: AbortSignal };
+
+    expect(conditional).toBeInstanceOf(AbortSignal);
+    expect(conditional.aborted).toBe(false);
+
+    resolve({ data: { user: { id: "person" } } });
+
+    await vi.waitFor(() =>
+      expect(state.navigate).toHaveBeenCalledWith("/dashboard", { replace: true }),
+    );
+    expect(host.querySelector("#login-error")).toBeNull();
+  });
+
+  it("aborts the inline request when the email changes", async () => {
+    stubConditionalPasskey();
+    state.passkey.mockReturnValue(new Promise(() => {}));
+    const host = mount();
+
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
+    const { conditional } = state.passkey.mock.calls[0]![0] as { conditional: AbortSignal };
+    const input = host.querySelector<HTMLInputElement>("#email")!;
+
+    input.value = "p";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    flush();
+
+    expect(conditional.aborted).toBe(true);
+  });
+
+  it("stays quiet when the inline passkey sheet is dismissed", async () => {
+    stubConditionalPasskey();
+    let resolve!: (value: unknown) => void;
+    state.passkey.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const host = mount();
+
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
+    resolve({ error: { tag: "PasskeyNotAllowed", message: "raw detail" } });
+    await new Promise((done) => {
+      setTimeout(done, 0);
+    });
+    flush();
+
+    expect(host.querySelector("#login-error")).toBeNull();
+    expect(host.textContent).not.toContain("raw detail");
+    expect(host.textContent).not.toContain("wasn't completed");
+  });
+
+  it("does not start on the account step", async () => {
+    stubConditionalPasskey();
+    state.params = { email: "person@example.com", created: "1" };
+    state.startSso.mockResolvedValue({ kind: "unavailable" });
+    const host = mount();
+
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    await new Promise((done) => {
+      setTimeout(done, 0);
+    });
+    flush();
+
+    expect(state.passkey).not.toHaveBeenCalled();
+    expect(button(host, /sign in with a passkey/i)).toBeDefined();
   });
 });

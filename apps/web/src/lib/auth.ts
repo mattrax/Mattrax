@@ -29,6 +29,7 @@ import {
   passkeyEnvironmentAvailable,
   passkeyEnvironmentFailure,
   PasskeySignInError,
+  startConditionalPasskey,
 } from "~/lib/passkey-sign-in";
 
 type AuthUser = {
@@ -634,7 +635,12 @@ const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
 };
 
 /** Discoverable-credential sign-in shared by the login page and registration. */
-const passkeySignInFlow = async (): Promise<CompletionState> => {
+const passkeySignInFlow = async (
+  options: {
+    /** Set for conditional UI; the caller aborts it on an email edit or unmount. */
+    conditional?: AbortSignal;
+  } = {},
+): Promise<CompletionState> => {
   const environmentFailure = passkeyEnvironmentFailure();
 
   if (environmentFailure) throw environmentFailure;
@@ -648,22 +654,39 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
     }),
   });
 
+  if (options.conditional?.aborted)
+    throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
+
   let response: unknown;
 
   try {
-    const { startAuthentication } = await import("@simplewebauthn/browser");
-    response = await startAuthentication({
-      // A registration follow-up should not leave the person staring at a
-      // browser prompt for the server's full five-minute window.
-      optionsJSON: {
-        ...toRequestOptions(started.options),
-        timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
-      },
-      useBrowserAutofill: false,
-    });
+    if (options.conditional) {
+      response = await startConditionalPasskey(
+        toRequestOptions(started.options),
+        options.conditional,
+      );
+    } else {
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      response = await startAuthentication({
+        // A registration follow-up should not leave the person staring at a
+        // browser prompt for the server's full five-minute window.
+        optionsJSON: {
+          ...toRequestOptions(started.options),
+          timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
+        },
+        useBrowserAutofill: false,
+      });
+    }
   } catch (error) {
+    if (error instanceof PasskeySignInError) throw error;
+
     throw passkeyAuthenticationFailure(error);
   }
+
+  // An email edit or unmount may land while the browser is finishing the
+  // assertion; never complete a ceremony the page has already abandoned.
+  if (options.conditional?.aborted)
+    throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
 
   const completion = await request("/completePasskeySignIn", Schema.Json, {
     method: "POST",
@@ -897,11 +920,13 @@ export const authClient = {
     }),
   /**
    * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
-   * request-binding cookie; only the WebAuthn response travels back.
+   * request-binding cookie; only the WebAuthn response travels back. Passing a
+   * signal runs it as conditional UI, where the browser offers saved passkeys
+   * inline and the caller owns cancellation.
    */
-  passkeySignIn: async (): AuthResult<CompletionState> => {
+  passkeySignIn: async (options?: { conditional?: AbortSignal }): AuthResult<CompletionState> => {
     try {
-      return { data: await passkeySignInFlow() };
+      return { data: await passkeySignInFlow(options) };
     } catch (error) {
       if (error instanceof PasskeySignInError)
         return { error: { message: error.message, tag: error.tag } };

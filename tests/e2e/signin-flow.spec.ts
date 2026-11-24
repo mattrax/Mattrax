@@ -44,8 +44,10 @@ test.describe("sign-in flow", () => {
     await page.locator("#email").fill("person@acme.com");
     await page.getByRole("button", { name: /^continue$/i }).click();
 
-    // The pending state must not fall back to the redundant organisation button.
-    await expect(page.getByText("Checking your organisation…")).toBeVisible();
+    // The pending state lives on the button, not in a second status line, and
+    // must not fall back to the redundant organisation button.
+    await expect(page.locator('button[aria-busy="true"]')).toHaveCount(1);
+    await expect(page.locator('[data-slot="spinner"]')).toHaveCount(1);
     await expect(page.getByRole("button", { name: /sign in with your organisation/i })).toHaveCount(
       0,
     );

@@ -1,3 +1,8 @@
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from "@simplewebauthn/browser";
+
 export type PasskeySignInFailureTag =
   | "PasskeyCancelled"
   | "PasskeyNotAllowed"
@@ -30,6 +35,124 @@ export const passkeyEnvironmentFailure = (): PasskeySignInError | null => {
     "PasskeyUnsupported",
     "This browser can't use passkeys. Open Mattrax over HTTPS in a current browser and try again.",
   );
+};
+
+const decodeBase64Url = (value: string): Uint8Array => {
+  const padded = value
+    .replaceAll("-", "+")
+    .replaceAll("_", "/")
+    .padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+
+  return bytes;
+};
+
+const encodeBase64Url = (value: ArrayBuffer) => {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+};
+
+const conditionalMediation = () => {
+  if (!passkeyEnvironmentAvailable()) return undefined;
+
+  // The capability is a progressive enhancement in current browsers and is
+  // absent from older WebAuthn implementations, so probe it at runtime.
+  const { isConditionalMediationAvailable: capability } = window.PublicKeyCredential as {
+    isConditionalMediationAvailable?: () => Promise<boolean>;
+  };
+
+  return typeof capability === "function" ? capability : undefined;
+};
+
+/**
+ * Conditional UI is only worth starting when this browser can show saved
+ * passkeys inside its own autofill sheet. Capability probe failures mean no,
+ * never a broken sign-in screen.
+ */
+export const conditionalPasskeyAvailable = async () => {
+  const capability = conditionalMediation();
+
+  if (!capability) return false;
+
+  try {
+    return await capability.call(window.PublicKeyCredential);
+  } catch {
+    return false;
+  }
+};
+
+type AssertionCredential = Credential & {
+  rawId: ArrayBuffer;
+  authenticatorAttachment?: string | null;
+  response: AuthenticatorAssertionResponse;
+  getClientExtensionResults: () => AuthenticationResponseJSON["clientExtensionResults"];
+};
+
+/**
+ * Start conditional WebAuthn against the server's request options and return
+ * the assertion in the same JSON shape SimpleWebAuthn produces for the
+ * explicit button. The caller owns the signal so an email edit or unmount can
+ * settle the browser's pending credential picker.
+ */
+export const startConditionalPasskey = async (
+  options: PublicKeyCredentialRequestOptionsJSON,
+  signal: AbortSignal,
+): Promise<AuthenticationResponseJSON> => {
+  const capability = conditionalMediation();
+
+  if (!capability || !(await capability.call(window.PublicKeyCredential)))
+    throw new PasskeySignInError(
+      "PasskeyUnsupported",
+      "This browser can't offer passkeys in autofill. Use the passkey button instead.",
+    );
+
+  const { challenge, allowCredentials: _allowCredentials, ...rest } = options;
+  let credential: AssertionCredential | null;
+
+  try {
+    credential = (await navigator.credentials.get({
+      mediation: "conditional",
+      signal,
+      publicKey: {
+        ...rest,
+        challenge: decodeBase64Url(challenge),
+        // Conditional UI has to leave the allow list open so the browser can
+        // surface any passkey saved for this site, not just one account.
+        allowCredentials: [],
+      },
+    } as CredentialRequestOptions)) as AssertionCredential | null;
+  } catch (error) {
+    throw passkeyAuthenticationFailure(error);
+  }
+
+  if (!credential || credential.type !== "public-key")
+    throw new PasskeySignInError("PasskeyUnsupported", "The browser returned no passkey.");
+
+  const attachment = credential.authenticatorAttachment;
+
+  return {
+    id: credential.id,
+    rawId: encodeBase64Url(credential.rawId),
+    type: "public-key",
+    response: {
+      clientDataJSON: encodeBase64Url(credential.response.clientDataJSON),
+      authenticatorData: encodeBase64Url(credential.response.authenticatorData),
+      signature: encodeBase64Url(credential.response.signature),
+      userHandle: credential.response.userHandle
+        ? encodeBase64Url(credential.response.userHandle)
+        : undefined,
+    },
+    clientExtensionResults: credential.getClientExtensionResults(),
+    authenticatorAttachment:
+      attachment === "platform" || attachment === "cross-platform" ? attachment : undefined,
+  };
 };
 
 const errorCause = (cause: unknown): Error | undefined => {
