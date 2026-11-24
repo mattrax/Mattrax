@@ -59,7 +59,8 @@ function serializeValue(value: unknown, allowNullish: boolean): string {
       return `<data>${btoa(String.fromCharCode(...new Uint8Array(value)))}</data>`;
     }
 
-    if (value instanceof Date && Number.isFinite(value.getTime())) {
+    if (value instanceof Date) {
+      if (!Number.isFinite(value.getTime())) throw new TypeError("Expected a valid Date");
       return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
     }
 

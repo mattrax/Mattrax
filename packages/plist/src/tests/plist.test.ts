@@ -224,6 +224,21 @@ describe("plist", () => {
       expect(result).toBeInstanceOf(PlistSerializeError);
     });
 
+    it("rejects an invalid root date", async () => {
+      const result = await serialize(new Date(Number.NaN)).pipe(Effect.flip, Effect.runPromise);
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects a nested invalid date", async () => {
+      const result = await serialize({ nested: [new Date(Number.NaN)] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
     it("visits each dictionary once", () => {
       const value: PlistValue = {
         first: [{ second: ["value"] }],
