@@ -69,26 +69,32 @@ requires `E2E_ALLOW_REMOTE_DATABASE=1`. The suite creates its own users and
 tenants, so it is safe to point at a disposable database.
 
 The suite runs with a single Playwright worker because its tests share the dev
-mailbox and rate-limit buckets through one server. CI shards it across four
-runners instead — each gets its own database and dev server — with
-`pnpm test:e2e --shard=1/4`; use the same flag to reproduce a single shard
-locally.
+mailbox and rate-limit buckets through one server. CI splits it across eight
+runners instead — each gets its own database and dev server. The split is not
+Playwright's `--shard`: that cuts the alphabetically ordered file list into
+contiguous slices, which leaves one shard holding every heavy spec. Instead
+`packages/config/scripts/e2e-shard.ts` assigns spec files largest-first to the
+emptiest shard. To reproduce one shard locally:
+
+```sh
+pnpm test:e2e $(pnpm exec tsx packages/config/scripts/e2e-shard.ts 3/8)
+```
 
 ## Architecture
 
 The repository is split into protocol, management and product layers so each
 piece can be tested in isolation:
 
-| Layer               | Packages / apps                                   |
-| ------------------- | ------------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` |
-| Management contract | `management-backend`, `management-backend-http`   |
-| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`            |
-| Product contracts   | `enterprise-domain` (entity modules + HTTP)       |
+| Layer               | Packages / apps                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`                                                           |
+| Management contract | `management-backend`, `management-backend-http`                                                                           |
+| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`                                                                                    |
+| Product contracts   | `enterprise-domain` (entity modules + HTTP)                                                                               |
 | Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-billing`, `enterprise-identity`, `entra-id`, `apple-business-manager` |
-| Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)    |
-| Hosted services     | `cloud-services`                                  |
-| Surfaces            | `apps/web` (dashboard, landing, docs)             |
+| Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)                                                                            |
+| Hosted services     | `cloud-services`                                                                                                          |
+| Surfaces            | `apps/web` (dashboard, landing, docs)                                                                                     |
 
 ## Cloud
 
