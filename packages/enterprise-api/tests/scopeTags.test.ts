@@ -5,7 +5,7 @@ import {
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 /**
  * Scope tags are an authorisation boundary, not a label. These tests set up two
@@ -88,7 +88,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -692,7 +691,7 @@ describe("scope tags", () => {
     const results = await runEffect(
       context.service.search(request(headers), tenantId, { q: "europe" }),
     );
-    expect(results.rows.map((row: { id: string }) => row.id).sort()).toEqual([
+    expect(results.rows.flatMap((row) => ("id" in row ? [row.id] : [])).sort()).toEqual([
       "app-europe",
       "device-europe",
       "group-europe",
