@@ -131,7 +131,7 @@ test.describe("dashboards", () => {
     await gotoHydrated(page, `/t/${tenant.id}/dashboards/${dashboard.id}?edit=1`);
 
     const grid = page.locator(".dashboard-grid");
-    const handle = page.getByRole("button", { name: "Move Managed devices" });
+    const handle = page.getByRole("button", { name: "Move Managed devices", exact: true });
     await handle.scrollIntoViewIfNeeded();
     const gridBox = await grid.boundingBox();
     const handleBox = await handle.boundingBox();

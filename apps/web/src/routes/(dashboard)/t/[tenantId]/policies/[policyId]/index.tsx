@@ -342,6 +342,14 @@ export const route = {
   },
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function PolicyDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -354,7 +362,7 @@ export default function PolicyDetailPage() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const row = () => Option.getOrUndefined(decodePolicyRow(settledQueryData(policy)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped by "Reload latest" to reseed the metadata form. */
   const [reseed, setReseed] = createSignal(0);
@@ -574,7 +582,7 @@ export default function PolicyDetailPage() {
 
   const androidDeliveryUnavailable = () =>
     configurations().some(([kind]) => kind.startsWith("mttx.android.policy")) &&
-    (!android.data?.configured || !android.data?.available);
+    (!settledQueryData(android)?.configured || !settledQueryData(android)?.available);
 
   const deployments = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "policy", params.policyId), "deployments"],
@@ -588,7 +596,7 @@ export default function PolicyDetailPage() {
   );
 
   const deploymentApplicable = () => {
-    const counts = deploymentSummary.data?.counts;
+    const counts = settledQueryData(deploymentSummary)?.counts;
 
     return counts ? counts.delivered + counts.pending + counts.failed : 0;
   };
@@ -708,13 +716,13 @@ export default function PolicyDetailPage() {
   const scope = useQuery(() => enterpriseQueries.policyScope(params.tenantId, params.policyId));
 
   const scopeCounts = (): PolicyScopeCounts | undefined => {
-    const data = scope.data;
+    const data = settledQueryData(scope);
 
     return data ? policyScopeCounts(data.devices) : undefined;
   };
 
   const scopeWarnings = () => {
-    const data = scope.data;
+    const data = settledQueryData(scope);
 
     return data ? policyScopeWarnings(data) : [];
   };
@@ -1049,7 +1057,7 @@ export default function PolicyDetailPage() {
           title="Scope"
           description="Where this policy actually applies, and why it loses anywhere it does not."
           actions={
-            <Show when={scope.data}>
+            <Show when={settledQueryData(scope)}>
               {(data) => (
                 <span class="flex flex-wrap items-center justify-end gap-1.5">
                   <For each={data().platforms}>
@@ -1075,7 +1083,7 @@ export default function PolicyDetailPage() {
           }
         >
           <Show
-            when={scope.data}
+            when={settledQueryData(scope)}
             fallback={
               <Show when={scope.isError} fallback={<SkeletonRows rows={3} />}>
                 <QueryError error={scope.error} onRetry={() => void scope.refetch()} />
@@ -1208,7 +1216,7 @@ export default function PolicyDetailPage() {
           title="Deployment"
           description="Per-device progress for the latest saved version."
           actions={
-            <Show when={deploymentSummary.data}>
+            <Show when={settledQueryData(deploymentSummary)}>
               {(summary) => (
                 <Button
                   as="a"
@@ -1224,7 +1232,7 @@ export default function PolicyDetailPage() {
         >
           <Show when={!deployments.isPending} fallback={<SkeletonRows rows={2} />}>
             <Show
-              when={(deployments.data?.deployments.length ?? 0) > 0}
+              when={(settledQueryData(deployments)?.deployments.length ?? 0) > 0}
               fallback={
                 <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
                   No deployments yet. Every save creates a version and starts tracking each device
@@ -1233,7 +1241,7 @@ export default function PolicyDetailPage() {
               }
             >
               <Show
-                when={deploymentSummary.data}
+                when={settledQueryData(deploymentSummary)}
                 fallback={
                   <Show when={deploymentSummary.isError} fallback={<SkeletonRows rows={2} />}>
                     <QueryError
@@ -1317,13 +1325,13 @@ export default function PolicyDetailPage() {
           actions={
             <Badge variant="outline" class="gap-1.5 text-muted-foreground">
               <Activity class="size-3" />
-              {deployments.data?.deployments.length ?? 0} version
-              {(deployments.data?.deployments.length ?? 0) === 1 ? "" : "s"}
+              {settledQueryData(deployments)?.deployments.length ?? 0} version
+              {(settledQueryData(deployments)?.deployments.length ?? 0) === 1 ? "" : "s"}
             </Badge>
           }
         >
           <Show
-            when={(deployments.data?.deployments.length ?? 0) > 0}
+            when={(settledQueryData(deployments)?.deployments.length ?? 0) > 0}
             fallback={
               <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
                 No deployments yet.
@@ -1331,7 +1339,7 @@ export default function PolicyDetailPage() {
             }
           >
             <div class="divide-y divide-border/60 overflow-hidden rounded-lg border border-border">
-              <For each={deployments.data?.deployments ?? []}>
+              <For each={settledQueryData(deployments)?.deployments ?? []}>
                 {(deployment) => (
                   <div class="flex flex-wrap items-center justify-between gap-3 bg-muted/10 px-3 py-2.5 text-[13px]">
                     <span class="flex min-w-0 items-center gap-2">

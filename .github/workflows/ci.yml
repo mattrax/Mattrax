@@ -176,7 +176,9 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Shards 1 and 3 carry the slow specs and a retried failure costs two
+    # timeouts, so the old 30 minutes cut them off before they could report.
+    timeout-minutes: 45
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false

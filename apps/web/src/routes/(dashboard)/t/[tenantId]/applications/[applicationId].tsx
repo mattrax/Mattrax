@@ -243,6 +243,14 @@ const formatBytes = (value?: number | null) => {
   return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function ApplicationDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -260,7 +268,8 @@ export default function ApplicationDetailPage() {
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
 
-  const row = () => Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(app.data));
+  const row = () =>
+    Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(settledQueryData(app)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped after our own save and by "Reload latest" to reseed the form. */
   const [seedEpoch, setSeedEpoch] = createSignal(0);
@@ -307,7 +316,10 @@ export default function ApplicationDetailPage() {
   );
 
   const invalidate = async () => {
-    await qc.invalidateQueries({
+    // Refetch the record itself and wait for it: callers read `row()` straight
+    // after this returns (the stale-write guard takes the refreshed
+    // `updatedAt`), and an invalidation alone resolves before the data lands.
+    await qc.refetchQueries({
       queryKey: enterpriseKeys.application(params.tenantId, params.applicationId),
     });
     await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
@@ -319,7 +331,9 @@ export default function ApplicationDetailPage() {
   /** Group relations for the checkboxes, named from the cached group list. */
   const optimisticGroups = () => {
     const names = new Map(
-      (groups.data?.rows ?? []).map((group: GroupRow) => [group.id, group.name] as const),
+      (settledQueryData(groups)?.rows ?? []).map(
+        (group: GroupRow) => [group.id, group.name] as const,
+      ),
     );
 
     for (const group of row()?.groups ?? [])
@@ -331,7 +345,7 @@ export default function ApplicationDetailPage() {
   /** Directory group relations for the checkboxes, named from the directory. */
   const optimisticUserGroups = () => {
     const names = new Map(
-      (directory.data?.groups ?? []).map((group) => [group.id, group.name] as const),
+      (settledQueryData(directory)?.groups ?? []).map((group) => [group.id, group.name] as const),
     );
 
     for (const group of row()?.userGroups ?? [])
@@ -343,7 +357,9 @@ export default function ApplicationDetailPage() {
   /** Device relations for the checkboxes, named from the cached device list. */
   const optimisticDevices = () => {
     const names = new Map(
-      (devices.data?.rows ?? []).map((device: DeviceRow) => [device.id, device.name] as const),
+      (settledQueryData(devices)?.rows ?? []).map(
+        (device: DeviceRow) => [device.id, device.name] as const,
+      ),
     );
 
     for (const device of row()?.devices ?? [])
@@ -703,7 +719,7 @@ export default function ApplicationDetailPage() {
     "";
 
   const vppAsset = createMemo(() =>
-    (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
+    (settledQueryData(vppAssets)?.assets ?? []).find((asset) => asset.adamId === storeId()),
   );
 
   const reloadLatest = async () => {
@@ -903,8 +919,8 @@ export default function ApplicationDetailPage() {
                   <Show
                     when={
                       platform() === "apple" &&
-                      vpp.data?.configured &&
-                      vppAssets.data &&
+                      settledQueryData(vpp)?.configured &&
+                      settledQueryData(vppAssets) &&
                       !vppAsset()
                     }
                   >
@@ -1309,11 +1325,11 @@ export default function ApplicationDetailPage() {
                       <span class="tabular-nums">{groupIds().size}</span>
                     </p>
                     <Show
-                      when={(groups.data?.rows.length ?? 0) > 0}
+                      when={(settledQueryData(groups)?.rows.length ?? 0) > 0}
                       fallback={<p class="text-[12px] text-muted-foreground">No groups yet.</p>}
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={groups.data?.rows ?? []}>
+                        <For each={settledQueryData(groups)?.rows ?? []}>
                           {(group: GroupRow) => (
                             <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                               <input
@@ -1336,7 +1352,7 @@ export default function ApplicationDetailPage() {
                       <span class="tabular-nums">{userGroupIds().size}</span>
                     </p>
                     <Show
-                      when={(directory.data?.groups.length ?? 0) > 0}
+                      when={(settledQueryData(directory)?.groups.length ?? 0) > 0}
                       fallback={
                         <p class="text-[12px] text-muted-foreground">
                           No directory groups synced yet.
@@ -1344,7 +1360,7 @@ export default function ApplicationDetailPage() {
                       }
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={directory.data?.groups ?? []}>
+                        <For each={settledQueryData(directory)?.groups ?? []}>
                           {(group) => (
                             <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                               <input
@@ -1374,13 +1390,13 @@ export default function ApplicationDetailPage() {
                       <span class="tabular-nums">{deviceIds().size}</span>
                     </p>
                     <Show
-                      when={(devices.data?.rows.length ?? 0) > 0}
+                      when={(settledQueryData(devices)?.rows.length ?? 0) > 0}
                       fallback={
                         <p class="text-[12px] text-muted-foreground">No devices enrolled yet.</p>
                       }
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={devices.data?.rows ?? []}>
+                        <For each={settledQueryData(devices)?.rows ?? []}>
                           {(device: DeviceRow) => (
                             <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
                               <input

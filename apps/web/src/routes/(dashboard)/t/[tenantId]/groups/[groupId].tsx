@@ -93,6 +93,14 @@ export const route = {
   },
 };
 
+/** Read secondary query data only after success so pending async values never throw in component scope. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function GroupDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -177,7 +185,7 @@ export default function GroupDetailPage() {
 
   const scope = useQuery(() => enterpriseQueries.groupScope(params.tenantId, params.groupId));
 
-  const row = () => Option.getOrUndefined(decodeGroupNode(group.data));
+  const row = () => Option.getOrUndefined(decodeGroupNode(settledQueryData(group)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
 
   /** Begin editing against the version currently shown. */
@@ -204,8 +212,8 @@ export default function GroupDetailPage() {
 
   // The full tenant list is only needed while editing, because the picker must
   // offer unassigned devices too.
-  const deviceRows = () => groupDevices.data?.devices ?? [];
-  const deviceTotal = () => groupDevices.data?.total ?? 0;
+  const deviceRows = () => settledQueryData(groupDevices)?.devices ?? [];
+  const deviceTotal = () => settledQueryData(groupDevices)?.total ?? 0;
   const devicePageCount = () => Math.max(1, Math.ceil(deviceTotal() / GROUP_DEVICE_PAGE_SIZE));
 
   // A deletion (or a concurrent enrollment) can leave the pager past the end.
@@ -426,7 +434,8 @@ export default function GroupDetailPage() {
       const nextPolicies = policyModes();
 
       const linkedDirectory = directoryGroupId()
-        ? (directory.data?.groups.find((group) => group.id === directoryGroupId()) ?? null)
+        ? (settledQueryData(directory)?.groups.find((group) => group.id === directoryGroupId()) ??
+          null)
         : null;
 
       const restore = await patchGroup({
@@ -558,9 +567,9 @@ export default function GroupDetailPage() {
   const shownPolicies = () => {
     const term = policySearch().trim().toLowerCase();
 
-    if (!term) return policies.data?.rows ?? [];
+    if (!term) return settledQueryData(policies)?.rows ?? [];
 
-    return (policies.data?.rows ?? []).filter(
+    return (settledQueryData(policies)?.rows ?? []).filter(
       (policy) =>
         policy.name.toLowerCase().includes(term) ||
         (policy.notes ?? "").toLowerCase().includes(term),
@@ -577,7 +586,7 @@ export default function GroupDetailPage() {
 
   /** Child groups that are not this group and not already nested here. */
   const childGroupChoices = () =>
-    (allGroups.data?.rows ?? []).filter(
+    (settledQueryData(allGroups)?.rows ?? []).filter(
       (group) => group.id !== params.groupId && !childGroupIds().has(group.id),
     );
 
@@ -607,7 +616,7 @@ export default function GroupDetailPage() {
     deviceRows().filter((device) => !excludedDeviceIds().has(device.id));
 
   const excludeUserChoices = () =>
-    (directory.data?.users ?? []).filter((user) => !excludedUserIds().has(user.id));
+    (settledQueryData(directory)?.users ?? []).filter((user) => !excludedUserIds().has(user.id));
 
   const addExcludedDevice = () => {
     if (!edit()) return;
@@ -655,7 +664,8 @@ export default function GroupDetailPage() {
   // The materialised membership is authoritative: it includes inherited
   // devices, which the live rule preview deliberately does not.
   const memberCount = () =>
-    row()?.devices?.length ?? (row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : 0);
+    row()?.devices?.length ??
+    (row()?.kind === "dynamic" ? (settledQueryData(preview)?.count ?? "…") : 0);
   const policyCount = () => row()?.policies?.length ?? 0;
 
   return (
@@ -708,12 +718,11 @@ export default function GroupDetailPage() {
 
       <ErrorText error={sync.error} />
 
-      <div
-        data-testid="group-summary"
-        class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-      >
+      <div class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <Show when={row()}>
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* The summary is the badge/count strip only; the view switch beside it
+              is navigation, so keep it out of the summary's test contract. */}
+          <div data-testid="group-summary" class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Show when={row()!.kind === "dynamic"}>
               <Badge>Dynamic</Badge>
             </Show>
@@ -818,7 +827,9 @@ export default function GroupDetailPage() {
                         resetDeviceSelection("directory");
 
                         setDirectoryGroupId(
-                          directoryGroupId() ?? (directory.data?.groups ?? [])[0]?.id ?? "",
+                          directoryGroupId() ??
+                            (settledQueryData(directory)?.groups ?? [])[0]?.id ??
+                            "",
                         );
                       } else if (value === "manual") {
                         setDirectoryGroupId(null);
@@ -847,7 +858,7 @@ export default function GroupDetailPage() {
                     onChange={(e) => setDirectoryGroupId(e.currentTarget.value || null)}
                   >
                     <option value="">Choose a directory group</option>
-                    <For each={directory.data?.groups ?? []}>
+                    <For each={settledQueryData(directory)?.groups ?? []}>
                       {(group) => (
                         <option value={group.id}>
                           {group.name} ({group.memberCount} member
@@ -884,7 +895,7 @@ export default function GroupDetailPage() {
                     rules={rules()}
                     onChange={setRules}
                     disabled={!edit()}
-                    groups={allGroups.data?.rows ?? []}
+                    groups={settledQueryData(allGroups)?.rows ?? []}
                     groupId={params.groupId}
                   />
                 </div>
@@ -944,9 +955,9 @@ export default function GroupDetailPage() {
             >
               <div class="space-y-3">
                 <p class="text-[26px] font-semibold leading-none tracking-[-0.03em] text-foreground">
-                  {preview.data?.count ?? "…"}
+                  {settledQueryData(preview)?.count ?? "…"}
                 </p>
-                <Show when={preview.data?.problem}>
+                <Show when={settledQueryData(preview)?.problem}>
                   {(problem) => (
                     <div class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
                       <p class="font-medium text-foreground">This group is not being evaluated</p>
@@ -958,10 +969,10 @@ export default function GroupDetailPage() {
                     </div>
                   )}
                 </Show>
-                <Show when={(preview.data?.references?.length ?? 0) > 0}>
+                <Show when={(settledQueryData(preview)?.references?.length ?? 0) > 0}>
                   <div class="space-y-1">
                     <p class="text-[11px] font-medium text-muted-foreground">Referenced groups</p>
-                    <For each={preview.data?.references ?? []}>
+                    <For each={settledQueryData(preview)?.references ?? []}>
                       {(reference) => (
                         <div class="flex items-start justify-between gap-3 rounded-md border border-border bg-surface px-2.5 py-1.5">
                           <div class="min-w-0">
@@ -987,13 +998,17 @@ export default function GroupDetailPage() {
                     </For>
                   </div>
                 </Show>
-                <Show when={preview.data && preview.data.count === 0 && !preview.data.problem}>
+                <Show
+                  when={
+                    settledQueryData(preview)?.count === 0 && !settledQueryData(preview)?.problem
+                  }
+                >
                   <p class="text-[12px] text-muted-foreground">No devices match these rules yet.</p>
                 </Show>
                 <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
-                <Show when={(preview.data?.devices.length ?? 0) > 0}>
+                <Show when={(settledQueryData(preview)?.devices.length ?? 0) > 0}>
                   <div class="max-h-64 space-y-0.5 overflow-auto">
-                    <For each={preview.data?.devices.slice(0, 25) ?? []}>
+                    <For each={settledQueryData(preview)?.devices.slice(0, 25) ?? []}>
                       {(device) => (
                         <a
                           class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover"
@@ -1005,7 +1020,7 @@ export default function GroupDetailPage() {
                     </For>
                   </div>
                 </Show>
-                <Show when={(preview.data?.devices.length ?? 0) > 25}>
+                <Show when={(settledQueryData(preview)?.devices.length ?? 0) > 25}>
                   <p class="text-[11px] text-muted-foreground">
                     Showing the first 25 matches. Refresh after saving to recompute membership.
                   </p>
@@ -1102,7 +1117,7 @@ export default function GroupDetailPage() {
             title="Computed scope"
             description="Policies this group carries and the member devices each one actually wins on."
             actions={
-              <Show when={scope.data}>
+              <Show when={settledQueryData(scope)}>
                 {(data) => (
                   <Badge variant="outline" class="tabular-nums text-muted-foreground">
                     {data().memberCount} member device{data().memberCount === 1 ? "" : "s"}
@@ -1112,7 +1127,7 @@ export default function GroupDetailPage() {
             }
           >
             <Show
-              when={scope.data}
+              when={settledQueryData(scope)}
               fallback={
                 <Show
                   when={scope.isError}
@@ -1256,7 +1271,7 @@ export default function GroupDetailPage() {
               <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
               <Panel flush title="Matched devices" description="Current rule evaluation result.">
                 <Show
-                  when={(preview.data?.devices.length ?? 0) > 0}
+                  when={(settledQueryData(preview)?.devices.length ?? 0) > 0}
                   fallback={
                     <div class="px-4 py-10 text-center sm:px-5">
                       <p class="text-[13px] font-medium text-foreground">
@@ -1277,7 +1292,7 @@ export default function GroupDetailPage() {
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-border">
-                        <For each={preview.data?.devices ?? []}>
+                        <For each={settledQueryData(preview)?.devices ?? []}>
                           {(device) => (
                             <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
                               <td class="px-4 py-2.5">
@@ -1660,7 +1675,7 @@ export default function GroupDetailPage() {
           >
             <div class="p-3">
               <MdmTable<PolicyRow>
-                rows={policies.data?.rows ?? []}
+                rows={settledQueryData(policies)?.rows ?? []}
                 selectable={editable() && edit()}
                 selectedIds={() => new Set(policyModes().keys())}
                 onSelectedChange={setPolicySelection}

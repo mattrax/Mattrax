@@ -221,6 +221,14 @@ const clampLayout = (
   };
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function DashboardPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -281,12 +289,12 @@ export default function DashboardPage() {
   let gridRef: HTMLDivElement | undefined;
   let cleanDrag: (() => void) | undefined;
 
-  const widgets = () => dashboard.data?.widgets ?? [];
+  const widgets = () => settledQueryData(dashboard)?.widgets ?? [];
 
   const currentLayout = (widget: DashboardWidget): DashboardLayout => layout()[widget.id] ?? widget;
 
   createEffect(
-    () => dashboard.data,
+    () => settledQueryData(dashboard),
     (data) => {
       if (!data) return;
       setName(data.name);
@@ -709,9 +717,9 @@ export default function DashboardPage() {
           </a>
           <div class="mt-1 flex flex-wrap items-center gap-2">
             <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">
-              {dashboard.data?.name ?? "Dashboard"}
+              {settledQueryData(dashboard)?.name ?? "Dashboard"}
             </h1>
-            <Show when={dashboard.data?.isDefault}>
+            <Show when={settledQueryData(dashboard)?.isDefault}>
               <Badge variant="secondary" class="gap-1">
                 <Star class="size-3" />
                 Overview
@@ -719,12 +727,12 @@ export default function DashboardPage() {
             </Show>
           </div>
           <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
-            {dashboard.data?.description?.trim() ||
+            {settledQueryData(dashboard)?.description?.trim() ||
               "A shared view of your fleet. Widgets run live queries and can be arranged on the grid."}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <Show when={dashboard.data}>
+          <Show when={settledQueryData(dashboard)}>
             <Button
               as="a"
               href={routes.tenant(params.tenantId).dashboardReports(params.dashboardId!)}
@@ -735,7 +743,7 @@ export default function DashboardPage() {
               Reports
             </Button>
           </Show>
-          <Show when={dashboard.data}>
+          <Show when={settledQueryData(dashboard)}>
             {(current) => (
               <PinDashboardButton
                 tenantId={resolveTenantId(params.tenantId) ?? params.tenantId ?? ""}
@@ -745,7 +753,7 @@ export default function DashboardPage() {
               />
             )}
           </Show>
-          <Show when={writable() && !dashboard.data?.isDefault}>
+          <Show when={writable() && !settledQueryData(dashboard)?.isDefault}>
             <Button
               size="sm"
               variant="outline"
@@ -1206,16 +1214,16 @@ export default function DashboardPage() {
 
       <p class="text-[11px] text-muted-foreground">
         Shared with everyone in this tenant.
-        <Show when={dashboard.data?.updatedAt}>
+        <Show when={settledQueryData(dashboard)?.updatedAt}>
           {" "}
-          Last updated {relativeTime(dashboard.data!.updatedAt)}.
+          Last updated {relativeTime(settledQueryData(dashboard)!.updatedAt)}.
         </Show>
       </p>
 
       <ConfirmDialog
         open={confirmDeleteDashboard()}
         onOpenChange={setConfirmDeleteDashboard}
-        title={`Delete “${dashboard.data?.name ?? "this dashboard"}”?`}
+        title={`Delete “${settledQueryData(dashboard)?.name ?? "this dashboard"}”?`}
         description="This removes the dashboard and its layout. This cannot be undone."
         confirmLabel="Delete dashboard"
         destructive
