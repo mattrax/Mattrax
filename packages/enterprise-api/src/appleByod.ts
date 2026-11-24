@@ -1,6 +1,6 @@
 import { Effect, Layer, Stream } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
-import { and, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { appleByodTokenProblem } from "./appleByodDocument.js";
@@ -30,8 +30,6 @@ import { appleByodTokenProblem } from "./appleByodDocument.js";
 const MAX_ENROLLMENT_BODY_BYTES = 64 * 1024;
 
 const CHALLENGE_TTL_MILLIS = 10 * 60 * 1000;
-const PRUNE_AFTER_MILLIS = 7 * 24 * 60 * 60 * 1000;
-
 const BYOD_WINDOW_MILLIS = 60_000;
 const BYOD_PER_IP_LIMIT = 30;
 const byodWindows = new Map<string, { count: number; resetAt: number }>();
@@ -336,23 +334,10 @@ export const appleByodRoutes = Layer.mergeAll(
       }
 
       // No bearer token: mint a device-bound challenge and ask the client to
-      // start the web-authentication session. Expired challenge rows are
-      // pruned here, not on the hot path of an authorised redemption.
+      // start the web-authentication session. Expired rows are inert and are
+      // left for operational cleanup rather than failing this request.
       const timestamp = new Date();
       const id = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-
-      yield* db
-        .delete(schema.appleByodEnrollment)
-        .where(
-          and(
-            eq(schema.appleByodEnrollment.organizationId, organizationId),
-            lt(
-              schema.appleByodEnrollment.createdAt,
-              new Date(timestamp.getTime() - PRUNE_AFTER_MILLIS),
-            ),
-            isNull(schema.appleByodEnrollment.tokenHash),
-          ),
-        );
 
       yield* db.insert(schema.appleByodEnrollment).values({
         id,
