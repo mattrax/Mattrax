@@ -56,10 +56,11 @@ client-ext.cnf
 # Local dev TLS certificates
 apps/web/.certs
 
-# Playwright
+# Playwright and CDP reports
 /test-results/
 /playwright-report/
 /blob-report/
+/.cdp-report/
 
 # Rolldown perf-kit build artifacts
 **/perf-kit.vite.config.ts

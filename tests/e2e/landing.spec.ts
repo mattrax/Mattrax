@@ -44,12 +44,10 @@ test.describe("landing auth state", () => {
       await expect(menu).toBeVisible();
 
       // No wrong destination is offered before the session is known.
-      await expect(
-        menu.getByRole("link", { name: "Create an account", exact: true }),
-      ).toHaveCount(0);
-      await expect(
-        menu.getByRole("link", { name: "Open dashboard", exact: true }),
-      ).toHaveCount(0);
+      await expect(menu.getByRole("link", { name: "Create an account", exact: true })).toHaveCount(
+        0,
+      );
+      await expect(menu.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(0);
       await expect(menu.getByRole("link", { name: "Start free", exact: true })).toHaveCount(0);
 
       release();
@@ -60,9 +58,7 @@ test.describe("landing auth state", () => {
     }
   });
 
-  test("shows no clickable primary CTA while a signed-in session is pending", async ({
-    page,
-  }) => {
+  test("shows no clickable primary CTA while a signed-in session is pending", async ({ page }) => {
     await register(page);
 
     let release!: () => void;
@@ -82,9 +78,7 @@ test.describe("landing auth state", () => {
 
       // The hero, pricing and closing sections all wait for the session.
       await expect(page.getByRole("link", { name: "Start free", exact: true })).toHaveCount(0);
-      await expect(
-        page.getByRole("link", { name: "Open dashboard", exact: true }),
-      ).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(0);
 
       release();
       await expect(
@@ -117,14 +111,16 @@ test.describe("landing auth state", () => {
     await gotoHydrated(page, "/login");
     await expect(page.getByText("Already signed in.", { exact: false })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign up", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Open dashboard", exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open dashboard", exact: true }).first(),
+    ).toBeVisible();
 
     await gotoHydrated(page, "/register");
-    await expect(
-      page.getByText(/You're already signed in as/, { exact: false }),
-    ).toBeVisible();
+    await expect(page.getByText(/You're already signed in as/, { exact: false })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Open dashboard", exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Open dashboard", exact: true }).first(),
+    ).toBeVisible();
   });
 });
 
@@ -170,5 +166,60 @@ test.describe("landing chrome", () => {
     // Native popover light dismiss: Escape closes without a JS listener.
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
+  });
+});
+
+test.describe("landing redesign interactions", () => {
+  test("filters the sample fleet without changing the page", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoHydrated(page, landingUrl());
+
+    const before = page.url();
+    const attention = page.getByRole("button", { name: /Needs attention/ });
+    await attention.click();
+
+    await expect(attention).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Field Tablet", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sales Laptop", { exact: true })).toBeVisible();
+    await expect(page.getByText("Reception Mac", { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(before);
+  });
+
+  test("switches the policy trace between explanation and evidence", async ({ page }) => {
+    await gotoHydrated(page, landingUrl());
+
+    const audit = page.getByRole("button", { name: "Audit trail", exact: true });
+    await audit.click();
+
+    await expect(audit).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      page.getByRole("heading", { name: "Every change leaves a receipt." }),
+    ).toBeVisible();
+    await expect(page.getByText("policy.publish", { exact: false })).toBeVisible();
+  });
+
+  test("keeps the full composition visible with reduced motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoHydrated(page, landingUrl());
+
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fleet overview", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "A device record you can read." }),
+    ).toBeVisible();
+  });
+
+  test("reflows the landing page at a narrow mobile viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await gotoHydrated(page, landingUrl());
+
+    const overflow = await page.evaluate(() => ({
+      viewport: window.innerWidth,
+      document: document.documentElement.scrollWidth,
+    }));
+
+    expect(overflow.document).toBeLessThanOrEqual(overflow.viewport);
+    await expect(page.getByRole("button", { name: /Needs attention/ })).toBeVisible();
   });
 });

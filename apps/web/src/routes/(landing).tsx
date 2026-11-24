@@ -12,17 +12,18 @@ import { publicPrimaryCta } from "~/lib/public-auth-cta";
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
+  const isLanding = () => location.pathname === "/";
 
   return (
     <div
       class={`lx-layout flex min-h-screen flex-col bg-background font-sans text-foreground ${
-        location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
-      }`}
+        isLanding() ? "lr-layout" : ""
+      } ${location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""}`}
     >
       {/* Keyboard users land here first; the landing header repeats five links
           before the content starts. Other (landing) routes need their own
           `#main-content` target before this can apply to them. */}
-      <Show when={location.pathname === "/"}>
+      <Show when={isLanding()}>
         <SkipLink />
       </Show>
       <TopNavigation />
@@ -103,6 +104,7 @@ function TopNavigation() {
   const session = authClient.useSession();
   const cta = () => publicPrimaryCta(session().isPending, Boolean(session().data?.user));
   const location = useLocation();
+  const isLanding = () => location.pathname === "/";
 
   const isActive = (href: string) =>
     href.startsWith("/") && !href.startsWith("/#") && location.pathname === href;
@@ -126,18 +128,29 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
-      <div class="mx-auto flex h-14 w-full max-w-[var(--lx-max)] items-center justify-between gap-6 px-[var(--lx-gutter)]">
+    <header
+      class={`sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90 ${
+        isLanding() ? "lr-header" : ""
+      }`}
+    >
+      <div
+        class={`mx-auto flex h-14 w-full max-w-[var(--lx-max)] items-center justify-between gap-6 px-[var(--lx-gutter)] ${
+          isLanding() ? "lr-header__inner" : ""
+        }`}
+      >
         <div class="flex min-w-0 items-center gap-9">
           <a
             href="/"
             class="touch-target flex min-h-11 shrink-0 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Mattrax home"
           >
-            <BrandLogo class="h-3.5" />
+            <BrandLogo class={isLanding() ? "h-4" : "h-3.5"} />
           </a>
 
-          <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
+          <nav
+            aria-label="Primary"
+            class={`hidden items-center gap-6 text-[12.5px] md:flex ${isLanding() ? "lr-nav" : ""}`}
+          >
             {navigation.map((item) => (
               <NavigationLink
                 href={item.href}
@@ -149,7 +162,7 @@ function TopNavigation() {
           </nav>
         </div>
 
-        <div class="flex shrink-0 items-center gap-2">
+        <div class={`flex shrink-0 items-center gap-2 ${isLanding() ? "lr-header__actions" : ""}`}>
           <Show when={!session().isPending && session().data?.user}>
             <Button
               as="a"
@@ -236,8 +249,12 @@ function TopNavigation() {
 }
 
 function Footer() {
+  const location = useLocation();
+
   return (
-    <footer class="border-t border-border bg-background">
+    <footer
+      class={`border-t border-border bg-background ${location.pathname === "/" ? "lr-footer" : ""}`}
+    >
       <div class="mx-auto w-full max-w-[var(--lx-max)] px-[var(--lx-gutter)] py-14">
         <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
           <div>
@@ -246,7 +263,7 @@ function Footer() {
               class="touch-target flex min-h-11 items-center gap-2.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Mattrax home"
             >
-              <BrandLogo class="h-3.5" />
+              <BrandLogo class={location.pathname === "/" ? "h-4" : "h-3.5"} />
             </a>
             <p class="mt-4 max-w-[15rem] text-[12px] leading-5 text-muted-foreground">
               Device management infrastructure for Apple, Windows and Android fleets.
