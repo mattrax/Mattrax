@@ -8,6 +8,8 @@ import {
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest,
   isSupportedDynamicGroupRulesVersion,
+  isTenantApplicationObjectKey,
+  tenantApplicationObjectPrefix,
   remapDynamicGroupRuleGroups,
   validateTenantBranding,
 } from "@mattrax/enterprise-domain";
@@ -23,21 +25,9 @@ import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 /** Restore obeys the same bundle size limit as a fresh import. */
 export const TENANT_RESTORE_MAX_BYTES = TENANT_IMPORT_MAX_BYTES;
 
-/**
- * Every uploaded application/installer object this tenant may read or delete
- * lives under `a/<tenantId>/`. Ownership is checked again at each R2 sink so a
- * row written before this validation (or by a bug) cannot reach another
- * tenant's bytes.
- */
-export const tenantApplicationObjectPrefix = (organizationId: string) => `a/${organizationId}/`;
-
-export const isTenantApplicationObjectKey = (
-  organizationId: string,
-  key: string | null | undefined,
-): key is string =>
-  typeof key === "string" &&
-  key.length > 0 &&
-  key.startsWith(tenantApplicationObjectPrefix(organizationId));
+// The guard lives in the domain package so the delivery sinks (including
+// mdm-apple) can apply it without depending on this module.
+export { isTenantApplicationObjectKey, tenantApplicationObjectPrefix };
 
 const AUDIT_OBJECT_KEY_PROPERTIES = new Set(["r2Key", "objectKey", "backupKey"]);
 

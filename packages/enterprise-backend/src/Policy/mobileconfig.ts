@@ -196,14 +196,21 @@ const MAX_PLIST_NODES = 100_000;
 
 const PLIST_TAG = /<(\/?)([A-Za-z][A-Za-z0-9._-]*)([^>]*)>/g;
 
+/**
+ * Sections the parser skips. Scanning them would let tag-like text inside a
+ * comment cancel real nesting (or reject a valid profile), so blank them first.
+ */
+const PLIST_SKIPPED_SECTIONS = /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>/g;
+
 const assertPlistWithinLimits = (text: string): void => {
   let depth = 0;
   let nodes = 0;
   let match: RegExpExecArray | null;
+  const scanned = text.replaceAll(PLIST_SKIPPED_SECTIONS, " ");
 
   PLIST_TAG.lastIndex = 0;
 
-  while ((match = PLIST_TAG.exec(text)) !== null) {
+  while ((match = PLIST_TAG.exec(scanned)) !== null) {
     const closing = match[1] === "/";
     const tag = match[2].toLowerCase();
     const selfClosing = !closing && /\/\s*$/.test(match[3]);
@@ -212,16 +219,18 @@ const assertPlistWithinLimits = (text: string): void => {
       if (closing) depth -= 1;
       else if (!selfClosing) depth += 1;
 
+      // A closer with nothing open cannot be parsed; refusing it here also
+      // stops closers from buying depth headroom later in the document.
+      if (depth < 0) throw new Error("The mobileconfig is not well formed");
+
       if (depth > MAX_PLIST_DEPTH)
         throw new Error("The mobileconfig is nested too deeply to preview");
     }
 
-    if (!closing) {
-      nodes += 1;
+    nodes += 1;
 
-      if (nodes > MAX_PLIST_NODES)
-        throw new Error("The mobileconfig contains too many values to preview");
-    }
+    if (nodes > MAX_PLIST_NODES)
+      throw new Error("The mobileconfig contains too many values to preview");
   }
 };
 

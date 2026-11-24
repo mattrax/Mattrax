@@ -15,7 +15,12 @@ import { Schema } from "effect";
 import { SetDeviceAttributesRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
-import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
+import {
+  EnterpriseAuthRequiredErrors,
+  EnterpriseBadRequest,
+  EnterpriseDbErrors,
+  EnterpriseForbidden,
+} from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
@@ -33,8 +38,22 @@ import { BulkUpdateResult } from "../Common.js";
 import { AddUserGroupMembersRequest } from "../Directory.js";
 import { PatchTenantAccountRolesRequest } from "../Tenant.js";
 
-/** Largest decoded mobileconfig the preview/extract helpers will process. */
+/**
+ * Largest decoded mobileconfig the preview/extract helpers will process.
+ * Applied to the decoded string; the request cap below leaves room for base64.
+ */
 export const MOBILECONFIG_MAX_CHARS = 8 * 1024 * 1024;
+
+/**
+ * These helpers authenticate before parsing, so their contract must carry the
+ * auth failures: an undeclared error cannot be encoded and becomes a 500.
+ */
+const MobileconfigHelperErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 
 /**
  * Raw HTTP body cap for the stateless helpers. Base64 expands by 4/3, so this
@@ -143,14 +162,14 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     // that group's generated declaration is already at the compiler's size
     // limit, and these endpoints are stateless policy helpers.
     HttpApiEndpoint.post("extractMobileconfig", "/v1/policy/extract-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigExtractResponse,
     }),
   )
   .add(
     HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigPreview,
     }),

@@ -1794,6 +1794,48 @@ const readMobileconfigPayload = (
     );
   });
 
+/**
+ * Read a mobileconfig helper body under a parse slot. The slot covers the body
+ * read and the parse so concurrent parses stay bounded; refusals are plain JSON
+ * so a caller sees a retryable 429 (or a 413) instead of a validation error.
+ *
+ * Authentication happens inside the service (this handler layer has no auth
+ * context); the read is bounded and the edge limiter bounds anonymous callers.
+ */
+const runMobileconfigRequest = <A, E, R>(
+  request: HttpServerRequest,
+  run: (payload: { mobileconfig: string }) => Effect.Effect<A, E, R>,
+) =>
+  Effect.suspend(() => {
+    const release = mobileconfigParses.tryAcquire();
+
+    if (!release)
+      return Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          {
+            error: "rate_limited",
+            message: "Too many mobileconfig requests are being parsed. Try again shortly.",
+          },
+          { status: 429 },
+        ),
+      );
+
+    return Effect.gen(function* () {
+      const payload = yield* readMobileconfigPayload(request);
+
+      if (payload === null)
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error: "payload_too_large",
+            message: "The mobileconfig request body is too large.",
+          },
+          { status: 413 },
+        );
+
+      return yield* run(payload);
+    }).pipe(Effect.ensuring(Effect.sync(release)));
+  });
+
 const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
 
 const DEVICE_HANDOVER_REASON_MAX_LENGTH = 500;
@@ -2563,25 +2605,6 @@ export const createEnterpriseService = ({
         );
 
       return user;
-    });
-
-  const withMobileconfigSlot = <A, E, R>(
-    effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E | EnterpriseBadRequest, R> =>
-    Effect.suspend((): Effect.Effect<A, E | EnterpriseBadRequest, R> => {
-      const release = mobileconfigParses.tryAcquire();
-
-      if (!release)
-        return Effect.fail(
-          diagnoseError(
-            new EnterpriseBadRequest({
-              message: "Too many mobileconfig requests are being parsed. Try again shortly.",
-            }),
-            { code: "rate_limited", retryable: true },
-          ),
-        );
-
-      return effect.pipe(Effect.ensuring(Effect.sync(release)));
     });
 
   const requireTenant = (
@@ -30208,7 +30231,14 @@ export const createEnterpriseService = ({
           // or a store listing. The selected installer already matched the
           // device's platform, OS version and reported capabilities.
           if (installer.source === "upload") {
-            if (!installer.r2Key || !installer.sha256 || !installer.fileName) {
+            // A manifest must not be signed for a key outside this tenant, even
+            // if the row predates key validation.
+            if (
+              !installer.r2Key ||
+              !installer.sha256 ||
+              !installer.fileName ||
+              !isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+            ) {
               skipped += groupDevices.length;
               reasons.push("Upload the installer before installing this application.");
               continue;
@@ -31115,19 +31145,19 @@ export const createEnterpriseService = ({
       }),
     extractMobileconfig: (request, payload) =>
       Effect.gen(function* () {
+        // Defence in depth: the HTTP handler authenticates and gates before
+        // buffering, but a direct service caller must still be verified.
         yield* requireVerifiedUser(request);
 
         const body: { mobileconfig: string } = payload;
 
-        return yield* withMobileconfigSlot(
-          Effect.tryPromise({
-            try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
-            catch: (cause) =>
-              new EnterpriseBadRequest({
-                message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
-              }),
-          }),
-        );
+        return yield* Effect.tryPromise({
+          try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+            }),
+        });
       }),
     previewMobileconfig: (request, payload) =>
       Effect.gen(function* () {
@@ -31135,15 +31165,13 @@ export const createEnterpriseService = ({
 
         const body: { mobileconfig: string } = payload;
 
-        return yield* withMobileconfigSlot(
-          Effect.tryPromise({
-            try: () => parseMobileconfigPreview(body.mobileconfig),
-            catch: (cause) =>
-              new EnterpriseBadRequest({
-                message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
-              }),
-          }),
-        );
+        return yield* Effect.tryPromise({
+          try: () => parseMobileconfigPreview(body.mobileconfig),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+            }),
+        });
       }),
     search: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -36258,38 +36286,12 @@ export const enterpriseAttributeHandlers = (
     )
     .handleRaw("extractMobileconfig", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        Effect.gen(function* () {
-          const payload = yield* readMobileconfigPayload(request);
-
-          if (payload === null)
-            return HttpServerResponse.jsonUnsafe(
-              {
-                error: "payload_too_large",
-                message: "The mobileconfig request body is too large.",
-              },
-              { status: 413 },
-            );
-
-          return yield* service.extractMobileconfig(request, payload);
-        }),
+        runMobileconfigRequest(request, (payload) => service.extractMobileconfig(request, payload)),
       ),
     )
     .handleRaw("previewMobileconfig", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        Effect.gen(function* () {
-          const payload = yield* readMobileconfigPayload(request);
-
-          if (payload === null)
-            return HttpServerResponse.jsonUnsafe(
-              {
-                error: "payload_too_large",
-                message: "The mobileconfig request body is too large.",
-              },
-              { status: 413 },
-            );
-
-          return yield* service.previewMobileconfig(request, payload);
-        }),
+        runMobileconfigRequest(request, (payload) => service.previewMobileconfig(request, payload)),
       ),
     )
     .handle("importDeviceAttributes", ({ request, params, payload }) =>

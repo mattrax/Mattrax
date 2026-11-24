@@ -80,9 +80,7 @@ describe("mobileconfig helper HTTP body cap", () => {
   it("parses a normal request", async () => {
     const { handler, calls } = makeHandler();
 
-    const response = await handler(
-      post(JSON.stringify({ mobileconfig: btoa("<plist></plist>") })),
-    );
+    const response = await handler(post(JSON.stringify({ mobileconfig: btoa("<plist></plist>") })));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ plist: "parsed" });
@@ -96,6 +94,30 @@ describe("mobileconfig helper HTTP body cap", () => {
       post(JSON.stringify({ mobileconfig: btoa("<plist></plist>") }), {
         "content-length": String(12 * 1024 * 1024 + 1),
       }),
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ error: "payload_too_large" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects an oversized streamed body without a content-length header", async () => {
+    const { handler, calls } = makeHandler();
+
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(13 * 1024 * 1024));
+        controller.close();
+      },
+    });
+
+    const response = await handler(
+      new Request("http://localhost/api/v1/policy/extract-mobileconfig", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        duplex: "half",
+      } as RequestInit),
     );
 
     expect(response.status).toBe(413);

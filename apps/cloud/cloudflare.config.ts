@@ -33,6 +33,7 @@ const configuredRateLimitBindings = () => {
     RATE_LIMITER_SCIM: rateLimitBinding("SCIM", 600),
     RATE_LIMITER_BILLING: rateLimitBinding("BILLING", 600),
     RATE_LIMITER_SCEP: rateLimitBinding("SCEP", 300),
+    RATE_LIMITER_POLICY: rateLimitBinding("POLICY", 120),
   };
 
   // A production Worker without these has no shared limiter at all: it falls

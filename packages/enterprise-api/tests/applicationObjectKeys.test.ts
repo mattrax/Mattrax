@@ -236,9 +236,7 @@ describe("application object ownership at the R2 sinks", () => {
 
     expect(download.content).toBe(Buffer.from("OWNED").toString("base64"));
 
-    await runEffect(
-      context.service.deleteApplications(request(headers), "org-1", ["app-owned"]),
-    );
+    await runEffect(context.service.deleteApplications(request(headers), "org-1", ["app-owned"]));
 
     expect(context.deleted).toContain(key);
     expect(context.objects.has(key)).toBe(false);
