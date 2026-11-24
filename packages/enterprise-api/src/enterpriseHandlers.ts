@@ -33734,6 +33734,53 @@ export const createEnterpriseService = ({
             },
           };
 
+        const requestTime = now();
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceDiagnosticsArchive)
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.id, archiveId),
+              eq(schema.deviceDiagnosticsArchive.status, "pending"),
+            ),
+          )
+          .limit(1);
+
+        if (!archive || archive.expiresAt.getTime() <= requestTime.getTime()) return unauthorized;
+
+        const valid = yield* Effect.promise(() =>
+          verifyScopedToken(
+            authSecret,
+            WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
+            `${archive.organizationId}:${archive.id}:${archive.deviceId}`,
+            token,
+            requestTime.getTime(),
+          ),
+        );
+
+        if (!valid) return unauthorized;
+
+        const archiveDeviceId = archive.deviceId;
+
+        const [device] = yield* db
+          .select({
+            id: schema.device.id,
+            status: schema.device.status,
+            proto: schema.device.proto,
+          })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.id, archiveDeviceId),
+              eq(schema.device.organizationId, archive.organizationId),
+            ),
+          )
+          .limit(1);
+
+        if (!device || device.status !== "enrolled" || device.proto !== "win") return unauthorized;
+
+        // The scoped token is proved before the first body pull. Keep the
+        // streaming cap as defence in depth for authenticated uploads.
         const bounded = yield* readBoundedRequestBody(request, windowsDiagnosticsMaxBytes);
 
         if (!bounded.ok)
@@ -33771,50 +33818,6 @@ export const createEnterpriseService = ({
             status: 400 as const,
             body: { status: "error" as const, error: "The upload is not a ZIP archive." },
           };
-
-        const [archive] = yield* db
-          .select()
-          .from(schema.deviceDiagnosticsArchive)
-          .where(
-            and(
-              eq(schema.deviceDiagnosticsArchive.id, archiveId),
-              eq(schema.deviceDiagnosticsArchive.status, "pending"),
-            ),
-          )
-          .limit(1);
-
-        if (!archive || archive.expiresAt.getTime() <= now().getTime()) return unauthorized;
-
-        const valid = yield* Effect.promise(() =>
-          verifyScopedToken(
-            authSecret,
-            WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
-            `${archive.organizationId}:${archive.id}:${archive.deviceId}`,
-            token,
-            now().getTime(),
-          ),
-        );
-
-        if (!valid) return unauthorized;
-
-        const archiveDeviceId = archive.deviceId;
-
-        const [device] = yield* db
-          .select({
-            id: schema.device.id,
-            status: schema.device.status,
-            proto: schema.device.proto,
-          })
-          .from(schema.device)
-          .where(
-            and(
-              eq(schema.device.id, archiveDeviceId),
-              eq(schema.device.organizationId, archive.organizationId),
-            ),
-          )
-          .limit(1);
-
-        if (!device || device.status !== "enrolled" || device.proto !== "win") return unauthorized;
 
         const digest = yield* sha256Hex(bytesToArrayBuffer(bytes));
         const r2Key = `diagnostics/${archive.organizationId}/${archiveDeviceId}/${archive.id}.zip`;

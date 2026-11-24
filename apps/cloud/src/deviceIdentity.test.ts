@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { Effect, Layer, Schema } from "effect";
+import { HttpRouter } from "effect/http";
+import { ManagementBackend, ManagementNotSupported } from "@mattrax/management-backend";
+import type { WindowsEnrollmentRequest, WindowsManagementScope } from "@mattrax/management-backend";
+import { WindowsMdmServiceLive, windowsMdmRoutes } from "@mattrax/dm-windows";
 import { deviceIdentityHeaders, NODE_PEER_ADDRESS_HEADER } from "./deviceIdentity.js";
 import { parseTrustedPeerAddresses } from "./trustedPeer.js";
 
@@ -207,6 +212,141 @@ describe("device identity trust boundary", () => {
       });
 
       expect(headers.get("x-device-identity-certificate-der-base64")).toBeNull();
+    }
+  });
+});
+
+describe("Windows device identity ingress", () => {
+  const config = { origin: "https://mattrax.example.com", providerId: "Mattrax" };
+  const IdleManifest = Schema.TaggedStruct("Idle", {});
+  const enrollBody =
+    '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-dummy</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>';
+  const enrollEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:BinarySecurityToken>token</wsse:BinarySecurityToken></wsse:Security></s:Header><s:Body>${enrollBody}</s:Body></s:Envelope>`;
+  const managementBody =
+    '<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>1</SessionID><MsgID>1</MsgID><Target><LocURI>server</LocURI></Target><Source><LocURI>device-dummy</LocURI></Source></SyncHdr><SyncBody><Final/></SyncBody></SyncML>';
+
+  type BackendCall =
+    | { readonly kind: "enroll"; readonly request: WindowsEnrollmentRequest }
+    | { readonly kind: "checkin"; readonly scope: WindowsManagementScope };
+
+  const handler = (calls: BackendCall[]) => {
+    const backend = ManagementBackend.of({
+      getAppleBootstrapToken: () => Effect.succeed(null),
+      appleReturnToServiceConfiguration: () => Effect.succeed({ enabled: false }),
+      appleDeviceEvent: () => Effect.void,
+      appleManagementCheckin: () => Effect.succeed(IdleManifest.make({})),
+      getAppleDeclarationTokens: () =>
+        Effect.succeed({
+          activationsToken: "a",
+          configurationsToken: "c",
+          assetsToken: "as",
+          managementToken: "m",
+          declarationsToken: "d",
+        }),
+      getAppleDeclarationItems: () =>
+        Effect.succeed({ activations: [], configurations: [], assets: [], management: [] }),
+      getAppleDeclaration: () => Effect.succeed(null),
+      getAppleAsset: () => Effect.succeed(null),
+      windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
+      getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
+      windowsEnroll: (request) => {
+        calls.push({ kind: "enroll", request });
+
+        return Effect.succeed({
+          deviceId: "device-dummy",
+          signedCertificate: "signed",
+          identityCertificate: "identity",
+          username: "device-dummy",
+          secret: "secret",
+          providerId: "Mattrax",
+        });
+      },
+      windowsManagementCheckin: (scope) => {
+        calls.push({ kind: "checkin", scope });
+
+        return Effect.succeed({ commands: [] });
+      },
+      windowsDeviceEvent: () => Effect.void,
+      windowsRecordFailure: () => Effect.void,
+    });
+
+    return HttpRouter.toWebHandler(
+      windowsMdmRoutes.pipe(
+        Layer.provideMerge(
+          WindowsMdmServiceLive(config).pipe(
+            Layer.provideMerge(Layer.succeed(ManagementBackend, backend)),
+          ),
+        ),
+      ),
+    ).handler;
+  };
+
+  const send = async (
+    routeHandler: ReturnType<typeof handler>,
+    path: string,
+    body: string,
+    headers: Headers,
+  ) =>
+    routeHandler(
+      new Request(`https://mattrax.example.com${path}`, {
+        method: "POST",
+        body,
+        headers,
+      }),
+    );
+
+  it("strips an untrusted peer's forged bundle before both Windows backend methods", async () => {
+    const calls: BackendCall[] = [];
+    const routeHandler = handler(calls);
+    const headers = deviceIdentityHeaders(
+      request({ ...identityHeaders, [NODE_PEER_ADDRESS_HEADER]: "198.51.100.25" }),
+      { trustIdentityHeaders: true, trustedPeers, trustForwarded: false },
+    );
+
+    expect(identity(headers)).toEqual(noIdentity);
+    expect((await send(routeHandler, "/mdm/windows/enroll", enrollEnvelope, headers)).status).toBe(
+      200,
+    );
+    expect(
+      (await send(routeHandler, "/mdm/windows/management", managementBody, headers)).status,
+    ).toBe(200);
+
+    expect(calls.map((call) => call.kind)).toEqual(["enroll", "checkin"]);
+    for (const call of calls) {
+      const value = call.kind === "enroll" ? call.request : call.scope;
+
+      expect(value.identityCertificate).toBeUndefined();
+      expect(value.identityCertificateSerial).toBeUndefined();
+      expect(value.identityCertificateDerBase64).toBeUndefined();
+    }
+  });
+
+  it("preserves the trusted proxy's verified DER through both Windows backend methods", async () => {
+    const calls: BackendCall[] = [];
+    const routeHandler = handler(calls);
+    const headers = deviceIdentityHeaders(
+      request({ ...identityHeaders, [NODE_PEER_ADDRESS_HEADER]: "127.0.0.1" }),
+      { trustIdentityHeaders: true, trustedPeers, trustForwarded: false },
+    );
+
+    expect(identity(headers)).toEqual(expectedIdentity);
+    expect((await send(routeHandler, "/mdm/windows/enroll", enrollEnvelope, headers)).status).toBe(
+      200,
+    );
+    expect(
+      (await send(routeHandler, "/mdm/windows/management", managementBody, headers)).status,
+    ).toBe(200);
+
+    expect(calls.map((call) => call.kind)).toEqual(["enroll", "checkin"]);
+    for (const call of calls) {
+      const value = call.kind === "enroll" ? call.request : call.scope;
+
+      expect(value).toMatchObject({
+        identityCertificate: identityHeaders["x-device-identity-certificate"],
+        identityCertificateSerial: identityHeaders["x-device-identity-certificate-serial"],
+        identityCertificateDerBase64: identityHeaders["x-device-identity-certificate-der-base64"],
+      });
     }
   });
 });

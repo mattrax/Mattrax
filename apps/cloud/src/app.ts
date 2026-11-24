@@ -28,6 +28,7 @@ import {
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   EnterpriseErrorDiagnostics,
+  WINDOWS_DIAGNOSTICS_MAX_BYTES,
   enterpriseScopeTagApi,
   fleetMigrationApi,
   parseSuperadminEmails,
@@ -152,7 +153,9 @@ import {
   isDevMailboxEnabled,
   listDevEmails,
   timingSafeStringEqual,
+  clientKey,
   errorResponse,
+  localConsumer,
   logRequest,
   readErrorTag,
   resolveRequestId,
@@ -238,6 +241,44 @@ const auditCheckinCoalesceWindowMs =
  * fallback.
  */
 const localRateLimitStore: RateLimitStore = new Map();
+
+const WINDOWS_DIAGNOSTICS_UPLOAD_PATH = "/api/v1/windows-diagnostics/upload";
+
+/**
+ * Diagnostics uploads are large, unauthenticated until their scoped token is
+ * checked, and intentionally absent from the general route classifier. Keep a
+ * separate, low per-client ceiling so invalid tokens cannot fan out unbounded
+ * body reads. This process-local backstop is exact for the self-hosted host;
+ * Worker isolates retain the same bounded per-isolate behaviour as the other
+ * local fallback counters.
+ */
+const windowsDiagnosticsUploadRateLimitRule = {
+  bucket: "mdm",
+  limit: 30,
+  windowSeconds: 60,
+} as const;
+
+const windowsDiagnosticsUploadRateLimitStore: RateLimitStore = new Map();
+
+const consumeWindowsDiagnosticsUploadRateLimit = localConsumer({
+  store: windowsDiagnosticsUploadRateLimitStore,
+});
+
+const checkWindowsDiagnosticsUploadRateLimit = (request: Request) =>
+  consumeWindowsDiagnosticsUploadRateLimit(
+    windowsDiagnosticsUploadRateLimitRule,
+    `windows-diagnostics-upload:${clientKey(request, { trustForwarded: TRUST_PROXY_HEADERS })}`,
+  );
+
+const isWindowsDiagnosticsUpload = (request: Request) =>
+  (request.method === "PUT" || request.method === "POST") &&
+  new URL(request.url).pathname === WINDOWS_DIAGNOSTICS_UPLOAD_PATH;
+
+const windowsDiagnosticsContentLengthTooLarge = (request: Request) => {
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+
+  return Number.isFinite(contentLength) && contentLength > WINDOWS_DIAGNOSTICS_MAX_BYTES;
+};
 
 /**
  * Charge the request to whichever limiter this deployment has.
@@ -409,7 +450,7 @@ const handlersLayer = Layer.mergeAll(
   // route because the body is binary and the device presents a signed token,
   // not a tenant session.
   ...["PUT" as const, "POST" as const].map((method) =>
-    HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
+    HttpRouter.add(method, WINDOWS_DIAGNOSTICS_UPLOAD_PATH, (request) =>
       Effect.flatMap(EnterpriseServiceTag, (service) =>
         Effect.map(
           service.uploadWindowsDiagnostics(request),
@@ -1469,9 +1510,21 @@ export const createApiRuntime = (
         const limited = await Effect.runPromise(
           checkRateLimit(request).pipe(Effect.provide(rateLimiterLayer(env))),
         );
+        const uploadLimited = isWindowsDiagnosticsUpload(request)
+          ? await Effect.runPromise(checkWindowsDiagnosticsUploadRateLimit(request))
+          : undefined;
+        const effectiveLimit = limited.limited ? limited : uploadLimited;
 
-        if (limited.limited) {
-          response = rateLimitResponse(limited, requestId);
+        if (effectiveLimit?.limited) {
+          response = rateLimitResponse(effectiveLimit, requestId);
+        } else if (uploadLimited && windowsDiagnosticsContentLengthTooLarge(request)) {
+          response = errorResponse(413, requestId, {
+            error: "payload_too_large",
+            message:
+              "Diagnostic archives must be " +
+              Math.floor(WINDOWS_DIAGNOSTICS_MAX_BYTES / 1024 / 1024) +
+              " MB or smaller.",
+          });
         } else if (
           (pathname === "/api/health" || pathname === "/health") &&
           request.method === "GET"

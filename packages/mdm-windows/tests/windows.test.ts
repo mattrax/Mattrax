@@ -5,10 +5,18 @@ import * as pkijs from "pkijs";
 import {
   arrayBufferToBase64,
   exportPrivateKeyJwk,
+  pemDecode,
   generateCaKeyPair,
   sealSecret,
 } from "@mattrax/crypto";
-import { certToPem, createCaCertificate, pemToCert, signScepCsr } from "@mattrax/scep";
+import {
+  certificateSerialHex,
+  certToPem,
+  createCaCertificate,
+  describeScepCa,
+  pemToCert,
+  signScepCsr,
+} from "@mattrax/scep";
 import { MdmOrigin, UnknownDevice } from "@mattrax/management-backend";
 import {
   createWindowsEnrollmentToken,
@@ -112,6 +120,29 @@ const enrollmentRow = (organizationId: string) => ({
   updatedAt: new Date("2024-01-01T00:00:00Z"),
 });
 
+const issuedCertificateRow = (serial: string, deviceId: string, overrides: Row = {}): Row => ({
+  __table: tableName(schema.scepIssuedCertificate),
+  serial,
+  organizationId: "org-early",
+  enrollmentId: null,
+  deviceId,
+  byodEnrollmentId: null,
+  caFingerprintSha256: null,
+  notAfter: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+  revokedAt: null,
+  createdAt: new Date("2024-01-01T00:00:00Z"),
+  ...overrides,
+});
+
+const identityDerBase64 = (certificatePem: string) =>
+  arrayBufferToBase64(pemDecode("CERTIFICATE", certificatePem));
+
+type EnrollmentIdentityProof = {
+  readonly identityCertificate?: string;
+  readonly identityCertificateSerial?: string;
+  readonly identityCertificateDerBase64?: string;
+};
+
 const setup = async (
   overrides: {
     windowsOrganizationId?: string | null;
@@ -119,11 +150,14 @@ const setup = async (
     tenantTokenTtlSeconds?: number;
     planLimits?: ReturnType<typeof parsePlanLimits>;
     devices?: Array<Row>;
+    certificates?: Array<Row>;
+    includeLateCa?: boolean;
     ssoConfig?: Array<Row>;
     federated?: Parameters<typeof createWindowsBackend>[0]["federated"];
   } = {},
 ) => {
   const ca = await makeCa();
+  const lateCa = overrides.includeLateCa ? await makeCa() : null;
 
   const initial: Store = {
     [tableName(schema.organization)]: [
@@ -140,6 +174,19 @@ const setup = async (
         createdAt: new Date(),
         rotatedAt: null,
       },
+      ...(lateCa
+        ? [
+            {
+              id: 2,
+              organizationId: "org-late",
+              certPem: lateCa.certPem,
+              privateKeyJwk: lateCa.privateKeyJwk,
+              source: "generated",
+              createdAt: new Date(),
+              rotatedAt: null,
+            },
+          ]
+        : []),
     ],
     [tableName(schema.enterpriseEnrollment)]: [
       enrollmentRow("org-late"),
@@ -148,6 +195,9 @@ const setup = async (
   };
 
   if (overrides.devices) initial[tableName(schema.device)] = overrides.devices;
+
+  if (overrides.certificates)
+    initial[tableName(schema.scepIssuedCertificate)] = overrides.certificates;
 
   if (overrides.ssoConfig) initial[tableName(schema.ssoConfig)] = overrides.ssoConfig;
 
@@ -168,10 +218,44 @@ const setup = async (
     federated: overrides.federated,
   });
 
-  return { ca, db, backend };
+  return { ca, lateCa, db, backend };
 };
 
-const enrollmentRequest = (authToken: string, csr: string, deviceId = "device-1") => ({
+const signTestIdentity = async (
+  ca: Awaited<ReturnType<typeof makeCa>>,
+  commonName: string,
+  organizationId = "org-early",
+) => {
+  const signed = await run(
+    signScepCsr({
+      csr: await makeCsr(commonName),
+      caCertPem: ca.certPem,
+      caPrivateKeyJwk: ca.privateKeyJwk,
+      notBefore: new Date(Date.now() - 1_000),
+      notAfter: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+      deviceId: commonName,
+      organizationalUnit: organizationId,
+    }),
+  );
+  const serial = certificateSerialHex(signed.certificate);
+
+  return {
+    signed,
+    serial,
+    proof: {
+      identityCertificate: `O=Mattrax, OU=${organizationId}, CN=${commonName}`,
+      identityCertificateSerial: serial,
+      identityCertificateDerBase64: identityDerBase64(signed.certificatePem),
+    } satisfies EnrollmentIdentityProof,
+  };
+};
+
+const enrollmentRequest = (
+  authToken: string,
+  csr: string,
+  deviceId = "device-1",
+  proof?: EnrollmentIdentityProof,
+) => ({
   authToken,
   csr,
   deviceId,
@@ -179,6 +263,7 @@ const enrollmentRequest = (authToken: string, csr: string, deviceId = "device-1"
   enrollmentType: "Full",
   context: { DeviceID: deviceId, DeviceName: "DESKTOP-TEST" },
   mdmOrigin,
+  ...proof,
 });
 
 /**
@@ -440,8 +525,20 @@ describe("Windows enterprise backend", () => {
           lastSeenAt: now,
         },
       ],
+      certificates: [issuedCertificateRow("a1b2c3", "existing")],
     });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    db.store[tableName(schema.autopilotDevice)] = [
+      {
+        __table: tableName(schema.autopilotDevice),
+        organizationId: "org-early",
+        serial: "DEVICE-1",
+        enrollmentState: "enrolled",
+        profileStatus: "assigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
     db.failInsertTable = tableName(schema.scepIssuedCertificate);
 
     await expect(
@@ -450,7 +547,9 @@ describe("Windows enterprise backend", () => {
     expect(dbRows(db, tableName(schema.device))).toMatchObject([
       { id: "existing", status: "pending", name: "ORIGINAL" },
     ]);
-    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toEqual([]);
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toMatchObject([
+      { serial: "a1b2c3", deviceId: "existing" },
+    ]);
   });
 
   it("rejects a new Windows device when the plan device limit is reached", async () => {
@@ -483,7 +582,7 @@ describe("Windows enterprise backend", () => {
   it("allows re-enrolling an existing Windows device above the plan limit", async () => {
     const now = new Date("2024-03-01T00:00:00Z");
 
-    const { backend, db } = await setup({
+    const { backend, db, ca } = await setup({
       planLimits: parsePlanLimits(JSON.stringify({ free: { devices: 1 } })),
       devices: [
         {
@@ -498,11 +597,19 @@ describe("Windows enterprise backend", () => {
         },
       ],
     });
+    const identity = await signTestIdentity(ca, "device-existing");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(identity.serial, "existing"),
+    ];
 
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
     const csr = await makeCsr();
     await expect(
-      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, csr, "device-existing"))),
+      run(
+        backend.windowsEnroll(
+          enrollmentRequest(policy.authToken, csr, "device-existing", identity.proof),
+        ),
+      ),
     ).resolves.toMatchObject({ deviceId: "device-existing" });
     expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
   });
@@ -510,8 +617,21 @@ describe("Windows enterprise backend", () => {
   it("updates an existing device instead of inserting a duplicate", async () => {
     const { backend, db } = await setup();
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("FIRST"))));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("SECOND"))));
+    const first = await run(
+      backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("FIRST"))),
+    );
+    const firstSerial = Schema.decodeUnknownSync(Schema.String)(
+      dbRows(db, tableName(schema.scepIssuedCertificate))[0].serial,
+    );
+    await run(
+      backend.windowsEnroll(
+        enrollmentRequest(policy.authToken, await makeCsr("SECOND"), "device-1", {
+          identityCertificate: `O=Mattrax, OU=org-early, CN=device-1`,
+          identityCertificateSerial: firstSerial,
+          identityCertificateDerBase64: identityDerBase64(first.signedCertificate),
+        }),
+      ),
+    );
 
     const devices = dbRows(db, tableName(schema.device));
     expect(devices).toHaveLength(1);
@@ -521,6 +641,163 @@ describe("Windows enterprise backend", () => {
 
     for (const certificate of certificates) expect(certificate.deviceId).toBe(devices[0].id);
     expect(certificates[0].serial).not.toBe(certificates[1].serial);
+  });
+
+  it("rejects renewal of an existing DeviceID without possession proof before signing", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db } = await setup({
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "ORIGINAL",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+      certificates: [issuedCertificateRow("a1b2c3", "existing")],
+    });
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+
+    await expect(
+      run(
+        backend.windowsEnroll({
+          ...enrollmentRequest(policy.authToken, "not-a-csr"),
+          // Caller-owned SOAP context must never be accepted as trusted proof.
+          context: {
+            DeviceID: "device-1",
+            identityCertificateSerial: "a1b2c3",
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    expect(dbRows(db, tableName(schema.device))).toMatchObject([
+      { id: "existing", name: "ORIGINAL", dmIdentifier: "device-1" },
+    ]);
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(1);
+  });
+
+  it("rejects a cross-device certificate serial before signing a renewal", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db, ca } = await setup({
+      devices: [
+        {
+          id: "target",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "TARGET",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+        {
+          id: "other",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "OTHER",
+          dmIdentifier: "device-2",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    const targetIdentity = await signTestIdentity(ca, "device-1");
+    const otherIdentity = await signTestIdentity(ca, "device-2");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(targetIdentity.serial, "target"),
+      issuedCertificateRow(otherIdentity.serial, "other"),
+    ];
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+
+    await expect(
+      run(
+        backend.windowsEnroll(
+          enrollmentRequest(policy.authToken, "not-a-csr", "device-1", otherIdentity.proof),
+        ),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(2);
+  });
+
+  it.each(["unknown", "revoked", "expired"] as const)(
+    "rejects an %s renewal certificate before signing",
+    async (state) => {
+      const now = new Date("2024-03-01T00:00:00Z");
+      const { backend, db, ca } = await setup({
+        devices: [
+          {
+            id: "existing",
+            organizationId: "org-early",
+            proto: "win",
+            status: "enrolled",
+            name: "ORIGINAL",
+            dmIdentifier: "device-1",
+            enrolledAt: now,
+            lastSeenAt: now,
+          },
+        ],
+      });
+      const identity = await signTestIdentity(ca, "device-1");
+      const certificate = issuedCertificateRow(identity.serial, "existing");
+      if (state === "revoked") certificate.revokedAt = now;
+      if (state === "expired") certificate.notAfter = new Date(Date.now() - 1_000);
+      db.store[tableName(schema.scepIssuedCertificate)] = [certificate];
+      const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+      const proof =
+        state === "unknown"
+          ? { ...identity.proof, identityCertificateSerial: "f9f9f9" }
+          : identity.proof;
+
+      await expect(
+        run(
+          backend.windowsEnroll(
+            enrollmentRequest(policy.authToken, "not-a-csr", "device-1", proof),
+          ),
+        ),
+      ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+      expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(1);
+    },
+  );
+
+  it("renews an existing identity only with its active device certificate", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db, ca } = await setup({
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "ORIGINAL",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    const identity = await signTestIdentity(ca, "device-1");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(identity.serial, "existing"),
+    ];
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    const result = await run(
+      backend.windowsEnroll(
+        enrollmentRequest(policy.authToken, await makeCsr("RENEWED"), "device-1", identity.proof),
+      ),
+    );
+
+    const certificate = await pemToCert(result.signedCertificate);
+    expect(await certificate.verify(await pemToCert(ca.certPem))).toBe(true);
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+    const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
+    expect(certificates).toHaveLength(2);
+    expect(certificates.every((row) => row.deviceId === "existing")).toBe(true);
+    expect(certificates.map((row) => row.serial)).toContain(certificateSerialHex(certificate));
   });
 
   it("rejects forged and expired enrollment tokens", async () => {
@@ -912,7 +1189,9 @@ describe("Windows enterprise backend", () => {
   it("requires a matching client certificate when configured", async () => {
     const { backend, db } = await setup({ requireDeviceIdentity: true });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    const enrolled = await run(
+      backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())),
+    );
     suppressInventory(db);
 
     await expect(
@@ -931,23 +1210,45 @@ describe("Windows enterprise backend", () => {
       ),
     ).rejects.toBeInstanceOf(UnknownDevice);
 
-    const response = await run(
-      backend.windowsManagementCheckin(
-        {
-          deviceId: "device-1",
-          identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
-          mdmOrigin,
-        },
-        {
-          sessionID: "1",
-          msgID: "1",
-          source: "device-1",
-          target: origin,
-          statuses: [],
-          alerts: [],
-        },
+    const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0];
+    const identityCertificateDerBase64 = identityDerBase64(enrolled.signedCertificate);
+    const scope = {
+      deviceId: "device-1",
+      identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+      identityCertificateSerial: Schema.decodeUnknownSync(Schema.String)(certificate.serial),
+      identityCertificateDerBase64,
+      mdmOrigin,
+    };
+    const managementRequest = {
+      sessionID: "1",
+      msgID: "1",
+      source: "device-1",
+      target: origin,
+      statuses: [],
+      alerts: [],
+    };
+
+    await expect(
+      run(
+        backend.windowsManagementCheckin(
+          { ...scope, identityCertificateDerBase64: undefined },
+          managementRequest,
+        ),
       ),
-    );
+    ).rejects.toBeInstanceOf(UnknownDevice);
+
+    const tamperedDer = new Uint8Array(pemDecode("CERTIFICATE", enrolled.signedCertificate));
+    tamperedDer[0] ^= 1;
+    await expect(
+      run(
+        backend.windowsManagementCheckin(
+          { ...scope, identityCertificateDerBase64: arrayBufferToBase64(tamperedDer.buffer) },
+          managementRequest,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+
+    const response = await run(backend.windowsManagementCheckin(scope, managementRequest));
 
     expect(response.commands).toEqual([]);
   });
@@ -1229,9 +1530,12 @@ describe("Windows tenant enrollment tokens", () => {
   });
 
   it("rejects a tenant token that disagrees with the client certificate", async () => {
-    const { backend } = await setup({ requireDeviceIdentity: true });
+    const { backend, db } = await setup({ requireDeviceIdentity: true });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    const enrolled = await run(
+      backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())),
+    );
+    const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0];
 
     const lateToken = await createWindowsTenantToken("org-late", authSecret);
     await expect(
@@ -1240,6 +1544,8 @@ describe("Windows tenant enrollment tokens", () => {
           {
             deviceId: "device-1",
             identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+            identityCertificateSerial: Schema.decodeUnknownSync(Schema.String)(certificate.serial),
+            identityCertificateDerBase64: identityDerBase64(enrolled.signedCertificate),
             tenantToken: lateToken,
             mdmOrigin,
           },
@@ -1285,7 +1591,9 @@ describe("Windows identity lifecycle", () => {
   it("rejects a revoked identity certificate serial and accepts an active one", async () => {
     const { backend, db } = await setup({ requireDeviceIdentity: true });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
-    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+    const enrolled = await run(
+      backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())),
+    );
     suppressInventory(db);
 
     const certificate = dbRows(db, tableName(schema.scepIssuedCertificate))[0];
@@ -1295,6 +1603,7 @@ describe("Windows identity lifecycle", () => {
       deviceId: "device-1",
       identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
       identityCertificateSerial: Schema.decodeUnknownSync(Schema.String)(certificate.serial),
+      identityCertificateDerBase64: identityDerBase64(enrolled.signedCertificate),
       mdmOrigin,
     };
 
@@ -1314,11 +1623,290 @@ describe("Windows identity lifecycle", () => {
     await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     storedCertificate.revokedAt = null;
+    const notAfter = storedCertificate.notAfter;
+    storedCertificate.notAfter = new Date(Date.now() - 1_000);
+    await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+    storedCertificate.notAfter = notAfter;
+
+    await expect(
+      checkin(backend, { ...scope, identityCertificateSerial: "f9f9f9" }),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+    await expect(
+      checkin(backend, { ...scope, identityCertificateSerial: undefined }),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
     await expect(checkin(backend, scope)).resolves.toEqual({ commands: [] });
   });
 
+  it.each(["autopilot", "pre-registration", "foreign-autopilot", "none"] as const)(
+    "reclaims an unenrolled Windows row only with legitimate arrival proof (%s)",
+    async (proof) => {
+      const { backend, db } = await setup();
+      const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+      await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+      suppressInventory(db);
+
+      await run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-1", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: [],
+            alerts: [{ cmdID: "9", data: "1226" }],
+          },
+        ),
+      );
+
+      const device = dbRows(db, tableName(schema.device))[0];
+      const [oldCertificate] = dbRows(db, tableName(schema.scepIssuedCertificate));
+      expect(device.status).toBe("unenrolled");
+      expect(oldCertificate.revokedAt).toBeInstanceOf(Date);
+
+      if (proof === "autopilot") {
+        db.store[tableName(schema.autopilotDevice)] = [
+          {
+            __table: tableName(schema.autopilotDevice),
+            organizationId: "org-early",
+            serial: "DEVICE-1",
+            enrollmentState: "enrolled",
+            profileStatus: "assigned",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      } else if (proof === "pre-registration") {
+        db.store[tableName(schema.devicePreRegistration)] = [
+          {
+            __table: tableName(schema.devicePreRegistration),
+            id: "pre-registration-1",
+            organizationId: "org-early",
+            serial: "device-1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      } else if (proof === "foreign-autopilot") {
+        db.store[tableName(schema.autopilotDevice)] = [
+          {
+            __table: tableName(schema.autopilotDevice),
+            organizationId: "org-late",
+            serial: "DEVICE-1",
+            enrollmentState: "enrolled",
+            profileStatus: "assigned",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      }
+
+      if (proof === "foreign-autopilot" || proof === "none") {
+        await expect(
+          run(backend.windowsEnroll(enrollmentRequest(policy.authToken, "not-a-csr"))),
+        ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+        expect(dbRows(db, tableName(schema.device))).toMatchObject([
+          { id: device.id, status: "unenrolled" },
+        ]);
+        expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(1);
+
+        return;
+      }
+
+      const result = await run(
+        backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("RE-ENROLLED"))),
+      );
+      expect(result.deviceId).toBe("device-1");
+      expect(dbRows(db, tableName(schema.device))).toMatchObject([
+        { id: device.id, status: "enrolled", name: "DESKTOP-TEST" },
+      ]);
+      const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
+      expect(certificates).toHaveLength(2);
+      expect(
+        certificates.find((row) => row.serial === oldCertificate.serial)?.revokedAt,
+      ).toBeInstanceOf(Date);
+      const renewedCertificate = certificates.find((row) => row.serial !== oldCertificate.serial);
+      expect(renewedCertificate?.deviceId).toBe(device.id);
+      expect(renewedCertificate?.revokedAt ?? null).toBeNull();
+    },
+  );
+
+  it("binds Windows identity to the asserted tenant's CA, not issuer DN alone", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db, ca, lateCa } = await setup({
+      includeLateCa: true,
+      requireDeviceIdentity: true,
+      devices: [
+        {
+          id: "target-b",
+          organizationId: "org-late",
+          proto: "win",
+          status: "enrolled",
+          name: "TARGET B",
+          dmIdentifier: "device-b",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    if (!lateCa) throw new Error("missing tenant B test CA");
+
+    const forgedIdentity = await signTestIdentity(ca, "device-b", "org-late");
+    const validIdentity = await signTestIdentity(lateCa, "device-b", "org-late");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(forgedIdentity.serial, "target-b", { organizationId: "org-late" }),
+    ];
+    suppressInventory(db);
+
+    await expect(
+      checkin(backend, { deviceId: "device-b", ...forgedIdentity.proof, mdmOrigin }),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+
+    const tenantToken = await createWindowsTenantToken("org-late", authSecret);
+    const policy = await run(backend.getWindowsEnrollmentPolicy("", { tenantToken }));
+    await expect(
+      run(
+        backend.windowsEnroll({
+          ...enrollmentRequest(policy.authToken, "not-a-csr", "device-b", forgedIdentity.proof),
+          tenantToken,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(validIdentity.serial, "target-b", { organizationId: "org-late" }),
+    ];
+    await expect(
+      checkin(backend, { deviceId: "device-b", ...validIdentity.proof, mdmOrigin }),
+    ).resolves.toEqual({ commands: [] });
+    await expect(
+      run(
+        backend.windowsEnroll({
+          ...enrollmentRequest(
+            policy.authToken,
+            await makeCsr("RENEWED B"),
+            "device-b",
+            validIdentity.proof,
+          ),
+          tenantToken,
+        }),
+      ),
+    ).resolves.toMatchObject({ deviceId: "device-b" });
+  });
+
+  it("accepts an unexpired retired tenant CA anchor and rejects it after trustUntil", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db } = await setup({
+      requireDeviceIdentity: true,
+      devices: [
+        {
+          id: "target",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "TARGET",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    const retiredCa = await makeCa();
+    const identity = await signTestIdentity(retiredCa, "device-1");
+    const description = await run(describeScepCa(retiredCa.certPem));
+    const trustTable = tableName(schema.scepCaTrust);
+    const trustRow = {
+      __table: trustTable,
+      id: "retired-ca-1",
+      organizationId: "org-early",
+      certPem: retiredCa.certPem,
+      fingerprintSha256: description.fingerprintSha256,
+      source: "generated",
+      retiredAt: now,
+      trustUntil: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+      createdAt: now,
+    };
+    db.store[trustTable] = [trustRow];
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(identity.serial, "target"),
+    ];
+    suppressInventory(db);
+
+    await expect(
+      checkin(backend, { deviceId: "device-1", ...identity.proof, mdmOrigin }),
+    ).resolves.toEqual({ commands: [] });
+
+    trustRow.trustUntil = new Date(Date.now() - 1_000);
+    await expect(
+      checkin(backend, { deviceId: "device-1", ...identity.proof, mdmOrigin }),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+  });
+
+  it("does not disclose commands to a device presenting another device's serial", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db, ca } = await setup({
+      requireDeviceIdentity: true,
+      devices: [
+        {
+          id: "target",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "TARGET",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+        {
+          id: "other",
+          organizationId: "org-early",
+          proto: "win",
+          status: "enrolled",
+          name: "OTHER",
+          dmIdentifier: "device-2",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    const targetIdentity = await signTestIdentity(ca, "device-1");
+    const targetRowIdentity = await signTestIdentity(ca, "device-1");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(targetRowIdentity.serial, "target"),
+      issuedCertificateRow(targetIdentity.serial, "other"),
+    ];
+    const commandTable = tableName(schema.deviceCommand);
+    (db.store[commandTable] ??= []).push({
+      __table: commandTable,
+      id: "target-command",
+      organizationId: "org-early",
+      deviceId: "target",
+      requestType: "WindowsSyncML",
+      payload: { kind: "Get", locURI: "./Vendor/MSFT/Dummy/Read", format: "chr" },
+      status: "queued",
+      dedupeKey: null,
+      expiresAt: null,
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      checkin(backend, {
+        deviceId: "device-1",
+        ...targetIdentity.proof,
+        mdmOrigin,
+      }),
+    ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
+    expect(dbRows(db, commandTable)).toMatchObject([{ id: "target-command", status: "queued" }]);
+    expect(dbRows(db, tableName(schema.auditLog)).some((row) => row.action === "mdm.checkin")).toBe(
+      false,
+    );
+  });
+
   it("enforces identity on management events but allows enrollment with a tenant token", async () => {
-    const { backend } = await setup({
+    const { backend, db, ca } = await setup({
       requireDeviceIdentity: true,
       windowsOrganizationId: null,
     });
@@ -1335,6 +1923,12 @@ describe("Windows identity lifecycle", () => {
       ),
     ).resolves.toBeUndefined();
 
+    const enrolledDevice = dbRows(db, tableName(schema.device))[0];
+    const identity = await signTestIdentity(ca, "device-2");
+    db.store[tableName(schema.scepIssuedCertificate)] = [
+      issuedCertificateRow(identity.serial, enrolledDevice.id as string),
+    ];
+
     await expect(
       run(
         backend.windowsDeviceEvent(
@@ -1349,7 +1943,7 @@ describe("Windows identity lifecycle", () => {
         backend.windowsDeviceEvent(
           {
             deviceId: "device-2",
-            identityCertificate: "O=Mattrax, OU=org-early, CN=device-2",
+            ...identity.proof,
             tenantToken: token,
             mdmOrigin,
           },
