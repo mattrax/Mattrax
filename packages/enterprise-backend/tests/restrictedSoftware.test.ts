@@ -4,6 +4,7 @@ import { makeEmailTransport } from "@mattrax/email";
 import {
   markAndroidRestrictedSoftwarePolicyDelivered,
   reconcileRestrictedSoftwareForDevice,
+  reconcileRestrictedSoftwareForOrganization,
   recordRestrictedSoftwareEnforcement,
   replaceDeviceApplications,
 } from "@mattrax/enterprise-core";
@@ -139,38 +140,87 @@ const trackSelectedTables = (db: ReturnType<typeof makeDb>) => {
 };
 
 describe("restricted software detection", () => {
-  it("does not reread applications or violations for a report with no rules", async () => {
-    const db = makeDb({
-      organization: [organization("org-1", "Acme")],
-      device: [device("device-1", "org-1")],
-      device_application: [application({ bundleId: "com.example.Stale" })],
-    });
-    const tables = trackSelectedTables(db);
+  it.each([
+    { scope: "no rules", rules: [], assignments: [] },
+    {
+      scope: "no applicable rules",
+      rules: [rule()],
+      assignments: [assignment({ mode: "exclude" })],
+    },
+  ])(
+    "does not reread applications or violations for a report with $scope",
+    async ({ rules, assignments }) => {
+      const db = makeDb({
+        organization: [organization("org-1", "Acme")],
+        device: [device("device-1", "org-1")],
+        restricted_software: rules,
+        restricted_software_assignment: assignments,
+        device_application: [application({ bundleId: "com.example.Stale" })],
+      });
+      const tables = trackSelectedTables(db);
 
-    const count = await runEffect(
-      replaceDeviceApplications(db, {
-        deviceId: "device-1",
-        organizationId: "org-1",
-        applications: [{ bundleId: "com.example.Banned", name: "Banned App" }],
-        reportedAt: now,
-      }),
-    );
+      const count = await runEffect(
+        replaceDeviceApplications(db, {
+          deviceId: "device-1",
+          organizationId: "org-1",
+          applications: [{ bundleId: "com.example.Banned", name: "Banned App" }],
+          reportedAt: now,
+        }),
+      );
 
-    expect(count).toBe(1);
-    // Replacement reads the previous rows once to diff them; reconciliation
-    // must not read applications or violations back.
-    expect(tables.filter((table) => table === schema.deviceApplication)).toHaveLength(1);
-    expect(tables.filter((table) => table === schema.restrictedSoftwareViolation)).toHaveLength(0);
-    expect(db.store.restricted_software_violation).toHaveLength(0);
-  });
+      expect(count).toBe(1);
+      // Replacement reads the previous rows once to diff them; reconciliation
+      // must not read applications or violations back.
+      expect(tables.filter((table) => table === schema.deviceApplication)).toHaveLength(1);
+      expect(tables.filter((table) => table === schema.restrictedSoftwareViolation)).toHaveLength(
+        0,
+      );
+      expect(db.store.restricted_software_violation).toHaveLength(0);
+    },
+  );
 
-  it("skips application and violation reads when scope excludes every rule", async () => {
+  it("resolves excluded violations during an organization rescan without reading applications", async () => {
     const db = makeDb({
       organization: [organization("org-1", "Acme")],
       device: [device("device-1", "org-1")],
       restricted_software: [rule()],
       restricted_software_assignment: [assignment({ mode: "exclude" })],
       device_application: [application()],
+      restricted_software_violation: [violation()],
+    });
+    const tables = trackSelectedTables(db);
+
+    const result = await runEffect(
+      reconcileRestrictedSoftwareForOrganization(db, {
+        organizationId: "org-1",
+        at: now,
+      }),
+    );
+
+    expect(result).toEqual({ devices: 1 });
+    expect(tables).not.toContain(schema.deviceApplication);
+    expect(tables.filter((table) => table === schema.restrictedSoftwareViolation)).toHaveLength(1);
+    expect(db.store.restricted_software_violation![0]).toMatchObject({
+      status: "resolved",
+      resolvedAt: now,
+      enforcementDetail: "No restricted-software rules currently apply to this device.",
+    });
+    expect(
+      db.store.audit_log!.filter((row) => row.action === "restricted_software.violation_resolved"),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    { change: "disabled", rules: [rule({ enabled: false })], assignments: [assignment()] },
+    { change: "unassigned", rules: [rule()], assignments: [] },
+  ])("resolves an open violation when the last rule is $change", async ({ rules, assignments }) => {
+    const db = makeDb({
+      organization: [organization("org-1", "Acme")],
+      device: [device("device-1", "org-1")],
+      restricted_software: rules,
+      restricted_software_assignment: assignments,
+      device_application: [application()],
+      restricted_software_violation: [violation()],
     });
     const tables = trackSelectedTables(db);
 
@@ -179,13 +229,55 @@ describe("restricted software detection", () => {
         organizationId: "org-1",
         deviceId: "device-1",
         at: now,
+        rescan: true,
       }),
     );
 
-    expect(result).toEqual({ detected: 0, reopened: 0, refreshed: 0, resolved: 0 });
+    expect(result).toEqual({ detected: 0, reopened: 0, refreshed: 0, resolved: 1 });
     expect(tables).not.toContain(schema.deviceApplication);
-    expect(tables).not.toContain(schema.restrictedSoftwareViolation);
-    expect(db.store.restricted_software_violation).toHaveLength(0);
+    expect(tables.filter((table) => table === schema.restrictedSoftwareViolation)).toHaveLength(1);
+    expect(db.store.restricted_software_violation![0]).toMatchObject({
+      status: "resolved",
+      resolvedAt: now,
+      enforcementDetail: "No restricted-software rules currently apply to this device.",
+    });
+    expect(
+      db.store.audit_log!.filter((row) => row.action === "restricted_software.violation_resolved"),
+    ).toHaveLength(1);
+  });
+
+  it("resolves an open violation from fresh empty inventory without rereading applications", async () => {
+    const later = new Date(now.getTime() + 60_000);
+    const db = makeDb({
+      organization: [organization("org-1", "Acme")],
+      device: [device("device-1", "org-1")],
+      restricted_software: [rule()],
+      restricted_software_assignment: [assignment()],
+      device_application: [application()],
+      restricted_software_violation: [violation()],
+    });
+    const tables = trackSelectedTables(db);
+
+    const count = await runEffect(
+      replaceDeviceApplications(db, {
+        deviceId: "device-1",
+        organizationId: "org-1",
+        applications: [],
+        reportedAt: later,
+      }),
+    );
+
+    expect(count).toBe(0);
+    expect(tables.filter((table) => table === schema.deviceApplication)).toHaveLength(1);
+    expect(tables.filter((table) => table === schema.restrictedSoftwareViolation)).toHaveLength(1);
+    expect(db.store.restricted_software_violation![0]).toMatchObject({
+      status: "resolved",
+      resolvedAt: later,
+      enforcementDetail: "The application is no longer present in the device inventory.",
+    });
+    expect(
+      db.store.audit_log!.filter((row) => row.action === "restricted_software.violation_resolved"),
+    ).toHaveLength(1);
   });
 
   it.each([
