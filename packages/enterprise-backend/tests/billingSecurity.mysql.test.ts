@@ -7,8 +7,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import {
   BillingWebhookError,
+  makeEntitlementSync,
   processStripeWebhook,
+  reconcileEntitlements,
   ServicesDbService,
+  tenantEntitlement,
 } from "@mattrax/enterprise-billing";
 import { applyBillingEntitlement, billingEntitlementRoutes } from "../src/billingEntitlement.ts";
 import { effectMysqlOptions, startMysqlFixture } from "./mysql.ts";
@@ -202,6 +205,106 @@ describe.skipIf(!process.env.TEST_MYSQL_URL)("billing races on disposable MySQL"
       ["org-1"],
     );
     expect(row).toMatchObject({ billing_status: "canceled", billing_entitlement_revision: 5 });
+  });
+
+  it("reconciles a committed revision-0 old-service mutation before duplicate replay can repair it", async () => {
+    const servicesDb = await runtime.runPromise(ServicesDbService);
+    const cloudDb = await runtime.runPromise(Db);
+    await seedSubscription("sub_1", "active", 0);
+    await fixture.query(
+      "INSERT INTO services_stripe_event (id, type, tenant_id, license_id, received_at) VALUES (?, ?, ?, ?, ?)",
+      ["evt_old_service", "customer.subscription.deleted", "org-1", null, now],
+    );
+    // Simulate the mutation committed by an old services instance during the
+    // transition: it changes state but knows nothing about revisions.
+    await fixture.query(
+      "UPDATE services_subscription SET status = ?, updated_at = ? WHERE tenant_id = ?",
+      ["canceled", now, "org-1"],
+    );
+    await fixture.query(
+      "INSERT INTO organization (id, billing_plan, billing_status, billing_entitlement_revision, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ["org-1", "device", "active", 0, now],
+    );
+
+    const receive = HttpRouter.toWebHandler(
+      billingEntitlementRoutes({ token }).pipe(Layer.provideMerge(Layer.succeed(Db, cloudDb))),
+    ).handler;
+    const pushed: Array<{ revision: number; status: string | null }> = [];
+    const sync = makeEntitlementSync({
+      url: "https://cloud.example.com",
+      token,
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        pushed.push((await request.clone().json()) as { revision: number; status: string | null });
+        return receive(request);
+      },
+    });
+    const replay = () => {
+      const { payload, signature } = signed(
+        event(
+          "evt_old_service",
+          "customer.subscription.deleted",
+          subscription("sub_1", "canceled"),
+        ),
+      );
+
+      return Effect.runPromise(
+        processStripeWebhook({
+          db: servicesDb,
+          payload,
+          signature,
+          webhookSecret,
+          deviceMonthlyPriceId: "price_device",
+          now,
+          onApplied: (result, db) =>
+            Effect.gen(function* () {
+              if (!result.tenantId) return;
+              const entitlement = yield* tenantEntitlement(db, result.tenantId);
+              if (entitlement) yield* sync({ organizationId: result.tenantId, ...entitlement });
+            }),
+        }),
+      );
+    };
+
+    // A duplicate alone cannot repair the old mutation: it faithfully resends
+    // revision 0, which the new receiver must reject.
+    await expect(replay()).rejects.toMatchObject({ _tag: "BillingWebhookError", statusCode: 500 });
+    expect(pushed.at(-1)).toMatchObject({ revision: 0, status: "canceled" });
+    let [cloud] = await fixture.query<RowDataPacket[]>(
+      "SELECT billing_status, billing_entitlement_revision, updated_at FROM organization WHERE id = ?",
+      ["org-1"],
+    );
+    expect(cloud).toMatchObject({ billing_status: "active", billing_entitlement_revision: 0 });
+
+    await expect(runtime.runPromise(reconcileEntitlements(servicesDb, sync))).resolves.toEqual({
+      tenants: 1,
+      promoted: 1,
+    });
+    expect(pushed.at(-1)).toMatchObject({ revision: 1, status: "canceled" });
+    [cloud] = await fixture.query<RowDataPacket[]>(
+      "SELECT billing_status, billing_entitlement_revision, updated_at FROM organization WHERE id = ?",
+      ["org-1"],
+    );
+    expect(cloud).toMatchObject({ billing_status: "canceled", billing_entitlement_revision: 1 });
+    const reconciledAt = new Date(cloud.updated_at).getTime();
+
+    // Once promoted, normal duplicate replay sends revision 1 and is a safe
+    // no-op at the receiver. Rerunning reconciliation is retry-safe as well.
+    await expect(replay()).resolves.toEqual({ duplicate: true });
+    await expect(runtime.runPromise(reconcileEntitlements(servicesDb, sync))).resolves.toEqual({
+      tenants: 1,
+      promoted: 0,
+    });
+    expect(pushed.slice(-2)).toMatchObject([
+      { revision: 1, status: "canceled" },
+      { revision: 1, status: "canceled" },
+    ]);
+    [cloud] = await fixture.query<RowDataPacket[]>(
+      "SELECT billing_status, billing_entitlement_revision, updated_at FROM organization WHERE id = ?",
+      ["org-1"],
+    );
+    expect(cloud).toMatchObject({ billing_status: "canceled", billing_entitlement_revision: 1 });
+    expect(new Date(cloud.updated_at).getTime()).toBe(reconciledAt);
   });
 
   it("serializes concurrent billing events without losing entitlement revisions", async () => {
