@@ -16,6 +16,12 @@ boundary keeps protocol handling independent from product state.
 | Hosted services     | `cloud-services`                                                                                                                                        | Mail, SSO, analytics, rate limits, readiness       |
 | Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                                                                                             | Dashboard, API and push relay                      |
 
+`apps/apns-relay` is a standalone development/custom-fork relay, not a supported
+alternative to the hosted services relay. The application no longer exposes an
+operator setting that targets it; only the internal `MATTRAX_SERVICES_URL` test
+override can. Hosted Cloud uses `apps/services`, and self-hosted production
+deployments use the hosted relay with a licence.
+
 ## Module conventions
 
 The domain and service packages follow Cap's Effect layout:

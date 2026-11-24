@@ -18,7 +18,11 @@ export type ServicesUrls = {
   readonly billing: string;
 };
 
-const parseServicesUrl = (value: string): string => {
+/**
+ * Normalise a services origin for environment validation and endpoint
+ * derivation. Rejects non-HTTPS values and anything that is not a bare origin.
+ */
+export const parseServicesUrl = (value: string): string => {
   let url: URL;
 
   try {

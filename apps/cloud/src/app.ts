@@ -667,7 +667,7 @@ const dashboardReportsJob = (env: Env) =>
 /** Hosted endpoints derived from the single services origin. */
 const services = servicesUrls(apiEnv.MATTRAX_SERVICES_URL);
 
-const makeHostedApns = (env: Env) => {
+const makeHostedApns = () => {
   const url = services.apnsRelay;
   // Hosted Cloud signs relay requests with the shared services token. A
   // self-hosted deployment already holds a licence key; reusing it for the
@@ -676,8 +676,8 @@ const makeHostedApns = (env: Env) => {
     typeof process === "undefined" ? undefined : process.env.MATTRAX_LICENSE_KEY?.trim();
 
   return makeApnsService(
-    env.SERVICES_TOKEN
-      ? RelayPushTransport({ url, secret: env.SERVICES_TOKEN })
+    apiEnv.SERVICES_TOKEN
+      ? RelayPushTransport({ url, secret: apiEnv.SERVICES_TOKEN })
       : licenseKey
         ? RelayPushTransport({ url, token: licenseKey })
         : NoopPushTransport(
@@ -695,7 +695,7 @@ const makeHostedApns = (env: Env) => {
  * changed users to report).
  */
 const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
-  const apns = makeHostedApns(env);
+  const apns = makeHostedApns();
 
   const androidConfig = androidDeliveryConfig(apiEnv);
 
@@ -811,7 +811,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
   // pushes go through the HMAC-signed relay. Without a relay the service is a
   // no-op: devices still poll for DDM changes, so policy still converges.
-  const apns = makeHostedApns(env);
+  const apns = makeHostedApns();
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
@@ -982,10 +982,10 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud forwards tenant billing to the services deployment. A
   // self-hosted deployment uses the licence API on the same service; neither
   // path needs a Stripe secret in the application.
-  const servicesBilling = env.SERVICES_TOKEN
+  const servicesBilling = apiEnv.SERVICES_TOKEN
     ? makeServicesBillingService({
         url: services.origin,
-        token: env.SERVICES_TOKEN,
+        token: apiEnv.SERVICES_TOKEN,
         origin: env.ORIGIN,
       })
     : undefined;

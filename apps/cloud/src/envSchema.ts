@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { parseServicesUrl } from "@mattrax/cloud-services/services";
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
 
@@ -14,6 +15,18 @@ const urlString = Schema.String.check(
   }),
 );
 
+const servicesUrlString = Schema.String.check(
+  Schema.makeFilter<string>((value) => {
+    try {
+      parseServicesUrl(value);
+
+      return true;
+    } catch (error) {
+      return error instanceof Error ? error.message : "a valid services origin";
+    }
+  }),
+);
+
 const ApiEnvSchema = Schema.Struct({
   ORIGIN: urlString,
   // Signs sessions, SSR tokens, step-up grants, SSO assertions and email
@@ -23,7 +36,7 @@ const ApiEnvSchema = Schema.Struct({
    * Internal override for the hosted services origin. It defaults to
    * `https://services.mattrax.app` and deployments should not set it.
    */
-  MATTRAX_SERVICES_URL: Schema.optional(urlString),
+  MATTRAX_SERVICES_URL: Schema.optional(servicesUrlString),
   SERVICES_TOKEN: Schema.optional(nonEmptyString),
   /**
    * Optional JSON plan catalogue mapping plan names to device/tenant limits.
@@ -321,7 +334,7 @@ export const resolveApiEnv = (source: unknown) => {
     ORIGIN: emptyStringAsUndefined(rawEnv.ORIGIN) ?? "https://e.mattrax.app",
     AUTH_SECRET: emptyStringAsUndefined(rawEnv.AUTH_SECRET),
     MATTRAX_SERVICES_URL: trimmedStringAsUndefined(rawEnv.MATTRAX_SERVICES_URL),
-    SERVICES_TOKEN: emptyStringAsUndefined(rawEnv.SERVICES_TOKEN),
+    SERVICES_TOKEN: trimmedStringAsUndefined(rawEnv.SERVICES_TOKEN),
     MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
     MATTRAX_SUPERADMINS: emptyStringAsUndefined(rawEnv.MATTRAX_SUPERADMINS),
     CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),

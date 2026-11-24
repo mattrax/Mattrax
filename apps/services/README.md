@@ -78,4 +78,14 @@ SHA-256 hash of the deployment licence id as both the distinct id and
 `deployment_id`. The raw licence id, push token, certificates, tenant data and
 request body are never sent.
 
+### Relay authentication rollout
+
+`SERVICES_TOKEN` must match the API Worker byte-for-byte, because it both
+authorises hosted billing and signs APNs relay requests. Deploy this service
+and Cloud together, or first stage a services release that accepts both the
+old relay secret and `SERVICES_TOKEN`, then deploy Cloud and remove the old
+secret. Add `SERVICES_TOKEN` wherever only the former relay secret was
+configured. Self-hosted installs are unaffected and continue to use their
+deployment licence.
+
 The public origin is `https://services.mattrax.app`.
