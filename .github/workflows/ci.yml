@@ -155,6 +155,7 @@ jobs:
         with:
           name: lighthouse-report
           path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 7
 
   # One runner per shard. Playwright's `--shard` splits the spec files by test
