@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 import { authClient } from "~/lib/auth";
 import { installHeroProgress } from "~/lib/landing-motion";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";
-import { Eyebrow } from "./primitives";
+import { Eyebrow, NoJsStartFree } from "./primitives";
 
 type Platform = "apple" | "windows" | "android";
 
@@ -97,10 +97,11 @@ export function Hero() {
                 <Show
                   when={cta()}
                   fallback={
-                    <Button as="a" href="/register" size="lg" class="h-10 px-5">
-                      Start free
-                      <ArrowRight class="size-3.5" />
-                    </Button>
+                    <div
+                      data-js-pending
+                      class="h-10 w-32 animate-pulse rounded-lg bg-secondary"
+                      aria-hidden="true"
+                    />
                   }
                 >
                   {(action) => (
@@ -110,6 +111,7 @@ export function Hero() {
                     </Button>
                   )}
                 </Show>
+                <NoJsStartFree />
                 <Button
                   as="a"
                   href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"

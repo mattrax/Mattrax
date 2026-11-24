@@ -3,7 +3,8 @@
  *
  * Session state can be unknown during the first client pass, so `undefined`
  * means "render a neutral skeleton": never show Start free to someone who is
- * signed in, or Open dashboard to someone who is signed out.
+ * signed in, or Open dashboard to someone who is signed out. The landing page
+ * adds a <noscript> Start free link for clients that never run JavaScript.
  */
 export type PublicPrimaryCta = {
   readonly label: "Start free" | "Open dashboard";

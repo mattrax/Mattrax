@@ -212,6 +212,7 @@ function TopNavigation() {
                 when={cta()}
                 fallback={
                   <span
+                    data-js-pending
                     class="block h-9 w-full animate-pulse rounded-md bg-hover"
                     aria-hidden="true"
                   />

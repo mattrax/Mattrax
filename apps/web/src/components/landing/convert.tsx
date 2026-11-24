@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 import { authClient } from "~/lib/auth";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";
 import { faqStructuredData } from "~/lib/site";
-import { Eyebrow } from "./primitives";
+import { Eyebrow, NoJsStartFree } from "./primitives";
 
 type PricePlan = {
   readonly name: string;
@@ -96,14 +96,11 @@ export function Pricing() {
                   <Show
                     when={action(plan)}
                     fallback={
-                      <Button
-                        as="a"
-                        href="/register"
-                        variant={plan.secondary ? "outline" : "default"}
-                        class="w-full"
-                      >
-                        Start free
-                      </Button>
+                      <div
+                        data-js-pending
+                        class="h-9 w-full animate-pulse rounded-lg bg-hover"
+                        aria-hidden="true"
+                      />
                     }
                   >
                     {(value) => (
@@ -116,6 +113,9 @@ export function Pricing() {
                         {value().label}
                       </Button>
                     )}
+                  </Show>
+                  <Show when={plan.href === "/register"}>
+                    <NoJsStartFree class="w-full" />
                   </Show>
                 </div>
               </div>
@@ -263,10 +263,11 @@ export function Closing() {
             <Show
               when={cta()}
               fallback={
-                <Button as="a" href="/register" size="lg" class="h-10 px-5">
-                  Start free
-                  <ArrowRight class="size-3.5" />
-                </Button>
+                <div
+                  data-js-pending
+                  class="h-10 w-32 animate-pulse rounded-lg bg-secondary"
+                  aria-hidden="true"
+                />
               }
             >
               {(action) => (
@@ -276,6 +277,7 @@ export function Closing() {
                 </Button>
               )}
             </Show>
+            <NoJsStartFree />
             <Button
               as="a"
               href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"

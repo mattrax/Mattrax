@@ -486,9 +486,9 @@ export function RegionPicker(props: {
                             data-code={country.properties.iso.toLowerCase()}
                             fill={
                               selected() === country.properties.iso.toUpperCase()
-                                ? "var(--brand-solid)"
+                                ? "var(--globe-selected)"
                                 : hovered() === country.properties.iso
-                                  ? "var(--brand-muted)"
+                                  ? "var(--globe-hover)"
                                   : "var(--globe-land)"
                             }
                             stroke="var(--globe-land-stroke)"

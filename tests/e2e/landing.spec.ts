@@ -60,6 +60,42 @@ test.describe("landing auth state", () => {
     }
   });
 
+  test("shows no clickable primary CTA while a signed-in session is pending", async ({
+    page,
+  }) => {
+    await register(page);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await page.route("**/api/v1/getSession", async (route) => {
+      await gate;
+      await route.continue();
+    });
+
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(landingUrl(), { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+
+      // The hero, pricing and closing sections all wait for the session.
+      await expect(page.getByRole("link", { name: "Start free", exact: true })).toHaveCount(0);
+      await expect(
+        page.getByRole("link", { name: "Open dashboard", exact: true }),
+      ).toHaveCount(0);
+
+      release();
+      await expect(
+        page.getByRole("link", { name: "Open dashboard", exact: true }).first(),
+      ).toBeVisible();
+    } finally {
+      release();
+      await page.unroute("**/api/v1/getSession");
+    }
+  });
+
   test("shows the registration CTA to a signed-out visitor", async ({ page }) => {
     await page.context().clearCookies();
     await gotoHydrated(page, landingUrl());

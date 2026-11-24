@@ -3,11 +3,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 /**
- * The globe encodes land, water and coastlines with colour tokens. Keep the
- * pairs at WCAG's 3:1 non-text contrast minimum in both themes, including the
- * radial rim that shades the sphere edge at 8% of the foreground. An outline
- * that disappears into the ocean is not a border, and land that matches water
- * is not a map.
+ * The globe encodes land, water, coastlines and interaction states with colour
+ * tokens. Keep the pairs at WCAG's 3:1 non-text contrast minimum in both
+ * themes, including the radial rim that shades the sphere edge at 8% of the
+ * foreground. An outline that disappears into the ocean is not a border, land
+ * that matches water is not a map, and a selected country must read against the
+ * surrounding land.
  */
 const css = readFileSync(
   join(import.meta.dirname, "../../../../packages/ui/src/styles.css"),
@@ -73,24 +74,32 @@ for (const [theme, block] of [
     const ocean = token(block, "globe-ocean");
     const land = token(block, "globe-land");
     const coast = token(block, "globe-land-stroke");
+    const selected = token(block, "globe-selected");
+    const hover = token(block, "globe-hover");
     const foreground = token(block, "foreground");
 
     expect(contrast(land, ocean)).toBeGreaterThanOrEqual(3);
     expect(contrast(coast, land)).toBeGreaterThanOrEqual(3);
     expect(contrast(coast, ocean)).toBeGreaterThanOrEqual(3);
+    expect(contrast(selected, land)).toBeGreaterThanOrEqual(3);
+    expect(contrast(hover, land)).toBeGreaterThanOrEqual(3);
 
     const shadedOcean = shade(ocean, foreground, RIM_OPACITY);
     const shadedLand = shade(land, foreground, RIM_OPACITY);
     const shadedCoast = shade(coast, foreground, RIM_OPACITY);
+    const shadedSelected = shade(selected, foreground, RIM_OPACITY);
+    const shadedHover = shade(hover, foreground, RIM_OPACITY);
 
     expect(contrast(shadedLand, shadedOcean)).toBeGreaterThanOrEqual(3);
     expect(contrast(shadedCoast, shadedLand)).toBeGreaterThanOrEqual(3);
     expect(contrast(shadedCoast, shadedOcean)).toBeGreaterThanOrEqual(3);
+    expect(contrast(shadedSelected, shadedLand)).toBeGreaterThanOrEqual(3);
+    expect(contrast(shadedHover, shadedLand)).toBeGreaterThanOrEqual(3);
   });
 }
 
 describe("globe palette scope", () => {
   test("keeps globe tokens out of the general colour API", () => {
-    expect(css.match(/--globe-/g)?.length).toBe(6);
+    expect(css.match(/--globe-/g)?.length).toBe(10);
   });
 });
