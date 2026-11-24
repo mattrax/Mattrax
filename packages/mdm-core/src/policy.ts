@@ -13,8 +13,12 @@ import type { VerifiedAppleAssetToken } from "@mattrax/dm-apple";
 import {
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  WINDOWS_LAPS_CONFIGURATION_KIND,
   normalizeAppleLockScreenMessage,
   parseAppleLockScreenMessageConfiguration,
+  parseWindowsLapsPolicy,
+  windowsLapsPolicyNodes,
+  windowsLapsPolicyProblem,
 } from "@mattrax/enterprise-domain";
 import { isPlistObject, plistText } from "./internal/plistValue.js";
 import type { PlistObject } from "./internal/plistValue.js";
@@ -65,6 +69,7 @@ export type ConfigurationKind =
   | { readonly type: "declaration"; readonly id: string }
   | { readonly type: "application"; readonly id: string }
   | { readonly type: "windows"; readonly id: string }
+  | { readonly type: "windows-laps" }
   | { readonly type: "android"; readonly id: string }
   /** An imperative lock screen default, not a declaration. */
   | { readonly type: "lockScreenMessage" }
@@ -130,6 +135,7 @@ export const parseConfigurationKind = (kind: string): ConfigurationKind => {
 
   if (windows?.[1] && IDENTIFIER_PATTERN.test(windows[1]))
     return { type: "windows", id: windows[1] };
+  if (kind === WINDOWS_LAPS_CONFIGURATION_KIND) return { type: "windows-laps" };
   const match = /^mttx\.apple\.(custom|certificate|declaration|application)\.(.+)$/.exec(kind);
 
   if (!match) return { type: "unknown" };
@@ -660,7 +666,7 @@ export const validateConfiguration = (
     switch (parsed.type) {
       case "unknown":
         return yield* Effect.fail(
-          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id> and mttx.android.policy.<id>.`,
+          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id>, mttx.windows.laps and mttx.android.policy.<id>.`,
         );
       case "application": {
         if (scope === "user")
@@ -883,6 +889,26 @@ export const validateConfiguration = (
           )
             return yield* Effect.fail(`"${kind}.format" must be int, chr, bool, xml, b64 or node`);
         }
+
+        return;
+      }
+
+      case "windows-laps": {
+        if (scope === "user")
+          return yield* Effect.fail(
+            `"${kind}" is device-scoped: the Windows LAPS CSP manages a local account on the device.`,
+          );
+
+        const policy = parseWindowsLapsPolicy(data);
+
+        if (!policy)
+          return yield* Effect.fail(
+            `"${kind}" must be an object with a backupDirectory of "entra-id", "active-directory" or "disabled".`,
+          );
+
+        const problem = windowsLapsPolicyProblem(policy);
+
+        if (problem) return yield* Effect.fail(problem);
 
         return;
       }
@@ -1440,9 +1466,23 @@ export type WindowsPolicyNode = {
   format?: string;
 };
 
-/** Extract OMA-URI nodes from a Windows custom policy configuration. */
+/** Extract OMA-URI nodes from a Windows custom or structured LAPS policy. */
 export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPolicyNode> => {
-  if (parseConfigurationKind(row.kind).type !== "windows") return [];
+  const configuration = parseConfigurationKind(row.kind);
+
+  if (configuration.type === "windows-laps") {
+    const policy = parseWindowsLapsPolicy(row.data);
+
+    return policy
+      ? windowsLapsPolicyNodes(policy).map((node) => ({
+          omaUri: node.omaUri,
+          value: node.value,
+          format: node.format,
+        }))
+      : [];
+  }
+
+  if (configuration.type !== "windows") return [];
   const data = asRecord(row.data);
   const nodes = data === undefined ? [] : Schema.is(JsonArray)(data.nodes) ? data.nodes : [data];
 

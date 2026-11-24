@@ -109,7 +109,12 @@ export const ACTIVE_COMMAND_STATUSES = DEVICE_COMMAND_ACTIVE_STATUSES;
 export const commandStatusIsActive = (status: string | null | undefined): boolean => {
   const normalized = normalizeDeviceCommandStatus(status);
 
-  return normalized === "queued" || normalized === "sent" || normalized === "deferred";
+  return (
+    normalized === "queued" ||
+    normalized === "sent" ||
+    normalized === "accepted" ||
+    normalized === "deferred"
+  );
 };
 
 /** Result status recorded when the server, not the device, resolved a command. */
@@ -275,6 +280,10 @@ export const planCommandDeliveryBatch = (
       deliver.push(row);
       continue;
     }
+
+    // Accepted asynchronous work is already running on the device. It is
+    // polled through its result/status channel, never re-delivered.
+    if (status === "accepted") continue;
 
     const retryAfter =
       status === "deferred" ? DEVICE_COMMAND_DEFERRED_RETRY_MS : DEVICE_COMMAND_SENT_RETRY_MS;

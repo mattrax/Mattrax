@@ -25,6 +25,7 @@ export const DeviceHandoverSecretKind = Schema.Literals([
   "recovery_lock_password",
   "local_admin_password",
   "bootstrap_token",
+  "bitlocker_recovery_key",
 ]);
 
 export type DeviceHandoverSecretKind = typeof DeviceHandoverSecretKind.Type;
@@ -712,15 +713,18 @@ export type UploadAppleFdeEscrowKeyRequest = typeof UploadAppleFdeEscrowKeyReque
 /**
  * Lifecycle of a queued MDM command.
  *
- * `queued`, `sent` and `deferred` are active: the device may still run the
- * command. `succeeded` and `failed` are outcomes reported by the device (or
- * reconciled from what it reports). `expired` means the delivery deadline
+ * `queued`, `sent`, `deferred` and `accepted` are active. `accepted` means the
+ * device acknowledged an asynchronous command (for example BitLocker key
+ * rotation) and is still processing it; it must never be re-delivered.
+ * `succeeded` and `failed` are outcomes reported by the device (or reconciled
+ * from what it reports). `expired` means the delivery deadline
  * passed before the device ran it, `superseded` means a newer command made it
  * obsolete, and `cancelled` means the device left management first.
  */
 export const DeviceCommandStatus = Schema.Literals([
   "queued",
   "sent",
+  "accepted",
   "deferred",
   "succeeded",
   "failed",
@@ -733,7 +737,7 @@ export const DeviceCommandStatus = Schema.Literals([
 export type DeviceCommandStatus = typeof DeviceCommandStatus.Type;
 
 /** Statuses where the device can still run the command. */
-export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "deferred"] as const;
+export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "accepted", "deferred"] as const;
 
 /** Result status recorded when the server, not the device, resolved a command. */
 export const DEVICE_COMMAND_RECONCILED_RESULT_STATUS = "Reconciled";
@@ -741,6 +745,7 @@ export const DEVICE_COMMAND_RECONCILED_RESULT_STATUS = "Reconciled";
 export const DEVICE_COMMAND_STATUS_LABELS: Record<DeviceCommandStatus, string> = {
   queued: "Queued",
   sent: "Sent",
+  accepted: "Accepted by device",
   deferred: "Deferred by device",
   succeeded: "Succeeded",
   failed: "Failed",
@@ -760,6 +765,7 @@ export const normalizeDeviceCommandStatus = (
   switch (value) {
     case "queued":
     case "sent":
+    case "accepted":
     case "succeeded":
     case "failed":
     case "expired":
@@ -1242,6 +1248,25 @@ export const DeviceActionResponse = Schema.Struct({
       automatedDeviceEnrollment: Schema.Boolean,
     }),
   ),
+  /**
+   * What a Windows Fresh Start will do. The mode is explicit so the dashboard
+   * cannot imply that user files survive when they will not.
+   */
+  freshStart: Schema.optional(
+    Schema.Struct({
+      mode: Schema.Literals(["retain-user-data", "remove-user-data"]),
+      retainUserData: Schema.Boolean,
+      /** Set when the device returns to OOBE and must enrol again. */
+      warning: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  /** The diagnostic archive request created by `collect-diagnostics`. */
+  diagnostics: Schema.optional(
+    Schema.Struct({
+      archiveId: Schema.String,
+      expiresAt: Schema.String,
+    }),
+  ),
 });
 
 export const DeviceActionRequest = Schema.Struct({
@@ -1266,6 +1291,11 @@ export const DeviceActionRequest = Schema.Struct({
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */
   recoveryLockPassword: Schema.optional(Schema.String),
+  /**
+   * Windows Fresh Start: `true` keeps user files, `false` removes everything.
+   * Required by `fresh-start` so the retention choice is never implicit.
+   */
+  freshStartRetainUserData: Schema.optional(Schema.Boolean),
   /**
    * `ScheduleOSUpdate` install action. `InstallASAP` is immediate; use
    * `InstallLater` with a deadline to let the user postpone the restart.

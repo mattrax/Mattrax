@@ -87,16 +87,53 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/effective-policy
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
+## Windows LAPS policy
+
+LAPS is a structured policy kind that compiles to the documented CSP nodes:
+
+```json
+{
+  "mttx.windows.laps": {
+    "backupDirectory": "entra-id",
+    "accountName": "MattraxAdmin",
+    "passwordAgeDays": 30,
+    "passwordLength": 20,
+    "passwordComplexity": 4,
+    "passphraseLength": 6,
+    "postAuthenticationActions": 3,
+    "postAuthenticationResetDelayHours": 24,
+    "passwordExpirationProtection": true
+  }
+}
+```
+
+`backupDirectory` is `entra-id`, `active-directory` or `disabled`. Only `entra-id` allows
+Mattrax to retrieve the password; AD-only policies are delivered and rotated but cannot be
+read. `disabled` policies cannot be rotated because the new password would be stored
+nowhere. Passphrase complexity (6-8) is Windows 11 24H2+ only and is rejected on the 22H2
+baseline; `passwordExpirationProtection` is only emitted for an AD backup. See
+[Windows LAPS](/platforms/windows/#windows-laps) for the platform baseline, Graph permission
+and reveal contract.
+
+A raw `mttx.windows.custom.*` configuration with
+`./Device/Vendor/MSFT/LAPS/Policies/...` nodes is also accepted, which keeps an existing
+hand-authored policy working. The structured kind validates Microsoft's ranges before
+delivery.
+
 ## Commands
 
-Two remote actions map to OMA-DM:
+| Action                        | URI                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `wipe`                        | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected`                      |
+| `restart`                     | `./Device/Vendor/MSFT/Reboot/RebootNow`                                |
+| `fresh-start`                 | `./Device/Vendor/MSFT/CleanPC/CleanPCRetainingUserData` or `CleanPCWithoutRetainingUserData` |
+| `collect-diagnostics`         | `./Vendor/MSFT/DiagnosticLog/DiagnosticArchive/ArchiveDefinition`      |
+| `rotate-bitlocker-key`        | `./Device/Vendor/MSFT/BitLocker/RotateRecoveryPasswords`              |
+| `rotate-local-admin-password` | `./Device/Vendor/MSFT/LAPS/Actions/ResetPassword`                      |
 
-| Action    | URI                                               |
-| --------- | ------------------------------------------------- |
-| `wipe`    | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected` |
-| `restart` | `./Device/Vendor/MSFT/Reboot/RebootNow`           |
-
-Everything else is rejected. There is no push; commands wait for the next poll.
+Everything else is rejected. There is no push; commands wait for the next poll. The
+per-device `actions` array is the authority; it omits an action when the OS build,
+edition, join state or LAPS policy makes it impossible, and the API returns that reason.
 
 ## Authoring tips
 
@@ -112,7 +149,10 @@ Everything else is rejected. There is no push; commands wait for the next poll.
 - The server generates `Replace` and `Delete` commands for OMA-URI settings. There is no
   `Add`, arbitrary `Exec` or custom SyncML authoring, and inventory `Get` requests are
   server-generated.
-- No BitLocker key escrow, app install or per-device policy push; devices poll.
+- No app install or per-device policy push; devices poll. BitLocker escrow is delivered
+  through the agent channel, not policy (Windows has no recovery-key upload CSP node).
+- LAPS policy delivery is subject to the CSP's own dependencies; for example Entra-backed
+  password age must be at least 7 days.
 - ADMX templates can be imported in the designer: Microsoft in-box policies map to their
   existing `ADMX_*` catalogue URI, and vendor templates are ingested with
   `ConfigOperations/ADMXInstall`. The designer is device-scoped, so user-scoped templates

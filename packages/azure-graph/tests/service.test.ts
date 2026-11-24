@@ -964,6 +964,53 @@ describe("AzureGraph delegated consent revocation", () => {
     expect(error).toBeInstanceOf(AzureGraphConsentRevocationFailed);
     expect(error).toMatchObject({ grantsRemoved: 1, status: 500 });
   });
+  it("lists BitLocker keys with a device filter and fetches one with $select=key", async () => {
+    const urls: string[] = [];
+
+    const result = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+        const keys = yield* graph.listBitlockerRecoveryKeys(tenantId, "entra-device");
+        const key = yield* graph.getBitlockerRecoveryKey(tenantId, "key-1");
+
+        return { keys, key };
+      }),
+      (url) => {
+        if (isTokenRequest(url)) return tokenResponse();
+        urls.push(decodeURIComponent(url));
+
+        if (url.includes("/recoveryKeys/key-1"))
+          return json({
+            id: "key-1",
+            deviceId: "entra-device",
+            createdDateTime: "2026-11-01T00:00:00Z",
+            volumeType: 1,
+            key: "111111-222222",
+          });
+
+        return json({
+          value: [
+            {
+              id: "key-1",
+              deviceId: "entra-device",
+              createdDateTime: "2026-11-01T00:00:00Z",
+              volumeType: 1,
+            },
+          ],
+        });
+      },
+    );
+
+    expect(urls[0]).toContain(
+      "/informationProtection/bitlocker/recoveryKeys?$filter=deviceId eq 'entra-device'",
+    );
+    expect(urls[1]).toContain(
+      "/informationProtection/bitlocker/recoveryKeys/key-1?$select=id,deviceId,createdDateTime,volumeType,key",
+    );
+    expect(result.keys).toHaveLength(1);
+    expect(result.key.key).toBe("111111-222222");
+  });
+
 });
 
 describe("AzureGraph URL policy", () => {

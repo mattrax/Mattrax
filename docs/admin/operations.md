@@ -40,6 +40,13 @@ Enrollment, checkout, unenrollment, compliance and declaration failures keep the
 `device.*` actions. Each state change is appended once per occurrence and is never folded
 into a check-in row.
 
+Windows secret and support actions are separate `device.*` rows: `device.fresh_start_requested`,
+`device.diagnostics_requested`, `device.diagnostics_uploaded`, `device.diagnostics_downloaded`,
+`device.windows_laps_password_viewed`, `device.windows_laps_rotated`,
+`device.bitlocker_keys_escrowed`, `device.bitlocker_key_viewed` and
+`device.bitlocker_keys_rotated`. Their metadata records the operator reason or request id,
+never a password or recovery key.
+
 `mdm.checkin` is coalesced because a fleet of devices polls continuously. The window is
 `MDM_AUDIT_CHECKIN_COALESCE_SECONDS` (default 15 minutes, `0` records every request) and
 the bucket is **fixed**, not sliding: `createdAt` is the bucket start, so a device that

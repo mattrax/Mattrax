@@ -1,6 +1,18 @@
-import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schedule, Schema } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Match,
+  Option,
+  Predicate,
+  Schedule,
+  Schema,
+  Stream,
+} from "effect";
 import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
+import { HttpApiSchema } from "effect/http-api";
 import { preconditionFailure, preconditionFromRequest } from "./preconditions.js";
 import type {
   enterpriseAccountApi,
@@ -138,6 +150,23 @@ import {
   validateAttributeValue,
   windowsActivationStatusFromLicenseStatus,
   windowsLicenseStatusValue,
+  WINDOWS_DIAGNOSTICS_EXPIRY_MS,
+  WINDOWS_DIAGNOSTICS_MAX_BYTES,
+  WINDOWS_FRESH_START_MODE_LABELS,
+  WindowsFreshStartMode,
+  windowsSecretReasonProblem,
+  windowsBitlockerRotateCommand,
+  windowsBitlockerRotationSupported,
+  windowsDiagnosticsCommand,
+  windowsDiagnosticsSupported,
+  windowsFreshStartCommand,
+  windowsLapsResetCommand,
+  windowsLapsSupported,
+  resolveWindowsLapsConfiguration,
+  bitlockerKeyHealth,
+  bitlockerVolumeTypeFromGraph,
+  WINDOWS_BITLOCKER_SYNC_TTL_MS,
+  WINDOWS_SECRET_REASON_MAX_LENGTH,
   deriveDevicePresence,
   deriveUserPolicies,
   countSoftwareUpdates,
@@ -784,6 +813,8 @@ export type EnterpriseHandlersConfig = {
    * Maintenance must be configured with the same value.
    */
   readonly windowsFailureRetentionDays?: number;
+  /** Test/deployment override for the diagnostic archive byte cap. */
+  readonly windowsDiagnosticsMaxBytes?: number;
   /**
    * Deployment identity used to CMS-sign Apple enrollment profile downloads.
    * This is an explicit self-hosted override. When it is omitted, each tenant's
@@ -1315,6 +1346,8 @@ const DEVICE_HANDOVER_SECRET_KINDS = [
   "recovery_lock_password",
   "local_admin_password",
   "bootstrap_token",
+  /** A JSON array of escrowed BitLocker keys; the archive is passphrase-sealed. */
+  "bitlocker_recovery_key",
 ] as const;
 
 type DeviceHandoverSecretKind = (typeof DEVICE_HANDOVER_SECRET_KINDS)[number];
@@ -1325,6 +1358,7 @@ const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, string> = 
   recovery_lock_password: "Recovery Lock password",
   local_admin_password: "managed local administrator password",
   bootstrap_token: "bootstrap token",
+  bitlocker_recovery_key: "BitLocker recovery keys",
 };
 
 /** A single export is bounded so one request cannot hold the database open. */
@@ -1334,6 +1368,123 @@ const DEVICE_HANDOVER_MAX_DEVICES = 500;
 const DEVICE_HANDOVER_TTL_MS = 15 * 60 * 1000;
 
 const DEVICE_HANDOVER_DOWNLOAD_SCOPE = "device-handover";
+
+/** The CSP writes to this scoped URL; it is not a tenant session. */
+const WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE = "windows-diagnostics-upload";
+
+/** Minted by the diagnostics list and consumed by the download endpoint. */
+const WINDOWS_DIAGNOSTICS_DOWNLOAD_SCOPE = "windows-diagnostics-download";
+
+const WINDOWS_DIAGNOSTICS_DOWNLOAD_TTL_MS = 15 * 60 * 1000;
+
+/** Minimum gap between force-refreshes triggered by reveal misses. */
+const WINDOWS_BITLOCKER_FORCE_SYNC_COOLDOWN_MS = 30_000;
+
+type BoundedBody = {
+  readonly ok: boolean;
+  readonly bytes?: Uint8Array;
+  readonly reason?: "too_large" | "read_error";
+};
+
+/**
+ * Read a request body with a hard byte cap before allocating the full buffer.
+ * The Effect request exposes a stream; a Web Request is read through its
+ * ReadableStream. Both cancel on the first chunk that crosses the cap.
+ *
+ * Peak retention is the capped chunks plus the final contiguous copy (about
+ * 2x the cap). The cap stays well below the Worker request-body limit so this
+ * remains bounded.
+ */
+const readBoundedRequestBody = (
+  request: HttpServerRequest | Request,
+  limit: number,
+): Effect.Effect<BoundedBody, never> =>
+  Effect.gen(function* () {
+    if (request instanceof Request) {
+      return yield* Effect.tryPromise(async (): Promise<BoundedBody> => {
+        const reader = request.body?.getReader();
+
+        if (!reader) return { ok: false, reason: "read_error" };
+
+        const chunks: Array<Uint8Array> = [];
+        let total = 0;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) break;
+            if (!value) continue;
+            total += value.byteLength;
+
+            if (total > limit) {
+              await reader.cancel().catch(() => undefined);
+
+              return { ok: false, reason: "too_large" };
+            }
+
+            chunks.push(value);
+          }
+        } catch {
+          return { ok: false, reason: "read_error" };
+        } finally {
+          reader.releaseLock();
+        }
+
+        const bytes = new Uint8Array(total);
+        let offset = 0;
+
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+
+        return { ok: true, bytes };
+      }).pipe(
+        Effect.catch(() =>
+          Effect.succeed<BoundedBody>({ ok: false, reason: "read_error" }),
+        ),
+      );
+    }
+
+    const chunks: Array<Uint8Array> = [];
+    let total = 0;
+
+    const tooLarge = { _tag: "WindowsUploadTooLarge" } as const;
+    const outcome = yield* request.stream.pipe(
+      Stream.runForEach((chunk) =>
+        Effect.suspend(() => {
+          total += chunk.byteLength;
+
+          if (total > limit) return Effect.fail(tooLarge);
+
+          chunks.push(chunk);
+
+          return Effect.void;
+        }),
+      ),
+      Effect.as("ok" as const),
+      Effect.catch((error) =>
+        Effect.succeed(
+          typeof error === "object" && error !== null && "_tag" in error && error._tag === tooLarge._tag
+            ? ("too_large" as const)
+            : ("read_error" as const),
+        ),
+      ),
+    );
+
+    if (outcome !== "ok") return { ok: false, reason: outcome };
+
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    return { ok: true, bytes };
+  });
 
 const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
 
@@ -1784,6 +1935,7 @@ export const createEnterpriseService = ({
   webhookTimeoutMs,
   planLimits,
   windowsFailureRetentionDays: configuredWindowsFailureRetentionDays,
+  windowsDiagnosticsMaxBytes: configuredWindowsDiagnosticsMaxBytes,
   appleProfileSigning,
   analytics,
   enrollmentProfileTtlSeconds: configuredEnrollmentProfileTtlSeconds,
@@ -1807,6 +1959,11 @@ export const createEnterpriseService = ({
 
   const windowsFailureRetentionDays =
     configuredWindowsFailureRetentionDays ?? WINDOWS_FAILURE_RETENTION_DAYS;
+  const windowsDiagnosticsMaxBytes =
+    configuredWindowsDiagnosticsMaxBytes ?? WINDOWS_DIAGNOSTICS_MAX_BYTES;
+
+  /** Per-device cooldown for force refreshes; survives across requests. */
+  const bitlockerForcedSyncAt = new Map<string, number>();
 
   const entraConsentRevocationTimeoutMs = configuredEntraConsentRevocationTimeoutMs ?? 20_000;
 
@@ -4679,6 +4836,27 @@ export const createEnterpriseService = ({
         found.set(row.deviceId, current);
       }
 
+      const bitlockerRows = yield* db
+        .select({ deviceId: schema.deviceBitlockerKey.deviceId })
+        .from(schema.deviceBitlockerKey)
+        .where(
+          and(
+            eq(schema.deviceBitlockerKey.organizationId, organizationId),
+            inArray(schema.deviceBitlockerKey.deviceId, [...deviceIds]),
+            isNull(schema.deviceBitlockerKey.retiredAt),
+            // Only a cached key is destroyed with the row. Uncached metadata
+            // can be re-read from Entra ID after the device is re-enrolled.
+            isNotNull(schema.deviceBitlockerKey.sealedValue),
+          ),
+        );
+
+      for (const row of bitlockerRows) {
+        const current = found.get(row.deviceId) ?? new Set<DeviceHandoverSecretKind>();
+
+        current.add("bitlocker_recovery_key");
+        found.set(row.deviceId, current);
+      }
+
       for (const [deviceId, present] of found)
         kinds.set(
           deviceId,
@@ -4777,6 +4955,28 @@ export const createEnterpriseService = ({
         byDevice.set(row.deviceId, current);
       }
 
+      const bitlockerRows = ids.length
+        ? yield* db
+            .select()
+            .from(schema.deviceBitlockerKey)
+            .where(
+              and(
+                eq(schema.deviceBitlockerKey.organizationId, input.organization.id),
+                inArray(schema.deviceBitlockerKey.deviceId, ids),
+                isNull(schema.deviceBitlockerKey.retiredAt),
+              ),
+            )
+        : [];
+
+      const bitlockerByDevice = new Map<string, typeof bitlockerRows>();
+
+      for (const row of bitlockerRows) {
+        const current = bitlockerByDevice.get(row.deviceId) ?? [];
+
+        current.push(row);
+        bitlockerByDevice.set(row.deviceId, current);
+      }
+
       const devices: DeviceHandoverArchiveDevice[] = [];
 
       for (const device of input.devices) {
@@ -4801,6 +5001,40 @@ export const createEnterpriseService = ({
           if (value.trim().length === 0) continue;
 
           secrets[secret.kind] = value;
+        }
+
+        const bitlocker = bitlockerByDevice.get(device.id) ?? [];
+
+        if (bitlocker.length > 0) {
+          const keys = [];
+
+          for (const key of bitlocker) {
+            const sealedValue = key.sealedValue;
+
+            if (!sealedValue) continue;
+
+            const recoveryKey = yield* Effect.tryPromise(() =>
+              openSecret(input.authSecret, sealedValue),
+            ).pipe(
+              Effect.mapError(
+                () =>
+                  new EnterpriseBadRequest({
+                    message: `The BitLocker recovery key for "${device.name}" could not be decrypted. No handover archive was created and nothing was exported.`,
+                  }),
+              ),
+            );
+
+            keys.push({
+              volumeType: key.volumeType,
+              keyId: key.keyId,
+              keyType: key.keyType,
+              protectorType: key.protectorType,
+              recoveryKey,
+              capturedAt: iso(key.capturedAt),
+            });
+          }
+
+          if (keys.length > 0) secrets.bitlocker_recovery_key = JSON.stringify(keys);
         }
 
         devices.push({
@@ -5005,6 +5239,8 @@ export const createEnterpriseService = ({
       readonly lostModeLocationReportedAt?: Date | null;
       readonly localAccountsUpdatedAt?: Date | null;
       readonly localAdminGuid?: string | null;
+      /** True when an effective Windows LAPS policy applies. */
+      readonly windowsLapsConfigured?: boolean;
     },
     android?: {
       readonly managementMode?: string | null;
@@ -5134,11 +5370,16 @@ export const createEnterpriseService = ({
       status: row.status,
       osEdition: row.osEdition,
       osVersion: row.osVersion,
+      osBuild: row.osBuild,
       model: row.model,
+      bitLockerEnabled: row.bitLockerEnabled,
+      entraDeviceId: row.entraDeviceId,
+      domainName: row.domainName,
       declarationMode: setup?.declarationMode ?? null,
       enrollmentMode: setup?.enrollmentMode ?? null,
       lostModeEnabled: setup?.lostModeEnabled ?? null,
       localAdminGuid: setup?.localAdminGuid ?? null,
+      windowsLapsConfigured: setup?.windowsLapsConfigured === true,
       capabilities: Option.getOrUndefined(
         Schema.decodeUnknownOption(Schema.Json)(row.capabilities),
       ),
@@ -5457,11 +5698,273 @@ export const createEnterpriseService = ({
         return yield* Effect.fail(
           new EnterpriseNotConfigured({
             message:
-              "Connect Entra ID for this tenant (Settings → Identity) before using Windows Autopilot.",
+              "Connect Entra ID for this tenant (Settings → Identity) before using Microsoft Graph features.",
           }),
         );
 
       return { graph: azureGraph, azureTenantId };
+    });
+
+  /**
+   * The LAPS policy that applies to one device, resolved from the same
+   * effective configuration stream Windows policy delivery uses. Synchronous
+   * callers (device list rows) omit the result rather than issuing one policy
+   * query per row.
+   */
+  const deviceWindowsLapsConfiguration = (device: {
+    readonly id: string;
+    readonly organizationId: string;
+  }) =>
+    Effect.gen(function* () {
+      const effective = yield* resolveEffectivePolicyForDevice(db, device);
+
+      return resolveWindowsLapsConfiguration(
+        effective.configurations.map((configuration) => ({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          data: configuration.data,
+        })),
+      );
+    });
+
+  /** Decode Graph's Base64 password (UTF-16LE) into the value typed at logon. */
+  const decodeWindowsLapsPassword = (value: string): string => {
+    const bytes = Uint8Array.from(atob(value.replaceAll(/\s+/g, "")), (character) =>
+      character.charCodeAt(0),
+    );
+    let decoded = "";
+
+    for (let index = 0; index + 1 < bytes.length; index += 2)
+      decoded += String.fromCharCode(bytes[index]! | (bytes[index + 1]! << 8));
+
+    return decoded || new TextDecoder().decode(bytes);
+  };
+
+  const graphErrorMessage = (cause: unknown, fallback: string): string => {
+    const detail =
+      Option.getOrUndefined(Schema.decodeUnknownOption(ErrorMessage)(cause))?.message ??
+      (cause instanceof Error ? cause.message : fallback);
+
+    return detail.slice(0, 500);
+  };
+
+  /**
+   * Refresh BitLocker key metadata from Microsoft Entra ID.
+   *
+   * The list endpoint does not return key material, so this is cheap and does
+   * not create an Entra key-read audit row. An authorised reveal fetches the
+   * key with `$select=key` and caches the sealed value. Failures are recorded
+   * on the device but never make the security read fail: the last known keys
+   * remain visible with an explanation.
+   */
+  const syncDeviceBitlockerKeys = (
+    device: EnterpriseDevice,
+    options?: { readonly force?: boolean },
+  ) =>
+    Effect.gen(function* () {
+      const at = now();
+
+      if (!device.entraDeviceId?.trim())
+        return {
+          syncedAt: device.bitLockerKeysSyncedAt ? iso(device.bitLockerKeysSyncedAt) : null,
+          error: "This device is not Entra joined, so it has no Entra BitLocker key store.",
+        };
+
+      const lastForced = bitlockerForcedSyncAt.get(device.id) ?? 0;
+      const forceAllowed =
+        options?.force === true &&
+        at.getTime() - lastForced >= WINDOWS_BITLOCKER_FORCE_SYNC_COOLDOWN_MS;
+
+      if (forceAllowed) bitlockerForcedSyncAt.set(device.id, at.getTime());
+
+      if (
+        !forceAllowed &&
+        device.bitLockerKeysSyncedAt &&
+        at.getTime() - device.bitLockerKeysSyncedAt.getTime() < WINDOWS_BITLOCKER_SYNC_TTL_MS
+      )
+        return {
+          syncedAt: iso(device.bitLockerKeysSyncedAt),
+          error: device.bitLockerKeysSyncError ?? null,
+        };
+
+      const refresh = Effect.gen(function* () {
+        const { graph, azureTenantId } = yield* autopilotContext(device.organizationId);
+        const keys = yield* graph.listBitlockerRecoveryKeys(
+          azureTenantId,
+          device.entraDeviceId!.trim(),
+        );
+
+        const existing = yield* db
+          .select()
+          .from(schema.deviceBitlockerKey)
+          .where(
+            and(
+              eq(schema.deviceBitlockerKey.organizationId, device.organizationId),
+              eq(schema.deviceBitlockerKey.deviceId, device.id),
+            ),
+          );
+        const existingById = new Map(existing.map((row) => [row.keyId, row]));
+        const active = existing.filter((row) => row.retiredAt === null);
+        const reportedIds = new Set(keys.map((key) => key.id));
+        let inserted = 0;
+
+        // Entra normally retains the old key after a rotation, so the list can
+        // contain several keys for one volume. Pair by volume and creation
+        // time: the newest is the replacement and gets rotatedAt, while the
+        // older keys remain visible/recoverable.
+        const newestKeyByVolume = new Map<string, string>();
+
+        for (const key of keys) {
+          const volumeType = bitlockerVolumeTypeFromGraph(key.volumeType);
+          const created = key.createdDateTime ? Date.parse(key.createdDateTime) : 0;
+          const current = newestKeyByVolume.get(volumeType);
+          const currentCreated =
+            current === undefined
+              ? Number.NEGATIVE_INFINITY
+              : Date.parse(
+                  keys.find((candidate) => candidate.id === current)?.createdDateTime ?? "",
+                );
+
+          if (!Number.isFinite(currentCreated) || created >= currentCreated)
+            newestKeyByVolume.set(volumeType, key.id);
+        }
+
+        const volumeCounts = new Map<string, number>();
+
+        for (const key of keys) {
+          const volumeType = bitlockerVolumeTypeFromGraph(key.volumeType);
+          volumeCounts.set(volumeType, (volumeCounts.get(volumeType) ?? 0) + 1);
+        }
+
+        // First-seen count per volume. A replacement is only inferred when the
+        // server previously saw one key for that volume and Entra later lists
+        // two; a device that arrives with two keys on its first sync is not a
+        // rotation.
+        const previousVolumeCounts = new Map<string, number>();
+
+        for (const row of active) {
+          const volumeType = bitlockerVolumeTypeFromGraph(row.volumeType);
+          previousVolumeCounts.set(volumeType, (previousVolumeCounts.get(volumeType) ?? 0) + 1);
+        }
+
+        for (const key of keys) {
+          const volumeType = bitlockerVolumeTypeFromGraph(key.volumeType);
+          const previous = existingById.get(key.id);
+          const parsedCreated = key.createdDateTime ? new Date(key.createdDateTime) : null;
+          const capturedAt =
+            previous?.capturedAt ??
+            (parsedCreated && Number.isFinite(parsedCreated.getTime()) ? parsedCreated : at);
+          const replaced = previous
+            ? undefined
+            : active.find(
+                (row) =>
+                  row.retiredAt === null &&
+                  bitlockerVolumeTypeFromGraph(row.volumeType) === volumeType &&
+                  !reportedIds.has(row.keyId),
+              );
+          const replacementOfListed =
+            (previousVolumeCounts.get(volumeType) ?? 0) === 1 &&
+            (volumeCounts.get(volumeType) ?? 0) > 1 &&
+            newestKeyByVolume.get(volumeType) === key.id;
+
+          if (!previous) inserted++;
+
+          yield* db
+            .insert(schema.deviceBitlockerKey)
+            .values({
+              id: previous?.id ?? crypto.randomUUID(),
+              organizationId: device.organizationId,
+              deviceId: device.id,
+              volumeType,
+              volumeId: volumeType,
+              keyId: key.id,
+              keyType: "numeric-password",
+              protectorType: "RecoveryPassword",
+              sealedValue: previous?.sealedValue ?? null,
+              source: "entra-id",
+              capturedAt,
+              rotatedAt:
+                previous?.rotatedAt ?? (replaced || replacementOfListed ? capturedAt : null),
+              reportedAt: at,
+              retiredAt: null,
+              createdAt: previous?.createdAt ?? at,
+              updatedAt: at,
+            })
+            .onDuplicateKeyUpdate({
+              set: {
+                volumeType,
+                volumeId: volumeType,
+                keyType: "numeric-password",
+                protectorType: "RecoveryPassword",
+                source: "entra-id",
+                capturedAt,
+                rotatedAt:
+                  previous?.rotatedAt ?? (replaced || replacementOfListed ? capturedAt : null),
+                reportedAt: at,
+                retiredAt: null,
+                updatedAt: at,
+              },
+            });
+        }
+
+        // The Graph list is complete for this device. Anything still active
+        // that the list no longer contains was replaced or removed.
+        const stale = active.filter((row) => !reportedIds.has(row.keyId));
+
+        if (stale.length > 0)
+          yield* db
+            .update(schema.deviceBitlockerKey)
+            .set({ retiredAt: at, updatedAt: at })
+            .where(
+              and(
+                eq(schema.deviceBitlockerKey.organizationId, device.organizationId),
+                eq(schema.deviceBitlockerKey.deviceId, device.id),
+                inArray(
+                  schema.deviceBitlockerKey.id,
+                  stale.map((row) => row.id),
+                ),
+              ),
+            );
+
+        yield* db
+          .update(schema.device)
+          .set({ bitLockerKeysSyncedAt: at, bitLockerKeysSyncError: null })
+          .where(eq(schema.device.id, device.id));
+
+        if (inserted > 0 || stale.length > 0)
+          yield* writeSystemAudit(db, {
+            organizationId: device.organizationId,
+            action: "device.bitlocker_keys_escrowed",
+            targetType: "device",
+            targetId: device.id,
+            deviceId: device.id,
+            protocol: "win",
+            metadata: {
+              action: "bitlocker-escrow",
+              platform: "win",
+              added: inserted,
+              retired: stale.length,
+              source: "entra-id",
+            },
+          });
+
+        return { syncedAt: iso(at), error: null };
+      });
+
+      return yield* refresh.pipe(
+        Effect.catch((error: unknown) =>
+          Effect.gen(function* () {
+            const message = graphErrorMessage(error, "Microsoft Graph request failed");
+
+            yield* db
+              .update(schema.device)
+              .set({ bitLockerKeysSyncedAt: at, bitLockerKeysSyncError: message })
+              .where(eq(schema.device.id, device.id));
+
+            return { syncedAt: iso(at), error: message };
+          }),
+        ),
+      );
     });
 
   const autopilotDevicesFor = (organizationId: string, limit = 1_000) =>
@@ -19938,6 +20441,7 @@ export const createEnterpriseService = ({
           osUpdateProductKey?: string;
           osUpdateDeadline?: string;
           osUpdateMechanism?: "ddm-software-update";
+          freshStartRetainUserData?: boolean;
         } = payload ?? {};
 
         const action = body.action ?? "sync";
@@ -19978,6 +20482,17 @@ export const createEnterpriseService = ({
                 .limit(1)
             : [];
 
+        // A Windows LAPS rotation is only advertised once an effective LAPS
+        // policy applies. Loading it here (rather than on every action) keeps
+        // wipe/restart cheap while still rejecting a rotation Windows would
+        // have no policy for.
+        const lapsConfiguration =
+          device.proto === "win" && action === "rotate-local-admin-password"
+            ? yield* deviceWindowsLapsConfiguration(device)
+            : undefined;
+        const lapsRotatable =
+          lapsConfiguration !== undefined && lapsConfiguration.backupDirectory !== "disabled";
+
         // Capability gating: the platform, enrollment state and the device's
         // own reported capabilities decide which actions are legal. RBAC is
         // still enforced by `requireTenant` above.
@@ -19986,7 +20501,12 @@ export const createEnterpriseService = ({
           status: device.status,
           osEdition: device.osEdition,
           osVersion: device.osVersion,
+          osBuild: device.osBuild,
           model: device.model,
+          bitLockerEnabled: device.bitLockerEnabled,
+          entraDeviceId: device.entraDeviceId,
+          domainName: device.domainName,
+          windowsLapsConfigured: lapsRotatable,
           declarationMode: apple?.declarationMode ?? null,
           enrollmentMode: apple?.enrollmentMode ?? null,
           lostModeEnabled: apple?.lostModeEnabled ?? null,
@@ -20065,6 +20585,26 @@ export const createEnterpriseService = ({
         )
           yield* requireStepUp(auth, request, "device-command");
 
+        // Fresh Start's data-retention choice is explicit and validated before
+        // any approval or command is recorded. A missing value is never
+        // defaulted: retaining files and returning the PC to OOBE are
+        // materially different outcomes.
+        let freshStartMode: WindowsFreshStartMode | undefined;
+
+        if (requestedAction === "fresh-start") {
+          if (body.freshStartRetainUserData === undefined)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "Choose whether Fresh Start keeps user files. Set freshStartRetainUserData to true to keep them, or false to remove everything.",
+              }),
+            );
+
+          freshStartMode = body.freshStartRetainUserData
+            ? "retain-user-data"
+            : "remove-user-data";
+        }
+
         // Wipe and Return to Service both erase the device; the mode is bound
         // into the request so an approval for one cannot run the other. Other
         // commands keep their existing step-up-only treatment.
@@ -20079,6 +20619,27 @@ export const createEnterpriseService = ({
               deviceName: device.name,
               platform: device.proto,
               mode: requestedAction,
+            },
+          });
+
+        // Fresh Start removes applications and may return the PC to OOBE. It
+        // has its own approval action so a policy for a wipe cannot silently
+        // authorise a different destructive operation.
+        if (requestedAction === "fresh-start" && freshStartMode)
+          yield* requireApproval(ctx, request, {
+            action: "device.fresh-start",
+            target: { deviceIds: [device.id], groupIds: [] },
+            resourceId: device.id,
+            details: {
+              platform: device.proto,
+              mode: freshStartMode,
+              retainUserData: freshStartMode === "retain-user-data",
+            },
+            summary: {
+              deviceId: device.id,
+              deviceName: device.name,
+              platform: device.proto,
+              mode: freshStartMode,
             },
           });
 
@@ -20102,6 +20663,361 @@ export const createEnterpriseService = ({
           | undefined;
 
         let returnToServicePayload: CommandPayload | undefined;
+
+        if (
+          device.proto === "win" &&
+          device.status === "enrolled" &&
+          requestedAction &&
+          [
+            "fresh-start",
+            "collect-diagnostics",
+            "rotate-bitlocker-key",
+            "rotate-local-admin-password",
+          ].includes(requestedAction)
+        ) {
+          const timestamp = now();
+
+          if (requestedAction === "fresh-start" && freshStartMode) {
+            const csp = windowsFreshStartCommand(freshStartMode);
+            const retainUserData = freshStartMode === "retain-user-data";
+
+            const queued = yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "WindowsFreshStart",
+              payload: {
+                kind: "Exec",
+                locURI: csp.locURI,
+                data: csp.data,
+                format: csp.format,
+                retainUserData,
+              },
+              at: timestamp,
+            });
+
+            const warning = retainUserData
+              ? null
+              : "This device will return to the out-of-box experience. Its user files, installed applications and management enrolment are removed, so it must be enrolled again before Mattrax can manage it.";
+
+            yield* audit(ctx, "device.fresh_start_requested", "device", device.id, {
+              action: "fresh-start",
+              platform: "win",
+              mode: freshStartMode,
+              modeLabel: WINDOWS_FRESH_START_MODE_LABELS[freshStartMode],
+              retainUserData,
+              deduplicated: queued.deduplicated,
+            });
+
+            return {
+              ...ok,
+              commandId: queued.id,
+              deduplicated: queued.deduplicated,
+              freshStart: {
+                mode: freshStartMode,
+                retainUserData,
+                warning,
+              },
+            };
+          }
+
+          if (requestedAction === "collect-diagnostics") {
+            if (!authSecret)
+              return yield* Effect.fail(
+                new EnterpriseNotConfigured({
+                  message:
+                    "Diagnostic collection needs AUTH_SECRET to sign the upload and download links.",
+                }),
+              );
+
+            const [pending] = yield* db
+              .select({ id: schema.deviceDiagnosticsArchive.id })
+              .from(schema.deviceDiagnosticsArchive)
+              .where(
+                and(
+                  eq(schema.deviceDiagnosticsArchive.organizationId, ctx.organization.id),
+                  eq(schema.deviceDiagnosticsArchive.deviceId, device.id),
+                  eq(schema.deviceDiagnosticsArchive.status, "pending"),
+                  gt(schema.deviceDiagnosticsArchive.expiresAt, timestamp),
+                ),
+              )
+              .limit(1);
+
+            if (pending)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message:
+                    "A diagnostic collection is already pending for this device. Wait for its upload or expiry before starting another.",
+                }),
+              );
+
+            const archiveId = crypto.randomUUID();
+            const collectionId = crypto.randomUUID();
+            const expiresAt = new Date(timestamp.getTime() + WINDOWS_DIAGNOSTICS_EXPIRY_MS);
+            const uploadToken = yield* Effect.tryPromise({
+              try: () =>
+                signScopedToken(
+                  authSecret,
+                  WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
+                  `${ctx.organization.id}:${archiveId}:${device.id}`,
+                  Math.floor(expiresAt.getTime() / 1000),
+                ),
+              catch: () =>
+                new EnterpriseInternal({ message: "Could not sign the diagnostic upload link" }),
+            });
+            const uploadUrl =
+              origin.replace(/\/+$/, "") +
+              "/api/v1/windows-diagnostics/upload?token=" +
+              encodeURIComponent(uploadToken) +
+              "&archiveId=" +
+              encodeURIComponent(archiveId);
+
+            let csp;
+
+            try {
+              csp = windowsDiagnosticsCommand({ collectionId, uploadUrl });
+            } catch {
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "The deployment origin must use HTTPS before Windows can upload a diagnostic archive.",
+                }),
+              );
+            }
+
+            yield* db.insert(schema.deviceDiagnosticsArchive).values({
+              id: archiveId,
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestedByAccountId: ctx.account.id,
+              requestedByEmail: ctx.account.email,
+              collectionId,
+              commandId: null,
+              status: "pending",
+              r2Key: null,
+              sizeBytes: null,
+              sha256: null,
+              contentType: null,
+              error: null,
+              requestedAt: timestamp,
+              uploadedAt: null,
+              expiresAt,
+              updatedAt: timestamp,
+            });
+
+            const queued = yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "WindowsCollectDiagnostics",
+              payload: {
+                kind: "Exec",
+                locURI: csp.locURI,
+                data: csp.data,
+                format: csp.format,
+                archiveId,
+              },
+              at: timestamp,
+            });
+
+            yield* db
+              .update(schema.deviceDiagnosticsArchive)
+              .set({ commandId: queued.id, updatedAt: timestamp })
+              .where(
+                and(
+                  eq(schema.deviceDiagnosticsArchive.id, archiveId),
+                  eq(schema.deviceDiagnosticsArchive.organizationId, ctx.organization.id),
+                ),
+              );
+
+            yield* audit(ctx, "device.diagnostics_requested", "device", device.id, {
+              action: "collect-diagnostics",
+              platform: "win",
+              archiveId,
+              expiresAt: iso(expiresAt),
+              deduplicated: queued.deduplicated,
+            });
+
+            return {
+              ...ok,
+              commandId: queued.id,
+              deduplicated: queued.deduplicated,
+              diagnostics: { archiveId, expiresAt: iso(expiresAt) },
+            };
+          }
+
+          if (requestedAction === "rotate-bitlocker-key") {
+            if (
+              !windowsBitlockerRotationSupported({
+                proto: device.proto,
+                osVersion: device.osVersion,
+                osBuild: device.osBuild,
+                bitLockerEnabled: device.bitLockerEnabled,
+                entraDeviceId: device.entraDeviceId,
+                domainName: device.domainName,
+              })
+            )
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "BitLocker recovery password rotation needs an encrypted device joined to Microsoft Entra ID (or hybrid joined with an Entra device id), on Windows 10 1909 or later.",
+                }),
+              );
+
+            const [active] = yield* db
+              .select({ id: schema.deviceCommand.id })
+              .from(schema.deviceCommand)
+              .where(
+                and(
+                  eq(schema.deviceCommand.deviceId, device.id),
+                  inArray(schema.deviceCommand.requestType, [
+                    "WindowsBitLockerRotate",
+                    "WindowsBitLockerRotateStatus",
+                  ]),
+                  inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                  or(
+                    isNull(schema.deviceCommand.expiresAt),
+                    gt(schema.deviceCommand.expiresAt, timestamp),
+                  ),
+                ),
+              )
+              .limit(1);
+
+            if (active)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message:
+                    "A BitLocker recovery key rotation is already in progress for this device. Wait for its result before starting another.",
+                }),
+              );
+
+            const requestId = crypto.randomUUID();
+            const csp = windowsBitlockerRotateCommand(requestId);
+
+            const queued = yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "WindowsBitLockerRotate",
+              payload: {
+                kind: "Exec",
+                locURI: csp.locURI,
+                data: csp.data,
+                format: csp.format,
+                requestId,
+              },
+              at: timestamp,
+            });
+
+            // The status Get is queued by the Windows check-in after this Exec
+            // is acknowledged, then re-polled until Windows reports terminal.
+            yield* audit(ctx, "device.bitlocker_keys_rotated", "device", device.id, {
+              action: "rotate-bitlocker-key",
+              platform: "win",
+              requestId,
+              deduplicated: queued.deduplicated,
+            });
+
+            return { ...ok, commandId: queued.id, deduplicated: queued.deduplicated };
+          }
+
+          if (requestedAction === "rotate-local-admin-password") {
+            if (!lapsConfiguration)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "No Windows LAPS policy applies to this device. Add a LAPS policy with a backup directory before rotating the local administrator password.",
+                }),
+              );
+
+            if (lapsConfiguration.backupDirectory === "disabled")
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "This LAPS policy disables password backup, so a rotated password would be stored nowhere. Choose Microsoft Entra ID or Active Directory backup before rotating.",
+                }),
+              );
+
+            if (!windowsLapsSupported(device))
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    "Windows LAPS rotation requires Windows 11 22H2 (build 22621) or later, or Windows Server 2025.",
+                }),
+              );
+
+            const [active] = yield* db
+              .select({ id: schema.deviceCommand.id })
+              .from(schema.deviceCommand)
+              .where(
+                and(
+                  eq(schema.deviceCommand.deviceId, device.id),
+                  inArray(schema.deviceCommand.requestType, [
+                    "WindowsLapsResetPassword",
+                    "WindowsLapsResetPasswordStatus",
+                  ]),
+                  inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+                  or(
+                    isNull(schema.deviceCommand.expiresAt),
+                    gt(schema.deviceCommand.expiresAt, timestamp),
+                  ),
+                ),
+              )
+              .limit(1);
+
+            if (active)
+              return yield* Effect.fail(
+                new EnterpriseConflict({
+                  message:
+                    "A local administrator password rotation is already in progress for this device. Wait for its result before rotating again.",
+                }),
+              );
+
+            const csp = windowsLapsResetCommand();
+
+            const queued = yield* queueDeviceCommand({
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: "WindowsLapsResetPassword",
+              payload: { kind: "Exec", locURI: csp.locURI, data: csp.data, format: csp.format },
+              at: timestamp,
+            });
+
+            // ResetPasswordStatus is polled by the next check-in after the
+            // Exec is acknowledged, then repeated until it is terminal.
+            yield* db
+              .insert(schema.deviceWindowsLaps)
+              .values({
+                deviceId: device.id,
+                organizationId: ctx.organization.id,
+                accountName: lapsConfiguration.accountName ?? null,
+                accountSid: null,
+                backupAt: null,
+                refreshAt: null,
+                retrievedAt: null,
+                source: lapsConfiguration.backupDirectory === "entra-id" ? "entra-id" : "unknown",
+                resetRequestedAt: timestamp,
+                resetStatus: "pending",
+                lastError: null,
+                updatedAt: timestamp,
+              })
+              .onDuplicateKeyUpdate({
+                set: {
+                  accountName: lapsConfiguration.accountName ?? null,
+                  resetRequestedAt: timestamp,
+                  resetStatus: "pending",
+                  lastError: null,
+                  updatedAt: timestamp,
+                },
+              });
+
+            yield* audit(ctx, "device.windows_laps_rotated", "device", device.id, {
+              action: "rotate-local-admin-password",
+              platform: "win",
+              policyId: lapsConfiguration.policyId ?? null,
+              deduplicated: queued.deduplicated,
+            });
+
+            return { ...ok, commandId: queued.id, deduplicated: queued.deduplicated };
+          }
+        }
 
         if (device.proto === "android" && device.status === "enrolled" && action === "sync") {
           // Read this one device from Google before pushing policy: a status
@@ -28816,9 +29732,21 @@ export const createEnterpriseService = ({
 
         const localAccounts = yield* deviceLocalAccountsFor([row.id]);
 
+        // A Windows LAPS rotation is only advertised on the detail payload,
+        // where the effective policy can be resolved once. List rows omit it
+        // rather than issuing one policy query per device.
+        const lapsPolicy =
+          row.proto === "win" ? yield* deviceWindowsLapsConfiguration(row) : undefined;
+        const windowsLapsConfigured =
+          row.proto === "win" && lapsPolicy !== undefined && lapsPolicy.backupDirectory !== "disabled";
+
         const baseDevice = rowDevice(
           row,
-          apple,
+          apple
+            ? { ...apple, windowsLapsConfigured }
+            : windowsLapsConfigured
+              ? { windowsLapsConfigured }
+              : undefined,
           android,
           lockScreen ? { policy: lockScreen } : undefined,
         );
@@ -28887,6 +29815,1071 @@ export const createEnterpriseService = ({
             ),
         };
       }),
+    getDeviceWindowsSecurity: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        const at = now();
+
+        if (device.proto !== "win")
+          return {
+            platformSupported: false,
+            laps: {
+              supported: false,
+              configured: false,
+              retrievable: false,
+              reason: "Windows LAPS and BitLocker escrow are only available on Windows devices.",
+            },
+            bitlocker: {
+              encrypted: false,
+              status: null,
+              joined: false,
+              rotationInProgress: false,
+              rotationStatus: null,
+              lastRotationAt: null,
+              lastSyncedAt: null,
+              syncError: null,
+              keys: [],
+              escrowMissing: false,
+              reason: "BitLocker escrow is only available on Windows devices.",
+            },
+          };
+
+        const config = yield* deviceWindowsLapsConfiguration(device);
+        const [lapsMeta] = yield* db
+          .select()
+          .from(schema.deviceWindowsLaps)
+          .where(
+            and(
+              eq(schema.deviceWindowsLaps.organizationId, ctx.organization.id),
+              eq(schema.deviceWindowsLaps.deviceId, device.id),
+            ),
+          )
+          .limit(1);
+
+        const active = yield* db
+          .select({
+            requestType: schema.deviceCommand.requestType,
+            status: schema.deviceCommand.status,
+          })
+          .from(schema.deviceCommand)
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, device.id),
+              inArray(schema.deviceCommand.requestType, [
+                "WindowsLapsResetPassword",
+                "WindowsLapsResetPasswordStatus",
+                "WindowsBitLockerRotate",
+                "WindowsBitLockerRotateStatus",
+              ]),
+              inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+              or(
+                isNull(schema.deviceCommand.expiresAt),
+                gt(schema.deviceCommand.expiresAt, at),
+              ),
+            ),
+          );
+
+        const lapsRotationInProgress = active.some(
+          (row) =>
+            row.requestType === "WindowsLapsResetPassword" ||
+            row.requestType === "WindowsLapsResetPasswordStatus",
+        );
+        const bitlockerRotationInProgress = active.some(
+          (row) =>
+            row.requestType === "WindowsBitLockerRotate" ||
+            row.requestType === "WindowsBitLockerRotateStatus",
+        );
+
+        const [latestRotateStatus] = yield* db
+          .select({ resultDetail: schema.deviceCommand.resultDetail })
+          .from(schema.deviceCommand)
+          .where(
+            and(
+              eq(schema.deviceCommand.deviceId, device.id),
+              eq(schema.deviceCommand.requestType, "WindowsBitLockerRotateStatus"),
+            ),
+          )
+          .orderBy(desc(schema.deviceCommand.createdAt))
+          .limit(1);
+
+        // Metadata-only Graph refresh. The list endpoint carries no key
+        // material, so this does not create an Entra key-read audit row.
+        const bitlockerSync = yield* syncDeviceBitlockerKeys(device);
+
+        const keyRows = yield* db
+          .select()
+          .from(schema.deviceBitlockerKey)
+          .where(
+            and(
+              eq(schema.deviceBitlockerKey.organizationId, ctx.organization.id),
+              eq(schema.deviceBitlockerKey.deviceId, device.id),
+              isNull(schema.deviceBitlockerKey.retiredAt),
+            ),
+          )
+          .orderBy(desc(schema.deviceBitlockerKey.capturedAt));
+
+        const keys = keyRows.map((row) => {
+          const health = bitlockerKeyHealth({ capturedAt: row.capturedAt, now: at });
+
+          return {
+            id: row.id,
+            volumeType: row.volumeType as never,
+            keyId: row.keyId,
+            keyType: row.keyType as never,
+            protectorType: row.protectorType,
+            source: "entra-id" as const,
+            keyAvailable: row.sealedValue !== null,
+            capturedAt: iso(row.capturedAt),
+            rotatedAt: isoOrNull(row.rotatedAt),
+            reportedAt: iso(row.reportedAt),
+            ageDays: health.ageDays,
+            health: health.health,
+          };
+        });
+
+        const encrypted = device.bitLockerEnabled === true;
+        const joined = Boolean(device.entraDeviceId?.trim());
+        const lastRotationAt = keys.reduce<string | null>((latest, key) => {
+          const value = key.rotatedAt ?? null;
+
+          return value && (!latest || value > latest) ? value : latest;
+        }, null);
+
+        const lapsSupported = windowsLapsSupported(device);
+        const lapsAgeDays = config?.passwordAgeDays ?? 30;
+        const backupAt = lapsMeta?.backupAt ?? null;
+        const passwordExpiresAt = backupAt
+          ? new Date(backupAt.getTime() + lapsAgeDays * 86_400_000)
+          : null;
+        const passwordAgeDays = backupAt
+          ? Math.max(0, Math.floor((at.getTime() - backupAt.getTime()) / 86_400_000))
+          : null;
+
+        const lapsReason = !lapsSupported
+          ? "Windows LAPS requires Windows 11 22H2 (build 22621) or later, or Windows Server 2025."
+          : !config
+            ? "No Windows LAPS policy applies to this device. Add a LAPS policy to manage the local administrator password."
+            : config.backupDirectory === "active-directory"
+              ? "This LAPS policy backs the password up to Active Directory only. Mattrax does not integrate with AD, so the password cannot be retrieved here."
+              : config.backupDirectory === "disabled"
+                ? "This LAPS policy disables password backup. Set the backup directory to Microsoft Entra ID to retrieve the password."
+                : !device.entraDeviceId?.trim()
+                  ? "This device has not reported a Microsoft Entra device id, so its LAPS password cannot be looked up in Entra."
+                  : !lapsMeta?.backupAt
+                    ? "Windows has not reported a backed-up LAPS password yet. The device backs it up on its next policy cycle."
+                    : null;
+
+        const retrievable =
+          lapsSupported &&
+          config?.backupDirectory === "entra-id" &&
+          Boolean(device.entraDeviceId?.trim());
+
+        return {
+          platformSupported: true,
+          laps: {
+            supported: lapsSupported,
+            configured: Boolean(config),
+            retrievable,
+            backupDirectory: config?.backupDirectory ?? null,
+            accountName: lapsMeta?.accountName ?? config?.accountName ?? null,
+            policyId: config?.policyId ?? null,
+            passwordBackedUpAt: backupAt ? iso(backupAt) : null,
+            passwordRefreshAt: lapsMeta?.refreshAt ? iso(lapsMeta.refreshAt) : null,
+            passwordExpiresAt: passwordExpiresAt ? iso(passwordExpiresAt) : null,
+            passwordExpired: passwordExpiresAt ? passwordExpiresAt.getTime() <= at.getTime() : false,
+            passwordAgeDays,
+            rotationInProgress: lapsRotationInProgress,
+            resetStatus: lapsMeta?.resetStatus ?? null,
+            lastError: lapsMeta?.lastError ?? null,
+            reason: lapsReason,
+          },
+          bitlocker: {
+            encrypted,
+            status: device.bitLockerStatus ?? null,
+            joined,
+            rotationInProgress: bitlockerRotationInProgress,
+            rotationStatus: latestRotateStatus?.resultDetail ?? null,
+            lastRotationAt,
+            lastSyncedAt: bitlockerSync.syncedAt,
+            syncError: bitlockerSync.error,
+            keys,
+            escrowMissing: encrypted && keys.length === 0,
+            reason: !encrypted
+              ? "BitLocker is not enabled according to the last inventory report."
+              : !joined
+                ? "This device is not Microsoft Entra joined or hybrid joined. BitLocker recovery keys are read from the Entra key store, so a plain AD join is not supported."
+                : bitlockerSync.error
+                  ? "Microsoft Entra BitLocker keys could not be refreshed: " + bitlockerSync.error
+                  : keys.length === 0
+                    ? "No BitLocker recovery key is stored in Microsoft Entra ID for this device. Check that BitLocker backs up recovery information to Entra ID."
+                    : null,
+          },
+        };
+      }),
+    getDeviceLapsPassword: (request, tenantId, deviceId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        yield* requireStepUp(auth, request, "recovery-key-reveal");
+
+        const reasonProblem = windowsSecretReasonProblem(query?.reason);
+
+        if (reasonProblem)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: reasonProblem }));
+
+        if (device.proto !== "win")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Windows LAPS passwords are only available on Windows devices.",
+            }),
+          );
+
+        if (!windowsLapsSupported(device))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Windows LAPS requires Windows 11 22H2 (build 22621) or later, or Windows Server 2025.",
+            }),
+          );
+
+        const config = yield* deviceWindowsLapsConfiguration(device);
+
+        if (!config)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "No Windows LAPS policy applies to this device, so no local administrator password is managed or backed up.",
+            }),
+          );
+
+        if (config.backupDirectory === "active-directory")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "This LAPS policy backs the password up to Active Directory only. Mattrax does not integrate with AD; change the policy to back up to Microsoft Entra ID to retrieve it here.",
+            }),
+          );
+
+        if (config.backupDirectory !== "entra-id")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "This LAPS policy does not back the password up to Microsoft Entra ID, so there is nothing Mattrax can retrieve.",
+            }),
+          );
+
+        if (!device.entraDeviceId?.trim())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "This device has not reported a Microsoft Entra device id. Windows LAPS retrieval needs the AADDeviceID inventory value.",
+            }),
+          );
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Windows LAPS escrow requires a configured AUTH_SECRET.",
+            }),
+          );
+
+        const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+
+        const info = yield* graph.deviceLocalCredentials(azureTenantId, device.entraDeviceId!.trim()).pipe(
+          Effect.tapError((cause) =>
+            Effect.gen(function* () {
+              const at = now();
+              const message = graphErrorMessage(
+                cause,
+                "Microsoft Graph could not return the LAPS password.",
+              );
+
+              yield* db
+                .insert(schema.deviceWindowsLaps)
+                .values({
+                  deviceId: device.id,
+                  organizationId: ctx.organization.id,
+                  accountName: config.accountName ?? null,
+                  accountSid: null,
+                  backupAt: null,
+                  refreshAt: null,
+                  retrievedAt: null,
+                  source: "entra-id",
+                  resetRequestedAt: null,
+                  resetStatus: null,
+                  lastError: message,
+                  updatedAt: at,
+                })
+                .onDuplicateKeyUpdate({
+                  set: { lastError: message, updatedAt: at },
+                });
+            }),
+          ),
+          Effect.mapError((cause) => {
+            if (cause._tag === "ConsentRequired")
+              return new EnterpriseNotConfigured({
+                message:
+                  "Microsoft Graph has not been granted the DeviceLocalCredential.Read.All permission for this tenant. An administrator must consent to it before Windows LAPS passwords can be read.",
+              });
+
+            if (cause._tag === "NotFound")
+              return new EnterpriseNotFound({
+                message:
+                  "Microsoft Entra has no local administrator password backed up for this device. Check that the LAPS policy targets it and that the device is Entra joined.",
+              });
+
+            if (cause._tag === "Throttled")
+              return new EnterpriseUpstreamError({
+                message: "Microsoft Graph throttled the LAPS password request. Try again shortly.",
+              });
+
+            return new EnterpriseUpstreamError({
+              message: "Microsoft Graph could not return the LAPS password. Try again shortly.",
+            });
+          }),
+        );
+
+        const credentials = info.credentials ?? [];
+        const configuredAccount = config.accountName?.trim().toLowerCase();
+        const credential = configuredAccount
+          ? credentials.find(
+              (entry) => entry.accountName?.trim().toLowerCase() === configuredAccount,
+            )
+          : credentials[0];
+
+        if (!credential?.passwordBase64)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message:
+                "Microsoft Entra returned no LAPS password for the managed account. Wait for the device's next backup cycle or check the LAPS policy.",
+            }),
+          );
+
+        let password: string;
+
+        try {
+          password = decodeWindowsLapsPassword(credential.passwordBase64);
+        } catch {
+          return yield* Effect.fail(
+            new EnterpriseInternal({
+              message: "The LAPS password returned by Microsoft Entra could not be decoded.",
+            }),
+          );
+        }
+
+        if (!password)
+          return yield* Effect.fail(
+            new EnterpriseInternal({
+              message: "Microsoft Entra returned an empty LAPS password.",
+            }),
+          );
+
+        const backupAt = credential.backupDateTime
+          ? new Date(credential.backupDateTime)
+          : info.lastBackupDateTime
+            ? new Date(info.lastBackupDateTime)
+            : null;
+
+        if (!backupAt || !Number.isFinite(backupAt.getTime()))
+          return yield* Effect.fail(
+            new EnterpriseUpstreamError({
+              message: "Microsoft Entra did not return a valid LAPS backup timestamp.",
+            }),
+          );
+
+        const refreshAt = info.refreshDateTime ? new Date(info.refreshDateTime) : null;
+        const ageDays = Math.max(0, Math.floor((now().getTime() - backupAt.getTime()) / 86_400_000));
+        const expiresAt = new Date(backupAt.getTime() + (config.passwordAgeDays ?? 30) * 86_400_000);
+        const expired = expiresAt.getTime() <= now().getTime();
+
+        const [existingMeta] = yield* db
+          .select()
+          .from(schema.deviceWindowsLaps)
+          .where(
+            and(
+              eq(schema.deviceWindowsLaps.organizationId, ctx.organization.id),
+              eq(schema.deviceWindowsLaps.deviceId, device.id),
+            ),
+          )
+          .limit(1);
+
+        const [existingSecret] = yield* db
+          .select()
+          .from(schema.deviceSecret)
+          .where(
+            and(
+              eq(schema.deviceSecret.organizationId, ctx.organization.id),
+              eq(schema.deviceSecret.deviceId, device.id),
+              eq(schema.deviceSecret.kind, "windows_laps_password"),
+            ),
+          )
+          .limit(1);
+
+        let rotatedAt = existingSecret?.rotatedAt ?? null;
+
+        if (existingSecret) {
+          const previous = yield* Effect.tryPromise(() =>
+            openSecret(authSecret, existingSecret.sealedValue),
+          ).pipe(Effect.orElseSucceed(() => null));
+
+          if (previous !== password) rotatedAt = backupAt;
+        } else rotatedAt = backupAt;
+
+        const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password)).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseInternal({
+                message: "The LAPS password could not be sealed for storage.",
+              }),
+          ),
+        );
+
+        yield* db
+          .insert(schema.deviceSecret)
+          .values({
+            deviceId: device.id,
+            organizationId: ctx.organization.id,
+            kind: "windows_laps_password",
+            sealedValue,
+            format: "plaintext",
+            createdAt: existingSecret?.createdAt ?? now(),
+            updatedAt: now(),
+            rotatedAt,
+            pendingCommandId: null,
+          })
+          .onDuplicateKeyUpdate({
+            set: { sealedValue, format: "plaintext", updatedAt: now(), rotatedAt },
+          });
+
+        const resetSucceeded =
+          existingMeta?.resetRequestedAt !== null &&
+          existingMeta?.resetRequestedAt !== undefined &&
+          backupAt.getTime() >= existingMeta.resetRequestedAt.getTime();
+
+        yield* db
+          .insert(schema.deviceWindowsLaps)
+          .values({
+            deviceId: device.id,
+            organizationId: ctx.organization.id,
+            accountName: credential.accountName ?? config.accountName ?? null,
+            accountSid: credential.accountSid ?? null,
+            backupAt,
+            refreshAt: refreshAt && Number.isFinite(refreshAt.getTime()) ? refreshAt : null,
+            retrievedAt: now(),
+            source: "entra-id",
+            resetRequestedAt: existingMeta?.resetRequestedAt ?? null,
+            resetStatus: resetSucceeded ? "succeeded" : (existingMeta?.resetStatus ?? null),
+            lastError: null,
+            updatedAt: now(),
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              accountName: credential.accountName ?? config.accountName ?? null,
+              accountSid: credential.accountSid ?? null,
+              backupAt,
+              refreshAt: refreshAt && Number.isFinite(refreshAt.getTime()) ? refreshAt : null,
+              retrievedAt: now(),
+              source: "entra-id",
+              resetStatus: resetSucceeded ? "succeeded" : (existingMeta?.resetStatus ?? null),
+              lastError: null,
+              updatedAt: now(),
+            },
+          });
+
+        yield* audit(ctx, "device.windows_laps_password_viewed", "device", device.id, {
+          kind: "windows_laps_password",
+          reason: query!.reason!.trim().slice(0, WINDOWS_SECRET_REASON_MAX_LENGTH),
+          accountName: credential.accountName ?? null,
+          backupAt: iso(backupAt),
+          expired,
+        });
+
+        return HttpApiSchema.withHeaders({
+          body: {
+            username: credential.accountName ?? config.accountName ?? "Administrator",
+            password,
+            accountSid: credential.accountSid ?? null,
+            backedUpAt: iso(backupAt),
+            expiresAt: iso(expiresAt),
+            expired,
+            ageDays,
+          },
+          headers: { "cache-control": "no-store" as const },
+        });
+      }),
+    revealDeviceBitlockerKey: (request, tenantId, deviceId, keyId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        yield* requireStepUp(auth, request, "recovery-key-reveal");
+
+        const reasonProblem = windowsSecretReasonProblem(query?.reason);
+
+        if (reasonProblem)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: reasonProblem }));
+
+        if (device.proto !== "win")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "BitLocker recovery keys are only available on Windows devices.",
+            }),
+          );
+
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "BitLocker escrow requires a configured AUTH_SECRET.",
+            }),
+          );
+
+        const findKey = () =>
+          db
+            .select()
+            .from(schema.deviceBitlockerKey)
+            .where(
+              and(
+                or(
+                  eq(schema.deviceBitlockerKey.id, keyId),
+                  // The API normally receives the row id from the list, but
+                  // accepting the Graph key id makes a forced refresh after
+                  // rotation work before the page has been reloaded.
+                  eq(schema.deviceBitlockerKey.keyId, keyId),
+                ),
+                eq(schema.deviceBitlockerKey.organizationId, ctx.organization.id),
+                eq(schema.deviceBitlockerKey.deviceId, device.id),
+                isNull(schema.deviceBitlockerKey.retiredAt),
+              ),
+            )
+            .limit(1)
+            .pipe(Effect.map((rows) => rows[0]));
+
+        let key = yield* findKey();
+
+        // A stale page can name a key that a newer Graph sync has not written
+        // yet. Refresh once rather than telling the operator it does not exist.
+        if (!key && device.entraDeviceId) {
+          // A rotation can create a new key between the 10-minute metadata
+          // refreshes. Force a fresh list before saying the key is unknown.
+          yield* syncDeviceBitlockerKeys(device, { force: true });
+          key = yield* findKey();
+        }
+
+        if (!key)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({
+              message:
+                "No active BitLocker recovery key with that id is stored for this device. The Entra key list is cached for 10 minutes; refresh the Windows security card after that or reload the page.",
+            }),
+          );
+
+        let sealedValue = key.sealedValue;
+
+        // The Graph list endpoint deliberately omits key material. Fetch it
+        // only on an authorised reveal; Microsoft Entra audits the $select=key
+        // read, and Mattrax caches the sealed value for later reveals.
+        if (!sealedValue) {
+          if (!device.entraDeviceId?.trim())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message:
+                  "This BitLocker key is not cached and the device has no Entra device id to fetch it from.",
+              }),
+            );
+
+          const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
+          const graphKey = yield* graph
+            .getBitlockerRecoveryKey(azureTenantId, key.keyId)
+            .pipe(
+              Effect.mapError((cause) => {
+                if (cause._tag === "ConsentRequired")
+                  return new EnterpriseNotConfigured({
+                    message:
+                      "Microsoft Graph has not been granted the BitlockerKey.Read.All permission for this tenant. An administrator must consent to it before BitLocker keys can be read.",
+                  });
+
+                if (cause._tag === "NotFound")
+                  return new EnterpriseNotFound({
+                    message:
+                      "Microsoft Entra no longer has this BitLocker recovery key. Refresh the Windows security card.",
+                  });
+
+                return new EnterpriseUpstreamError({
+                  message: "Microsoft Graph could not return the BitLocker recovery key.",
+                });
+              }),
+            );
+
+          if (
+            graphKey.deviceId &&
+            device.entraDeviceId &&
+            graphKey.deviceId.trim().toLowerCase() !== device.entraDeviceId.trim().toLowerCase()
+          )
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: "Microsoft Entra returned a BitLocker key for a different device.",
+              }),
+            );
+
+          if (!graphKey.key)
+            return yield* Effect.fail(
+              new EnterpriseUpstreamError({
+                message: "Microsoft Entra returned an empty BitLocker recovery key.",
+              }),
+            );
+
+          sealedValue = yield* Effect.tryPromise(() =>
+            sealSecret(authSecret, graphKey.key!),
+          ).pipe(
+            Effect.mapError(
+              () =>
+                new EnterpriseInternal({
+                  message: "The BitLocker recovery key could not be sealed for storage.",
+                }),
+            ),
+          );
+
+          yield* db
+            .update(schema.deviceBitlockerKey)
+            .set({ sealedValue, updatedAt: now() })
+            .where(
+              and(
+                eq(schema.deviceBitlockerKey.id, key.id),
+                eq(schema.deviceBitlockerKey.organizationId, ctx.organization.id),
+                eq(schema.deviceBitlockerKey.deviceId, device.id),
+              ),
+            );
+        }
+
+        const recoveryKey = yield* Effect.tryPromise(() => openSecret(authSecret, sealedValue!)).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseBadRequest({
+                message: "The stored BitLocker recovery key could not be decrypted.",
+              }),
+          ),
+        );
+
+        const health = bitlockerKeyHealth({ capturedAt: key.capturedAt, now: now() });
+
+        yield* audit(ctx, "device.bitlocker_key_viewed", "device", device.id, {
+          kind: "bitlocker_recovery_key",
+          reason: query!.reason!.trim().slice(0, WINDOWS_SECRET_REASON_MAX_LENGTH),
+          keyId: key.keyId,
+          volumeType: key.volumeType,
+          volumeId: key.volumeId,
+          health: health.health,
+        });
+
+        return HttpApiSchema.withHeaders({
+          body: {
+            id: key.id,
+            volumeType: key.volumeType as never,
+            keyId: key.keyId,
+            keyType: key.keyType as never,
+            protectorType: key.protectorType,
+            recoveryKey,
+            capturedAt: iso(key.capturedAt),
+            ageDays: health.ageDays,
+            health: health.health,
+          },
+          headers: { "cache-control": "no-store" as const },
+        });
+      }),
+    listDeviceDiagnostics: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        if (device.proto !== "win")
+          return {
+            supported: false,
+            reason: "Diagnostic archives are only available on Windows devices.",
+            archives: [],
+          };
+
+        const at = now();
+        const rows = yield* db
+          .select()
+          .from(schema.deviceDiagnosticsArchive)
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.organizationId, ctx.organization.id),
+              eq(schema.deviceDiagnosticsArchive.deviceId, device.id),
+            ),
+          )
+          .orderBy(desc(schema.deviceDiagnosticsArchive.requestedAt))
+          .limit(50);
+
+        const archives = yield* Effect.forEach(rows, (row) =>
+          Effect.gen(function* () {
+            const expired = row.expiresAt.getTime() <= at.getTime();
+            const status: "pending" | "uploaded" | "failed" | "expired" =
+              expired && (row.status === "pending" || row.status === "uploaded")
+                ? "expired"
+                : row.status;
+            let downloadPath: string | null = null;
+
+            if (status === "uploaded" && authSecret) {
+              const tokenExpiry = Math.min(
+                row.expiresAt.getTime(),
+                at.getTime() + WINDOWS_DIAGNOSTICS_DOWNLOAD_TTL_MS,
+              );
+              const token = yield* Effect.tryPromise(() =>
+                signScopedToken(
+                  authSecret,
+                  WINDOWS_DIAGNOSTICS_DOWNLOAD_SCOPE,
+                  `${ctx.organization.id}:${row.id}:${device.id}`,
+                  Math.floor(tokenExpiry / 1000),
+                ),
+              ).pipe(Effect.orElseSucceed(() => null));
+
+              if (token)
+                downloadPath =
+                  "/api/v1/tenants/" +
+                  encodeURIComponent(ctx.organization.id) +
+                  "/devices/" +
+                  encodeURIComponent(device.id) +
+                  "/diagnostics/" +
+                  encodeURIComponent(row.id) +
+                  "/download?token=" +
+                  encodeURIComponent(token);
+            }
+
+            return {
+              id: row.id,
+              status,
+              requestedAt: iso(row.requestedAt),
+              uploadedAt: isoOrNull(row.uploadedAt),
+              expiresAt: iso(row.expiresAt),
+              sizeBytes: row.sizeBytes ?? null,
+              downloadPath,
+              error: row.error ?? null,
+            };
+          }),
+        );
+
+        return {
+          supported: windowsDiagnosticsSupported(device),
+          reason: windowsDiagnosticsSupported(device)
+            ? null
+            : "Diagnostic collection requires Windows 10 1903 (build 18362) or later.",
+          archives,
+        };
+      }),
+    downloadDeviceDiagnostics: (request, tenantId, deviceId, archiveId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceDiagnosticsArchive)
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.id, archiveId),
+              eq(schema.deviceDiagnosticsArchive.organizationId, ctx.organization.id),
+              eq(schema.deviceDiagnosticsArchive.deviceId, device.id),
+            ),
+          )
+          .limit(1);
+
+        if (!archive)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Diagnostic archive not found" }),
+          );
+
+        const at = now();
+
+        if (archive.expiresAt.getTime() <= at.getTime())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "This diagnostic archive has expired. Collect diagnostics again.",
+            }),
+          );
+
+        if (archive.status !== "uploaded")
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                archive.status === "pending"
+                  ? "The device has not uploaded this diagnostic archive yet."
+                  : "This diagnostic archive is not available.",
+            }),
+          );
+
+        const token = query?.token ?? "";
+        const valid =
+          authSecret !== undefined &&
+          (yield* Effect.promise(() =>
+            verifyScopedToken(
+              authSecret,
+              WINDOWS_DIAGNOSTICS_DOWNLOAD_SCOPE,
+              `${ctx.organization.id}:${archive.id}:${device.id}`,
+              token,
+              at.getTime(),
+            ),
+          ));
+
+        if (!valid)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "The download link is invalid or has expired. Refresh the diagnostics list.",
+            }),
+          );
+
+        if (!archive.r2Key)
+          return yield* Effect.fail(
+            new EnterpriseR2FileNotFound({
+              message: "The diagnostic archive is no longer available",
+            }),
+          );
+
+        const r2 = yield* R2Storage;
+        const object = yield* r2.get(archive.r2Key).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "R2FileNotFound"
+              ? new EnterpriseR2FileNotFound({
+                  message: "The diagnostic archive is no longer available",
+                })
+              : new EnterpriseR2InternalError({
+                  message: "Could not read the diagnostic archive",
+                }),
+          ),
+        );
+        const bytes = yield* r2.arrayBuffer(object).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseR2InternalError({
+                message: "Could not read the diagnostic archive",
+              }),
+          ),
+        );
+
+        yield* audit(ctx, "device.diagnostics_downloaded", "device", device.id, {
+          archiveId: archive.id,
+          sizeBytes: archive.sizeBytes ?? null,
+          requestedAt: iso(archive.requestedAt),
+        });
+
+        return HttpApiSchema.withHeaders({
+          body: new Uint8Array(bytes),
+          headers: { "cache-control": "no-store" as const },
+        });
+      }).pipe(Effect.provide(r2Layer)),
+    uploadWindowsDiagnostics: (request: HttpServerRequest | Request) =>
+      Effect.gen(function* () {
+        const unauthorized = {
+          status: 401 as const,
+          body: { status: "error" as const, error: "Unauthorized" },
+        };
+
+        if (!authSecret) return unauthorized;
+
+        const url = new URL(request.url);
+        const token = url.searchParams.get("token") ?? "";
+        const archiveId = url.searchParams.get("archiveId") ?? "";
+
+        if (!token || !archiveId) return unauthorized;
+
+        const contentLengthHeader =
+          request.headers instanceof Headers
+            ? request.headers.get("content-length")
+            : headerValue(request.headers, "content-length");
+        const contentLength = Number(contentLengthHeader ?? "0");
+
+        if (Number.isFinite(contentLength) && contentLength > windowsDiagnosticsMaxBytes)
+          return {
+            status: 413 as const,
+            body: {
+              status: "error" as const,
+              error:
+                "Diagnostic archives must be " +
+                Math.floor(windowsDiagnosticsMaxBytes / 1024 / 1024) +
+                " MB or smaller.",
+            },
+          };
+
+        const bounded = yield* readBoundedRequestBody(request, windowsDiagnosticsMaxBytes);
+
+        if (!bounded.ok)
+          return {
+            status: (bounded.reason === "too_large" ? 413 : 400) as 413 | 400,
+            body: {
+              status: "error" as const,
+              error:
+                bounded.reason === "too_large"
+                  ? "Diagnostic archives must be " +
+                    Math.floor(windowsDiagnosticsMaxBytes / 1024 / 1024) +
+                    " MB or smaller."
+                  : "The upload body could not be read.",
+            },
+          };
+
+        const bytes = bounded.bytes!;
+
+        if (bytes.byteLength === 0)
+          return {
+            status: 413 as const,
+            body: {
+              status: "error" as const,
+              error: "Diagnostic archives must not be empty.",
+            },
+          };
+
+        const zipMagic =
+          bytes[0] === 0x50 &&
+          bytes[1] === 0x4b &&
+          ((bytes[2] === 0x03 && bytes[3] === 0x04) ||
+            (bytes[2] === 0x05 && bytes[3] === 0x06));
+
+        if (!zipMagic)
+          return {
+            status: 400 as const,
+            body: { status: "error" as const, error: "The upload is not a ZIP archive." },
+          };
+
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceDiagnosticsArchive)
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.id, archiveId),
+              eq(schema.deviceDiagnosticsArchive.status, "pending"),
+            ),
+          )
+          .limit(1);
+
+        if (!archive || archive.expiresAt.getTime() <= now().getTime()) return unauthorized;
+
+        const valid = yield* Effect.promise(() =>
+          verifyScopedToken(
+            authSecret,
+            WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
+            `${archive.organizationId}:${archive.id}:${archive.deviceId}`,
+            token,
+            now().getTime(),
+          ),
+        );
+
+        if (!valid) return unauthorized;
+
+        const archiveDeviceId = archive.deviceId;
+
+        const [device] = yield* db
+          .select({ id: schema.device.id, status: schema.device.status, proto: schema.device.proto })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.id, archiveDeviceId),
+              eq(schema.device.organizationId, archive.organizationId),
+            ),
+          )
+          .limit(1);
+
+        if (!device || device.status !== "enrolled" || device.proto !== "win")
+          return unauthorized;
+
+        const digest = yield* sha256Hex(bytesToArrayBuffer(bytes));
+        const r2Key = `diagnostics/${archive.organizationId}/${archiveDeviceId}/${archive.id}.zip`;
+        const r2 = yield* R2Storage;
+
+        yield* r2
+          .put(r2Key, bytes, {
+            httpMetadata: {
+              contentType: "application/zip",
+              cacheControl: R2_PRIVATE_CACHE_CONTROL,
+              contentDisposition: `attachment; filename="diagnostics-${archiveDeviceId.slice(0, 8)}-${archive.id.slice(0, 8)}.zip"`,
+            },
+            customMetadata: {
+              tenantId: archive.organizationId,
+              deviceId: archiveDeviceId,
+              archiveId: archive.id,
+              expiresAt: iso(archive.expiresAt),
+            },
+            sha256: digest,
+          })
+          .pipe(
+            Effect.mapError(
+              () =>
+                new EnterpriseR2InternalError({
+                  message: "Could not store the diagnostic archive",
+                }),
+            ),
+          );
+
+        const claimed = yield* db
+          .update(schema.deviceDiagnosticsArchive)
+          .set({
+            status: "uploaded",
+            r2Key,
+            sizeBytes: bytes.byteLength,
+            sha256: digest,
+            contentType: "application/zip",
+            error: null,
+            uploadedAt: now(),
+          })
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.id, archive.id),
+              eq(schema.deviceDiagnosticsArchive.organizationId, archive.organizationId),
+              eq(schema.deviceDiagnosticsArchive.status, "pending"),
+            ),
+          );
+
+        if (claimed.affectedRows !== 1) {
+          // A concurrent upload won the claim. Do not overwrite its object.
+          yield* r2.delete(r2Key).pipe(Effect.orElseSucceed(() => undefined));
+
+          return {
+            status: 409 as const,
+            body: { status: "error" as const, error: "This archive was already uploaded." },
+          };
+        }
+
+        yield* writeSystemAudit(db, {
+          organizationId: archive.organizationId,
+          action: "device.diagnostics_uploaded",
+          targetType: "device",
+          targetId: archiveDeviceId,
+          deviceId: archiveDeviceId,
+          protocol: "win",
+          metadata: {
+            archiveId: archive.id,
+            sizeBytes: bytes.byteLength,
+          },
+        });
+
+        return { status: 200 as const, body: { status: "ok" as const } };
+      }).pipe(Effect.provide(r2Layer)),
     getDeviceRecoveryKey: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         // Reading a recovery key is a privileged action: the same role check as
@@ -30771,11 +32764,49 @@ export const enterpriseApprovalHandlers = (
 export const enterpriseWindowsHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseWindowsApi>,
 ) =>
-  handlers.handle("listWindowsFailures", ({ request, params, query }) =>
-    Effect.flatMap(EnterpriseService, (service) =>
-      service.listWindowsFailures(request, params.tenantId, query),
-    ),
-  );
+  handlers
+    .handle("listWindowsFailures", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listWindowsFailures(request, params.tenantId, query),
+      ),
+    )
+    .handle("getDeviceWindowsSecurity", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceWindowsSecurity(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("getDeviceLapsPassword", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceLapsPassword(request, params.tenantId, params.id, query),
+      ),
+    )
+    .handle("revealDeviceBitlockerKey", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revealDeviceBitlockerKey(
+          request,
+          params.tenantId,
+          params.id,
+          params.keyId,
+          query,
+        ),
+      ),
+    )
+    .handle("listDeviceDiagnostics", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceDiagnostics(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("downloadDeviceDiagnostics", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.downloadDeviceDiagnostics(
+          request,
+          params.tenantId,
+          params.id,
+          params.archiveId,
+          query,
+        ),
+      ),
+    );
 
 export const enterpriseAttributeHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseAttributeApi>,

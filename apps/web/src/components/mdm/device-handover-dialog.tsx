@@ -29,6 +29,7 @@ export const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, str
   recovery_lock_password: "Recovery Lock password",
   local_admin_password: "Local administrator password",
   bootstrap_token: "Bootstrap token",
+  bitlocker_recovery_key: "BitLocker recovery keys",
 };
 
 export const deviceHandoverSecretLabel = (kind: DeviceHandoverSecretKind) =>

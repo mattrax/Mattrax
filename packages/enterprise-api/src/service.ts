@@ -41,6 +41,8 @@ export type EnterpriseServiceOptions = {
    * Delivery. Defaults to the maintenance default; `0` means kept forever.
    */
   readonly windowsFailureRetentionDays?: number;
+  /** Test/deployment override for the Windows diagnostic archive byte cap. */
+  readonly windowsDiagnosticsMaxBytes?: number;
   /** Stripe price for the per-device plan; enables Checkout and seat sync. */
   /**
    * Customer-facing billing implementation. Omit on hosted deployments to use
@@ -142,6 +144,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           appleApi: options.appleApi,
           planLimits: options.planLimits,
           windowsFailureRetentionDays: options.windowsFailureRetentionDays,
+          windowsDiagnosticsMaxBytes: options.windowsDiagnosticsMaxBytes,
           analytics: options.analytics,
           email: options.email,
           invitationFromEmail: options.invitationFromEmail,

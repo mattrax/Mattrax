@@ -152,7 +152,11 @@ Core tables:
   `device_apple` (policy delivery mode, ADE awaiting-setup/configured state, Return to
   Service request clocks and the security-report clocks),
   `device_secret` (sealed recovery key, bootstrap token, activation-lock bypass code,
-  managed local-admin password and Recovery Lock password), `device_command` (device or one
+  managed local-admin password, Recovery Lock password and cached Windows LAPS password),
+  `device_bitlocker_key` (Entra BitLocker key metadata with a sealed cache once revealed,
+  capture/report/retirement times), `device_windows_laps` (Entra backup/refresh metadata and reset
+  status; never the password), `device_diagnostics_archive` (DiagnosticLog request and R2
+  pointer), `device_command` (device or one
   Apple user channel via `user_id`), `device_apple_user` (per-user Apple channel: identity names, push credentials,
   bind time, last check-in and reported profiles), `device_declaration`,
   `device_application` (Apple bundle ids, Android package names and Windows product/registry

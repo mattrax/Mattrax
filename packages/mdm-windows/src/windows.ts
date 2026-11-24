@@ -1,8 +1,9 @@
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { osPolicyRuleFromRow, windowsOsUpdatePolicyNodes } from "@mattrax/enterprise-domain";
 import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
+import { planWindowsRotationPoll } from "./windowsRotation.js";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import { SYSTEM_AUDIT_ACTIONS, describeAuditFailure, writeSystemAudit } from "@mattrax/mdm-core";
@@ -2191,8 +2192,10 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           if (!commandId) continue;
 
           const data = windowsSyncMLData(status.data) ?? "";
-          const outcome = windowsCommandOutcome(data);
           const row = rowsById.get(commandId) ?? inventoryRowsByCommandId.get(commandId);
+          const outcome = windowsCommandOutcome(data, {
+            acceptedForProcessing: row?.requestType === "WindowsBitLockerRotate",
+          });
 
           if (!row) {
             // An imperative command is addressed by its row id, which is also
@@ -2252,6 +2255,35 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           // outcome is already represented by `mdm.status_report` when the
           // values changed, and recording every daily poll result would drown
           // the signal.
+          // A rejected ArchiveDefinition can never upload. Mark the archive
+          // failed now so the device page explains the CSP status instead of
+          // leaving it pending until the 24-hour deadline.
+          if (
+            row.requestType === "WindowsCollectDiagnostics" &&
+            outcome.status === "failed"
+          ) {
+            const archiveId = payloadString(commandPayload(row.payload), "archiveId");
+
+            if (archiveId)
+              yield* db
+                .update(s.deviceDiagnosticsArchive)
+                .set({
+                  status: "failed",
+                  error:
+                    "The device rejected DiagnosticArchive with SyncML status " +
+                    outcome.resultStatus +
+                    ".",
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(s.deviceDiagnosticsArchive.id, archiveId),
+                    eq(s.deviceDiagnosticsArchive.organizationId, organizationId),
+                    eq(s.deviceDiagnosticsArchive.deviceId, device.id),
+                  ),
+                );
+          }
+
           if (!isInventory && row.status !== outcome.status) {
             if (outcome.status === "succeeded")
               yield* writeSystemAudit(
@@ -2422,19 +2454,63 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         for (const cmdRef of resultCommandIds) {
-          const row = inventoryRowsByCommandId.get(cmdRef);
+          const row = inventoryRowsByCommandId.get(cmdRef) ?? rowsById.get(cmdRef);
 
           if (!row) continue;
+
+          const uri = payloadString(commandPayload(row.payload), "locURI");
+          const value = uri ? inventoryValues.get(uri) : undefined;
+
+          // LAPS and BitLocker status nodes are ordinary `Get` commands, not
+          // inventory requests. Persisting the first value the device answers
+          // lets the device page reconcile ResetPasswordStatus and
+          // RotateRecoveryPasswordsStatus without a second round trip.
+          // Only the rotation status nodes carry a meaningful result value.
+          // An inventory Get's data is the inventory itself and must not be
+          // copied into the command history as a "Status ..." string.
+          const statusRequest =
+            row.requestType === "WindowsLapsResetPasswordStatus" ||
+            row.requestType === "WindowsBitLockerRotateStatus";
+          const detail =
+            statusRequest && value !== undefined && value.trim()
+              ? "Status " + value.trim().slice(0, 200)
+              : row.resultDetail;
 
           yield* db
             .update(s.deviceCommand)
             .set({
               status: "succeeded",
               resultStatus: "200",
+              resultDetail: detail,
               dedupeKey: null,
               updatedAt: timestamp,
             })
             .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+
+          if (
+            row.requestType === "WindowsLapsResetPasswordStatus" &&
+            value !== undefined &&
+            value.trim()
+          )
+            yield* db
+              .insert(s.deviceWindowsLaps)
+              .values({
+                deviceId: device.id,
+                organizationId,
+                accountName: null,
+                accountSid: null,
+                backupAt: null,
+                refreshAt: null,
+                retrievedAt: null,
+                source: "unknown",
+                resetRequestedAt: null,
+                resetStatus: value.trim().slice(0, 255),
+                lastError: null,
+                updatedAt: timestamp,
+              })
+              .onDuplicateKeyUpdate({
+                set: { resetStatus: value.trim().slice(0, 255), updatedAt: timestamp },
+              });
         }
 
         const applicationReport = parseWindowsApplicationsReport(inventoryValues, {
@@ -2915,6 +2991,47 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             .update(s.deviceCommand)
             .set({ status: "sent", updatedAt: timestamp })
             .where(eq(s.deviceCommand.id, command.id));
+        }
+
+        // A rotation's status node is polled on later check-ins until it
+        // reaches a terminal value. The planner runs after delivery, so the
+        // Exec is already marked sent here and is not eligible until the
+        // device acknowledges it with accepted or succeeded.
+        const rotationRows = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, [
+                "WindowsBitLockerRotate",
+                "WindowsBitLockerRotateStatus",
+                "WindowsLapsResetPassword",
+                "WindowsLapsResetPasswordStatus",
+              ]),
+            ),
+          )
+          .orderBy(desc(s.deviceCommand.createdAt))
+          .limit(20);
+
+        if (device.status === "enrolled") {
+          const poll = planWindowsRotationPoll({ rows: rotationRows, now: timestamp });
+
+          if (poll)
+            yield* db.insert(s.deviceCommand).values({
+              id: crypto.randomUUID(),
+              organizationId,
+              deviceId: device.id,
+              requestType: poll.requestType,
+              payload: poll.payload,
+              status: "queued",
+              dedupeKey: null,
+              expiresAt: poll.expiresAt,
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
         }
 
         // Policy rejections are already stored per OMA-URI on the device; this

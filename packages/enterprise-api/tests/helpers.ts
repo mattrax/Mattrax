@@ -66,6 +66,16 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
 
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (key in row ? row[key] : row[fallback]) == null);
+
+      if (op.includes(" > ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) > comparable(param.value),
+        );
+
+      if (op.includes(" < ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) < comparable(param.value),
+        );
     }
   }
 

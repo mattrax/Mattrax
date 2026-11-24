@@ -412,6 +412,29 @@ export function EntityActions(props: {
     },
   }));
 
+  /**
+   * Diagnostics are one command per device. A selection spanning non-Windows
+   * rows reports those rows as failures instead of hiding them; each device's
+   * own capability check decides whether the command is legal.
+   */
+  const diagnostics = useMutation(() => ({
+    mutationFn: async (): Promise<BulkOutcome> => {
+      const selected = await targets();
+
+      return settleRows(selected, (id) =>
+        enterprise.deviceAction(params.tenantId, id, { action: "collect-diagnostics" }),
+      );
+    },
+    onSuccess: async (outcome) => {
+      await invalidate(outcome.failed.map((row) => row.id));
+      reportBulk(
+        props.entity,
+        { ok: "diagnostics requested for", fail: "could not request diagnostics for" },
+        outcome,
+      );
+    },
+  }));
+
   return (
     <>
       <Show when={props.entity === "device" && can("devices.handover")}>
@@ -430,8 +453,20 @@ export function EntityActions(props: {
           Sync
         </Button>
       </Show>
+      <Show when={props.entity === "device" && can("devices.command")}>
+        <Button
+          variant="outline"
+          disabled={diagnostics.isPending}
+          onClick={() => diagnostics.mutate()}
+        >
+          {diagnostics.isPending ? "Requesting…" : "Collect diagnostics"}
+        </Button>
+      </Show>
       <Show when={sync.error}>
         <ErrorText error={sync.error} />
+      </Show>
+      <Show when={diagnostics.error}>
+        <ErrorText error={diagnostics.error} />
       </Show>
       <Show when={props.entity === "device" && can("devices.write")}>
         <ConfirmAction

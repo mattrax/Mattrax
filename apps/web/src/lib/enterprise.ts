@@ -322,6 +322,7 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"];
 
@@ -745,6 +746,7 @@ function endpoint<A, E>(
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
+        ...client.EnterpriseWindows,
         ...client.EnterpriseOnboarding,
         ...client.EnterpriseApproval,
       })),
@@ -1640,7 +1642,10 @@ export const enterprise = {
         | "relinquish-ownership"
         | "schedule-os-update"
         | "set-device-name"
-        | "set-lock-screen-message";
+        | "set-lock-screen-message"
+        | "fresh-start"
+        | "collect-diagnostics"
+        | "rotate-bitlocker-key";
       deviceName?: string;
       lockScreenMessage?: string;
       lockScreenIncludeAssetTag?: boolean;
@@ -1658,6 +1663,7 @@ export const enterprise = {
       osUpdateProductKey?: string;
       osUpdateDeadline?: string;
       osUpdateMechanism?: "ddm-software-update";
+      freshStartRetainUserData?: boolean;
     } = { action: "sync" },
   ) =>
     endpoint((api) =>
@@ -1693,6 +1699,41 @@ export const enterprise = {
           params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         }),
       { stepUp: "recovery-key-reveal" },
+    ),
+  getDeviceWindowsSecurity: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceWindowsSecurity({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceLapsPassword: (tenantId: RouteParam, id: RouteParam, reason: string) =>
+    endpoint(
+      (api) =>
+        api.getDeviceLapsPassword({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  revealDeviceBitlockerKey: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    keyId: string,
+    reason: string,
+  ) =>
+    endpoint(
+      (api) =>
+        api.revealDeviceBitlockerKey({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), keyId },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  listDeviceDiagnostics: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceDiagnostics({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
     ),
   getDeviceActivationLockBypassCode: (tenantId: RouteParam, id: RouteParam) =>
     endpoint(

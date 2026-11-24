@@ -30,6 +30,7 @@ import {
   parseSuperadminEmails,
   scriptAgentApi,
   scriptApi,
+  EnterpriseService as EnterpriseServiceTag,
 } from "@mattrax/enterprise-domain";
 import {
   EnterpriseAnalyticsService,
@@ -393,6 +394,20 @@ const handlersLayer = Layer.mergeAll(
     Effect.sync(managementWebhookOpenApiResponse),
   ),
   HttpRouter.add("GET", "/api/docs", Effect.sync(apiDocsResponse)),
+  // The DiagnosticLog CSP uploads its ZIP to this scoped URL. It is a raw
+  // route because the body is binary and the device presents a signed token,
+  // not a tenant session.
+  ...[("PUT" as const), ("POST" as const)].map((method) =>
+    HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
+      Effect.flatMap(EnterpriseServiceTag, (service) =>
+        Effect.map(
+          service.uploadWindowsDiagnostics(request),
+          (result: { status: number; body: unknown }) =>
+            HttpServerResponse.jsonUnsafe(result.body, { status: result.status }),
+        ),
+      ),
+    ),
+  ),
 );
 
 const apiLayer = Layer.mergeAll(

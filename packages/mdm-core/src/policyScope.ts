@@ -5,6 +5,7 @@ import {
   compareOsVersion,
 } from "@mattrax/dm-apple";
 import type { AppleOsFamily } from "@mattrax/dm-apple";
+import { WINDOWS_LAPS_MIN_BUILD } from "@mattrax/enterprise-domain";
 import { configurationPayloadTypes, parseConfigurationKind } from "./policy.ts";
 import type { ConfigurationKind } from "./policy.ts";
 import { resolveEffectivePolicy } from "./policyResolution.ts";
@@ -214,6 +215,7 @@ const platformOf = (kind: ConfigurationKind): PolicyPlatform | null => {
     case "android":
       return "android";
     case "windows":
+    case "windows-laps":
       return "windows";
     case "application":
     case "certificate":
@@ -314,7 +316,10 @@ export const derivePolicyPlatformSupport = async (
     platforms.add(platform);
 
     if (platform === "windows") {
-      const minimum = windowsConfigurationMinimumBuild(configuration.data);
+      const minimum =
+        parsed.type === "windows-laps"
+          ? "10.0." + WINDOWS_LAPS_MIN_BUILD
+          : windowsConfigurationMinimumBuild(configuration.data);
 
       if (minimum && (windowsMinimum === null || compareOsVersion(minimum, windowsMinimum) > 0))
         windowsMinimum = minimum;

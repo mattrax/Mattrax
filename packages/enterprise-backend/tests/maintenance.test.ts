@@ -1352,3 +1352,80 @@ describe("maintenance handover archive retention", () => {
     expect(db.store.device_handover_archive).toHaveLength(1);
   });
 });
+
+describe("maintenance diagnostic archive retention", () => {
+  const archive = (id: string, ageDays: number, r2Key: string | null) => ({
+    id,
+    organizationId: "org-1",
+    deviceId: "device-1",
+    requestedByAccountId: "user-1",
+    requestedByEmail: "owner@example.com",
+    collectionId: id,
+    commandId: null,
+    status: r2Key ? "uploaded" : "pending",
+    r2Key,
+    sizeBytes: r2Key ? 10 : null,
+    sha256: r2Key ? "a".repeat(64) : null,
+    contentType: r2Key ? "application/zip" : null,
+    error: null,
+    requestedAt: new Date(now.getTime() - ageDays * DAY),
+    uploadedAt: r2Key ? new Date(now.getTime() - ageDays * DAY) : null,
+    expiresAt: new Date(now.getTime() - ageDays * DAY + 24 * 60 * 60 * 1000),
+    updatedAt: new Date(now.getTime() - ageDays * DAY),
+  });
+
+  it("prunes keyless expired rows without storage but keeps R2-backed rows", async () => {
+    const db = makeDb();
+
+    db.store.device_diagnostics_archive.push(
+      archive("pending", 2, null),
+      archive("uploaded", 2, "diagnostics/org-1/device-1/uploaded.zip"),
+      archive("live", 0, null),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedDiagnosticsArchives).toBe(1);
+    expect(db.store.device_diagnostics_archive.map((row: any) => row.id)).toEqual([
+      "uploaded",
+      "live",
+    ]);
+  });
+
+  it("deletes the object before the row when storage is available", async () => {
+    const db = makeDb();
+    const deleted: string[] = [];
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async (keys: string | ReadonlyArray<string>) => {
+        for (const key of Array.isArray(keys) ? keys : [keys]) deleted.push(key);
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_diagnostics_archive.push(
+      archive("uploaded", 2, "diagnostics/org-1/device-1/uploaded.zip"),
+    );
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedDiagnosticsArchives).toBe(1);
+    expect(deleted).toEqual(["diagnostics/org-1/device-1/uploaded.zip"]);
+    expect(db.store.device_diagnostics_archive).toHaveLength(0);
+  });
+});

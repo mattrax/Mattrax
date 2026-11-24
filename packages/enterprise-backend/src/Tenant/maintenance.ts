@@ -333,6 +333,8 @@ export type MaintenanceResult = {
   readonly purgedTenantDeletionLogs: number;
   /** Expired handover archive rows (and objects, when storage is available). */
   readonly purgedHandoverArchives: number;
+  /** Expired Windows diagnostic archives and their R2 objects. */
+  readonly purgedDiagnosticsArchives: number;
   /** Terminal approval requests (and their decisions) deleted by retention. */
   readonly purgedApprovalRequests: number;
   /** Tenant usage snapshots accepted by the billing service. */
@@ -587,6 +589,7 @@ export const runMaintenance = (
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
       purgedHandoverArchives: 0,
+      purgedDiagnosticsArchives: 0,
       purgedApprovalRequests: 0,
       billingUsageReported: 0,
       billingUsageFailed: 0,
@@ -1299,6 +1302,54 @@ export const runMaintenance = (
         );
 
       result.purgedHandoverArchives = purgeable.length;
+    }
+
+    // 11c. Expired Windows diagnostic archives. The download token is already
+    //      dead past `expiresAt`; delete the object first so a failed storage
+    //      delete leaves the row for the next run instead of orphaning bytes.
+    const expiredDiagnostics = yield* db
+      .select({ id: s.deviceDiagnosticsArchive.id, r2Key: s.deviceDiagnosticsArchive.r2Key })
+      .from(s.deviceDiagnosticsArchive)
+      .where(lt(s.deviceDiagnosticsArchive.expiresAt, now))
+      .limit(5_000);
+
+    if (expiredDiagnostics.length > 0) {
+      // Without a storage binding, deleting a row that still points at an R2
+      // object orphans bytes forever. Keep those rows for a deployment that
+      // later configures storage; only keyless rows can be pruned safely.
+      let purgeable = options.storage
+        ? expiredDiagnostics
+        : expiredDiagnostics.filter((row) => row.r2Key === null);
+      const storage = options.storage;
+
+      if (storage) {
+        const keys = expiredDiagnostics.flatMap((row) => (row.r2Key ? [row.r2Key] : []));
+
+        if (keys.length > 0) {
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(keys),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired diagnostic archives; rows are retried next run",
+              { cause: failure },
+            );
+            purgeable = expiredDiagnostics.filter((row) => row.r2Key === null);
+          }
+        }
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceDiagnosticsArchive).where(
+          inArray(
+            s.deviceDiagnosticsArchive.id,
+            purgeable.map((row) => row.id),
+          ),
+        );
+
+      result.purgedDiagnosticsArchives = purgeable.length;
     }
 
     // 12. Billing usage. Devices live in this database but billing lives in

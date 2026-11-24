@@ -1,6 +1,9 @@
 import { Clock, Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
 import {
+  GraphBitlockerRecoveryKeyListResponse,
+  GraphBitlockerRecoveryKeySchema,
+  GraphDeviceLocalCredentialInfoSchema,
   GraphAutopilotDeviceResponse,
   GraphAutopilotDevicesResponse,
   GraphAutopilotImportResponse,
@@ -18,6 +21,8 @@ import {
   importedAutopilotDevices,
 } from "./schema.js";
 import type {
+  GraphBitlockerRecoveryKey,
+  GraphDeviceLocalCredentialInfo,
   GraphAutopilotDevice,
   GraphAutopilotProfile,
   GraphDeltaPage,
@@ -199,6 +204,29 @@ export type AzureGraphService = {
   ) => Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError>;
   readonly consentUrl: (tenantId: string) => string;
 
+  /**
+   * Read the Windows LAPS credentials backed up to Microsoft Entra ID for one
+   * device object. Requires the `DeviceLocalCredential.Read.All` application
+   * permission.
+   */
+  readonly deviceLocalCredentials: (
+    tenantId: string,
+    deviceId: string,
+  ) => Effect.Effect<GraphDeviceLocalCredentialInfo, AzureGraphError>;
+  /**
+   * List every BitLocker recovery key backed up for one Entra device. The list
+   * endpoint does not return key material; use {@link getBitlockerRecoveryKey}
+   * for that, which triggers an Entra audit record.
+   */
+  readonly listBitlockerRecoveryKeys: (
+    tenantId: string,
+    deviceId: string,
+  ) => Effect.Effect<ReadonlyArray<GraphBitlockerRecoveryKey>, AzureGraphError>;
+  /** Fetch one key with `$select=key`; the material is audited by Entra. */
+  readonly getBitlockerRecoveryKey: (
+    tenantId: string,
+    keyId: string,
+  ) => Effect.Effect<GraphBitlockerRecoveryKey, AzureGraphError>;
   /** List `windowsAutopilotDeviceIdentities`, one page at a time. */
   readonly listAutopilotDevices: (
     tenantId: string,
@@ -1137,6 +1165,52 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           profileBody(input, false),
         ).pipe(Effect.map(graphAutopilotProfileFromWire));
 
+      const deviceLocalCredentials = (
+        tenantId: string,
+        deviceId: string,
+      ): Effect.Effect<GraphDeviceLocalCredentialInfo, AzureGraphError> =>
+        get(
+          tenantId,
+          `${graphBaseUrl}/directory/deviceLocalCredentials/${encodeURIComponent(deviceId)}`,
+          GraphDeviceLocalCredentialInfoSchema,
+        );
+
+      const bitlockerRecoveryKeyBase = `${graphBaseUrl}/informationProtection/bitlocker/recoveryKeys`;
+
+      const listBitlockerRecoveryKeys = (
+        tenantId: string,
+        deviceId: string,
+      ): Effect.Effect<ReadonlyArray<GraphBitlockerRecoveryKey>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const keys: Array<GraphBitlockerRecoveryKey> = [];
+          let link: string | undefined =
+            bitlockerRecoveryKeyBase +
+            "?$filter=" +
+            encodeURIComponent(`deviceId eq '${deviceId.replaceAll("'", "''")}'`);
+
+          for (let page = 0; link && page < 100; page++) {
+            const response: GraphBitlockerRecoveryKeyListResponse = yield* get(
+              tenantId,
+              link,
+              GraphBitlockerRecoveryKeyListResponse,
+            );
+            keys.push(...(response.value ?? []));
+            link = response["@odata.nextLink"] ?? undefined;
+          }
+
+          return keys;
+        });
+
+      const getBitlockerRecoveryKey = (
+        tenantId: string,
+        keyId: string,
+      ): Effect.Effect<GraphBitlockerRecoveryKey, AzureGraphError> =>
+        get(
+          tenantId,
+          `${bitlockerRecoveryKeyBase}/${encodeURIComponent(keyId)}?$select=id,deviceId,createdDateTime,volumeType,key`,
+          GraphBitlockerRecoveryKeySchema,
+        );
+
       const assignAutopilotProfile = (
         tenantId: string,
         id: string,
@@ -1171,6 +1245,9 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         createAutopilotProfile,
         updateAutopilotProfile,
         assignAutopilotProfile,
+        deviceLocalCredentials,
+        listBitlockerRecoveryKeys,
+        getBitlockerRecoveryKey,
       });
     }),
   );
