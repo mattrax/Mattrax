@@ -24,6 +24,7 @@ import {
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { webHttpClientLayer } from "~/lib/web-http";
+import { enterpriseSecurityHeaders } from "~/lib/enterprise-headers";
 import { ME_QUERY_KEY } from "~/lib/me-keys";
 import { buildMeQueryOptions } from "~/lib/me-options";
 import { currentTenantDirectory, resolveTenant, resolveTenantId } from "~/lib/tenant";
@@ -401,12 +402,20 @@ type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["Sc
  */
 const migrationClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(fleetMigrationHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -780,14 +789,28 @@ const required = (value: RouteParam, name: string) => {
   return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
 };
 
+const enterpriseRequestOrigin = () => {
+  const event = isServer ? getRequestEvent() : undefined;
+
+  return event ? new URL(event.request.url).origin : undefined;
+};
+
 const clientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return makeEnterpriseClient({
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -797,24 +820,40 @@ const clientEffect = (headers: Readonly<Record<string, string>>) => {
  */
 const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(scriptHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
 /** Restricted software is its own contract for the same declaration-size reason. */
 const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(restrictedSoftwareHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -946,9 +985,14 @@ const download = (
             ? cause
             : new EnterpriseBadRequest({ message: "Invalid download parameters" }),
       });
+      const method = options.method ?? "GET";
       const response = yield* client.execute(
-        HttpClientRequest.make(options.method ?? "GET")(requestPath, {
-          headers: { ...enterpriseRequestHeaders(grant, approval), ...options.headers },
+        HttpClientRequest.make(method)(requestPath, {
+          headers: {
+            ...enterpriseRequestHeaders(grant, approval),
+            ...options.headers,
+            ...enterpriseSecurityHeaders(method, enterpriseRequestOrigin()),
+          },
           ...(options.body === undefined ? {} : { body: HttpBody.jsonUnsafe(options.body) }),
         }),
       );

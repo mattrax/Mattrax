@@ -17,6 +17,7 @@ import {
   enterpriseHandlers,
 } from "@mattrax/enterprise-api";
 import { makeDb, makeHttpHandler, schema } from "./helpers.js";
+import { enterpriseSecurityHeaders } from "../../../apps/web/src/lib/enterprise-headers.ts";
 
 const origin = "https://enterprise.test";
 const authSecret = "account-auth-http-test-secret";
@@ -216,10 +217,11 @@ const makeAuthHandler = async (
 };
 
 const bearerHeaders = (token: string) => ({ authorization: `Bearer ${token}` });
-const sessionHeaders = () => ({
+const sessionHeaders = (method: string, forwardedOrigin?: string) => ({
   cookie: "__Host-mattrax_session=test",
-  origin,
-  "x-effect-auth-csrf": "1",
+  // A browser adds Origin to unsafe fetches; SSR must forward it explicitly.
+  ...(forwardedOrigin ? {} : { origin }),
+  ...enterpriseSecurityHeaders(method, forwardedOrigin),
 });
 const jsonHeaders = (headers: Record<string, string>) => ({
   ...headers,
@@ -307,12 +309,27 @@ describe("native-router account authentication", () => {
     expect(db.store.account).toHaveLength(1);
   });
 
-  it("allows a valid browser deletion", async () => {
+  it("allows browser deletion with client-generated security headers", async () => {
     const { handler, db } = await makeAuthHandler({ credential: "session" });
     const response = await handler(
       new Request("http://localhost/api/v1/me", {
         method: "DELETE",
-        headers: jsonHeaders(sessionHeaders()),
+        headers: jsonHeaders(sessionHeaders("DELETE")),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: "ok", deletedTenants: [] });
+    expect(db.store.account).toHaveLength(0);
+  });
+
+  it("allows SSR-forwarded deletion with client-generated security headers", async () => {
+    const { handler, db } = await makeAuthHandler({ credential: "session" });
+    const response = await handler(
+      new Request("http://localhost/api/v1/me", {
+        method: "DELETE",
+        headers: jsonHeaders(sessionHeaders("DELETE", origin)),
         body: JSON.stringify({ confirmEmail: email }),
       }),
     );
@@ -327,7 +344,7 @@ describe("native-router account authentication", () => {
     const response = await handler(
       new Request("http://localhost/api/v1/tenants/tenant-1", {
         method: "PATCH",
-        headers: jsonHeaders(sessionHeaders()),
+        headers: jsonHeaders(sessionHeaders("PATCH")),
         body: JSON.stringify({ displayName: "Acme Corp" }),
       }),
     );
@@ -356,7 +373,7 @@ describe("native-router account authentication", () => {
     const response = await handler(
       new Request("http://localhost/api/v1/%61ccount/api-tokens", {
         method: "POST",
-        headers: jsonHeaders({ ...sessionHeaders(), "x-mattrax-step-up": grant }),
+        headers: jsonHeaders({ ...sessionHeaders("POST"), "x-mattrax-step-up": grant }),
         body: JSON.stringify({ name: "Browser CLI", scopes: ["read"] }),
       }),
     );
