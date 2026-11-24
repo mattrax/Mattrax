@@ -1,5 +1,4 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { Show, createSignal } from "solid-js";
 import {
@@ -23,19 +22,8 @@ import {
   RESTRICTED_SOFTWARE_PLATFORM_LABELS,
   restrictedSoftwareCapability,
 } from "@mattrax/enterprise-domain/client";
-import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { queryClient } from "~/lib/query-client";
-
-export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.restrictedSoftware(params.tenantId)),
-    ]);
-  },
-};
+import { restrictedSoftwareQueryAccess } from "./restricted-software/query-access";
 
 type View = "rules" | "violations";
 
@@ -70,13 +58,26 @@ export default function RestrictedSoftwarePage() {
   const [view, setView] = createSignal<View>(ruleFilter() ? "violations" : "rules");
   const [violationFilter, setViolationFilter] = createSignal<"open" | "all">("open");
 
-  const rules = useQuery(() => enterpriseQueries.restrictedSoftware(params.tenantId));
-  const violations = useQuery(() =>
-    enterpriseQueries.restrictedSoftwareViolations(params.tenantId, {
+  const queryAccess = () =>
+    restrictedSoftwareQueryAccess({
+      read: can("restricted_software.read"),
+      write: writable(),
+      isNew: false,
+      violationsView: view() === "violations",
+    });
+  const rules = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftware(params.tenantId);
+
+    return { ...options, enabled: options.enabled && queryAccess().rules };
+  });
+  const violations = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareViolations(params.tenantId, {
       status: violationFilter() === "open" ? "open" : undefined,
       ruleId: ruleFilter(),
-    }),
-  );
+    });
+
+    return { ...options, enabled: options.enabled && queryAccess().violations };
+  });
 
   const ruleRows = () => [...(rules.data?.rules ?? [])];
   const violationRows = () => [...(violations.data?.violations ?? [])];

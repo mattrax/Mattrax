@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { authClient } from "~/lib/auth";
 import { Badge } from "~/components/ui/badge";
 import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -10,9 +11,18 @@ import {
   onboardingProgress,
   shouldShowOnboarding,
 } from "~/lib/onboarding";
-import { useCan } from "~/lib/permissions";
+import {
+  ONBOARDING_STALE_MILLIS,
+  ONBOARDING_WRITE_PERMISSIONS,
+  onboardingIsDismissed,
+  onboardingQueryEnabled,
+  readOnboardingDismissal,
+  writeOnboardingDismissal,
+} from "~/lib/onboarding-query";
+import { useTenantPermissions } from "~/lib/permissions";
 import { supportUrl } from "~/lib/support-config-store";
 import { cn } from "~/lib/utils";
+import { resolveTenantId } from "~/lib/tenant";
 
 /**
  * The in-product onboarding path for a new tenant.
@@ -21,19 +31,70 @@ import { cn } from "~/lib/utils";
  * derived from the tenant's live resources. Dismissal is stored on the member
  * row: it follows the account across browsers and does not hide the checklist
  * for another administrator. The card disappears on completion, and an empty
- * step list (a member with no relevant write permissions) renders nothing.
+ * step list (a member with no relevant write permissions) renders nothing. The
+ * aggregate query stays disabled until membership permissions are known and
+ * remains disabled for a dismissed checklist.
  */
 export function OnboardingChecklist(props: { tenantId: string }) {
-  const { can } = useCan();
+  const { can, canAny, known, tenant } = useTenantPermissions();
+  const session = authClient.useSession();
   const queryClient = useQueryClient();
-  const state = useQuery(() => enterpriseQueries.onboarding(props.tenantId));
+  const browserStorage = () => {
+    try {
+      return globalThis.localStorage;
+    } catch {
+      return undefined;
+    }
+  };
+  const dismissalIdentity = () => ({
+    userId: session()?.data?.user?.id,
+    tenantId: tenant()?.id ?? resolveTenantId(props.tenantId) ?? props.tenantId,
+  });
+  const locallyDismissed = createMemo(() => {
+    const { userId, tenantId } = dismissalIdentity();
+
+    return readOnboardingDismissal(browserStorage(), userId, tenantId);
+  });
+  const queryKey = () => enterpriseKeys.onboarding(props.tenantId);
+  const [dismissed, setDismissed] = createSignal(
+    onboardingIsDismissed(queryClient.getQueryData<TenantOnboardingState>(queryKey())),
+  );
+  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+    if (
+      event.query.queryKey.length !== queryKey().length ||
+      !event.query.queryKey.every((part: unknown, index: number) => part === queryKey()[index])
+    )
+      return;
+
+    const data = event.query.state.data as TenantOnboardingState | undefined;
+    setDismissed(onboardingIsDismissed(data));
+  });
+  onCleanup(unsubscribe);
+
+  const state = useQuery(() => {
+    const options = enterpriseQueries.onboarding(props.tenantId);
+
+    return {
+      ...options,
+      enabled:
+        options.enabled &&
+        onboardingQueryEnabled(
+          known(),
+          canAny(ONBOARDING_WRITE_PERMISSIONS),
+          dismissed() || locallyDismissed(),
+        ),
+      staleTime: ONBOARDING_STALE_MILLIS,
+      refetchOnMount: true,
+    };
+  });
 
   const steps = createMemo(() =>
     state.data ? deriveOnboardingSteps(props.tenantId, state.data, can) : [],
   );
 
   const visible = createMemo(
-    () => state.data !== undefined && shouldShowOnboarding(state.data, steps()),
+    () =>
+      state.data !== undefined && !locallyDismissed() && shouldShowOnboarding(state.data, steps()),
   );
 
   const progress = createMemo(() => onboardingProgress(steps()));
@@ -41,21 +102,37 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   const dismiss = useMutation(() => ({
     mutationFn: () => enterprise.patchTenantOnboarding(props.tenantId, true),
     onMutate: async () => {
-      const key = enterpriseKeys.onboarding(props.tenantId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<TenantOnboardingState>(key);
+      await queryClient.cancelQueries({ queryKey: queryKey() });
+      const previous = queryClient.getQueryData<TenantOnboardingState>(queryKey());
+      const identity = dismissalIdentity();
+      writeOnboardingDismissal(browserStorage(), identity.userId, identity.tenantId, true);
 
       if (previous)
-        queryClient.setQueryData(key, markOnboardingDismissed(previous, new Date().toISOString()));
+        queryClient.setQueryData(
+          queryKey(),
+          markOnboardingDismissed(previous, new Date().toISOString()),
+        );
 
-      return { previous };
+      return { previous, identity };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous)
-        queryClient.setQueryData(enterpriseKeys.onboarding(props.tenantId), context.previous);
+      const restored =
+        context?.previous ?? queryClient.getQueryData<TenantOnboardingState>(queryKey());
+
+      if (restored) {
+        queryClient.setQueryData(queryKey(), restored);
+        setDismissed(onboardingIsDismissed(restored));
+      } else setDismissed(false);
+
+      if (context)
+        writeOnboardingDismissal(
+          browserStorage(),
+          context.identity.userId,
+          context.identity.tenantId,
+          false,
+        );
     },
-    onSettled: () =>
-      queryClient.invalidateQueries({ queryKey: enterpriseKeys.onboarding(props.tenantId) }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKey(), refetchType: "none" }),
   }));
 
   const externalSupport = () => supportUrl().startsWith("http");
