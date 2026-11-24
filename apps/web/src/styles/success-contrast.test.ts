@@ -90,6 +90,8 @@ describe("success badge contrast", () => {
     const source = (path: string) => readFileSync(join(repository, path), "utf8");
     const users = source("apps/web/src/routes/(dashboard)/t/[tenantId]/users/index.tsx");
     const account = source("apps/web/src/routes/(dashboard)/account/index.tsx");
+    const accountSecurity = source("apps/web/src/components/account-security.tsx");
+    const accountLoginAttempts = source("apps/web/src/components/account-login-attempts.tsx");
     const statusChip = source("apps/web/src/components/settings/status-chip.tsx");
 
     expect(users).toContain("bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success");
@@ -97,6 +99,10 @@ describe("success badge contrast", () => {
       "bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success-foreground",
     );
     expect(account).not.toContain("text-success-foreground");
+    expect(accountSecurity).toContain('success: "border-success/25 bg-success/10 text-success"');
+    expect(accountSecurity).not.toContain("text-success-foreground");
+    expect(accountLoginAttempts).toContain("border-success/25 bg-success/10 text-success");
+    expect(accountLoginAttempts).not.toContain("text-success-foreground");
     expect(statusChip).toContain('success: "border-success/25 bg-success/10 text-success"');
   });
 });

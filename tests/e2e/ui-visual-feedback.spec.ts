@@ -74,13 +74,31 @@ test.describe("UI visual feedback", () => {
         },
       }),
     );
+    await page.route("**/api/v1/account/login-attempts", (route) =>
+      route.fulfill({
+        json: {
+          attempts: [
+            {
+              id: "contrast-login-attempt",
+              createdAt: new Date().toISOString(),
+              success: true,
+              method: "passkey",
+              browser: "Chrome",
+              platform: "macOS",
+            },
+          ],
+        },
+      }),
+    );
 
     for (const theme of ["light", "dark"] as const) {
       await useTheme(page, theme);
 
       await gotoHydrated(page, "/account");
       await expect(page.locator('[data-success-badge="verified"]').first()).toBeVisible();
-      await expectNoContrastViolations(page, '[data-success-badge="verified"]');
+      await expect(page.getByText("Enabled", { exact: true })).toBeVisible();
+      await expect(page.getByText("Signed in", { exact: true })).toBeVisible();
+      await expectNoContrastViolations(page, "main");
 
       await gotoHydrated(page, `/t/${tenant.id}/users`);
       await expect(page.locator('[data-success-badge="active"]')).toBeVisible();
