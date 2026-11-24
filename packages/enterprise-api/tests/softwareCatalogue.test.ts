@@ -81,6 +81,18 @@ const makeContext = (role: "owner" | "member" = "owner") => {
       enrolledAt: now,
       lastSeenAt: now,
     },
+    {
+      id: "windows-1",
+      organizationId,
+      proto: "win",
+      status: "enrolled",
+      name: "PC 1",
+      serial: "WIN-1",
+      osEdition: "Windows",
+      osVersion: "11.0",
+      enrolledAt: now,
+      lastSeenAt: now,
+    },
   );
 
   db.store.apple_push_certificate.push({
@@ -269,6 +281,100 @@ describe("software catalogue API", () => {
     expect(
       db.store.application_installer.filter((row: any) => row.source === "store"),
     ).toHaveLength(2);
+  });
+
+  it("re-reads the winner when the unique index rejects a competing insert", async () => {
+    const { db, service, headers } = makeContext();
+    const now = new Date();
+    const originalInsert = db.insert.bind(db);
+    let replaced = false;
+
+    // Keep the winner row after the rejected transaction, exactly as a
+    // separate committed transaction would. The default fake transaction
+    // restores its snapshot on failure, which would also remove the winner.
+    db.transaction = ((work: any) => Effect.suspend(() => work(db))) as any;
+
+    // The in-memory fake does not enforce unique indexes, so inject the exact
+    // failure MySQL produces after another writer commits the same title/method.
+    db.insert = ((table: any) => {
+      if (!replaced && table === schema.application) {
+        replaced = true;
+        db.store.application.push({
+          id: "winner-app",
+          organizationId,
+          name: "Google Chrome (Android)",
+          platform: "android",
+          source: "store",
+          bundleId: "com.android.chrome",
+          version: null,
+          catalogueTitleId: "google-chrome",
+          catalogueMethodId: "android-play",
+          catalogueTarget: "android",
+          catalogueKind: "android-play",
+          notes: null,
+          removeOnUnassign: false,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        return {
+          values: () =>
+            Effect.fail(
+              new Error(
+                "Duplicate entry 'google-chrome-org-1-android-play' for key 'application_catalogue_method_unique'",
+              ),
+            ),
+        } as any;
+      }
+
+      return originalInsert(table);
+    }) as any;
+
+    const result = await runEffect(
+      service.addSoftwareCatalogueTitle(request(headers), organizationId, "google-chrome", {
+        methods: [{ methodId: "android-play" }],
+      }),
+    );
+
+    expect(result.applications).toMatchObject([
+      { id: "winner-app", methodId: "android-play", created: false },
+    ]);
+    expect(db.store.application).toHaveLength(1);
+  });
+
+  it("queues redirect-based Windows MSI catalogue methods", async () => {
+    const { db, service, headers } = makeContext();
+
+    for (const titleId of ["microsoft-edge", "mozilla-firefox"]) {
+      const added = await runEffect(
+        service.addSoftwareCatalogueTitle(request(headers), organizationId, titleId, {
+          methods: [
+            {
+              methodId: "windows-msi",
+              productCode: "8A69F5D9-4B3D-4F7E-9C5A-1B2C3D4E5F60",
+            },
+          ],
+        }),
+      );
+
+      const applicationId = added.applications[0]!.id;
+      db.store.application_device.push({ deviceId: "windows-1", applicationId });
+
+      const installed = await runEffect(
+        service.installApplication(request(headers), organizationId, applicationId),
+      );
+
+      expect(installed, titleId).toMatchObject({ status: "ok", queued: 1, skipped: 0 });
+      const command = db.store.device_command.at(-1)!;
+      expect(command, titleId).toMatchObject({
+        requestType: "InstallApplication",
+        deviceId: "windows-1",
+      });
+      expect(command.payload.locURI, titleId).toContain(
+        encodeURIComponent("{8A69F5D9-4B3D-4F7E-9C5A-1B2C3D4E5F60}"),
+      );
+      expect(command.payload.data, titleId).toContain("<ContentURL>https://");
+    }
   });
 
   it("installs a macOS App Store title only on Macs and an iOS title only on iPhones", async () => {

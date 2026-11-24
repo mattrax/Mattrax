@@ -19,8 +19,10 @@ export type CatalogueMethodAvailability =
  * The caveat is appended to the application notes and shown in the catalogue so
  * an administrator cannot mistake a direct URL for a hash-pinned upload.
  */
-export const CATALOGUE_VENDOR_URL_CAVEAT =
-  "Vendor URL: Mattrax does not hash-verify these bytes. The vendor controls the package and version; upload a signed package instead if your organisation requires hash pinning.";
+export const catalogueVendorUrlCaveat = (kind: string): string =>
+  kind === "windows-msi"
+    ? "Vendor URL: Mattrax does not hash-verify these bytes. The vendor controls the MSI and version; deploy a verified MSI from your own packaging process if hash pinning is required."
+    : "Vendor URL: Mattrax does not hash-verify these bytes. The vendor controls the package and version; upload a signed package instead if your organisation requires hash pinning.";
 
 const bareProductCodePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

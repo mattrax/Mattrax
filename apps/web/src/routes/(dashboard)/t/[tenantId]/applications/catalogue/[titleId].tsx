@@ -5,7 +5,6 @@ import { toast } from "~/components/toast";
 import {
   EmptyState,
   ErrorText,
-  formatDate,
   LinkButton,
   Page,
   PageHeader,
@@ -17,6 +16,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ArrowUpRight, CheckCircle2, CircleAlert, Info, Package } from "~/components/ui/icons";
+import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { CatalogueDeployment, CatalogueTitleResponse } from "~/lib/enterprise";
 import { optimisticUpdate } from "~/lib/optimistic";
@@ -30,6 +30,12 @@ const PLATFORM_LABELS = {
   ipados: "iPadOS",
   android: "Android",
   web: "Web",
+};
+
+const MDM_LABELS = {
+  apple: "Apple",
+  win: "Windows",
+  android: "Android",
 };
 
 const CATEGORY_LABELS = {
@@ -60,8 +66,10 @@ const KIND_LABELS = {
 const label = (labels: Readonly<Record<string, string>>, value: string) => labels[value] ?? value;
 
 /** Keep the no-hash warning visible next to every direct vendor URL. */
-const VENDOR_URL_CAVEAT =
-  "Mattrax does not hash-verify a vendor URL. The vendor controls the bytes and version; upload a signed package instead if hash pinning is required.";
+const vendorUrlCaveat = (kind: string) =>
+  kind === "windows-msi"
+    ? "Vendor URL: Mattrax does not hash-verify these bytes. The vendor controls the MSI and version; deploy a verified MSI from your own packaging process if hash pinning is required."
+    : "Vendor URL: Mattrax does not hash-verify these bytes. The vendor controls the package and version; upload a signed package instead if your organisation requires hash pinning.";
 
 type Availability =
   | { status: "ready"; label: string }
@@ -326,7 +334,7 @@ export default function SoftwareCatalogueTitlePage() {
                         <span class="text-muted-foreground/40" aria-hidden="true">
                           ·
                         </span>
-                        <span>Catalogue checked {formatDate(detail.data?.verifiedAt)}</span>
+                        <span>Catalogue checked {formatCatalogueVerifiedAt(detail.data?.verifiedAt)}</span>
                       </Show>
                     </>
                   }
@@ -406,7 +414,7 @@ export default function SoftwareCatalogueTitlePage() {
                                   }
                                 >
                                   <p class="max-w-3xl rounded-md border border-warning/25 bg-warning/[0.06] px-2.5 py-1.5 text-[11.5px] leading-5 text-warning-foreground">
-                                    {VENDOR_URL_CAVEAT}
+                                    {vendorUrlCaveat(method.kind)}
                                   </p>
                                 </Show>
                                 <Show when={method.url}>
@@ -541,7 +549,7 @@ export default function SoftwareCatalogueTitlePage() {
                                           />
                                         </div>
                                         <p class="text-[11px] leading-4 text-muted-foreground">
-                                          {VENDOR_URL_CAVEAT}
+                                          {vendorUrlCaveat(method.kind)}
                                         </p>
                                       </div>
                                     </Show>
@@ -601,7 +609,7 @@ export default function SoftwareCatalogueTitlePage() {
                                   </a>
                                 </Show>
                                 <Badge variant="outline" class="shrink-0">
-                                  {label(PLATFORM_LABELS, addition.platform)}
+                                  {label(MDM_LABELS, addition.platform)}
                                 </Badge>
                               </li>
                             )}

@@ -1,8 +1,8 @@
 import { CATALOGUE_DEPLOYMENT_KIND_LABELS, CATALOGUE_PLATFORM_LABELS } from "./schema.js";
 import type { CatalogueDeployment, CatalogueTitle } from "./schema.js";
 import {
-  CATALOGUE_VENDOR_URL_CAVEAT,
   catalogueMethodAvailability,
+  catalogueVendorUrlCaveat,
   catalogueMethodUsesVendorUrl,
   isCatalogueProductCode,
   methodName,
@@ -72,7 +72,7 @@ const provenanceNotes = (title: CatalogueTitle, method: CatalogueDeployment) =>
     "From the Mattrax software catalogue: " + title.name + " (" + title.id + "/" + method.id + ").",
     title.notes,
     method.note,
-    catalogueMethodUsesVendorUrl(method) ? CATALOGUE_VENDOR_URL_CAVEAT : undefined,
+    catalogueMethodUsesVendorUrl(method) ? catalogueVendorUrlCaveat(method.kind) : undefined,
   ]
     .filter(Boolean)
     .join(" ")
