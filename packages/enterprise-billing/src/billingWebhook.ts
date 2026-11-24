@@ -1,5 +1,5 @@
 import { Data, Effect, Option, Schema } from "effect";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { verifyStripeWebhookSignature } from "@mattrax/effect-stripe";
 import { isUniqueViolationForConstraint } from "@mattrax/enterprise-core";
@@ -334,6 +334,8 @@ type ApplySubscriptionInput = {
   readonly statusOverride?: string;
   readonly deviceMonthlyPriceId?: string;
   readonly now: Date;
+  /** Only a validated Checkout completion may replace the tenant's subscription. */
+  readonly allowReplacement?: boolean;
 };
 
 const applySubscription = (input: ApplySubscriptionInput) =>
@@ -370,25 +372,49 @@ const applySubscription = (input: ApplySubscriptionInput) =>
       .select()
       .from(schema.subscription)
       .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
-      .limit(1);
+      .limit(1)
+      .for("update");
 
     if (byStripeId && byStripeId.tenantId !== tenant.id)
       return yield* Effect.fail(
         fail("Stripe subscription already belongs to another Mattrax tenant"),
       );
 
-    const existing =
-      byStripeId ??
-      (yield* input.db
+    let tenantSubscription: BillingSubscriptionRow | undefined;
+
+    if (!byStripeId) {
+      [tenantSubscription] = yield* input.db
         .select()
         .from(schema.subscription)
         .where(eq(schema.subscription.tenantId, tenant.id))
-        .limit(1))[0];
+        .limit(1)
+        .for("update");
+
+      if (tenantSubscription && !input.allowReplacement)
+        return yield* Effect.fail(
+          fail("Stripe subscription does not match the tenant's current subscription"),
+        );
+    }
+
+    const existing = byStripeId ?? tenantSubscription;
+
+    if (
+      input.allowReplacement &&
+      existing &&
+      customerId &&
+      existing.stripeCustomerId &&
+      existing.stripeCustomerId !== customerId
+    )
+      return yield* Effect.fail(
+        fail("Stripe customer does not belong to the subscription being replaced"),
+      );
 
     const { periodStart, periodEnd } = subscriptionPeriod(subscription);
 
     // `canceled` is terminal for one Stripe subscription id. A stale invoice
     // or checkout event must not resurrect it after `subscription.deleted`.
+    // The row lock makes this terminal-state guard and the revision increment
+    // one serialized decision for the current Stripe subscription id.
     const status =
       byStripeId?.status === "canceled"
         ? "canceled"
@@ -408,14 +434,33 @@ const applySubscription = (input: ApplySubscriptionInput) =>
     };
 
     if (existing) {
-      yield* input.db
+      const updated = yield* input.db
         .update(schema.subscription)
-        .set({ ...values, updatedAt: input.now })
-        .where(eq(schema.subscription.id, existing.id));
+        .set({
+          ...values,
+          entitlementRevision: existing.entitlementRevision + 1,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(schema.subscription.id, existing.id),
+            input.allowReplacement
+              ? existing.stripeSubscriptionId === null
+                ? isNull(schema.subscription.stripeSubscriptionId)
+                : eq(schema.subscription.stripeSubscriptionId, existing.stripeSubscriptionId)
+              : eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId),
+          ),
+        );
+
+      // The pointer can change while this event is in flight. Never write by
+      // local id alone after a replacement has committed.
+      if (updated.affectedRows === 0)
+        return yield* Effect.fail(fail("Stripe subscription is no longer current for this tenant"));
     } else {
       yield* input.db.insert(schema.subscription).values({
         id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
         ...values,
+        entitlementRevision: 1,
         createdAt: input.now,
         updatedAt: input.now,
       });
@@ -522,23 +567,15 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
       now: input.now,
     });
 
-    let existing: BillingSubscriptionRow | undefined;
+    if (!stripeSubscriptionId)
+      return yield* Effect.fail(fail("Invoice does not identify a Stripe subscription"));
 
-    if (stripeSubscriptionId) {
-      [existing] = yield* input.db
-        .select()
-        .from(schema.subscription)
-        .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
-        .limit(1);
-    }
-
-    if (!existing) {
-      [existing] = yield* input.db
-        .select()
-        .from(schema.subscription)
-        .where(eq(schema.subscription.tenantId, tenant.id))
-        .limit(1);
-    }
+    const [existing] = yield* input.db
+      .select()
+      .from(schema.subscription)
+      .where(eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId))
+      .limit(1)
+      .for("update");
 
     if (!existing)
       return yield* Effect.fail(fail("Invoice does not match a known Mattrax subscription"));
@@ -550,15 +587,24 @@ const applyInvoice = (input: ApplyInvoiceInput) =>
         fail("Stripe invoice subscription already belongs to another Mattrax tenant"),
       );
 
-    yield* input.db
+    const updated = yield* input.db
       .update(schema.subscription)
       .set({
         // A late invoice event must not resurrect a canceled subscription.
         status:
           existing.status === "canceled" ? "canceled" : input.paymentFailed ? "past_due" : "active",
+        entitlementRevision: existing.entitlementRevision + 1,
         updatedAt: input.now,
       })
-      .where(eq(schema.subscription.id, existing.id));
+      .where(
+        and(
+          eq(schema.subscription.id, existing.id),
+          eq(schema.subscription.stripeSubscriptionId, stripeSubscriptionId),
+        ),
+      );
+
+    if (updated.affectedRows === 0)
+      return yield* Effect.fail(fail("Stripe invoice subscription is no longer current"));
 
     return { tenantId: tenant.id };
   });
@@ -631,6 +677,16 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
     if (metadata.name) subscriptionMetadata.tenantName = metadata.name;
     if (plan) subscriptionMetadata.plan = plan;
 
+    // Resolve and validate the session's tenant before trusting a subscription
+    // id that may already be recorded for a different tenant.
+    const tenant = yield* resolveTenant({
+      db: input.db,
+      metadataTenantId: referenceId,
+      metadataTenantName: metadata.name,
+      customerId: idOf(session.customer),
+      now: input.now,
+    });
+
     const [recorded] = yield* input.db
       .select({ tenantId: schema.subscription.tenantId })
       .from(schema.subscription)
@@ -639,7 +695,14 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
 
     // `customer.subscription.created/updated` is the higher-fidelity source.
     // If it already recorded this subscription, keep its period and status.
-    if (recorded) return { tenantId: recorded.tenantId };
+    if (recorded) {
+      if (recorded.tenantId !== tenant.id)
+        return yield* Effect.fail(
+          fail("Stripe subscription already belongs to another Mattrax tenant"),
+        );
+
+      return { tenantId: recorded.tenantId };
+    }
 
     return yield* applySubscription({
       db: input.db,
@@ -651,6 +714,7 @@ const applyCheckoutSession = (input: ApplyCheckoutSessionInput) =>
         cancel_at_period_end: false,
       },
       now: input.now,
+      allowReplacement: true,
     });
   });
 
