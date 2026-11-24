@@ -100,7 +100,8 @@
   --accent-foreground: #1a1a18;
   --destructive: #b4382e;
   --destructive-foreground: #ffffff;
-  --success: #157a52;
+  /** Tone for success text and icons, including 10% tints over the page. */
+  --success: #116b47;
   --success-foreground: #ffffff;
   --warning: #8a5208;
   --warning-foreground: #7a4a06;

@@ -142,7 +142,7 @@ export function AccountLoginAttempts(props: { userId: string | undefined }) {
                       >
                         <Badge
                           variant="outline"
-                          class="border-success/25 bg-success/10 text-success-foreground"
+                          class="border-success/25 bg-success/10 text-success"
                         >
                           Signed in
                         </Badge>

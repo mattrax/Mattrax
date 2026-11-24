@@ -656,6 +656,7 @@ export default function GroupDetailPage() {
   // devices, which the live rule preview deliberately does not.
   const memberCount = () =>
     row()?.devices?.length ?? (row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : 0);
+  const policyCount = () => row()?.policies?.length ?? 0;
 
   return (
     <Page wide>
@@ -707,7 +708,10 @@ export default function GroupDetailPage() {
 
       <ErrorText error={sync.error} />
 
-      <div class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+      <div
+        data-testid="group-summary"
+        class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+      >
         <Show when={row()}>
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Show when={row()!.kind === "dynamic"}>
@@ -736,15 +740,15 @@ export default function GroupDetailPage() {
                 {memberCount()}
               </span>
               <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                devices
+                {memberCount() === 1 ? "device" : "devices"}
               </span>
             </span>
             <span class="flex items-baseline gap-1.5">
               <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
-                {row()!.policies?.length ?? 0}
+                {policyCount()}
               </span>
               <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                policies
+                {policyCount() === 1 ? "policy" : "policies"}
               </span>
             </span>
             <Show when={row()!.kind === "dynamic" && row()!.lastEvaluatedAt}>
