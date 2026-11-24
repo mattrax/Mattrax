@@ -1,4 +1,4 @@
-import { bindings, defineConfig, triggers } from "cf/config";
+import { bindings, defineConfig, exports as workerExports, triggers } from "cf/config";
 import type { InferEnv, UnwrapConfig } from "cf/config";
 
 /**
@@ -108,6 +108,10 @@ export const apiWorker = {
   compatibilityDate: "2026-10-06",
   compatibilityFlags: ["nodejs_compat"],
   entrypoint: new URL("./src/index.ts", import.meta.url).pathname,
+  exports: {
+    TenantDeviceViewsObject: workerExports.durableObject({ storage: "sqlite" }),
+    PersonalDeviceViewsObject: workerExports.durableObject({ storage: "sqlite" }),
+  },
   workersDev: false,
   previewUrls: false,
   // Workers Logs + real-time Issues: uncaught exceptions, failed invocations,
@@ -278,6 +282,14 @@ export const apiWorker = {
     // Shared edge limiters, only present when the deployment supplies a
     // namespace id. Without them the API keeps its per-isolate fallback.
     ...configuredRateLimitBindings(),
+    TENANT_DEVICE_VIEWS: bindings.durableObject({
+      worker: "mattrax-api",
+      exportName: "TenantDeviceViewsObject",
+    }),
+    PERSONAL_DEVICE_VIEWS: bindings.durableObject({
+      worker: "mattrax-api",
+      exportName: "PersonalDeviceViewsObject",
+    }),
     HYPERDRIVE: bindings.hyperdrive({
       // Preview deployments bind the shared preview database through their own
       // Hyperdrive config; production keeps the hosted database by default.

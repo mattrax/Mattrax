@@ -309,27 +309,29 @@ export type DeviceSearchResponse = typeof DeviceSearchResponse.Type;
  * values into search params. `limit`/`offset` are deliberately absent: the
  * view stores the page size, and a copied link still starts at page one.
  */
+const DeviceViewFilterString = Schema.String.check(Schema.isMaxLength(2_000));
+
 export const DeviceViewQuery = Schema.Struct({
-  q: Schema.optional(Schema.String),
-  query: Schema.optional(Schema.String),
+  q: Schema.optional(DeviceViewFilterString),
+  query: Schema.optional(DeviceViewFilterString),
   status: Schema.optional(DeviceStatus),
   proto: Schema.optional(DeviceProtocol),
-  groupId: Schema.optional(Schema.String),
-  notSeenSince: Schema.optional(Schema.String),
+  groupId: Schema.optional(DeviceViewFilterString),
+  notSeenSince: Schema.optional(DeviceViewFilterString),
   staleDays: Schema.optional(Schema.Number),
   health: Schema.optional(DeviceHealthFilter),
   push: Schema.optional(Schema.Literals(["failing", "invalid"])),
-  lostMode: Schema.optional(Schema.String),
-  localAccount: Schema.optional(Schema.String),
+  lostMode: Schema.optional(DeviceViewFilterString),
+  localAccount: Schema.optional(DeviceViewFilterString),
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
   activation: Schema.optional(WindowsActivationStatus),
-  attributes: Schema.optional(Schema.String),
+  attributes: Schema.optional(DeviceViewFilterString),
   sort: Schema.optional(DeviceSearchSort),
   direction: Schema.optional(SortDirection),
   /** Visible table column ids, in display order. */
-  columns: Schema.Array(Schema.String),
+  columns: Schema.Array(Schema.String.check(Schema.isMaxLength(128))).check(Schema.isMaxLength(50)),
   /** Rows per page; the backend clamps this to its search maximum. */
-  pageSize: Schema.optional(Schema.Number),
+  pageSize: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 }))),
 });
 
 export type DeviceViewQuery = typeof DeviceViewQuery.Type;

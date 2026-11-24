@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Badge, Button, Label, NativeSelect } from "@mattrax/ui";
@@ -31,7 +30,7 @@ import {
 import { toast } from "~/components/toast";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { ErrorText } from "./common";
-import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { deviceViewSync } from "~/lib/device-view-sync";
 
 /**
  * The device toolbar's saved-view menu.
@@ -42,6 +41,7 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
  */
 export function DeviceViewsMenu(props: {
   tenantId: string;
+  accountId: string;
   views: ReadonlyArray<DeviceView>;
   currentViewId: string | undefined;
   /** `devices.read`: members can curate private views. */
@@ -54,7 +54,6 @@ export function DeviceViewsMenu(props: {
   /** Drop the active-view marker after deleting the selected view. */
   onCurrentViewDeleted: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [editorOpen, setEditorOpen] = createSignal(false);
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [name, setName] = createSignal("");
@@ -73,9 +72,6 @@ export function DeviceViewsMenu(props: {
 
   const canEdit = (view: DeviceView) =>
     view.visibility === "tenant" ? props.canPublish : view.isOwner;
-
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: enterpriseKeys.deviceViews(props.tenantId) });
 
   const failure = (error: unknown) => {
     setErrored(error);
@@ -107,14 +103,14 @@ export function DeviceViewsMenu(props: {
       const id = editingId();
 
       if (id) {
-        await enterprise.patchDeviceView(props.tenantId, id, {
+        await deviceViewSync.patch(props.tenantId, props.accountId, id, {
           name: name().trim(),
           description: description().trim() || null,
           visibility: visibility(),
         });
         toast.success("View renamed");
       } else {
-        await enterprise.createDeviceView(props.tenantId, {
+        await deviceViewSync.create(props.tenantId, props.accountId, {
           name: name().trim(),
           description: description().trim() || null,
           visibility: visibility(),
@@ -123,7 +119,6 @@ export function DeviceViewsMenu(props: {
         toast.success("View saved");
       }
 
-      await invalidate();
       setEditorOpen(false);
     } catch (error) {
       failure(error);
@@ -136,10 +131,9 @@ export function DeviceViewsMenu(props: {
     setPendingAction("update");
 
     try {
-      await enterprise.patchDeviceView(props.tenantId, view.id, {
+      await deviceViewSync.patch(props.tenantId, props.accountId, view.id, {
         query: props.currentQuery(view),
       });
-      await invalidate();
       toast.success("View updated to the current filters");
     } catch (error) {
       toast.error("Could not update the view", {
@@ -154,14 +148,13 @@ export function DeviceViewsMenu(props: {
     setPendingAction("duplicate");
 
     try {
-      await enterprise.createDeviceView(props.tenantId, {
+      await deviceViewSync.create(props.tenantId, props.accountId, {
         name: `${view.name} copy`.slice(0, 120),
         description: view.description,
         // A member who cannot publish keeps the copy private.
         visibility: view.visibility === "tenant" && !props.canPublish ? "private" : view.visibility,
         query: view.query,
       });
-      await invalidate();
       toast.success("View duplicated");
     } catch (error) {
       toast.error("Could not duplicate the view", {
@@ -176,8 +169,11 @@ export function DeviceViewsMenu(props: {
     setPendingAction("default");
 
     try {
-      await enterprise.setDefaultDeviceView(props.tenantId, view.isDefault ? null : view.id);
-      await invalidate();
+      await deviceViewSync.setDefault(
+        props.tenantId,
+        props.accountId,
+        view.isDefault ? null : view.id,
+      );
       toast.success(view.isDefault ? "Default view cleared" : "Default view set");
     } catch (error) {
       toast.error("Could not change your default view", {
@@ -197,8 +193,7 @@ export function DeviceViewsMenu(props: {
     setDeleteError(undefined);
 
     try {
-      await enterprise.deleteDeviceView(props.tenantId, view.id);
-      await invalidate();
+      await deviceViewSync.delete(props.tenantId, props.accountId, view.id);
       toast.success("View deleted");
       setDeleteTarget(undefined);
 
@@ -344,6 +339,7 @@ export function DeviceViewsMenu(props: {
               <NativeSelect
                 id="device-view-visibility"
                 value={visibility()}
+                disabled={editingId() !== null}
                 onChange={(event) =>
                   setVisibility(event.currentTarget.value as DeviceViewVisibility)
                 }
@@ -354,9 +350,11 @@ export function DeviceViewsMenu(props: {
                 </Show>
               </NativeSelect>
               <p class="text-[11px] text-muted-foreground">
-                {visibility() === "tenant"
-                  ? "Tenant views can be opened by every member. Managing devices is required to publish."
-                  : "Only you can see and manage a private view."}
+                {editingId() !== null
+                  ? "Visibility is fixed after a view is saved. Create a new view to change it."
+                  : visibility() === "tenant"
+                    ? "Tenant views can be opened by every member. Managing devices is required to publish."
+                    : "Only you can see and manage a private view."}
               </p>
             </div>
             <ErrorText error={errored()} />

@@ -29,6 +29,8 @@ export * from "./deviceHealth.ts";
 
 export * from "./devicePresence.ts";
 
+export * from "./deviceViewSync.js";
+
 export * from "./realtime.ts";
 
 export * from "./softwareUpdates.ts";

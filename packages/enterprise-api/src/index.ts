@@ -10,6 +10,8 @@ export * from "./appleBusinessManager.js";
 
 export * from "./enterpriseHandlers.js";
 
+export * from "./deviceViewSync.js";
+
 export * from "./mcpOAuth.js";
 
 export * from "./policyDeployment.js";

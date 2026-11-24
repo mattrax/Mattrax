@@ -83,6 +83,7 @@ import {
 import { resolveTenantId } from "~/lib/tenant";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
+import { deviceViewSync } from "~/lib/device-view-sync";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -362,7 +363,7 @@ const rowGroups = (row: DeviceRow) => Option.getOrUndefined(decodeRowGroups(row)
 
 export default function DevicesPage() {
   const params = useParams();
-  const { can, canAny } = useCan();
+  const { accountId, can, canAny } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
   // One clock for every row; presence flips to offline with time, not only
   // when a new query arrives.
@@ -874,10 +875,24 @@ export default function DevicesPage() {
 
   const deviceViews = useQuery(() => ({
     queryKey: enterpriseKeys.deviceViews(params.tenantId),
-    queryFn: () => enterprise.listDeviceViews(params.tenantId),
+    queryFn: () => {
+      const id = accountId();
+      const tenantId = params.tenantId;
+      if (!id || !tenantId) throw new Error("Your account is still loading.");
+      return deviceViewSync.list(tenantId, id);
+    },
     placeholderData: { views: [] },
-    enabled: can("devices.read"),
+    enabled: can("devices.read") && accountId() !== undefined,
   }));
+
+  createEffect(
+    () => ({ id: accountId(), tenantId: params.tenantId, canRead: can("devices.read") }),
+    ({ id, tenantId, canRead }) => {
+      if (!id || !tenantId || !canRead) return;
+      void deviceViewSync.retain(tenantId, id).catch(() => undefined);
+      onCleanup(() => deviceViewSync.release(tenantId, id));
+    },
+  );
 
   /** Attribute filters the URL can represent (one key/value pair). */
   const viewAttribute = (query: DeviceViewQuery) => {
@@ -1703,6 +1718,7 @@ export default function DevicesPage() {
               <div class="ml-auto flex flex-wrap items-center gap-1.5">
                 <DeviceViewsMenu
                   tenantId={params.tenantId ?? ""}
+                  accountId={accountId() ?? ""}
                   views={deviceViews.data?.views ?? []}
                   currentViewId={currentViewId()}
                   canSave={can("devices.read")}

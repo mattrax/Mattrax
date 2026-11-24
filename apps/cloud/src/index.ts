@@ -2,6 +2,8 @@ import "reflect-metadata";
 import * as Workerd from "@yielded/auth-platform-workerd";
 import { createApiRuntime } from "./app.js";
 
+export { PersonalDeviceViewsObject, TenantDeviceViewsObject } from "./deviceViewObjects.js";
+
 /**
  * Cloudflare Worker entry point.
  *

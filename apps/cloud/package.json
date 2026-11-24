@@ -45,6 +45,8 @@
     "@mattrax/scep": "workspace:*",
     "@yielded/auth": "catalog:",
     "@yielded/auth-platform-workerd": "catalog:",
+    "@yielded/sync": "catalog:",
+    "@yielded/sync-platform-cloudflare": "catalog:",
     "effect": "catalog:",
     "mysql2": "catalog:",
     "reflect-metadata": "catalog:"
