@@ -35,6 +35,8 @@ import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/uplo
 import { createStaleWriteGuard } from "~/lib/stale-write";
 import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
+import { decodePolicyConfiguration, decodePolicyConfigurationOrEmpty } from "~/lib/policy-config";
+import type { PolicyConfiguration } from "~/lib/policy-config";
 
 const keys = {
   cert: "mttx.apple.certificate.default",
@@ -60,13 +62,7 @@ const WindowsConfig = Schema.Struct({
   format: Schema.optional(Schema.String),
 });
 
-const Config = Schema.Record(Schema.String, Schema.Json);
-
-type Config = typeof Config.Type;
-
 type CustomProfile = typeof CustomProfile.Type;
-
-const decodeConfig = Schema.decodeUnknownOption(Config);
 
 const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
@@ -120,7 +116,7 @@ export function PolicyConfigurationEditor() {
   /** Bumped by "Reload latest" to reseed the form from the refetched policy. */
   const [reseed, setReseed] = createSignal(0);
   const [active, setActive] = createSignal("custom");
-  const [config, setConfig] = createSignal<Config>({});
+  const [config, setConfig] = createSignal<PolicyConfiguration>({});
   const [scopes, setScopes] = createSignal<Record<string, "device" | "user">>({});
   const [initialScopes, setInitialScopes] = createSignal("{}");
   const [initial, setInitial] = createSignal("{}");
@@ -132,7 +128,7 @@ export function PolicyConfigurationEditor() {
 
     if (!configurations) return;
 
-    const decoded = Option.getOrUndefined(decodeConfig(configurations)) ?? {};
+    const decoded = Option.getOrUndefined(decodePolicyConfiguration(configurations)) ?? {};
 
     const nextScopes = { ...row()?.configurationScopes };
 
@@ -260,9 +256,17 @@ export function PolicyConfigurationEditor() {
   );
 
   const discard = () => {
-    setConfig(JSON.parse(initial()));
-    setScopes(JSON.parse(initialScopes()));
-    setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
+    const decoded = decodePolicyConfigurationOrEmpty(JSON.parse(initial()));
+    const nextScopes =
+      Option.getOrUndefined(
+        Schema.decodeUnknownOption(
+          Schema.Record(Schema.String, Schema.Literals(["device", "user"])),
+        )(JSON.parse(initialScopes())),
+      ) ?? {};
+
+    setConfig(decoded);
+    setScopes(nextScopes);
+    setRaw(JSON.stringify(decoded, null, 2));
     setRawError(null);
     setCanEdit(false);
   };
@@ -449,7 +453,16 @@ export function PolicyConfigurationEditor() {
 
                       try {
                         const parsed = JSON.parse(text);
-                        setConfig(parsed);
+                        const decoded = Option.getOrUndefined(decodePolicyConfiguration(parsed));
+
+                        if (decoded === undefined) {
+                          setRaw(text);
+                          setRawError("Configurations must be a JSON object with JSON values.");
+
+                          return;
+                        }
+
+                        setConfig(decoded);
                         setRaw(JSON.stringify(parsed, null, 2));
                         setRawError(null);
                       } catch (error) {
@@ -583,7 +596,7 @@ function ScopeSelect(props: {
 }
 
 function SecuritySection(props: {
-  config: Config;
+  config: PolicyConfiguration;
   setKey: (key: string, value: Schema.Json) => void;
 }) {
   const cert = () => Option.getOrUndefined(decodeCertificate(props.config[keys.cert]));
@@ -632,7 +645,7 @@ function SecuritySection(props: {
 }
 
 function DeviceSection(props: {
-  config: Config;
+  config: PolicyConfiguration;
   setKey: (key: string, value: Schema.Json) => void;
 }) {
   const device = () =>
@@ -672,7 +685,7 @@ function DeviceSection(props: {
 }
 
 function WindowsSection(props: {
-  config: Config;
+  config: PolicyConfiguration;
   setKey: (key: string, value: Schema.Json) => void;
   scopes: Readonly<Record<string, "device" | "user">>;
   setScope: (kind: string, scope: "device" | "user") => void;
@@ -737,7 +750,7 @@ function WindowsSection(props: {
 }
 
 function CustomSection(props: {
-  config: Config;
+  config: PolicyConfiguration;
   setKey: (key: string, value: Schema.Json) => void;
   policyId: string;
   scopes: Readonly<Record<string, "device" | "user">>;

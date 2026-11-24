@@ -69,7 +69,7 @@ export function AccountSecurity(props: {
       return;
     }
 
-    setPasskeys(result.data.credentials);
+    setPasskeys([...result.data.credentials]);
   };
 
   onSettled(() => {

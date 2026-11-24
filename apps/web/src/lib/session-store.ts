@@ -1,5 +1,6 @@
 import { MeResponse } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
+import { setRequestTenantDirectory } from "~/lib/tenant";
 
 /**
  * The session the server already loaded for a page request.
@@ -28,6 +29,7 @@ const sessions = new WeakMap<Request, PreloadedSession>();
 
 export function setPreloadedSession(request: Request, session: PreloadedSession): void {
   sessions.set(request, session);
+  setRequestTenantDirectory(request, session?.me?.tenants);
 }
 
 export function getPreloadedSession(request: Request): PreloadedSession | undefined {

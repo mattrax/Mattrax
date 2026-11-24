@@ -54,6 +54,7 @@ import { authClient } from "~/lib/auth";
 import { chord, useCommands } from "~/lib/commands";
 import type { Command } from "~/lib/commands";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { disposeCatalogueRuntime } from "~/lib/catalogue-service";
 import {
   collectionProperties,
   loadAppleOsSupport,
@@ -61,7 +62,6 @@ import {
   loadManifest,
   loadPlatformIndex,
   loadSearchIndex,
-  resetPlatformCache,
   searchIndexProperties,
   appleCollectionManaged,
   appleOsRangeLabel,
@@ -477,7 +477,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     });
 
   const beginLoad = (target: PlatformId, force = false) => {
-    if (force) resetPlatformCache(target);
+    if (force) void disposeCatalogueRuntime();
     setIndexErrors((current) => {
       const next = { ...current };
       delete next[target];

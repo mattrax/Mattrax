@@ -241,21 +241,12 @@ export default function AccountPage() {
     setSessionsError(null);
 
     try {
-      const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
+      const body = await enterprise.listAccountSessions();
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(Sessions)(body));
 
-      if (!response.ok) {
-        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+      if (decoded === undefined) throw new Error("Unexpected sessions response");
 
-        return;
-      }
-
-      const body = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Sessions)(await response.json()),
-      );
-
-      if (body === undefined) throw new Error("Unexpected sessions response");
-
-      setSessions(body);
+      setSessions(decoded);
     } catch (error) {
       setSessionsError(errorMessage(raisedFailure(error)));
     }
@@ -297,18 +288,7 @@ export default function AccountPage() {
     );
 
     try {
-      const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
-
-      if (!response.ok) {
-        setSessions(previous);
-        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
-
-        return;
-      }
+      await enterprise.revokeAccountSession(id);
 
       // Already gone from the list above; the refetch confirms it.
       await refetchSessions();

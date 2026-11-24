@@ -35,7 +35,6 @@ import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
 import { StatusChip as Chip } from "~/components/settings/status-chip";
 import { downloadBlob } from "~/lib/download";
-import { resolveTenantId } from "~/lib/tenant";
 
 const selectClass =
   "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
@@ -441,25 +440,7 @@ export default function ManagementSettingsPage() {
     setCsrError(undefined);
 
     try {
-      const response = await fetch(`/api/v1/tenants/${resolveTenantId(params.tenantId)}/apns/csr`, {
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => undefined);
-        throw new Error(
-          errorMessage(raisedFailure(body), `CSR request failed (${response.status})`),
-        );
-      }
-
-      const data = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Schema.Struct({ plist: Schema.optional(Schema.String) }))(
-          await response.json(),
-        ),
-      );
-
-      if (data?.plist === undefined) throw new Error("The server did not return a CSR");
+      const data = await enterprise.getApnsCsr(params.tenantId);
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
       downloadBlob(new Blob([bytes], { type: "application/x-plist" }), "mattrax-push-csr.plist");
       setStep(2);
@@ -668,7 +649,8 @@ export default function ManagementSettingsPage() {
               <p class="font-medium text-foreground">Android Enterprise</p>
               <Show when={android.data}>
                 {(data) => (
-                  <Chip capitalize
+                  <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -844,7 +826,8 @@ export default function ManagementSettingsPage() {
               <p class="font-medium text-foreground">Automated Device Enrollment</p>
               <Show when={abm.data}>
                 {(data) => (
-                  <Chip capitalize
+                  <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -1005,7 +988,8 @@ export default function ManagementSettingsPage() {
               <p class="font-medium text-foreground">Volume licences</p>
               <Show when={vpp.data}>
                 {(data) => (
-                  <Chip capitalize
+                  <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -1139,7 +1123,9 @@ export default function ManagementSettingsPage() {
             </span>
           </Show>
           <Show when={autopilot.data?.federatedEnrollment.enabled}>
-            <Chip capitalize tone="neutral">Federated Entra enrollment</Chip>
+            <Chip capitalize tone="neutral">
+              Federated Entra enrollment
+            </Chip>
           </Show>
         </div>
 

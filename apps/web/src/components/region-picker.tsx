@@ -1,6 +1,7 @@
 import { geoCentroid, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import type { Feature, Geometry } from "geojson";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import { Portal } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { LoadingState } from "~/components/ui";
@@ -17,6 +18,7 @@ import { Input } from "~/components/ui/input";
 import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
 import { flagOf, regionName } from "~/components/region-label";
 import { clampZoom, rotateByDrag, rotateByKey } from "~/components/region-globe";
+import { isSubmitEnter } from "~/lib/ime";
 
 const GLOBE_SIZE = 480;
 const GLOBE_CENTER = GLOBE_SIZE / 2;
@@ -39,31 +41,12 @@ const WorldSchema = Schema.Struct({
 type Country = typeof CountrySchema.Type;
 type World = typeof WorldSchema.Type;
 
-const decodeWorld = Schema.decodeUnknownSync(WorldSchema);
-
-let cachedWorld: World | undefined;
-let worldPromise: Promise<World> | undefined;
-
-const fetchWorld = (): Promise<World> => {
-  if (cachedWorld) return Promise.resolve(cachedWorld);
-  worldPromise ??= fetch("/assets/world-countries.geojson")
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`Map request failed (${response.status})`);
-
-      return decodeWorld(await response.json());
-    })
-    .then((world) => {
-      cachedWorld = world;
-
-      return world;
-    })
-    .catch((error: unknown) => {
-      worldPromise = undefined;
-      throw error;
-    });
-
-  return worldPromise;
-};
+const fetchWorld = (): Promise<World> =>
+  runCatalogue(
+    CatalogueService.pipe(
+      Effect.flatMap((service) => service.get("/assets/world-countries.geojson", WorldSchema)),
+    ),
+  );
 
 const asFeature = (country: Country): Feature<Geometry> => ({
   type: "Feature",
@@ -378,7 +361,7 @@ export function RegionPicker(props: {
                 }}
                 onFocus={() => setResultsOpen(true)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (isSubmitEnter(event)) {
                     const first = matches()[0];
 
                     if (first) {

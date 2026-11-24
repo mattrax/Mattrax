@@ -2,6 +2,7 @@ import { useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Schema } from "effect";
+import { TenantExportEnvelope } from "@mattrax/enterprise-domain/client";
 import { createSignal, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
@@ -26,17 +27,8 @@ import {
 import { preloadSettingsPage } from "~/components/settings/preload";
 import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
-import { withStepUp } from "~/lib/step-up";
-import { approvalFailure, raisedFailure } from "~/lib/errors";
-import {
-  ApprovalRequiredError,
-  approvalHeaders,
-  registerApprovalRetry,
-} from "~/lib/approval-retry";
-import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { downloadBlob } from "~/lib/download";
 import { responseFailure } from "~/components/settings/http-failure";
-import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
   preload: (args: RoutePreloadFuncArgs) =>
@@ -49,14 +41,6 @@ export const route = {
       },
     ]),
 };
-
-const StepUpFailure = Schema.Struct({
-  _tag: Schema.Literal("StepUpRequired"),
-  action: Schema.optional(Schema.String),
-  methods: Schema.optional(Schema.Array(Schema.String)),
-});
-
-const isStepUpFailure = Schema.is(StepUpFailure);
 
 export default function BackupsSettingsPage() {
   const params = useParams();
@@ -208,71 +192,22 @@ export default function BackupsSettingsPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const downloadBackup = async (id: string, approval?: ApprovalRetryInput) => {
+  const downloadBackup = async (id: string) => {
     setBackupDownloadError(null);
 
     try {
-      const response = await withStepUp("backup-download", async (grant) => {
-        const result = await fetch(
-          `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/backups/${encodeURIComponent(
-            id,
-          )}/download`,
-          {
-            credentials: "include",
-            headers: {
-              ...(grant ? { "x-mattrax-step-up": grant } : {}),
-              ...approvalHeaders(approval),
-            },
-          },
-        );
-
-        if (result.status === 403) {
-          const body = await result
-            .clone()
-            .json()
-            .catch(() => null);
-          const fields = approvalFailure(raisedFailure(body));
-
-          if (fields.requestId) {
-            registerApprovalRetry({
-              requestId: fields.requestId,
-              action: "backup.download",
-              retry: async (next) => {
-                await downloadBackup(id, next);
-              },
-            });
-
-            throw new ApprovalRequiredError({
-              message:
-                fields.status === "approved"
-                  ? "This download is approved. Retry with this approval."
-                  : "This download needs approval from another administrator.",
-              requestId: fields.requestId,
-              status: fields.status === "approved" ? "approved" : "pending",
-            });
-          }
-
-          // The body is a schema-validated step-up failure, not an Error; the
-          // caller matches it structurally.
-          // oxlint-disable-next-line typescript/only-throw-error -- typed error body, matched by the caller.
-          if (isStepUpFailure(body)) throw body;
-        }
-
-        return result;
-      });
+      const response = await enterprise.downloadTenantBackup(params.tenantId, id);
 
       if (!response.ok)
-        throw await responseFailure(response, `Download failed (${response.status})`);
+        throw await responseFailure(response, "Download failed (" + response.status + ")");
       const disposition = response.headers.get("Content-Disposition") ?? "";
-
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
-        `tenant-${tenant.data?.slug ?? params.tenantId ?? "backup"}-backup.json`;
+        "tenant-" + (tenant.data?.slug ?? params.tenantId ?? "backup") + "-backup.json";
 
-      downloadBlob(
-        new Blob([await response.text()], { type: "application/json" }),
-        filename,
-      );
+      const body = await response.text();
+      Schema.decodeUnknownSync(TenantExportEnvelope)(JSON.parse(body));
+      downloadBlob(new Blob([body], { type: "application/json" }), filename);
     } catch (error) {
       setBackupDownloadError(error);
     }
@@ -302,8 +237,8 @@ export default function BackupsSettingsPage() {
               <p class="text-xs leading-relaxed text-muted-foreground">
                 Downloads are authenticated and go through the API; the object store is never
                 public. Restore replaces this tenant's groups, policies, applications and
-                pre-registrations in place, keeps its members, devices and certificates, and takes
-                a pinned snapshot first.
+                pre-registrations in place, keeps its members, devices and certificates, and takes a
+                pinned snapshot first.
               </p>
             </div>
             <Button
@@ -509,7 +444,9 @@ export default function BackupsSettingsPage() {
                 <>
                   <p class="text-xs leading-relaxed text-muted-foreground">
                     Type the tenant slug{" "}
-                    <span class="font-mono font-medium">{tenant.data?.slug ?? params.tenantId}</span>{" "}
+                    <span class="font-mono font-medium">
+                      {tenant.data?.slug ?? params.tenantId}
+                    </span>{" "}
                     to confirm.
                   </p>
                   <Input

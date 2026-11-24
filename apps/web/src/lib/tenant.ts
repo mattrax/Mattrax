@@ -1,3 +1,6 @@
+import { Context, Layer } from "effect";
+import { getRequestEvent, isServer } from "@solidjs/web";
+
 /**
  * A tenant as the shell knows it. The API addresses tenants by id, but the
  * dashboard addresses them by slug so links survive exports/imports and match
@@ -9,66 +12,179 @@ export type TenantKey = {
   readonly name?: string;
 };
 
+/** An immutable membership snapshot plus account-scoped pending slug aliases. */
+export type TenantRoutingDirectory = {
+  readonly tenants: readonly TenantKey[];
+  readonly resolveId: (value: string | undefined) => string | undefined;
+  readonly canonicalSegment: (value: string) => string;
+  readonly resolveAlias: (value: string) => string | undefined;
+};
+
+/** Effect-facing request directory service. */
+export class TenantDirectoryService extends Context.Service<
+  TenantDirectoryService,
+  TenantRoutingDirectory
+>()("mattraxe/web/TenantDirectory") {}
+
+const snapshot = (tenants: readonly TenantKey[] | undefined): readonly TenantKey[] =>
+  tenants?.map((tenant) => ({
+    id: tenant.id,
+    slug: tenant.slug ?? null,
+    name: tenant.name,
+  })) ?? [];
+
+export const createTenantDirectory = (
+  tenants: readonly TenantKey[] | undefined,
+  aliases: ReadonlyMap<string, string> = new Map(),
+): TenantRoutingDirectory => {
+  const entries = Object.freeze(snapshot(tenants));
+  const byId = new Map(entries.map((tenant) => [tenant.id, tenant]));
+  const bySlug = new Map(
+    entries.flatMap((tenant) => (tenant.slug ? [[tenant.slug, tenant] as const] : [])),
+  );
+  const resolveId = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+
+    // Ids win over slugs on the astronomically unlikely collision so an
+    // existing API identifier is never silently redirected.
+    return byId.get(value)?.id ?? bySlug.get(value)?.id ?? aliases.get(value) ?? value;
+  };
+
+  return Object.freeze({
+    tenants: entries,
+    resolveId,
+    resolveAlias: (value) => aliases.get(value),
+    canonicalSegment: (value) => {
+      const tenant = byId.get(value) ?? bySlug.get(value);
+
+      return tenant ? canonicalTenantParam(tenant) : value;
+    },
+  });
+};
+
+const emptyDirectory = createTenantDirectory([]);
+
 /** The path segment a tenant should appear as. */
 export const canonicalTenantParam = (tenant: TenantKey): string => tenant.slug || tenant.id;
 
 export const tenantMatchesKey = (tenant: TenantKey, key: string): boolean =>
   tenant.id === key || tenant.slug === key;
 
+/** SSR directories belong to one Request, never to the isolate. */
+const requestDirectories = new WeakMap<Request, TenantRoutingDirectory>();
+
+export const setRequestTenantDirectory = (
+  request: Request,
+  tenants: readonly TenantKey[] | undefined,
+): void => {
+  requestDirectories.set(request, createTenantDirectory(tenants));
+};
+
+export const getRequestTenantDirectory = (request: Request): TenantRoutingDirectory =>
+  requestDirectories.get(request) ?? emptyDirectory;
+
+export const requestTenantDirectoryLayer = (
+  request: Request,
+): Layer.Layer<TenantDirectoryService> =>
+  Layer.succeed(TenantDirectoryService, getRequestTenantDirectory(request));
+
+/** Browser snapshots are replaced atomically and aliases die with the account. */
+let browserIdentity: string | undefined;
+let browserTenants: readonly TenantKey[] = [];
+const browserAliases = new Map<string, string>();
+
+export const clearBrowserTenantDirectory = (): void => {
+  browserIdentity = undefined;
+  browserTenants = [];
+  browserAliases.clear();
+};
+
+export const rememberTenants = (
+  tenants: readonly TenantKey[] | undefined,
+  identity?: string,
+): void => {
+  if (isServer) {
+    const event = getRequestEvent();
+
+    if (event) setRequestTenantDirectory(event.request, tenants);
+
+    return;
+  }
+
+  if (identity !== undefined && identity !== browserIdentity) browserAliases.clear();
+  browserIdentity = identity ?? browserIdentity;
+  browserTenants = snapshot(tenants);
+};
+
+export const rememberTenantAlias = (slug: string, id: string, identity?: string): void => {
+  if (isServer || !slug) return;
+  if (identity !== undefined && identity !== browserIdentity) {
+    browserAliases.clear();
+    browserTenants = [];
+    browserIdentity = identity;
+  }
+  if (browserIdentity === undefined) return;
+  browserAliases.set(slug, id);
+};
+
+/** Resolve the immutable directory for the current SSR request or browser account. */
+export const currentTenantDirectory = (): TenantRoutingDirectory => {
+  if (isServer) {
+    const event = getRequestEvent();
+
+    return event ? getRequestTenantDirectory(event.request) : emptyDirectory;
+  }
+
+  return createTenantDirectory(browserTenants, browserAliases);
+};
+
 /**
  * The canonical segment for a value that may be an id or a slug. Used by the
  * route builders so a click never starts on a legacy id URL once the shell
  * knows the tenant.
  */
-export function canonicalTenantSegment(value: string): string {
-  const tenant = directory.find((entry) => tenantMatchesKey(entry, value));
-
-  return tenant ? canonicalTenantParam(tenant) : value;
+export function canonicalTenantSegment(
+  value: string,
+  directory: TenantRoutingDirectory = currentTenantDirectory(),
+): string {
+  return directory.canonicalSegment(value);
 }
 
 /**
  * The membership a URL segment names, accepting both the canonical slug and
  * the legacy id. With no key the first membership is the sensible default for
- * unscoped pages (the tenant picker and `/dashboard`).
+ * unscoped pages (the tenant picker and /dashboard).
  */
 export function resolveTenant<T extends TenantKey>(
   tenants: readonly T[] | undefined,
   key?: string,
+  directory: TenantRoutingDirectory = currentTenantDirectory(),
 ): T | undefined {
   if (!tenants) return undefined;
-
   if (!key) return tenants[0];
 
   const direct = tenants.find((tenant) => tenantMatchesKey(tenant, key));
 
   if (direct) return direct;
 
-  // A slug saved in this tab is usable before `/me` has re-fetched the new
+  // A slug saved in this account is usable before /me has re-fetched the new
   // membership list (the tenant id does not change).
-  const pendingId = aliases.get(key);
+  const pendingId = directory.resolveAlias(key);
 
   return pendingId ? tenants.find((tenant) => tenant.id === pendingId) : undefined;
 }
 
 export type TenantLandingPreference = {
-  /** Account-level choice from `/me`; only honoured while it is a membership. */
+  /** Account-level choice from /me; only honoured while it is a membership. */
   readonly defaultTenantId?: string | null;
   /** Browser-scoped last-used tenant. */
   readonly lastTenantId?: string | null;
 };
 
 /**
- * Where an unscoped page (`/dashboard`, the shell's tenant picker) should land.
- *
- * The account-level default wins over the browser's last-used tenant so a new
- * device or incognito session still starts where the account chose. Either
- * value is ignored once the membership disappears, and an account with no
- * preference falls back to the server's first membership, exactly as before.
- *
- * The account default is always an id, so it matches by id only. The
- * browser-scoped value may be a slug saved before the shell learned the id, so
- * it prefers an exact id and only then falls back to a slug; otherwise a slug
- * collision could land on the wrong tenant.
+ * Where an unscoped page (/dashboard, the shell's tenant picker) should land.
+ * The account-level default wins over the browser's last-used tenant. Either
+ * value is ignored once the membership disappears.
  */
 export function resolveLandingTenant<T extends TenantKey>(
   tenants: readonly T[] | undefined,
@@ -77,7 +193,6 @@ export function resolveLandingTenant<T extends TenantKey>(
   if (!tenants || tenants.length === 0) return undefined;
 
   const { defaultTenantId, lastTenantId } = preference;
-
   const preferred = defaultTenantId
     ? tenants.find((tenant) => tenant.id === defaultTenantId)
     : undefined;
@@ -92,63 +207,7 @@ export function resolveLandingTenant<T extends TenantKey>(
   return remembered ?? tenants[0];
 }
 
-/**
- * The memberships the current request/session can address. The API client only
- * speaks tenant ids, while the router carries slugs, so every `/api` call
- * routes its tenant parameter through {@link resolveTenantId}.
- *
- * The directory is seeded from the preloaded `/me` shell during SSR and from
- * the same shell (or the per-account cache) in the browser. An unknown value
- * is passed through unchanged so an id created moments ago still works before
- * the membership list refreshes.
- */
-let directory: readonly TenantKey[] = [];
-
-/** The array the directory was built from, so observers reusing one payload skip the map. */
-let directorySource: readonly TenantKey[] | undefined;
-
-/** Slugs saved in this tab that the membership shell has not seen yet. */
-const aliases = new Map<string, string>();
-
-export function rememberTenantAlias(slug: string, id: string): void {
-  if (slug) aliases.set(slug, id);
-}
-
-export function rememberTenants(tenants: readonly TenantKey[] | undefined): void {
-  if (!tenants || tenants === directorySource) return;
-
-  // Snapshot plain values: callers hand us reactive query stores, and the
-  // directory is read from untracked scopes (query keys, API helpers) where a
-  // pending async property read would suspend or trip the strict-read
-  // diagnostic.
-  directorySource = tenants;
-  directory = tenants.map((tenant) => ({
-    id: tenant.id,
-    slug: tenant.slug ?? null,
-    name: tenant.name,
-  }));
-}
-
-export function resolveTenantId(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-
-  // Ids win over slugs on the astronomically unlikely collision so an existing
-  // API identifier is never silently redirected to another tenant.
-  const exact = directory.find((tenant) => tenant.id === value);
-
-  if (exact) return exact.id;
-
-  return directory.find((tenant) => tenant.slug === value)?.id ?? aliases.get(value) ?? value;
-}
-
-/**
- * Where `/t` (and every other unscoped tenant URL) should land once the
- * membership list is known. The account default wins over the browser's
- * last-used tenant, exactly as `/dashboard` resolves its redirect.
- *
- * `tail` is appended verbatim; callers pass the current `?search#hash` so a
- * redirect never drops a filter, a deep link or an in-page anchor.
- */
+/** Canonical unscoped tenant redirect, preserving query and hash. */
 export function tenantLandingHref(
   tenants: readonly TenantKey[] | undefined,
   preference: TenantLandingPreference = {},
@@ -161,9 +220,10 @@ export function tenantLandingHref(
   return `/t/${encodeURIComponent(canonicalTenantParam(tenant))}${tail}`;
 }
 
-/** Test hook: clears the process/isolate-level membership directory. */
-export function resetTenantDirectory(): void {
-  directory = [];
-  directorySource = undefined;
-  aliases.clear();
+/** Translate a route segment to an API id, preserving unknown-id pass-through. */
+export function resolveTenantId(
+  value: string | undefined,
+  directory: TenantRoutingDirectory = currentTenantDirectory(),
+): string | undefined {
+  return directory.resolveId(value);
 }

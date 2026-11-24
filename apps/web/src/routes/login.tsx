@@ -2,7 +2,6 @@ import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { BrandLogo } from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
-import { Option, Schema } from "effect";
 import { createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
@@ -11,11 +10,6 @@ import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
-
-const SsoStartResponse = Schema.Struct({
-  url: Schema.optional(Schema.String),
-  error: Schema.optional(Schema.String),
-});
 
 const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -109,21 +103,11 @@ export default function LoginPage() {
     setCheckingEmail(true);
 
     try {
-      const query = new URLSearchParams({ email: value });
-      const target = returnTo();
+      const result = await authClient.startSso(value, returnTo());
+      const url = result.error ? undefined : result.data?.url;
 
-      if (target) query.set("returnTo", target);
-
-      const response = await fetch(`/api/v1/sso/azure/start?${query.toString()}`, {
-        headers: { accept: "application/json" },
-      });
-
-      const body = Option.getOrUndefined(
-        Schema.decodeUnknownOption(SsoStartResponse)(await response.json().catch(() => ({}))),
-      );
-
-      setSsoUrl(body?.url ?? null);
-      setSsoAvailable(Boolean(body?.url));
+      setSsoUrl(url ?? null);
+      setSsoAvailable(Boolean(url));
     } catch {
       // An unreachable SSO service must not block passkey sign-in.
       setSsoUrl(null);

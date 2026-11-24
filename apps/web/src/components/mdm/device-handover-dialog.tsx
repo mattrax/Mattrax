@@ -49,11 +49,10 @@ const downloadArchive = async (
   archive: { readonly id: string; readonly filename: string; readonly downloadToken: string },
 ) => {
   const query = new URLSearchParams({ token: archive.downloadToken });
-  const response = await fetch(
+  const response = await enterprise.request(
     `/api/v1/tenants/${encodeURIComponent(tenantId)}/devices/handover/${encodeURIComponent(
       archive.id,
     )}/download?${query.toString()}`,
-    { credentials: "include" },
   );
 
   if (!response.ok) {

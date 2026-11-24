@@ -5,6 +5,7 @@ import { Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   TENANT_IMPORT_MAX_BYTES,
+  TenantExportEnvelope,
   TenantImportRequest as TenantImportRequestSchema,
 } from "@mattrax/enterprise-domain/client";
 import type { TenantImportRequest, TenantImportResponse } from "@mattrax/enterprise-domain/client";
@@ -23,17 +24,10 @@ import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise"
 import { preloadSettingsPage } from "~/components/settings/preload";
 import { queryClient } from "~/lib/query-client";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { approvalFailure, raisedFailure } from "~/lib/errors";
 import { responseFailure } from "~/components/settings/http-failure";
-import {
-  ApprovalRequiredError,
-  approvalHeaders,
-  registerApprovalRetry,
-} from "~/lib/approval-retry";
-import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { downloadBlob } from "~/lib/download";
 import { scrollToHashTarget } from "~/lib/hash-scroll";
-import { resolveTenantId } from "~/lib/tenant";
+
 import { useNavigate } from "~/lib/navigation";
 import { CutoverPanel } from "../cutover-panel";
 
@@ -108,56 +102,23 @@ export default function MigrationExportPage() {
   const download = (body: string, filename: string) =>
     downloadBlob(new Blob([body], { type: "application/json" }), filename);
 
-  const exportTenant = async (approval?: ApprovalRetryInput) => {
+  const exportTenant = async () => {
     setExporting(true);
     setExportError(undefined);
 
     try {
-      const suffix = includeAudit() ? "?includeAudit=true" : "";
+      const response = await enterprise.exportTenantDownload(params.tenantId, includeAudit());
 
-      const response = await fetch(
-        `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/export${suffix}`,
-        {
-          credentials: "include",
-          headers: approvalHeaders(approval),
-        },
-      );
-
-      if (response.status === 403) {
-        const body = await response
-          .clone()
-          .json()
-          .catch(() => null);
-        const fields = approvalFailure(raisedFailure(body));
-
-        if (fields.requestId) {
-          registerApprovalRetry({
-            requestId: fields.requestId,
-            action: "tenant.export",
-            retry: async (next) => {
-              await exportTenant(next);
-            },
-          });
-
-          throw new ApprovalRequiredError({
-            message:
-              fields.status === "approved"
-                ? "This export is approved. Retry with this approval."
-                : "This export needs approval from another administrator.",
-            requestId: fields.requestId,
-            status: fields.status === "approved" ? "approved" : "pending",
-          });
-        }
-      }
-
-      if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);
+      if (!response.ok)
+        throw await responseFailure(response, "Export failed (" + response.status + ")");
       const disposition = response.headers.get("Content-Disposition") ?? "";
-
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
-        `tenant-${tenant.data?.slug ?? params.tenantId ?? "export"}.json`;
+        "tenant-" + (tenant.data?.slug ?? params.tenantId ?? "export") + ".json";
 
-      download(await response.text(), filename);
+      const body = await response.text();
+      Schema.decodeUnknownSync(TenantExportEnvelope)(JSON.parse(body));
+      download(body, filename);
     } catch (error) {
       setExportError(error);
     } finally {

@@ -1583,9 +1583,8 @@ export default function DevicesPage() {
       const search = query.toString();
       const suffix = search ? `?${search}` : "";
 
-      const response = await fetch(
+      const response = await enterprise.request(
         `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/devices/export${suffix}`,
-        { credentials: "include" },
       );
 
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);

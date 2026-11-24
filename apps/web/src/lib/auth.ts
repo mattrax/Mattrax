@@ -3,8 +3,11 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
 import { MeResponse } from "@mattrax/enterprise-domain/client";
-import type { Permission, UpdateMeRequest } from "@mattrax/enterprise-domain/client";
-import { Option, Schema } from "effect";
+import { Permission } from "@mattrax/enterprise-domain/client";
+import type { UpdateMeRequest } from "@mattrax/enterprise-domain/client";
+import { Effect, Option, Schema } from "effect";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { webHttpClientLayer } from "~/lib/web-http";
 import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
@@ -16,6 +19,7 @@ import { capturePostHog } from "~/lib/posthog";
 import { clearMeCache } from "~/lib/me-cache";
 import { resetMePreload } from "~/lib/me-preload";
 import { clearSessionPresence } from "~/lib/session-presence";
+import { clearBrowserTenantDirectory, rememberTenants } from "~/lib/tenant";
 
 type AuthUser = {
   id: string;
@@ -53,7 +57,7 @@ type PasskeyEnrollmentRequest = {
 
 type AuthEnvelope<T> = {
   value: T;
-  private?: PrivateReveal[];
+  private?: readonly PrivateReveal[];
 };
 
 const TotpEnrollmentReveal = Schema.Struct({ manualKey: Schema.String, uri: Schema.String });
@@ -79,74 +83,162 @@ const userFromSession = (session: Session | null | undefined): AuthUser | undefi
       }
     : undefined;
 
-async function requestEnvelope<T>(path: string, init: RequestInit = {}): Promise<AuthEnvelope<T>> {
-  const url = path.startsWith("/v1/") ? `/api${path}` : `/api/v1${path}`;
+const Success = Schema.Struct({
+  _tag: Schema.Literal("Success"),
+  value: Schema.Unknown,
+  private: Schema.optional(Schema.Array(PrivateReveal)),
+});
+
+const decodeSuccess = Schema.decodeUnknownOption(Success);
+
+const FailureFields = Schema.Struct({
+  _tag: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  action: Schema.optional(Schema.String),
+  methods: Schema.optional(Schema.Array(Schema.String)),
+});
+
+const FailureEnvelope = Schema.Struct({
+  _tag: Schema.Literal("Failure"),
+  message: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  action: Schema.optional(Schema.String),
+  methods: Schema.optional(Schema.Array(Schema.String)),
+  error: Schema.optional(FailureFields),
+});
+
+const DirectFailure = Schema.Struct({
+  _tag: Schema.String,
+  message: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  action: Schema.optional(Schema.String),
+  methods: Schema.optional(Schema.Array(Schema.String)),
+});
+
+const decodeFailureEnvelope = Schema.decodeUnknownOption(FailureEnvelope);
+const decodeDirectFailure = Schema.decodeUnknownOption(DirectFailure);
+
+class AuthResponseError extends Schema.TaggedError<AuthResponseError>()("AuthResponseError", {
+  message: Schema.String,
+}) {}
+
+const readAuthResponse = async (
+  path: string,
+  init: RequestInit,
+): Promise<{ readonly status: number; readonly body: unknown }> => {
+  const url = path.startsWith("/v1/") ? "/api" + path : "/api/v1" + path;
   const event = isServer ? getRequestEvent() : undefined;
   const headers = new Headers(init.headers);
 
   if (init.body) headers.set("content-type", "application/json");
-
   if (init.method && init.method !== "GET") headers.set("x-effect-auth-csrf", "1");
-
-  if (event) headers.set("origin", new URL(event.request.url).origin);
-
-  let response: Response;
-
   if (event) {
+    headers.set("origin", new URL(event.request.url).origin);
     const cookie = event.request.headers.get("cookie");
 
     if (cookie) headers.set("cookie", cookie);
-    response = await apiFetch(new Request(new URL(url, event.request.url), { ...init, headers }));
-  } else {
-    response = await fetch(url, { ...init, credentials: "include", headers });
+    const response = await apiFetch(
+      new Request(new URL(url, event.request.url), { ...init, headers }),
+    );
+    const body = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.Json)(await response.json().catch(() => undefined)),
+    );
+
+    return { status: response.status, body };
   }
 
-  // SAFETY: the auth API always sends JSON; `T` is the caller-declared
-  // response contract for the endpoint path it passes to `requestEnvelope`.
-  const data = (await response.json().catch(() => undefined)) as
-    | {
-        _tag?: string;
-        value?: T;
-        private?: PrivateReveal[];
-        message?: string;
-        reason?: string;
-        action?: string;
-        methods?: string[];
-        error?: { _tag?: string; message?: string; reason?: string };
-      }
-    | undefined;
+  const request = new Request(url, { ...init, credentials: "include", headers });
+  const result = await Effect.runPromise(
+    HttpClient.execute(HttpClientRequest.fromWeb(request)).pipe(
+      Effect.flatMap((response) =>
+        Effect.gen(function* () {
+          const body = yield* HttpClientResponse.schemaBodyJson(Schema.Json)(response).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          );
 
-  if (data?._tag === "Failure" || !response.ok) {
-    // Auth actions wrap failures in a `Failure` envelope; the Enterprise API
-    // returns the tagged error directly. Accept both so step-up retries work.
-    const direct = data?._tag !== "Failure" && data?._tag !== "Success" ? data?._tag : undefined;
-    const tag = data?.error?._tag ?? direct;
-    const message = data?.error?.message ?? data?.message;
-    const reason = data?.error?.reason ?? data?.reason;
-
-    const error = new AuthRequestError(
-      errorMessage(
-        raisedFailure({ _tag: tag, message, reason }),
-        authFailureFallback(tag, response.status),
+          return { status: response.status, body };
+        }),
       ),
+      Effect.catch((error) =>
+        Effect.fail(
+          new AuthRequestError(
+            error instanceof Error
+              ? error.message
+              : "The authentication service could not be reached",
+          ),
+        ),
+      ),
+      Effect.provide(webHttpClientLayer),
+    ),
+  );
+
+  return result;
+};
+
+export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, never>>(
+  status: number,
+  responseBody: unknown,
+  schema: S,
+): AuthEnvelope<S["Type"]> => {
+  const successEnvelope =
+    responseBody === undefined ? undefined : Option.getOrUndefined(decodeSuccess(responseBody));
+  const value =
+    successEnvelope === undefined
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(schema)(successEnvelope.value));
+
+  if (status >= 200 && status < 300 && successEnvelope && value !== undefined)
+    return { value, private: successEnvelope.private };
+
+  const failureEnvelope =
+    responseBody === undefined
+      ? undefined
+      : Option.getOrUndefined(decodeFailureEnvelope(responseBody));
+  const direct =
+    responseBody === undefined || (status >= 200 && status < 300)
+      ? undefined
+      : Option.getOrUndefined(decodeDirectFailure(responseBody));
+  const failure = failureEnvelope ?? direct;
+  const fields = failureEnvelope
+    ? {
+        _tag: failureEnvelope._tag,
+        ...(failureEnvelope.error ?? {}),
+        message: failureEnvelope.error?.message ?? failureEnvelope.message,
+        reason: failureEnvelope.error?.reason ?? failureEnvelope.reason,
+        action: failureEnvelope.error?.action ?? failureEnvelope.action,
+        methods: failureEnvelope.error?.methods ?? failureEnvelope.methods,
+      }
+    : direct;
+  const tag = fields?._tag;
+  const message = fields?.message;
+  const reason = fields?.reason;
+
+  if (status < 200 || status >= 300 || failure) {
+    const error = new AuthRequestError(
+      errorMessage(raisedFailure({ _tag: tag, message, reason }), authFailureFallback(tag, status)),
     );
 
     if (tag) error._tag = tag;
-
     if (reason) error.reason = reason;
-
-    if (data?.action) error.action = data.action;
-
-    if (data?.methods) error.methods = data.methods;
+    if (fields?.action) error.action = fields.action;
+    if (fields?.methods) error.methods = [...fields.methods];
     throw error;
   }
 
-  // SAFETY: `T` is the response contract declared by this call site; a
-  // `Success` envelope carries that same value under `value`.
-  return {
-    value: (data !== undefined && isSuccessEnvelope(data) ? data.value : data) as T,
-    private: data?.private,
-  };
+  throw new AuthResponseError({
+    message: "The authentication service returned an invalid success response",
+  });
+};
+
+async function requestEnvelope<S extends Schema.ConstraintDecoder<unknown, never>>(
+  path: string,
+  schema: S,
+  init: RequestInit = {},
+): Promise<AuthEnvelope<S["Type"]>> {
+  const response = await readAuthResponse(path, init);
+
+  return decodeAuthEnvelope(response.status, response.body, schema);
 }
 
 class AuthRequestError extends Error {
@@ -156,8 +248,12 @@ class AuthRequestError extends Error {
   methods?: string[];
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  return (await requestEnvelope<T>(path, init)).value;
+async function request<S extends Schema.ConstraintDecoder<unknown, never>>(
+  path: string,
+  schema: S,
+  init: RequestInit = {},
+): Promise<S["Type"]> {
+  return (await requestEnvelope(path, schema, init)).value;
 }
 
 const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
@@ -203,9 +299,140 @@ const ClientSessionGlobal = Schema.Struct({
   __MATTRAX_SESSION__: Schema.optional(Schema.NullOr(SessionPayload)),
 });
 
-const SuccessEnvelope = Schema.Struct({ _tag: Schema.Literal("Success") });
+const StatusOk = Schema.Struct({ status: Schema.Literal("ok") });
+const SessionResponse = Schema.NullOr(SessionPayload);
+const CredentialDescriptor = Schema.Struct({
+  type: Schema.Literal("public-key"),
+  id: Schema.String,
+  transports: Schema.optional(
+    Schema.Array(
+      Schema.Literals(["ble", "cable", "hybrid", "internal", "nfc", "smart-card", "usb"]),
+    ),
+  ),
+});
+const AuthenticatorSelection = Schema.Struct({
+  authenticatorAttachment: Schema.optional(Schema.Literals(["cross-platform", "platform"])),
+  residentKey: Schema.optional(Schema.Literals(["discouraged", "preferred", "required"])),
+  requireResidentKey: Schema.optional(Schema.Boolean),
+  userVerification: Schema.optional(Schema.Literals(["discouraged", "preferred", "required"])),
+});
+const CreationOptions = Schema.Struct({
+  challenge: Schema.String,
+  rp: Schema.Struct({ name: Schema.String, id: Schema.optional(Schema.String) }),
+  user: Schema.Struct({ id: Schema.String, name: Schema.String, displayName: Schema.String }),
+  pubKeyCredParams: Schema.Array(
+    Schema.Struct({ type: Schema.Literal("public-key"), alg: Schema.Number }),
+  ),
+  timeout: Schema.optional(Schema.Number),
+  excludeCredentials: Schema.optional(Schema.Array(CredentialDescriptor)),
+  authenticatorSelection: Schema.optional(AuthenticatorSelection),
+  hints: Schema.optional(
+    Schema.Array(Schema.Literals(["hybrid", "security-key", "client-device"])),
+  ),
+  attestation: Schema.optional(Schema.Literals(["direct", "enterprise", "indirect", "none"])),
+  attestationFormats: Schema.optional(
+    Schema.Array(
+      Schema.Literals([
+        "fido-u2f",
+        "packed",
+        "android-safetynet",
+        "android-key",
+        "tpm",
+        "apple",
+        "none",
+      ]),
+    ),
+  ),
+  extensions: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
+});
+const RequestOptions = Schema.Struct({
+  challenge: Schema.String,
+  timeout: Schema.optional(Schema.Number),
+  rpId: Schema.optional(Schema.String),
+  allowCredentials: Schema.optional(Schema.Array(CredentialDescriptor)),
+  userVerification: Schema.optional(Schema.Literals(["discouraged", "preferred", "required"])),
+  hints: Schema.optional(
+    Schema.Array(Schema.Literals(["hybrid", "security-key", "client-device"])),
+  ),
+  extensions: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
+});
+const PasskeyCreationStart = Schema.Struct({
+  flowId: Schema.String,
+  expiresAtMillis: Schema.Number,
+  options: CreationOptions,
+});
+const PasskeyRequestStart = Schema.Struct({
+  flowId: Schema.String,
+  expiresAtMillis: Schema.Number,
+  options: RequestOptions,
+});
 
-const isSuccessEnvelope = Schema.is(SuccessEnvelope);
+const mutableDescriptor = (credential: typeof CredentialDescriptor.Type) => ({
+  ...credential,
+  transports: credential.transports ? [...credential.transports] : undefined,
+});
+
+const toRequestOptions = (
+  options: typeof RequestOptions.Type,
+): PublicKeyCredentialRequestOptionsJSON => ({
+  ...options,
+  allowCredentials: options.allowCredentials?.map(mutableDescriptor),
+  hints: options.hints ? [...options.hints] : undefined,
+});
+
+const toCreationOptions = (
+  options: typeof CreationOptions.Type,
+): PublicKeyCredentialCreationOptionsJSON => ({
+  ...options,
+  pubKeyCredParams: [...options.pubKeyCredParams],
+  excludeCredentials: options.excludeCredentials?.map(mutableDescriptor),
+  hints: options.hints ? [...options.hints] : undefined,
+  attestationFormats: options.attestationFormats ? [...options.attestationFormats] : undefined,
+});
+const RegistrationCode = Schema.Struct({ status: Schema.Literal("ok"), emailSent: Schema.Boolean });
+const RegistrationGrant = Schema.Struct({ grant: Schema.String });
+const PasskeyCredential = Schema.Struct({
+  credentialId: Schema.String,
+  name: Schema.String,
+  primarySignIn: Schema.Boolean,
+  createdAtMillis: Schema.Number,
+  lastUsedAtMillis: Schema.optional(Schema.Number),
+});
+const PasskeyList = Schema.Struct({
+  credentials: Schema.Array(PasskeyCredential),
+  cursor: Schema.optional(Schema.String),
+});
+const PasskeyEnrollmentComplete = Schema.Struct({ credential: PasskeyCredential });
+const PasskeyRename = Schema.Struct({
+  credential: Schema.Struct({ credentialId: Schema.String, name: Schema.String }),
+});
+const TotpBegin = Schema.Struct({ enrollmentId: Schema.String, expiresAtMillis: Schema.Number });
+const TotpConfirm = Schema.Struct({ enabled: Schema.Boolean, invalidation: Schema.Json });
+const TotpRegenerated = Schema.Struct({ enabled: Schema.Literal(true) });
+const SsoStart = Schema.Struct({
+  url: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+});
+const EmailVerification = Schema.Struct({
+  status: Schema.Literal("ok"),
+  challenge: Schema.optional(Schema.String),
+  emailSent: Schema.optional(Schema.Boolean),
+});
+const ApiToken = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  tokenPrefix: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  permissions: Schema.Array(Permission),
+  tenantId: Schema.optional(Schema.NullOr(Schema.String)),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  lastUsedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
+  revokedAt: Schema.optional(Schema.NullOr(Schema.String)),
+});
+const ApiTokenList = Schema.Struct({ tokens: Schema.Array(ApiToken) });
+const ApiTokenCreated = Schema.Struct({ token: Schema.String, item: ApiToken });
 
 const completionState = (completion: Schema.Json): CompletionState => {
   const authenticated = Option.getOrUndefined(decodeAuthenticated(completion));
@@ -249,7 +476,7 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
     let failed = false;
 
     try {
-      next = await request<Session | null>("/getSession", { method: "POST", body: "{}" });
+      next = await request("/getSession", SessionResponse, { method: "POST", body: "{}" });
     } catch {
       failed = true;
     }
@@ -268,8 +495,10 @@ function createSessionStore(initial: Session | null | undefined): SessionStore {
 
       if (next === null) {
         clearMeCache();
+        resetMePreload();
         clearSessionPresence();
-      }
+        clearBrowserTenantDirectory();
+      } else rememberTenants(next.me?.tenants, next.subjectId);
     };
 
     if (hydrating) onHydrationEnd(settle);
@@ -326,7 +555,8 @@ function commitSession(session: Session | null): void {
     // seed a re-sign-in. A refresh/MFA commit for the same account keeps it.
     resetMePreload();
     clearSessionPresence();
-  }
+    clearBrowserTenantDirectory();
+  } else rememberTenants(session.me?.tenants, session.subjectId);
 }
 
 const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
@@ -343,11 +573,7 @@ const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
 
 /** Discoverable-credential sign-in shared by the login page and registration. */
 const passkeySignInFlow = async (): Promise<CompletionState> => {
-  const started = await request<{
-    flowId: string;
-    expiresAtMillis: number;
-    options: PublicKeyCredentialRequestOptionsJSON;
-  }>("/beginPasskeySignIn", {
+  const started = await request("/beginPasskeySignIn", PasskeyRequestStart, {
     method: "POST",
     body: authBody({
       flowId: crypto.randomUUID(),
@@ -364,7 +590,7 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
       // A registration follow-up should not leave the person staring at a
       // browser prompt for the server's full five-minute window.
       optionsJSON: {
-        ...started.options,
+        ...toRequestOptions(started.options),
         timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
       },
       useBrowserAutofill: false,
@@ -376,7 +602,7 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
     throw new Error("That passkey wasn't confirmed. Try again.");
   }
 
-  const completion = await request<Schema.Json>("/completePasskeySignIn", {
+  const completion = await request("/completePasskeySignIn", Schema.Json, {
     method: "POST",
     body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
   });
@@ -486,18 +712,10 @@ export const authClient = {
 
       if (payload.grant !== undefined) registration.grant = payload.grant;
 
-      let started: {
-        flowId: string;
-        expiresAtMillis: number;
-        options: PublicKeyCredentialCreationOptionsJSON;
-      };
+      let started: typeof PasskeyCreationStart.Type;
 
       try {
-        started = await request<{
-          flowId: string;
-          expiresAtMillis: number;
-          options: PublicKeyCredentialCreationOptionsJSON;
-        }>("/beginPasskeyRegistration", {
+        started = await request("/beginPasskeyRegistration", PasskeyCreationStart, {
           method: "POST",
           body: authBody({
             flowId: crypto.randomUUID(),
@@ -520,13 +738,13 @@ export const authClient = {
 
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
-        response = await startRegistration({ optionsJSON: started.options });
+        response = await startRegistration({ optionsJSON: toCreationOptions(started.options) });
       } catch (error) {
         throw new Error(passkeyCreationFailure(error), { cause: error });
       }
 
       try {
-        await request("/completePasskeyRegistration", {
+        await request("/completePasskeyRegistration", Schema.Unknown, {
           method: "POST",
           body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
         });
@@ -545,7 +763,7 @@ export const authClient = {
       // The registration ceremony does not issue a session, but an earlier
       // step or a retried request may have already established one. Check
       // first, then sign in once with the credential that was just created.
-      const signedIn = await request("/me")
+      const signedIn = await request("/me", Schema.Unknown)
         .then(() => true)
         .catch(() => false);
 
@@ -564,9 +782,16 @@ export const authClient = {
         return { signedIn: false };
       }
     }),
+  startSso: (email: string, returnTo?: string) => {
+    const query = new URLSearchParams({ email });
+
+    if (returnTo) query.set("returnTo", returnTo);
+
+    return result(() => request("/v1/sso/azure/start?" + query.toString(), SsoStart));
+  },
   ssoSignIn: (token: string) =>
     result(async () => {
-      const completion = await request<Schema.Json>("/ssoSignIn", {
+      const completion = await request("/ssoSignIn", Schema.Json, {
         method: "POST",
         body: authBody({ token }),
       });
@@ -585,31 +810,31 @@ export const authClient = {
    */
   requestRegistrationCode: (payload: { name: string; email: string }) =>
     result(async () =>
-      request<{ status: "ok"; emailSent: boolean }>("/register/verification", {
+      request("/register/verification", RegistrationCode, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     ),
   verifyRegistrationCode: (payload: { email: string; code: string }) =>
     result(async () =>
-      request<{ grant: string }>("/register/verification/verify", {
+      request("/register/verification/verify", RegistrationGrant, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     ),
   /** The committed server session, for identity checks after a ceremony. */
   session: () =>
-    result(async () => request<Session | null>("/getSession", { method: "POST", body: "{}" })),
+    result(async () => request("/getSession", SessionResponse, { method: "POST", body: "{}" })),
   signOut: () =>
     result(async () => {
-      await request("/signOut", { method: "POST", body: "{}" });
+      await request("/signOut", StatusOk, { method: "POST", body: "{}" });
       commitSession(null);
 
       return { status: "ok" as const };
     }),
   verifyTotpPending: (code: string) =>
     result(async () => {
-      const completion = await request<Schema.Json>("/verifyTotpPending", {
+      const completion = await request("/verifyTotpPending", Schema.Json, {
         method: "POST",
         body: authBody({ code }),
       });
@@ -628,11 +853,7 @@ export const authClient = {
   /** Complete a pending SSO sign-in with a passkey. */
   passkeyPending: () =>
     result(async () => {
-      const started = await request<{
-        flowId: string;
-        expiresAtMillis: number;
-        options: PublicKeyCredentialRequestOptionsJSON;
-      }>("/beginPasskeyPending", {
+      const started = await request("/beginPasskeyPending", PasskeyRequestStart, {
         method: "POST",
         body: authBody({
           flowId: crypto.randomUUID(),
@@ -646,14 +867,14 @@ export const authClient = {
       try {
         const { startAuthentication } = await import("@simplewebauthn/browser");
         response = await startAuthentication({
-          optionsJSON: started.options,
+          optionsJSON: toRequestOptions(started.options),
           useBrowserAutofill: false,
         });
       } catch {
         throw new Error("That passkey wasn't confirmed. Try again or use a code.");
       }
 
-      const completion = await request<Schema.Json>("/completePasskeyPending", {
+      const completion = await request("/completePasskeyPending", Schema.Json, {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
@@ -666,16 +887,7 @@ export const authClient = {
     }),
   listPasskeys: () =>
     result(() =>
-      request<{
-        credentials: Array<{
-          credentialId: string;
-          name: string;
-          primarySignIn: boolean;
-          createdAtMillis: number;
-          lastUsedAtMillis?: number;
-        }>;
-        cursor?: string;
-      }>("/listPasskeys", { method: "POST", body: authBody({ limit: 64 }) }),
+      request("/listPasskeys", PasskeyList, { method: "POST", body: authBody({ limit: 64 }) }),
     ),
   /**
    * Add a passkey.
@@ -701,37 +913,28 @@ export const authClient = {
 
       if (actionProof !== undefined) enrollment.actionProof = actionProof;
 
-      const started = await request<{
-        flowId: string;
-        expiresAtMillis: number;
-        options: PublicKeyCredentialCreationOptionsJSON;
-      }>("/beginPasskeyEnrollment", { method: "POST", body: authBody(enrollment) });
+      const started = await request("/beginPasskeyEnrollment", PasskeyCreationStart, {
+        method: "POST",
+        body: authBody(enrollment),
+      });
 
       let response: unknown;
 
       try {
         const { startRegistration } = await import("@simplewebauthn/browser");
-        response = await startRegistration({ optionsJSON: started.options });
+        response = await startRegistration({ optionsJSON: toCreationOptions(started.options) });
       } catch (error) {
         throw new Error(passkeyCreationFailure(error), { cause: error });
       }
 
-      return request<{
-        credential: {
-          credentialId: string;
-          name: string;
-          primarySignIn: boolean;
-          createdAtMillis: number;
-          lastUsedAtMillis?: number;
-        };
-      }>("/completePasskeyEnrollment", {
+      return request("/completePasskeyEnrollment", PasskeyEnrollmentComplete, {
         method: "POST",
         body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
       });
     }),
   renamePasskey: (payload: { credentialId: string; name: string }) =>
     result(() =>
-      request<{ credential: { credentialId: string; name: string } }>("/renamePasskey", {
+      request("/renamePasskey", PasskeyRename, {
         method: "POST",
         body: authBody({ commandId: crypto.randomUUID(), ...payload }),
       }),
@@ -739,15 +942,16 @@ export const authClient = {
   removePasskey: (credentialId: string) =>
     result(() =>
       withStepUp("passkey-remove", (grant) =>
-        request<{ status: "ok" }>(
+        request(
           `/v1/account/passkeys/${encodeURIComponent(credentialId)}`,
+          StatusOk,
           withStepUpHeaders({ method: "DELETE" }, grant),
         ),
       ),
     ),
   recoverTotpPending: (code: string) =>
     result(async () => {
-      const completion = await request<Schema.Json>("/recoverTotpPending", {
+      const completion = await request("/recoverTotpPending", Schema.Json, {
         method: "POST",
         body: authBody({ code }),
       });
@@ -762,13 +966,10 @@ export const authClient = {
     result(async () => {
       const actionProof = await requireStepUpGrant("mfa-enroll");
 
-      const envelope = await requestEnvelope<{ enrollmentId: string; expiresAtMillis: number }>(
-        "/beginTotpEnrollment",
-        {
-          method: "POST",
-          body: authBody({ commandId: crypto.randomUUID(), accountName, actionProof }),
-        },
-      );
+      const envelope = await requestEnvelope("/beginTotpEnrollment", TotpBegin, {
+        method: "POST",
+        body: authBody({ commandId: crypto.randomUUID(), accountName, actionProof }),
+      });
 
       const reveal = revealOf(TotpEnrollmentReveal, envelope, "totp-enrollment");
 
@@ -780,10 +981,7 @@ export const authClient = {
     result(async () => {
       const actionProof = await requireStepUpGrant("mfa-enroll");
 
-      const envelope = await requestEnvelope<{
-        enabled: boolean;
-        invalidation: Schema.Json;
-      }>("/confirmTotpEnrollment", {
+      const envelope = await requestEnvelope("/confirmTotpEnrollment", TotpConfirm, {
         method: "POST",
         body: authBody({ commandId: crypto.randomUUID(), ...payload, actionProof }),
       });
@@ -797,7 +995,7 @@ export const authClient = {
     result(async () => {
       const grant = await requireStepUpGrant("mfa-regenerate");
 
-      const envelope = await requestEnvelope<{ enabled: true }>("/regenerateTotpRecoveryCodes", {
+      const envelope = await requestEnvelope("/regenerateTotpRecoveryCodes", TotpRegenerated, {
         method: "POST",
         body: authBody({
           commandId: crypto.randomUUID(),
@@ -814,7 +1012,7 @@ export const authClient = {
     result(async () => {
       const grant = await requireStepUpGrant("mfa-disable");
 
-      return request<{ enabled: boolean; invalidation: unknown }>("/disableTotp", {
+      return request("/disableTotp", TotpConfirm, {
         method: "POST",
         body: authBody({
           commandId: crypto.randomUUID(),
@@ -829,7 +1027,7 @@ export const authClient = {
    */
   recoverySignIn: (token: string) =>
     result(async () => {
-      const completion = await request<Schema.Json>("/recoverySignIn", {
+      const completion = await request("/recoverySignIn", Schema.Json, {
         method: "POST",
         body: authBody({ token }),
       });
@@ -844,20 +1042,17 @@ export const authClient = {
       return state;
     }),
   updateUser: (payload: UpdateMeRequest) =>
-    result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
+    result(() => request("/v1/me", StatusOk, { method: "PATCH", body: body(payload) })),
   requestEmailVerification: () =>
     result(() =>
-      request<{ status: "ok"; challenge?: string; emailSent?: boolean }>(
-        "/v1/account/email-verification",
-        {
-          method: "POST",
-          body: "{}",
-        },
-      ),
+      request("/v1/account/email-verification", EmailVerification, {
+        method: "POST",
+        body: "{}",
+      }),
     ),
   verifyEmail: (payload: { token?: string; code?: string; challenge?: string }) =>
     result(async () => {
-      await request<{ status: "ok" }>("/v1/verify-email", {
+      await request("/v1/verify-email", StatusOk, {
         method: "POST",
         body: body(payload),
       });
@@ -872,8 +1067,9 @@ export const authClient = {
   changeEmail: (payload: { newEmail: string; callbackURL?: string }) =>
     result(() =>
       withStepUp("email-change", (grant) =>
-        request<{ status: "ok" }>(
+        request(
           "/v1/account/email-change",
+          StatusOk,
           withStepUpHeaders({ method: "POST", body: body({ newEmail: payload.newEmail }) }, grant),
         ),
       ),
@@ -881,7 +1077,7 @@ export const authClient = {
   /** Cancel a pending change from the link mailed to the old address. */
   cancelEmailChange: (token: string) =>
     result(async () => {
-      await request<{ status: "ok" }>("/v1/account/email-change/cancel", {
+      await request("/v1/account/email-change/cancel", StatusOk, {
         method: "POST",
         body: body({ token }),
       });
@@ -891,7 +1087,7 @@ export const authClient = {
     }),
   verifyEmailChange: (payload: { token: string }) =>
     result(async () => {
-      await request<{ status: "ok" }>("/v1/account/email-change/verify", {
+      await request("/v1/account/email-change/verify", StatusOk, {
         method: "POST",
         body: body(payload),
       });
@@ -899,22 +1095,7 @@ export const authClient = {
 
       return { status: "ok" as const };
     }),
-  listApiTokens: () =>
-    request<{
-      tokens: Array<{
-        id: string;
-        name: string;
-        tokenPrefix: string;
-        scopes: string[];
-        permissions: Permission[];
-        tenantId?: string | null;
-        createdAt: string;
-        updatedAt: string;
-        lastUsedAt?: string | null;
-        expiresAt?: string | null;
-        revokedAt?: string | null;
-      }>;
-    }>("/v1/account/api-tokens"),
+  listApiTokens: () => request("/v1/account/api-tokens", ApiTokenList),
   createApiToken: (payload: {
     name: string;
     expiresAt?: string | null;
@@ -923,30 +1104,17 @@ export const authClient = {
     tenantId?: string | null;
   }) =>
     withStepUp("api-token-create", (grant) =>
-      request<{
-        token: string;
-        item: {
-          id: string;
-          name: string;
-          tokenPrefix: string;
-          scopes: string[];
-          permissions: Permission[];
-          tenantId?: string | null;
-          createdAt: string;
-          updatedAt: string;
-          lastUsedAt?: string | null;
-          expiresAt?: string | null;
-          revokedAt?: string | null;
-        };
-      }>(
+      request(
         "/v1/account/api-tokens",
+        ApiTokenCreated,
         withStepUpHeaders({ method: "POST", body: body(payload) }, grant),
       ),
     ),
   revokeApiToken: (tokenId: string) =>
     withStepUp("api-token-revoke", (grant) =>
-      request<{ status: "ok" }>(
+      request(
         `/v1/account/api-tokens/${tokenId}`,
+        StatusOk,
         withStepUpHeaders({ method: "DELETE" }, grant),
       ),
     ),

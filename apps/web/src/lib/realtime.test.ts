@@ -1,17 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
+import { TestClock } from "effect/testing";
+import { describe, expect, it, vi } from "vitest";
 import type { RealtimeEvent } from "@mattrax/enterprise-domain/client";
 import { enterpriseKeys } from "~/lib/enterprise";
 import {
-  REALTIME_FALLBACK_POLL_MS,
   REALTIME_MAX_DEVICES_PER_FLUSH,
   REALTIME_RETRY_MAX_MS,
   collectRealtimeTargets,
-  createRealtimeInvalidator,
+  RealtimeInvalidatorService,
+  realtimeInvalidatorLayer,
+  startTenantRealtimeEffect,
   decodeRealtimeEvent,
   realtimeKeysForEvents,
   realtimeRetryDelay,
-  startTenantRealtime,
 } from "./realtime";
+import type { RealtimeQueryCache } from "./realtime";
 
 const tenantId = "tenant-1";
 
@@ -127,75 +130,83 @@ describe("realtimeKeysForEvents", () => {
 });
 
 describe("createRealtimeInvalidator", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it("debounces a burst into one invalidation per key", () => {
+  it("debounces a burst into one invalidation per key", async () => {
     const client = fakeClient();
 
-    const invalidator = createRealtimeInvalidator(client, tenantId, {
-      debounceMs: 100,
-    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const invalidator = yield* RealtimeInvalidatorService;
 
-    for (let index = 0; index < 25; index++) invalidator.push(event({ seq: index + 1 }));
+        for (let index = 0; index < 25; index++) yield* invalidator.push(event({ seq: index + 1 }));
+        expect(client.invalidateQueries).not.toHaveBeenCalled();
 
-    expect(client.invalidateQueries).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(100);
-
-    const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
-
-    expect(calls).toContainEqual({
-      queryKey: enterpriseKeys.item(tenantId, "device", "device-a"),
-      refetchType: "active",
-    });
-    // A repeated device does not produce repeated calls for the same key.
-    expect(
-      calls.filter(
-        (input) =>
-          JSON.stringify(input?.queryKey) ===
-          JSON.stringify(enterpriseKeys.item(tenantId, "device", "device-a")),
+        yield* TestClock.adjust(100);
+        yield* Effect.yieldNow;
+        const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
+        expect(calls).toContainEqual({
+          queryKey: enterpriseKeys.item(tenantId, "device", "device-a"),
+          refetchType: "active",
+        });
+        expect(
+          calls.filter(
+            (input) =>
+              JSON.stringify(input?.queryKey) ===
+              JSON.stringify(enterpriseKeys.item(tenantId, "device", "device-a")),
+          ),
+        ).toHaveLength(1);
+      }).pipe(
+        Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 100 })),
+        Effect.provide(TestClock.layer()),
+        Effect.scoped,
       ),
-    ).toHaveLength(1);
+    );
   });
 
-  it("stops scheduling after dispose", () => {
+  it("cancels scheduled work when its scope closes", async () => {
     const client = fakeClient();
 
-    const invalidator = createRealtimeInvalidator(client, tenantId, {
-      debounceMs: 100,
-    });
-
-    invalidator.push(event());
-    invalidator.dispose();
-    vi.advanceTimersByTime(1_000);
-
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const invalidator = yield* RealtimeInvalidatorService;
+        yield* invalidator.push(event());
+        yield* Effect.yieldNow;
+      }).pipe(
+        Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 100 })),
+        Effect.provide(TestClock.layer()),
+        Effect.scoped,
+      ),
+    );
+    await Effect.runPromise(TestClock.adjust(1_000).pipe(Effect.provide(TestClock.layer())));
     expect(client.invalidateQueries).not.toHaveBeenCalled();
   });
 
-  it("invalidateAll refreshes every realtime family once", () => {
+  it("invalidateAll refreshes every realtime family once", async () => {
     const client = fakeClient();
 
-    const invalidator = createRealtimeInvalidator(client, tenantId, {
-      debounceMs: 1,
-    });
-
-    invalidator.invalidateAll();
-
-    const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
-
-    expect(calls).toContainEqual({
-      queryKey: enterpriseKeys.deviceSearchPrefix(tenantId),
-      refetchType: "active",
-    });
-    expect(calls).toContainEqual({
-      queryKey: ["enterprise", "item", tenantId, "device"],
-      refetchType: "active",
-    });
-    expect(calls).toContainEqual({
-      queryKey: enterpriseKeys.enrollmentAttempts(tenantId),
-      refetchType: "active",
-    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const invalidator = yield* RealtimeInvalidatorService;
+        yield* invalidator.invalidateAll;
+        yield* Effect.yieldNow;
+        const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
+        expect(calls).toContainEqual({
+          queryKey: enterpriseKeys.deviceSearchPrefix(tenantId),
+          refetchType: "active",
+        });
+        expect(calls).toContainEqual({
+          queryKey: ["enterprise", "item", tenantId, "device"],
+          refetchType: "active",
+        });
+        expect(calls).toContainEqual({
+          queryKey: enterpriseKeys.enrollmentAttempts(tenantId),
+          refetchType: "active",
+        });
+      }).pipe(
+        Effect.provide(realtimeInvalidatorLayer(client, tenantId)),
+        Effect.provide(TestClock.layer()),
+        Effect.scoped,
+      ),
+    );
   });
 });
 
@@ -212,10 +223,9 @@ describe("decodeRealtimeEvent", () => {
   });
 });
 
-describe("startTenantRealtime", () => {
+describe("startTenantRealtimeEffect", () => {
   class FakeEventSource {
     static instances: FakeEventSource[] = [];
-
     readonly url: string;
     readyState = 1;
     closed = false;
@@ -248,7 +258,6 @@ describe("startTenantRealtime", () => {
 
   const fakeDocument = (hidden = false) => {
     const listeners = new Map<string, Set<() => void>>();
-
     const target = {
       hidden,
       addEventListener: (type: string, listener: () => void) => {
@@ -262,6 +271,7 @@ describe("startTenantRealtime", () => {
       emit: (type: string) => {
         for (const listener of listeners.get(type) ?? []) listener();
       },
+      listenerCount: () => [...listeners.values()].reduce((total, set) => total + set.size, 0),
     };
 
     return target;
@@ -269,7 +279,6 @@ describe("startTenantRealtime", () => {
 
   const fakeWindow = () => {
     const listeners = new Map<string, Set<() => void>>();
-
     return {
       addEventListener: (type: string, listener: () => void) => {
         const set = listeners.get(type) ?? new Set();
@@ -285,112 +294,154 @@ describe("startTenantRealtime", () => {
     };
   };
 
-  beforeEach(() => {
+  const provide = <A, E, R>(effect: Effect.Effect<A, E, R>, client: RealtimeQueryCache) =>
+    effect.pipe(
+      Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 10 })),
+      Effect.provide(TestClock.layer()),
+      Effect.scoped,
+    );
+
+  it("connects, resumes from the cursor and closes on scope exit", async () => {
     FakeEventSource.instances = [];
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => vi.useRealTimers());
-
-  const start = (document = fakeDocument()) => {
     const client = fakeClient();
-
-    const realtime = startTenantRealtime({
-      tenantId,
-      queryClient: client,
-      eventSource: (url) => new FakeEventSource(url),
-      document,
-      window: fakeWindow(),
-      random: () => 0,
-      debounceMs: 10,
-      fallbackPollMs: 1_000,
-      maxRetries: 2,
-      slowRetryMs: 5_000,
-    });
-
-    return { realtime, client, document };
-  };
-
-  it("connects to the tenant path and resumes from the newest cursor", () => {
-    const { realtime } = start();
-    const first = FakeEventSource.instances[0];
-
-    expect(first.url).toBe("/api/v1/tenants/tenant-1/realtime");
-
-    first.open();
-    first.message(JSON.stringify(event({ seq: 5 })));
-    first.message(JSON.stringify(event({ seq: 5 })));
-
-    expect(realtime.status()).toBe("live");
-    expect(realtime.cursor()).toBe(5);
-
-    // A duplicate frame is ignored by seq, so a reconnect race cannot refetch.
-    vi.advanceTimersByTime(10);
-    expect(realtime.cursor()).toBe(5);
-
-    first.fail();
-    vi.advanceTimersByTime(1_000);
-
-    expect(FakeEventSource.instances[1]?.url).toBe("/api/v1/tenants/tenant-1/realtime?after=5");
-
-    realtime.dispose();
-  });
-
-  it("backs off and falls back to polling after repeated failures", () => {
-    const { realtime, client } = start();
-
-    FakeEventSource.instances[0].fail();
-    expect(realtime.status()).toBe("reconnecting");
-
-    vi.advanceTimersByTime(1_000);
-    expect(FakeEventSource.instances).toHaveLength(2);
-
-    FakeEventSource.instances[1].fail();
-    expect(realtime.status()).toBe("polling");
-
-    vi.advanceTimersByTime(1_000);
-
-    const calls = client.invalidateQueries.mock.calls.length;
-
-    expect(calls).toBeGreaterThan(0);
-
-    realtime.dispose();
-  });
-
-  it("pauses when the tab is hidden and reconnects on return", () => {
     const document = fakeDocument();
-    const { realtime } = start(document);
+    let first: FakeEventSource | undefined;
+    let latest: FakeEventSource | undefined;
 
-    FakeEventSource.instances[0].open();
+    await Effect.runPromise(
+      provide(
+        Effect.gen(function* () {
+          const handle = yield* startTenantRealtimeEffect({
+            tenantId,
+            queryClient: client,
+            eventSource: (url) => new FakeEventSource(url),
+            document,
+            window: fakeWindow(),
+            random: () => 0,
+            debounceMs: 10,
+            fallbackPollMs: 1_000,
+            maxRetries: 2,
+            slowRetryMs: 5_000,
+          });
+          yield* Effect.yieldNow;
+          first = FakeEventSource.instances[0];
+          expect(first.url).toBe("/api/v1/tenants/tenant-1/realtime");
+          first.open();
+          first.message(JSON.stringify(event({ seq: 5 })));
+          first.message(JSON.stringify(event({ seq: 5 })));
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("live");
+          expect(yield* handle.cursor).toBe(5);
+          yield* TestClock.adjust(10);
+          first.fail();
+          yield* TestClock.adjust(1_000);
+          yield* Effect.yieldNow;
+          latest = FakeEventSource.instances[1];
+          expect(latest?.url).toBe("/api/v1/tenants/tenant-1/realtime?after=5");
+        }),
+        client,
+      ),
+    );
 
-    document.hidden = true;
-    document.emit("visibilitychange");
-
-    expect(realtime.status()).toBe("paused");
-    expect(FakeEventSource.instances[0].closed).toBe(true);
-
-    document.hidden = false;
-    document.emit("visibilitychange");
-
-    expect(FakeEventSource.instances).toHaveLength(2);
-
-    realtime.dispose();
+    expect(first?.closed).toBe(true);
+    expect(latest?.closed).toBe(true);
+    expect(document.listenerCount()).toBe(0);
   });
 
-  it("uses the polling fallback when there is no EventSource", () => {
+  it("backs off and falls back to polling after repeated failures", async () => {
+    FakeEventSource.instances = [];
     const client = fakeClient();
+    const document = fakeDocument();
 
-    const realtime = startTenantRealtime({
-      tenantId,
-      queryClient: client,
-      document: fakeDocument(),
-      eventSource: undefined,
-      fallbackPollMs: REALTIME_FALLBACK_POLL_MS,
-    });
+    await Effect.runPromise(
+      provide(
+        Effect.gen(function* () {
+          const handle = yield* startTenantRealtimeEffect({
+            tenantId,
+            queryClient: client,
+            eventSource: (url) => new FakeEventSource(url),
+            document,
+            random: () => 0,
+            fallbackPollMs: 1_000,
+            maxRetries: 2,
+            slowRetryMs: 5_000,
+          });
+          yield* Effect.yieldNow;
+          FakeEventSource.instances[0].fail();
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("reconnecting");
+          yield* TestClock.adjust(1_000);
+          FakeEventSource.instances[1].fail();
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("polling");
+          yield* TestClock.adjust(1_000);
+          yield* Effect.yieldNow;
+          expect(client.invalidateQueries).toHaveBeenCalled();
+        }),
+        client,
+      ),
+    );
+  });
 
-    expect(realtime.status()).toBe("polling");
-    expect(client.invalidateQueries).not.toHaveBeenCalled();
+  it("pauses while hidden and reconnects on return", async () => {
+    FakeEventSource.instances = [];
+    const client = fakeClient();
+    const document = fakeDocument();
 
-    realtime.dispose();
+    await Effect.runPromise(
+      provide(
+        Effect.gen(function* () {
+          const handle = yield* startTenantRealtimeEffect({
+            tenantId,
+            queryClient: client,
+            eventSource: (url) => new FakeEventSource(url),
+            document,
+            random: () => 0,
+          });
+          yield* Effect.yieldNow;
+          FakeEventSource.instances[0].open();
+          document.hidden = true;
+          document.emit("visibilitychange");
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("paused");
+          expect(FakeEventSource.instances[0].closed).toBe(true);
+          document.hidden = false;
+          document.emit("visibilitychange");
+          yield* TestClock.adjust(0);
+          expect(FakeEventSource.instances).toHaveLength(2);
+        }),
+        client,
+      ),
+    );
+  });
+
+  it("uses the polling fallback when EventSource construction fails", async () => {
+    FakeEventSource.instances = [];
+    const client = fakeClient();
+    const document = fakeDocument();
+
+    await Effect.runPromise(
+      provide(
+        Effect.gen(function* () {
+          const handle = yield* startTenantRealtimeEffect({
+            tenantId,
+            queryClient: client,
+            eventSource: () => {
+              throw new Error("blocked");
+            },
+            document,
+            random: () => 0,
+            fallbackPollMs: 1_000,
+          });
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("reconnecting");
+          yield* TestClock.adjust(1_000);
+          yield* Effect.yieldNow;
+          expect(yield* handle.status).toBe("polling");
+          expect(client.invalidateQueries).toHaveBeenCalled();
+        }),
+        client,
+      ),
+    );
   });
 });
