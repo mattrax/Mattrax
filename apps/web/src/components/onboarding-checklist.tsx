@@ -121,21 +121,49 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   const dismiss = useMutation(() => ({
     mutationFn: () => enterprise.patchTenantOnboarding(props.tenantId, true),
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: queryKey() });
-      const previous = queryClient.getQueryData<TenantOnboardingState>(queryKey());
+      // Solid Query does not await `onMutate`. Capture the rollback snapshot
+      // and mark the browser before the cancellation await so a PATCH that
+      // rejects immediately still has something to restore and clear.
       const identity = dismissalIdentity();
+      const previous = queryClient.getQueryData<TenantOnboardingState>(queryKey());
       const context = { previous, identity };
       dismissalRollback = context;
       dismissalFailed = false;
       writeOnboardingDismissal(browserStorage(), identity.userId, identity.tenantId, true);
 
-      if (previous)
+      await queryClient.cancelQueries({ queryKey: queryKey() });
+
+      // The mutation may have settled while cancellation was pending. onError
+      // has then already restored the cache and cleared the marker, so do not
+      // reapply the optimistic dismissal behind its back.
+      if (dismissalRollback !== context) return context;
+
+      const latest = queryClient.getQueryData<TenantOnboardingState>(queryKey());
+
+      // Write the optimistic dismissal only after cancellation has settled, so
+      // an in-flight GET cannot overwrite it. A failure before this point is
+      // handled by the synchronous marker and rollback snapshot above.
+      if (latest) {
+        context.previous = latest;
         queryClient.setQueryData(
           queryKey(),
-          markOnboardingDismissed(previous, new Date().toISOString()),
+          markOnboardingDismissed(latest, new Date().toISOString()),
         );
+      }
 
       return context;
+    },
+    onSuccess: () => {
+      // The server has confirmed the dismissal. If the PATCH settled before
+      // `onMutate`'s cancellation continuation, no optimistic write has landed
+      // yet; mark the cache here so the card still disappears.
+      const current = queryClient.getQueryData<TenantOnboardingState>(queryKey());
+
+      if (current && current.dismissedAt === null)
+        queryClient.setQueryData(
+          queryKey(),
+          markOnboardingDismissed(current, new Date().toISOString()),
+        );
     },
     onError: () => {
       const context = dismissalRollback;

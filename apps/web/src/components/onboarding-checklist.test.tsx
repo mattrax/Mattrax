@@ -220,6 +220,40 @@ describe("OnboardingChecklist dismissal", () => {
     expect(errors).toEqual([]);
   });
 
+  it("disables refetching when an authoritative dismissal arrives after mount", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    api.getTenantOnboarding.mockResolvedValue(onboardingState());
+
+    const host = mount(() => <OnboardingChecklist tenantId="tenant-1" />, client, errors);
+    flush();
+    await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
+
+    // Prove invalidation can reach this query while it is eligible.
+    await client.invalidateQueries({ queryKey: onboardingKey(), refetchType: "none" });
+    await client.refetchQueries({ queryKey: onboardingKey(), type: "all" });
+    await vi.waitFor(() => expect(api.getTenantOnboarding).toHaveBeenCalledTimes(2));
+
+    client.setQueryData(
+      onboardingKey(),
+      onboardingState({ dismissedAt: "2026-11-24T12:00:00.000Z" }),
+    );
+    flush();
+
+    await vi.waitFor(() => expect(host.querySelector("#onboarding-title")).toBeNull());
+    await vi.waitFor(() =>
+      expect(client.getQueryCache().find({ queryKey: onboardingKey() })?.isDisabled()).toBe(true),
+    );
+
+    await client.invalidateQueries({ queryKey: onboardingKey() });
+    await Promise.resolve();
+    flush();
+
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(2);
+    expect(errors).toEqual([]);
+  });
+
   it("does not request the aggregate counts for a read-only member", async () => {
     const client = makeClient();
     const errors: unknown[] = [];
@@ -259,9 +293,13 @@ describe("OnboardingChecklist dismissal", () => {
     expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
 
     dismissButton(host)!.click();
+    await Promise.resolve();
     flush();
 
-    await vi.waitFor(() => expect(host.querySelector("#onboarding-title")).toBeNull());
+    await vi.waitFor(() => {
+      flush();
+      expect(host.querySelector("#onboarding-title")).toBeNull();
+    });
     await vi.waitFor(() =>
       expect(readOnboardingDismissal(storage, "account-1", "tenant-1")).toBe(true),
     );
@@ -274,6 +312,39 @@ describe("OnboardingChecklist dismissal", () => {
     await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
 
     expect(api.patchTenantOnboarding).toHaveBeenCalledWith("tenant-1", true);
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("clears the marker when the PATCH rejects before cancellation settles", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    const cancellation = deferred<void>();
+    api.getTenantOnboarding.mockResolvedValue(onboardingState());
+    api.patchTenantOnboarding.mockRejectedValueOnce(new Error("offline"));
+    vi.spyOn(client, "cancelQueries").mockReturnValueOnce(cancellation.promise);
+
+    const host = mount(() => <OnboardingChecklist tenantId="tenant-1" />, client, errors);
+    flush();
+    await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
+
+    dismissButton(host)!.click();
+    await Promise.resolve();
+    flush();
+
+    await vi.waitFor(() =>
+      expect(readOnboardingDismissal(storage, "account-1", "tenant-1")).toBe(false),
+    );
+    await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
+
+    cancellation.resolve();
+    flush();
+    await Promise.resolve();
+    flush();
+
+    expect(readOnboardingDismissal(storage, "account-1", "tenant-1")).toBe(false);
+    expect(host.querySelector("#onboarding-title")).not.toBeNull();
     expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
     expect(errors).toEqual([]);
   });
@@ -291,6 +362,7 @@ describe("OnboardingChecklist dismissal", () => {
     await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
 
     dismissButton(host)!.click();
+    await Promise.resolve();
     flush();
 
     await vi.waitFor(() => expect(host.querySelector("#onboarding-title")).toBeNull());
