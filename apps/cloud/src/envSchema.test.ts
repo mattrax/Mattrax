@@ -132,4 +132,38 @@ describe("services URL environment resolution", () => {
       },
     );
   });
+
+  describe("trusted device identity headers", () => {
+    it("fails startup unless an explicit trusted peer is configured", () => {
+      expect(() => resolveApiEnv({ ...base, TRUST_DEVICE_IDENTITY_HEADERS: "1" })).toThrow(
+        /TRUSTED_DEVICE_IDENTITY_PEERS is required/,
+      );
+      expect(() =>
+        resolveApiEnv({
+          ...base,
+          TRUST_DEVICE_IDENTITY_HEADERS: "1",
+          TRUSTED_DEVICE_IDENTITY_PEERS: "   ",
+        }),
+      ).toThrow(/TRUSTED_DEVICE_IDENTITY_PEERS is required/);
+    });
+
+    it("trims a configured trusted peer list", () => {
+      expect(
+        resolveApiEnv({
+          ...base,
+          TRUST_DEVICE_IDENTITY_HEADERS: "1",
+          TRUSTED_DEVICE_IDENTITY_PEERS: " 127.0.0.1, ::1 ",
+        }).TRUSTED_DEVICE_IDENTITY_PEERS,
+      ).toBe("127.0.0.1, ::1");
+    });
+
+    it.each(["localhost", "127.0.0.1/8", "0.0.0.0"])(
+      "rejects an invalid trusted peer even when header trust is off: %s",
+      (value) => {
+        expect(() => resolveApiEnv({ ...base, TRUSTED_DEVICE_IDENTITY_PEERS: value })).toThrow(
+          /TRUSTED_DEVICE_IDENTITY_PEERS/,
+        );
+      },
+    );
+  });
 });

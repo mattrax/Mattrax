@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Context, DateTime, Effect, Exit, Layer, Option, Predicate, Schema, Tracer } from "effect";
+import { Context, DateTime, Effect, Exit, Layer, Predicate, Schema, Tracer } from "effect";
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
@@ -136,6 +136,8 @@ import { MysqlClient } from "@effect/sql-mysql2";
 import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
+import { deviceIdentityHeaders } from "./deviceIdentity.js";
+import { parseTrustedPeerAddresses } from "./trustedPeer.js";
 import { resolveDeploymentBranding } from "./onboardingBranding.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import { logBestEffortFailure } from "./bestEffort.js";
@@ -179,7 +181,6 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
-  boundedClientAddress,
   databaseConfigFromFields,
   mysqlClientOptions,
   servicesUrls,
@@ -1375,18 +1376,6 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
   );
 };
 
-const TlsClientAuth = Schema.Struct({
-  certVerified: Schema.optional(Schema.String),
-  certRevoked: Schema.optional(Schema.Union([Schema.String, Schema.Boolean])),
-  certSubjectDN: Schema.optional(Schema.String),
-  certSerial: Schema.optional(Schema.String),
-  certFingerprintSHA256: Schema.optional(Schema.String),
-});
-
-const RequestCfProperties = Schema.Struct({
-  tlsClientAuth: Schema.optional(TlsClientAuth),
-});
-
 /** Redact emails and long opaque tokens before an error message reaches logs. */
 const describeError = (cause: unknown): string => {
   const error = Predicate.isError(cause) ? cause : undefined;
@@ -1405,46 +1394,9 @@ const describeError = (cause: unknown): string => {
  * forwards the verified fields instead, which requires an explicit opt-in.
  */
 const TRUST_DEVICE_IDENTITY_HEADERS = apiEnv.TRUST_DEVICE_IDENTITY_HEADERS === "1";
-
-const deviceIdentityHeaders = (request: Request) => {
-  const headers = new Headers(request.headers);
-
-  // The client address is computed once, with the rate limiter's trust policy,
-  // and handed to the inner handlers as a header they can trust. A caller can
-  // never set it: the value is stripped first and only the verified address is
-  // written back. Handlers store null when the deployment cannot prove one.
-  headers.delete("x-mattrax-client-address");
-  // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
-  const cloudflare = (request as { cf?: unknown }).cf !== undefined;
-
-  const address = boundedClientAddress(request.headers, {
-    trustForwarded: TRUST_PROXY_HEADERS,
-    cloudflare,
-  });
-
-  if (address) headers.set("x-mattrax-client-address", address);
-
-  if (TRUST_DEVICE_IDENTITY_HEADERS) return headers;
-
-  headers.delete("x-device-identity-certificate");
-  headers.delete("x-device-identity-certificate-serial");
-  headers.delete("x-device-identity-certificate-sha256");
-
-  const cf = Option.getOrUndefined(Schema.decodeUnknownOption(RequestCfProperties)(request.cf));
-
-  const tls = cf?.tlsClientAuth;
-
-  if (tls?.certVerified === "SUCCESS" && tls.certRevoked !== "1" && tls.certRevoked !== true) {
-    if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
-
-    if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
-
-    if (tls.certFingerprintSHA256)
-      headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
-  }
-
-  return headers;
-};
+const TRUSTED_DEVICE_IDENTITY_PEERS = parseTrustedPeerAddresses(
+  apiEnv.TRUSTED_DEVICE_IDENTITY_PEERS,
+);
 
 /**
  * Build the API runtime for a host. The Cloudflare entry supplies the Workers
@@ -1539,7 +1491,13 @@ export const createApiRuntime = (
           // machinery and no service layer, so a scrape stays cheap.
           response = metricsResponse(request);
         } else {
-          const deviceRequest = new Request(request, { headers: deviceIdentityHeaders(request) });
+          const deviceRequest = new Request(request, {
+            headers: deviceIdentityHeaders(request, {
+              trustIdentityHeaders: TRUST_DEVICE_IDENTITY_HEADERS,
+              trustedPeers: TRUSTED_DEVICE_IDENTITY_PEERS,
+              trustForwarded: TRUST_PROXY_HEADERS,
+            }),
+          });
 
           // The root span becomes the parent of every span the handler creates
           // (including `@effect/sql` query spans), which is what makes the
