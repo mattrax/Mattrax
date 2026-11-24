@@ -1,78 +1,135 @@
-import type Stripe from "stripe";
-import { Option, Schema } from "effect";
+import { Clock, Duration, Effect, Option, Result, Schedule, Schema } from "effect";
+import {
+  FetchHttpClient,
+  Headers as HttpHeaders,
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+} from "effect/http";
 
 /** Stripe calls are usually sub-second; a hung one must not pin the request. */
 export const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 
-/** The Stripe SDK retries transient network failures itself; keep that bounded. */
+/** Retry transient failures at most twice after the initial attempt. */
 export const STRIPE_MAX_NETWORK_RETRIES = 2;
 
-/** Minimal Stripe object shapes used by billing. */
-export type StripeCustomer = {
-  readonly id: string;
-  readonly name?: string | null;
-  readonly email?: string | null;
-  readonly metadata?: Readonly<Record<string, string>> | null;
-};
+const OptionalString = Schema.optional(Schema.NullOr(Schema.String));
+const Metadata = Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.String)));
+const StripeObjectReference = Schema.Struct({ id: Schema.optional(Schema.String) });
+
+export const StripeCustomerSchema = Schema.Struct({
+  id: Schema.String,
+  name: OptionalString,
+  email: OptionalString,
+  metadata: Metadata,
+});
+
+export type StripeCustomer = typeof StripeCustomerSchema.Type;
+
+const listSchema = <A>(item: Schema.ConstraintDecoder<A>) =>
+  Schema.Struct({
+    data: Schema.Array(item),
+    has_more: Schema.optional(Schema.Boolean),
+  });
 
 export type StripeList<T> = {
   readonly data: ReadonlyArray<T>;
   readonly has_more?: boolean;
 };
 
-export type StripePortalSession = {
-  readonly url?: string | null;
-};
+export const StripePortalSessionSchema = Schema.Struct({
+  url: OptionalString,
+});
 
-export type StripeSubscriptionItem = {
-  readonly id: string;
-  readonly quantity?: number | null;
-  readonly price?: { readonly id?: string } | null;
+export type StripePortalSession = typeof StripePortalSessionSchema.Type;
+
+export const StripeSubscriptionItemSchema = Schema.Struct({
+  id: Schema.String,
+  quantity: Schema.optional(Schema.NullOr(Schema.Number)),
+  price: Schema.optional(Schema.NullOr(StripeObjectReference)),
   /** Current period end in Unix seconds (moved onto items in newer APIs). */
-  readonly current_period_end?: number;
-};
+  current_period_end: Schema.optional(Schema.Number),
+});
 
-export type StripeSubscription = {
-  readonly id: string;
-  readonly status?: string;
-  readonly cancel_at_period_end?: boolean;
-  readonly metadata?: Readonly<Record<string, string>> | null;
-  readonly customer?: string | { readonly id?: string } | null;
-  readonly items?: { readonly data: ReadonlyArray<StripeSubscriptionItem> } | null;
+export type StripeSubscriptionItem = typeof StripeSubscriptionItemSchema.Type;
+
+export const StripeSubscriptionSchema = Schema.Struct({
+  id: Schema.String,
+  status: OptionalString,
+  cancel_at_period_end: Schema.optional(Schema.Boolean),
+  metadata: Metadata,
+  customer: Schema.optional(Schema.NullOr(Schema.Union([Schema.String, StripeObjectReference]))),
+  items: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        data: Schema.Array(StripeSubscriptionItemSchema),
+      }),
+    ),
+  ),
   /** Older API versions keep the period end on the subscription. */
-  readonly current_period_end?: number;
-};
+  current_period_end: Schema.optional(Schema.Number),
+});
+
+export type StripeSubscription = typeof StripeSubscriptionSchema.Type;
 
 /** A hosted Checkout Session. Only the fields the redirect needs are typed. */
-export type StripeCheckoutSession = {
-  readonly id: string;
-  readonly url?: string | null;
-  readonly mode?: string | null;
-  readonly status?: string | null;
-  readonly payment_status?: string | null;
-  readonly customer?: string | { readonly id?: string } | null;
-  readonly subscription?: string | { readonly id?: string } | null;
-  readonly client_reference_id?: string | null;
-  readonly metadata?: Readonly<Record<string, string>> | null;
-};
+export const StripeCheckoutSessionSchema = Schema.Struct({
+  id: Schema.String,
+  url: OptionalString,
+  mode: OptionalString,
+  status: OptionalString,
+  payment_status: OptionalString,
+  customer: Schema.optional(Schema.NullOr(Schema.Union([Schema.String, StripeObjectReference]))),
+  subscription: Schema.optional(
+    Schema.NullOr(Schema.Union([Schema.String, StripeObjectReference])),
+  ),
+  client_reference_id: OptionalString,
+  metadata: Metadata,
+});
 
-export type StripeInvoiceStatus = "draft" | "open" | "paid" | "uncollectible" | "void";
+export type StripeCheckoutSession = typeof StripeCheckoutSessionSchema.Type;
+
+export const StripeInvoiceStatusSchema = Schema.Literals([
+  "draft",
+  "open",
+  "paid",
+  "uncollectible",
+  "void",
+]);
+
+export type StripeInvoiceStatus = typeof StripeInvoiceStatusSchema.Type;
 
 /** The invoice fields rendered in the dashboard. */
-export type StripeInvoice = {
-  readonly id: string;
-  readonly number?: string | null;
-  readonly status?: StripeInvoiceStatus | null;
-  readonly total?: number | null;
-  readonly amount_due?: number | null;
-  readonly amount_paid?: number | null;
-  readonly currency?: string | null;
-  readonly created?: number | null;
-  readonly period_start?: number | null;
-  readonly period_end?: number | null;
-  readonly hosted_invoice_url?: string | null;
-  readonly invoice_pdf?: string | null;
-};
+export const StripeInvoiceSchema = Schema.Struct({
+  id: Schema.String,
+  number: OptionalString,
+  status: Schema.optional(Schema.NullOr(StripeInvoiceStatusSchema)),
+  total: Schema.optional(Schema.NullOr(Schema.Number)),
+  amount_due: Schema.optional(Schema.NullOr(Schema.Number)),
+  amount_paid: Schema.optional(Schema.NullOr(Schema.Number)),
+  currency: OptionalString,
+  created: Schema.optional(Schema.NullOr(Schema.Number)),
+  period_start: Schema.optional(Schema.NullOr(Schema.Number)),
+  period_end: Schema.optional(Schema.NullOr(Schema.Number)),
+  hosted_invoice_url: OptionalString,
+  invoice_pdf: OptionalString,
+});
+
+export type StripeInvoice = typeof StripeInvoiceSchema.Type;
+
+/**
+ * The authenticated webhook envelope used by billing. Stripe's resource union
+ * stays open here; the billing layer decodes the object for each event type.
+ */
+export const StripeWebhookEventSchema = Schema.Struct({
+  id: Schema.String,
+  type: Schema.String,
+  data: Schema.Struct({
+    object: Schema.Record(Schema.String, Schema.Unknown),
+  }),
+});
+
+export type StripeWebhookEvent = typeof StripeWebhookEventSchema.Type;
 
 export type StripeCheckoutSessionParams = {
   readonly mode: "subscription";
@@ -115,8 +172,8 @@ export type StripeClientConfig = {
 
 /**
  * The subset of the Stripe SDK that this app calls. Keeping it structural lets
- * production use the small fetch client below while tests and hosts can still
- * inject a real `Stripe` instance without the Worker bundling the SDK.
+ * tests and hosts inject a real `Stripe` instance without the Worker bundling
+ * the SDK.
  */
 export interface StripeClientLike {
   readonly customers: {
@@ -174,11 +231,8 @@ export interface StripeClientLike {
 }
 
 const DEFAULT_HOST = "https://api.stripe.com";
-
 const DEFAULT_TIMEOUT = STRIPE_REQUEST_TIMEOUT_MS;
-
 const DEFAULT_RETRIES = STRIPE_MAX_NETWORK_RETRIES;
-
 const RETRYABLE_STATUS = new Set([409, 429, 500, 502, 503, 504]);
 
 const SDK_ERROR_NAMES = new Map([
@@ -186,6 +240,7 @@ const SDK_ERROR_NAMES = new Map([
   ["rate_limit_error", "StripeRateLimitError"],
   ["invalid_request_error", "StripeInvalidRequestError"],
   ["api_error", "StripeAPIError"],
+  ["api_connection_error", "StripeConnectionError"],
   ["authentication_error", "StripeAuthenticationError"],
   ["permission_error", "StripePermissionError"],
   ["idempotency_error", "StripeIdempotencyError"],
@@ -213,10 +268,22 @@ class StripeHttpError extends Error {
   readonly decline_code: string | undefined;
   readonly param: string | undefined;
   readonly requestId: string | undefined;
-  readonly statusCode: number;
+  readonly statusCode: number | undefined;
+  readonly retryable: boolean;
+  readonly retryAfter: Duration.Duration;
+  readonly cause: unknown;
 
-  constructor(status: number, body: DecodedStripeError, requestId: string | undefined) {
-    super(body.message ?? `Stripe request failed with ${status}`);
+  constructor(
+    status: number | undefined,
+    body: DecodedStripeError,
+    requestId: string | undefined,
+    options: {
+      readonly retryable?: boolean;
+      readonly retryAfter?: Duration.Duration;
+      readonly cause?: unknown;
+    } = {},
+  ) {
+    super(body.message ?? `Stripe request failed with ${status ?? "no response"}`);
     this.name = "StripeError";
     this.type =
       SDK_ERROR_NAMES.get(body.type ?? "") ??
@@ -226,8 +293,33 @@ class StripeHttpError extends Error {
     this.param = body.param;
     this.requestId = requestId;
     this.statusCode = status;
+    this.retryable = options.retryable ?? false;
+    this.retryAfter = options.retryAfter ?? Duration.zero;
+    this.cause = options.cause;
   }
 }
+
+const connectionError = (cause: unknown): StripeHttpError =>
+  new StripeHttpError(
+    undefined,
+    {
+      type: "api_connection_error",
+      message: cause instanceof Error ? cause.message : "Stripe connection failed",
+    },
+    undefined,
+    { retryable: true, cause },
+  );
+
+const timeoutError = (): StripeHttpError =>
+  new StripeHttpError(
+    undefined,
+    { type: "api_connection_error", message: "Stripe request timed out" },
+    undefined,
+    { retryable: true },
+  );
+
+const invalidResponse = (message: string, cause: unknown): StripeHttpError =>
+  new StripeHttpError(undefined, { message }, undefined, { cause });
 
 const paramPairs = (
   ...entries: ReadonlyArray<readonly [string, string | number | undefined]>
@@ -250,24 +342,34 @@ const withMetadata = (
   return search;
 };
 
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
+const retryAfterDelay = (header: string | undefined, now: number): Duration.Duration => {
+  if (!header) return Duration.zero;
+
+  const parsed = HttpHeaders.parseRetryAfter(header);
+
+  return Result.isSuccess(parsed)
+    ? HttpHeaders.retryAfterDelay(parsed.success, now)
+    : Duration.zero;
+};
+
+const shouldRetryStatus = (status: number, guidance: string | undefined): boolean => {
+  const normalized = guidance?.trim().toLowerCase();
+
+  if (normalized === "false") return false;
+  if (normalized === "true") return true;
+
+  return RETRYABLE_STATUS.has(status);
+};
 
 /**
  * A very small Stripe REST client.
  *
- * The app calls customer create/update/search/list, a billing portal session,
- * Checkout Session creation, invoices, and the subscription cancel/quantity
- * update used by tenant teardown and seat reconciliation, and verifies
- * webhooks. The official SDK brings its HTTP
- * stack, form encoder, event types and retry machinery into the Worker bundle
- * (~530KB), which is most of the remaining removable code. This client keeps
- * the observable behaviour: bearer auth, form encoding, bounded retries for
- * 409/429/5xx, `Retry-After`, timeouts and SDK-shaped errors.
+ * Requests run on Effect's HttpClient. Each attempt has its own deadline, and
+ * retries use the Effect clock so parent interruption stops both in-flight
+ * requests and backoff sleeps. POSTs carry one idempotency key for every
+ * attempt of the logical request.
  */
-export class HttpStripeClient implements StripeClientLike {
+export class HttpStripeClient {
   readonly #key: string;
   readonly #host: string;
   readonly #timeout: number;
@@ -277,8 +379,8 @@ export class HttpStripeClient implements StripeClientLike {
   constructor(key: string, config: StripeClientConfig = {}) {
     this.#key = key;
     this.#host = (config.host ?? DEFAULT_HOST).replace(/\/+$/, "");
-    this.#timeout = config.timeout ?? DEFAULT_TIMEOUT;
-    this.#retries = config.maxNetworkRetries ?? DEFAULT_RETRIES;
+    this.#timeout = Math.max(1, config.timeout ?? DEFAULT_TIMEOUT);
+    this.#retries = Math.max(0, Math.floor(config.maxNetworkRetries ?? DEFAULT_RETRIES));
     this.#fetch = config.fetch ?? globalThis.fetch;
   }
 
@@ -287,108 +389,123 @@ export class HttpStripeClient implements StripeClientLike {
     return field === "timeout" ? this.#timeout : this.#retries;
   }
 
-  async #request<T>(
+  #run<A, E>(effect: Effect.Effect<A, E, HttpClient.HttpClient>): Effect.Effect<A, E> {
+    return effect.pipe(
+      Effect.provideService(FetchHttpClient.Fetch, this.#fetch),
+      Effect.provide(FetchHttpClient.layer),
+    );
+  }
+
+  #request<A>(
     method: "GET" | "POST" | "DELETE",
     path: string,
+    schema: Schema.ConstraintDecoder<A>,
     params: URLSearchParams = new URLSearchParams(),
-  ): Promise<T> {
+  ): Effect.Effect<A, StripeHttpError> {
     const url =
       method === "GET"
         ? `${this.#host}${path}${params.size > 0 ? `?${params.toString()}` : ""}`
         : `${this.#host}${path}`;
+    const idempotencyKey = method === "POST" ? crypto.randomUUID() : undefined;
 
-    const headers = new Headers({ authorization: `Bearer ${this.#key}` });
+    let request = HttpClientRequest.make(method)(url).pipe(
+      HttpClientRequest.setHeader("authorization", `Bearer ${this.#key}`),
+    );
 
-    const init: RequestInit = {
-      method,
-      headers,
-      signal: AbortSignal.timeout(this.#timeout),
-    };
+    if (method === "POST")
+      request = request.pipe(
+        HttpClientRequest.setHeader("content-type", "application/x-www-form-urlencoded"),
+        HttpClientRequest.setHeader("idempotency-key", idempotencyKey!),
+        HttpClientRequest.setBody(
+          HttpBody.text(params.toString(), "application/x-www-form-urlencoded"),
+        ),
+      );
 
-    if (method === "POST") {
-      headers.set("content-type", "application/x-www-form-urlencoded");
-      init.body = params.toString();
-    }
+    const attempt = Effect.gen(function* () {
+      const response = yield* HttpClient.execute(request);
 
-    let lastError: Error = new Error("Stripe request failed");
+      if (response.status >= 200 && response.status < 300) {
+        const body = yield* response.json.pipe(
+          Effect.mapError((cause) => invalidResponse("Stripe returned invalid JSON", cause)),
+        );
 
-    for (let attempt = 0; attempt <= this.#retries; attempt += 1) {
-      let response: Response;
-
-      try {
-        response = await this.#fetch(url, {
-          ...init,
-          // A fresh deadline per attempt: a slow first try must not consume
-          // the timeout budget of its retries.
-          signal: AbortSignal.timeout(this.#timeout),
+        return yield* Effect.try({
+          try: () => Schema.decodeUnknownSync(schema)(body),
+          catch: (cause) => invalidResponse("Stripe returned an invalid response", cause),
         });
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (attempt === this.#retries) throw lastError;
-
-        await sleep(500 * 2 ** attempt);
-        continue;
       }
 
-      const body: unknown = await response.json().catch(() => undefined);
-
-      if (response.ok) {
-        // SAFETY: `T` is the documented response shape for the endpoint called;
-        // body is the JSON returned for that endpoint.
-        return body as T;
-      }
-
+      const body = yield* response.json.pipe(Effect.catch(() => Effect.succeed(undefined)));
       const decoded = Option.getOrUndefined(decodeStripeError(body));
-
       const errorBody: DecodedStripeError = decoded
         ? "error" in decoded
           ? decoded.error
           : decoded
         : {};
+      const now = yield* Clock.currentTimeMillis;
+      const retryAfter = retryAfterDelay(response.headers["retry-after"], now);
 
-      const stripeError = new StripeHttpError(
-        response.status,
-        errorBody,
-        response.headers.get("request-id") ?? undefined,
+      return yield* Effect.fail(
+        new StripeHttpError(response.status, errorBody, response.headers["request-id"], {
+          retryable: shouldRetryStatus(response.status, response.headers["stripe-should-retry"]),
+          retryAfter,
+        }),
       );
+    }).pipe(
+      Effect.mapError((cause) =>
+        cause instanceof StripeHttpError ? cause : connectionError(cause),
+      ),
+      Effect.timeoutOrElse({
+        duration: this.#timeout,
+        orElse: () => Effect.fail(timeoutError()),
+      }),
+    );
 
-      if (!RETRYABLE_STATUS.has(response.status) || attempt === this.#retries) throw stripeError;
+    const schedule = Schedule.exponential("500 millis").pipe(
+      Schedule.setInputType<StripeHttpError>(),
+      Schedule.upTo({ times: this.#retries }),
+      Schedule.modifyDelay(({ duration, input }) =>
+        Effect.succeed(Duration.max(duration, input.retryAfter)),
+      ),
+    );
 
-      lastError = stripeError;
+    const retried = Effect.retry(attempt, {
+      schedule,
+      while: (error) => error.retryable,
+    });
 
-      const retryAfter = Number(response.headers.get("retry-after"));
-      await sleep(Number.isFinite(retryAfter) ? retryAfter * 1000 : 500 * 2 ** attempt);
-    }
-
-    throw lastError;
+    return this.#run(retried);
   }
 
   readonly customers = {
     create: (params: Parameters<StripeClientLike["customers"]["create"]>[0]) =>
-      this.#request<StripeCustomer>(
+      this.#request(
         "POST",
         "/v1/customers",
+        StripeCustomerSchema,
         withMetadata(paramPairs(["name", params.name], ["email", params.email]), params.metadata),
       ),
     update: (id: string, params: Parameters<StripeClientLike["customers"]["update"]>[1]) =>
-      this.#request<StripeCustomer>(
+      this.#request(
         "POST",
         `/v1/customers/${encodeURIComponent(id)}`,
+        StripeCustomerSchema,
         withMetadata(paramPairs(["name", params.name], ["email", params.email]), params.metadata),
       ),
     retrieve: (id: string) =>
-      this.#request<StripeCustomer>("GET", `/v1/customers/${encodeURIComponent(id)}`),
+      this.#request("GET", `/v1/customers/${encodeURIComponent(id)}`, StripeCustomerSchema),
     search: (params: Parameters<StripeClientLike["customers"]["search"]>[0]) =>
-      this.#request<StripeList<StripeCustomer>>(
+      this.#request(
         "GET",
         "/v1/customers/search",
+        listSchema(StripeCustomerSchema),
         paramPairs(["query", params.query], ["limit", params.limit]),
       ),
     list: (params: Parameters<StripeClientLike["customers"]["list"]>[0] = {}) =>
-      this.#request<StripeList<StripeCustomer>>(
+      this.#request(
         "GET",
         "/v1/customers",
+        listSchema(StripeCustomerSchema),
         paramPairs(["email", params.email], ["limit", params.limit]),
       ),
   };
@@ -396,9 +513,10 @@ export class HttpStripeClient implements StripeClientLike {
   readonly billingPortal = {
     sessions: {
       create: (params: Parameters<StripeClientLike["billingPortal"]["sessions"]["create"]>[0]) =>
-        this.#request<StripePortalSession>(
+        this.#request(
           "POST",
           "/v1/billing_portal/sessions",
+          StripePortalSessionSchema,
           paramPairs(["customer", params.customer], ["return_url", params.return_url]),
         ),
     },
@@ -435,23 +553,24 @@ export class HttpStripeClient implements StripeClientLike {
 
         if (subscription?.trial_period_days !== undefined)
           search.set(
-            "subscription_data[trial_period_days]",
+            `subscription_data[trial_period_days]`,
             String(subscription.trial_period_days),
           );
 
         for (const [key, value] of Object.entries(subscription?.metadata ?? {}))
           search.set(`subscription_data[metadata][${key}]`, value);
 
-        return this.#request<StripeCheckoutSession>("POST", "/v1/checkout/sessions", search);
+        return this.#request("POST", "/v1/checkout/sessions", StripeCheckoutSessionSchema, search);
       },
     },
   };
 
   readonly invoices = {
     list: (params: StripeInvoiceListParams) =>
-      this.#request<StripeList<StripeInvoice>>(
+      this.#request(
         "GET",
         "/v1/invoices",
+        listSchema(StripeInvoiceSchema),
         paramPairs(
           ["customer", params.customer],
           ["limit", params.limit],
@@ -463,11 +582,15 @@ export class HttpStripeClient implements StripeClientLike {
 
   readonly subscriptions = {
     retrieve: (id: string) =>
-      this.#request<StripeSubscription>("GET", `/v1/subscriptions/${encodeURIComponent(id)}`),
+      this.#request("GET", `/v1/subscriptions/${encodeURIComponent(id)}`, StripeSubscriptionSchema),
     // `DELETE /v1/subscriptions/:id` cancels immediately. Stripe keeps the
     // object readable with status `canceled`, so a retried teardown converges.
     cancel: (id: string) =>
-      this.#request<StripeSubscription>("DELETE", `/v1/subscriptions/${encodeURIComponent(id)}`),
+      this.#request(
+        "DELETE",
+        `/v1/subscriptions/${encodeURIComponent(id)}`,
+        StripeSubscriptionSchema,
+      ),
     update: (id: string, params: StripeSubscriptionUpdateParams) => {
       const search = withMetadata(
         paramPairs(
@@ -489,9 +612,10 @@ export class HttpStripeClient implements StripeClientLike {
         search.set(`items[${index}][quantity]`, String(item.quantity));
       });
 
-      return this.#request<StripeSubscription>(
+      return this.#request(
         "POST",
         `/v1/subscriptions/${encodeURIComponent(id)}`,
+        StripeSubscriptionSchema,
         search,
       );
     },
@@ -512,58 +636,78 @@ const constantTimeEqual = (left: string, right: string): boolean => {
   return difference === 0;
 };
 
-const invalidSignature = (message: string) =>
-  new StripeHttpError(400, { type: "invalid_request_error", message }, undefined);
+const invalidSignature = (message: string, cause?: unknown): StripeHttpError =>
+  new StripeHttpError(
+    400,
+    { type: "invalid_request_error", message },
+    undefined,
+    cause === undefined ? {} : { cause },
+  );
 
 /**
- * Verify a Stripe webhook signature and return the authenticated event.
+ * Verify a Stripe webhook signature and decode the authenticated event envelope.
  *
- * Matches the SDK's async verifier: HMAC-SHA256 over `timestamp.payload`, all
- * `v1` signatures are accepted, and events older than five minutes are
- * rejected to bound replay.
+ * Matches the SDK's verifier: HMAC-SHA256 over `timestamp.payload`, all `v1`
+ * signatures are accepted, and events outside the five-minute replay window
+ * are rejected. The current time comes from the active Effect clock.
  */
-export const verifyStripeSignature = async (
+export const verifyStripeSignature = (
   payload: string,
   signature: string,
   secret: string,
-  now = Date.now(),
-): Promise<Stripe.Event> => {
-  // An empty HMAC key is a misconfiguration, not an authenticated event. Fail
-  // with the verifier's own error instead of letting WebCrypto throw a raw
-  // DataError out of the request path.
-  if (!secret) throw invalidSignature("Invalid signature");
+): Effect.Effect<StripeWebhookEvent, StripeHttpError> =>
+  Effect.gen(function* () {
+    // An empty HMAC key is a misconfiguration, not an authenticated event.
+    if (!secret) return yield* Effect.fail(invalidSignature("Invalid signature"));
 
-  const parts = signature.split(",").map((part) => part.split("="));
-  const timestamp = parts.find(([name]) => name === "t")?.[1];
+    const parts = signature.split(",").map((part) => {
+      const separator = part.indexOf("=");
 
-  const signatures = parts
-    .filter(([name]) => name === "v1")
-    .map(([, value]) => value)
-    .filter((value): value is string => value !== undefined);
+      return separator === -1
+        ? [part.trim(), undefined]
+        : [part.slice(0, separator).trim(), part.slice(separator + 1)];
+    });
+    const timestamp = parts.find(([name]) => name === "t")?.[1];
 
-  if (!timestamp || signatures.length === 0) throw invalidSignature("Invalid signature");
+    const signatures = parts
+      .filter(([name]) => name === "v1")
+      .map(([, value]) => value)
+      .filter((value): value is string => value !== undefined);
 
-  const seconds = Number(timestamp);
+    if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0)
+      return yield* Effect.fail(invalidSignature("Invalid signature"));
 
-  if (!Number.isFinite(seconds) || Math.abs(now / 1000 - seconds) > 300)
-    throw invalidSignature("Timestamp outside the tolerance zone");
+    const seconds = Number(timestamp);
+    const now = yield* Clock.currentTimeMillis;
 
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+    if (!Number.isFinite(seconds) || Math.abs(now / 1000 - seconds) > 300)
+      return yield* Effect.fail(invalidSignature("Timestamp outside the tolerance zone"));
 
-  const expected = hex(
-    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${payload}`)),
-  );
+    const key = yield* Effect.tryPromise({
+      try: () =>
+        crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"],
+        ),
+      catch: (cause) => invalidSignature("Invalid signature", cause),
+    });
 
-  if (!signatures.some((candidate) => constantTimeEqual(candidate, expected)))
-    throw invalidSignature("No matching signature");
+    const expected = yield* Effect.tryPromise({
+      try: () =>
+        crypto.subtle
+          .sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${payload}`))
+          .then(hex),
+      catch: (cause) => invalidSignature("Invalid signature", cause),
+    });
 
-  // SAFETY: the body is authenticated by the HMAC above and Stripe's event
-  // contract is the only producer of this payload; the type is the SDK's.
-  return JSON.parse(payload) as Stripe.Event;
-};
+    if (!signatures.some((candidate) => constantTimeEqual(candidate, expected)))
+      return yield* Effect.fail(invalidSignature("No matching signature"));
+
+    return yield* Effect.try({
+      try: () => Schema.decodeUnknownSync(StripeWebhookEventSchema)(JSON.parse(payload)),
+      catch: (cause) => invalidSignature("Invalid Stripe event payload", cause),
+    });
+  });
