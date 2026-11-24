@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
-import { performStepUp } from "~/lib/step-up";
+import { isPasskeyCancellation, performStepUp } from "~/lib/step-up";
 import {
   cancelStepUp,
   completeStepUp,
@@ -60,11 +60,13 @@ export function StepUpDialog() {
     const current = request();
 
     if (!current) return;
+    const selectedMethod = activeMethod();
+
     setError(null);
     setPending(true);
 
     try {
-      const grant = await performStepUp(current.action, activeMethod(), {
+      const grant = await performStepUp(current.action, selectedMethod, {
         code: code(),
       });
 
@@ -72,7 +74,18 @@ export function StepUpDialog() {
       completeStepUp(grant.grant);
       setCode("");
     } catch (error_) {
-      setError(errorMessage(raisedFailure(error_), "We couldn't confirm that action. Try again."));
+      const message = errorMessage(
+        raisedFailure(error_),
+        "We couldn't confirm that action. Try again.",
+      );
+
+      if (selectedMethod === "passkey" && isPasskeyCancellation(error_)) {
+        cancelStepUp(error_ instanceof Error ? error_ : new Error(message));
+
+        return;
+      }
+
+      setError(message);
     } finally {
       setPending(false);
     }
@@ -106,17 +119,18 @@ export function StepUpDialog() {
                 <div
                   role="group"
                   aria-label="Confirmation method"
-                  class="mt-4 flex flex-wrap gap-2 text-xs"
+                  class="mt-4 inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1 text-xs"
                 >
                   <For each={available()}>
                     {(item) => (
                       <button
                         type="button"
                         aria-pressed={activeMethod() === item ? "true" : "false"}
-                        class={`rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
+                        disabled={pending()}
+                        class={`rounded-md px-2.5 py-1.5 font-medium outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:opacity-50 ${
                           activeMethod() === item
-                            ? "bg-brand-solid text-brand-foreground"
-                            : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
+                            ? "bg-background text-foreground shadow-sm ring-1 ring-border"
+                            : "text-muted-foreground hover:bg-hover hover:text-foreground"
                         }`}
                         onClick={() => choose(item)}
                       >

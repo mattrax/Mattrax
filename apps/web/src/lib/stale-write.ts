@@ -61,6 +61,12 @@ export type StaleWriteGuard = {
   /** The save succeeded; future refetches may move the base forward again. */
   readonly markSaved: () => void;
   /**
+   * Acknowledge a server-side refresh that advanced `updatedAt` while the
+   * editor kept its draft. A forced 412 remains pinned until the operator
+   * explicitly accepts the latest version.
+   */
+  readonly markRefreshed: () => void;
+  /**
    * Accept the refetched version as the new base. Callers keep their draft,
    * so this is the explicit "save mine over it" action.
    */
@@ -78,7 +84,7 @@ export type StaleWriteGuard = {
 export const createStaleWriteGuard = (
   currentUpdatedAt: () => string | undefined,
 ): StaleWriteGuard => {
-  const [base, setBase] = createSignal<string>();
+  const [base, setBase] = createSignal<string | undefined>(currentUpdatedAt());
   const [conflict, setConflict] = createSignal(false);
 
   // Set after our own save so the next refetched timestamp becomes the base.
@@ -108,6 +114,14 @@ export const createStaleWriteGuard = (
     markSaved: () => {
       pendingResync = true;
       setConflict(false);
+    },
+    markRefreshed: () => {
+      if (conflict()) return;
+
+      pendingResync = false;
+      const updatedAt = currentUpdatedAt();
+
+      if (updatedAt !== undefined) setBase(updatedAt);
     },
     acceptLatest: () => {
       pendingResync = false;

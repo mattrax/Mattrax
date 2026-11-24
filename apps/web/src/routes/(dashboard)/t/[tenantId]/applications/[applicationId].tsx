@@ -80,6 +80,73 @@ type InstallerDraft = {
   priority: string;
 };
 
+type ApplicationAssignmentPatch = {
+  assign: { groups: string[]; userGroups: string[]; devices: string[] };
+  unassign: { groups: string[]; userGroups: string[]; devices: string[] };
+};
+
+/** Diff against the loaded row before an optimistic write can hide the change. */
+const applicationAssignmentDiff = (
+  current:
+    | {
+        readonly groups: ReadonlyArray<{ readonly id: string }>;
+        readonly userGroups: ReadonlyArray<{ readonly id: string }>;
+        readonly devices: ReadonlyArray<{ readonly id: string }>;
+      }
+    | undefined,
+  next: {
+    readonly groups: ReadonlySet<string>;
+    readonly userGroups: ReadonlySet<string>;
+    readonly devices: ReadonlySet<string>;
+  },
+): ApplicationAssignmentPatch | undefined => {
+  const oldGroups = current?.groups.map((group) => group.id) ?? [];
+  const oldUserGroups = current?.userGroups.map((group) => group.id) ?? [];
+  const oldDevices = current?.devices.map((device) => device.id) ?? [];
+  const assignGroups = [...next.groups].filter((id) => !oldGroups.includes(id));
+  const assignUserGroups = [...next.userGroups].filter((id) => !oldUserGroups.includes(id));
+  const assignDevices = [...next.devices].filter((id) => !oldDevices.includes(id));
+  const unassignGroups = oldGroups.filter((id) => !next.groups.has(id));
+  const unassignUserGroups = oldUserGroups.filter((id) => !next.userGroups.has(id));
+  const unassignDevices = oldDevices.filter((id) => !next.devices.has(id));
+
+  if (
+    assignGroups.length +
+      assignUserGroups.length +
+      assignDevices.length +
+      unassignGroups.length +
+      unassignUserGroups.length +
+      unassignDevices.length ===
+    0
+  )
+    return undefined;
+
+  return {
+    assign: {
+      groups: assignGroups,
+      userGroups: assignUserGroups,
+      devices: assignDevices,
+    },
+    unassign: {
+      groups: unassignGroups,
+      userGroups: unassignUserGroups,
+      devices: unassignDevices,
+    },
+  };
+};
+
+type ApplicationSaveDraft = {
+  name: string;
+  notes: string | null;
+  removeOnUnassign: boolean;
+  expectedUpdatedAt?: string;
+  installers: InstallerDraft[];
+  groups: ApplicationNode["groups"];
+  userGroups: ApplicationNode["userGroups"];
+  devices: ApplicationNode["devices"];
+  assignmentPatch?: ApplicationAssignmentPatch;
+};
+
 const installerDraft = (value: ApplicationNode["installers"][number]): InstallerDraft => ({
   id: value.id,
   platform: value.platform,
@@ -289,13 +356,13 @@ export default function ApplicationDetailPage() {
 
   const save = useMutation(() => ({
     meta: { inlineError: true },
-    mutationFn: async () => {
+    mutationFn: async (draft: ApplicationSaveDraft) => {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
-        name: name(),
-        notes: notes() || null,
-        removeOnUnassign: removeOnUnassign(),
-        expectedUpdatedAt: guard.expectedUpdatedAt(),
-        installers: installers().map((installer) => ({
+        name: draft.name,
+        notes: draft.notes,
+        removeOnUnassign: draft.removeOnUnassign,
+        expectedUpdatedAt: draft.expectedUpdatedAt,
+        installers: draft.installers.map((installer) => ({
           id: installer.id,
           platform: installer.platform,
           source: installer.source,
@@ -308,60 +375,36 @@ export default function ApplicationDetailPage() {
           priority: Number(installer.priority) || 0,
         })),
       });
-      const oldGroups = row()?.groups.map((group) => group.id) ?? [];
-      const oldUserGroups = row()?.userGroups.map((group) => group.id) ?? [];
-      const oldDevices = row()?.devices.map((device) => device.id) ?? [];
-      const assignGroups = [...groupIds()].filter((id) => !oldGroups.includes(id));
-      const assignUserGroups = [...userGroupIds()].filter((id) => !oldUserGroups.includes(id));
-      const assignDevices = [...deviceIds()].filter((id) => !oldDevices.includes(id));
-      const unassignGroups = oldGroups.filter((id) => !groupIds().has(id));
-      const unassignUserGroups = oldUserGroups.filter((id) => !userGroupIds().has(id));
-      const unassignDevices = oldDevices.filter((id) => !deviceIds().has(id));
 
-      if (
-        assignGroups.length +
-          assignUserGroups.length +
-          assignDevices.length +
-          unassignGroups.length +
-          unassignUserGroups.length +
-          unassignDevices.length >
-        0
-      )
-        await enterprise.patchApplicationAssignments(params.tenantId, params.applicationId, {
-          assign: {
-            groups: assignGroups,
-            userGroups: assignUserGroups,
-            devices: assignDevices,
-          },
-          unassign: {
-            groups: unassignGroups,
-            userGroups: unassignUserGroups,
-            devices: unassignDevices,
-          },
-        });
+      if (draft.assignmentPatch)
+        await enterprise.patchApplicationAssignments(
+          params.tenantId,
+          params.applicationId,
+          draft.assignmentPatch,
+        );
     },
-    onMutate: async () => {
+    onMutate: async (draft: ApplicationSaveDraft) => {
       const restores = await Promise.all([
         optimisticUpdate<ApplicationNode>(
           qc,
           enterpriseKeys.application(params.tenantId, params.applicationId),
           (current) => ({
             ...current,
-            name: name(),
-            notes: notes() || null,
-            removeOnUnassign: removeOnUnassign(),
-            installers: installers().map((draft, index) =>
+            name: draft.name,
+            notes: draft.notes,
+            removeOnUnassign: draft.removeOnUnassign,
+            installers: draft.installers.map((installer, index) =>
               installerFromDraft(
-                draft,
+                installer,
                 index,
-                current.installers.find((installer) => installer.id === draft.id),
+                current.installers.find((existing) => existing.id === installer.id),
               ),
             ),
-            groups: optimisticGroups(),
-            userGroups: optimisticUserGroups(),
-            devices: optimisticDevices(),
-            groupsCount: groupIds().size,
-            devicesCount: deviceIds().size,
+            groups: draft.groups,
+            userGroups: draft.userGroups,
+            devices: draft.devices,
+            groupsCount: draft.groups.length,
+            devicesCount: draft.devices.length,
           }),
         ),
         optimisticallyUpdateCollection(
@@ -373,9 +416,9 @@ export default function ApplicationDetailPage() {
               row.id === params.applicationId
                 ? {
                     ...row,
-                    name: name(),
-                    groupsCount: groupIds().size,
-                    devicesCount: deviceIds().size,
+                    name: draft.name,
+                    groupsCount: draft.groups.length,
+                    devicesCount: draft.devices.length,
                   }
                 : row,
             ),
@@ -414,6 +457,28 @@ export default function ApplicationDetailPage() {
       }
     },
   }));
+
+  const saveDraft = () => {
+    const current = row();
+
+    if (!current) return;
+
+    save.mutate({
+      name: name(),
+      notes: notes() || null,
+      removeOnUnassign: removeOnUnassign(),
+      expectedUpdatedAt: guard.expectedUpdatedAt(),
+      installers: installers().map((installer) => ({ ...installer })),
+      groups: optimisticGroups(),
+      userGroups: optimisticUserGroups(),
+      devices: optimisticDevices(),
+      assignmentPatch: applicationAssignmentDiff(current, {
+        groups: groupIds(),
+        userGroups: userGroupIds(),
+        devices: deviceIds(),
+      }),
+    });
+  };
 
   const [installNotice, setInstallNotice] = createSignal<
     { tone: "success" | "warning"; text: string } | undefined
@@ -487,6 +552,7 @@ export default function ApplicationDetailPage() {
           : "Storefront mapping saved.",
       );
       await invalidate();
+      guard.markRefreshed();
     },
   }));
 
@@ -509,6 +575,7 @@ export default function ApplicationDetailPage() {
           : `Checked ${result.storefronts.length} storefront(s); the app is available.${errors}`,
       );
       await invalidate();
+      guard.markRefreshed();
     },
   }));
 
@@ -701,7 +768,7 @@ export default function ApplicationDetailPage() {
               </Button>
               <Button
                 variant="outline"
-                class="text-destructive-foreground"
+                class="text-destructive"
                 disabled={uninstall.isPending || uninstallDisabledReason() !== undefined}
                 title={uninstallDisabledReason()}
                 onClick={() => setConfirmUninstall(true)}
@@ -1156,7 +1223,7 @@ export default function ApplicationDetailPage() {
                   </label>
                   <div class="flex flex-wrap items-center gap-2 pt-1">
                     <Show when={writable()}>
-                      <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                      <Button disabled={save.isPending} onClick={saveDraft}>
                         {save.isPending ? "Saving…" : "Save changes"}
                       </Button>
                       <Button
