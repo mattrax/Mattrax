@@ -40,6 +40,9 @@ jobs:
       pull-requests: read
     outputs:
       suites: ${{ steps.suites.outputs.suites }}
+      # Narrower than `suites`: only the paths that can change what Lighthouse
+      # measures. See the filter below.
+      perf: ${{ steps.suites.outputs.perf }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
@@ -63,11 +66,29 @@ jobs:
               - '!.gitignore'
               - '!.dockerignore'
               - '!.zed/**'
+            # Lighthouse serves the self-host build of `apps/web`, so it is only
+            # worth scheduling when something that build bundles can have moved.
+            # Same fail-safe shape as `suites`: start from everything and subtract
+            # the paths that cannot reach that build.
+            perf:
+              - '**'
+              - '!**/*.md'
+              # Not `docs/`: the web build derives public routes from it, so a
+              # docs change can move the pages Lighthouse measures.
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+              - '!apps/mattraxd/**'
+              - '!tests/**'
+              - '!bench/**'
       - id: suites
         if: always()
         env:
           FILTER_OUTCOME: ${{ steps.filter.outcome }}
           MATCHED: ${{ steps.filter.outputs.suites }}
+          PERF_MATCHED: ${{ steps.filter.outputs.perf }}
         run: |
           # Only a filter that actually ran may say "nothing to run". A failed,
           # cancelled or skipped filter falls back to running the suites, as
@@ -76,6 +97,12 @@ jobs:
             echo "suites=$MATCHED" >> "$GITHUB_OUTPUT"
           else
             echo "suites=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ "$FILTER_OUTCOME" = "success" ] && [ -n "$PERF_MATCHED" ]; then
+            echo "perf=$PERF_MATCHED" >> "$GITHUB_OUTPUT"
+          else
+            echo "perf=true" >> "$GITHUB_OUTPUT"
           fi
 
   check:
@@ -122,13 +149,22 @@ jobs:
     # ~3 minutes in front of a ~3 minute job for no benefit; a broken PR still
     # fails `check` and this job on its own.
     #
+    # The budgets are a smoke test for the public pages, not a gate on every
+    # commit. Measured over a week of `main` runs, `/designer` - a client
+    # rendered canvas editor - scores 0.83-0.84 against the shared 0.85 budget
+    # with 608-657 ms of total blocking time against 500 ms, so the job failed
+    # about half of the pull requests that could not have moved it. It now runs
+    # where its answer is actionable: on every push to `main`, and on pull
+    # requests that touch something the self-host build bundles (`perf` above).
+    # The budgets themselves live in `packages/config/lighthouserc.cjs`.
+    #
     # `needs:` alone would skip this job when `changes` fails or times out, and
     # a skipped job reports success, so run unless the gate positively decided
     # the change cannot affect the suite.
     needs: changes
     if: >-
       always() &&
-      (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
+      (needs.changes.result != 'success' || needs.changes.outputs.perf == 'true')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -158,16 +194,25 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard. Playwright's `--shard` splits the spec files by test
-  # count, and each shard gets its own MySQL service and dev server on the same
-  # port. The suite runs with a single Playwright worker because its tests share
-  # dev-mailbox state and rate-limit buckets through one server; sharding keeps
-  # that isolation intact while the suite as a whole runs in parallel. The suite
-  # took 18-22 minutes serially; four shards bring it to roughly a quarter plus
-  # the per-runner setup (checkout, install, browser, migrations, dev server).
+  # One runner per shard, each with its own MySQL service and dev server on the
+  # same port. The suite runs with a single Playwright worker because its tests
+  # share dev-mailbox state and rate-limit buckets through one server; sharding
+  # keeps that isolation intact while the suite as a whole runs in parallel.
+  #
+  # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
+  # Playwright's `--shard`: a contiguous slice of the file list is only balanced
+  # while every spec has the same number of tests, and with eight slices they
+  # held 33, 38, 25, 27, 30, 44, 17 and 29 tests. The heaviest slice - not the
+  # number of runners - was the suite's wall clock. Files are now assigned
+  # largest-first to the emptiest shard, which splits them 31, 31, 31, 30, 30,
+  # 30, 30 and 30, and the assignment is recomputed on every run so a growing
+  # spec moves shard instead of inflating one.
+  #
+  # Each shard pays ~2 minutes of setup (service container, checkout, install,
+  # browser, migrations, dev server), so the matrix stops at eight.
   e2e:
     # The denominator comes from the matrix itself, so adding or removing a
-    # shard cannot leave a shard running a stale slice of the suite.
+    # shard cannot leave a shard running a stale share of the suite.
     name: Browser tests (CDP, shard ${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
     # A failed or timed-out gate must not turn into a skipped (successful)
@@ -176,14 +221,15 @@ jobs:
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     runs-on: ubuntu-latest
-    # Shards 1 and 3 carry the slow specs and a retried failure costs two
-    # timeouts, so the old 30 minutes cut them off before they could report.
+    # A retried failure costs two 60 second timeouts on its own and the budget
+    # has to swallow one pathological spec, so keep well above the ~10 minute
+    # expectation for a balanced shard.
     timeout-minutes: 45
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     services:
       mysql:
         # MySQL 8.0, the version the Worker's mysql2 client is exercised
@@ -230,8 +276,25 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The browser download is ~9 seconds per shard, and the cache takes the
+      # CDN off the critical path for the other seven. The key is the installed
+      # `@playwright/test` version (pinned in the lockfile) rather than the
+      # lockfile hash, so an unrelated dependency bump does not re-download it.
+      - name: Resolve the Playwright version
+        id: playwright
+        run: |
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@playwright/test/package.json', 'utf8')).version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # `pnpm exec` uses the version the lockfile installed; `npx` resolves it
       # through npm first.
+      #
+      # `--with-deps` stays: the runner image ships Chrome, but its `apt-get`
+      # still installs nine of chromium's libraries (~10 seconds), so dropping
+      # it would trade those seconds for a browser that cannot launch.
       - run: pnpm exec playwright install --with-deps chromium
       - name: Write local dev environment
         run: |
@@ -273,7 +336,15 @@ jobs:
       - name: Browser tests
         env:
           E2E_BASE_URL: http://localhost:9050
-        run: pnpm test:e2e --shard="$E2E_SHARD"
+        run: |
+          # `E2E_SHARD` is still the shard's name; the script turns it into the
+          # spec files that shard owns. It exits non-zero rather than printing
+          # nothing, because Playwright with no argument runs the whole suite.
+          specs=$(pnpm exec tsx packages/config/scripts/e2e-shard.ts "$E2E_SHARD")
+          # One CLI filter per spec file: the split is the point, so the
+          # variable is intentionally unquoted.
+          # shellcheck disable=SC2086
+          pnpm test:e2e $specs
       - name: Stop the dev server
         if: always()
         run: pkill -9 -f 'vite.js dev' || true
