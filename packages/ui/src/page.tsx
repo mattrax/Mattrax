@@ -34,7 +34,10 @@ function PageTitle(props: ComponentProps<"h1">) {
   return (
     <h1
       data-slot="page-title"
-      class={cn("text-[22px] font-[580] leading-[1.15] tracking-[-0.028em]", local.class)}
+      class={cn(
+        "min-w-0 max-w-full text-[22px] font-[580] leading-[1.15] tracking-[-0.028em] text-balance wrap-anywhere",
+        local.class,
+      )}
       {...others}
     >
       {local.children}

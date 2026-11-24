@@ -74,3 +74,45 @@ test("rejects a user-scoped setting the platform cannot deliver", async ({ page 
     /assigns a policy to a device, not a user/,
   );
 });
+
+test("keeps Windows scope after an invalid URI so correcting only the URI succeeds", async ({
+  page,
+}) => {
+  const tenant = await bootstrapTenant(page, "Windows Scope Recovery Tenant");
+
+  await page.goto(`/t/${tenant.id}/policies/new`);
+  await page.getByLabel("Name").fill("Windows scope recovery");
+  await page.getByRole("button", { name: /^create policy$/i }).click();
+  await expect(page).toHaveURL(/\/editor$/);
+
+  const policyUrl = page.url().replace(/\/editor$/, "");
+  await page.getByRole("button", { name: /^edit$/i }).click();
+  await page.getByRole("button", { name: "Windows", exact: true }).click();
+
+  const windows = page.getByRole("region", { name: "Windows configuration" });
+  const scope = windows.getByLabel("Scope");
+  const omaUri = windows.getByLabel("OMA-URI");
+
+  await scope.selectOption("user");
+  await omaUri.fill("./Vendor/MSFT/Policy/Config/Privacy/AllowTelemetry");
+  await windows.getByLabel("Value").fill("1");
+  await page.getByRole("button", { name: /^save$/i }).click();
+
+  await expect(windows.getByRole("alert")).toContainText('must start with "./User/"');
+  await expect(scope).toHaveValue("user");
+  await expect(omaUri).toHaveValue("./Vendor/MSFT/Policy/Config/Privacy/AllowTelemetry");
+
+  // This is the exact recovery path: change only the rejected URI.
+  await omaUri.fill("./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator");
+  await page.getByRole("button", { name: /^save$/i }).click();
+  await expect(
+    page.getByRole("region", { name: "Notifications" }).getByText("Policy configurations saved"),
+  ).toBeVisible();
+
+  await gotoHydrated(page, `${policyUrl}/editor`);
+  await page.getByRole("button", { name: "Windows", exact: true }).click();
+  await expect(page.getByLabel("Scope")).toHaveValue("user");
+  await expect(page.getByLabel("OMA-URI")).toHaveValue(
+    "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+  );
+});

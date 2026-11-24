@@ -23,6 +23,7 @@ export default function NewPolicyPage() {
   const qc = useQueryClient();
   const { can } = useCan();
   const [name, setName] = createSignal("");
+  const [nameInvalid, setNameInvalid] = createSignal(false);
   const [notes, setNotes] = createSignal("");
   const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
   const [cisOpen, setCisOpen] = createSignal(false);
@@ -98,7 +99,13 @@ export default function NewPolicyPage() {
                 <Input
                   required
                   value={name()}
-                  onInput={(e) => setName(e.currentTarget.value)}
+                  aria-invalid={nameInvalid() ? "true" : "false"}
+                  onInvalid={() => setNameInvalid(true)}
+                  onInput={(e) => {
+                    setName(e.currentTarget.value);
+
+                    if (nameInvalid() && e.currentTarget.value.trim()) setNameInvalid(false);
+                  }}
                   placeholder="e.g. Corporate Mac baseline"
                 />
               </Field>

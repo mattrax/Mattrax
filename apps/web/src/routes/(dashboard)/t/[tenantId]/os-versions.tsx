@@ -331,8 +331,8 @@ export default function OsVersionsPage() {
                       </div>
                     }
                   >
-                    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-                      <div>
+                    <div class="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+                      <div class="min-w-0">
                         <div class="flex flex-wrap gap-2">
                           <Badge variant="success" dot="success">
                             {platform.counts.compliant} compliant
@@ -355,10 +355,10 @@ export default function OsVersionsPage() {
                           </Show>
                         </div>
 
-                        <p class="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-3 text-pretty text-[11.5px] leading-relaxed text-muted-foreground">
                           {platform.capability.description}
                         </p>
-                        <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-1 text-pretty text-[11.5px] leading-relaxed text-muted-foreground">
                           <span class="font-medium text-foreground">Not enforced: </span>
                           {platform.capability.limitation}
                         </p>
@@ -389,7 +389,7 @@ export default function OsVersionsPage() {
                         </div>
                       </div>
 
-                      <div>
+                      <div class="min-w-0">
                         <div class="flex flex-wrap items-center justify-between gap-2">
                           <p class="text-[12.5px] font-medium text-foreground">
                             {platform.behind.length === 0

@@ -11,6 +11,7 @@ import {
   onSettled,
   Show,
   Switch,
+  untrack,
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
@@ -65,7 +66,6 @@ type CustomProfile = typeof CustomProfile.Type;
 const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
 const decodeCustomProfile = Schema.decodeUnknownOption(CustomProfile);
-
 
 const decodeDeviceConfig = Schema.decodeUnknownOption(DeviceConfig);
 
@@ -139,10 +139,11 @@ export function PolicyConfigurationEditor() {
   };
 
   // Seed per policy, and again only when the operator explicitly reloads the
-  // latest version. A background refetch after a 412 must keep the draft.
+  // latest version. seedFromRow reads the row itself, so untrack it to keep
+  // background refetches from becoming implicit reseeds.
   createEffect(
     () => `${row()?.id ?? ""}:${reseed()}`,
-    () => seedFromRow(),
+    () => untrack(seedFromRow),
   );
 
   const dirty = createMemo(
@@ -599,7 +600,6 @@ function ScopeSelect(props: {
     </label>
   );
 }
-
 
 function DeviceSection(props: {
   config: PolicyConfiguration;
