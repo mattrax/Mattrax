@@ -1739,12 +1739,20 @@ const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
     headers: headersFromRequest(request),
   });
 
+/** Authenticate with the original method, path and headers intact. */
+const requireUser = (
+  auth: EnterpriseAuth["Service"],
+  request: HttpServerRequest,
+  origin: string,
+) => auth.requireUser(webRequestFromRequest(request, origin));
+
 /** Require a recent step-up for a sensitive action. */
 const requireStepUp = (
   auth: EnterpriseAuth["Service"],
   request: HttpServerRequest,
+  origin: string,
   action: StepUpAction,
-) => auth.requireStepUp(request, action);
+) => auth.requireStepUp(webRequestFromRequest(request, origin), action);
 
 /** Map a cutover failure onto the HTTP error the API schema declares. */
 const cutoverFailure = (error: TenantCutoverError) => {
@@ -2337,7 +2345,7 @@ export const createEnterpriseService = ({
     access: "read" | "write" | "delete" = "read",
   ) =>
     Effect.gen(function* () {
-      const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
+      const { user, apiToken, oauth } = yield* requireUser(auth, request, origin);
 
       // An unverified address cannot reach tenant data through either a
       // browser session or a bearer token. Tokens resolve to their owner's user
@@ -11128,14 +11136,14 @@ export const createEnterpriseService = ({
      */
     me: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         return yield* mePayload(user);
       }),
     mcpContext: (request) =>
       Effect.gen(function* () {
-        const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
+        const { user, apiToken, oauth } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const me = yield* mePayload(user);
 
@@ -11188,7 +11196,7 @@ export const createEnterpriseService = ({
      */
     listAdminAccounts: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         yield* requirePlatformSuperadmin(user);
         yield* identifyUser(user);
@@ -11235,7 +11243,7 @@ export const createEnterpriseService = ({
      */
     patchAdminAccountSuperadmin: (request, accountId, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         yield* requirePlatformSuperadmin(user);
         yield* identifyUser(user);
@@ -11356,7 +11364,7 @@ export const createEnterpriseService = ({
       }),
     bootstrap: (request) =>
       Effect.gen(function* () {
-        const { user, session } = yield* auth.requireUser({ headers: request.headers });
+        const { user, session } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const me = yield* mePayload(user);
@@ -11428,7 +11436,7 @@ export const createEnterpriseService = ({
       }),
     updateMe: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const body: { name?: string; image?: string | null; defaultTenantId?: string | null } =
@@ -11467,14 +11475,14 @@ export const createEnterpriseService = ({
       }),
     getAccountDeletion: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         return yield* accountDeletionPreviewFor(user);
       }),
     deleteMe: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         // The typed address proves the person knows which account they are
@@ -11628,7 +11636,7 @@ export const createEnterpriseService = ({
       }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
     listAccountSessions: (request) =>
       Effect.gen(function* () {
-        const resolved = yield* auth.requireUser({ headers: request.headers });
+        const resolved = yield* requireUser(auth, request, origin);
         yield* identifyUser(resolved.user);
 
         return {
@@ -11637,7 +11645,7 @@ export const createEnterpriseService = ({
       }),
     listLoginAttempts: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const rows = yield* listLoginAttempts(db, user.id, LOGIN_ATTEMPT_LIST_LIMIT);
@@ -11646,7 +11654,7 @@ export const createEnterpriseService = ({
       }),
     revokeAccountSession: (request, sessionId) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const revoked = yield* revokeUserSession(db, user.id, sessionId);
 
@@ -11670,7 +11678,7 @@ export const createEnterpriseService = ({
      */
     revokeAllAccountSessions: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* requireStepUp(auth, request, "sessions-revoke-all");
+        const { user } = yield* requireStepUp(auth, request, origin, "sessions-revoke-all");
 
         const { revoked } = yield* revokeAllUserSessions(db, user.id);
 
@@ -11691,7 +11699,7 @@ export const createEnterpriseService = ({
       }),
     searchAccountAuditLog: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const filters = yield* normalizedAuditFilters(query);
 
@@ -11712,7 +11720,7 @@ export const createEnterpriseService = ({
       }),
     exportAccountAuditLog: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const format = query.format ?? "csv";
 
@@ -11796,7 +11804,7 @@ export const createEnterpriseService = ({
     cancelEmailChange: (_request, payload) => auth.cancelEmailChange(payload),
     listTenants: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -11811,7 +11819,7 @@ export const createEnterpriseService = ({
       }),
     createTenant: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12112,7 +12120,7 @@ export const createEnterpriseService = ({
     downloadTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
-        yield* requireStepUp(auth, request, "backup-download");
+        yield* requireStepUp(auth, request, origin, "backup-download");
 
         // Scoped lookup: an id from another tenant must look missing.
         const run = yield* db.query.backupRun.findFirst({
@@ -12153,7 +12161,7 @@ export const createEnterpriseService = ({
     pinTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-pin");
+        yield* requireStepUp(auth, request, origin, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "pinned", {
           accountId: ctx.account.id,
@@ -12165,7 +12173,7 @@ export const createEnterpriseService = ({
     unpinTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-pin");
+        yield* requireStepUp(auth, request, origin, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "default", {
           accountId: ctx.account.id,
@@ -12177,7 +12185,7 @@ export const createEnterpriseService = ({
     deleteTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-delete");
+        yield* requireStepUp(auth, request, origin, "backup-delete");
 
         yield* deleteBackupRun(db, storage, ctx.organization.id, backupId, {
           accountId: ctx.account.id,
@@ -12189,7 +12197,7 @@ export const createEnterpriseService = ({
     restoreTenantBackup: (request, tenantId, backupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-restore");
+        yield* requireStepUp(auth, request, origin, "backup-restore");
 
         // Restoring replaces the policy catalogue and the rest of the stored
         // configuration. It is covered by policy.delete so a tenant that
@@ -12215,7 +12223,7 @@ export const createEnterpriseService = ({
       }),
     importTenant: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12855,7 +12863,7 @@ export const createEnterpriseService = ({
         // private keys, so it needs fresh proof of presence as well.
         const ctx = yield* requireTenant(request, tenantId, "read");
         yield* assertTenantWideRead(ctx, "tenant.export", "Tenant cutover export");
-        yield* requireStepUp(auth, request, "cutover-export");
+        yield* requireStepUp(auth, request, origin, "cutover-export");
 
         // A cutover archive is a superset of the plain export: it carries device
         // identities, the SCEP CA and escrowed secrets. It is governed by the
@@ -12892,7 +12900,7 @@ export const createEnterpriseService = ({
       }),
     previewTenantCutover: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12940,7 +12948,7 @@ export const createEnterpriseService = ({
       }),
     importTenantCutover: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12950,7 +12958,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        yield* requireStepUp(auth, request, "cutover-import");
+        yield* requireStepUp(auth, request, origin, "cutover-import");
 
         let target: CutoverTarget = { kind: "new" };
 
@@ -13109,7 +13117,7 @@ export const createEnterpriseService = ({
     deleteTenant: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "delete");
-        yield* requireStepUp(auth, request, "tenant-delete");
+        yield* requireStepUp(auth, request, origin, "tenant-delete");
         const count = yield* memberCount(tenantId);
 
         // The explicit delete only accepts a solo tenant. Check that before
@@ -13342,7 +13350,7 @@ export const createEnterpriseService = ({
     linkDirectoryUserSso: (request, tenantId, directoryUserId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const linked = yield* linkDirectoryUserToSso(db, {
           organizationId: ctx.organization.id,
@@ -13556,7 +13564,7 @@ export const createEnterpriseService = ({
     putGoogleDirectoryCredentials: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const body: { serviceAccountJson: string; adminEmail: string; customer?: string } = payload;
         const adminEmail = normaliseAdminEmail(body.adminEmail);
@@ -13653,7 +13661,7 @@ export const createEnterpriseService = ({
     deleteGoogleDirectoryCredentials: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const timestamp = now();
 
@@ -14079,14 +14087,14 @@ export const createEnterpriseService = ({
     patchTenantSecurity: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "tenant-mfa-policy");
+        yield* requireStepUp(auth, request, origin, "tenant-mfa-policy");
 
         return { requireMfa: yield* setTenantMfaPolicy(ctx, payload.requireMfa) };
       }),
     approveAccountRecovery: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "recovery-approve");
+        yield* requireStepUp(auth, request, origin, "recovery-approve");
 
         return yield* approveRecoveryRequest(
           { db, authSecret: authSecret ?? "", origin, email, branding },
@@ -14121,7 +14129,7 @@ export const createEnterpriseService = ({
     patchSsoConfig: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const body: {
           enabled?: boolean;
@@ -14311,7 +14319,7 @@ export const createEnterpriseService = ({
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "scim-token-create");
+        yield* requireStepUp(auth, request, origin, "scim-token-create");
 
         const body: { name: string; expiresAt?: string | null } = payload;
         const name = body.name.trim();
@@ -16383,7 +16391,7 @@ export const createEnterpriseService = ({
       }),
     acceptInvitation: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const body: { token: string } = payload;
 
@@ -17140,7 +17148,7 @@ export const createEnterpriseService = ({
       }),
     acceptTenantOwnershipTransfer: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         if (!user.emailVerified)
           return yield* Effect.fail(
@@ -18589,7 +18597,7 @@ export const createEnterpriseService = ({
         // Starting a rotation changes the root that new identities chain to.
         // It is staged and non-destructive, but it is still a security-relevant
         // change that needs fresh proof of presence.
-        yield* requireStepUp(auth, request, "scep-ca-rotate");
+        yield* requireStepUp(auth, request, origin, "scep-ca-rotate");
         const organizationId = ctx.organization.id;
         const rotatedAt = now();
 
@@ -18638,7 +18646,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         // Importing a CA replaces the root every device identity chains to.
-        yield* requireStepUp(auth, request, "scep-ca-import");
+        yield* requireStepUp(auth, request, origin, "scep-ca-import");
         const organizationId = ctx.organization.id;
 
         const material = yield* importScepCa({
@@ -19535,7 +19543,7 @@ export const createEnterpriseService = ({
     collectDeviceAttribute: (request, tenantId, deviceId, attributeId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-run");
+        yield* requireStepUp(auth, request, origin, "script-run");
 
         if (!ctx.organization.scriptsEnabled)
           return yield* Effect.fail(
@@ -20460,7 +20468,7 @@ export const createEnterpriseService = ({
           // record Google holds, so it needs tenant-delete permission and the
           // same recent proof of possession as a wipe.
           const ctx = yield* requireTenant(request, tenantId, "delete");
-          yield* requireStepUp(auth, request, "android-disconnect");
+          yield* requireStepUp(auth, request, origin, "android-disconnect");
 
           const result = yield* mapAndroidFailure(
             disconnectAndroidEnterprise({
@@ -20908,7 +20916,7 @@ export const createEnterpriseService = ({
         // permission, a fresh step-up and a recorded reason. Deleting the
         // device is permanent, so this is the only supported recovery path.
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "device-handover");
+        yield* requireStepUp(auth, request, origin, "device-handover");
         const body: {
           readonly ids: ReadonlyArray<string>;
 
@@ -21747,7 +21755,7 @@ export const createEnterpriseService = ({
     patchScriptSettings: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         if (ctx.organization.scriptsEnabled !== payload.enabled) {
           yield* db
@@ -21870,7 +21878,7 @@ export const createEnterpriseService = ({
     patchScript: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -21953,7 +21961,7 @@ export const createEnterpriseService = ({
     deleteScript: (request, tenantId, scriptId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -22027,7 +22035,7 @@ export const createEnterpriseService = ({
     patchScriptAssignments: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -22085,7 +22093,7 @@ export const createEnterpriseService = ({
     runScript: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-run");
+        yield* requireStepUp(auth, request, origin, "script-run");
 
         if (!ctx.organization.scriptsEnabled)
           return yield* Effect.fail(
@@ -22279,7 +22287,7 @@ export const createEnterpriseService = ({
     createRestrictedSoftware: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const result = yield* createRestrictedSoftware(
           db,
@@ -22304,7 +22312,7 @@ export const createEnterpriseService = ({
     patchRestrictedSoftware: (request, tenantId, ruleId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const precondition = yield* preconditionFromRequest(request, payload.expectedUpdatedAt);
         const result = yield* updateRestrictedSoftware(
@@ -22369,7 +22377,7 @@ export const createEnterpriseService = ({
     deleteRestrictedSoftware: (request, tenantId, ruleId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const devices = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
         const result = yield* deleteRestrictedSoftware(db, ctx.organization.id, ruleId);
@@ -22388,7 +22396,7 @@ export const createEnterpriseService = ({
     patchRestrictedSoftwareAssignments: (request, tenantId, ruleId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const before = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
         const result = yield* patchRestrictedSoftwareAssignments(
@@ -22785,7 +22793,7 @@ export const createEnterpriseService = ({
             "set-lock-screen-message",
           ].includes(action)
         )
-          yield* requireStepUp(auth, request, "device-command");
+          yield* requireStepUp(auth, request, origin, "device-command");
 
         // Fresh Start's data-retention choice is explicit and validated before
         // any approval or command is recorded. A missing value is never
@@ -24504,7 +24512,7 @@ export const createEnterpriseService = ({
           return yield* Effect.gen(function* () {
             // Deleting the Google Enterprise record is destructive, so it
             // demands the same recent step-up proof as the /action commands.
-            yield* requireStepUp(auth, request, "device-command");
+            yield* requireStepUp(auth, request, origin, "device-command");
 
             // Deleting the Google Enterprise device resource removes Android
             // Device Policy and its work data, then moves the row to
@@ -25036,7 +25044,7 @@ export const createEnterpriseService = ({
     patchTenantOsPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "device-command");
+        yield* requireStepUp(auth, request, origin, "device-command");
 
         const existing = yield* loadOsPolicyRules(ctx.organization.id);
         const timestamp = now();
@@ -26602,7 +26610,7 @@ export const createEnterpriseService = ({
         });
 
         if (prepared.some((entry) => entry.material))
-          yield* requireStepUp(auth, request, "certificate-upload");
+          yield* requireStepUp(auth, request, origin, "certificate-upload");
 
         // Validate before the insert: a rejected kind must not leave an empty
         // policy behind, and an import saves the policy and its settings as one
@@ -26811,7 +26819,7 @@ export const createEnterpriseService = ({
         });
 
         if (prepared.some((entry) => entry.material))
-          yield* requireStepUp(auth, request, "certificate-upload");
+          yield* requireStepUp(auth, request, origin, "certificate-upload");
 
         // Validate the whole patch before mutating anything so a bad
         // configuration cannot leave the policy half-updated.
@@ -33025,7 +33033,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         const reasonProblem = windowsSecretReasonProblem(query?.reason);
 
@@ -33330,7 +33338,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         const reasonProblem = windowsSecretReasonProblem(query?.reason);
 
@@ -33895,7 +33903,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
         yield* assertResourceScope(ctx, db, "device", deviceId, "This device");
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -33965,7 +33973,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -34030,7 +34038,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
         yield* assertResourceScope(ctx, db, "device", deviceId, "This device");
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -34821,7 +34829,7 @@ export const createEnterpriseService = ({
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "billing-portal");
+        yield* requireStepUp(auth, request, origin, "billing-portal");
 
         const body: { returnUrl: string } = payload;
 
@@ -34840,7 +34848,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         // Checkout changes the plan, so it needs the same step-up as opening
         // the portal.
-        yield* requireStepUp(auth, request, "billing-portal");
+        yield* requireStepUp(auth, request, origin, "billing-portal");
 
         const usage = yield* billingUsageForOrganization(db, ctx.organization.id, ctx.account.id);
 
@@ -35089,20 +35097,26 @@ export const createEnterpriseService = ({
         // before it writes the token.
         const resolved = yield* auth.requireStepUp(webRequest, "api-token-create");
 
+        // OAuth connections are delegated MCP credentials, never an account
+        // login. Keep this decision at the endpoint as well as in auth so no
+        // URL spelling can turn one into a long-lived account API token.
+        if (resolved.oauth)
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseForbidden({
+                message: "MCP tokens cannot manage account settings.",
+              }),
+              { code: "mcp_account_scope", reason: "api_token_create" },
+            ),
+          );
+
         const credential = resolved.apiToken
           ? {
               type: "api_token" as const,
               id: resolved.apiToken.id,
               name: resolved.apiToken.name,
             }
-          : resolved.oauth
-            ? {
-                type: "oauth" as const,
-                id: resolved.oauth.connectionId,
-                name: resolved.oauth.clientName,
-                clientId: resolved.oauth.clientId,
-              }
-            : undefined;
+          : undefined;
         const scopes = [...(payload.permissions ?? payload.scopes ?? [])].sort((left, right) =>
           String(left).localeCompare(String(right)),
         );
@@ -35214,7 +35228,7 @@ export const createEnterpriseService = ({
      */
     removeAccountPasskey: (request, credentialId) =>
       Effect.gen(function* () {
-        const { user } = yield* requireStepUp(auth, request, "passkey-remove");
+        const { user } = yield* requireStepUp(auth, request, origin, "passkey-remove");
 
         const credential = yield* db
           .select({ credentialId: schema.authPasskeyCredentials.credentialId })
@@ -35375,7 +35389,7 @@ export const createEnterpriseService = ({
 
         // Removing an MDM profile is a device command, so it needs the same
         // recent proof as any other destructive device action.
-        yield* requireStepUp(auth, request, "device-command");
+        yield* requireStepUp(auth, request, origin, "device-command");
 
         const result = yield* issueMigrationUnenrol(
           db,

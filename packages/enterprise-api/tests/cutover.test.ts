@@ -10,7 +10,7 @@ const headers = { cookie: "mattrax_session=test" };
 
 const passphrase = "correct horse battery staple";
 
-type AuthRequest = { readonly headers: Readonly<Record<string, string>> };
+type AuthRequest = Request;
 
 const makeContext = () => {
   const db = makeDb();
@@ -30,7 +30,7 @@ const makeContext = () => {
 
   const auth = {
     requireUser: (input: AuthRequest) =>
-      input.headers.cookie
+      input.headers.get("cookie")
         ? Effect.succeed({ user })
         : Effect.fail(new EnterpriseBadRequest({ message: "Unauthenticated" })),
     listApiTokens: () => Effect.succeed({ tokens: [] }),
