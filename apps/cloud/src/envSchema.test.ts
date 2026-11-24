@@ -8,6 +8,32 @@ const base = {
   AUTH_SECRET: "local-development-auth-secret-0123456789abcdef",
 };
 
+describe("deployment branding environment resolution", () => {
+  it("exposes the deployment brand without inventing values", () => {
+    const resolved = resolveApiEnv({
+      ...base,
+      MATTRAX_BRAND_NAME: "Acme Device Management",
+      MATTRAX_BRAND_LOGO_URL: "https://cdn.acme.test/logo.png",
+      MATTRAX_BRAND_COLOR: "#16a34a",
+    });
+
+    expect(resolved).toMatchObject({
+      MATTRAX_BRAND_NAME: "Acme Device Management",
+      MATTRAX_BRAND_LOGO_URL: "https://cdn.acme.test/logo.png",
+      MATTRAX_BRAND_COLOR: "#16a34a",
+    });
+  });
+
+  it("treats an empty deployment brand as unset", () => {
+    expect(
+      resolveApiEnv({ ...base, MATTRAX_BRAND_NAME: "", MATTRAX_BRAND_COLOR: "" }),
+    ).toMatchObject({
+      MATTRAX_BRAND_NAME: undefined,
+      MATTRAX_BRAND_COLOR: undefined,
+    });
+  });
+});
+
 describe("services URL environment resolution", () => {
   it("treats a whitespace-only override as unset", () => {
     expect(

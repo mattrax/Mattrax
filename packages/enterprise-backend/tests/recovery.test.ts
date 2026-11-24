@@ -22,7 +22,7 @@ const authSecret = "enterprise-recovery-test-secret";
 
 const start = Date.UTC(2026, 10, 16, 12, 0, 0);
 
-type Sent = { to: string; subject: string; text: string };
+type Sent = { to: string; subject: string; text: string; html: string };
 
 const emailTransport = (sent: Sent[]) =>
   makeEmailTransport(async (message: OutboundEmailMessage) => {
@@ -30,6 +30,7 @@ const emailTransport = (sent: Sent[]) =>
       to: Schema.is(Schema.String)(message.to) ? message.to : message.to.join(", "),
       subject: message.subject,
       text: message.text ?? "",
+      html: message.html ?? "",
     });
   });
 
@@ -86,6 +87,11 @@ const organization = (id: string) => ({
 const makeDeps = (
   initial: Record<string, any[]> = { account: [account()] },
   now: () => Date = () => new Date(start),
+  branding?: {
+    readonly brandName?: string;
+    readonly logoUrl?: string;
+    readonly brandColor?: string;
+  },
 ) => {
   const db = makeDb(initial);
   const sent: Sent[] = [];
@@ -98,6 +104,7 @@ const makeDeps = (
       authSecret,
       origin,
       email: emailTransport(sent),
+      branding,
       now,
     },
   };
@@ -155,6 +162,20 @@ describe("break-glass recovery on a solo account", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("uses deployment branding for the recovery proof", async () => {
+    const { sent, deps } = makeDeps(undefined, undefined, {
+      brandName: "Acme Device Management",
+      brandColor: "#16a34a",
+      logoUrl: "/assets/acme.png",
+    });
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+
+    expect(sent[0].html).toContain("Acme Device Management</td>");
+    expect(sent[0].html).toContain('src="https://enterprise.test/assets/acme.png"');
+    expect(sent[0].html).toContain("background:#16a34a;");
+  });
+
   it("answers identically for an address that does not exist", async () => {
     const { db, sent, deps } = makeDeps();
 
@@ -210,6 +231,32 @@ describe("break-glass recovery on a solo account", () => {
 
 /** A shared tenant requires a different owner to approve. */
 describe("break-glass recovery approval", () => {
+  it("renders branded notices and escapes the account name", async () => {
+    const initial = shared();
+    initial.account[0] = { ...initial.account[0]!, name: "<img src=x onerror=alert(1)>" };
+    const { sent, deps } = makeDeps(initial);
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+
+    const proof = sent.find((message) => message.to === "owner@example.com");
+    const approval = sent.find((message) => message.subject.includes("approval"));
+
+    expect(proof?.html).toContain('role="presentation"');
+    expect(proof?.html).toContain('name="color-scheme"');
+    expect(proof?.html).toContain("Recover access");
+    // The footer tells the recipient what to do when it was not them, matching
+    // the body rather than contradicting it with "no action needed".
+    expect(proof?.text).toContain(
+      "If it wasn't you, ignore this email and change your email address",
+    );
+    expect(proof?.html).toContain(
+      "If it wasn't you, ignore this email and change your email address",
+    );
+    expect(approval?.html).toContain('role="presentation"');
+    expect(approval?.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(approval?.html).not.toContain("<img");
+  });
+
   const shared = () => ({
     account: [
       account(),

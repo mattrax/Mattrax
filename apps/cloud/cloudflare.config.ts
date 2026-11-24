@@ -232,6 +232,10 @@ export const apiWorker = {
     MATTRAX_ONBOARDING_REPLY_TO: bindings.secret(),
     /** Support address in the onboarding footer; defaults to the sender. */
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: bindings.secret(),
+    /** Deployment brand used before an account has a tenant. */
+    MATTRAX_BRAND_NAME: bindings.text(process.env.MATTRAX_BRAND_NAME ?? ""),
+    MATTRAX_BRAND_LOGO_URL: bindings.text(process.env.MATTRAX_BRAND_LOGO_URL ?? ""),
+    MATTRAX_BRAND_COLOR: bindings.text(process.env.MATTRAX_BRAND_COLOR ?? ""),
     /**
      * Set to `true` only on a deployment that intentionally has no outbound
      * email. Readiness then reports `mailer: skipped` (degraded) instead of

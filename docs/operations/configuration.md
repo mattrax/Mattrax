@@ -317,15 +317,18 @@ They never use a `no-reply` address; replies go to the configured mailbox.
   no enrolled device, no recently created enrolling device and no successful
   enrollment attempt.
 
-| Variable                                | Default               | Purpose                                                        |
-| --------------------------------------- | --------------------- | -------------------------------------------------------------- |
-| `MATTRAX_ONBOARDING_REPLY_TO`           | `oscar@otbeaumont.me` | Reply-To for both emails; use a monitored mailbox              |
-| `MATTRAX_ONBOARDING_SUPPORT_EMAIL`      | `hello@mattrax.cloud` | Footer support address                                         |
-| `MATTRAX_ONBOARDING_SINCE`              | —                     | ISO date; tenants created earlier are never follow-up eligible |
-| `MAINTENANCE_ONBOARDING_EMAILS`         | `true`                | Set `false`, `0` or `off` to disable the follow-up sweep       |
-| `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` | `7`                   | Days after tenant creation before the follow-up is eligible    |
-| `MAINTENANCE_ONBOARDING_WINDOW_DAYS`    | `7`                   | Extra days after the threshold that remain eligible            |
-| `MAINTENANCE_ONBOARDING_COOLDOWN_DAYS`  | `7`                   | Per-recipient cooldown across tenants; `0` disables it         |
+| Variable                                | Default               | Purpose                                                          |
+| --------------------------------------- | --------------------- | ---------------------------------------------------------------- |
+| `MATTRAX_ONBOARDING_REPLY_TO`           | `oscar@otbeaumont.me` | Reply-To for both emails; use a monitored mailbox                |
+| `MATTRAX_ONBOARDING_SUPPORT_EMAIL`      | `hello@mattrax.cloud` | Footer support address                                           |
+| `MATTRAX_BRAND_NAME`                    | `Mattrax`             | Deployment brand in account and welcome email                    |
+| `MATTRAX_BRAND_LOGO_URL`                | —                     | https logo for email; root-relative paths resolve against ORIGIN |
+| `MATTRAX_BRAND_COLOR`                   | `#6e56cf`             | Brand colour for the mark and primary action                     |
+| `MATTRAX_ONBOARDING_SINCE`              | —                     | ISO date; tenants created earlier are never follow-up eligible   |
+| `MAINTENANCE_ONBOARDING_EMAILS`         | `true`                | Set `false`, `0` or `off` to disable the follow-up sweep         |
+| `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` | `7`                   | Days after tenant creation before the follow-up is eligible      |
+| `MAINTENANCE_ONBOARDING_WINDOW_DAYS`    | `7`                   | Extra days after the threshold that remain eligible              |
+| `MAINTENANCE_ONBOARDING_COOLDOWN_DAYS`  | `7`                   | Per-recipient cooldown across tenants; `0` disables it           |
 
 An invalid `MATTRAX_ONBOARDING_REPLY_TO` or `MATTRAX_ONBOARDING_SUPPORT_EMAIL`
 is reported once per isolate and the built-in default is used instead, so a typo
@@ -336,6 +339,16 @@ an existing deployment. Without it, tenants created in the trailing
 `FOLLOW_UP_DAYS + WINDOW_DAYS` window are eligible, which may include customers
 who predate the feature. The welcome email is transactional and is not affected
 by `MAINTENANCE_ONBOARDING_EMAILS`.
+
+Account email sent before a tenant exists (welcome, verification and recovery)
+uses deployment branding from `MATTRAX_BRAND_NAME`, `MATTRAX_BRAND_LOGO_URL`
+and `MATTRAX_BRAND_COLOR` (Mattrax by default); invitation, ownership-transfer
+and follow-up mail use the tenant's display name, logo and brand colour. They
+share the dashboard's table-based email layout, include a plain-text
+alternative, and apply dark-mode overrides where the client supports them
+(Apple Mail and Outlook.com; Gmail follows its own theme). See
+[Administration → Onboarding email](/admin/#onboarding-email) for how to preview
+the messages with the development mailbox.
 
 The follow-up eligibility window is therefore 7–14 days after tenant creation
 with the defaults. The cooldown is derived from onboarding audit rows, so

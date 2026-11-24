@@ -1,9 +1,14 @@
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
+import { DEFAULT_BRAND_COLOR } from "@mattrax/enterprise-domain";
 import { Effect, Ref, Schema } from "effect";
 import { schema as s } from "../schema.ts";
 import type { EnterpriseDb } from "../schema.ts";
 import { onboardingFollowUpEmail, welcomeEmail } from "./onboardingEmail.ts";
-import type { OnboardingFollowUpEmailInput, WelcomeEmailInput } from "./onboardingEmail.ts";
+import type {
+  OnboardingEmailBranding,
+  OnboardingFollowUpEmailInput,
+  WelcomeEmailInput,
+} from "./onboardingEmail.ts";
 import { loadTenantAdminRecipients } from "./maintenance.ts";
 import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
 
@@ -142,6 +147,8 @@ export type SendWelcomeEmailOptions = {
   readonly origin: string;
   readonly replyTo?: EmailReplyTo | null;
   readonly supportEmail?: string | null;
+  /** Deployment branding for the header, mark and primary action. */
+  readonly branding?: OnboardingEmailBranding | null;
   /** Envelope sender; defaults to the hosted onboarding identity. */
   readonly from?: EmailAddress;
   /** Injectable clock for tests. */
@@ -216,9 +223,12 @@ export const sendWelcomeEmailOnce = (
     const input: WelcomeEmailInput = {
       firstName: firstNameOf(user.name),
       dashboardUrl,
-      enrollUrl: dashboardUrl,
       replyTo: replyAddress(replyTo),
       supportEmail,
+      accountEmail: user.email,
+      brandName: options.branding?.brandName,
+      logoUrl: options.branding?.logoUrl,
+      brandColor: options.branding?.brandColor,
     };
 
     const message = yield* Effect.try({
@@ -271,6 +281,8 @@ export type WelcomeEmailSweepOptions = {
   readonly origin: string;
   readonly replyTo?: EmailReplyTo | null;
   readonly supportEmail?: string | null;
+  /** Deployment branding for the header, mark and primary action. */
+  readonly branding?: OnboardingEmailBranding | null;
   readonly from?: EmailAddress;
   /** Only accounts created this recently are retried. Defaults to 2 days. */
   readonly lookbackDays?: number;
@@ -349,6 +361,7 @@ export const runWelcomeEmailSweep = (
           origin: options.origin,
           replyTo: options.replyTo,
           supportEmail: options.supportEmail,
+          branding: options.branding,
           from: options.from,
           now,
         }),
@@ -419,7 +432,9 @@ type OrganizationCandidate = {
   readonly id: string;
   readonly name: string;
   readonly displayName: string | null;
+  readonly logo: string | null;
   readonly supportEmail: string | null;
+  readonly brandColor: string | null;
   readonly createdAt: Date;
 };
 
@@ -486,7 +501,9 @@ export const runOnboardingEmails = (
           id: s.organization.id,
           name: s.organization.name,
           displayName: s.organization.displayName,
+          logo: s.organization.logo,
           supportEmail: s.organization.supportEmail,
+          brandColor: s.organization.brandColor,
           createdAt: s.organization.createdAt,
         })
         .from(s.organization)
@@ -660,6 +677,11 @@ export const runOnboardingEmails = (
               enrollUrl: `${origin}/t/${organization.id}/enrollment`,
               replyTo: replyAddress(replyTo),
               supportEmail: organization.supportEmail ?? fallbackSupportEmail,
+              brandName: tenantName,
+              logoUrl: organization.logo,
+              // Match invitation/ownership, which resolve an unset tenant colour
+              // to the shared dashboard default rather than the deployment purple.
+              brandColor: organization.brandColor ?? DEFAULT_BRAND_COLOR,
               daysSinceCreation,
             };
 

@@ -223,7 +223,7 @@ export default function GeneralSettingsPage() {
             </FieldRow>
             <FieldRow
               label="Logo"
-              hint="An https URL, an inline data: image URL, or an absolute path."
+              hint="An https URL, an inline data: image URL, or an absolute path. Email resolves paths against this deployment but may not display data URLs."
             >
               <Input
                 disabled={!canWrite()}

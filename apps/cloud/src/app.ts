@@ -117,6 +117,7 @@ import { MysqlClient } from "@effect/sql-mysql2";
 import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
+import { resolveDeploymentBranding } from "./onboardingBranding.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import {
   DAILY_CRON,
@@ -599,6 +600,12 @@ const onboardingReplyTo = () => apiEnv.MATTRAX_ONBOARDING_REPLY_TO ?? DEFAULT_ON
 const onboardingSupportEmail = () =>
   apiEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL ?? ONBOARDING_SUPPORT_EMAIL;
 
+/**
+ * Resolve once: the verification hook and the delayed welcome sweep must render
+ * the same brand even when the first attempt was lost.
+ */
+const onboardingBranding = resolveDeploymentBranding(apiEnv);
+
 const onboardingSince = optionalIsoDate(apiEnv.MATTRAX_ONBOARDING_SINCE);
 
 if (apiEnv.MATTRAX_ONBOARDING_SINCE && !onboardingSince)
@@ -879,6 +886,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     emailFrom: mailer.sender,
     onboardingReplyTo: onboardingReplyTo(),
     onboardingSupportEmail: onboardingSupportEmail(),
+    onboardingBranding,
     trustedOrigins: (apiEnv.TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -1026,6 +1034,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       // invitation-specific override still wins when an operator wants the
       // branded address only for invites.
       invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM ?? mailer.sender.email,
+      branding: onboardingBranding,
       enrollmentProfileTtlSeconds,
       // The SOFA feed is public and refreshable at most a few times a day.
       // Failure cooldowns keep an outage from adding a timeout to every
@@ -1125,6 +1134,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
                 origin: env.ORIGIN,
                 replyTo: onboardingReplyTo(),
                 supportEmail: onboardingSupportEmail(),
+                branding: onboardingBranding,
               });
 
               const followUp = onboardingEmailsEnabled()
@@ -1845,6 +1855,7 @@ export const createApiRuntime = (
               origin: apiEnv.ORIGIN,
               replyTo: onboardingReplyTo(),
               supportEmail: onboardingSupportEmail(),
+              branding: onboardingBranding,
               from: onboardingFrom,
             });
 
