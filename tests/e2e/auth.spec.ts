@@ -57,7 +57,7 @@ test.describe("authentication and onboarding", () => {
     await expect(page.locator("#confirm-password")).toHaveCount(0);
   });
 
-  test("branches to organisation sign-in", async ({ page }) => {
+  test("automatically continues to organisation sign-in", async ({ page }) => {
     await page.route("**/api/v1/sso/azure/start*", async (route) => {
       const url = new URL(route.request().url());
 
@@ -75,8 +75,10 @@ test.describe("authentication and onboarding", () => {
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill("person@acme.com");
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await page.getByRole("button", { name: /continue with sso/i }).click();
     await expect(page).toHaveURL(/sso=started/);
+    await expect(page.getByRole("button", { name: /sign in with your organisation/i })).toHaveCount(
+      0,
+    );
   });
 
   test("signs out and back in with a passkey", async ({ page }) => {

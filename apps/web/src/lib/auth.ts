@@ -24,6 +24,12 @@ import { clearMeCache } from "~/lib/me-cache";
 import { resetMePreload } from "~/lib/me-preload";
 import { clearSessionPresence } from "~/lib/session-presence";
 import { clearBrowserTenantDirectory, rememberTenants } from "~/lib/tenant";
+import {
+  passkeyAuthenticationFailure,
+  passkeyEnvironmentAvailable,
+  passkeyEnvironmentFailure,
+  PasskeySignInError,
+} from "~/lib/passkey-sign-in";
 
 type AuthUser = {
   id: string;
@@ -469,7 +475,6 @@ const PasskeyRename = Schema.Struct({
 const TotpBegin = Schema.Struct({ enrollmentId: Schema.String, expiresAtMillis: Schema.Number });
 const TotpConfirm = Schema.Struct({ enabled: Schema.Boolean, invalidation: Schema.Json });
 const TotpRegenerated = Schema.Struct({ enabled: Schema.Literal(true) });
-const SsoStart = Schema.Struct({ url: Schema.String });
 const EmailVerification = Schema.Struct({
   status: Schema.Literal("ok"),
   challenge: Schema.optional(Schema.String),
@@ -630,6 +635,10 @@ const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
 
 /** Discoverable-credential sign-in shared by the login page and registration. */
 const passkeySignInFlow = async (): Promise<CompletionState> => {
+  const environmentFailure = passkeyEnvironmentFailure();
+
+  if (environmentFailure) throw environmentFailure;
+
   const started = await request("/beginPasskeySignIn", PasskeyRequestStart, {
     method: "POST",
     body: authBody({
@@ -652,11 +661,8 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
       },
       useBrowserAutofill: false,
     });
-  } catch {
-    // The browser/OS prompt was dismissed or timed out. No tag: callers only
-    // retry a server-tagged PasskeyRejected, so a deliberate cancellation is
-    // never re-prompted.
-    throw new Error("That passkey wasn't confirmed. Try again.");
+  } catch (error) {
+    throw passkeyAuthenticationFailure(error);
   }
 
   const completion = await request("/completePasskeySignIn", Schema.Json, {
@@ -672,12 +678,6 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
 
   return state;
 };
-
-/** WebAuthn needs a secure context and a browser that exposes the API. */
-const passkeyEnvironmentAvailable = () =>
-  typeof window !== "undefined" &&
-  window.isSecureContext &&
-  window.PublicKeyCredential !== undefined;
 
 /**
  * Human copy for the tagged auth failures that arrive without a message.
@@ -839,13 +839,6 @@ export const authClient = {
         return { signedIn: false };
       }
     }),
-  startSso: (email: string, returnTo?: string) => {
-    const query = new URLSearchParams({ email });
-
-    if (returnTo) query.set("returnTo", returnTo);
-
-    return result(() => request("/v1/sso/azure/start?" + query.toString(), SsoStart));
-  },
   ssoSignIn: (token: string) =>
     result(async () => {
       const completion = await request("/ssoSignIn", Schema.Json, {
@@ -906,7 +899,18 @@ export const authClient = {
    * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
    * request-binding cookie; only the WebAuthn response travels back.
    */
-  passkeySignIn: () => result(passkeySignInFlow),
+  passkeySignIn: async (): AuthResult<CompletionState> => {
+    try {
+      return { data: await passkeySignInFlow() };
+    } catch (error) {
+      if (error instanceof PasskeySignInError)
+        return { error: { message: error.message, tag: error.tag } };
+
+      const raised = raisedFailure(error);
+
+      return { error: { message: errorMessage(raised), tag: errorTag(raised) } };
+    }
+  },
   /** Complete a pending SSO sign-in with a passkey. */
   passkeyPending: () =>
     result(async () => {
@@ -927,8 +931,8 @@ export const authClient = {
           optionsJSON: toRequestOptions(started.options),
           useBrowserAutofill: false,
         });
-      } catch {
-        throw new Error("That passkey wasn't confirmed. Try again or use a code.");
+      } catch (error) {
+        throw passkeyAuthenticationFailure(error);
       }
 
       const completion = await request("/completePasskeyPending", Schema.Json, {
