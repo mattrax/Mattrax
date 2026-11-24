@@ -35,7 +35,21 @@ const latestSnapshot = (): Snapshot => {
 };
 
 const columnNames = (entry: SnapshotEntry): ReadonlyArray<string> =>
-  (entry.columns ?? []).map((column) => (typeof column === "string" ? column : column.value));
+  (entry.columns ?? []).map((column) => {
+    const value = typeof column === "string" ? column : column.value;
+
+    // Drizzle records DESC index keys as SQL expressions in the snapshot.
+    return value.replace(/^`([^`]+)`\s+(?:asc|desc)$/i, "$1");
+  });
+
+const hasDescendingSuffix = (table: string, columns: ReadonlyArray<string>): boolean =>
+  (indexesByTable().get(table) ?? []).some((index) => {
+    if (columnNames(index).join(",") !== columns.join(",")) return false;
+
+    return (index.columns ?? [])
+      .slice(-2)
+      .every((column) => typeof column !== "string" && / desc$/i.test(column.value));
+  });
 
 const isIndexEntry = (entry: SnapshotEntry): boolean =>
   entry.entityType === "indexes" || entry.entityType === "pks";
@@ -148,6 +162,47 @@ describe("query-driven indexes", () => {
     expect(hasIndex("email_outbox", ["status", "created_at"])).toBe(true);
     expect(hasIndex("invitation", ["status", "expires_at"])).toBe(true);
     expect(hasIndex("android_pubsub_message", ["received_at"])).toBe(true);
+  });
+
+  it("orders tenant-scoped audit filters by the keyset cursor", () => {
+    // Search/export add one equality filter, then page by created_at DESC,
+    // id DESC. The unfiltered tenant stream keeps its separate index.
+    expect(hasIndex("audit_log", ["organization_id", "created_at"])).toBe(true);
+    expect(hasIndex("audit_log", ["organization_id", "category", "created_at", "id"])).toBe(true);
+    expect(hasIndex("audit_log", ["organization_id", "action", "created_at", "id"])).toBe(true);
+    expect(hasIndex("audit_log", ["organization_id", "protocol", "created_at", "id"])).toBe(true);
+    // The physical direction matters: MySQL otherwise prefers the unfiltered
+    // tenant index for deep keyset ranges.
+    expect(
+      hasDescendingSuffix("audit_log", ["organization_id", "category", "created_at", "id"]),
+    ).toBe(true);
+    expect(
+      hasDescendingSuffix("audit_log", ["organization_id", "action", "created_at", "id"]),
+    ).toBe(true);
+    expect(
+      hasDescendingSuffix("audit_log", ["organization_id", "protocol", "created_at", "id"]),
+    ).toBe(true);
+
+    // The ordered action index replaces the old prefix; maintaining both
+    // would add a second B-tree write to every audit insert.
+    expect(hasIndex("audit_log", ["organization_id", "action"])).toBe(false);
+
+    // Device activity already has a device-leading ordered path. Do not add a
+    // second tenant/device composite that writes the same keys again.
+    expect(hasIndex("audit_log", ["device_id", "organization_id", "created_at"])).toBe(true);
+    expect(hasIndex("audit_log", ["organization_id", "device_id", "created_at", "id"])).toBe(false);
+  });
+
+  it("indexes the global stale-device and webhook retry queues", () => {
+    // Maintenance is deployment-wide, so a tenant-leading index cannot serve
+    // the stale-device predicate.
+    expect(hasIndex("device", ["status", "last_seen_at"])).toBe(true);
+
+    // Retry reads failed rows below the attempt cap, oldest first. Creation
+    // time leads the residual attempt predicate so the queue is ordered without
+    // a filesort; the old status/attempt prefix has no remaining reader.
+    expect(hasIndex("webhook_delivery", ["status", "created_at", "attempt"])).toBe(true);
+    expect(hasIndex("webhook_delivery", ["status", "attempt"])).toBe(false);
   });
 });
 

@@ -18,7 +18,7 @@ import type {
   DeviceViewQuery,
   DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
-import { defineRelations, sql } from "drizzle-orm";
+import { defineRelations, desc, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   bigint,
@@ -1968,7 +1968,28 @@ export const auditLog = mysqlTable(
   },
   (table) => [
     index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("audit_log_organization_action_idx").on(table.organizationId, table.action),
+    // Search/export add one equality filter before paging newest-first. The
+    // descending keys match the query exactly: MySQL otherwise prefers the
+    // unfiltered tenant index for deep keyset ranges. The action index replaces
+    // its narrower prefix rather than maintaining both on every audit insert.
+    index("audit_log_organization_category_created_idx").on(
+      table.organizationId,
+      table.category,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_action_created_idx").on(
+      table.organizationId,
+      table.action,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_protocol_created_idx").on(
+      table.organizationId,
+      table.protocol,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
     // Device activity reads one target's newest entries; without this the
     // query scans the tenant's whole stream before filtering the target.
     index("audit_log_organization_target_created_idx").on(
@@ -2100,7 +2121,15 @@ export const webhookDelivery = mysqlTable(
   (table) => [
     index("webhook_delivery_endpoint_created_idx").on(table.endpointId, table.createdAt),
     index("webhook_delivery_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("webhook_delivery_status_attempt_idx").on(table.status, table.attempt),
+    // The retry queue filters failed rows below the attempt cap and reads
+    // oldest-first. Creation time precedes the residual attempt predicate so
+    // the index supplies the order without a filesort; no other query uses the
+    // old status/attempt prefix.
+    index("webhook_delivery_status_created_attempt_idx").on(
+      table.status,
+      table.createdAt,
+      table.attempt,
+    ),
     // Retention deletes by age across every endpoint; the endpoint- and
     // organisation-leading indexes cannot serve that prune.
     index("webhook_delivery_created_idx").on(table.createdAt),
@@ -2617,6 +2646,9 @@ export const device = mysqlTable(
     // needed.
     index("device_organization_name_idx").on(table.organizationId, table.name),
     index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
+    // Daily maintenance scans every tenant for enrolled devices that stopped
+    // checking in. Tenant-leading indexes cannot serve that global sweep.
+    index("device_status_last_seen_idx").on(table.status, table.lastSeenAt),
     index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
     // `sort=enrolledAt` (ascending by default) pages by `enrolled_at, id`; the
     // composite supplies that order through the implicit primary-key suffix.
