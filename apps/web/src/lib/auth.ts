@@ -2,8 +2,12 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import { MeResponse } from "@mattrax/enterprise-domain/client";
-import { Permission } from "@mattrax/enterprise-domain/client";
+import {
+  BeginRegistrationVerificationResponse,
+  CompleteRegistrationVerificationResponse,
+  MeResponse,
+  Permission,
+} from "@mattrax/enterprise-domain/client";
 import type { UpdateMeRequest } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
@@ -90,6 +94,17 @@ const Success = Schema.Struct({
 });
 
 const decodeSuccess = Schema.decodeUnknownOption(Success);
+
+type AuthEnvelopeOptions = { readonly directSuccess?: boolean };
+
+/**
+ * Auth operations wrap responses in Success/Failure. Enterprise HttpApi routes
+ * return their declared success schema directly.
+ */
+const hasDirectSuccessResponse = (path: string) =>
+  path.startsWith("/v1/") ||
+  path === "/register/verification" ||
+  path === "/register/verification/verify";
 
 const FailureFields = Schema.Struct({
   _tag: Schema.optional(Schema.String),
@@ -190,7 +205,9 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
   status: number,
   responseBody: unknown,
   schema: S,
+  options: AuthEnvelopeOptions = {},
 ): AuthEnvelope<S["Type"]> => {
+  const successful = status >= 200 && status < 300;
   const successEnvelope =
     responseBody === undefined ? undefined : Option.getOrUndefined(decodeSuccess(responseBody));
   const value =
@@ -198,7 +215,7 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
       ? undefined
       : Option.getOrUndefined(Schema.decodeUnknownOption(schema)(successEnvelope.value));
 
-  if (status >= 200 && status < 300 && successEnvelope && value !== undefined)
+  if (successful && successEnvelope && value !== undefined)
     return { value, private: successEnvelope.private };
 
   const failureEnvelope =
@@ -206,10 +223,22 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
       ? undefined
       : Option.getOrUndefined(decodeFailureEnvelope(responseBody));
   const direct =
-    responseBody === undefined || (status >= 200 && status < 300)
+    responseBody === undefined || successful
       ? undefined
       : Option.getOrUndefined(decodeDirectFailure(responseBody));
   const failure = failureEnvelope ?? direct;
+
+  if (
+    successful &&
+    options.directSuccess &&
+    failureEnvelope === undefined &&
+    responseBody !== undefined
+  ) {
+    const directValue = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(responseBody));
+
+    if (directValue !== undefined) return { value: directValue, private: undefined };
+  }
+
   const fields = failureEnvelope
     ? {
         _tag: failureEnvelope._tag,
@@ -224,7 +253,7 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
   const message = fields?.message;
   const reason = fields?.reason;
 
-  if (status < 200 || status >= 300 || failure) {
+  if (!successful || failure) {
     const error = new AuthRequestError(
       errorMessage(raisedFailure({ _tag: tag, message, reason }), authFailureFallback(tag, status)),
     );
@@ -248,7 +277,9 @@ async function requestEnvelope<S extends Schema.ConstraintDecoder<unknown, never
 ): Promise<AuthEnvelope<S["Type"]>> {
   const response = await readAuthResponse(path, init);
 
-  return decodeAuthEnvelope(response.status, response.body, schema);
+  return decodeAuthEnvelope(response.status, response.body, schema, {
+    directSuccess: hasDirectSuccessResponse(path),
+  });
 }
 
 class AuthRequestError extends Error {
@@ -399,8 +430,6 @@ const toCreationOptions = (
   hints: options.hints ? [...options.hints] : undefined,
   attestationFormats: options.attestationFormats ? [...options.attestationFormats] : undefined,
 });
-const RegistrationCode = Schema.Struct({ status: Schema.Literal("ok"), emailSent: Schema.Boolean });
-const RegistrationGrant = Schema.Struct({ grant: Schema.String });
 const PasskeyCredential = Schema.Struct({
   credentialId: Schema.String,
   name: Schema.String,
@@ -820,14 +849,14 @@ export const authClient = {
    */
   requestRegistrationCode: (payload: { name: string; email: string }) =>
     result(async () =>
-      request("/register/verification", RegistrationCode, {
+      request("/register/verification", BeginRegistrationVerificationResponse, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     ),
   verifyRegistrationCode: (payload: { email: string; code: string }) =>
     result(async () =>
-      request("/register/verification/verify", RegistrationGrant, {
+      request("/register/verification/verify", CompleteRegistrationVerificationResponse, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
