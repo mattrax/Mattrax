@@ -118,6 +118,73 @@ describe("browser auth transport", () => {
     });
   });
 
+  it.each(["revoked", "already-invalid", "client-only"])(
+    "accepts the sign-out action's enveloped %s result",
+    async (invalidation) => {
+      fetch.mockResolvedValueOnce(
+        Response.json({
+          _tag: "Success",
+          value: { clearCredential: true, invalidation },
+        }),
+      );
+
+      await expect(authClient.signOut()).resolves.toEqual({ data: { status: "ok" } });
+
+      const [input, init] = fetch.mock.calls[0]!;
+      const headers = new Headers(init?.headers);
+
+      expect(String(input)).toBe("https://mattrax.test/api/v1/signOut");
+      expect(init?.method).toBe("POST");
+      expect(headers.get("content-type")).toBe("application/json");
+      expect(headers.get("x-effect-auth-csrf")).toBe("1");
+      expect(new TextDecoder().decode(init?.body as Uint8Array)).toBe("{}");
+      expect((init as RequestInit & { duplex?: string }).duplex).toBeUndefined();
+    },
+  );
+
+  it("treats a declared sign-out-without-revocation result as signed out", async () => {
+    fetch.mockResolvedValueOnce(
+      Response.json({
+        _tag: "Success",
+        value: { _tag: "SessionSignOutUnavailable", clearCredential: true },
+      }),
+    );
+
+    await expect(authClient.signOut()).resolves.toEqual({ data: { status: "ok" } });
+  });
+
+  it.each([
+    {},
+    { status: "ok" },
+    { clearCredential: true, invalidation: "revoked" },
+    { _tag: "Success", value: { clearCredential: true } },
+    { _tag: "Success", value: { clearCredential: false, invalidation: "revoked" } },
+    { _tag: "Success", value: { clearCredential: true, invalidation: "expired" } },
+    { _tag: "Success", value: { _tag: "SessionSignOutUnavailable" } },
+  ])("rejects a malformed sign-out success %#", async (responseBody) => {
+    fetch.mockResolvedValueOnce(Response.json(responseBody));
+
+    await expect(authClient.signOut()).resolves.toEqual({
+      error: {
+        message: "The authentication service returned an invalid success response",
+        tag: "AuthResponseError",
+      },
+    });
+  });
+
+  it("preserves a non-2xx sign-out failure", async () => {
+    fetch.mockResolvedValueOnce(
+      Response.json({ _tag: "Failure", error: { _tag: "SessionUnavailable" } }, { status: 503 }),
+    );
+
+    await expect(authClient.signOut()).resolves.toEqual({
+      error: {
+        message: "Your session has expired. Sign in again to continue.",
+        tag: "SessionUnavailable",
+      },
+    });
+  });
+
   it("rejects a direct session body from an auth-envelope endpoint", async () => {
     fetch.mockResolvedValueOnce(Response.json(session));
 
