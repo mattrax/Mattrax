@@ -27490,6 +27490,15 @@ export const createEnterpriseService = ({
         const at = now();
 
         for (const { installer, devices: groupDevices } of selected.values()) {
+          const catalogueDeployment =
+            app.catalogueTitleId && app.catalogueMethodId
+              ? catalogueTitleById(app.catalogueTitleId)?.deployments.find(
+                  (deployment) => deployment.id === app.catalogueMethodId,
+                )
+              : undefined;
+          const catalogueMsi =
+            catalogueDeployment?.kind === "windows-msi" || app.catalogueKind === "windows-msi";
+
           if (installer.platform === "android") {
             const packageName = installer.bundleId?.trim();
 
@@ -27576,6 +27585,7 @@ export const createEnterpriseService = ({
             }
 
             if (
+              !catalogueMsi &&
               !isMsiInstaller({
                 fileName: installer.fileName,
                 contentType: installer.contentType,
@@ -27781,13 +27791,6 @@ export const createEnterpriseService = ({
            * manifest carries none; this is documented on the catalogue page.
            */
           const vendorPkgUrl = installer.manifestUrl?.trim();
-          const catalogueDeployment =
-            app.catalogueTitleId && app.catalogueMethodId
-              ? catalogueTitleById(app.catalogueTitleId)?.deployments.find(
-                  (deployment) => deployment.id === app.catalogueMethodId,
-                )
-              : undefined;
-
           const cataloguePkg =
             catalogueDeployment?.kind === "apple-pkg" || app.catalogueKind === "apple-pkg";
 

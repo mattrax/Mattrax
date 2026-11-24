@@ -1,9 +1,10 @@
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/http";
+import { HttpRouter, HttpServer } from "effect/http";
 import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 import { EnterpriseService, enterpriseSoftwareCatalogueApi } from "@mattrax/enterprise-domain";
 import { enterpriseSoftwareCatalogueHandlers } from "@mattrax/enterprise-api";
+import { makeHttpHandler } from "./helpers.js";
 
 /** The catalogue group is separate from EnterpriseApi; prove its prefix too. */
 const makeHandler = () => {
@@ -30,9 +31,10 @@ const makeHandler = () => {
     ),
     Layer.provide(Layer.succeed(EnterpriseService, service as any)),
     Layer.provide(HttpRouter.layer),
+    Layer.provide(HttpServer.layerServices),
   );
 
-  return HttpRouter.toWebHandler(layer).handler;
+  return makeHttpHandler(layer);
 };
 
 describe("software catalogue HTTP contract", () => {

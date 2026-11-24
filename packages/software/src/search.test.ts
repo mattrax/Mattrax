@@ -164,8 +164,7 @@ describe("catalogue search", () => {
 
     expect(ids).toContain("figma");
     expect(ids).toContain("adobe-creative-cloud");
-    for (const title of design.items)
-      if (title.category === "media") expect(title.category).toBe("media");
+    expect(design.items.some((title) => title.category === "media")).toBe(true);
   });
 
   it("has a populated education category", () => {

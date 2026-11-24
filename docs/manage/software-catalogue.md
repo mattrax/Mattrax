@@ -19,7 +19,8 @@ as a hand-built entry. This page states exactly what the data contains and where
 | API       | `/api/v1/tenants/:tenantId/software/catalogue`                       |
 | Dashboard | Applications → **Catalogue** (`/t/:tenantId/applications/catalogue`) |
 
-The old `/t/:tenantId/software` URL redirects to the catalogue for bookmarks.
+The old `/t/:tenantId/software` URL redirects to `/t/:tenantId/applications` for bookmarks; the
+catalogue is one tab away.
 
 ## What a title contains
 

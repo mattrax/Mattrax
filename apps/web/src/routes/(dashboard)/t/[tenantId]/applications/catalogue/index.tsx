@@ -4,7 +4,6 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { ApplicationViewTabs } from "~/components/mdm/application-view-tabs";
 import {
   EmptyState,
-  formatDate,
   LinkButton,
   Page,
   PageHeader,
@@ -15,6 +14,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ArrowRightLeft, Package, Search, X } from "~/components/ui/icons";
+import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { CatalogueTitle } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
@@ -131,7 +131,7 @@ export default function SoftwareCataloguePage() {
               <span class="text-muted-foreground/40" aria-hidden="true">
                 ·
               </span>
-              <span>Catalogue checked {formatDate(catalogue.data?.pages[0]?.verifiedAt)}</span>
+              <span>Catalogue checked {formatCatalogueVerifiedAt(catalogue.data?.pages[0]?.verifiedAt)}</span>
             </Show>
           </Show>
         }
@@ -233,7 +233,7 @@ export default function SoftwareCataloguePage() {
         </div>
       </Show>
 
-      <Show when={!catalogue.isPending && rows().length === 0}>
+      <Show when={!catalogue.error && !catalogue.isPending && rows().length === 0}>
         <EmptyState
           icon={(props) => <Package {...props} />}
           title={hasFilters() ? "No matching software" : "The catalogue is empty"}
@@ -252,7 +252,7 @@ export default function SoftwareCataloguePage() {
         />
       </Show>
 
-      <Show when={rows().length > 0}>
+      <Show when={!catalogue.error && rows().length > 0}>
         <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <For each={rows()}>
             {(title) => {

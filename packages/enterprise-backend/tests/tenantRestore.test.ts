@@ -218,6 +218,48 @@ describe("in-place tenant restore", () => {
     ]);
   });
 
+  it("preserves software catalogue provenance on restore", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({
+        ...bundle,
+        applications: [
+          {
+            key: "app-1",
+            name: "Slack",
+            platform: "apple",
+            source: "store",
+            storeId: "803453959",
+            groupKeys: [],
+            catalogueTitleId: "slack",
+            catalogueMethodId: "macos-app-store",
+            catalogueTarget: "macos",
+            catalogueKind: "apple-app-store",
+          },
+        ],
+      }),
+    );
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({
+      name: "Slack",
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+  });
+
   it("remaps group references in dynamic rules to the restored ids", async () => {
     const { db, storage, objects, organization } = makeContext();
 
