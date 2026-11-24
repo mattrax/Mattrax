@@ -74,6 +74,7 @@ const KNOWN_ACTIONS = [
   "policy.deleted",
   "policy.assignments_changed",
   "application.created",
+  "application.catalogue_added",
   "group.created",
   "group.members_changed",
   "member.invited",

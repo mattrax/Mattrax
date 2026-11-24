@@ -481,6 +481,44 @@ describe("tenant import", () => {
     ).toHaveLength(1);
   });
 
+  it("round-trips software catalogue provenance", async () => {
+    const context = makeContext();
+    const source = await seedTenant(context);
+
+    const sourceRow = context.db.store.application.find(
+      (row: any) => row.id === source.application.id,
+    )!;
+
+    Object.assign(sourceRow, {
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+
+    const { bundle } = await exportBundle(context, source.tenant.id);
+
+    expect(bundle.applications?.[0]).toMatchObject({
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+
+    const result = await runEffect(context.service.importTenant(request(headers), bundle));
+
+    const importedApplication = context.db.store.application.find(
+      (row: any) => row.organizationId === result.tenantId,
+    )!;
+
+    expect(importedApplication).toMatchObject({
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+  });
+
   it("round-trips a disabled policy", async () => {
     const context = makeContext();
     const source = await seedTenant(context);

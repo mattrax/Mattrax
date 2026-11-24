@@ -789,6 +789,7 @@ snapshots:
 				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
+				"@mattrax/software": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
@@ -879,6 +880,7 @@ snapshots:
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/software": "workspace:*",
 				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",
@@ -1078,7 +1080,16 @@ snapshots:
 			},
 		},
 
-		"packages/software": {},
+		"packages/software": {
+			"name": "@mattrax/software",
+			"dependencies": {
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
 
 		"packages/ui": {
 			"name": "@mattrax/ui",

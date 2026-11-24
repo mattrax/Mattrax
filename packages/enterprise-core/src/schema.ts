@@ -4152,6 +4152,17 @@ export const application = mysqlTable(
     sha256: shortText("sha256"),
     r2Key: text("r2_key"),
     notes: text("notes"),
+    /**
+     * Provenance for an entry created from the curated software catalogue.
+     * The stable title and method ids let the dashboard show "already added"
+     * and give a later version feed (#589) one row to update.
+     */
+    catalogueTitleId: shortText("catalogue_title_id"),
+    catalogueMethodId: shortText("catalogue_method_id"),
+    /** OS target of the catalogue method, for example `macos` or `ios`. */
+    catalogueTarget: shortText("catalogue_target"),
+    /** Catalogue method kind, for example `apple-app-store` or `windows-msi`. */
+    catalogueKind: shortText("catalogue_kind"),
     /** Roll-up of the per-storefront checks below. */
     availability: varchar("availability", {
       length: 16,
@@ -4172,7 +4183,18 @@ export const application = mysqlTable(
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [index("application_organization_id_idx").on(table.organizationId)],
+  (table) => [
+    index("application_organization_id_idx").on(table.organizationId),
+    // A retried or concurrent catalogue add must not create a second row for
+    // the same title/method. Manual applications leave these columns null, and
+    // MySQL permits many nulls in a unique index. The title-first order also
+    // serves the "additions for these titles" lookup.
+    uniqueIndex("application_catalogue_method_unique").on(
+      table.catalogueTitleId,
+      table.organizationId,
+      table.catalogueMethodId,
+    ),
+  ],
 );
 
 /**

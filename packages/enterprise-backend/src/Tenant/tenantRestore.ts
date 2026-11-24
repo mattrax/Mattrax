@@ -99,6 +99,10 @@ type ParsedBundle = {
     sha256: string | null;
     r2Key: string | null;
     notes: string | null;
+    catalogueTitleId?: string | null;
+    catalogueMethodId?: string | null;
+    catalogueTarget?: string | null;
+    catalogueKind?: string | null;
     removeOnUnassign?: boolean | null;
     installers?: ReadonlyArray<{
       platform: "apple" | "win" | "android";
@@ -588,6 +592,10 @@ export const parseTenantRestoreBundle = (
         sha256: text(application.sha256, 255),
         r2Key: application.r2Key ?? null,
         notes: text(application.notes, 10_000),
+        catalogueTitleId: text(application.catalogueTitleId, 255),
+        catalogueMethodId: text(application.catalogueMethodId, 255),
+        catalogueTarget: text(application.catalogueTarget, 32),
+        catalogueKind: text(application.catalogueKind, 64),
         removeOnUnassign: application.removeOnUnassign ?? false,
         installers: application.installers?.map((installer) => ({
           platform: installer.platform,
@@ -1198,6 +1206,10 @@ export const applyTenantBundle = (
           // Same tenant, so the object under `a/<tenant>/` still exists.
           r2Key: application.r2Key,
           notes: application.notes,
+          catalogueTitleId: application.catalogueTitleId ?? null,
+          catalogueMethodId: application.catalogueMethodId ?? null,
+          catalogueTarget: application.catalogueTarget ?? null,
+          catalogueKind: application.catalogueKind ?? null,
           removeOnUnassign: application.removeOnUnassign ?? false,
           createdAt: timestamp,
           updatedAt: timestamp,

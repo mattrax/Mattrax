@@ -22,6 +22,7 @@
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-billing": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/software": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",

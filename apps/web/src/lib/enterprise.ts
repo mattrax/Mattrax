@@ -59,6 +59,9 @@ import type {
   ApplicationInventoryQuery,
   ApplicationSearchQuery,
   ApplicationSearchResponse,
+  AddCatalogueTitleRequest,
+  CatalogueSearchQuery,
+  CatalogueSearchResponse,
   AuditSearchQuery,
   AuditSearchResponse,
   AutopilotImportRequest,
@@ -154,6 +157,10 @@ export type {
   ApplicationRow,
   ApplicationSearchQuery,
   ApplicationSearchResponse,
+  CatalogueAddition,
+  CatalogueDeployment,
+  CatalogueTitle,
+  CatalogueTitleResponse,
   ApnsInfo,
   AcceptInvitationResponse,
   AccountAuditEntry,
@@ -328,6 +335,7 @@ type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApplication"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseSoftwareCatalogue"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
@@ -540,6 +548,12 @@ export const enterpriseKeys = {
   sso: (tenantId: RouteParam) => ["enterprise", "sso", keyTenant(tenantId)] as const,
   applications: (tenantId: RouteParam) =>
     ["enterprise", "applications", keyTenant(tenantId)] as const,
+  softwareCatalogue: (tenantId: RouteParam, query: CatalogueSearchQuery = {}) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId), query] as const,
+  softwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId), "title", titleId ?? ""] as const,
+  softwareCataloguePrefix: (tenantId: RouteParam) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId)] as const,
   applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
     ["enterprise", "application-inventory", keyTenant(tenantId), query] as const,
   deviceApplications: (tenantId: RouteParam, id: RouteParam) =>
@@ -817,6 +831,7 @@ function endpoint<A, E>(
       Effect.map(clientEffect(headers), (client) => ({
         ...client.EnterpriseApi,
         ...client.EnterpriseApplication,
+        ...client.EnterpriseSoftwareCatalogue,
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
@@ -1292,6 +1307,29 @@ export const enterprise = {
   searchApplications: (tenantId: RouteParam, query: ApplicationSearchQuery = {}) =>
     listEndpoint((api) =>
       api.searchApplications({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Server-paginated curated software catalogue. */
+  searchSoftwareCatalogue: (tenantId: RouteParam, query: CatalogueSearchQuery = {}) =>
+    endpoint((api) =>
+      api.searchSoftwareCatalogue({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  getSoftwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    endpoint((api) =>
+      api.getSoftwareCatalogueTitle({
+        params: { tenantId: required(tenantId, "tenantId"), titleId: required(titleId, "titleId") },
+      }),
+    ),
+  /** Create one tenant application per selected catalogue deployment method. */
+  addSoftwareCatalogueTitle: (
+    tenantId: RouteParam,
+    titleId: RouteParam,
+    payload: AddCatalogueTitleRequest,
+  ) =>
+    endpoint((api) =>
+      api.addSoftwareCatalogueTitle({
+        params: { tenantId: required(tenantId, "tenantId"), titleId: required(titleId, "titleId") },
+        payload,
+      }),
     ),
   listMcpConnections: () => accountEndpoint((api) => api.listMcpConnections({})),
   revokeMcpConnection: (connectionId: RouteParam) =>
@@ -3744,6 +3782,34 @@ export const enterpriseQueries = {
       // table's "filters changed" notice describes what is on screen.
       placeholderData: keepPreviousData,
       enabled: Boolean(tenantId) && !isServer,
+    }),
+  /** Server-paginated curated software catalogue; see `searchGroups`. */
+  searchSoftwareCatalogue: (tenantId: RouteParam, filters: CatalogueSearchQuery = {}) =>
+    infiniteQueryOptions<
+      CatalogueSearchResponse,
+      Error,
+      InfiniteData<CatalogueSearchResponse>,
+      readonly unknown[],
+      number
+    >({
+      queryKey: enterpriseKeys.softwareCatalogue(tenantId, filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchSoftwareCatalogue(tenantId, { ...filters, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (_last, pages) => {
+        const loaded = pages.reduce((count, page) => count + page.items.length, 0);
+        const total = pages.at(-1)?.total ?? 0;
+
+        return loaded < total ? loaded : undefined;
+      },
+      placeholderData: keepPreviousData,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  softwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.softwareCatalogueTitle(tenantId, titleId),
+      queryFn: () => enterprise.getSoftwareCatalogueTitle(tenantId, titleId),
+      enabled: Boolean(tenantId && titleId) && !isServer,
     }),
   roles: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

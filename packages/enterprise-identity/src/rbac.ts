@@ -112,6 +112,8 @@ const APPLICATION_READ = new Set([
   "getApplication",
   "getApplicationInventory",
   "downloadApplication",
+  "searchSoftwareCatalogue",
+  "getSoftwareCatalogueTitle",
 ]);
 
 const APPLICATION_WRITE = new Set([
@@ -125,6 +127,7 @@ const APPLICATION_WRITE = new Set([
   "installApplication",
   "uninstallApplication",
   "uploadApplication",
+  "addSoftwareCatalogueTitle",
 ]);
 
 const SCRIPT_READ = new Set([

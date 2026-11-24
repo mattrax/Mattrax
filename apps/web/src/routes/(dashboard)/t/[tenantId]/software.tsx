@@ -4,7 +4,8 @@ import { onSettled } from "solid-js";
 
 /**
  * Software moved into the application catalogue and per-device inventory.
- * Keep the old URL working for bookmarks by forwarding to the catalogue.
+ * Keep the old URL working for bookmarks by forwarding to the applications
+ * list; the curated catalogue is one tab away.
  */
 export default function SoftwareRedirectPage() {
   const params = useParams();

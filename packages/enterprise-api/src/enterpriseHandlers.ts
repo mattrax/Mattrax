@@ -26,6 +26,7 @@ import type {
   enterpriseOnboardingApi,
   enterpriseUserApi,
   enterpriseListApi,
+  enterpriseSoftwareCatalogueApi,
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   fleetMigrationApi,
@@ -236,8 +237,17 @@ import type {
   UpdateTenantOsPolicyEntry,
   AdminAccountInfo,
   AdminAccountMembership,
+  CatalogueSearchQuery,
+  AddCatalogueTitleRequest,
+  CatalogueAddition,
 } from "@mattrax/enterprise-domain";
 import { makeApplicationStoreService } from "./appStore.js";
+import {
+  CATALOGUE_VERIFIED_AT,
+  catalogueTitleById,
+  planCatalogueAddition,
+  searchCatalogue,
+} from "@mattrax/software";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
 import { resolvePolicyDeployment } from "./policyDeployment.js";
 import {
@@ -660,6 +670,8 @@ import {
   buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
   buildRemoveApplicationPayload,
+  appleOsFamily,
+  isApplePackageUrl,
   createAppleProfileSigner,
   AppleAdeEnrollmentError,
   ipaProvisioningExpiresAt,
@@ -6426,6 +6438,36 @@ export const createEnterpriseService = ({
         ),
       );
 
+  const rowCatalogueAddition = (row: EnterpriseApplication): CatalogueAddition => ({
+    titleId: row.catalogueTitleId ?? "",
+    methodId: row.catalogueMethodId ?? "",
+    applicationId: row.id,
+    name: row.name,
+    platform: row.platform,
+    source: row.source,
+    createdAt: iso(row.createdAt),
+  });
+
+  /** Tenant applications already created from one or more catalogue titles. */
+  const catalogueAdditionsFor = (
+    organizationId: string,
+    titleIds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<CatalogueAddition>, unknown, never> =>
+    titleIds.length === 0
+      ? Effect.succeed([])
+      : queryEffect(
+          db
+            .select()
+            .from(schema.application)
+            .where(
+              and(
+                eq(schema.application.organizationId, organizationId),
+                inArray(schema.application.catalogueTitleId, [...titleIds]),
+              ),
+            )
+            .orderBy(asc(schema.application.name), asc(schema.application.id)),
+        ).pipe(Effect.map((rows) => rows.map(rowCatalogueAddition)));
+
   /**
    * Insert or update one storefront row. The composite primary key is
    * `(application_id, region)`, and looking the row up first keeps the write
@@ -12180,6 +12222,10 @@ export const createEnterpriseService = ({
                 // at the source tenant's R2 key.
                 r2Key: null,
                 notes: application.notes ?? null,
+                catalogueTitleId: importString(application.catalogueTitleId, 255),
+                catalogueMethodId: importString(application.catalogueMethodId, 255),
+                catalogueTarget: importString(application.catalogueTarget, 32),
+                catalogueKind: importString(application.catalogueKind, 64),
                 createdAt: timestamp,
                 updatedAt: timestamp,
               });
@@ -26370,6 +26416,233 @@ export const createEnterpriseService = ({
           total: Number(total?.value ?? 0),
         };
       }),
+    searchSoftwareCatalogue: (request, tenantId, query: CatalogueSearchQuery) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+
+        const result = searchCatalogue({
+          q: query.q,
+          category: query.category,
+          platform: query.platform,
+          mdmPlatform: query.mdmPlatform,
+          limit: query.limit,
+          offset: query.offset,
+        });
+
+        const additions = yield* catalogueAdditionsFor(
+          ctx.organization.id,
+          result.items.map((title) => title.id),
+        );
+
+        return { ...result, additions, verifiedAt: CATALOGUE_VERIFIED_AT };
+      }),
+    getSoftwareCatalogueTitle: (request, tenantId, titleId: string) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "read");
+
+        const title = catalogueTitleById(titleId);
+
+        if (!title)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Software catalogue title not found" }),
+          );
+
+        const additions = yield* catalogueAdditionsFor(ctx.organization.id, [title.id]);
+
+        return { title, additions, verifiedAt: CATALOGUE_VERIFIED_AT };
+      }),
+    addSoftwareCatalogueTitle: (
+      request,
+      tenantId,
+      titleId: string,
+      payload: AddCatalogueTitleRequest,
+    ) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+
+        const title = catalogueTitleById(titleId);
+
+        if (!title)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Software catalogue title not found" }),
+          );
+
+        const plan = planCatalogueAddition({
+          titleId: title.id,
+          methods: payload.methods.map((method) => ({
+            methodId: method.methodId,
+            productCode: method.productCode ?? undefined,
+            version: method.version ?? undefined,
+          })),
+        });
+
+        if (!plan.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: plan.problem }));
+
+        const existing = yield* queryEffect(
+          db
+            .select()
+            .from(schema.application)
+            .where(
+              and(
+                eq(schema.application.organizationId, ctx.organization.id),
+                eq(schema.application.catalogueTitleId, title.id),
+              ),
+            ),
+        );
+
+        const existingByMethod = new Map(
+          existing
+            .filter((row) => Boolean(row.catalogueMethodId))
+            .map((row) => [row.catalogueMethodId!, row]),
+        );
+
+        const applications: Array<{
+          id: string;
+          name: string;
+          platform: "apple" | "win" | "android";
+          methodId: string;
+          target: string;
+          created: boolean;
+        }> = [];
+
+        for (const planned of plan.applications) {
+          const already = existingByMethod.get(planned.methodId);
+
+          if (already) {
+            applications.push({
+              id: already.id,
+              name: already.name,
+              platform: already.platform,
+              methodId: planned.methodId,
+              target: planned.target,
+              created: false,
+            });
+            continue;
+          }
+
+          const applicationId = id();
+          const at = now();
+
+          // The unique index on (organization, title, method) arbitrates a
+          // concurrent add. Re-check inside the transaction so a retry normally
+          // takes the existing row without relying on the error path.
+          const created = yield* db
+            .transaction((tx) =>
+              Effect.gen(function* () {
+                const [current] = yield* tx
+                  .select()
+                  .from(schema.application)
+                  .where(
+                    and(
+                      eq(schema.application.organizationId, ctx.organization.id),
+                      eq(schema.application.catalogueTitleId, title.id),
+                      eq(schema.application.catalogueMethodId, planned.methodId),
+                    ),
+                  )
+                  .limit(1);
+
+                if (current) return { existing: current, id: current.id, at };
+
+                yield* tx.insert(schema.application).values({
+                  id: applicationId,
+                  organizationId: ctx.organization.id,
+                  name: planned.name,
+                  platform: planned.platform,
+                  bundleId: planned.bundleId,
+                  version: planned.version,
+                  source: planned.source,
+                  manifestUrl: planned.manifestUrl,
+                  storeId: planned.storeId,
+                  notes: planned.notes,
+                  catalogueTitleId: title.id,
+                  catalogueMethodId: planned.methodId,
+                  catalogueTarget: planned.target,
+                  catalogueKind: planned.kind,
+                  removeOnUnassign: false,
+                  createdAt: at,
+                  updatedAt: at,
+                });
+
+                return { existing: undefined, id: applicationId, at };
+              }),
+            )
+            .pipe(Effect.result);
+
+          if (Predicate.isTagged(created, "Failure")) {
+            // The other writer won the unique index. Read its row rather than
+            // surfacing a duplicate-key error to the administrator.
+            const [winner] = yield* db
+              .select()
+              .from(schema.application)
+              .where(
+                and(
+                  eq(schema.application.organizationId, ctx.organization.id),
+                  eq(schema.application.catalogueTitleId, title.id),
+                  eq(schema.application.catalogueMethodId, planned.methodId),
+                ),
+              )
+              .limit(1);
+
+            if (!winner) return yield* Effect.fail(created.failure);
+
+            applications.push({
+              id: winner.id,
+              name: winner.name,
+              platform: winner.platform,
+              methodId: planned.methodId,
+              target: planned.target,
+              created: false,
+            });
+            continue;
+          }
+
+          if (created.success.existing) {
+            applications.push({
+              id: created.success.existing.id,
+              name: created.success.existing.name,
+              platform: created.success.existing.platform,
+              methodId: planned.methodId,
+              target: planned.target,
+              created: false,
+            });
+            continue;
+          }
+
+          yield* replaceApplicationInstallers({
+            organizationId: ctx.organization.id,
+            applicationId: created.success.id,
+            installers: [
+              {
+                platform: planned.platform,
+                source: planned.source,
+                bundleId: planned.bundleId,
+                manifestUrl: planned.manifestUrl,
+                storeId: planned.storeId,
+                version: planned.version,
+              },
+            ],
+          });
+
+          applications.push({
+            id: created.success.id,
+            name: planned.name,
+            platform: planned.platform,
+            methodId: planned.methodId,
+            target: planned.target,
+            created: true,
+          });
+        }
+
+        yield* audit(ctx, "application.catalogue_added", "software_catalogue", title.id, {
+          title: title.name,
+          methods: applications.map((application) => application.methodId),
+          created: applications.filter((application) => application.created).length,
+          existing: applications.filter((application) => !application.created).length,
+        });
+
+        return { applications };
+      }),
     getApplication: (request, tenantId, applicationId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -27498,6 +27771,94 @@ export const createEnterpriseService = ({
             continue;
           }
 
+          /**
+           * A vendor PKG URL is an inline manifest, not an OTA plist.
+           *
+           * The application may have been created from the curated catalogue's
+           * `apple-pkg` method, whose stable URL can be a redirect (Microsoft's
+           * fwlink) that hides the extension. Fall back to the URL suffix for
+           * hand-built entries. No hash exists for a vendor "latest" URL, so the
+           * manifest carries none; this is documented on the catalogue page.
+           */
+          const vendorPkgUrl = installer.manifestUrl?.trim();
+          const catalogueDeployment =
+            app.catalogueTitleId && app.catalogueMethodId
+              ? catalogueTitleById(app.catalogueTitleId)?.deployments.find(
+                  (deployment) => deployment.id === app.catalogueMethodId,
+                )
+              : undefined;
+
+          const cataloguePkg =
+            catalogueDeployment?.kind === "apple-pkg" || app.catalogueKind === "apple-pkg";
+
+          if (
+            installer.source === "manifest" &&
+            cataloguePkg &&
+            (!vendorPkgUrl || !vendorPkgUrl.startsWith("https://"))
+          ) {
+            skipped += groupDevices.length;
+            reasons.push("a catalogue vendor PKG must use an HTTPS URL");
+            continue;
+          }
+
+          if (
+            installer.source === "manifest" &&
+            vendorPkgUrl &&
+            (cataloguePkg || isApplePackageUrl(vendorPkgUrl))
+          ) {
+            const bundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
+
+            if (!bundleId) {
+              skipped += groupDevices.length;
+              reasons.push("a vendor PKG install needs a bundle identifier");
+              continue;
+            }
+
+            const targets = groupDevices.filter((device) =>
+              appleUploadSupportsDevice({ fileName: "installer.pkg", osEdition: device.osEdition }),
+            );
+
+            skipped += groupDevices.length - targets.length;
+
+            if (targets.length === 0) {
+              reasons.push("A vendor PKG installs on macOS only, and no assigned Mac is enrolled.");
+              continue;
+            }
+
+            for (const device of targets) {
+              yield* queueDeviceCommand({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                requestType: "InstallEnterpriseApplication",
+                payload: buildInstallEnterpriseApplicationPayload({
+                  manifest: buildAppleManifest({
+                    url: vendorPkgUrl,
+                    sha256: installer.sha256 ?? undefined,
+                    bundleId,
+                    version: installer.version?.trim() || "0",
+                    title: app.name,
+                  }),
+                  managementFlags: 1,
+                }),
+                at,
+              });
+
+              yield* recordInstallProvenance({
+                organizationId: ctx.organization.id,
+                deviceId: device.id,
+                applicationId: app.id,
+                installerId: installer.id,
+                platform: "apple",
+                bundleId,
+                at,
+              });
+            }
+
+            yield* applePush.pushAppleDevices(targets.map((device) => device.id));
+            queued += targets.length;
+            continue;
+          }
+
           if (installer.source === "store") {
             // The region mapping wins over the legacy single store id: it can
             // name a different id for the device's storefront. When no row is
@@ -27513,6 +27874,25 @@ export const createEnterpriseService = ({
             if (!storeId) {
               skipped += groupDevices.length;
               reasons.push("the store installer is missing its store ID");
+              continue;
+            }
+
+            // Apple store ids are per app record, not per OS family. A macOS
+            // App Store app and its iOS counterpart share the same Apple
+            // platform, so the catalogue target decides which devices are
+            // eligible. Manual entries without a target keep prior behaviour.
+            const targetFamily: "iOS" | "macOS" | "tvOS" | "visionOS" | "watchOS" | null =
+              app.catalogueTarget ? appleOsFamily(app.catalogueTarget) : null;
+            const storeDevices: typeof groupDevices = targetFamily
+              ? groupDevices.filter((device) => appleOsFamily(device.osEdition) === targetFamily)
+              : groupDevices;
+
+            skipped += groupDevices.length - storeDevices.length;
+
+            if (storeDevices.length === 0) {
+              reasons.push(
+                "the catalogue target does not match any assigned Apple device (macOS versus iOS/iPadOS)",
+              );
               continue;
             }
 
@@ -27532,14 +27912,14 @@ export const createEnterpriseService = ({
               const asset = yield* findVppAssetByStoreId(db, ctx.organization.id, storeId);
 
               if (!asset) {
-                skipped += groupDevices.length;
+                skipped += storeDevices.length;
                 reasons.push("no VPP licence pool exists for this app yet");
                 continue;
               }
 
-              const queuedDevices: Array<(typeof groupDevices)[number]> = [];
+              const queuedDevices: Array<(typeof storeDevices)[number]> = [];
 
-              for (const device of groupDevices) {
+              for (const device of storeDevices) {
                 const outcome = yield* mapVppFailure(
                   assignVppLicence({
                     db,
@@ -27598,7 +27978,7 @@ export const createEnterpriseService = ({
             };
             const storeBundleId = installer.bundleId?.trim() ?? app.bundleId?.trim();
 
-            for (const device of groupDevices) {
+            for (const device of storeDevices) {
               yield* queueDeviceCommand({
                 organizationId: ctx.organization.id,
                 deviceId: device.id,
@@ -27619,7 +27999,7 @@ export const createEnterpriseService = ({
                 });
             }
 
-            queued += groupDevices.length;
+            queued += storeDevices.length;
             continue;
           }
 
@@ -32702,6 +33082,31 @@ export const enterpriseListHandlers = (
     .handle("searchApplications", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.searchApplications(request, params.tenantId, query),
+      ),
+    );
+
+/**
+ * Curated software catalogue handlers. The group carries search, one title's
+ * detail and the add-to-tenant action; it is separate from `EnterpriseApi` so
+ * its generated declaration stays inside the compiler's emit limit.
+ */
+export const enterpriseSoftwareCatalogueHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseSoftwareCatalogueApi>,
+) =>
+  handlers
+    .handle("searchSoftwareCatalogue", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.searchSoftwareCatalogue(request, params.tenantId, query),
+      ),
+    )
+    .handle("getSoftwareCatalogueTitle", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getSoftwareCatalogueTitle(request, params.tenantId, params.titleId),
+      ),
+    )
+    .handle("addSoftwareCatalogueTitle", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.addSoftwareCatalogueTitle(request, params.tenantId, params.titleId, payload),
       ),
     );
 

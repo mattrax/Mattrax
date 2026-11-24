@@ -34,6 +34,8 @@ export * from "./PolicyScope.js";
 
 export * from "./Application.js";
 
+export * from "./SoftwareCatalogue.js";
+
 export * from "./Backup.js";
 
 export * from "./Common.js";

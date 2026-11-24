@@ -512,6 +512,10 @@ export const buildTenantExport = (
       sha256: application.sha256,
       r2Key: application.r2Key,
       notes: application.notes,
+      catalogueTitleId: application.catalogueTitleId,
+      catalogueMethodId: application.catalogueMethodId,
+      catalogueTarget: application.catalogueTarget,
+      catalogueKind: application.catalogueKind,
       removeOnUnassign: application.removeOnUnassign,
       installers: (installersByApplication.get(application.id) ?? []).map((installer) => ({
         platform: installer.platform,

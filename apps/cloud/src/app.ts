@@ -24,6 +24,7 @@ import {
   enterpriseSoftwareUpdateApi,
   enterpriseOsPolicyApi,
   enterpriseListApi,
+  enterpriseSoftwareCatalogueApi,
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   EnterpriseErrorDiagnostics,
@@ -56,6 +57,7 @@ import {
   enterpriseOnboardingHandlers,
   enterpriseUserHandlers,
   enterpriseListHandlers,
+  enterpriseSoftwareCatalogueHandlers,
   enterpriseWindowsHandlers,
   fleetMigrationHandlers,
   mcpOAuthRoutes,
@@ -285,6 +287,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseSoftwareUpdateApi)
   .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
+  .add(enterpriseSoftwareCatalogueApi)
   .add(enterpriseWindowsApi)
   .add(enterpriseApprovalApi)
   .add(fleetMigrationApi)
@@ -357,6 +360,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareUpdate", enterpriseSoftwareUpdateHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseOsPolicy", enterpriseOsPolicyHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseList", enterpriseListHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareCatalogue", enterpriseSoftwareCatalogueHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApproval", enterpriseApprovalHandlers),
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),

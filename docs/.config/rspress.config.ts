@@ -148,6 +148,7 @@ export default defineConfig({
             { text: "Groups", link: "/manage/groups" },
             { text: "Policies", link: "/manage/policies" },
             { text: "Applications", link: "/manage/applications" },
+            { text: "Software catalogue", link: "/manage/software-catalogue" },
             { text: "Scripts", link: "/manage/scripts" },
             { text: "AI agents and MCP", link: "/manage/mcp" },
             { text: "Security", link: "/manage/security" },

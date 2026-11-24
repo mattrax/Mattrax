@@ -364,6 +364,9 @@ export const routes = {
       applications: () => `${base}/applications`,
       newApplication: () => `${base}/applications/new`,
       application: (applicationId: string) => `${base}/applications/${segment(applicationId)}`,
+      softwareCatalogue: () => `${base}/applications/catalogue`,
+      softwareCatalogueTitle: (titleId: string) =>
+        `${base}/applications/catalogue/${segment(titleId)}`,
       scripts: () => `${base}/scripts`,
       migrations: () => `${base}/migration`,
       migration: (migrationId: string) => `${base}/migration/${segment(migrationId)}`,
