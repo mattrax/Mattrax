@@ -37,6 +37,53 @@ describe("tracked background tasks", () => {
     expect(finished).toBe(true);
   });
 
+  it("keeps fork idleness separate from unrelated parent work", async () => {
+    const parent = createBackgroundTasks();
+    const tick = parent.fork();
+    let releaseRequest!: () => void;
+    let releaseTick!: () => void;
+    const request = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    const work = new Promise<void>((resolve) => {
+      releaseTick = resolve;
+    });
+    parent.waitUntil(request);
+    tick.waitUntil(work);
+    let tickIdle = false;
+    const waiting = tick.idle().then(() => {
+      tickIdle = true;
+    });
+
+    await Promise.resolve();
+    expect(tickIdle).toBe(false);
+    releaseTick();
+    await waiting;
+    expect(tickIdle).toBe(true);
+
+    let parentIdle = false;
+    const parentWaiting = parent.idle().then(() => {
+      parentIdle = true;
+    });
+    await Promise.resolve();
+    expect(parentIdle).toBe(false);
+    releaseRequest();
+    await parentWaiting;
+  });
+
+  it("tracks forked work in the parent shutdown deadline", async () => {
+    const parent = createBackgroundTasks();
+    const tick = parent.fork();
+    const running = Effect.runPromiseExit(Effect.never, { signal: tick.signal });
+    tick.waitUntil(running);
+
+    await expect(parent.drain(5)).resolves.toBe("interrupted");
+    expect(tick.signal).toBe(parent.signal);
+    const exit = await running;
+
+    expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true);
+  });
+
   it("drains successful work without interrupting it", async () => {
     const tasks = createBackgroundTasks();
     let interrupted = false;
