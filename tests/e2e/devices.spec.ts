@@ -81,6 +81,32 @@ async function scrollColumnHeaderIntoView(viewport: Locator, name: string) {
   return header;
 }
 
+async function scrollRowCheckboxIntoView(viewport: Locator, name: RegExp) {
+  const checkbox = viewport.getByRole("checkbox", { name });
+
+  await expect
+    .poll(
+      async () => {
+        if (await checkbox.count()) return true;
+
+        await viewport.evaluate((element) => {
+          element.scrollTop = Math.min(
+            element.scrollHeight,
+            element.scrollTop + element.clientHeight,
+          );
+        });
+
+        return false;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  await checkbox.scrollIntoViewIfNeeded();
+  await expect(checkbox).toBeInViewport();
+
+  return checkbox;
+}
+
 test.describe("device fleet management", () => {
   test("searches, filters and exports the device list", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Fleet Tenant");
@@ -309,6 +335,24 @@ test.describe("device fleet management", () => {
 
     await viewport.evaluate((element) => {
       element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    const descendantFocus = page.getByRole("checkbox", { name: /Select Virtual Device 001/ });
+    await descendantFocus.focus();
+    await expect(rows.first()).toHaveAttribute("tabindex", "0");
+    await page.mouse.move(
+      (wheelBox?.x ?? 0) + (wheelBox?.width ?? 0) / 2,
+      (wheelBox?.y ?? 0) + (wheelBox?.height ?? 0) / 2,
+    );
+    await page.mouse.wheel(0, 5_000);
+    await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
+    await expect(viewport).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("TR");
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -352,8 +396,7 @@ test.describe("device fleet management", () => {
     await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
 
     await page.getByRole("checkbox", { name: /Select Virtual Device 001/ }).check();
-    const rangeTarget = page.getByRole("checkbox", { name: /Select Virtual Device 035/ });
-    await rangeTarget.scrollIntoViewIfNeeded();
+    const rangeTarget = await scrollRowCheckboxIntoView(viewport, /Select Virtual Device 035/);
     await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
     await rangeTarget.focus();
     await page.keyboard.press("Shift+Space");
@@ -366,8 +409,7 @@ test.describe("device fleet management", () => {
       element.scrollTop = 0;
     });
     await page.getByRole("checkbox", { name: /Select Virtual Device 001/ }).check();
-    const farRangeTarget = page.getByRole("checkbox", { name: /Select Virtual Device 081/ });
-    await farRangeTarget.scrollIntoViewIfNeeded();
+    const farRangeTarget = await scrollRowCheckboxIntoView(viewport, /Select Virtual Device 081/);
     await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
     await farRangeTarget.focus();
     await page.keyboard.press("Shift+Space");

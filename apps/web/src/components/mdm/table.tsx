@@ -715,29 +715,35 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   // Keyboard focus stays on a single row so the table is one tab stop, the
   // roving-tabindex pattern.
 
-  const rowWindowAt = (top: number) =>
+  const rowWindowAt = (top: number, focusIndex = activeRow()) =>
     virtualized()
       ? getTableRenderWindow({
           rowCount: rows().length,
           offsets: rowOffsets(),
           scrollTop: top,
           viewportHeight: Math.max(1, viewportHeight() - TABLE_HEADER_HEIGHT),
-          focusIndex: activeRow(),
+          focusIndex,
         })
       : { start: 0, end: rows().length, top: 0, bottom: 0 };
 
   const preserveFocusForScroll = (top: number) => {
     if (typeof document === "undefined" || !viewportRef) return;
 
-    const active = activeRow();
-    const row = active >= 0 ? rows()[active] : undefined;
-    const element = row ? rowRefs.get(row.id) : undefined;
-    const window = rowWindowAt(top);
+    const focused = document.activeElement;
+    let focusedRowId: string | undefined;
 
-    if (
-      element?.contains(document.activeElement) &&
-      (active < window.start || active >= window.end)
-    ) {
+    for (const [id, element] of rowRefs) {
+      if (!element.contains(focused)) continue;
+      focusedRowId = id;
+      break;
+    }
+
+    if (!focusedRowId) return;
+    const focusedIndex = rows().findIndex((row) => row.id === focusedRowId);
+    const window = rowWindowAt(top, focusedIndex);
+
+    if (focusedIndex >= 0 && (focusedIndex < window.start || focusedIndex >= window.end)) {
+      setActiveRow(focusedIndex);
       viewportRef.focus({ preventScroll: true });
     }
   };
@@ -832,6 +838,17 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
       return;
     }
+  };
+
+  const onTableFocusIn = (event: FocusEvent) => {
+    setTableFocused(true);
+    const target =
+      event.target instanceof Element
+        ? event.target.closest<HTMLTableRowElement>("tr[data-row-id]")
+        : null;
+    const index = Number(target?.dataset.rowIndex);
+
+    if (Number.isInteger(index) && index >= 0 && index < rows().length) setActiveRow(index);
   };
 
   /**
@@ -1402,9 +1419,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 aria-rowcount={rows().length + 1}
                 aria-colcount={columnCount()}
                 onKeyDown={onTableKeyDown}
-                onFocusIn={() => {
-                  setTableFocused(true);
-                }}
+                onFocusIn={onTableFocusIn}
                 onFocusOut={(event) => {
                   if (
                     !tableRef?.contains(
