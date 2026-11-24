@@ -92,6 +92,10 @@ export declare const apiWorker: {
     MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
     /** Support address in the onboarding footer; defaults to the sender. */
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+    /** Deployment brand used before an account has a tenant. */
+    MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+    MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+    MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
     /**
      * Set to `true` only on a deployment that intentionally has no outbound
      * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -225,6 +229,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
           /** Support address in the onboarding footer; defaults to the sender. */
           MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+          /** Deployment brand used before an account has a tenant. */
+          MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+          MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+          MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
           /**
            * Set to `true` only on a deployment that intentionally has no outbound
            * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -356,6 +364,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
           /** Support address in the onboarding footer; defaults to the sender. */
           MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+          /** Deployment brand used before an account has a tenant. */
+          MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+          MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+          MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
           /**
            * Set to `true` only on a deployment that intentionally has no outbound
            * email. Readiness then reports `mailer: skipped` (degraded) instead of

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BRAND_COLOR } from "@mattrax/enterprise-domain";
+import { DEFAULT_BRAND_COLOR, resolveTenantBranding } from "@mattrax/enterprise-domain";
+import { DEFAULT_EMAIL_BRAND_COLOR } from "../src/Mail/emailLayout.ts";
 import { invitationEmail } from "../src/Mail/invitationEmail.ts";
 import type { InvitationEmailInput } from "../src/Mail/invitationEmail.ts";
 
@@ -109,21 +110,58 @@ describe("invitationEmail", () => {
     });
 
     expect(injected.html).not.toContain("url(");
-    expect(injected.html).toContain(`background:${DEFAULT_BRAND_COLOR};`);
+    expect(injected.html).toContain(`background:${DEFAULT_EMAIL_BRAND_COLOR};`);
   });
 
-  it("includes a logo only for absolute https URLs", () => {
+  it("keeps English paragraphs LTR when the inviter name is RTL", () => {
+    const email = invitationEmail({ ...base, inviterName: "شركة أكمي" });
+
+    expect(email.html).toContain("شركة أكمي");
+    expect(email.html).toContain('dir="ltr"');
+    expect(email.html).toContain("unicode-bidi:isolate");
+    expect(email.html).not.toContain('dir="auto" class="email-heading"');
+  });
+
+  it("renders the resolved tenant default colour when none is set", () => {
+    const branding = resolveTenantBranding({ name: "Acme" });
+    const email = invitationEmail({ ...base, brandColor: branding.brandColor });
+
+    expect(branding.brandColor).toBe(DEFAULT_BRAND_COLOR);
+    expect(email.html).toContain("background:#1c1917;");
+    expect(email.html).not.toContain("background:#6e56cf;");
+  });
+
+  it("renders a decorative logo with an aspect-ratio-safe chip", () => {
     const logo = "https://cdn.acme.test/logo.png?tenant=acme&size=2";
     const email = invitationEmail({ ...base, logoUrl: logo });
 
     expect(email.html).toContain(
       `<img src="https://cdn.acme.test/logo.png?tenant=acme&amp;size=2"`,
     );
-    expect(email.html).toContain('alt="Acme"');
+    expect(email.html).toContain('alt="" role="presentation"');
+    expect(email.html).toContain("max-width:120px;max-height:28px");
+    expect(email.html).toContain("width:auto;height:auto");
+    expect(email.html).toContain('width="120" height="28"');
+    expect(email.html).toContain('bgcolor="#ffffff"');
   });
 
   it.each([
-    ["relative", "/logo.png"],
+    ["208 by 32", "https://cdn.acme.test/logo-208x32.png"],
+    ["wide", "https://cdn.acme.test/logo-wide-600x40.png"],
+  ])("keeps the %s logo ratio", (_label, logoUrl) => {
+    const email = invitationEmail({ ...base, logoUrl });
+
+    expect(email.html).toContain("max-width:120px;max-height:28px");
+    expect(email.html).toContain("width:auto;height:auto");
+  });
+
+  it("resolves a root-relative logo against the invitation origin", () => {
+    const email = invitationEmail({ ...base, logoUrl: "/logo.png" });
+
+    expect(email.html).toContain('src="https://app.mattrax.app/logo.png"');
+  });
+
+  it.each([
     ["protocol-relative", "//cdn.acme.test/logo.png"],
     ["plain http", "http://cdn.acme.test/logo.png"],
     ["javascript scheme", "javascript:alert(1)"],

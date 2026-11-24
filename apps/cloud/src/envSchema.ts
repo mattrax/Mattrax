@@ -116,6 +116,14 @@ const ApiEnvSchema = Schema.Struct({
   /** Support address in the onboarding email footer. Defaults to the sender. */
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: Schema.optional(nonEmptyString),
   /**
+   * Deployment brand shown in account and onboarding email. Defaults to
+   * Mattrax. A logo is only used when it resolves to an https image; root
+   * relative paths are resolved against `ORIGIN`.
+   */
+  MATTRAX_BRAND_NAME: Schema.optional(nonEmptyString),
+  MATTRAX_BRAND_LOGO_URL: Schema.optional(nonEmptyString),
+  MATTRAX_BRAND_COLOR: Schema.optional(nonEmptyString),
+  /**
    * ISO date (for example `2026-11-14`). Tenants created before this date are
    * never sent the follow-up, so enabling it does not mail existing customers.
    */
@@ -272,6 +280,9 @@ const RawApiEnvSchema = Schema.Struct({
   MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: optionalString,
   MATTRAX_ONBOARDING_REPLY_TO: optionalString,
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
+  MATTRAX_BRAND_NAME: optionalString,
+  MATTRAX_BRAND_LOGO_URL: optionalString,
+  MATTRAX_BRAND_COLOR: optionalString,
   MATTRAX_ONBOARDING_SINCE: optionalString,
   MAIL_TRANSPORT: optionalString,
   MAIL_FROM: optionalString,
@@ -375,6 +386,9 @@ export const resolveApiEnv = (source: unknown) => {
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(
       rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL,
     ),
+    MATTRAX_BRAND_NAME: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_NAME),
+    MATTRAX_BRAND_LOGO_URL: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_LOGO_URL),
+    MATTRAX_BRAND_COLOR: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_COLOR),
     MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
     MAIL_TRANSPORT: emptyStringAsUndefined(rawEnv.MAIL_TRANSPORT),
     MAIL_FROM: emptyStringAsUndefined(rawEnv.MAIL_FROM),

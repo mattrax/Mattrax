@@ -28,9 +28,22 @@ import {
   ONBOARDING_SUPPORT_EMAIL,
   sendWelcomeEmailOnce,
 } from "../Tenant/onboardingEmails.ts";
+import type { OnboardingEmailBranding } from "../Tenant/onboardingEmail.ts";
 import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import { sendTransactionalEmail } from "../Mail/emailOutbox.ts";
+import {
+  emailButton,
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "../Mail/emailLayout.ts";
+import { escapeHtml } from "../Mail/emailTemplate.ts";
 import {
   signStepUpFlow,
   signStepUpGrant,
@@ -264,6 +277,11 @@ export type EnterpriseAuthOptions = {
   readonly onboardingReplyTo?: EmailReplyTo;
   /** Support address in the welcome footer. Defaults to the sender address. */
   readonly onboardingSupportEmail?: string | null;
+  /**
+   * Deployment-level branding for the welcome email. A new account has no
+   * tenant yet, so this is the only branding available at verification time.
+   */
+  readonly onboardingBranding?: OnboardingEmailBranding | null;
   /** Extra origins allowed to make cookie-authenticated writes. */
   readonly trustedOrigins?: ReadonlyArray<string>;
 };
@@ -307,6 +325,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const allowedWriteOrigins = [origin, ...(options.trustedOrigins ?? [])];
 
       const emailFrom = options.emailFrom ?? DEFAULT_EMAIL_FROM;
+
+      const accountBrand = resolveEmailBrand({
+        name: options.onboardingBranding?.brandName,
+        logoUrl: options.onboardingBranding?.logoUrl,
+        brandColor: options.onboardingBranding?.brandColor,
+        origin,
+      });
 
       /** Queue one account email, or deliver it through the local mailbox. */
       const deliver = (
@@ -361,6 +386,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           origin,
           replyTo: options.onboardingReplyTo ?? DEFAULT_ONBOARDING_REPLY_TO,
           supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
+          branding: options.onboardingBranding,
           from: onboardingFrom,
         }).pipe(Effect.catchCause(() => Effect.void));
 
@@ -1157,6 +1183,27 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               return yield* Effect.fail(new EnterpriseBadRequest({ message }));
             });
 
+          const confirmationHtml = emailDocument({
+            subject: "Confirm your new Mattrax email address",
+            preheader: "Confirm the new address for your Mattrax account.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Confirm your new email address"),
+              emailParagraph(
+                "Confirm the new address for your Mattrax account by opening this link:",
+              ),
+              emailButton(confirmLink, "Confirm email address", accountBrand),
+              emailFootnote(
+                `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+                  confirmLink,
+                )}</span>`,
+                16,
+              ),
+              emailParagraph("The link works once and expires in one hour.", { muted: true }),
+            ].join("\n"),
+            footer: emailFootnote("If you weren't expecting this, ignore this email."),
+          });
+
           const confirmation = yield* deliver(
             {
               template: "email_change_confirm",
@@ -1167,7 +1214,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 to: newEmail,
                 subject: "Confirm your new Mattrax email address",
                 text: `Confirm your new Mattrax email address by opening this link:\n\n${confirmLink}\n\nThe link works once and expires in one hour.`,
-                html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${confirmLink}">${confirmLink}</a></p><p>The link works once and expires in one hour.</p>`,
+                html: confirmationHtml,
               },
             },
             newEmail,
@@ -1181,6 +1228,32 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           // about the attempt and can stop it without signing in.
           const cancelLink = emailChangeCancelLinkFor(origin, cancelToken);
 
+          const noticeHtml = emailDocument({
+            subject: "Your Mattrax email address is being changed",
+            preheader: "A change to your Mattrax email address was requested.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Your email address is being changed"),
+              emailParagraph(
+                `Someone signed in to your Mattrax account and asked to change its email address to <strong>${emailIsolate(
+                  newEmail,
+                )}</strong>.`,
+              ),
+              emailParagraph(
+                "If this was you, no action is needed: the change completes only after the new address confirms it.",
+              ),
+              emailParagraph(
+                `If this was not you, ${emailTextLink(
+                  cancelLink,
+                  "cancel the change",
+                )}. The link works once and expires in one hour. Then review your active sessions in Account settings.`,
+              ),
+            ].join("\n"),
+            footer: emailFootnote(
+              "If you did not request this change, cancel it and review your active sessions.",
+            ),
+          });
+
           const notice = yield* deliver(
             {
               template: "email_change_notice",
@@ -1189,7 +1262,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 to: user.email,
                 subject: "Your Mattrax email address is being changed",
                 text: `Someone signed in to your Mattrax account and asked to change its email address to ${newEmail}.\n\nIf this was you, no action is needed: the change completes only after the new address confirms it.\n\nIf this was not you, cancel the change here:\n\n${cancelLink}\n\nThe link works once and expires in one hour. Then review your active sessions in Account settings.`,
-                html: `<p>Someone signed in to your Mattrax account and asked to change its email address to <strong>${newEmail}</strong>.</p><p>If this was you, no action is needed: the change completes only after the new address confirms it.</p><p>If this was not you, <a href="${cancelLink}">cancel the change</a>. The link works once and expires in one hour. Then review your active sessions in Account settings.</p>`,
+                html: noticeHtml,
               },
             },
             user.email,
@@ -1254,6 +1327,25 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
 
+          const verificationHtml = emailDocument({
+            subject: "Your Mattrax verification code",
+            preheader: "Use this code to verify your email address.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Verify your email address"),
+              emailParagraph("Enter this code on the verification page:"),
+              emailCode(code),
+              emailParagraph("It expires in 15 minutes.", { muted: true }),
+              emailParagraph(
+                `You can also verify by opening ${emailTextLink(
+                  link,
+                  "this link",
+                )}. The link expires in 24 hours.`,
+              ),
+            ].join("\n"),
+            footer: emailFootnote("If you weren't expecting this, ignore this email."),
+          });
+
           const delivered = yield* deliver(
             {
               template: "email_verification",
@@ -1264,7 +1356,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 to: user.email,
                 subject: "Your Mattrax verification code",
                 text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
-                html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes.</p><p>You can also verify by opening <a href="${link}">this link</a>. The link expires in 24 hours.</p>`,
+                html: verificationHtml,
               },
             },
             user.email,

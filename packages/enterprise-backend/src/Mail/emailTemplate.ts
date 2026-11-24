@@ -22,14 +22,31 @@ export const trimOrNull = (value: string | null | undefined): string | null => {
 };
 
 /**
- * Only absolute `https` logos survive. Relative paths, inline data URLs and
- * unsafe schemes are dropped rather than rewritten, so the template never
- * emits an unusable or untrustworthy image.
+ * Resolve a logo to an absolute `https` URL. Same-origin root-relative paths
+ * are resolved against the deployment origin because tenant settings accept
+ * them; inline data URLs and unsafe schemes are dropped. Email clients do not
+ * reliably fetch data URLs, so the settings and docs tell operators to use an
+ * https image for mail.
  */
-export const safeLogoUrl = (value: string | null | undefined): string | null => {
+export const safeLogoUrl = (
+  value: string | null | undefined,
+  origin?: string | null,
+): string | null => {
   const trimmed = trimOrNull(value);
 
   if (!trimmed) return null;
+
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
+    if (!origin) return null;
+
+    try {
+      const resolved = new URL(trimmed, origin);
+
+      return resolved.protocol === "https:" ? resolved.href : null;
+    } catch {
+      return null;
+    }
+  }
 
   let parsed: URL;
 
@@ -73,25 +90,65 @@ export const formatExpiry = (value: Date | string): string => {
   return raw || "an unknown time";
 };
 
+const NEAR_BLACK = "#1c1917";
+
+const expandHex = (background: string): string | null => {
+  const hex = background.trim().replace(/^#/, "");
+
+  if (hex.length === 3)
+    return hex
+      .split("")
+      .map((char) => `${char}${char}`)
+      .join("");
+
+  return /^[0-9a-f]{6}$/i.test(hex) ? hex : null;
+};
+
+/** WCAG 2 relative luminance for an sRGB hex colour. */
+export const relativeLuminance = (background: string): number => {
+  const hex = expandHex(background);
+
+  if (!hex) return 0;
+
+  const channel = (offset: number) => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+};
+
+/** WCAG contrast ratio between two sRGB hex colours. */
+export const contrastRatio = (left: string, right: string): number => {
+  const first = relativeLuminance(left);
+  const second = relativeLuminance(right);
+  const lighter = Math.max(first, second);
+  const darker = Math.min(first, second);
+
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
 /**
- * Pick black or white button text from the background luminance so a light
- * tenant brand colour stays readable.
+ * Pick accessible text for a brand background.
+ *
+ * White and near-black cover the design, but a mid-tone grey can leave both
+ * just under 4.5:1. Pure black is the final candidate, and the chosen pair is
+ * always the best of the three that meets WCAG AA. Near-black is preferred when
+ * it passes so the product palette survives.
  */
 export const buttonTextColor = (background: string): string => {
-  const hex = background.slice(1);
+  const candidates = ["#ffffff", NEAR_BLACK, "#000000"] as const;
+  const preferred = contrastRatio(background, NEAR_BLACK) >= 4.5 ? NEAR_BLACK : null;
+  const white = contrastRatio(background, "#ffffff") >= 4.5 ? "#ffffff" : null;
+  const black = contrastRatio(background, "#000000") >= 4.5 ? "#000000" : null;
 
-  const expanded =
-    hex.length === 3
-      ? hex
-          .split("")
-          .map((char) => `${char}${char}`)
-          .join("")
-      : hex;
-
-  const red = Number.parseInt(expanded.slice(0, 2), 16);
-  const green = Number.parseInt(expanded.slice(2, 4), 16);
-  const blue = Number.parseInt(expanded.slice(4, 6), 16);
-  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
-
-  return luminance > 0.6 ? "#1c1917" : "#ffffff";
+  return (
+    preferred ??
+    white ??
+    black ??
+    candidates.reduce((best, candidate) =>
+      contrastRatio(background, candidate) > contrastRatio(background, best) ? candidate : best,
+    )
+  );
 };

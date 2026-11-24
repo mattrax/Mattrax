@@ -13,7 +13,7 @@ import { BillingService } from "@mattrax/enterprise-billing";
 import type { BillingOperations } from "@mattrax/enterprise-billing";
 import { AzureGraph } from "@mattrax/azure-graph";
 import type { AzureGraphService } from "@mattrax/azure-graph";
-import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
+import type { AndroidDeliveryConfig, OnboardingEmailBranding } from "@mattrax/enterprise-backend";
 import type { AppleApiConfig } from "@mattrax/apple-business-manager";
 import type { EmailTransport } from "@mattrax/email";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
@@ -63,6 +63,8 @@ export type EnterpriseServiceOptions = {
   readonly superadmins?: ReadonlyArray<string>;
   /** Verified invitation sender; defaults to `hello@mattrax.cloud`. */
   readonly invitationFromEmail?: string;
+  /** Deployment branding for account email sent before a tenant exists. */
+  readonly branding?: OnboardingEmailBranding | null;
   /**
    * Lifetime of the bearer SCEP challenge in an Apple enrollment profile, in
    * seconds. Defaults to one hour (see `ENROLLMENT_PROFILE_DEFAULT_TTL_SECONDS`).
@@ -116,6 +118,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
           db,
           schema,
           origin: env.origin,
+          branding: options.branding,
           billing: billing ?? options.billing,
           storage,
           auth,

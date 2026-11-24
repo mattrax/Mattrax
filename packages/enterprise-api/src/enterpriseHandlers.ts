@@ -307,7 +307,11 @@ import {
   loginAttemptEntry,
   normalizeEntityListQuery,
 } from "@mattrax/enterprise-backend";
-import type { NormalizedEntityListQuery, AndroidDeliveryError } from "@mattrax/enterprise-backend";
+import type {
+  NormalizedEntityListQuery,
+  AndroidDeliveryError,
+  OnboardingEmailBranding,
+} from "@mattrax/enterprise-backend";
 import {
   AUTOPILOT_IMPORT_MAX_BYTES,
   AUTOPILOT_IMPORT_MAX_ROWS,
@@ -422,6 +426,14 @@ import {
   updateScript,
 } from "@mattrax/enterprise-backend";
 import { invitationEmail } from "@mattrax/enterprise-backend";
+import {
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailParagraph,
+  resolveEmailBrand,
+} from "@mattrax/enterprise-backend";
 import { ownershipTransferEmail } from "@mattrax/enterprise-backend";
 import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
@@ -711,6 +723,8 @@ export class EnterpriseAnalyticsService extends Context.Service<
 
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
+  /** Deployment branding for account email sent before a tenant exists. */
+  readonly branding?: OnboardingEmailBranding | null;
   /**
    * Customer-facing billing implementation. Hosted Cloud and self-hosted
    * deployments both forward to the services deployment; a deployment with no
@@ -1746,6 +1760,7 @@ export const createEnterpriseService = ({
   db,
   schema,
   origin,
+  branding,
   billing: providedBilling,
   storage,
   auth: authService,
@@ -10159,12 +10174,13 @@ export const createEnterpriseService = ({
             }),
           )
           .pipe(
-            Effect.mapError(() =>
-              new EnterpriseDbError({
-                message: preview.tenant
-                  ? "The tenant was deleted, but the rest of your account could not be removed. Nothing else was changed, so your sign-in still works; retry to finish."
-                  : "Your account could not be deleted. Nothing was changed; retry to finish.",
-              }),
+            Effect.mapError(
+              () =>
+                new EnterpriseDbError({
+                  message: preview.tenant
+                    ? "The tenant was deleted, but the rest of your account could not be removed. Nothing else was changed, so your sign-in still works; retry to finish."
+                    : "Your account could not be deleted. Nothing was changed; retry to finish.",
+                }),
             ),
           );
 
@@ -10312,7 +10328,7 @@ export const createEnterpriseService = ({
           );
 
         return yield* startRecoveryRequest(
-          { db, authSecret: authSecret ?? "", origin, email },
+          { db, authSecret: authSecret ?? "", origin, email, branding },
           { email },
         );
       }),
@@ -12624,7 +12640,7 @@ export const createEnterpriseService = ({
         yield* requireStepUp(auth, request, "recovery-approve");
 
         return yield* approveRecoveryRequest(
-          { db, authSecret: authSecret ?? "", origin, email },
+          { db, authSecret: authSecret ?? "", origin, email, branding },
           {
             token: payload.token,
             organizationId: ctx.organization.id,
@@ -29800,6 +29816,27 @@ export const createEnterpriseService = ({
             },
           });
 
+        const brand = resolveEmailBrand({
+          name: branding?.brandName,
+          logoUrl: branding?.logoUrl,
+          brandColor: branding?.brandColor,
+          origin,
+        });
+
+        const verificationHtml = emailDocument({
+          subject: "Your Mattrax verification code",
+          preheader: "Use this code to finish creating your Mattrax account.",
+          brand,
+          content: [
+            emailHeading("Verify your email address"),
+            emailParagraph("Enter this code on the sign-up page:"),
+            emailCode(code),
+            emailParagraph("It expires in 15 minutes.", { muted: true }),
+            emailParagraph("Enter it on the sign-up page to finish creating your account."),
+          ].join("\n"),
+          footer: emailFootnote("If you weren't expecting this, ignore this email."),
+        });
+
         const outcome = yield* sendTransactionalEmail({
           db,
           email,
@@ -29815,7 +29852,7 @@ export const createEnterpriseService = ({
             from: DEFAULT_EMAIL_FROM,
             subject: "Your Mattrax verification code",
             text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. Enter it on the sign-up page to finish creating your account.`,
-            html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes. Enter it on the sign-up page to finish creating your account.</p>`,
+            html: verificationHtml,
           },
         });
 

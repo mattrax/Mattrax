@@ -18,7 +18,11 @@ and Approvals in the rail. Exporting and importing a tenant bundle, and moving a
 deployment, are under **Settings → Migration → Export / import**.
 
 Branding is used by the public enrollment page, Apple enrollment profiles, the DDM
-organization declaration and invitation emails.
+organization declaration, invitation emails, ownership-transfer emails and the
+one-week onboarding follow-up. Account email sent before a new account belongs
+to a tenant (welcome, verification and recovery) uses deployment branding from
+`MATTRAX_BRAND_NAME`, `MATTRAX_BRAND_LOGO_URL` and `MATTRAX_BRAND_COLOR`
+(Mattrax defaults when unset) plus the account address.
 
 ```bash
 curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID" \
@@ -69,7 +73,7 @@ shared tenant; account deletion is the separate, self-service flow below.
 
 ### Deleting your account
 
-**Account → Delete account** deletes the dashboard account *and* the tenant it owns.
+**Account → Delete account** deletes the dashboard account _and_ the tenant it owns.
 The button opens an email dialog, then navigates to `/account/delete` as a separate page.
 That page lists the tenant, its member and device counts, and every effect of the cascade.
 The email is typed again there, then acknowledged, before the destructive button is
@@ -118,7 +122,11 @@ Mattrax sends two transactional onboarding emails from
 `no-reply` mailbox.
 
 - **Welcome** — one email per manual account, sent after the address is
-  verified. It links to the dashboard and the first-device enrollment step.
+  verified. It explains what Mattrax is and gives the real order of work for a
+  tenantless account: create a tenant, set a policy, then enrol a device. It
+  links to tenant creation, the dashboard and the getting-started quick start,
+  and includes the account address plus support and unsubscribe details where
+  configured. It does not link to an enrollment page before a tenant exists.
   Directory-provisioned SCIM/Graph accounts never receive it.
 - **One-week follow-up** — one private email per verified tenant owner/admin,
   sent by the daily scheduler once the tenant is at least seven days old (and
@@ -140,6 +148,52 @@ move the eligibility window with `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` and
 `MAINTENANCE_ONBOARDING_WINDOW_DAYS`, and prevent historical tenants from being
 emailed with `MATTRAX_ONBOARDING_SINCE`. See
 [Configuration](/operations/configuration).
+
+### Presentation and accessibility
+
+Both emails use the dashboard's visual language: a warm page, a white card,
+hairline borders, brand-coloured primary actions whose text is chosen for at
+least 4.5:1 contrast, and purple links. The header shows a coloured brand mark
+and wordmark, and adds the deployment or tenant logo when one is set. Account
+email before a tenant exists uses the deployment brand; invitation,
+ownership-transfer and follow-up mail use the tenant brand.
+
+Email logos must resolve to an absolute `https` image. Root-relative paths are
+resolved against `ORIGIN`; `data:` URLs are accepted by tenant branding for the
+dashboard and enrollment page but are not used in email because clients commonly
+block them. The logo is decorative (`alt=""`) because the wordmark carries the
+accessible brand name; the header keeps the text mark and wordmark when images
+are blocked. A logo sits on a white chip so dark artwork remains visible in dark
+mode. Clients that honour CSS keep the original aspect ratio; Outlook falls back
+to the fixed 120×28 box so a wide logo cannot overflow the card.
+
+The HTML is table-based with inline styles for Outlook and always ships a
+plain-text alternative; the welcome copy is rendered into both bodies from one
+definition. It declares `color-scheme: light dark`
+with `prefers-color-scheme` and Outlook.com `[data-ogsc]` overrides. Apple Mail
+and Outlook.com apply those overrides; Gmail follows its own dark theme and may
+not. Long and right-to-left names are isolated and allowed to wrap. Support
+addresses, unsubscribe links and optional tenant branding are escaped before
+rendering.
+
+### Previewing onboarding email
+
+Enable the development mailbox and register a local account:
+
+```bash
+DEV_MAILBOX=true pnpm web dev
+```
+
+`GET http://localhost:9050/api/debug/emails` returns the rendered messages,
+including `html` and `text`. To re-run the bounded welcome backstop and follow-up
+sweep without waiting for the scheduler:
+
+```bash
+curl -X POST http://localhost:9050/api/debug/onboarding-emails
+```
+
+Both routes are loopback-only unless `DEV_MAILBOX_ALLOW_REMOTE` and
+`DEV_MAILBOX_SECRET` are set. Never enable the mailbox in production.
 
 ## Roles
 

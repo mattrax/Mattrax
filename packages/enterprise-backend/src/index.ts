@@ -305,6 +305,19 @@ export {
   type SignSsrTokenInput,
 } from "./Account/ssrToken.ts";
 
+export {
+  DEFAULT_EMAIL_BRAND_COLOR,
+  emailButton,
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "./Mail/emailLayout.ts";
+
 export { invitationEmail } from "./Mail/invitationEmail.ts";
 
 export type { InvitationEmail, InvitationEmailInput } from "./Mail/invitationEmail.ts";
@@ -320,6 +333,7 @@ export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.
 
 export type {
   OnboardingEmail,
+  OnboardingEmailBranding,
   OnboardingFollowUpEmailInput,
   WelcomeEmailInput,
 } from "./Tenant/onboardingEmail.ts";

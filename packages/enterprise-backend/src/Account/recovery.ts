@@ -9,6 +9,17 @@ import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { AuthClaims } from "@mattrax/enterprise-domain";
 import { RecoveryRejected } from "@mattrax/enterprise-domain";
 import { ACCOUNT_AUDIT, recordAccountAudit } from "./accountAudit.ts";
+import type { OnboardingEmailBranding } from "../Tenant/onboardingEmail.ts";
+import {
+  emailButton,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  resolveEmailBrand,
+} from "../Mail/emailLayout.ts";
+import { escapeHtml } from "../Mail/emailTemplate.ts";
 import type { EmailTransport } from "@mattrax/email";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
 
@@ -44,6 +55,8 @@ export type RecoveryDeps = {
   readonly authSecret: string;
   readonly origin: string;
   readonly email?: EmailTransport;
+  /** Deployment branding used before an account belongs to a tenant. */
+  readonly branding?: OnboardingEmailBranding | null;
   readonly now?: () => Date;
 };
 
@@ -72,6 +85,14 @@ const linkFor = (origin: string, path: string, token: string) =>
   `${origin}${path}?token=${encodeURIComponent(token)}`;
 
 const FROM = { name: "Mattrax", email: "hello@mattrax.cloud" } as const;
+
+const recoveryBrand = (deps: RecoveryDeps) =>
+  resolveEmailBrand({
+    name: deps.branding?.brandName,
+    logoUrl: deps.branding?.logoUrl,
+    brandColor: deps.branding?.brandColor,
+    origin: deps.origin,
+  });
 
 const sendEmail = (
   email: EmailTransport | undefined,
@@ -216,14 +237,41 @@ export const requestAccountRecovery = (
     });
 
     const proofLink = linkFor(deps.origin, "/recover", proofToken);
+    const brand = recoveryBrand(deps);
+
+    const proofHtml = emailDocument({
+      subject: "Recover access to your Mattrax account",
+      preheader: "Open this link to prove you control this address.",
+      brand,
+      content: [
+        emailHeading("Recover access to your Mattrax account"),
+        emailParagraph(
+          "Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:",
+        ),
+        emailButton(proofLink, "Recover access", brand),
+        emailFootnote(
+          `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+            proofLink,
+          )}</span>`,
+          16,
+        ),
+        emailParagraph(
+          "The link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.",
+        ),
+        emailParagraph("No passkey or account setting has been changed.", { muted: true }),
+      ].join("\n"),
+      footer: emailFootnote(
+        "If it wasn't you, ignore this email and change your email address from a signed-in session.",
+      ),
+    });
 
     yield* sendEmail(
       deps.email,
       {
         to: user.email,
         subject: "Recover access to your Mattrax account",
-        text: `Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:\n\n${proofLink}\n\nThe link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.\n\nNo passkey or account setting has been changed.`,
-        html: `<p>Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:</p><p><a href="${proofLink}">${proofLink}</a></p><p>The link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.</p><p>No passkey or account setting has been changed.</p>`,
+        text: `Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:\n\n${proofLink}\n\nThe link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.\n\nNo passkey or account setting has been changed.\n\nIf it wasn't you, ignore this email and change your email address from a signed-in session.`,
+        html: proofHtml,
       },
       `RECOVERY PROOF requested for ${user.email}`,
     );
@@ -235,6 +283,29 @@ export const requestAccountRecovery = (
 
       const recipients = yield* ownerRecipients(deps.db, approvalOrganizationId, user.id);
 
+      const approvalHtml = emailDocument({
+        subject: "Account recovery needs your approval",
+        preheader: "A teammate asked to recover access to their Mattrax account.",
+        brand,
+        content: [
+          emailHeading("Account recovery needs your approval"),
+          emailParagraph(
+            `${emailIsolate(user.name)} (${emailIsolate(
+              user.email,
+            )}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.`,
+          ),
+          emailButton(approvalLink, "Review the request", brand),
+          emailFootnote(
+            `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+              approvalLink,
+            )}</span>`,
+            16,
+          ),
+          emailParagraph("If you were not expecting this, do not approve it.", { muted: true }),
+        ].join("\n"),
+        footer: emailFootnote("If you weren't expecting this, do not approve it."),
+      });
+
       for (const recipient of recipients)
         yield* sendEmail(
           deps.email,
@@ -242,7 +313,7 @@ export const requestAccountRecovery = (
             to: recipient,
             subject: "Account recovery needs your approval",
             text: `${user.name} (${user.email}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.\n\nOpen your administrators page to approve it: ${approvalLink}\n\nIf you were not expecting this, do not approve it.`,
-            html: `<p>${user.name} (${user.email}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.</p><p><a href="${approvalLink}">Open your administrators page to approve it</a></p><p>If you were not expecting this, do not approve it.</p>`,
+            html: approvalHtml,
           },
           `RECOVERY APPROVAL requested for ${recipient}`,
         );
@@ -436,6 +507,28 @@ export const approveAccountRecovery = (
     if (record.status === "pending_approval") {
       const completion = yield* mintCompletion(deps, record, now);
       const link = linkFor(deps.origin, "/recover/complete", completion.signInToken);
+      const brand = recoveryBrand(deps);
+
+      const completionHtml = emailDocument({
+        subject: "Your Mattrax account recovery was approved",
+        preheader: "Sign in and add a new passkey.",
+        brand,
+        content: [
+          emailHeading("Your account recovery was approved"),
+          emailParagraph(
+            "Another owner approved your account recovery. Open this link to sign in and add a new passkey:",
+          ),
+          emailButton(link, "Sign in and add a passkey", brand),
+          emailFootnote(
+            `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+              link,
+            )}</span>`,
+            16,
+          ),
+          emailParagraph("The link works once and expires in 15 minutes.", { muted: true }),
+        ].join("\n"),
+        footer: emailFootnote("If you weren't expecting this, ignore this email."),
+      });
 
       yield* sendEmail(
         deps.email,
@@ -443,7 +536,7 @@ export const approveAccountRecovery = (
           to: record.email,
           subject: "Your Mattrax account recovery was approved",
           text: `Another owner approved your account recovery. Open this link to sign in and add a new passkey:\n\n${link}\n\nThe link works once and expires in 15 minutes.`,
-          html: `<p>Another owner approved your account recovery. Open this link to sign in and add a new passkey:</p><p><a href="${link}">${link}</a></p><p>The link works once and expires in 15 minutes.</p>`,
+          html: completionHtml,
         },
         `RECOVERY COMPLETION requested for ${record.email}`,
       );
