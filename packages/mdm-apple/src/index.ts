@@ -34,6 +34,7 @@ import {
   LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   isAppleLockScreenMessageDevice,
   isConfirmedMacOsDevice,
+  isTenantApplicationObjectKey,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
@@ -7457,6 +7458,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .pipe(Effect.mapError(internal));
 
               if (!application?.r2Key || !application.sha256) return null;
+
+              // The row is tenant-checked below, but the *key* must also belong
+              // to that tenant: a row imported before key validation could still
+              // point at another tenant's object.
+              if (!isTenantApplicationObjectKey(application.organizationId, application.r2Key))
+                return null;
 
               const assetToken = yield* verifyAppleAssetTokenEffect(authSecret ?? "", token, {
                 policyId: catalogueApplicationId,

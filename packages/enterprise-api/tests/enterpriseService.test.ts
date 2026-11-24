@@ -6766,7 +6766,7 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("previews a mobileconfig with friendly payload categories", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -6787,7 +6787,9 @@ describe("enterprise policy validation and enrollment", () => {
 </array>
 </dict></plist>`;
 
-    const preview = await runEffect(service.previewMobileconfig({ mobileconfig: btoa(xml) }));
+    const preview = await runEffect(
+      service.previewMobileconfig(request(headers), { mobileconfig: btoa(xml) }),
+    );
     expect(preview).toMatchObject({
       displayName: "Acme Profile",
       description: "Corporate settings",
@@ -6801,10 +6803,34 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("rejects an invalid mobileconfig preview", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
     await expect(
-      runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
+      runEffect(
+        service.previewMobileconfig(request(headers), { mobileconfig: "not base64!" }),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("requires an authenticated, verified account to parse a mobileconfig", async () => {
+    const { service, headers, user } = await makeContext();
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(), { mobileconfig: btoa("<plist></plist>") }),
+      ),
+    ).rejects.toBeDefined();
+
+    user.emailVerified = false;
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(headers), {
+          mobileconfig: btoa("<plist></plist>"),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    user.emailVerified = true;
   });
 });
 

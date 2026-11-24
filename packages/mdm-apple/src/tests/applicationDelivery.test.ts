@@ -800,4 +800,50 @@ describe("Apple policy application delivery", () => {
       run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
     ).resolves.toMatchObject({ content: pkg });
   });
+
+  it("refuses a catalogue object stored under another tenant prefix", async () => {
+    const token = await signAppleAssetToken(authSecret, {
+      policyId: "app-1",
+      kind: CATALOGUE_APPLICATION_ASSET_KIND,
+      deviceId: "device-1",
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    });
+
+    let reads = 0;
+
+    const { backend } = setup({
+      applications: [
+        {
+          id: "app-1",
+          organizationId: "org-1",
+          name: "Imported",
+          platform: "apple",
+          bundleId: "com.example.imported",
+          version: "1.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Imported.pkg",
+          contentType: "application/octet-stream",
+          size: pkg.byteLength,
+          sha256,
+          // A row written before key validation, or by a cutover import.
+          r2Key: "a/org-2/app-1/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => {
+        reads += 1;
+
+        return pkg;
+      },
+    });
+
+    await expect(
+      run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
+    ).resolves.toBeNull();
+    expect(reads).toBe(0);
+  });
 });
