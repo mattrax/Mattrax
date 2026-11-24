@@ -5,7 +5,7 @@ use crate::host::{self, HostContext};
 use crate::logging::Logger;
 use crate::profiles::{self, InstalledScript};
 use crate::restricted::{self, LiveRestrictedRunner};
-use crate::result::{self, ScriptResult};
+use crate::result::{self, RestrictedResultQueue, ScriptResult};
 use crate::state::{self, AgentState, ScriptState};
 use crate::trigger::{self, TriggerKind};
 use chrono::{DateTime, Local};
@@ -37,14 +37,19 @@ pub struct Agent {
     state_path: PathBuf,
     pub logger: Logger,
     runner: Box<dyn ScriptRunner>,
+    restricted_results: RestrictedResultQueue,
 }
 
 impl Agent {
     pub fn system() -> Self {
+        let state_path = PathBuf::from(crate::STATE_PATH);
+        let restricted_results = RestrictedResultQueue::system(&state_path);
+
         Self {
-            state_path: PathBuf::from(crate::STATE_PATH),
+            state_path,
             logger: Logger::system(),
             runner: Box::new(LiveRunner),
+            restricted_results,
         }
     }
 
@@ -53,10 +58,14 @@ impl Agent {
         logger: Logger,
         runner: Box<dyn ScriptRunner>,
     ) -> Self {
+        let state_path: PathBuf = state_path.into();
+        let restricted_results = RestrictedResultQueue::system(&state_path);
+
         Self {
-            state_path: state_path.into(),
+            state_path,
             logger,
             runner,
+            restricted_results,
         }
     }
 
@@ -67,23 +76,27 @@ impl Agent {
     /// Evaluate every installed script once and persist state.
     pub fn run_once(&self) {
         let mut state = state::load(&self.state_path);
-        let scripts = profiles::installed_scripts();
+        let profile_snapshot = profiles::installed_profile_values();
+        let scripts = profiles::installed_scripts_from_profiles(&profile_snapshot);
+        let restricted_rules =
+            restricted::installed_restricted_software_from_profiles(&profile_snapshot);
         let host = host::collect();
+        let now = Local::now();
 
         tick(
             &scripts,
             &mut state,
-            Local::now(),
+            now,
             &host,
             self.runner.as_ref(),
             &self.logger,
         );
 
         restricted::tick(
-            &restricted::installed_restricted_software(),
+            &restricted_rules,
             &mut state.restricted,
-            Local::now(),
-            &LiveRestrictedRunner,
+            now,
+            &LiveRestrictedRunner::new(self.restricted_results.clone()),
             &self.logger,
         );
 
@@ -97,6 +110,8 @@ impl Agent {
     pub fn run_forever(&self) -> ! {
         self.logger
             .log(format!("mattraxd {} starting", crate::VERSION));
+
+        let _restricted_result_worker = self.restricted_results.start_worker();
 
         loop {
             self.run_once();
@@ -284,6 +299,40 @@ mod tests {
             .iter()
             .map(|(_, trigger)| trigger.clone())
             .collect()
+    }
+
+    #[test]
+    fn one_profile_snapshot_feeds_scripts_and_restricted_rules() {
+        let snapshot = vec![plist::from_bytes(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>PayloadContent</key><array>
+  <dict>
+    <key>PayloadType</key><string>com.mattrax.script</string>
+    <key>ScriptID</key><string>script-1</string>
+    <key>Content</key><string>true</string>
+    <key>ServerURL</key><string>https://mattrax.test</string>
+    <key>DeviceToken</key><string>token</string>
+  </dict>
+  <dict>
+    <key>PayloadType</key><string>com.mattrax.restricted-software</string>
+    <key>RestrictedSoftwareID</key><string>rule-1</string>
+    <key>MatchType</key><string>process-name</string>
+    <key>MatchValue</key><string>Banned</string>
+    <key>Action</key><string>kill-process</string>
+    <key>ServerURL</key><string>https://mattrax.test</string>
+    <key>DeviceToken</key><string>token</string>
+  </dict>
+</array></dict></plist>"#,
+        )
+        .expect("profile parses")];
+
+        let scripts = profiles::installed_scripts_from_profiles(&snapshot);
+        let rules = restricted::installed_restricted_software_from_profiles(&snapshot);
+
+        assert_eq!(scripts.len(), 1);
+        assert_eq!(rules.len(), 1);
+        assert_eq!(scripts[0].id, "script-1");
+        assert_eq!(rules[0].id, "rule-1");
     }
 
     #[test]

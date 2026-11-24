@@ -13,6 +13,7 @@
 
 use crate::logging::Logger;
 use crate::profiles::installed_profile_values;
+use crate::result::RestrictedResultQueue;
 use crate::state::RestrictedState;
 use crate::util;
 use chrono::{DateTime, Local, SecondsFormat, Utc};
@@ -20,9 +21,8 @@ use plist::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Duration;
 
 const DEFAULT_INTERVAL_SECONDS: i64 = 300;
@@ -56,7 +56,12 @@ pub struct RestrictedResult {
 }
 
 impl RestrictedResult {
-    fn succeeded(rule: &InstalledRestrictedSoftware, killed: usize, removed: usize, detail: String) -> Self {
+    fn succeeded(
+        rule: &InstalledRestrictedSoftware,
+        killed: usize,
+        removed: usize,
+        detail: String,
+    ) -> Self {
         Self {
             rule_id: rule.id.clone(),
             action: rule.action.clone(),
@@ -137,7 +142,9 @@ pub fn rules_from_profile(profile: &Value) -> Vec<InstalledRestrictedSoftware> {
 
     payloads
         .iter()
-        .filter(|payload| string(payload, "PayloadType") == Some(crate::RESTRICTED_SOFTWARE_PAYLOAD_TYPE))
+        .filter(|payload| {
+            string(payload, "PayloadType") == Some(crate::RESTRICTED_SOFTWARE_PAYLOAD_TYPE)
+        })
         .filter_map(|payload| {
             let id = string(payload, "RestrictedSoftwareID")?.to_owned();
             let match_type = string(payload, "MatchType")?.to_owned();
@@ -180,10 +187,14 @@ pub fn rules_from_profile(profile: &Value) -> Vec<InstalledRestrictedSoftware> {
 }
 
 pub fn installed_restricted_software() -> Vec<InstalledRestrictedSoftware> {
-    installed_profile_values()
-        .iter()
-        .flat_map(rules_from_profile)
-        .collect()
+    installed_restricted_software_from_profiles(&installed_profile_values())
+}
+
+/// Parse rules from a profile snapshot already collected for this tick.
+pub(crate) fn installed_restricted_software_from_profiles(
+    profiles: &[Value],
+) -> Vec<InstalledRestrictedSoftware> {
+    profiles.iter().flat_map(rules_from_profile).collect()
 }
 
 /// A stable digest of the rule fields that change enforcement behaviour.
@@ -197,19 +208,57 @@ pub fn rule_digest(rule: &InstalledRestrictedSoftware) -> String {
 }
 
 pub trait RestrictedRunner {
-    fn enforce(&self, rule: &InstalledRestrictedSoftware) -> RestrictedResult;
+    fn snapshot(&self, include_bundles: bool) -> EnforcementSnapshot;
+    fn enforce(
+        &self,
+        rule: &InstalledRestrictedSoftware,
+        snapshot: &EnforcementSnapshot,
+    ) -> RestrictedResult;
     fn post(&self, rule: &InstalledRestrictedSoftware, result: &RestrictedResult, logger: &Logger);
 }
 
-pub struct LiveRestrictedRunner;
+/// The process table and bundle inventory collected once for an enforcement
+/// tick. Rules only filter this snapshot; destructive actions still revalidate
+/// their targets immediately before signalling or deletion.
+#[derive(Debug, Clone)]
+pub struct EnforcementSnapshot {
+    pub(crate) processes: Result<Vec<(u32, String)>, String>,
+    pub(crate) bundles: Vec<BundleSnapshot>,
+    pub(crate) allowed_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BundleSnapshot {
+    pub(crate) path: PathBuf,
+    pub(crate) identifier: String,
+}
+
+pub struct LiveRestrictedRunner {
+    results: RestrictedResultQueue,
+}
+
+impl LiveRestrictedRunner {
+    pub fn new(results: RestrictedResultQueue) -> Self {
+        Self { results }
+    }
+}
 
 impl RestrictedRunner for LiveRestrictedRunner {
-    fn enforce(&self, rule: &InstalledRestrictedSoftware) -> RestrictedResult {
-        enforce_live(rule)
+    fn snapshot(&self, include_bundles: bool) -> EnforcementSnapshot {
+        live_snapshot(include_bundles)
+    }
+
+    fn enforce(
+        &self,
+        rule: &InstalledRestrictedSoftware,
+        snapshot: &EnforcementSnapshot,
+    ) -> RestrictedResult {
+        enforce_live(rule, snapshot)
     }
 
     fn post(&self, rule: &InstalledRestrictedSoftware, result: &RestrictedResult, logger: &Logger) {
-        post_result(rule, result, logger);
+        self.results.enqueue(rule, result);
+        logger.log(format!("{} result queued", rule.id));
     }
 }
 
@@ -222,17 +271,26 @@ pub fn tick(
     runner: &dyn RestrictedRunner,
     logger: &Logger,
 ) {
-    for rule in rules {
-        let entry = state.entry(rule.id.clone()).or_default();
-        let digest = rule_digest(rule);
-        let now_seconds = now.timestamp();
-        let due = entry.digest != digest || now_seconds - entry.last_run >= rule.interval_seconds;
+    let now_seconds = now.timestamp();
+    let due: Vec<_> = rules
+        .iter()
+        .filter_map(|rule| {
+            let entry = state.entry(rule.id.clone()).or_default();
+            let digest = rule_digest(rule);
+            (entry.digest != digest || now_seconds - entry.last_run >= rule.interval_seconds)
+                .then_some((rule, digest))
+        })
+        .collect();
 
-        if !due {
-            continue;
-        }
+    if due.is_empty() {
+        return;
+    }
 
-        let result = runner.enforce(rule);
+    let include_bundles = due.iter().any(|(rule, _)| rule.match_type == "bundle-id");
+    let snapshot = runner.snapshot(include_bundles);
+
+    for (rule, digest) in due {
+        let result = runner.enforce(rule, &snapshot);
 
         if result.should_post() {
             runner.post(rule, &result, logger);
@@ -243,6 +301,7 @@ pub fn tick(
             rule.id, result.status, result.killed_processes, result.removed_applications
         ));
 
+        let entry = state.entry(rule.id.clone()).or_default();
         entry.last_run = now_seconds;
         entry.digest = digest;
     }
@@ -255,75 +314,13 @@ pub fn endpoint_for(server_url: &str) -> String {
     )
 }
 
-fn post_result(rule: &InstalledRestrictedSoftware, result: &RestrictedResult, logger: &Logger) {
-    let data = match serde_json::to_vec(result) {
-        Ok(data) => data,
-        Err(error) => {
-            logger.log(format!("restricted software result could not encode: {error}"));
-            return;
-        }
-    };
-
-    let mut child = match Command::new(curl())
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--max-time",
-            "30",
-            "-X",
-            "POST",
-            "-H",
-            "content-type: application/json",
-            "-H",
-            &format!("authorization: Bearer {}", rule.device_token),
-            "--data-binary",
-            "@-",
-            &endpoint_for(&rule.server_url),
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => {
-            logger.log(format!("restricted software result could not start: {error}"));
-            return;
-        }
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if let Err(error) = stdin.write_all(&data) {
-            logger.log(format!("restricted software result could not send: {error}"));
-        }
-    }
-
-    match child.wait_with_output() {
-        Ok(output) if output.status.success() => {}
-        Ok(output) => logger.log(format!(
-            "restricted software result failed ({}): {}",
-            output.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )),
-        Err(error) => logger.log(format!("restricted software result failed: {error}")),
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn curl() -> &'static str {
-    "/usr/bin/curl"
-}
-
-#[cfg(not(target_os = "macos"))]
-fn curl() -> &'static str {
-    "curl"
-}
-
-fn enforce_live(rule: &InstalledRestrictedSoftware) -> RestrictedResult {
+fn enforce_live(
+    rule: &InstalledRestrictedSoftware,
+    snapshot: &EnforcementSnapshot,
+) -> RestrictedResult {
     #[cfg(target_os = "macos")]
     {
-        enforce_macos(rule)
+        enforce_macos(rule, snapshot)
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -399,31 +396,92 @@ pub fn deletable_bundles(
     roots: &[PathBuf],
     allowed_roots: &[PathBuf],
 ) -> Vec<PathBuf> {
-    find_bundle_paths(identifier, roots, true)
-        .into_iter()
+    validated_bundles(
+        identifier,
+        &find_bundle_paths(identifier, roots, true),
+        allowed_roots,
+    )
+}
+
+fn validated_bundles(
+    identifier: &str,
+    candidates: &[PathBuf],
+    allowed_roots: &[PathBuf],
+) -> Vec<PathBuf> {
+    candidates
+        .iter()
         .filter(|bundle| !protected_bundle(bundle))
         .filter(|bundle| validate_bundle(bundle, allowed_roots, identifier).is_ok())
+        .cloned()
         .collect()
 }
 
+fn bundles_for_rule(
+    rule: &InstalledRestrictedSoftware,
+    snapshot: &EnforcementSnapshot,
+) -> Vec<PathBuf> {
+    if rule.match_type != "bundle-id" {
+        return Vec::new();
+    }
+
+    let candidates: Vec<_> = snapshot
+        .bundles
+        .iter()
+        .filter(|bundle| bundle.identifier.eq_ignore_ascii_case(&rule.match_value))
+        .map(|bundle| bundle.path.clone())
+        .collect();
+
+    // The inventory is shared, but a user-writable Applications directory is
+    // not trusted. Re-check scope, symlinks and the identifier for every rule.
+    validated_bundles(&rule.match_value, &candidates, &snapshot.allowed_roots)
+}
+
 #[cfg(target_os = "macos")]
-fn enforce_macos(rule: &InstalledRestrictedSoftware) -> RestrictedResult {
-    let allowed = deletion_roots();
-    let bundles = if rule.match_type == "bundle-id" {
-        deletable_bundles(&rule.match_value, &bundle_roots(), &allowed)
+fn live_snapshot(include_bundles: bool) -> EnforcementSnapshot {
+    let allowed_roots = deletion_roots();
+    let bundles = if include_bundles {
+        bundle_snapshot(&bundle_roots_from(&allowed_roots))
     } else {
         Vec::new()
     };
+    let processes = list_processes().map_err(|error| error.to_string());
 
-    let processes = match list_processes() {
+    EnforcementSnapshot {
+        processes,
+        bundles,
+        allowed_roots,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn live_snapshot(_include_bundles: bool) -> EnforcementSnapshot {
+    EnforcementSnapshot {
+        processes: Ok(Vec::new()),
+        bundles: Vec::new(),
+        allowed_roots: Vec::new(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn enforce_macos(
+    rule: &InstalledRestrictedSoftware,
+    snapshot: &EnforcementSnapshot,
+) -> RestrictedResult {
+    let bundles = bundles_for_rule(rule, snapshot);
+
+    let processes = match &snapshot.processes {
         Ok(processes) => processes,
         Err(error) => {
-            return RestrictedResult::failed(rule, format!("Could not read the process table: {error}"))
+            return RestrictedResult::failed(
+                rule,
+                format!("Could not read the process table: {error}"),
+            )
         }
     };
 
-    let pids = matching_pids(rule, &processes, &bundles);
-    let (stopped, kill_error) = terminate(pids);
+    let matches = matching_processes(rule, processes, &bundles);
+    let (stopped, kill_error) =
+        terminate_matches_with(matches, rule, snapshot, &LiveProcessControl, 20);
 
     if let Some(error) = kill_error {
         return RestrictedResult::failed(rule, error);
@@ -446,7 +504,7 @@ fn enforce_macos(rule: &InstalledRestrictedSoftware) -> RestrictedResult {
     let mut failures = Vec::new();
 
     for bundle in &bundles {
-        match remove_bundle(bundle, &allowed, &rule.match_value) {
+        match remove_bundle(bundle, &snapshot.allowed_roots, &rule.match_value) {
             Ok(()) => removed += 1,
             Err(error) => failures.push(format!("{}: {error}", bundle.display())),
         }
@@ -457,9 +515,7 @@ fn enforce_macos(rule: &InstalledRestrictedSoftware) -> RestrictedResult {
         if removed == 0 {
             format!("Terminated {stopped} process(es); no matching application bundle was found.")
         } else {
-            format!(
-                "Terminated {stopped} process(es) and removed {removed} application bundle(s)."
-            )
+            format!("Terminated {stopped} process(es) and removed {removed} application bundle(s).")
         }
     } else {
         failures.join("; ")
@@ -489,20 +545,12 @@ pub fn deletion_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn bundle_roots() -> Vec<PathBuf> {
-    let mut roots = vec![
-        PathBuf::from("/Applications"),
-        PathBuf::from("/System/Applications"),
-    ];
+fn bundle_roots_from(allowed_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut roots = allowed_roots.to_vec();
+    let system = PathBuf::from("/System/Applications");
 
-    if let Ok(entries) = fs::read_dir("/Users") {
-        for entry in entries.flatten() {
-            let candidate = entry.path().join("Applications");
-
-            if candidate.is_dir() {
-                roots.push(candidate);
-            }
-        }
+    if !roots.contains(&system) {
+        roots.push(system);
     }
 
     roots
@@ -510,26 +558,29 @@ fn bundle_roots() -> Vec<PathBuf> {
 
 /// Find `.app` bundles with a matching bundle identifier. Only direct children
 /// (and one nested level, for folders such as Utilities) are inspected.
-pub fn find_bundle_paths(
-    identifier: &str,
-    roots: &[PathBuf],
-    by_bundle_id: bool,
-) -> Vec<PathBuf> {
+pub fn find_bundle_paths(identifier: &str, roots: &[PathBuf], by_bundle_id: bool) -> Vec<PathBuf> {
     if !by_bundle_id {
         return Vec::new();
     }
 
-    let wanted = identifier.to_lowercase();
+    bundle_snapshot(roots)
+        .into_iter()
+        .filter(|bundle| bundle.identifier.eq_ignore_ascii_case(identifier))
+        .map(|bundle| bundle.path)
+        .collect()
+}
+
+fn bundle_snapshot(roots: &[PathBuf]) -> Vec<BundleSnapshot> {
     let mut found = Vec::new();
 
     for root in roots {
-        collect_bundles(root, 0, &wanted, &mut found);
+        collect_bundles(root, 0, &mut found);
     }
 
     found
 }
 
-fn collect_bundles(directory: &Path, depth: usize, wanted: &str, found: &mut Vec<PathBuf>) {
+fn collect_bundles(directory: &Path, depth: usize, found: &mut Vec<BundleSnapshot>) {
     if depth > 1 {
         return;
     }
@@ -543,8 +594,8 @@ fn collect_bundles(directory: &Path, depth: usize, wanted: &str, found: &mut Vec
 
         if path.extension().and_then(|value| value.to_str()) == Some("app") {
             if let Some(identifier) = bundle_identifier(&path) {
-                if identifier.eq_ignore_ascii_case(wanted) && !found.contains(&path) {
-                    found.push(path);
+                if !found.iter().any(|bundle| bundle.path == path) {
+                    found.push(BundleSnapshot { path, identifier });
                 }
             }
 
@@ -552,7 +603,7 @@ fn collect_bundles(directory: &Path, depth: usize, wanted: &str, found: &mut Vec
         }
 
         if path.is_dir() {
-            collect_bundles(&path, depth + 1, wanted, found);
+            collect_bundles(&path, depth + 1, found);
         }
     }
 }
@@ -565,13 +616,12 @@ fn bundle_identifier(bundle: &Path) -> Option<String> {
 }
 
 pub fn list_processes() -> std::io::Result<Vec<(u32, String)>> {
-    let output = Command::new("/bin/ps").args(["-axo", "pid=,comm="]).output()?;
+    let output = Command::new("/bin/ps")
+        .args(["-axo", "pid=,comm="])
+        .output()?;
 
     if !output.status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "ps exited unsuccessfully",
-        ));
+        return Err(std::io::Error::other("ps exited unsuccessfully"));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout)
@@ -598,6 +648,17 @@ pub fn matching_pids(
     processes: &[(u32, String)],
     bundles: &[PathBuf],
 ) -> Vec<u32> {
+    matching_processes(rule, processes, bundles)
+        .into_iter()
+        .map(|(pid, _)| pid)
+        .collect()
+}
+
+fn matching_processes(
+    rule: &InstalledRestrictedSoftware,
+    processes: &[(u32, String)],
+    bundles: &[PathBuf],
+) -> Vec<(u32, String)> {
     let process_rule = rule.match_type == "process-name";
     let value = if process_rule {
         normalise_process_name(&rule.match_value)
@@ -609,7 +670,10 @@ pub fn matching_pids(
         .map(|bundle| {
             format!(
                 "{}/contents/macos/",
-                bundle.to_string_lossy().trim_end_matches('/').to_lowercase()
+                bundle
+                    .to_string_lossy()
+                    .trim_end_matches('/')
+                    .to_lowercase()
             )
         })
         .collect();
@@ -632,11 +696,11 @@ pub fn matching_pids(
             }
 
             if process_rule {
-                (base == value || normalise_process_name(base) == value).then_some(*pid)
+                (base == value || normalise_process_name(base) == value).then_some((*pid, command))
             } else {
                 let inside = prefixes.iter().any(|prefix| command.starts_with(prefix));
 
-                (inside || command == value).then_some(*pid)
+                (inside || command == value).then_some((*pid, command))
             }
         })
         .collect()
@@ -656,6 +720,11 @@ pub enum KillFailure {
 pub trait ProcessControl {
     fn signal(&self, pid: u32, signal: i32) -> Result<(), KillFailure>;
     fn exists(&self, pid: u32) -> bool;
+    /// Current executable path, when the platform can provide it without a
+    /// process-table scan. Live enforcement fails closed when it is unknown.
+    fn command(&self, _pid: u32) -> Option<String> {
+        None
+    }
 }
 
 pub struct LiveProcessControl;
@@ -695,6 +764,28 @@ impl ProcessControl for LiveProcessControl {
             // Unknown errno: be conservative and treat it as present.
             _ => true,
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn command(&self, pid: u32) -> Option<String> {
+        let mut buffer = [0_u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+        let length = unsafe {
+            libc::proc_pidpath(
+                pid as libc::c_int,
+                buffer.as_mut_ptr().cast(),
+                buffer.len() as u32,
+            )
+        };
+
+        if length <= 0 {
+            return None;
+        }
+
+        Some(
+            String::from_utf8_lossy(&buffer[..length as usize])
+                .trim_end_matches('\0')
+                .to_owned(),
+        )
     }
 }
 
@@ -770,6 +861,67 @@ pub fn terminate_with(
     }
 
     (stopped, None)
+}
+
+struct RecheckingProcessControl<'a> {
+    control: &'a dyn ProcessControl,
+    rule: &'a InstalledRestrictedSoftware,
+    snapshot: &'a EnforcementSnapshot,
+    bundles: Vec<PathBuf>,
+}
+
+impl RecheckingProcessControl<'_> {
+    fn command_matches(&self, pid: u32, bundles: &[PathBuf]) -> bool {
+        self.control.command(pid).is_some_and(|command| {
+            matching_pids(self.rule, &[(pid, command)], bundles).contains(&pid)
+        })
+    }
+}
+
+impl ProcessControl for RecheckingProcessControl<'_> {
+    fn signal(&self, pid: u32, signal: i32) -> Result<(), KillFailure> {
+        // A shared snapshot can outlive a PID. Re-read the executable and
+        // revalidate bundle targets immediately before every signal so a
+        // recycled PID or swapped application is never signalled.
+        let bundles = bundles_for_rule(self.rule, self.snapshot);
+        if self.command_matches(pid, &bundles) {
+            self.control.signal(pid, signal)
+        } else {
+            Err(KillFailure::Gone)
+        }
+    }
+
+    fn exists(&self, pid: u32) -> bool {
+        self.control.exists(pid) && self.command_matches(pid, &self.bundles)
+    }
+
+    fn command(&self, pid: u32) -> Option<String> {
+        self.control.command(pid)
+    }
+}
+
+fn terminate_matches_with(
+    matches: Vec<(u32, String)>,
+    rule: &InstalledRestrictedSoftware,
+    snapshot: &EnforcementSnapshot,
+    control: &dyn ProcessControl,
+    grace_steps: u32,
+) -> (usize, Option<String>) {
+    let bundles = bundles_for_rule(rule, snapshot);
+    let rechecking = RecheckingProcessControl {
+        control,
+        rule,
+        snapshot,
+        bundles: bundles.clone(),
+    };
+    let safe_pids = matches
+        .into_iter()
+        .filter_map(|(pid, _)| {
+            (control.exists(pid) && rechecking.command_matches(pid, &bundles)).then_some(pid)
+        })
+        .collect();
+
+    terminate_with(safe_pids, &rechecking, grace_steps)
 }
 
 pub fn terminate(pids: Vec<u32>) -> (usize, Option<String>) {
@@ -952,7 +1104,11 @@ mod tests {
             (11, "/usr/sbin/BannedHelper".into()),
             (12, "/usr/bin/Allowed".into()),
         ];
-        let pids = matching_pids(&rule("kill-process", "process-name", "Banned"), &processes, &[]);
+        let pids = matching_pids(
+            &rule("kill-process", "process-name", "Banned"),
+            &processes,
+            &[],
+        );
 
         assert_eq!(pids, vec![10]);
     }
@@ -961,10 +1117,17 @@ mod tests {
     fn matches_processes_inside_a_bundle() {
         let processes = vec![
             (20, "/Applications/Banned.app/Contents/MacOS/Banned".into()),
-            (21, "/Applications/Allowed.app/Contents/MacOS/Allowed".into()),
+            (
+                21,
+                "/Applications/Allowed.app/Contents/MacOS/Allowed".into(),
+            ),
         ];
         let bundles = vec![PathBuf::from("/Applications/Banned.app")];
-        let pids = matching_pids(&rule("kill-process", "bundle-id", "com.example.Banned"), &processes, &bundles);
+        let pids = matching_pids(
+            &rule("kill-process", "bundle-id", "com.example.Banned"),
+            &processes,
+            &bundles,
+        );
 
         assert_eq!(pids, vec![20]);
     }
@@ -990,7 +1153,12 @@ mod tests {
         let bundle = allowed.join("Banned.app");
         write_info_plist(&bundle, "com.example.Banned");
 
-        remove_bundle(&bundle, &[allowed.clone()], "com.example.Banned").expect("bundle removed");
+        remove_bundle(
+            &bundle,
+            std::slice::from_ref(&allowed),
+            "com.example.Banned",
+        )
+        .expect("bundle removed");
         assert!(!bundle.exists());
 
         let outside = directory.path().join("Elsewhere.app");
@@ -1012,7 +1180,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).expect("symlink");
 
         assert!(
-            remove_bundle(&link, &[allowed.clone()], "com.example.Banned").is_err(),
+            remove_bundle(&link, std::slice::from_ref(&allowed), "com.example.Banned",).is_err(),
             "a symlink must be rejected before deletion"
         );
         assert!(target.exists(), "the symlink target must survive");
@@ -1131,20 +1299,181 @@ mod tests {
         assert!(error.is_none());
     }
 
+    struct FakeCommandProcesses {
+        present: Mutex<Vec<u32>>,
+        commands: Mutex<Vec<(u32, String)>>,
+        signals: Mutex<Vec<(u32, i32)>>,
+    }
+
+    impl ProcessControl for FakeCommandProcesses {
+        fn signal(&self, pid: u32, signal: i32) -> Result<(), KillFailure> {
+            self.signals.lock().unwrap().push((pid, signal));
+            if signal == libc::SIGTERM {
+                self.present.lock().unwrap().retain(|value| *value != pid);
+            }
+            Ok(())
+        }
+
+        fn exists(&self, pid: u32) -> bool {
+            self.present.lock().unwrap().contains(&pid)
+        }
+
+        fn command(&self, pid: u32) -> Option<String> {
+            self.commands
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(candidate, _)| *candidate == pid)
+                .map(|(_, command)| command.clone())
+        }
+    }
+
+    fn empty_snapshot() -> EnforcementSnapshot {
+        EnforcementSnapshot {
+            processes: Ok(Vec::new()),
+            bundles: Vec::new(),
+            allowed_roots: Vec::new(),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn live_process_control_reads_the_current_executable_without_spawning_ps() {
+        let command = LiveProcessControl
+            .command(std::process::id())
+            .expect("current executable path");
+
+        assert!(Path::new(&command).is_absolute());
+    }
+
+    #[test]
+    fn shared_snapshots_never_signal_a_dangerous_recycled_pid() {
+        let control = FakeCommandProcesses {
+            present: Mutex::new(vec![42]),
+            commands: Mutex::new(vec![(42, "/sbin/launchd".into())]),
+            signals: Mutex::new(Vec::new()),
+        };
+        let rule = rule("kill-process", "process-name", "Banned");
+        let snapshot = empty_snapshot();
+
+        let (stopped, error) = terminate_matches_with(
+            vec![(42, "/usr/bin/Banned".into())],
+            &rule,
+            &snapshot,
+            &control,
+            0,
+        );
+
+        assert_eq!(stopped, 0);
+        assert!(error.is_none());
+        assert!(control.signals.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn shared_snapshots_recheck_identity_again_before_sending_a_signal() {
+        struct ChangesAfterSnapshot {
+            present: Mutex<Vec<u32>>,
+            reads: Mutex<usize>,
+            signals: Mutex<Vec<(u32, i32)>>,
+        }
+
+        impl ProcessControl for ChangesAfterSnapshot {
+            fn signal(&self, pid: u32, signal: i32) -> Result<(), KillFailure> {
+                self.signals.lock().unwrap().push((pid, signal));
+                Ok(())
+            }
+
+            fn exists(&self, pid: u32) -> bool {
+                self.present.lock().unwrap().contains(&pid)
+            }
+
+            fn command(&self, _pid: u32) -> Option<String> {
+                let mut reads = self.reads.lock().unwrap();
+                *reads += 1;
+                Some(if *reads <= 2 {
+                    "/usr/bin/Banned".into()
+                } else {
+                    "/sbin/launchd".into()
+                })
+            }
+        }
+
+        let control = ChangesAfterSnapshot {
+            present: Mutex::new(vec![42]),
+            reads: Mutex::new(0),
+            signals: Mutex::new(Vec::new()),
+        };
+        let rule = rule("kill-process", "process-name", "Banned");
+        let snapshot = empty_snapshot();
+
+        let (_, error) = terminate_matches_with(
+            vec![(42, "/usr/bin/Banned".into())],
+            &rule,
+            &snapshot,
+            &control,
+            0,
+        );
+
+        assert!(error.is_none());
+        assert!(control.signals.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn shared_snapshots_still_terminate_a_matching_process() {
+        let control = FakeCommandProcesses {
+            present: Mutex::new(vec![43]),
+            commands: Mutex::new(vec![(43, "/usr/bin/Banned".into())]),
+            signals: Mutex::new(Vec::new()),
+        };
+        let rule = rule("kill-process", "process-name", "Banned");
+        let snapshot = empty_snapshot();
+
+        let (stopped, error) = terminate_matches_with(
+            vec![(43, "/usr/bin/Banned".into())],
+            &rule,
+            &snapshot,
+            &control,
+            0,
+        );
+
+        assert_eq!(stopped, 1);
+        assert!(error.is_none());
+        assert_eq!(*control.signals.lock().unwrap(), vec![(43, libc::SIGTERM)]);
+    }
+
     #[test]
     fn post_is_deduplicated_per_rule_and_interval() {
         struct Recorder {
             runs: Mutex<Vec<String>>,
             posted: Mutex<usize>,
+            snapshots: Mutex<Vec<bool>>,
         }
 
         impl RestrictedRunner for Recorder {
-            fn enforce(&self, rule: &InstalledRestrictedSoftware) -> RestrictedResult {
+            fn snapshot(&self, include_bundles: bool) -> EnforcementSnapshot {
+                self.snapshots.lock().unwrap().push(include_bundles);
+                EnforcementSnapshot {
+                    processes: Ok(Vec::new()),
+                    bundles: Vec::new(),
+                    allowed_roots: Vec::new(),
+                }
+            }
+
+            fn enforce(
+                &self,
+                rule: &InstalledRestrictedSoftware,
+                _snapshot: &EnforcementSnapshot,
+            ) -> RestrictedResult {
                 self.runs.lock().unwrap().push(rule.id.clone());
                 RestrictedResult::succeeded(rule, 1, 0, "killed".into())
             }
 
-            fn post(&self, _rule: &InstalledRestrictedSoftware, _result: &RestrictedResult, _logger: &Logger) {
+            fn post(
+                &self,
+                _rule: &InstalledRestrictedSoftware,
+                _result: &RestrictedResult,
+                _logger: &Logger,
+            ) {
                 *self.posted.lock().unwrap() += 1;
             }
         }
@@ -1152,15 +1481,132 @@ mod tests {
         let recorder = Recorder {
             runs: Mutex::new(Vec::new()),
             posted: Mutex::new(0),
+            snapshots: Mutex::new(Vec::new()),
         };
         let mut state = BTreeMap::new();
         let at = Local.with_ymd_and_hms(2026, 11, 20, 12, 0, 0).unwrap();
+        let rules = [rule("kill-process", "process-name", "Banned")];
 
-        tick(&[rule("kill-process", "process-name", "Banned")], &mut state, at, &recorder, &Logger::system());
-        tick(&[rule("kill-process", "process-name", "Banned")], &mut state, at, &recorder, &Logger::system());
+        tick(&rules, &mut state, at, &recorder, &Logger::system());
+        tick(&rules, &mut state, at, &recorder, &Logger::system());
 
         assert_eq!(*recorder.runs.lock().unwrap(), vec!["rule-1"]);
         assert_eq!(*recorder.posted.lock().unwrap(), 1);
+        assert_eq!(*recorder.snapshots.lock().unwrap(), vec![false]);
+    }
+
+    #[test]
+    fn all_due_rules_share_one_process_and_bundle_snapshot() {
+        struct Recorder {
+            runs: Mutex<Vec<String>>,
+            snapshots: Mutex<Vec<bool>>,
+        }
+
+        impl RestrictedRunner for Recorder {
+            fn snapshot(&self, include_bundles: bool) -> EnforcementSnapshot {
+                self.snapshots.lock().unwrap().push(include_bundles);
+                EnforcementSnapshot {
+                    processes: Ok(Vec::new()),
+                    bundles: Vec::new(),
+                    allowed_roots: Vec::new(),
+                }
+            }
+
+            fn enforce(
+                &self,
+                rule: &InstalledRestrictedSoftware,
+                _snapshot: &EnforcementSnapshot,
+            ) -> RestrictedResult {
+                self.runs.lock().unwrap().push(rule.id.clone());
+                RestrictedResult::succeeded(rule, 0, 0, "no match".into())
+            }
+
+            fn post(
+                &self,
+                _rule: &InstalledRestrictedSoftware,
+                _result: &RestrictedResult,
+                _logger: &Logger,
+            ) {
+                panic!("no-op results must not be posted");
+            }
+        }
+
+        let recorder = Recorder {
+            runs: Mutex::new(Vec::new()),
+            snapshots: Mutex::new(Vec::new()),
+        };
+        let rules = [
+            rule("kill-process", "process-name", "Banned"),
+            rule("delete-app", "bundle-id", "com.example.Banned"),
+            rule("kill-process", "bundle-id", "com.example.Other"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut rule)| {
+            rule.id = format!("rule-{index}");
+            rule
+        })
+        .collect::<Vec<_>>();
+        let at = Local.with_ymd_and_hms(2026, 11, 20, 12, 0, 0).unwrap();
+
+        tick(
+            &rules,
+            &mut BTreeMap::new(),
+            at,
+            &recorder,
+            &Logger::system(),
+        );
+
+        assert_eq!(
+            *recorder.runs.lock().unwrap(),
+            rules.iter().map(|rule| rule.id.clone()).collect::<Vec<_>>()
+        );
+        assert_eq!(*recorder.snapshots.lock().unwrap(), vec![true]);
+    }
+
+    #[test]
+    fn shared_bundle_snapshots_keep_scope_symlink_and_apple_protections() {
+        let directory = tempdir().expect("temp dir");
+        let allowed = directory.path().join("Applications");
+        let safe = allowed.join("Safe.app");
+        let apple = allowed.join("Apple.app");
+        let outside = directory.path().join("Outside.app");
+        write_info_plist(&safe, "com.example.Banned");
+        write_info_plist(&apple, "com.apple.Banned");
+        write_info_plist(&outside, "com.example.Banned");
+
+        let link = allowed.join("Link.app");
+        std::os::unix::fs::symlink(&safe, &link).expect("symlink");
+        let snapshot = EnforcementSnapshot {
+            processes: Ok(Vec::new()),
+            bundles: vec![
+                BundleSnapshot {
+                    path: safe.clone(),
+                    identifier: "com.example.Banned".into(),
+                },
+                BundleSnapshot {
+                    path: link,
+                    identifier: "com.example.Banned".into(),
+                },
+                BundleSnapshot {
+                    path: apple,
+                    identifier: "com.apple.Banned".into(),
+                },
+                BundleSnapshot {
+                    path: outside,
+                    identifier: "com.example.Banned".into(),
+                },
+            ],
+            allowed_roots: vec![allowed],
+        };
+
+        assert_eq!(
+            bundles_for_rule(
+                &rule("delete-app", "bundle-id", "com.example.Banned"),
+                &snapshot,
+            ),
+            vec![safe]
+        );
     }
 
     #[test]

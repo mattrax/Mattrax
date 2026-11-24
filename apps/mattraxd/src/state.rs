@@ -1,10 +1,10 @@
 //! Persistent agent state.
 //!
-//! The JSON shape is the one the Swift agent wrote, so an upgrade keeps manual
-//! run ids and trigger timestamps. It never contains script bodies, output or
-//! tokens.
+//! The agent-state JSON shape is the one the Swift agent wrote, so an upgrade
+//! keeps manual run ids and trigger timestamps. Agent state never contains
+//! script bodies, output or tokens.
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
@@ -47,6 +47,13 @@ pub struct AgentState {
 }
 
 pub fn load(path: &Path) -> AgentState {
+    load_json(path)
+}
+
+pub(crate) fn load_json<T>(path: &Path) -> T
+where
+    T: DeserializeOwned + Default,
+{
     fs::read(path)
         .ok()
         .and_then(|data| serde_json::from_slice(&data).ok())
@@ -57,11 +64,18 @@ pub fn load(path: &Path) -> AgentState {
 /// leave a truncated state file. Failures are reported to the caller; the
 /// daemon logs them and keeps running with in-memory state.
 pub fn save(path: &Path, state: &AgentState) -> io::Result<()> {
+    save_json(path, state)
+}
+
+pub(crate) fn save_json<T>(path: &Path, value: &T) -> io::Result<()>
+where
+    T: Serialize,
+{
     if let Some(directory) = path.parent() {
         fs::create_dir_all(directory)?;
     }
 
-    let data = serde_json::to_vec(state)
+    let data = serde_json::to_vec(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let temporary = path.with_extension(format!("json.tmp.{}", std::process::id()));
 
