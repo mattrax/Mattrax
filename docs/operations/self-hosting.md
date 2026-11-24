@@ -18,7 +18,7 @@ first request is served.
 ## Published image
 
 Released images live in the GitHub Container Registry, and that is what
-`docker-compose.selfhost.yml` pulls:
+`apps/docker/docker-compose.yml` pulls:
 
 ```bash
 docker pull ghcr.io/mattrax/mattrax:latest
@@ -88,7 +88,7 @@ contain symbol names.
 ## Requirements
 
 - Docker 24 or newer, on a `linux/amd64` host (or emulation).
-- A MySQL 26.10 database. `docker-compose.selfhost.yml` starts one next to the app.
+- A MySQL 26.10 database. `apps/docker/docker-compose.yml` starts one next to the app.
 - An HTTPS reverse proxy in front of the container. `ORIGIN` must be `https://`,
   because WebAuthn passkeys and email magic links require a secure origin.
 
@@ -98,8 +98,8 @@ contain symbol names.
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
 
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
 ```
 
 This installs `latest`. Pin a specific release once you have chosen one (see
@@ -109,7 +109,7 @@ cannot reach GHCR can build from source instead
 
 The first start applies the database migrations and creates the `mattrax-data`
 volume. Check it with `curl http://127.0.0.1:8080/api/ready` or
-`docker compose -f docker-compose.selfhost.yml ps`.
+`docker compose -f apps/docker/docker-compose.yml ps`.
 
 ## Reverse proxy
 
@@ -175,8 +175,8 @@ published release makes a restart predictable:
 # Substitute a published release tag (without the leading v), from the GitHub
 # releases page or the registry.
 export MATTRAX_VERSION=<version>
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
 ```
 
 Run `pull` explicitly: `up` reuses a `latest` image that is already present, so
@@ -197,8 +197,8 @@ stanza and tags the result `mattrax-selfhost:local`:
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
 
-docker compose -f docker-compose.selfhost.yml \
-  -f docker-compose.selfhost.build.yml up -d --build
+docker compose -f apps/docker/docker-compose.yml \
+  -f apps/docker/docker-compose.build.yml up -d --build
 ```
 
 The override ignores `MATTRAX_VERSION`, so a local build cannot overwrite a

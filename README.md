@@ -101,12 +101,12 @@ nothing else:
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
 
-docker compose -f docker-compose.selfhost.yml pull
-docker compose -f docker-compose.selfhost.yml up -d
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
 ```
 
 Build from a checkout instead with
-`docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
+`docker compose -f apps/docker/docker-compose.yml -f apps/docker/docker-compose.build.yml up -d --build`.
 See [docs/operations/self-hosting.md](docs/operations/self-hosting.md) for version
 pinning, TLS, storage, backups and upgrade notes.
 

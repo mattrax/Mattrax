@@ -1,20 +1,25 @@
 # Self-hosted Mattrax.
 #
 #   ORIGIN=https://mdm.example.com AUTH_SECRET=$(openssl rand -base64 32) \
-#     docker compose -f docker-compose.selfhost.yml pull
+#     docker compose -f apps/docker/docker-compose.yml pull
 #   ORIGIN=https://mdm.example.com AUTH_SECRET=$(openssl rand -base64 32) \
-#     docker compose -f docker-compose.selfhost.yml up -d
+#     docker compose -f apps/docker/docker-compose.yml up -d
 #
 # Pulls the published image from GHCR by default. The default, `latest`,
 # follows the newest stable release; pin a published tag with
 # MATTRAX_VERSION=<version> to keep a deployment fixed. To build from a
 # checkout instead, add the build override:
 #
-#   docker compose -f docker-compose.selfhost.yml \
-#     -f docker-compose.selfhost.build.yml up -d --build
+#   docker compose -f apps/docker/docker-compose.yml \
+#     -f apps/docker/docker-compose.build.yml up -d --build
 #
 # ORIGIN must be the public HTTPS URL devices and browsers use. TLS is
 # terminated by a reverse proxy in front of this container.
+
+# The project name is pinned so moving this file does not rename the existing
+# `mattrax-data` and `mattrax-mysql` volumes on upgrade.
+name: mattrax
+
 services:
   app:
     image: ghcr.io/mattrax/mattrax:${MATTRAX_VERSION:-latest}

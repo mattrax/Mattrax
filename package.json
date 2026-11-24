@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "vp run dev",
     "dev:cert": "tsx apps/web/scripts/dev-cert.ts",
-    "db:up": "docker compose up -d mysql",
     "db:migrate": "pnpm cloud db:migrate",
     "catalog:sync": "tsx apps/web/scripts/catalog-sync/sync.ts",
     "catalog:split": "tsx apps/web/scripts/split-policy-catalog.ts",
