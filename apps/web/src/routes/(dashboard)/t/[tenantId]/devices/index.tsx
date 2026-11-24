@@ -29,10 +29,11 @@ import {
   Activity,
   BookOpen,
   Calendar,
-  Download,
+  Clock,
   HardDrive,
   KeyRound,
   Laptop,
+  Monitor,
   MonitorSmartphone,
   Package,
   RefreshCw,
@@ -74,7 +75,7 @@ import {
 } from "~/lib/device-import";
 import type { DeviceImportParseResult } from "~/lib/device-import";
 import { healthRank } from "~/lib/device-health";
-import { SoftwareUpdateTag } from "~/components/software-update-badge";
+import { OsVersionTag } from "~/components/software-update-badge";
 import { decodeSoftwareUpdate } from "~/lib/software-updates";
 import { readDeviceSearchParams, routes } from "~/lib/routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
@@ -1339,10 +1340,17 @@ export default function DevicesPage() {
       ),
     },
     {
+      // Keep the saved-view id: the column used to show update status.
       id: "osUpdate",
-      header: "OS updates",
-      icon: Download,
-      cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
+      header: "OS version",
+      icon: Monitor,
+      cell: (row) => (
+        <OsVersionTag
+          version={row.osVersion}
+          build={row.osBuild}
+          info={decodeSoftwareUpdate(row.osUpdate)}
+        />
+      ),
     },
     {
       id: "platform",
@@ -1444,7 +1452,7 @@ export default function DevicesPage() {
     {
       id: "lastSeen",
       header: "Last seen",
-      icon: RefreshCw,
+      icon: Clock,
       sort: (row) => row.lastSeenAt,
       sortId: "lastSeenAt",
       class: "text-right",
