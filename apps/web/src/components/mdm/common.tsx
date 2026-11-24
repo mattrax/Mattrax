@@ -634,14 +634,8 @@ export function PlatformMark(props: { proto: string; class?: string }) {
   const style = () =>
     Match.value(props.proto).pipe(
       Match.when("apple", () => "bg-foreground/[0.06] text-foreground"),
-      Match.when(
-        "win",
-        () => "bg-[#0078d4]/12 text-[#0a6cbd] dark:bg-[#4cc2ff]/15 dark:text-[#4cc2ff]",
-      ),
-      Match.when(
-        "android",
-        () => "bg-[#34a853]/12 text-[#1c8b3e] dark:bg-[#6dd58c]/15 dark:text-[#6dd58c]",
-      ),
+      Match.when("win", () => "bg-info/10 text-info"),
+      Match.when("android", () => "bg-success/10 text-success"),
       Match.orElse(() => "bg-surface text-muted-foreground"),
     );
 
